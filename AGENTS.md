@@ -28,6 +28,10 @@ assets/ icons/
 - Direct (beta): `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Contextify/Contextify.xcodeproj -scheme Contextify -destination 'platform=macOS' build`.
 - Xcode GUI: open `Contextify/Contextify.xcodeproj`, scheme `Contextify`, Run on “My Mac”.
 
+## Git Hooks (Pre-commit Build Guard)
+- Enable hooks: `git config core.hooksPath .githooks`
+- Behavior: when files under `Contextify/` are staged, the pre-commit hook runs `scripts/xc.sh build` (using Xcode‑beta if present). If the build fails, the commit is blocked; check logs under `build/logs/` and `.xcresult` under `build/ResultBundles/`.
+
 ## Coding Style & Naming Conventions
 - Swift: 2‑space indent; follow Swift API Design Guidelines. Types `UpperCamelCase`, methods/vars `lowerCamelCase`.
 - Concurrency (Swift 6): use async/await, structured `Task`s, `@MainActor` for UI, `Sendable` where crossing threads; avoid detached tasks.

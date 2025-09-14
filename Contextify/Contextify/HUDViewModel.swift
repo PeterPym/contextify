@@ -3,6 +3,7 @@ import Observation
 
 @Observable
 final class HUDViewModel {
+    static let shared = HUDViewModel()
     enum UIState: Equatable { case idle, ingesting, success(String), error(String) }
 
     var branch: String = "Not a git repo"

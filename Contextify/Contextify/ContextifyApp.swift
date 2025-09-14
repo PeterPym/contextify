@@ -10,7 +10,7 @@ import AppKit
 
 @main
 struct ContextifyApp: App {
-    @State private var model = HUDViewModel()
+    private let model = HUDViewModel.shared
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -21,7 +21,6 @@ struct ContextifyApp: App {
 }
 
 struct ProjectRootCommands: Commands {
-    @Environment(HUDViewModel.self) private var model
     var body: some Commands {
         CommandGroup(after: .newItem) {
             Button("Set Project Root…") { pickProjectRoot() }
@@ -34,7 +33,7 @@ struct ProjectRootCommands: Commands {
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         if panel.runModal() == .OK, let url = panel.urls.first {
-            model.setProjectRoot(url: url)
+            HUDViewModel.shared.setProjectRoot(url: url)
         }
     }
 }
