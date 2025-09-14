@@ -1,0 +1,72 @@
+# Repository Guidelines
+
+## Target Platform & Tooling
+- Xcode: 16+ (set Command Line Tools to Xcode 16).
+- SDKs: Base `macOS 26` (Tahoe); min deployment `macOS 14` or `15`.
+- Language: Swift 6; Frameworks: SwiftUI, Observation; optional: SwiftData, Core ML.
+- Availability: gate Tahoe-only APIs (`@available(macOS 26, *)`) with clear fallbacks.
+
+## Project Structure & Module Organization
+- Source lives under `app/` (SwiftUI macOS HUD) and `cli/` (session/automation tools) when added.
+- Documentation in `docs/` (e.g., `docs/roadmap/`) and acceptance/run guides per phase.
+- Tests in `tests/` mirroring targets (e.g., `app/Tests/`, `cli/tests/`).
+- Assets in `assets/` (icons, symbols). Working artifacts in per‑project `docs/sessions/` as described in the roadmap.
+
+Example layout:
+```
+app/ ContextifyHUD.xcodeproj …
+cli/ context/ …
+docs/ roadmap/ …
+tests/ app/ cli/
+assets/ icons/
+```
+
+## Build, Test, and Development Commands
+- Preferred: `bash scripts/xc.sh build` (auto-uses Xcode-beta if installed; DerivedData under `build/`).
+- Tests: `bash scripts/xc.sh test` (uses Swift Testing/XCTest if configured in the project).
+- Direct xcodebuild (beta): `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Contextify/Contextify.xcodeproj -scheme Contextify -destination 'platform=macOS' build`.
+- Xcode GUI: open `Contextify/Contextify.xcodeproj`, select scheme `Contextify`, Run on “My Mac”.
+
+## Coding Style & Naming Conventions
+- Swift: 2‑space indent; follow Swift API Design Guidelines. Types `UpperCamelCase`, methods/vars `lowerCamelCase`.
+- Concurrency (Swift 6): use async/await, structured `Task`s, `@MainActor` for UI, `Sendable` where crossing threads; avoid detached tasks.
+- State: prefer Observation (`@Observable`) or `@StateObject` ViewModels; keep Views declarative and side‑effect‑free.
+- Availability: isolate new APIs behind small adapters; `#available(macOS 26, *)` guards with working fallbacks.
+- Python (if present): Black (line length 88), isort, flake8; snake_case for functions/vars, PascalCase for classes.
+- File/dir names: kebab‑case for non‑code folders (e.g., `docs/sessions/active/`).
+- Keep modules small; separate UI (Views), state (ViewModels), and services.
+
+## Testing Guidelines
+- Use `XCTest` (or Swift Testing if adopted) for app modules; place under `app/Tests/…Tests.swift`.
+- Use `pytest` for CLI utilities under `cli/tests/` with `test_*.py` files.
+- Prefer fast, deterministic tests; include minimal fixtures under `tests/fixtures/`.
+- Target: add tests with every feature; smoke tests for HUD launch and file ingest flow.
+
+## Project Setup Recommendation
+- Preferred (interactive): create a new macOS App (SwiftUI) in Xcode 16, name `ContextifyHUD`, Base SDK `macOS 26`, min `macOS 14/15`. This ensures correct signing, targets, previews, and SDK selection. After creation, we add Views/ViewModels and tests via PRs.
+- Alternative (sample‑based): start from an Apple SwiftUI macOS sample that demonstrates drag & drop or `DocumentGroup`, then replace the root view with our HUD and keep the project settings. Avoid iOS‑only samples.
+- Avoid: generating `.xcodeproj` by hand in CI; Xcode manages capabilities and schemes more reliably.
+
+## Quickstart For Agents
+- Ensure Xcode-beta is installed and selected by the script (it auto-detects).
+- Build once: `bash scripts/xc.sh build`.
+- If CLI fails, verify: `xcodebuild -version` and `xcode-select -p` (set `DEVELOPER_DIR` or use Xcode GUI).
+- Keep PRs small; rely on CI (macOS build workflow) to validate changes.
+
+## Commit & Pull Request Guidelines
+- Commits: Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`).
+- Scope small, descriptive commits; prefer present tense, imperative mood.
+- PRs: clear summary, linked issues, screenshots/GIFs for UI, reproduction or acceptance steps, and notes on risks.
+- Require passing checks and reviewer approval before merge; rebase onto `main`.
+
+## Security & Configuration Tips
+- Default to no network access unless explicitly enabled; avoid committing secrets.
+- Session data belongs under `<project>/docs/sessions/` and may be versioned; do not store sensitive user data there.
+- Log minimally with timestamps; exclude local paths or tokens.
+
+## Useful References (Apple)
+- SwiftUI `onDrop`: https://developer.apple.com/documentation/swiftui/view/ondrop(of:isTargeted:perform/)
+- Transferable (modern data): https://developer.apple.com/documentation/coretransferable/transferable
+- MenuBarExtra: https://developer.apple.com/documentation/swiftui/menubarextra
+- DocumentGroup: https://developer.apple.com/documentation/swiftui/documentgroup
+- Testing (Swift Testing/XCTest): https://developer.apple.com/documentation/testing
