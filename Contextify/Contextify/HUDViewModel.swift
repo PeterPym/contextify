@@ -3,7 +3,7 @@ import Observation
 
 @Observable
 final class HUDViewModel {
-    enum UIState { case idle, ingesting, success(String), error(String) }
+    enum UIState: Equatable { case idle, ingesting, success(String), error(String) }
 
     var branch: String = "main"
     var session: String = "Session-001"
@@ -63,4 +63,3 @@ final class HUDViewModel {
     @MainActor
     func checkpoint() { status = "Checkpoint at \(Date())" }
 }
-
