@@ -45,11 +45,13 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
-            Button("Set Project Root…") {
-                let ok = pickProjectRoot()
-                print("[Contextify] Set Project Root result=\(ok)")
+            if model.projectRootURL == nil || model.branch == "—" {
+                Button("Set Project Root…") {
+                    let ok = pickProjectRoot()
+                    print("[Contextify] Set Project Root result=\(ok)")
+                }
+                .buttonStyle(.link)
             }
-            .buttonStyle(.link)
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()

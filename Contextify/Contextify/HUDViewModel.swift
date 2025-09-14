@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import Dispatch
 
 @Observable
 final class HUDViewModel {
@@ -15,6 +16,13 @@ final class HUDViewModel {
     var urlText: String = ""
     var alertMessage: String? = nil
     private static let defaultsProjectRootKey = "dev.contextify.projectRoot"
+    private static let sharedDefaults: UserDefaults = {
+        UserDefaults(suiteName: "dev.contextify") ?? .standard
+    }()
+    private(set) var projectRootURL: URL? = nil
+    private var branchTimer: Timer? = nil
+    private var headWatcher: DispatchSourceFileSystemObject? = nil
+    private var headFD: CInt = -1
 
     // Destination for outputs; for development keep outside repo by default.
     var outputsDirectory: URL {
@@ -26,11 +34,15 @@ final class HUDViewModel {
         // Load persisted project root if available (shared suite first, then standard fallback)
         let persisted = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey)
             ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey)
+        let persistedStr = persisted ?? "nil"
+        print("[Contextify] startup defaults dev.contextify.projectRoot=\(persistedStr)")
         if let path = persisted, !path.isEmpty {
             projectRootURL = URL(fileURLWithPath: path)
+            let resolved = findGitRoot(startingAt: projectRootURL!)?.path ?? "<none>"
+            print("[Contextify] startup resolvedGitRoot=\(resolved)")
             Task { @MainActor in
                 self.updateGitInfo()
-                self.startBranchMonitor()
+                self.updateHeadWatcher()
             }
         }
     }
@@ -224,9 +236,63 @@ final class HUDViewModel {
             status = "Select a Git repository"
             return false
         }
+        print("[Contextify] setProjectRoot selected=\(url.path)")
+        print("[Contextify] setProjectRoot resolvedGitRoot=\(repo.path)")
+        projectRootURL = repo
+        Self.sharedDefaults.set(repo.path, forKey: Self.defaultsProjectRootKey)
         UserDefaults.standard.set(repo.path, forKey: Self.defaultsProjectRootKey)
         status = "Ready"
         updateGitInfo()
+        updateHeadWatcher()
         return true
+    }
+
+    // MARK: - Auto refresh
+    @MainActor
+    func startBranchMonitor(interval: TimeInterval = 1.0) {
+        branchTimer?.invalidate()
+        branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.updateGitInfo()
+        }
+    }
+
+    @MainActor
+    func stopBranchMonitor() {
+        branchTimer?.invalidate()
+        branchTimer = nil
+    }
+
+    // MARK: - File watcher for .git/HEAD (instant updates)
+    @MainActor
+    func updateHeadWatcher() {
+        // Tear down existing
+        if let src = headWatcher { src.cancel(); headWatcher = nil }
+        if headFD >= 0 { close(headFD); headFD = -1 }
+
+        // Determine HEAD path
+        let base: URL
+        if let saved = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey) ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey) {
+            base = URL(fileURLWithPath: saved)
+        } else {
+            base = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        }
+        guard let root = findGitRoot(startingAt: base) else { return }
+        let headURL = root.appendingPathComponent(".git/HEAD").path
+
+        // Open for event-only
+        headFD = open(headURL, O_EVTONLY)
+        if headFD < 0 { return }
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: headFD, eventMask: [.write,.attrib,.extend], queue: .main)
+        src.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.updateGitInfo()
+        }
+        src.setCancelHandler { [weak self] in
+            if let fd = self?.headFD, fd >= 0 { close(fd) }
+            self?.headFD = -1
+        }
+        headWatcher = src
+        src.resume()
     }
 }
