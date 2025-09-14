@@ -45,10 +45,11 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
-            if model.projectRootURL == nil || model.branch == "Not a git repo" {
-                Button("Set Project Root…") { pickProjectRoot() }
-                    .buttonStyle(.link)
+            Button("Set Project Root…") {
+                let ok = pickProjectRoot()
+                print("[Contextify] Set Project Root result=\(ok)")
             }
+            .buttonStyle(.link)
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
@@ -112,14 +113,16 @@ private extension ContentView {
         if case .ingesting = model.state { return true }
         return false
     }
-    func pickProjectRoot() {
+    @discardableResult
+    func pickProjectRoot() -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         if panel.runModal() == .OK, let url = panel.urls.first {
-            model.setProjectRoot(url: url)
+            return model.setProjectRoot(url: url)
         }
+        return false
     }
 }

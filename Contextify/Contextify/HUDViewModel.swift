@@ -1,23 +1,20 @@
 import Foundation
 import Observation
+import OSLog
 
 @Observable
 final class HUDViewModel {
     static let shared = HUDViewModel()
     enum UIState: Equatable { case idle, ingesting, success(String), error(String) }
 
-    var branch: String = "Not a git repo"
+    var branch: String = "—"
     var session: String = "Session-001"
     var status: String = "Ready"
     var lastOutputURL: URL? = nil
     var state: UIState = .idle
     var urlText: String = ""
-    private(set) var projectRootURL: URL? = nil
-    private var branchTimer: Timer? = nil
-    private static let sharedDefaults: UserDefaults = {
-        // Use a shared suite to persist across bundle changes
-        UserDefaults(suiteName: "dev.contextify") ?? .standard
-    }()
+    var alertMessage: String? = nil
+    private static let defaultsProjectRootKey = "dev.contextify.projectRoot"
 
     // Destination for outputs; for development keep outside repo by default.
     var outputsDirectory: URL {
@@ -139,33 +136,41 @@ final class HUDViewModel {
     // MARK: - Git discovery (read-only)
     @MainActor
     func updateGitInfo() {
+        let logger = Logger(subsystem: "dev.contextify", category: "Git")
+        if let saved = UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey), !saved.isEmpty {
+            let base = URL(fileURLWithPath: saved)
+            logger.info("updateGitInfo: saved=\(saved, privacy: .public)")
+            guard let root = findGitRoot(startingAt: base) else {
+                alertMessage = "Configured project root is not a Git repository:\n\(saved)"
+                logger.error("Saved path had no git: \(saved, privacy: .public)")
+                UserDefaults.standard.removeObject(forKey: Self.defaultsProjectRootKey)
+                branch = "—"
+                status = "Select a Git repository"
+                return
+            }
+            if let br = runGitBranch(at: root) { self.branch = br; logger.info("branch=\(br, privacy: .public)") }
+            return
+        }
         if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
-            let url = URL(fileURLWithPath: root)
-            let rootURL = findGitRoot(startingAt: url) ?? url
-            if let br = runGitBranch(at: rootURL) { self.branch = br } else { self.branch = "Not a git repo" }
+            let base = URL(fileURLWithPath: root)
+            logger.info("env CONTEXTIFY_PROJECT_ROOT=\(root, privacy: .public)")
+            guard let repo = findGitRoot(startingAt: base) else { logger.error("env path not a git repo"); return }
+            if let br = runGitBranch(at: repo) { self.branch = br; logger.info("branch=\(br, privacy: .public)") }
+            return
+        }
+        let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        if let repo = findGitRoot(startingAt: cwd), let br = runGitBranch(at: repo) {
+            self.branch = br
+            logger.info("cwd repo branch=\(br, privacy: .public)")
         } else {
-            // Try current working directory
-            let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            let root = findGitRoot(startingAt: cwd) ?? cwd
-            if let br = runGitBranch(at: root) { self.branch = br } else { self.branch = "Not a git repo" }
+            logger.info("No repo found from CWD")
         }
     }
 
-    @MainActor
-    func setProjectRoot(url: URL) {
-        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
-        updateGitInfo()
-    }
+    // remove: old void variant of setProjectRoot (replaced by Bool version below)
 
     private func runGitBranch(at dir: URL) -> String? {
-        // Prefer fast local parse to avoid spawning git frequently
         if let br = parseHEAD(at: dir) { return br }
-        // Fall back to git CLI if parsing fails
-        if let br = gitCLIAbbrevRef(at: dir) { return br }
-        return nil
-    }
-
-    private func gitCLIAbbrevRef(at dir: URL) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = ["git", "rev-parse", "--abbrev-ref", "HEAD"]
@@ -186,37 +191,14 @@ final class HUDViewModel {
     }
 
     private func parseHEAD(at dir: URL) -> String? {
-        // Locate .git directory (can be directory or a file pointing to gitdir)
-        let dotGit = dir.appendingPathComponent(".git", isDirectory: false)
-        var gitDirURL: URL? = nil
-        let fm = FileManager.default
-        var isDir: ObjCBool = false
-        if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) {
-            if isDir.boolValue {
-                gitDirURL = dotGit
-            } else {
-                // .git is a file: read 'gitdir: <path>'
-                if let s = try? String(contentsOf: dotGit, encoding: .utf8),
-                   let range = s.range(of: "gitdir:") {
-                    let path = s[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
-                    if path.isEmpty == false {
-                        gitDirURL = URL(fileURLWithPath: path)
-                    }
-                }
-            }
-        }
-        guard let gitDir = gitDirURL else { return nil }
-        let headURL = gitDir.appendingPathComponent("HEAD")
+        guard let root = findGitRoot(startingAt: dir) else { return nil }
+        let headURL = root.appendingPathComponent(".git/HEAD")
         guard let head = try? String(contentsOf: headURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
         if head.hasPrefix("ref:") {
-            // format: ref: refs/heads/<branch>
             let ref = head.replacingOccurrences(of: "ref:", with: "").trimmingCharacters(in: .whitespaces)
             if let last = ref.split(separator: "/").last { return String(last) }
             return ref
-        } else if head.count >= 7 {
-            // Detached HEAD with SHA
-            return "detached@" + String(head.prefix(7))
-        }
+        } else if head.count >= 7 { return "detached@" + String(head.prefix(7)) }
         return nil
     }
 
@@ -234,32 +216,17 @@ final class HUDViewModel {
         return nil
     }
 
-    // MARK: - Project Root persistence
     @MainActor
-    func setProjectRoot(url: URL) {
-        projectRootURL = url
-        // Persist in both shared suite and standard to be resilient across builds
-        Self.sharedDefaults.set(url.path, forKey: Self.defaultsProjectRootKey)
-        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
-        updateGitInfo()
-        startBranchMonitor()
-    }
-
-    private static let defaultsProjectRootKey = "dev.contextify.projectRoot"
-
-    // MARK: - Auto branch monitoring
-    @MainActor
-    func startBranchMonitor(interval: TimeInterval = 1.0) {
-        branchTimer?.invalidate()
-        branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.updateGitInfo()
+    @discardableResult
+    func setProjectRoot(url: URL) -> Bool {
+        guard let repo = findGitRoot(startingAt: url) else {
+            alertMessage = "Selected folder is not a Git repository:\n\(url.path)"
+            status = "Select a Git repository"
+            return false
         }
-    }
-
-    @MainActor
-    func stopBranchMonitor() {
-        branchTimer?.invalidate()
-        branchTimer = nil
+        UserDefaults.standard.set(repo.path, forKey: Self.defaultsProjectRootKey)
+        status = "Ready"
+        updateGitInfo()
+        return true
     }
 }
