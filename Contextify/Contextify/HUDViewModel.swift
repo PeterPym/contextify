@@ -139,18 +139,66 @@ final class HUDViewModel {
     }
 
     private func runGitBranch(at dir: URL) -> String? {
+        // First try invoking git if available
+        if let br = gitCLIAbbrevRef(at: dir) { return br }
+        // Fallback: parse .git/HEAD (handles worktrees and detached HEAD)
+        if let br = parseHEAD(at: dir) { return br }
+        return nil
+    }
+
+    private func gitCLIAbbrevRef(at dir: URL) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = ["git", "rev-parse", "--abbrev-ref", "HEAD"]
         task.currentDirectoryURL = dir
+        var env = ProcessInfo.processInfo.environment
+        // Ensure PATH includes common locations
+        env["PATH"] = "/usr/bin:/bin:/usr/local/bin:" + (env["PATH"] ?? "")
+        task.environment = env
         let pipe = Pipe()
         task.standardOutput = pipe
-        task.standardError = Pipe()
+        let err = Pipe()
+        task.standardError = err
         do { try task.run() } catch { return nil }
         task.waitUntilExit()
         guard task.terminationStatus == 0 else { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func parseHEAD(at dir: URL) -> String? {
+        // Locate .git directory (can be directory or a file pointing to gitdir)
+        let dotGit = dir.appendingPathComponent(".git", isDirectory: false)
+        var gitDirURL: URL? = nil
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) {
+            if isDir.boolValue {
+                gitDirURL = dotGit
+            } else {
+                // .git is a file: read 'gitdir: <path>'
+                if let s = try? String(contentsOf: dotGit, encoding: .utf8),
+                   let range = s.range(of: "gitdir:") {
+                    let path = s[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if path.isEmpty == false {
+                        gitDirURL = URL(fileURLWithPath: path)
+                    }
+                }
+            }
+        }
+        guard let gitDir = gitDirURL else { return nil }
+        let headURL = gitDir.appendingPathComponent("HEAD")
+        guard let head = try? String(contentsOf: headURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        if head.hasPrefix("ref:") {
+            // format: ref: refs/heads/<branch>
+            let ref = head.replacingOccurrences(of: "ref:", with: "").trimmingCharacters(in: .whitespaces)
+            if let last = ref.split(separator: "/").last { return String(last) }
+            return ref
+        } else if head.count >= 7 {
+            // Detached HEAD with SHA
+            return "detached@" + String(head.prefix(7))
+        }
+        return nil
     }
 
     // MARK: - Project Root persistence

@@ -64,7 +64,13 @@ struct ContentView: View {
 
     private var urlEntry: some View {
         HStack {
-            TextField("Paste a URL…", text: $model.urlText)
+            TextField(
+                "Paste a URL…",
+                text: Binding(
+                    get: { model.urlText },
+                    set: { model.urlText = $0 }
+                )
+            )
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { Task { await model.ingestURLString() } }
             Button("Ingest") { Task { await model.ingestURLString() } }

@@ -22,30 +22,21 @@ struct IngestDropZone: View {
         }
     }
 
-    @MainActor
-    private func handle(_ providers: [NSItemProvider]) async {
+    private func handle(_ providers: [NSItemProvider]) {
         let logger = Logger(subsystem: "dev.contextify.app", category: "Drop")
         for p in providers where p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            if let url = await loadFileURL(from: p) {
-                await model.ingest(.file(url))
-            } else {
-                logger.error("Failed to resolve dropped item as file URL")
-            }
-        }
-    }
-
-    private func loadFileURL(from provider: NSItemProvider) async -> URL? {
-        await withCheckedContinuation { cont in
             // Prefer a file representation when available
-            provider.loadFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { url, _ in
-                if let url { cont.resume(returning: url) }
-                else {
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                        if let u = item as? URL { cont.resume(returning: u) }
-                        else if let data = item as? Data, let s = String(data: data, encoding: .utf8), let u = URL(string: s) {
-                            cont.resume(returning: u)
+            p.loadFileRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { url, _ in
+                if let url {
+                    Task { @MainActor in await model.ingest(.file(url)) }
+                } else {
+                    p.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                        if let u = item as? URL {
+                            Task { @MainActor in await model.ingest(.file(u)) }
+                        } else if let data = item as? Data, let s = String(data: data, encoding: .utf8), let u = URL(string: s) {
+                            Task { @MainActor in await model.ingest(.file(u)) }
                         } else {
-                            cont.resume(returning: nil)
+                            logger.error("Failed to resolve dropped item as file URL")
                         }
                     }
                 }
