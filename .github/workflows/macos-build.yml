@@ -1,0 +1,43 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -p
+          # Use default Xcode on runner; adjust if you require a specific beta version
+          xcodebuild -version
+
+      - name: Build Contextify
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Contextify/Contextify.xcodeproj \
+            -scheme Contextify \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            build | xcpretty || exit ${PIPESTATUS[0]}
+        env:
+          NSUnbufferedIO: "YES"
+
+      - name: Archive build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-build-logs
+          path: build/DerivedData
+
