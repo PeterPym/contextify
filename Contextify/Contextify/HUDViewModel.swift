@@ -26,10 +26,11 @@ final class HUDViewModel {
     }
 
     init() {
-        // Load persisted project root if available
-        if let path = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey), !path.isEmpty {
+        // Load persisted project root if available (shared suite first, then standard fallback)
+        let persisted = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey)
+            ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey)
+        if let path = persisted, !path.isEmpty {
             projectRootURL = URL(fileURLWithPath: path)
-            // Kick off initial detection and monitoring
             Task { @MainActor in
                 self.updateGitInfo()
                 self.startBranchMonitor()
@@ -216,7 +217,9 @@ final class HUDViewModel {
     @MainActor
     func setProjectRoot(url: URL) {
         projectRootURL = url
+        // Persist in both shared suite and standard to be resilient across builds
         Self.sharedDefaults.set(url.path, forKey: Self.defaultsProjectRootKey)
+        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
         updateGitInfo()
         startBranchMonitor()
     }
