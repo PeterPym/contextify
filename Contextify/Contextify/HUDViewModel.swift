@@ -139,10 +139,7 @@ final class HUDViewModel {
     // MARK: - Git discovery (read-only)
     @MainActor
     func updateGitInfo() {
-        if let url = projectRootURL {
-            let root = findGitRoot(startingAt: url) ?? url
-            if let br = runGitBranch(at: root) { self.branch = br } else { self.branch = "Not a git repo" }
-        } else if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
+        if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
             let url = URL(fileURLWithPath: root)
             let rootURL = findGitRoot(startingAt: url) ?? url
             if let br = runGitBranch(at: rootURL) { self.branch = br } else { self.branch = "Not a git repo" }
@@ -152,6 +149,12 @@ final class HUDViewModel {
             let root = findGitRoot(startingAt: cwd) ?? cwd
             if let br = runGitBranch(at: root) { self.branch = br } else { self.branch = "Not a git repo" }
         }
+    }
+
+    @MainActor
+    func setProjectRoot(url: URL) {
+        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
+        updateGitInfo()
     }
 
     private func runGitBranch(at dir: URL) -> String? {

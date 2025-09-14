@@ -112,7 +112,6 @@ private extension ContentView {
         if case .ingesting = model.state { return true }
         return false
     }
-
     func pickProjectRoot() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
