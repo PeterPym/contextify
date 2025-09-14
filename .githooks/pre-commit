@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit: build guard for Xcode project changes
+# Blocks commit if files under the Xcode project folder changed and the build fails.
+
+changed=$(git diff --cached --name-only --diff-filter=ACMR || true)
+if [[ -z "$changed" ]]; then
+  exit 0
+fi
+
+# Adjust this pattern if the project path changes
+if ! grep -E '^(Contextify/)' >/dev/null <<< "$changed"; then
+  exit 0
+fi
+
+if [[ ! -x scripts/xc.sh ]]; then
+  echo "[pre-commit] scripts/xc.sh not found or not executable; skipping build check." >&2
+  exit 0
+fi
+
+echo "[pre-commit] Xcode project changes detected. Running headless build (Xcode-beta if available)…"
+
+# Prefer Xcode-beta automatically (handled by the script). Capture exit status.
+if ! bash scripts/xc.sh build; then
+  echo "[pre-commit] Build failed. Commit aborted. See logs under build/logs/ and .xcresult in build/ResultBundles/." >&2
+  exit 1
+fi
+
+echo "[pre-commit] Build succeeded. Proceeding with commit."
+exit 0
+
