@@ -9,7 +9,7 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
-    @State private var model = HUDViewModel()
+    @Environment(HUDViewModel.self) private var model
     @State private var showToast = false
     @State private var toastText = ""
 
@@ -42,8 +42,10 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
-            Button("Set Project Root…") { pickProjectRoot() }
-                .buttonStyle(.link)
+            if model.projectRootURL == nil {
+                Button("Set Project Root…") { pickProjectRoot() }
+                    .buttonStyle(.link)
+            }
             Button("Refresh") { model.updateGitInfo() }
                 .buttonStyle(.borderless)
             Divider().frame(height: 16)
