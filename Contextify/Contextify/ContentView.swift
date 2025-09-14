@@ -16,6 +16,9 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
+            if case .ingesting = model.state {
+                ProgressView().controlSize(.small)
+            }
             urlEntry
             IngestDropZone()
             controls
@@ -59,14 +62,17 @@ struct ContentView: View {
                 .onSubmit { Task { await model.ingestURLString() } }
             Button("Ingest") { Task { await model.ingestURLString() } }
                 .buttonStyle(.borderedProminent)
-                .disabled(model.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(model.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
         }
+        .disabled(isBusy)
     }
 
     private var controls: some View {
         HStack {
             Button("New Session") { model.newSession() }
+                .disabled(isBusy)
             Button("Checkpoint") { model.checkpoint() }
+                .disabled(isBusy)
             Button("Reveal Outputs") { NSWorkspace.shared.open(model.outputsDirectory) }
             Spacer()
         }
@@ -86,3 +92,10 @@ struct ContentView: View {
 }
 
 #Preview { ContentView() }
+
+private extension ContentView {
+    var isBusy: Bool {
+        if case .ingesting = model.state { return true }
+        return false
+    }
+}
