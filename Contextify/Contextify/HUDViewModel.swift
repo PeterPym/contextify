@@ -8,6 +8,7 @@ final class HUDViewModel {
     var branch: String = "main"
     var session: String = "Session-001"
     var status: String = "Ready"
+    var lastOutputURL: URL? = nil
     var state: UIState = .idle
     var urlText: String = ""
 
@@ -52,6 +53,7 @@ final class HUDViewModel {
             try content.write(to: out, atomically: true, encoding: .utf8)
             state = .success("Saved to outputs: \(out.lastPathComponent)")
             status = "Last: \(out.lastPathComponent)"
+            lastOutputURL = out
         } catch {
             state = .error("Failed to save: \(error.localizedDescription)")
         }

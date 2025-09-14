@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @State private var model = HUDViewModel()
@@ -40,7 +41,14 @@ struct ContentView: View {
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
-            Text(model.status).foregroundStyle(.secondary)
+            if let url = model.lastOutputURL {
+                Button("Last: \(url.lastPathComponent)") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .buttonStyle(.link)
+            } else {
+                Text(model.status).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -59,6 +67,7 @@ struct ContentView: View {
         HStack {
             Button("New Session") { model.newSession() }
             Button("Checkpoint") { model.checkpoint() }
+            Button("Reveal Outputs") { NSWorkspace.shared.open(model.outputsDirectory) }
             Spacer()
         }
     }

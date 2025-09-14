@@ -50,6 +50,14 @@ else
   DERIVED="$repo_root/build/DerivedData"
 fi
 
+LOG_DIR="$repo_root/build/logs"
+RB_DIR="$repo_root/build/ResultBundles"
+mkdir -p "$LOG_DIR" "$RB_DIR" "$DERIVED"
+
+TS="$(date +%Y%m%d-%H%M%S)"
+LOGFILE="$LOG_DIR/${cmd}-${SCHEME}-${CONFIG}-${TS}.log"
+RB_PATH="$RB_DIR/${SCHEME}-${TS}.xcresult"
+
 echo "Using DEVELOPER_DIR=$DEVELOPER_DIR"
 xcodebuild -version
 
@@ -62,8 +70,11 @@ case "$cmd" in
       -configuration "$CONFIG" \
       -destination "$DEST" \
       -derivedDataPath "$DERIVED" \
+      -resultBundlePath "$RB_PATH" \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-      build
+      build | tee "$LOGFILE"
+    echo "Build log: $LOGFILE"
+    echo "Result bundle: $RB_PATH"
     ;;
   test)
     xcodebuild \
@@ -72,8 +83,11 @@ case "$cmd" in
       -configuration "$CONFIG" \
       -destination "$DEST" \
       -derivedDataPath "$DERIVED" \
+      -resultBundlePath "$RB_PATH" \
       CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
-      test
+      test | tee "$LOGFILE"
+    echo "Test log: $LOGFILE"
+    echo "Result bundle: $RB_PATH"
     ;;
   *)
     set +x
@@ -82,4 +96,3 @@ case "$cmd" in
     exit 2
     ;;
 esac
-

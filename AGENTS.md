@@ -22,10 +22,11 @@ assets/ icons/
 ```
 
 ## Build, Test, and Development Commands
-- Preferred: `bash scripts/xc.sh build` (auto-uses Xcode-beta if installed; DerivedData under `build/`).
-- Tests: `bash scripts/xc.sh test` (uses Swift Testing/XCTest if configured in the project).
-- Direct xcodebuild (beta): `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Contextify/Contextify.xcodeproj -scheme Contextify -destination 'platform=macOS' build`.
-- Xcode GUI: open `Contextify/Contextify.xcodeproj`, select scheme `Contextify`, Run on “My Mac”.
+- Preferred: `bash scripts/xc.sh build` (auto-uses Xcode‑beta if installed; DerivedData under `build/`).
+- Tests: `bash scripts/xc.sh test` (Swift Testing/XCTest if configured).
+- Logs/Results: script writes logs to `build/logs/…` and result bundles to `build/ResultBundles/…`. Use these for error triage; builds fail fast on non‑zero.
+- Direct (beta): `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Contextify/Contextify.xcodeproj -scheme Contextify -destination 'platform=macOS' build`.
+- Xcode GUI: open `Contextify/Contextify.xcodeproj`, scheme `Contextify`, Run on “My Mac”.
 
 ## Coding Style & Naming Conventions
 - Swift: 2‑space indent; follow Swift API Design Guidelines. Types `UpperCamelCase`, methods/vars `lowerCamelCase`.
