@@ -13,6 +13,7 @@ final class HUDViewModel {
     var state: UIState = .idle
     var urlText: String = ""
     private(set) var projectRootURL: URL? = nil
+    private var branchTimer: Timer? = nil
 
     // Destination for outputs; for development keep outside repo by default.
     var outputsDirectory: URL {
@@ -24,6 +25,11 @@ final class HUDViewModel {
         // Load persisted project root if available
         if let path = UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey), !path.isEmpty {
             projectRootURL = URL(fileURLWithPath: path)
+            // Kick off initial detection and monitoring
+            Task { @MainActor in
+                self.updateGitInfo()
+                self.startBranchMonitor()
+            }
         }
     }
 
@@ -208,7 +214,24 @@ final class HUDViewModel {
         projectRootURL = url
         UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
         updateGitInfo()
+        startBranchMonitor()
     }
 
     private static let defaultsProjectRootKey = "dev.contextify.projectRoot"
+
+    // MARK: - Auto branch monitoring
+    @MainActor
+    func startBranchMonitor(interval: TimeInterval = 3.0) {
+        branchTimer?.invalidate()
+        branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.updateGitInfo()
+        }
+    }
+
+    @MainActor
+    func stopBranchMonitor() {
+        branchTimer?.invalidate()
+        branchTimer = nil
+    }
 }

@@ -26,7 +26,10 @@ struct ContentView: View {
         .padding(16)
         .environment(model)
         .overlay(alignment: .top) { toast }
-        .onAppear { model.updateGitInfo() }
+        .onAppear {
+            model.updateGitInfo()
+            model.startBranchMonitor()
+        }
         .onChange(of: model.state) { _, newState in
             if case .success(let msg) = newState {
                 toastText = msg
@@ -46,8 +49,6 @@ struct ContentView: View {
                 Button("Set Project Root…") { pickProjectRoot() }
                     .buttonStyle(.link)
             }
-            Button("Refresh") { model.updateGitInfo() }
-                .buttonStyle(.borderless)
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
