@@ -26,6 +26,7 @@ struct ContentView: View {
         .padding(16)
         .environment(model)
         .overlay(alignment: .top) { toast }
+        .onAppear { model.updateGitInfo() }
         .onChange(of: model.state) { _, newState in
             if case .success(let msg) = newState {
                 toastText = msg
@@ -41,6 +42,10 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
+            Button("Set Project Root…") { pickProjectRoot() }
+                .buttonStyle(.link)
+            Button("Refresh") { model.updateGitInfo() }
+                .buttonStyle(.borderless)
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
@@ -97,5 +102,16 @@ private extension ContentView {
     var isBusy: Bool {
         if case .ingesting = model.state { return true }
         return false
+    }
+
+    func pickProjectRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.urls.first {
+            model.setProjectRoot(url: url)
+        }
     }
 }

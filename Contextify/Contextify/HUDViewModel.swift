@@ -11,11 +11,19 @@ final class HUDViewModel {
     var lastOutputURL: URL? = nil
     var state: UIState = .idle
     var urlText: String = ""
+    private(set) var projectRootURL: URL? = nil
 
     // Destination for outputs; for development keep outside repo by default.
     var outputsDirectory: URL {
         let base = FileManager.default.homeDirectoryForCurrentUser
         return base.appendingPathComponent("Contextify/outputs", isDirectory: true)
+    }
+
+    init() {
+        // Load persisted project root if available
+        if let path = UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey), !path.isEmpty {
+            projectRootURL = URL(fileURLWithPath: path)
+        }
     }
 
     @MainActor
@@ -119,7 +127,9 @@ final class HUDViewModel {
     // MARK: - Git discovery (read-only)
     @MainActor
     func updateGitInfo() {
-        if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
+        if let url = projectRootURL {
+            if let br = runGitBranch(at: url) { self.branch = br } else { self.branch = "Not a git repo" }
+        } else if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
             if let br = runGitBranch(at: URL(fileURLWithPath: root)) { self.branch = br } else { self.branch = "Not a git repo" }
         } else {
             // Try current working directory
@@ -142,4 +152,14 @@ final class HUDViewModel {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    // MARK: - Project Root persistence
+    @MainActor
+    func setProjectRoot(url: URL) {
+        projectRootURL = url
+        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
+        updateGitInfo()
+    }
+
+    private static let defaultsProjectRootKey = "dev.contextify.projectRoot"
 }
