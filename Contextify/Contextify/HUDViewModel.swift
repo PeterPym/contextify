@@ -14,6 +14,10 @@ final class HUDViewModel {
     var urlText: String = ""
     private(set) var projectRootURL: URL? = nil
     private var branchTimer: Timer? = nil
+    private static let sharedDefaults: UserDefaults = {
+        // Use a shared suite to persist across bundle changes
+        UserDefaults(suiteName: "dev.contextify") ?? .standard
+    }()
 
     // Destination for outputs; for development keep outside repo by default.
     var outputsDirectory: URL {
@@ -23,7 +27,7 @@ final class HUDViewModel {
 
     init() {
         // Load persisted project root if available
-        if let path = UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey), !path.isEmpty {
+        if let path = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey), !path.isEmpty {
             projectRootURL = URL(fileURLWithPath: path)
             // Kick off initial detection and monitoring
             Task { @MainActor in
@@ -146,10 +150,10 @@ final class HUDViewModel {
     }
 
     private func runGitBranch(at dir: URL) -> String? {
-        // First try invoking git if available
-        if let br = gitCLIAbbrevRef(at: dir) { return br }
-        // Fallback: parse .git/HEAD (handles worktrees and detached HEAD)
+        // Prefer fast local parse to avoid spawning git frequently
         if let br = parseHEAD(at: dir) { return br }
+        // Fall back to git CLI if parsing fails
+        if let br = gitCLIAbbrevRef(at: dir) { return br }
         return nil
     }
 
@@ -212,7 +216,7 @@ final class HUDViewModel {
     @MainActor
     func setProjectRoot(url: URL) {
         projectRootURL = url
-        UserDefaults.standard.set(url.path, forKey: Self.defaultsProjectRootKey)
+        Self.sharedDefaults.set(url.path, forKey: Self.defaultsProjectRootKey)
         updateGitInfo()
         startBranchMonitor()
     }
@@ -221,7 +225,7 @@ final class HUDViewModel {
 
     // MARK: - Auto branch monitoring
     @MainActor
-    func startBranchMonitor(interval: TimeInterval = 3.0) {
+    func startBranchMonitor(interval: TimeInterval = 1.0) {
         branchTimer?.invalidate()
         branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             guard let self else { return }
