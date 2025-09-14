@@ -45,7 +45,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
-            if model.projectRootURL == nil {
+            if model.projectRootURL == nil || model.branch == "Not a git repo" {
                 Button("Set Project Root…") { pickProjectRoot() }
                     .buttonStyle(.link)
             }

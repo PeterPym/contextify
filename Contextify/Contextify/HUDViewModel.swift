@@ -140,13 +140,17 @@ final class HUDViewModel {
     @MainActor
     func updateGitInfo() {
         if let url = projectRootURL {
-            if let br = runGitBranch(at: url) { self.branch = br } else { self.branch = "Not a git repo" }
+            let root = findGitRoot(startingAt: url) ?? url
+            if let br = runGitBranch(at: root) { self.branch = br } else { self.branch = "Not a git repo" }
         } else if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
-            if let br = runGitBranch(at: URL(fileURLWithPath: root)) { self.branch = br } else { self.branch = "Not a git repo" }
+            let url = URL(fileURLWithPath: root)
+            let rootURL = findGitRoot(startingAt: url) ?? url
+            if let br = runGitBranch(at: rootURL) { self.branch = br } else { self.branch = "Not a git repo" }
         } else {
             // Try current working directory
             let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            if let br = runGitBranch(at: cwd) { self.branch = br } else { self.branch = "Not a git repo" }
+            let root = findGitRoot(startingAt: cwd) ?? cwd
+            if let br = runGitBranch(at: root) { self.branch = br } else { self.branch = "Not a git repo" }
         }
     }
 
@@ -209,6 +213,20 @@ final class HUDViewModel {
         } else if head.count >= 7 {
             // Detached HEAD with SHA
             return "detached@" + String(head.prefix(7))
+        }
+        return nil
+    }
+
+    private func findGitRoot(startingAt url: URL) -> URL? {
+        var current = url
+        let fm = FileManager.default
+        while true {
+            var isDir: ObjCBool = false
+            let dotGit = current.appendingPathComponent(".git")
+            if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) { return current }
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            current = parent
         }
         return nil
     }
