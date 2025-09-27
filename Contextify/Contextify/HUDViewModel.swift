@@ -147,36 +147,73 @@ final class HUDViewModel {
 
     // MARK: - Git discovery (read-only)
     @MainActor
-    func updateGitInfo() {
+    func updateGitInfo(env: [String: String]? = nil) {
         let logger = Logger(subsystem: "dev.contextify", category: "Git")
-        if let saved = UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey), !saved.isEmpty {
+
+        func persistRootIfNeeded(_ path: String) {
+            let key = Self.defaultsProjectRootKey
+            if Self.sharedDefaults.string(forKey: key) != path {
+                Self.sharedDefaults.set(path, forKey: key)
+            }
+            if UserDefaults.standard.string(forKey: key) != path {
+                UserDefaults.standard.set(path, forKey: key)
+            }
+        }
+
+        func adoptDetectedRoot(_ root: URL, source: String, persist: Bool) {
+            guard projectRootURL?.path != root.path else { return }
+            projectRootURL = root
+            if persist { persistRootIfNeeded(root.path) }
+            status = "Ready"
+            updateHeadWatcher()
+            logger.info("adopted root (\(source, privacy: .public)): \(root.path, privacy: .public)")
+        }
+
+        if let saved = (Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey)
+                        ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey)),
+           !saved.isEmpty {
             let base = URL(fileURLWithPath: saved)
             logger.info("updateGitInfo: saved=\(saved, privacy: .public)")
             guard let root = findGitRoot(startingAt: base) else {
                 alertMessage = "Configured project root is not a Git repository:\n\(saved)"
                 logger.error("Saved path had no git: \(saved, privacy: .public)")
+                Self.sharedDefaults.removeObject(forKey: Self.defaultsProjectRootKey)
                 UserDefaults.standard.removeObject(forKey: Self.defaultsProjectRootKey)
+                projectRootURL = nil
                 branch = "—"
                 status = "Select a Git repository"
+                updateHeadWatcher()
                 return
             }
+            adoptDetectedRoot(root, source: "saved", persist: false)
             if let br = runGitBranch(at: root) { self.branch = br; logger.info("branch=\(br, privacy: .public)") }
             return
         }
-        if let root = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
+
+        let environment = env ?? ProcessInfo.processInfo.environment
+        if let root = environment["CONTEXTIFY_PROJECT_ROOT"], !root.isEmpty {
             let base = URL(fileURLWithPath: root)
             logger.info("env CONTEXTIFY_PROJECT_ROOT=\(root, privacy: .public)")
-            guard let repo = findGitRoot(startingAt: base) else { logger.error("env path not a git repo"); return }
+            guard let repo = findGitRoot(startingAt: base) else {
+                logger.error("env path not a git repo")
+                return
+            }
+            adoptDetectedRoot(repo, source: "env", persist: true)
             if let br = runGitBranch(at: repo) { self.branch = br; logger.info("branch=\(br, privacy: .public)") }
             return
         }
+
         let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        if let repo = findGitRoot(startingAt: cwd), let br = runGitBranch(at: repo) {
-            self.branch = br
-            logger.info("cwd repo branch=\(br, privacy: .public)")
-        } else {
-            logger.info("No repo found from CWD")
+        if let repo = findGitRoot(startingAt: cwd) {
+            adoptDetectedRoot(repo, source: "cwd", persist: true)
+            if let br = runGitBranch(at: repo) {
+                self.branch = br
+                logger.info("cwd repo branch=\(br, privacy: .public)")
+            }
+            return
         }
+
+        logger.info("No repo found from CWD")
     }
 
     // remove: old void variant of setProjectRoot (replaced by Bool version below)
@@ -271,12 +308,14 @@ final class HUDViewModel {
         if headFD >= 0 { close(headFD); headFD = -1 }
 
         // Determine HEAD path
-        let base: URL
-        if let saved = Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey) ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey) {
-            base = URL(fileURLWithPath: saved)
-        } else {
-            base = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        }
+        let base: URL = {
+            if let current = projectRootURL { return current }
+            if let saved = (Self.sharedDefaults.string(forKey: Self.defaultsProjectRootKey)
+                            ?? UserDefaults.standard.string(forKey: Self.defaultsProjectRootKey)) {
+                return URL(fileURLWithPath: saved)
+            }
+            return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        }()
         guard let root = findGitRoot(startingAt: base) else { return }
         let headURL = root.appendingPathComponent(".git/HEAD").path
 

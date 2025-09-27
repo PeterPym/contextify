@@ -45,7 +45,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.branch, systemImage: "arrow.branch")
-            if model.projectRootURL == nil || model.branch == "—" {
+            if model.projectRootURL == nil {
                 Button("Set Project Root…") {
                     let ok = pickProjectRoot()
                     print("[Contextify] Set Project Root result=\(ok)")
