@@ -33,7 +33,7 @@ struct ProjectRootCommands: Commands {
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         if panel.runModal() == .OK, let url = panel.urls.first {
-            HUDViewModel.shared.setProjectRoot(url: url)
+            _ = HUDViewModel.shared.setProjectRoot(url: url)
         }
     }
 }
