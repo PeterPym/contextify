@@ -57,6 +57,7 @@ assets/ icons/
 - Build once: `bash scripts/xc.sh build`.
 - If CLI fails, verify: `xcodebuild -version` and `xcode-select -p` (set `DEVELOPER_DIR` or use Xcode GUI).
 - Keep PRs small; rely on CI (macOS build workflow) to validate changes.
+- Never run destructive git commands (e.g. `git restore`, `reset --hard`, `clean`) on a teammate’s work without first creating a backup branch or patch; preserve in-progress changes at all costs.
 
 ## Commit & Pull Request Guidelines
 - Commits: Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`).
