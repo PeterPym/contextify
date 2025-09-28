@@ -14,8 +14,16 @@ enum HUDPreferences {
   }()
 
   static func getPersistedRoot() -> String? {
-    sharedDefaults.string(forKey: projectRootKey)
-      ?? UserDefaults.standard.string(forKey: projectRootKey)
+    if let groupValue = sharedDefaults.string(forKey: projectRootKey) {
+      return groupValue
+    }
+    if let legacy = UserDefaults.standard.string(forKey: projectRootKey) {
+      // migrate legacy value into shared defaults once
+      sharedDefaults.set(legacy, forKey: projectRootKey)
+      UserDefaults.standard.removeObject(forKey: projectRootKey)
+      return legacy
+    }
+    return nil
   }
 
   static func setPersistedRoot(_ path: String?) {
@@ -23,35 +31,35 @@ enum HUDPreferences {
       clearPersistedRoot()
       return
     }
-    let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-    storeRootURL(canonical)
+    storeRootURL(URL(fileURLWithPath: path))
   }
 
   static func setPersistedRoot(_ url: URL) {
-    storeRootURL(url.resolvingSymlinksInPath())
+    storeRootURL(url)
   }
 
   static func clearPersistedRoot() {
     sharedDefaults.removeObject(forKey: projectRootKey)
     sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
-    UserDefaults.standard.removeObject(forKey: projectRootKey)
     UserDefaults.standard.removeObject(forKey: projectRootBookmarkKey)
   }
 
   static func shouldAutoPersist() -> Bool {
     if let value = sharedDefaults.object(forKey: autoPersistKey) as? Bool { return value }
-    if let value = UserDefaults.standard.object(forKey: autoPersistKey) as? Bool { return value }
+    if let legacy = UserDefaults.standard.object(forKey: autoPersistKey) as? Bool {
+      sharedDefaults.set(legacy, forKey: autoPersistKey)
+      UserDefaults.standard.removeObject(forKey: autoPersistKey)
+      return legacy
+    }
     return true
   }
 
   static func setAutoPersist(_ enabled: Bool) {
     sharedDefaults.set(enabled, forKey: autoPersistKey)
-    UserDefaults.standard.set(enabled, forKey: autoPersistKey)
   }
 
   static func resolveBookmark() -> URL? {
-    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey)
-      ?? UserDefaults.standard.data(forKey: projectRootBookmarkKey) else { return nil }
+    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey) else { return nil }
     var stale = false
     do {
       let url = try URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
@@ -60,23 +68,20 @@ enum HUDPreferences {
       }
       return url
     } catch {
-      clearPersistedRoot()
+      sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
       return nil
     }
   }
 
   private static func storeRootURL(_ url: URL) {
     let canonical = url.resolvingSymlinksInPath()
-    let path = canonical.path
-    sharedDefaults.set(path, forKey: projectRootKey)
-    UserDefaults.standard.set(path, forKey: projectRootKey)
+    sharedDefaults.set(canonical.path, forKey: projectRootKey)
     try? storeBookmark(for: canonical)
   }
 
   private static func storeBookmark(for url: URL) throws {
     let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
     sharedDefaults.set(data, forKey: projectRootBookmarkKey)
-    UserDefaults.standard.set(data, forKey: projectRootBookmarkKey)
   }
 }
 
@@ -96,23 +101,29 @@ struct GitRepositoryResolver {
     currentRoot: URL?,
     autoPersist: Bool
   ) -> GitInfoResult {
-    if let persistedPath, !persistedPath.isEmpty {
-      let base = URL(fileURLWithPath: persistedPath)
-      if let root = findGitRoot(startingAt: base) {
-        let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
-        return GitInfoResult(root: root, branch: branch, source: "saved", shouldPersist: true, alertMessage: nil, clearPersisted: false)
-      } else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "Configured project root is not a Git repository:\n\(persistedPath)", clearPersisted: true)
-      }
-    }
-
     if let envPath = environment["CONTEXTIFY_PROJECT_ROOT"], !envPath.isEmpty {
-      let base = URL(fileURLWithPath: envPath)
+      let base = URL(fileURLWithPath: envPath).resolvingSymlinksInPath()
+      guard FileManager.default.isReadableFile(atPath: base.path) else {
+        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "CONTEXTIFY_PROJECT_ROOT is not readable:\n\(base.path)", clearPersisted: false)
+      }
       if let root = findGitRoot(startingAt: base) {
         let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
         return GitInfoResult(root: root, branch: branch, source: "env", shouldPersist: autoPersist, alertMessage: nil, clearPersisted: false)
       } else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: nil, clearPersisted: false)
+        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "CONTEXTIFY_PROJECT_ROOT is not a Git repository:\n\(base.path)", clearPersisted: false)
+      }
+    }
+
+    if let persistedPath, !persistedPath.isEmpty {
+      let base = URL(fileURLWithPath: persistedPath).resolvingSymlinksInPath()
+      guard FileManager.default.isReadableFile(atPath: base.path) else {
+        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "Stored project root is no longer readable:\n\(base.path)", clearPersisted: true)
+      }
+      if let root = findGitRoot(startingAt: base) {
+        let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
+        return GitInfoResult(root: root, branch: branch, source: "saved", shouldPersist: false, alertMessage: nil, clearPersisted: false)
+      } else {
+        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "Stored project root is not a Git repository:\n\(base.path)", clearPersisted: true)
       }
     }
 
@@ -232,8 +243,11 @@ struct GitRepositoryResolver {
 
     if group.wait(timeout: .now() + timeout) == .timedOut {
       task.terminate()
-      task.interrupt()
-      _ = group.wait(timeout: .now() + 1.0)
+      _ = group.wait(timeout: .now() + 0.5)
+      if task.isRunning {
+        kill(task.processIdentifier, SIGKILL)
+        _ = group.wait(timeout: .now() + 0.5)
+      }
       return nil
     }
 
@@ -269,10 +283,15 @@ final class HUDViewModel {
   var alertMessage: String? = nil
   private(set) var projectRootURL: URL? = nil
   private var branchTimer: Timer? = nil
+  private var drainTimer: Timer? = nil
   private var pendingDrainAt: Date = .distantPast
   private var headWatcher: DispatchSourceFileSystemObject? = nil
   private var headWatcherMask: DispatchSource.FileSystemEvent? = nil
   private var headFD: CInt = -1
+  private var refWatcher: DispatchSourceFileSystemObject? = nil
+  private var refFD: CInt = -1
+  private var packedWatcher: DispatchSourceFileSystemObject? = nil
+  private var packedFD: CInt = -1
   private var updating = false
   private var pendingUpdate = false
   private var pendingEnvironment: [String: String]? = nil
@@ -333,21 +352,17 @@ final class HUDViewModel {
     }
   }
 
-  deinit {
+  @MainActor deinit {
     lifecycleLog.info("HUDViewModel deinit")
-    MainActor.assumeIsolated { [unowned self] in
-      stopBranchMonitor()
-      headWatcher?.cancel()
-      headWatcher = nil
-      if headFD >= 0 {
-        close(headFD)
-        headFD = -1
-      }
-      #if os(macOS)
-      securityScopedURL?.stopAccessingSecurityScopedResource()
-      #endif
-      securityScopedURL = nil
-    }
+    branchTimer?.invalidate()
+    branchTimer = nil
+    drainTimer?.invalidate()
+    drainTimer = nil
+    cancelHeadAndRefWatchers()
+    #if os(macOS)
+    securityScopedURL?.stopAccessingSecurityScopedResource()
+    #endif
+    securityScopedURL = nil
   }
 
   func ingestURLString() async {
@@ -538,6 +553,9 @@ final class HUDViewModel {
       branch = "—"
       status = "Select a Git repository"
       stopBranchMonitor()
+      cancelHeadAndRefWatchers()
+      pendingUpdate = false
+      pendingEnvironment = nil
       return
     }
 
@@ -550,6 +568,9 @@ final class HUDViewModel {
       branch = "—"
       status = "Select a Git repository"
       stopBranchMonitor()
+      cancelHeadAndRefWatchers()
+      pendingUpdate = false
+      pendingEnvironment = nil
       return
     }
 
@@ -557,7 +578,11 @@ final class HUDViewModel {
     if let br = info.branch, !br.isEmpty {
       branch = br
       hasLoggedMissingGit = false
+      #if DEBUG
       gitLog.info("branch=\(br, privacy: .public)")
+      #else
+      gitLog.info("branch=\(br, privacy: .private)")
+      #endif
     } else {
       branch = "—"
       if !hasLoggedMissingGit {
@@ -635,9 +660,7 @@ final class HUDViewModel {
   func startBranchMonitor(interval: TimeInterval = 2.0) {
     branchTimer?.invalidate()
     branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-      Task { @MainActor [weak self] in
-        self?.updateGitInfo()
-      }
+      self?.updateGitInfo()
     }
   }
 
@@ -647,14 +670,7 @@ final class HUDViewModel {
   }
 
   func updateHeadWatcher() {
-    headWatcher?.cancel()
-    headWatcher = nil
-    headWatcherMask = nil
-
-    if headFD >= 0 {
-      close(headFD)
-      headFD = -1
-    }
+    cancelHeadAndRefWatchers()
 
     let base: URL = {
       if let current = projectRootURL { return current }
@@ -693,9 +709,7 @@ final class HUDViewModel {
       self.handleHeadEvent(events: events)
     }
     src.setCancelHandler { [weak self] in
-      DispatchQueue.main.async { [weak self] in
-        self?.handleWatcherCancelled()
-      }
+      self?.handleWatcherCancelled()
     }
     headWatcher = src
     headWatcherMask = eventMask
@@ -706,6 +720,7 @@ final class HUDViewModel {
     watcherLog.info("Armed HEAD watcher for \(headPath, privacy: .private)")
     #endif
     src.resume()
+    armRefWatchers(for: root)
   }
 
   private func handleHeadEvent(events: DispatchSource.FileSystemEvent) {
@@ -717,10 +732,10 @@ final class HUDViewModel {
     }
 
     let now = Date()
-   if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
-     lastHeadEventAt = now
-     updateGitInfo()
-   } else {
+    if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
+      lastHeadEventAt = now
+      updateGitInfo()
+    } else {
       lastHeadEventAt = now
       pendingUpdate = true
       scheduleDrain()
@@ -732,43 +747,131 @@ final class HUDViewModel {
   }
 
   private func handleWatcherCancelled() {
-    if headFD >= 0 {
-      close(headFD)
-    }
-    headFD = -1
+    closeFD(&headFD)
     headWatcher = nil
     headWatcherMask = nil
+    tearDownRefWatchers()
   }
 
   private func scheduleDrain() {
     let scheduledAt = Date()
-    let debounce = headEventDebounce
     pendingDrainAt = scheduledAt
-    Task { [weak self] in
-      try? await Task.sleep(nanoseconds: UInt64(debounce * 1_000_000_000))
-      await MainActor.run {
-        guard let self, self.pendingDrainAt == scheduledAt else { return }
-        self.pendingDrainAt = .distantPast
-        if self.pendingUpdate {
+    drainTimer?.invalidate()
+    let timer = Timer(timeInterval: headEventDebounce, repeats: false) { [weak self] _ in
+      guard let self, self.pendingDrainAt == scheduledAt else { return }
+      self.pendingDrainAt = .distantPast
+      if self.pendingUpdate {
+        if self.updating {
+          self.pendingUpdate = true
+        } else {
           self.pendingUpdate = false
           self.updateGitInfo()
         }
       }
     }
+    drainTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
   }
 
   private func updateSecurityScope(for url: URL, persisted: Bool) {
     #if os(macOS)
     securityScopedURL?.stopAccessingSecurityScopedResource()
-    #endif
     securityScopedURL = nil
-    #if os(macOS)
     if persisted, let bookmark = HUDPreferences.resolveBookmark(), bookmark.startAccessingSecurityScopedResource() {
       securityScopedURL = bookmark
     } else if url.startAccessingSecurityScopedResource() {
       securityScopedURL = url
+    } else if persisted {
+      HUDPreferences.clearPersistedRoot()
+      alertMessage = "Stored project root is no longer accessible."
     }
+    #else
     #endif
+  }
+
+  private func tearDownRefWatchers() {
+    refWatcher?.cancel()
+    refWatcher = nil
+    closeRefFD()
+
+    packedWatcher?.cancel()
+    packedWatcher = nil
+    closePackedFD()
+  }
+
+  private func refPath(for root: URL) -> String? {
+    guard let ref = GitRepositoryResolver.parseHEAD(at: root), ref.hasPrefix("refs/") else { return nil }
+    guard let gitDir = GitRepositoryResolver.resolveGitDir(for: root) else { return nil }
+    return gitDir.appendingPathComponent(ref).path
+  }
+
+  private func armRefWatchers(for root: URL) {
+    tearDownRefWatchers()
+
+    if let path = refPath(for: root) {
+      refFD = open(path, O_EVTONLY)
+      if refFD >= 0 {
+        let src = DispatchSource.makeFileSystemObjectSource(
+          fileDescriptor: refFD,
+          eventMask: [.write, .attrib, .extend, .delete, .rename, .revoke],
+          queue: .main
+        )
+        src.setEventHandler { [weak self] in self?.updateGitInfo() }
+        src.setCancelHandler { [weak self] in
+          self?.closeRefFD()
+        }
+        refWatcher = src
+        src.resume()
+      } else {
+        closeRefFD()
+      }
+    }
+
+    if let gitDir = GitRepositoryResolver.resolveGitDir(for: root) {
+      let packed = gitDir.appendingPathComponent("packed-refs").path
+      packedFD = open(packed, O_EVTONLY)
+      if packedFD >= 0 {
+        let src = DispatchSource.makeFileSystemObjectSource(
+          fileDescriptor: packedFD,
+          eventMask: [.write, .delete, .rename, .revoke],
+          queue: .main
+        )
+        src.setEventHandler { [weak self] in self?.updateGitInfo() }
+        src.setCancelHandler { [weak self] in
+          self?.closePackedFD()
+        }
+        packedWatcher = src
+        src.resume()
+      } else {
+        closePackedFD()
+      }
+    }
+  }
+
+  private func closeFD(_ fd: inout CInt) {
+    if fd >= 0 {
+      close(fd)
+      fd = -1
+    }
+  }
+
+  private func closeRefFD() {
+    closeFD(&refFD)
+  }
+
+  private func closePackedFD() {
+    closeFD(&packedFD)
+  }
+
+  private func cancelHeadAndRefWatchers() {
+    headWatcher?.cancel()
+    headWatcher = nil
+    headWatcherMask = nil
+    closeFD(&headFD)
+    tearDownRefWatchers()
+    drainTimer?.invalidate()
+    drainTimer = nil
+    pendingDrainAt = .distantPast
   }
 
   #if DEBUG

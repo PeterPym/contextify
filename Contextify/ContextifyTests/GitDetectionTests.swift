@@ -88,6 +88,37 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: HUDPreferences.projectRootKey))
     }
 
+    func testEnvironmentOverridesPersistedRoot() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        let fm = FileManager.default
+        let temp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: temp) }
+
+        let dotGit = temp.appendingPathComponent(".git", isDirectory: true)
+        try fm.createDirectory(at: dotGit, withIntermediateDirectories: true)
+        try "ref: refs/heads/main\n".write(to: dotGit.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        let refsHeads = dotGit.appendingPathComponent("refs/heads", isDirectory: true)
+        try fm.createDirectory(at: refsHeads, withIntermediateDirectories: true)
+        try "0123456".write(to: refsHeads.appendingPathComponent("main"), atomically: true, encoding: .utf8)
+
+        clearPersistedRoot()
+        HUDPreferences.setPersistedRoot(temp)
+
+        let model = HUDViewModel()
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": repo.path])
+
+        try await waitForCondition("Environment variable should override persisted root") {
+            model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
+        }
+        XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.resolvingSymlinksInPath().path)
+    }
+
     func testResolveGitDirHandlesGitFile() throws {
         guard let repo = locateRepoRoot() else {
             XCTFail("Could not locate repo root")
