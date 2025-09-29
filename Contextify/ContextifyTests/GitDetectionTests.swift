@@ -1,6 +1,24 @@
 import XCTest
 @testable import Contextify
 
+private enum TestGitRepoBuilder {
+    static func makeRepo(withPackedRefs: Bool = true) throws -> URL {
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let git = dir.appendingPathComponent(".git", isDirectory: true)
+        try fm.createDirectory(at: git, withIntermediateDirectories: true)
+        try "ref: refs/heads/main\n".write(to: git.appendingPathComponent("HEAD"), atomically: true, encoding: .utf8)
+        let heads = git.appendingPathComponent("refs/heads", isDirectory: true)
+        try fm.createDirectory(at: heads, withIntermediateDirectories: true)
+        try "0123456789abcdef\n".write(to: heads.appendingPathComponent("main"), atomically: true, encoding: .utf8)
+        if withPackedRefs {
+            fm.createFile(atPath: git.appendingPathComponent("packed-refs").path, contents: Data())
+        }
+        return dir
+    }
+}
+
 @MainActor
 final class GitDetectionTests: XCTestCase {
     override func setUp() {
@@ -105,6 +123,18 @@ final class GitDetectionTests: XCTestCase {
         }
         XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
         XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.resolvingSymlinksInPath().path)
+    }
+
+    func testComputeGitInfoCollectsEnvAlert() {
+        let result = GitRepositoryResolver.computeGitInfo(
+            environment: ["CONTEXTIFY_PROJECT_ROOT": "/tmp/definitely/not/a/repo"],
+            persistedPath: nil,
+            currentRoot: nil,
+            autoPersist: true
+        )
+        XCTAssertNil(result.root)
+        XCTAssertNotNil(result.alertMessage)
+        XCTAssertTrue(result.alertMessage?.contains("CONTEXTIFY_PROJECT_ROOT") ?? false)
     }
 
     func testPersistedInvalidFallsBackToCwd() async throws {
@@ -336,10 +366,8 @@ final class GitDetectionTests: XCTestCase {
     }
 
     func testPackedRefsWatcherArms() async throws {
-        guard let repo = locateRepoRoot() else {
-            XCTFail("Could not locate repo root")
-            return
-        }
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
 
         let model = HUDViewModel()
         _ = model.setProjectRoot(url: repo)

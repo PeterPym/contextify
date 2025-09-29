@@ -87,6 +87,7 @@ enum HUDPreferences {
 }
 
 struct GitRepositoryResolver {
+  private static let processLog = Logger(subsystem: "dev.contextify", category: "GitProcess")
   struct GitInfoResult: Sendable {
     let root: URL?
     let branch: String?
@@ -270,7 +271,18 @@ struct GitRepositoryResolver {
       return nil
     }
 
-    guard task.terminationStatus == 0 else { return nil }
+    if task.terminationStatus != 0 {
+      #if DEBUG
+      let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+      if let err = String(data: errorData, encoding: .utf8), !err.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        processLog.error("git rev-parse failed for \(dir.path, privacy: .private) status=\(task.terminationStatus) stderr=\(err, privacy: .public)")
+      } else {
+        processLog.error("git rev-parse failed for \(dir.path, privacy: .private) status=\(task.terminationStatus)")
+      }
+      #endif
+      return nil
+    }
+
     let data = stdout.fileHandleForReading.readDataToEndOfFile()
     guard var output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else { return nil }
     if output == "HEAD" {
@@ -621,7 +633,6 @@ final class HUDViewModel {
     }
     projectRootURL = canonical
     status = "Ready"
-    alertMessage = nil
     if persist {
       persistRootIfNeeded(canonical, force: forcePersist)
     }
@@ -742,6 +753,9 @@ final class HUDViewModel {
       let critical: DispatchSource.FileSystemEvent = [.delete, .rename, .revoke]
       if mask.intersection(critical) != critical {
         watcherLog.fault("HEAD watcher missing critical events mask=\(mask.rawValue, privacy: .public)")
+        #if DEBUG
+        precondition(mask.intersection(critical) == critical, "HEAD watcher missing critical re-arm events")
+        #endif
       }
     }
 
