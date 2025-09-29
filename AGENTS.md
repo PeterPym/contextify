@@ -63,6 +63,7 @@ assets/ icons/
 ## Commit & Pull Request Guidelines
 - Commits: Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`).
 - Scope small, descriptive commits; prefer present tense, imperative mood.
+- Keep commits atomic—each commit should represent a single logical change; never bundle unrelated edits.
 - PRs: clear summary, linked issues, screenshots/GIFs for UI, reproduction or acceptance steps, and notes on risks.
 - Require passing checks and reviewer approval before merge; rebase onto `main`.
 
