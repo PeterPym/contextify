@@ -12,9 +12,11 @@ enum HUDPreferences {
   private static let sharedDefaults: UserDefaults = {
     UserDefaults(suiteName: "dev.contextify") ?? .standard
   }()
+  private static var hasWarnedLegacyDefaults = false
 
   static func getPersistedRoot() -> String? {
-    sharedDefaults.string(forKey: projectRootKey)
+    warnIfLegacyDefaultsPresent()
+    return sharedDefaults.string(forKey: projectRootKey)
   }
 
   static func setPersistedRoot(_ path: String?) {
@@ -35,6 +37,7 @@ enum HUDPreferences {
   }
 
   static func shouldAutoPersist() -> Bool {
+    warnIfLegacyDefaultsPresent()
     if let value = sharedDefaults.object(forKey: autoPersistKey) as? Bool { return value }
     return true
   }
@@ -82,6 +85,17 @@ enum HUDPreferences {
   private static func storeBookmark(for url: URL) throws {
     let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
     sharedDefaults.set(data, forKey: projectRootBookmarkKey)
+  }
+
+  private static func warnIfLegacyDefaultsPresent() {
+    guard !hasWarnedLegacyDefaults else { return }
+    let legacyDefaults = UserDefaults.standard
+    let legacyKeys = [projectRootKey, projectRootBookmarkKey, autoPersistKey]
+      .filter { legacyDefaults.object(forKey: $0) != nil }
+    guard !legacyKeys.isEmpty else { return }
+    Logger(subsystem: "dev.contextify", category: "Lifecycle")
+      .warning("Legacy defaults ignored: \(legacyKeys.joined(separator: ", "), privacy: .public)")
+    hasWarnedLegacyDefaults = true
   }
 }
 
@@ -604,6 +618,9 @@ final class HUDViewModel {
     }
 
     adoptDetectedRoot(root, source: info.source, persist: info.shouldPersist)
+    #if DEBUG
+    gitLog.info("git info source=\(info.source ?? "none", privacy: .public) persist=\(info.shouldPersist, privacy: .public)")
+    #endif
     if let br = info.branch, !br.isEmpty {
       branch = br
       hasLoggedMissingGit = false
