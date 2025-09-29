@@ -310,6 +310,7 @@ final class HUDViewModel {
   var status: String = "Ready"
   var lastOutputURL: URL? = nil
   var state: UIState = .idle
+  var projectDisplayName: String = "Unknown Project"
   var urlText: String = ""
   var alertMessage: String? = nil
   private(set) var projectRootURL: URL? = nil
@@ -356,6 +357,7 @@ final class HUDViewModel {
       lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .private)")
       #endif
       projectRootURL = canonical
+      projectDisplayName = canonical.lastPathComponent
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
       if let bookmark = bookmarkURL {
@@ -373,6 +375,7 @@ final class HUDViewModel {
       lifecycleLog.info("startup bookmark root=\(canonical.path, privacy: .private)")
       #endif
       projectRootURL = canonical
+      projectDisplayName = canonical.lastPathComponent
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
       updateSecurityScope(for: bookmark, persisted: true)
@@ -380,6 +383,7 @@ final class HUDViewModel {
       updateHeadWatcher()
     } else {
       lifecycleLog.info("startup no persisted root")
+      projectDisplayName = "Unknown Project"
     }
   }
 
@@ -582,6 +586,7 @@ final class HUDViewModel {
       securityScopedURL = nil
       if info.root == nil {
         projectRootURL = nil
+        projectDisplayName = "Unknown Project"
       }
     }
 
@@ -597,6 +602,7 @@ final class HUDViewModel {
       #endif
       securityScopedURL = nil
       projectRootURL = nil
+      projectDisplayName = "Unknown Project"
       return
     }
 
@@ -632,6 +638,7 @@ final class HUDViewModel {
       securityScopedURL = nil
     }
     projectRootURL = canonical
+    projectDisplayName = canonical.lastPathComponent
     status = "Ready"
     if persist {
       persistRootIfNeeded(canonical, force: forcePersist)
