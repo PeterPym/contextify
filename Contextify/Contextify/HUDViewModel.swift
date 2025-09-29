@@ -68,9 +68,11 @@ enum HUDPreferences {
       return url
     } catch {
       sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
-      if let path = sharedDefaults.string(forKey: projectRootKey),
-         !FileManager.default.isReadableFile(atPath: path) {
-        sharedDefaults.removeObject(forKey: projectRootKey)
+      if let path = sharedDefaults.string(forKey: projectRootKey) {
+        var isDir: ObjCBool = false
+        if !(FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue) {
+          sharedDefaults.removeObject(forKey: projectRootKey)
+        }
       }
       return nil
     }
@@ -83,7 +85,8 @@ enum HUDPreferences {
   }
 
   private static func storeBookmark(for url: URL) throws {
-    let data = try url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+    let options: URL.BookmarkCreationOptions = Sandbox.isSandboxed ? [.withSecurityScope] : []
+    let data = try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
     sharedDefaults.set(data, forKey: projectRootBookmarkKey)
   }
 
@@ -96,6 +99,12 @@ enum HUDPreferences {
     Logger(subsystem: "dev.contextify", category: "Lifecycle")
       .warning("Legacy defaults ignored: \(legacyKeys.joined(separator: ", "), privacy: .public)")
     hasWarnedLegacyDefaults = true
+  }
+}
+
+private enum Sandbox {
+  static var isSandboxed: Bool {
+    ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
   }
 }
 
@@ -124,26 +133,28 @@ struct GitRepositoryResolver {
 
     if let envPath = environment["CONTEXTIFY_PROJECT_ROOT"], !envPath.isEmpty {
       let base = URL(fileURLWithPath: envPath).resolvingSymlinksInPath()
-      if FileManager.default.isReadableFile(atPath: base.path),
+      var envIsDir: ObjCBool = false
+      if FileManager.default.fileExists(atPath: base.path, isDirectory: &envIsDir), envIsDir.boolValue,
          let root = findGitRoot(startingAt: base) {
         candidateRoot = root
         candidateSource = "env"
         candidatePersist = autoPersist
       } else {
-        alerts.append("CONTEXTIFY_PROJECT_ROOT is invalid or unreadable:\n\(base.path)")
+        alerts.append("CONTEXTIFY_PROJECT_ROOT invalid/unreadable:\n\(base.path)")
       }
     }
 
     if candidateRoot == nil, let persistedPath, !persistedPath.isEmpty {
       let base = URL(fileURLWithPath: persistedPath).resolvingSymlinksInPath()
-      if FileManager.default.isReadableFile(atPath: base.path),
+      var savedIsDir: ObjCBool = false
+      if FileManager.default.fileExists(atPath: base.path, isDirectory: &savedIsDir), savedIsDir.boolValue,
          let root = findGitRoot(startingAt: base) {
         candidateRoot = root
         candidateSource = "saved"
         candidatePersist = false
       } else {
         clearPersisted = true
-        alerts.append("Stored project root is invalid or unreadable:\n\(base.path)")
+        alerts.append("Stored project root is invalid or unreadable (saved path):\n\(base.path)")
       }
     }
 
@@ -281,7 +292,7 @@ struct GitRepositoryResolver {
         kill(task.processIdentifier, SIGKILL)
         _ = group.wait(timeout: .now() + 0.5)
       }
-      return nil
+      return parseHEAD(at: dir)
     }
 
     if task.terminationStatus != 0 {
@@ -293,7 +304,7 @@ struct GitRepositoryResolver {
         processLog.error("git rev-parse failed for \(dir.path, privacy: .private) status=\(task.terminationStatus)")
       }
       #endif
-      return nil
+      return parseHEAD(at: dir)
     }
 
     let data = stdout.fileHandleForReading.readDataToEndOfFile()
@@ -390,7 +401,9 @@ final class HUDViewModel {
       projectRootURL = canonical
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
-      updateSecurityScope(for: canonical, persisted: true)
+      persistRootIfNeeded(canonical, force: true)
+      let scoped = HUDPreferences.resolveBookmark() ?? canonical
+      updateSecurityScope(for: scoped, persisted: true)
       updateGitInfo()
       updateHeadWatcher()
     } else {
@@ -642,7 +655,13 @@ final class HUDViewModel {
     }
   }
 
-  private func adoptDetectedRoot(_ root: URL, source: String?, persist: Bool, forcePersist: Bool = false) {
+  private func adoptDetectedRoot(
+    _ root: URL,
+    source: String?,
+    persist: Bool,
+    forcePersist: Bool = false,
+    scopedURL: URL? = nil
+  ) {
     let canonical = root.resolvingSymlinksInPath()
     let pathChanged = projectRootURL?.path != canonical.path
     if pathChanged {
@@ -651,12 +670,13 @@ final class HUDViewModel {
       #endif
       securityScopedURL = nil
     }
-      projectRootURL = canonical
+    projectRootURL = canonical
     status = "Ready"
     if persist {
       persistRootIfNeeded(canonical, force: forcePersist)
     }
-    updateSecurityScope(for: canonical, persisted: persist)
+    let scoped = scopedURL ?? (persist ? (HUDPreferences.resolveBookmark() ?? canonical) : canonical)
+    updateSecurityScope(for: scoped, persisted: persist)
     if let source {
       #if DEBUG
       gitLog.info("adopted root source=\(source, privacy: .public) path=\(canonical.path, privacy: .public)")
@@ -687,7 +707,8 @@ final class HUDViewModel {
 
   func setProjectRoot(url: URL) -> Result<URL, ProjectRootError> {
     let canonical = url.resolvingSymlinksInPath()
-    guard FileManager.default.isReadableFile(atPath: canonical.path) else {
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir), isDir.boolValue else {
       alertMessage = "Selected folder is not readable:\n\(canonical.path)"
       status = "Select a Git repository"
       return .failure(.unreadable(canonical))
@@ -697,7 +718,7 @@ final class HUDViewModel {
       status = "Select a Git repository"
       return .failure(.notGit(canonical))
     }
-    adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true)
+    adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true, scopedURL: url)
     updateGitInfo()
     return .success(repo)
   }
@@ -828,13 +849,24 @@ final class HUDViewModel {
     #if os(macOS)
     securityScopedURL?.stopAccessingSecurityScopedResource()
     securityScopedURL = nil
-    if persisted, url.startAccessingSecurityScopedResource() {
-      securityScopedURL = url
-    } else if url.startAccessingSecurityScopedResource() {
+    if !Sandbox.isSandboxed {
+      if FileManager.default.isReadableFile(atPath: url.path) {
+        return
+      } else if persisted {
+        HUDPreferences.clearPersistedRoot()
+        alertMessage = "Stored project root can’t be accessed."
+      }
+      return
+    }
+    if url.startAccessingSecurityScopedResource() {
       securityScopedURL = url
     } else if persisted {
-      HUDPreferences.clearPersistedRoot()
-      alertMessage = "Stored project root is no longer accessible."
+      var isDir: ObjCBool = false
+      let readableDir = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+      if !readableDir {
+        HUDPreferences.clearPersistedRoot()
+        alertMessage = "Stored project root can’t be accessed with current permissions."
+      }
     }
     #else
     #endif

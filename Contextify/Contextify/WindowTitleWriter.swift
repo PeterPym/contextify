@@ -6,9 +6,22 @@ import AppKit
 struct WindowTitleWriter: NSViewRepresentable {
     let title: String
 
-    func makeNSView(context: Context) -> NSView { NSView() }
+    final class TitleView: NSView {
+        var title: String = ""
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.title = title
+        }
+    }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func makeNSView(context: Context) -> TitleView {
+        let view = TitleView()
+        view.title = title
+        return view
+    }
+
+    func updateNSView(_ nsView: TitleView, context: Context) {
+        nsView.title = title
         nsView.window?.title = title
     }
 }

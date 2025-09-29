@@ -23,6 +23,9 @@ private enum TestGitRepoBuilder {
 final class GitDetectionTests: XCTestCase {
 #if os(macOS)
     private var scopedResources: [URL] = []
+    private var isSandboxed: Bool {
+        ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+    }
 #endif
     override func setUp() {
         super.setUp()
@@ -226,6 +229,22 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
     }
 
+    func testPersistThenRestartRestoresOutsideSandbox() async throws {
+        clearPersistedRoot()
+        let fm = FileManager.default
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        defer { try? fm.removeItem(at: repo) }
+
+        let firstModel = HUDViewModel()
+        _ = firstModel.setProjectRoot(url: repo)
+
+        let secondModel = HUDViewModel()
+        try await waitForCondition("Persisted root should restore on subsequent launch") {
+            secondModel.projectRootURL?.resolvingSymlinksInPath().path == repo.resolvingSymlinksInPath().path
+        }
+        XCTAssertNil(secondModel.alertMessage)
+    }
+
     func testPersistedInvalidFallsBackToExistingRoot() async throws {
         guard let repo = locateRepoRoot() else {
             XCTFail("Could not locate repo root")
@@ -339,12 +358,14 @@ final class GitDetectionTests: XCTestCase {
         }
         XCTAssertEqual(HUDPreferences.getPersistedRoot(), canonical)
 
-        #if DEBUG
-        XCTAssertNotNil(model.debugSecurityScopedURL)
+#if DEBUG
+        if isSandboxed {
+            XCTAssertNotNil(model.debugSecurityScopedURL)
+        }
         try await waitForCondition("watchers should arm after bookmark restore") {
             model.debugHeadWatcherMask != nil
         }
-        #endif
+#endif
     }
 
     func testEnvironmentOverridesPersistedRoot() async throws {

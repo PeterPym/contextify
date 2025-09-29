@@ -696,7 +696,7 @@
 				<key>ENABLE_PREVIEWS</key>
 				<string>YES</string>
 				<key>ENABLE_USER_SELECTED_FILES</key>
-				<string>readonly</string>
+				<string>readwrite</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
@@ -759,7 +759,7 @@
 				<key>ENABLE_PREVIEWS</key>
 				<string>YES</string>
 				<key>ENABLE_USER_SELECTED_FILES</key>
-				<string>readonly</string>
+				<string>readwrite</string>
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_NSHumanReadableCopyright</key>
@@ -909,8 +909,6 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
-				<key>CODE_SIGN_ENTITLEMENTS</key>
-				<string>Contextify.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>
@@ -947,8 +945,6 @@
 		<dict>
 			<key>buildSettings</key>
 			<dict>
-				<key>CODE_SIGN_ENTITLEMENTS</key>
-				<string>Contextify.entitlements</string>
 				<key>CODE_SIGN_STYLE</key>
 				<string>Automatic</string>
 				<key>CURRENT_PROJECT_VERSION</key>

@@ -83,6 +83,7 @@ struct ContentView: View {
             }
             .layoutPriority(2)
             .contentShape(Rectangle())
+            Spacer(minLength: 8)
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
