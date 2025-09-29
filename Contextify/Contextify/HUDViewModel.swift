@@ -14,16 +14,7 @@ enum HUDPreferences {
   }()
 
   static func getPersistedRoot() -> String? {
-    if let groupValue = sharedDefaults.string(forKey: projectRootKey) {
-      return groupValue
-    }
-    if let legacy = UserDefaults.standard.string(forKey: projectRootKey) {
-      // migrate legacy value into shared defaults once
-      sharedDefaults.set(legacy, forKey: projectRootKey)
-      UserDefaults.standard.removeObject(forKey: projectRootKey)
-      return legacy
-    }
-    return nil
+    sharedDefaults.string(forKey: projectRootKey)
   }
 
   static func setPersistedRoot(_ path: String?) {
@@ -41,17 +32,10 @@ enum HUDPreferences {
   static func clearPersistedRoot() {
     sharedDefaults.removeObject(forKey: projectRootKey)
     sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
-    UserDefaults.standard.removeObject(forKey: projectRootKey)
-    UserDefaults.standard.removeObject(forKey: projectRootBookmarkKey)
   }
 
   static func shouldAutoPersist() -> Bool {
     if let value = sharedDefaults.object(forKey: autoPersistKey) as? Bool { return value }
-    if let legacy = UserDefaults.standard.object(forKey: autoPersistKey) as? Bool {
-      sharedDefaults.set(legacy, forKey: autoPersistKey)
-      UserDefaults.standard.removeObject(forKey: autoPersistKey)
-      return legacy
-    }
     return true
   }
 
@@ -60,20 +44,11 @@ enum HUDPreferences {
   }
 
   static func resolveBookmark() -> URL? {
-    if let data = sharedDefaults.data(forKey: projectRootBookmarkKey) {
-      return resolveBookmarkData(data, rewritePersistedKeys: false)
-    }
-    if let legacy = UserDefaults.standard.data(forKey: projectRootBookmarkKey) {
-      sharedDefaults.set(legacy, forKey: projectRootBookmarkKey)
-      UserDefaults.standard.removeObject(forKey: projectRootBookmarkKey)
-      Logger(subsystem: "dev.contextify", category: "Lifecycle")
-        .info("Migrated legacy bookmark to suite defaults")
-      return resolveBookmarkData(legacy, rewritePersistedKeys: true)
-    }
-    return nil
+    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey) else { return nil }
+    return resolveBookmarkData(data)
   }
 
-  private static func resolveBookmarkData(_ data: Data, rewritePersistedKeys: Bool) -> URL? {
+  private static func resolveBookmarkData(_ data: Data) -> URL? {
     var stale = false
     do {
       let url = try URL(
@@ -82,7 +57,7 @@ enum HUDPreferences {
         relativeTo: nil,
         bookmarkDataIsStale: &stale
       )
-      if stale || rewritePersistedKeys {
+      if stale {
         storeRootURL(url)
         Logger(subsystem: "dev.contextify", category: "Lifecycle")
           .info("bookmark rewrite synchronized path=\(url.resolvingSymlinksInPath().path, privacy: .private)")
@@ -344,7 +319,9 @@ final class HUDViewModel {
   var status: String = "Ready"
   var lastOutputURL: URL? = nil
   var state: UIState = .idle
-  var projectDisplayName: String = "Unknown Project"
+  var projectDisplayName: String {
+    projectRootURL?.lastPathComponent ?? "Unknown Project"
+  }
   var urlText: String = ""
   var alertMessage: String? = nil
   private(set) var projectRootURL: URL? = nil
@@ -391,7 +368,6 @@ final class HUDViewModel {
       lifecycleLog.info("startup bookmark root=\(canonical.path, privacy: .private)")
       #endif
       projectRootURL = canonical
-      projectDisplayName = canonical.lastPathComponent
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
       persistRootIfNeeded(canonical, force: true)
@@ -406,7 +382,6 @@ final class HUDViewModel {
       lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .private)")
       #endif
       projectRootURL = canonical
-      projectDisplayName = canonical.lastPathComponent
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
       updateSecurityScope(for: canonical, persisted: true)
@@ -414,7 +389,6 @@ final class HUDViewModel {
       updateHeadWatcher()
     } else {
       lifecycleLog.info("startup no persisted root")
-      projectDisplayName = "Unknown Project"
     }
   }
 
@@ -617,7 +591,6 @@ final class HUDViewModel {
       securityScopedURL = nil
       if info.root == nil {
         projectRootURL = nil
-        projectDisplayName = "Unknown Project"
       }
     }
 
@@ -633,7 +606,6 @@ final class HUDViewModel {
       #endif
       securityScopedURL = nil
       projectRootURL = nil
-      projectDisplayName = "Unknown Project"
       return
     }
 
@@ -668,8 +640,7 @@ final class HUDViewModel {
       #endif
       securityScopedURL = nil
     }
-    projectRootURL = canonical
-    projectDisplayName = canonical.lastPathComponent
+      projectRootURL = canonical
     status = "Ready"
     if persist {
       persistRootIfNeeded(canonical, force: forcePersist)
