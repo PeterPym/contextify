@@ -41,6 +41,7 @@ enum HUDPreferences {
   static func clearPersistedRoot() {
     sharedDefaults.removeObject(forKey: projectRootKey)
     sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
+    UserDefaults.standard.removeObject(forKey: projectRootKey)
     UserDefaults.standard.removeObject(forKey: projectRootBookmarkKey)
   }
 
@@ -101,44 +102,62 @@ struct GitRepositoryResolver {
     currentRoot: URL?,
     autoPersist: Bool
   ) -> GitInfoResult {
+    var alerts: [String] = []
+    var candidateRoot: URL? = nil
+    var candidateSource: String? = nil
+    var candidatePersist = false
+    var clearPersisted = false
+
     if let envPath = environment["CONTEXTIFY_PROJECT_ROOT"], !envPath.isEmpty {
       let base = URL(fileURLWithPath: envPath).resolvingSymlinksInPath()
-      guard FileManager.default.isReadableFile(atPath: base.path) else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "CONTEXTIFY_PROJECT_ROOT is not readable:\n\(base.path)", clearPersisted: false)
-      }
-      if let root = findGitRoot(startingAt: base) {
-        let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
-        return GitInfoResult(root: root, branch: branch, source: "env", shouldPersist: autoPersist, alertMessage: nil, clearPersisted: false)
+      if FileManager.default.isReadableFile(atPath: base.path),
+         let root = findGitRoot(startingAt: base) {
+        candidateRoot = root
+        candidateSource = "env"
+        candidatePersist = autoPersist
       } else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "CONTEXTIFY_PROJECT_ROOT is not a Git repository:\n\(base.path)", clearPersisted: false)
+        alerts.append("CONTEXTIFY_PROJECT_ROOT is invalid or unreadable:\n\(base.path)")
       }
     }
 
-    if let persistedPath, !persistedPath.isEmpty {
+    if candidateRoot == nil, let persistedPath, !persistedPath.isEmpty {
       let base = URL(fileURLWithPath: persistedPath).resolvingSymlinksInPath()
-      guard FileManager.default.isReadableFile(atPath: base.path) else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "Stored project root is no longer readable:\n\(base.path)", clearPersisted: true)
-      }
-      if let root = findGitRoot(startingAt: base) {
-        let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
-        return GitInfoResult(root: root, branch: branch, source: "saved", shouldPersist: false, alertMessage: nil, clearPersisted: false)
+      if FileManager.default.isReadableFile(atPath: base.path),
+         let root = findGitRoot(startingAt: base) {
+        candidateRoot = root
+        candidateSource = "saved"
+        candidatePersist = false
       } else {
-        return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: "Stored project root is not a Git repository:\n\(base.path)", clearPersisted: true)
+        clearPersisted = true
+        alerts.append("Stored project root is invalid or unreadable:\n\(base.path)")
       }
     }
 
-    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    if let root = findGitRoot(startingAt: cwd) {
-      let branch = parseHEAD(at: root) ?? runGitBranch(at: root)
-      return GitInfoResult(root: root, branch: branch, source: "cwd", shouldPersist: autoPersist, alertMessage: nil, clearPersisted: false)
+    if candidateRoot == nil {
+      let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      if let cwdRoot = findGitRoot(startingAt: cwd) {
+        candidateRoot = cwdRoot
+        candidateSource = "cwd"
+        candidatePersist = autoPersist
+      }
     }
 
-    if let currentRoot {
-      let branch = parseHEAD(at: currentRoot) ?? runGitBranch(at: currentRoot)
-      return GitInfoResult(root: currentRoot, branch: branch, source: "existing", shouldPersist: false, alertMessage: nil, clearPersisted: false)
+    if candidateRoot == nil, let currentRoot {
+      candidateRoot = currentRoot
+      candidateSource = "existing"
+      candidatePersist = false
     }
 
-    return GitInfoResult(root: nil, branch: nil, source: nil, shouldPersist: false, alertMessage: nil, clearPersisted: false)
+    let branch = candidateRoot.flatMap { parseHEAD(at: $0) ?? runGitBranch(at: $0) }
+    let alertMessage = alerts.isEmpty ? nil : alerts.joined(separator: "\n")
+    return GitInfoResult(
+      root: candidateRoot,
+      branch: branch,
+      source: candidateSource,
+      shouldPersist: candidatePersist,
+      alertMessage: alertMessage,
+      clearPersisted: clearPersisted
+    )
   }
 
   static func resolveGitDir(for repoRoot: URL) -> URL? {
@@ -382,7 +401,7 @@ final class HUDViewModel {
     let sessionSnapshot = session
     let outputsDir = outputsDirectory
 
-    let result = await Task.detached(priority: .utility) { () -> Result<(URL, String), Error> in
+    let result = await Task(priority: .utility) { () -> Result<(URL, String), Error> in
       do {
         let fm = FileManager.default
         try fm.createDirectory(at: outputsDir, withIntermediateDirectories: true)
@@ -459,7 +478,7 @@ final class HUDViewModel {
     let sessionSnapshot = session
     let outputsDir = outputsDirectory
 
-    let result = await Task.detached(priority: .utility) { () -> Result<(URL, String), Error> in
+    let result = await Task(priority: .utility) { () -> Result<(URL, String), Error> in
       do {
         let fm = FileManager.default
         try fm.createDirectory(at: outputsDir, withIntermediateDirectories: true)
@@ -493,7 +512,7 @@ final class HUDViewModel {
 
   func prepareOutputsDirectory() async -> URL {
     let dir = outputsDirectory
-    _ = await Task.detached(priority: .utility) {
+    _ = await Task(priority: .utility) {
       try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }.value
     return dir
@@ -515,7 +534,7 @@ final class HUDViewModel {
     let autoPersist = HUDPreferences.shouldAutoPersist()
     let currentRoot = projectRootURL
 
-    Task.detached { [weak self, envToUse, persistedPath, autoPersist, currentRoot, generation] in
+    Task(priority: .utility) { [weak self, envToUse, persistedPath, autoPersist, currentRoot, generation] in
       let info = GitRepositoryResolver.computeGitInfo(
         environment: envToUse,
         persistedPath: persistedPath,
@@ -549,28 +568,23 @@ final class HUDViewModel {
       securityScopedURL?.stopAccessingSecurityScopedResource()
       #endif
       securityScopedURL = nil
-      projectRootURL = nil
+      if info.root == nil {
+        projectRootURL = nil
+      }
+    }
+
+    guard let root = info.root else {
       branch = "—"
       status = "Select a Git repository"
       stopBranchMonitor()
       cancelHeadAndRefWatchers()
       pendingUpdate = false
       pendingEnvironment = nil
-      return
-    }
-
-    guard let root = info.root else {
       #if os(macOS)
       securityScopedURL?.stopAccessingSecurityScopedResource()
       #endif
       securityScopedURL = nil
       projectRootURL = nil
-      branch = "—"
-      status = "Select a Git repository"
-      stopBranchMonitor()
-      cancelHeadAndRefWatchers()
-      pendingUpdate = false
-      pendingEnvironment = nil
       return
     }
 
@@ -879,6 +893,8 @@ final class HUDViewModel {
   var debugPendingUpdate: Bool { pendingUpdate }
   var debugHeadWatcherMask: DispatchSource.FileSystemEvent? { headWatcherMask }
   var debugHeadWatcherArms: Int { headWatcherArms }
+  var debugRefWatcherActive: Bool { refFD >= 0 }
+  var debugPackedWatcherActive: Bool { packedFD >= 0 }
   func debugHandleHeadEvent(_ events: DispatchSource.FileSystemEvent) { handleHeadEvent(events: events) }
   #endif
 }
