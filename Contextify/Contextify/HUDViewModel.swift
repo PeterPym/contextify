@@ -60,16 +60,50 @@ enum HUDPreferences {
   }
 
   static func resolveBookmark() -> URL? {
-    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey) else { return nil }
+    if let data = sharedDefaults.data(forKey: projectRootBookmarkKey) {
+      return resolveBookmarkData(data, rewritePersistedKeys: false)
+    }
+    if let legacy = UserDefaults.standard.data(forKey: projectRootBookmarkKey) {
+      sharedDefaults.set(legacy, forKey: projectRootBookmarkKey)
+      UserDefaults.standard.removeObject(forKey: projectRootBookmarkKey)
+      Logger(subsystem: "dev.contextify", category: "Lifecycle")
+        .info("Migrated legacy bookmark to suite defaults")
+      return resolveBookmarkData(legacy, rewritePersistedKeys: true)
+    }
+    return nil
+  }
+
+  private static func resolveBookmarkData(_ data: Data, rewritePersistedKeys: Bool) -> URL? {
     var stale = false
     do {
-      let url = try URL(resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
-      if stale {
-        try storeBookmark(for: url)
+      let url = try URL(
+        resolvingBookmarkData: data,
+        options: [.withSecurityScope],
+        relativeTo: nil,
+        bookmarkDataIsStale: &stale
+      )
+      if stale || rewritePersistedKeys {
+        storeRootURL(url)
+        Logger(subsystem: "dev.contextify", category: "Lifecycle")
+          .info("bookmark rewrite synchronized path=\(url.resolvingSymlinksInPath().path, privacy: .private)")
       }
+      #if DEBUG
+      if sharedDefaults.object(forKey: projectRootBookmarkKey) != nil {
+        let canonical = url.resolvingSymlinksInPath().path
+        guard let storedPath = sharedDefaults.string(forKey: projectRootKey) else {
+          assertionFailure("Bookmark present without matching path key")
+          return url
+        }
+        assert(storedPath == canonical, "Bookmark path mismatch: stored=\(storedPath) canonical=\(canonical)")
+      }
+      #endif
       return url
     } catch {
       sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
+      if let path = sharedDefaults.string(forKey: projectRootKey),
+         !FileManager.default.isReadableFile(atPath: path) {
+        sharedDefaults.removeObject(forKey: projectRootKey)
+      }
       return nil
     }
   }
@@ -347,27 +381,9 @@ final class HUDViewModel {
   }
 
   init() {
-    let persistedPath = HUDPreferences.getPersistedRoot()
     let bookmarkURL = HUDPreferences.resolveBookmark()
-    if let path = persistedPath, !path.isEmpty {
-      let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-      #if DEBUG
-      lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .public)")
-      #else
-      lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .private)")
-      #endif
-      projectRootURL = canonical
-      projectDisplayName = canonical.lastPathComponent
-      lastPersistedPath = canonical.path
-      lastPersistedAt = Date()
-      if let bookmark = bookmarkURL {
-        updateSecurityScope(for: bookmark, persisted: true)
-      } else {
-        updateSecurityScope(for: canonical, persisted: true)
-      }
-      updateGitInfo()
-      updateHeadWatcher()
-    } else if let bookmark = bookmarkURL {
+    let persistedPath = HUDPreferences.getPersistedRoot()
+    if let bookmark = bookmarkURL {
       let canonical = bookmark.resolvingSymlinksInPath()
       #if DEBUG
       lifecycleLog.info("startup bookmark root=\(canonical.path, privacy: .public)")
@@ -378,7 +394,22 @@ final class HUDViewModel {
       projectDisplayName = canonical.lastPathComponent
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
+      persistRootIfNeeded(canonical, force: true)
       updateSecurityScope(for: bookmark, persisted: true)
+      updateGitInfo()
+      updateHeadWatcher()
+    } else if let path = persistedPath, !path.isEmpty {
+      let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+      #if DEBUG
+      lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .public)")
+      #else
+      lifecycleLog.info("startup persisted root=\(canonical.path, privacy: .private)")
+      #endif
+      projectRootURL = canonical
+      projectDisplayName = canonical.lastPathComponent
+      lastPersistedPath = canonical.path
+      lastPersistedAt = Date()
+      updateSecurityScope(for: canonical, persisted: true)
       updateGitInfo()
       updateHeadWatcher()
     } else {
@@ -777,7 +808,9 @@ final class HUDViewModel {
     }
 
     if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
-      updateHeadWatcher()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        self?.updateHeadWatcher()
+      }
     }
   }
 
@@ -812,8 +845,8 @@ final class HUDViewModel {
     #if os(macOS)
     securityScopedURL?.stopAccessingSecurityScopedResource()
     securityScopedURL = nil
-    if persisted, let bookmark = HUDPreferences.resolveBookmark(), bookmark.startAccessingSecurityScopedResource() {
-      securityScopedURL = bookmark
+    if persisted, url.startAccessingSecurityScopedResource() {
+      securityScopedURL = url
     } else if url.startAccessingSecurityScopedResource() {
       securityScopedURL = url
     } else if persisted {
@@ -916,6 +949,7 @@ final class HUDViewModel {
   var debugHeadWatcherArms: Int { headWatcherArms }
   var debugRefWatcherActive: Bool { refFD >= 0 }
   var debugPackedWatcherActive: Bool { packedFD >= 0 }
+  var debugSecurityScopedURL: URL? { securityScopedURL }
   func debugHandleHeadEvent(_ events: DispatchSource.FileSystemEvent) { handleHeadEvent(events: events) }
   #endif
 }

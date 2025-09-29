@@ -28,6 +28,9 @@ struct ContentView: View {
         }
         .padding(16)
         .background(WindowTitleWriter(title: "Project: \(model.projectDisplayName)"))
+        .onChange(of: model.projectDisplayName) { _, newValue in
+            _ = WindowTitleWriter(title: "Project: \(newValue)")
+        }
         .overlay(alignment: .top) { toast }
         .onAppear { model.updateGitInfo() }
         .alert("Project Root", isPresented: Binding(
@@ -53,14 +56,36 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label(model.projectDisplayName, systemImage: "folder")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(0)
             Label(model.branchDisplay, systemImage: "arrow.branch")
-            if model.projectRootURL == nil {
-                Button("Set Project Root…") {
-                    let ok = pickProjectRoot()
-                    uiLog.info("Set Project Root result=\(ok, privacy: .public)")
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+                .layoutPriority(0)
+            Group {
+                if model.projectRootURL == nil {
+                    Button("Set Project Root…") {
+                        let ok = pickProjectRoot()
+                        uiLog.info("Set Project Root result=\(ok, privacy: .public)")
+                    }
+                    .buttonStyle(.link)
+                    .fixedSize()
+                    .accessibilityIdentifier("set-project-root")
+                } else {
+                    Button {
+                        _ = pickProjectRoot()
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                    }
+                    .help("Change Project Root…")
+                    .accessibilityLabel("Change Project Root")
+                    .fixedSize()
                 }
-                .buttonStyle(.link)
             }
+            .layoutPriority(2)
+            .contentShape(Rectangle())
             Divider().frame(height: 16)
             Label(model.session, systemImage: "tag")
             Spacer()
@@ -71,6 +96,8 @@ struct ContentView: View {
                 .buttonStyle(.link)
             } else {
                 Text(model.status).foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
     }

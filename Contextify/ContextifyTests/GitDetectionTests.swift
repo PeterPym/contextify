@@ -198,6 +198,90 @@ final class GitDetectionTests: XCTestCase {
         }
     }
 
+    func testResolveBookmarkStaleRewritesProjectRootKey() throws {
+        clearPersistedRoot()
+        let fm = FileManager.default
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: false)
+        defer { try? fm.removeItem(at: repo) }
+
+        let legacyBookmark = try repo.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
+        if let suite = UserDefaults(suiteName: "dev.contextify") {
+            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
+            suite.removeObject(forKey: HUDPreferences.projectRootKey)
+        }
+
+        let resolved = HUDPreferences.resolveBookmark()
+        XCTAssertNotNil(resolved)
+        let canonical = repo.resolvingSymlinksInPath().path
+        XCTAssertEqual(resolved?.resolvingSymlinksInPath().path, canonical)
+        XCTAssertNil(UserDefaults.standard.data(forKey: HUDPreferences.projectRootBookmarkKey))
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), canonical)
+        if let suite = UserDefaults(suiteName: "dev.contextify") {
+            XCTAssertNotNil(suite.data(forKey: HUDPreferences.projectRootBookmarkKey))
+            XCTAssertEqual(suite.string(forKey: HUDPreferences.projectRootKey), canonical)
+        }
+    }
+
+    func testInitPrefersBookmarkOverPathAndRewritesPathKey() async throws {
+        clearPersistedRoot()
+        let fm = FileManager.default
+        let repoA = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        let repoB = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        defer {
+            try? fm.removeItem(at: repoA)
+            try? fm.removeItem(at: repoB)
+        }
+
+        let legacyBookmark = try repoA.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
+        if let suite = UserDefaults(suiteName: "dev.contextify") {
+            suite.set(repoB.path, forKey: HUDPreferences.projectRootKey)
+            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
+        }
+
+        let model = HUDViewModel()
+        try await waitForCondition("bookmark should win during init") {
+            model.projectRootURL?.resolvingSymlinksInPath().path == repoA.resolvingSymlinksInPath().path
+        }
+
+        let canonical = repoA.resolvingSymlinksInPath().path
+        XCTAssertEqual(model.projectRootURL?.path, canonical)
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), canonical)
+        if let suite = UserDefaults(suiteName: "dev.contextify") {
+            XCTAssertEqual(suite.string(forKey: HUDPreferences.projectRootKey), canonical)
+        }
+    }
+
+    func testInitWithLegacyBookmarkStartsSecurityScopeAndArmsWatchers() async throws {
+        clearPersistedRoot()
+        let fm = FileManager.default
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
+        defer { try? fm.removeItem(at: repo) }
+
+        let legacyBookmark = try repo.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
+        if let suite = UserDefaults(suiteName: "dev.contextify") {
+            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
+            suite.removeObject(forKey: HUDPreferences.projectRootKey)
+        }
+
+        let model = HUDViewModel()
+
+        let canonical = repo.resolvingSymlinksInPath().path
+        try await waitForCondition("bookmark restore should set project root") {
+            model.projectRootURL?.resolvingSymlinksInPath().path == canonical
+        }
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), canonical)
+
+        #if DEBUG
+        XCTAssertNotNil(model.debugSecurityScopedURL)
+        try await waitForCondition("watchers should arm after bookmark restore") {
+            model.debugHeadWatcherMask != nil
+        }
+        #endif
+    }
+
     func testEnvironmentOverridesPersistedRoot() async throws {
         guard let repo = locateRepoRoot() else {
             XCTFail("Could not locate repo root")
