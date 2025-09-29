@@ -28,9 +28,6 @@ struct ContentView: View {
         }
         .padding(16)
         .background(WindowTitleWriter(title: "Project: \(model.projectDisplayName)"))
-        .onChange(of: model.projectDisplayName) { _, newValue in
-            _ = WindowTitleWriter(title: "Project: \(newValue)")
-        }
         .overlay(alignment: .top) { toast }
         .onAppear { model.updateGitInfo() }
         .alert("Project Root", isPresented: Binding(

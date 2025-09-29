@@ -63,6 +63,9 @@ final class GitDetectionTests: XCTestCase {
             return url
         }
     }
+#else
+    @discardableResult
+    private func allowSecurityScopedAccess(to url: URL, file: StaticString = #file, line: UInt = #line) -> URL { url }
 #endif
 
     func testBranchDetectionViaSetProjectRoot() async throws {
@@ -198,6 +201,31 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.resolvingSymlinksInPath().path)
     }
 
+    func testPersistedInvalidFallbackSurfacesAlert() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        let fm = FileManager.default
+        let original = fm.currentDirectoryPath
+        defer { _ = fm.changeCurrentDirectoryPath(original) }
+
+        clearPersistedRoot()
+        let invalidDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: invalidDir, withIntermediateDirectories: true)
+        HUDPreferences.setPersistedRoot(invalidDir)
+        XCTAssertTrue(fm.changeCurrentDirectoryPath(repo.path))
+
+        let model = HUDViewModel()
+        model.updateGitInfo()
+
+        try await waitForCondition("Alert should surface for invalid persisted root") {
+            (model.alertMessage ?? "").contains("Stored project root is invalid")
+        }
+        XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
+    }
+
     func testPersistedInvalidFallsBackToExistingRoot() async throws {
         guard let repo = locateRepoRoot() else {
             XCTFail("Could not locate repo root")
@@ -234,29 +262,35 @@ final class GitDetectionTests: XCTestCase {
         }
     }
 
-    func testResolveBookmarkStaleRewritesProjectRootKey() throws {
+    func testMultipleAlertsAreJoinedWhenSourcesFail() async throws {
         clearPersistedRoot()
         let fm = FileManager.default
-        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: false)
+        let invalidDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: invalidDir, withIntermediateDirectories: true)
+        HUDPreferences.setPersistedRoot(invalidDir)
+
+        let model = HUDViewModel()
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": "/tmp/definitely/not/a/repo"])
+
+        try await waitForCondition("Alert should capture multiple failures") {
+            guard let alert = model.alertMessage else { return false }
+            return alert.contains("CONTEXTIFY_PROJECT_ROOT") && alert.contains("Stored project root is invalid")
+        }
+        let alert = model.alertMessage ?? ""
+        XCTAssertTrue(alert.contains("\n"), "Alerts should be joined by newline")
+    }
+
+    func testResolveBookmarkReturnsStoredURL() throws {
+        clearPersistedRoot()
+        let fm = FileManager.default
+        let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: false).resolvingSymlinksInPath()
         defer { try? fm.removeItem(at: repo) }
 
-        let legacyBookmark = try repo.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
-        if let suite = UserDefaults(suiteName: "dev.contextify") {
-            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
-            suite.removeObject(forKey: HUDPreferences.projectRootKey)
-        }
-
+        HUDPreferences.setPersistedRoot(repo)
         let resolved = HUDPreferences.resolveBookmark()
         XCTAssertNotNil(resolved)
-        let canonical = repo.resolvingSymlinksInPath().path
-        XCTAssertEqual(resolved?.resolvingSymlinksInPath().path, canonical)
-        XCTAssertNil(UserDefaults.standard.data(forKey: HUDPreferences.projectRootBookmarkKey))
-        XCTAssertEqual(HUDPreferences.getPersistedRoot(), canonical)
-        if let suite = UserDefaults(suiteName: "dev.contextify") {
-            XCTAssertNotNil(suite.data(forKey: HUDPreferences.projectRootBookmarkKey))
-            XCTAssertEqual(suite.string(forKey: HUDPreferences.projectRootKey), canonical)
-        }
+        XCTAssertEqual(resolved?.resolvingSymlinksInPath().path, repo.path)
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.path)
     }
 
     func testInitPrefersBookmarkOverPathAndRewritesPathKey() async throws {

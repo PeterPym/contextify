@@ -1,21 +1,22 @@
+#if os(macOS)
 import SwiftUI
+import AppKit
 
+@MainActor
 struct WindowTitleWriter: NSViewRepresentable {
     let title: String
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        updateWindowTitle(for: view)
-        return view
-    }
+    func makeNSView(context: Context) -> NSView { NSView() }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        updateWindowTitle(for: nsView)
-    }
-
-    private func updateWindowTitle(for view: NSView) {
-        DispatchQueue.main.async {
-            view.window?.title = title
-        }
+        nsView.window?.title = title
     }
 }
+#else
+import SwiftUI
+
+struct WindowTitleWriter: View {
+    let title: String
+    var body: some View { EmptyView() }
+}
+#endif

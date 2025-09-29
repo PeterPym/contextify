@@ -341,6 +341,8 @@ final class HUDViewModel {
   private var lastPersistedPath: String?
   private var lastPersistedAt: Date = .distantPast
   private let headEventDebounce: TimeInterval = 0.15
+  private let headEventMask: DispatchSource.FileSystemEvent = [.write, .attrib, .extend, .delete, .rename, .revoke]
+  private let criticalHeadEvents: DispatchSource.FileSystemEvent = [.delete, .rename, .revoke]
   private var lastHeadEventAt: Date = .distantPast
   private var updateGeneration: UInt64 = 0
   private var hasLoggedMissingGit = false
@@ -731,10 +733,9 @@ final class HUDViewModel {
     }
 
     stopBranchMonitor()
-    let eventMask: DispatchSource.FileSystemEvent = [.write, .attrib, .extend, .delete, .rename, .revoke]
     let src = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: headFD,
-      eventMask: eventMask,
+      eventMask: headEventMask,
       queue: .main
     )
     src.setEventHandler { [weak self, weak src] in
@@ -746,7 +747,7 @@ final class HUDViewModel {
       self?.handleWatcherCancelled()
     }
     headWatcher = src
-    headWatcherMask = eventMask
+    headWatcherMask = headEventMask
     headWatcherArms += 1
     #if DEBUG
     watcherLog.info("Armed HEAD watcher for \(headPath, privacy: .public)")
@@ -759,11 +760,10 @@ final class HUDViewModel {
 
   private func handleHeadEvent(events: DispatchSource.FileSystemEvent) {
     if let mask = headWatcherMask {
-      let critical: DispatchSource.FileSystemEvent = [.delete, .rename, .revoke]
-      if mask.intersection(critical) != critical {
+      if mask.intersection(criticalHeadEvents) != criticalHeadEvents {
         watcherLog.fault("HEAD watcher missing critical events mask=\(mask.rawValue, privacy: .public)")
         #if DEBUG
-        precondition(mask.intersection(critical) == critical, "HEAD watcher missing critical re-arm events")
+        precondition(mask.intersection(criticalHeadEvents) == criticalHeadEvents, "HEAD watcher missing critical re-arm events")
         #endif
       }
     }
