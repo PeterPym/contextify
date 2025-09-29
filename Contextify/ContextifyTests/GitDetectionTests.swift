@@ -88,6 +88,86 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: HUDPreferences.projectRootKey))
     }
 
+    func testEnvInvalidFallsBackToPersisted() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        clearPersistedRoot()
+        HUDPreferences.setPersistedRoot(repo)
+
+        let model = HUDViewModel()
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": "/tmp/definitely/not/a/repo"])
+
+        try await waitForCondition("Invalid ENV should fall back to persisted root") {
+            model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
+        }
+        XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.resolvingSymlinksInPath().path)
+    }
+
+    func testPersistedInvalidFallsBackToCwd() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        let fm = FileManager.default
+        let original = fm.currentDirectoryPath
+        defer { _ = fm.changeCurrentDirectoryPath(original) }
+
+        clearPersistedRoot()
+        let invalidDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: invalidDir, withIntermediateDirectories: true)
+        HUDPreferences.setPersistedRoot(invalidDir)
+        XCTAssertTrue(fm.changeCurrentDirectoryPath(repo.path))
+
+        let model = HUDViewModel()
+        model.updateGitInfo()
+
+        try await waitForCondition("Invalid persisted root should fall back to CWD") {
+            model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
+        }
+        XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
+        XCTAssertEqual(HUDPreferences.getPersistedRoot(), repo.resolvingSymlinksInPath().path)
+    }
+
+    func testPersistedInvalidFallsBackToExistingRoot() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        let fm = FileManager.default
+        let original = fm.currentDirectoryPath
+        defer { _ = fm.changeCurrentDirectoryPath(original) }
+
+        clearPersistedRoot()
+        let model = HUDViewModel()
+        switch model.setProjectRoot(url: repo) {
+        case .success:
+            break
+        case .failure(let error):
+            XCTFail("Unexpected failure: \(error)")
+        }
+
+        let invalidDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: invalidDir, withIntermediateDirectories: true)
+        HUDPreferences.setPersistedRoot(invalidDir)
+        XCTAssertTrue(fm.changeCurrentDirectoryPath(fm.temporaryDirectory.path))
+
+        model.updateGitInfo()
+
+        try await waitForCondition("Existing root should survive invalid persisted path") {
+            model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
+        }
+        XCTAssertEqual(model.projectRootURL?.path, repo.resolvingSymlinksInPath().path)
+        try await waitForCondition("Persisted root should clear when invalid") {
+            HUDPreferences.getPersistedRoot() == nil
+        }
+    }
+
     func testEnvironmentOverridesPersistedRoot() async throws {
         guard let repo = locateRepoRoot() else {
             XCTFail("Could not locate repo root")
@@ -189,6 +269,20 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertEqual(branch, "refs/heads/feature/foo")
     }
 
+    func testParseHeadHandlesDetachedHead() throws {
+        let fm = FileManager.default
+        let temp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: temp) }
+        let dotGit = temp.appendingPathComponent(".git", isDirectory: true)
+        try fm.createDirectory(at: dotGit, withIntermediateDirectories: true)
+        let headFile = dotGit.appendingPathComponent("HEAD")
+        try "1234567890abcdef\n".write(to: headFile, atomically: true, encoding: .utf8)
+
+        let branch = GitRepositoryResolver.parseHEAD(at: temp)
+        XCTAssertEqual(branch, "detached@1234567")
+    }
+
     #if DEBUG
     func testCoalescedGitUpdatesFlushPending() async throws {
         guard let repo = locateRepoRoot() else {
@@ -239,6 +333,21 @@ final class GitDetectionTests: XCTestCase {
         try await waitForCondition("Watcher should rearm on rename") {
             model.debugHeadWatcherArms > initial
         }
+    }
+
+    func testPackedRefsWatcherArms() async throws {
+        guard let repo = locateRepoRoot() else {
+            XCTFail("Could not locate repo root")
+            return
+        }
+
+        let model = HUDViewModel()
+        _ = model.setProjectRoot(url: repo)
+
+        try await waitForCondition("Packed refs watcher should arm") {
+            model.debugPackedWatcherActive
+        }
+        XCTAssertTrue(model.debugRefWatcherActive)
     }
     #endif
 }
