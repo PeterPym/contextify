@@ -27,6 +27,7 @@ struct ContentView: View {
             controls
         }
         .padding(16)
+        .background(WindowTitleWriter(title: "Project: \(model.projectDisplayName)"))
         .overlay(alignment: .top) { toast }
         .onAppear { model.updateGitInfo() }
         .alert("Project Root", isPresented: Binding(
@@ -51,6 +52,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
+            Label(model.projectDisplayName, systemImage: "folder")
             Label(model.branchDisplay, systemImage: "arrow.branch")
             if model.projectRootURL == nil {
                 Button("Set Project Root…") {
