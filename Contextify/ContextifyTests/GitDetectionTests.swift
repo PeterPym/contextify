@@ -21,17 +21,49 @@ private enum TestGitRepoBuilder {
 
 @MainActor
 final class GitDetectionTests: XCTestCase {
+#if os(macOS)
+    private var scopedResources: [URL] = []
+#endif
     override func setUp() {
         super.setUp()
         clearPersistedRoot()
         HUDPreferences.setAutoPersist(true)
+#if os(macOS)
+        scopedResources.removeAll()
+        if let repo = locateRepoRoot() {
+            _ = allowSecurityScopedAccess(to: repo)
+        }
+#endif
     }
 
     override func tearDown() {
+#if os(macOS)
+        scopedResources.forEach { $0.stopAccessingSecurityScopedResource() }
+        scopedResources.removeAll()
+#endif
         clearPersistedRoot()
         HUDPreferences.setAutoPersist(true)
         super.tearDown()
     }
+
+#if os(macOS)
+    @discardableResult
+    private func allowSecurityScopedAccess(to url: URL, file: StaticString = #file, line: UInt = #line) -> URL {
+        do {
+            let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            var stale = false
+            let scoped = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
+            if !scoped.startAccessingSecurityScopedResource() {
+                XCTFail("Failed to start security scope for \(url.path)", file: file, line: line)
+            }
+            scopedResources.append(scoped)
+            return scoped
+        } catch {
+            XCTFail("Unable to create security scope for \(url.path): \(error)", file: file, line: line)
+            return url
+        }
+    }
+#endif
 
     func testBranchDetectionViaSetProjectRoot() async throws {
         guard let repo = locateRepoRoot() else {
@@ -39,8 +71,9 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let model = HUDViewModel()
-        switch model.setProjectRoot(url: repo) {
+        switch model.setProjectRoot(url: scopedRepo) {
         case .success(let detected):
             XCTAssertEqual(detected.path, repo.resolvingSymlinksInPath().path)
         case .failure(let error):
@@ -60,6 +93,7 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        _ = allowSecurityScopedAccess(to: repo)
         let fm = FileManager.default
         let original = fm.currentDirectoryPath
         XCTAssertTrue(fm.changeCurrentDirectoryPath(repo.path))
@@ -84,8 +118,9 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let model = HUDViewModel()
-        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": repo.path])
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": scopedRepo.path])
 
         try await waitForCondition("Env discovery should detect repo") {
             model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
@@ -169,13 +204,14 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let fm = FileManager.default
         let original = fm.currentDirectoryPath
         defer { _ = fm.changeCurrentDirectoryPath(original) }
 
         clearPersistedRoot()
         let model = HUDViewModel()
-        switch model.setProjectRoot(url: repo) {
+        switch model.setProjectRoot(url: scopedRepo) {
         case .success:
             break
         case .failure(let error):
@@ -288,6 +324,7 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let fm = FileManager.default
         let temp = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -304,7 +341,7 @@ final class GitDetectionTests: XCTestCase {
         HUDPreferences.setPersistedRoot(temp)
 
         let model = HUDViewModel()
-        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": repo.path])
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": scopedRepo.path])
 
         try await waitForCondition("Environment variable should override persisted root") {
             model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
@@ -335,9 +372,10 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         HUDPreferences.setAutoPersist(false)
         let model = HUDViewModel()
-        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": repo.path])
+        model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": scopedRepo.path])
         try await waitForCondition("Env detection should still resolve root") {
             model.projectRootURL?.path == repo.resolvingSymlinksInPath().path
         }
@@ -404,8 +442,9 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let model = HUDViewModel()
-        _ = model.setProjectRoot(url: repo)
+        _ = model.setProjectRoot(url: scopedRepo)
         model.debugHandleHeadEvent([.write])
         model.debugHandleHeadEvent([.write])
 
@@ -421,8 +460,9 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let model = HUDViewModel()
-        _ = model.setProjectRoot(url: repo)
+        _ = model.setProjectRoot(url: scopedRepo)
         model.updateHeadWatcher()
         guard let mask = model.debugHeadWatcherMask else {
             XCTFail("Watcher mask should be available")
@@ -439,8 +479,9 @@ final class GitDetectionTests: XCTestCase {
             return
         }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
         let model = HUDViewModel()
-        _ = model.setProjectRoot(url: repo)
+        _ = model.setProjectRoot(url: scopedRepo)
         let initial = model.debugHeadWatcherArms
         model.debugHandleHeadEvent([.rename])
 
@@ -453,8 +494,10 @@ final class GitDetectionTests: XCTestCase {
         let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
         defer { try? FileManager.default.removeItem(at: repo) }
 
+        let scopedRepo = allowSecurityScopedAccess(to: repo)
+
         let model = HUDViewModel()
-        _ = model.setProjectRoot(url: repo)
+        _ = model.setProjectRoot(url: scopedRepo)
 
         try await waitForCondition("Packed refs watcher should arm") {
             model.debugPackedWatcherActive
