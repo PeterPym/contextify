@@ -265,11 +265,10 @@ final class GitDetectionTests: XCTestCase {
     func testMultipleAlertsAreJoinedWhenSourcesFail() async throws {
         clearPersistedRoot()
         let fm = FileManager.default
+        let model = HUDViewModel()
         let invalidDir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: invalidDir, withIntermediateDirectories: true)
         HUDPreferences.setPersistedRoot(invalidDir)
-
-        let model = HUDViewModel()
         model.updateGitInfo(env: ["CONTEXTIFY_PROJECT_ROOT": "/tmp/definitely/not/a/repo"])
 
         try await waitForCondition("Alert should capture multiple failures") {
@@ -303,12 +302,13 @@ final class GitDetectionTests: XCTestCase {
             try? fm.removeItem(at: repoB)
         }
 
-        let legacyBookmark = try repoA.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
-        if let suite = UserDefaults(suiteName: "dev.contextify") {
-            suite.set(repoB.path, forKey: HUDPreferences.projectRootKey)
-            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
+        HUDPreferences.setPersistedRoot(repoB)
+        let bookmarkA = try repoA.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        guard let suite = UserDefaults(suiteName: "dev.contextify") else {
+            XCTFail("Shared defaults missing")
+            return
         }
+        suite.set(bookmarkA, forKey: HUDPreferences.projectRootBookmarkKey)
 
         let model = HUDViewModel()
         try await waitForCondition("bookmark should win during init") {
@@ -329,12 +329,7 @@ final class GitDetectionTests: XCTestCase {
         let repo = try TestGitRepoBuilder.makeRepo(withPackedRefs: true)
         defer { try? fm.removeItem(at: repo) }
 
-        let legacyBookmark = try repo.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
-        UserDefaults.standard.set(legacyBookmark, forKey: HUDPreferences.projectRootBookmarkKey)
-        if let suite = UserDefaults(suiteName: "dev.contextify") {
-            suite.removeObject(forKey: HUDPreferences.projectRootBookmarkKey)
-            suite.removeObject(forKey: HUDPreferences.projectRootKey)
-        }
+        HUDPreferences.setPersistedRoot(repo)
 
         let model = HUDViewModel()
 

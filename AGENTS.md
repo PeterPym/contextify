@@ -57,6 +57,7 @@ assets/ icons/
 - Build once: `bash scripts/xc.sh build`.
 - If CLI fails, verify: `xcodebuild -version` and `xcode-select -p` (set `DEVELOPER_DIR` or use Xcode GUI).
 - Persistence precedence (app startup): bookmark → stored path → env/CWD detection. Fallbacks still follow ENV → persisted → CWD → existing during runtime updates.
+- Backward compatibility is out of scope: assume clean builds with no user data and remove legacy migrations instead of maintaining phased deprecations.
 - Keep PRs small; rely on CI (macOS build workflow) to validate changes.
 - Never run destructive git commands (e.g. `git restore`, `reset --hard`, `clean`) on a teammate’s work without first creating a backup branch or patch; preserve in-progress changes at all costs.
 - NEVER delete or clean tracked files without a backup branch/patch that has been coordinated with the user.

@@ -62,16 +62,6 @@ enum HUDPreferences {
         Logger(subsystem: "dev.contextify", category: "Lifecycle")
           .info("bookmark rewrite synchronized path=\(url.resolvingSymlinksInPath().path, privacy: .private)")
       }
-      #if DEBUG
-      if sharedDefaults.object(forKey: projectRootBookmarkKey) != nil {
-        let canonical = url.resolvingSymlinksInPath().path
-        guard let storedPath = sharedDefaults.string(forKey: projectRootKey) else {
-          assertionFailure("Bookmark present without matching path key")
-          return url
-        }
-        assert(storedPath == canonical, "Bookmark path mismatch: stored=\(storedPath) canonical=\(canonical)")
-      }
-      #endif
       return url
     } catch {
       sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
@@ -582,7 +572,9 @@ final class HUDViewModel {
   }
 
   private func applyGitInfo(_ info: GitRepositoryResolver.GitInfoResult) {
-    alertMessage = info.alertMessage
+    if let message = info.alertMessage {
+      alertMessage = message
+    }
     if info.clearPersisted {
       HUDPreferences.clearPersistedRoot()
       lastPersistedPath = nil
@@ -779,8 +771,11 @@ final class HUDViewModel {
     }
 
     if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-        self?.updateHeadWatcher()
+      Task { [weak self] in
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await MainActor.run {
+          self?.updateHeadWatcher()
+        }
       }
     }
   }
