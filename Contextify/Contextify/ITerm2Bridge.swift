@@ -38,6 +38,30 @@ enum ITerm2Bridge {
 
   // MARK: - Public API
 
+  /// Returns the name of the current iTerm2 session/tab, or nil if unavailable.
+  static func getCurrentSessionName() async -> String? {
+    let script = """
+    tell application id "\(iTermBundleID)"
+      if not (exists current window) then
+        return ""
+      end if
+      tell current window
+        tell current session
+          return name
+        end tell
+      end tell
+    end tell
+    """
+
+    switch runAppleScript(script) {
+    case .success(let descriptor):
+      return descriptor.stringValue
+    case .failure(let error):
+      log.warning("Failed to get session name: \(String(describing: error), privacy: .public)")
+      return nil
+    }
+  }
+
   /// Ensures iTerm2 is available, then delivers `text` to the current session.
   /// Attempts to foreground iTerm2 afterward (may be ignored under SKE).
   static func send(text: String, newline: Bool) async -> Result<Void, Error> {
