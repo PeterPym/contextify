@@ -9,6 +9,9 @@ let package = Package(
   products: [
     .library(name: "ContextifyCore", targets: ["ContextifyCore"]),
   ],
+  dependencies: [
+    .package(url: "https://github.com/soffes/HotKey", from: "0.2.1")
+  ],
   targets: [
     .target(
       name: "ContextifyCore",
