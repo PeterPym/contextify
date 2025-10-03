@@ -12,5 +12,12 @@
     <array>
       <string>com.googlecode.iterm2</string>
     </array>
+    <key>com.apple.security.scripting-targets</key>
+    <dict>
+      <key>com.apple.systempreferences</key>
+      <array>
+        <string>com.apple.preference.security</string>
+      </array>
+    </dict>
   </dict>
 </plist>
