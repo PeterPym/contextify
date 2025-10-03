@@ -1,20 +1,21 @@
 import Foundation
 import AppKit
-import HotKey
+import Carbon
 import OSLog
 
 /// Manages global hotkey registration for Contextify.
 ///
 /// Implements Shift+G+G chord detection to trigger terminal content capture.
-/// Uses a state machine to track the first G press and validate the second press.
+/// Uses Carbon's RegisterEventHotKey API for system-wide keyboard monitoring.
 @MainActor
 final class GlobalHotkeyManager {
   static let shared = GlobalHotkeyManager()
 
   private let log = Logger(subsystem: "dev.contextify", category: "Hotkey")
 
-  // Hotkey configuration
-  private var shiftGHotKey: HotKey?
+  // Carbon hotkey registration
+  private var eventHotKeyRef: EventHotKeyRef?
+  private var eventHandler: EventHandlerRef?
 
   // State tracking for G+G chord
   private var firstShiftGPressed = false
@@ -22,6 +23,8 @@ final class GlobalHotkeyManager {
 
   // Configuration
   private let chordTimeout: TimeInterval = 0.5 // 500ms window for second G
+  private let hotkeyID: UInt32 = 1
+  private let hotkeySignature: OSType = UTGetOSTypeFromString("CTFY" as CFString)
 
   private init() {}
 
@@ -31,15 +34,47 @@ final class GlobalHotkeyManager {
   ///
   /// Call this during app initialization (e.g., applicationDidFinishLaunching).
   func registerContextifyHotkey() {
-    // Register Shift+G
-    shiftGHotKey = HotKey(
-      key: .g,
-      modifiers: [.shift]
+    // Register Shift+G using Carbon API
+    var glyph = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
+    let modifiers: UInt32 = UInt32(shiftKey) // Shift modifier
+    let keyCode: UInt32 = 5 // 'G' key code
+
+    let status = RegisterEventHotKey(
+      keyCode,
+      modifiers,
+      glyph,
+      GetEventDispatcherTarget(),
+      0,
+      &eventHotKeyRef
     )
 
-    shiftGHotKey?.keyDownHandler = { [weak self] in
-      self?.handleShiftGPressed()
+    if status != noErr {
+      log.error("Failed to register hotkey: \(status, privacy: .public)")
+      return
     }
+
+    // Install event handler
+    var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                    eventKind: UInt32(kEventHotKeyPressed))]
+    let callback: EventHandlerUPP = { (_, event, userData) -> OSStatus in
+      guard let userData = userData else { return OSStatus(eventNotHandledErr) }
+      let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+
+      Task { @MainActor in
+        manager.handleShiftGPressed()
+      }
+
+      return noErr
+    }
+
+    InstallEventHandler(
+      GetEventDispatcherTarget(),
+      callback,
+      1,
+      &eventTypes,
+      Unmanaged.passUnretained(self).toOpaque(),
+      &eventHandler
+    )
 
     log.info("Registered Shift+G+G global hotkey")
   }
@@ -48,7 +83,16 @@ final class GlobalHotkeyManager {
   ///
   /// Call this during app termination (e.g., applicationWillTerminate).
   func unregister() {
-    shiftGHotKey = nil
+    if let ref = eventHotKeyRef {
+      UnregisterEventHotKey(ref)
+      eventHotKeyRef = nil
+    }
+
+    if let handler = eventHandler {
+      RemoveEventHandler(handler)
+      eventHandler = nil
+    }
+
     chordResetTimer?.invalidate()
     chordResetTimer = nil
     firstShiftGPressed = false
