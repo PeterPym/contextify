@@ -9,6 +9,7 @@ import SwiftUI
 import AppKit
 import OSLog
 
+import ContextifyCore
 private let uiLog = Logger(subsystem: "dev.contextify", category: "UI")
 
 struct ContentView: View {

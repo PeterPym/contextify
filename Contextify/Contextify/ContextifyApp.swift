@@ -1,39 +1,41 @@
-//
-//  ContextifyApp.swift
-//  Contextify
-//
-//  Created by Rob Banagale on 9/13/25.
-//
-
 import SwiftUI
 import AppKit
+import ContextifyCore
 
 @main
 struct ContextifyApp: App {
-    private let model = HUDViewModel.shared
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environment(model)
-        }
-        .commands { ProjectRootCommands() }
+  @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  private let model = HUDViewModel.shared
+
+  var body: some Scene {
+    Window("Contextify", id: "main") {
+      ContentView()
+        .environment(model)
+        .background(WindowAccessor())
     }
+    .defaultSize(width: 1000, height: 700)
+    .commands {
+      CommandGroup(replacing: .newItem) { }
+      ProjectRootCommands()
+    }
+  }
 }
 
 struct ProjectRootCommands: Commands {
-    var body: some Commands {
-        CommandGroup(after: .newItem) {
-            Button("Set Project Root…") { pickProjectRoot() }
-        }
+  var body: some Commands {
+    CommandGroup(after: .newItem) {
+      Button("Set Project Root…") { pickProjectRoot() }
     }
-    private func pickProjectRoot() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        if panel.runModal() == .OK, let url = panel.urls.first {
-            _ = HUDViewModel.shared.setProjectRoot(url: url)
-        }
+  }
+
+  private func pickProjectRoot() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Choose"
+    if panel.runModal() == .OK, let url = panel.urls.first {
+      _ = HUDViewModel.shared.setProjectRoot(url: url)
     }
+  }
 }
