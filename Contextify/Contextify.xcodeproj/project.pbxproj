@@ -109,6 +109,7 @@
 				D4A773992E76936700747100 /* Sources */,
 				D4A7739A2E76936700747100 /* Frameworks */,
 				D4A7739B2E76936700747100 /* Resources */,
+				D4F0C0DE2E88000100747100 /* Copy iTerm2 Python Script */,
 			);
 			buildRules = (
 			);
@@ -242,6 +243,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D4F0C0DE2E88000100747100 /* Copy iTerm2 Python Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../scripts/iterm2_reader.py",
+			);
+			name = "Copy iTerm2 Python Script";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/iterm2_reader.py",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nSCRIPT_SOURCE=\"${SRCROOT}/../scripts/iterm2_reader.py\"\nSCRIPT_DEST_DIR=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nSCRIPT_DEST=\"${SCRIPT_DEST_DIR}/iterm2_reader.py\"\n\nif [ ! -f \"${SCRIPT_SOURCE}\" ]; then\n  echo \"warning: iTerm2 Python script not found at ${SCRIPT_SOURCE}\" >&2\n  exit 0\nfi\n\nmkdir -p \"${SCRIPT_DEST_DIR}\"\n/bin/cp \"${SCRIPT_SOURCE}\" \"${SCRIPT_DEST}\"\n/bin/chmod 755 \"${SCRIPT_DEST}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D4A773992E76936700747100 /* Sources */ = {

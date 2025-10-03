@@ -19,11 +19,18 @@ final class TerminalContentReader {
   ///
   /// Workflow:
   /// 1. Check Accessibility permissions
-  /// 2. Read terminal content via AppleScript (iTerm2) or Accessibility API (others)
+  /// 2. Prefer iTerm2 Python API (with AppleScript fallback) or Accessibility API
   /// 3. Parse Claude Code input with ClaudeCodeParser
   /// 4. Route to ComposeURLRouter with base64 encoding
   /// 5. Focus compose textarea
   func captureAndSendToContextify() {
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.captureAndSendToContextifyAsync()
+    }
+  }
+
+  private func captureAndSendToContextifyAsync() async {
     // Check accessibility permissions first
     guard checkAccessibilityPermissions() else {
       log.warning("Accessibility permissions not granted")
@@ -32,7 +39,7 @@ final class TerminalContentReader {
     }
 
     // Read terminal content
-    guard let terminalContent = readActiveTerminalContent() else {
+    guard let terminalContent = await readActiveTerminalContent() else {
       log.warning("Failed to read terminal content")
       return
     }
@@ -94,7 +101,7 @@ final class TerminalContentReader {
 
   // MARK: - Terminal Content Reading
 
-  private func readActiveTerminalContent() -> String? {
+  private func readActiveTerminalContent() async -> String? {
     // Get frontmost application
     guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
       log.error("No frontmost application")
@@ -105,10 +112,19 @@ final class TerminalContentReader {
     log.info("Reading from app: \(frontmostApp.localizedName ?? "unknown", privacy: .public) (Bundle: \(bundleID, privacy: .public))")
     NSLog("🔥 Reading from: \(frontmostApp.localizedName ?? "unknown") - Bundle: \(bundleID)")
 
-    // Use AppleScript for iTerm2 (more reliable than Accessibility API)
+    // Use Python API for iTerm2 with AppleScript fallback
     if bundleID == "com.googlecode.iterm2" {
-      NSLog("🔥 Using AppleScript method for iTerm2")
-      return readFromITerm2UsingAppleScript()
+      NSLog("🔥 Using Python API method for iTerm2")
+
+      switch await ITerm2PythonReader().readTerminalContent() {
+      case .success(let content):
+        return content
+      case .failure(let error):
+        log.error("Python reader failed: \(error.description, privacy: .public)")
+        NSLog("🔥 Python reader failed: \(error.description)")
+        NSLog("🔥 Falling back to AppleScript for iTerm2")
+        return readFromITerm2UsingAppleScript()
+      }
     }
 
     // Use AppleScript for Terminal.app
@@ -123,18 +139,17 @@ final class TerminalContentReader {
   }
 
   // MARK: - AppleScript Methods
-
-private func readFromITerm2UsingAppleScript() -> String? {
-  let script = """
-  tell application "iTerm2"
-    tell current session of current window
-      get contents
+  private func readFromITerm2UsingAppleScript() -> String? {
+    let script = """
+    tell application "iTerm2"
+      tell current session of current window
+        get contents
+      end tell
     end tell
-  end tell
-  """
+    """
 
-  return executeAppleScript(script, appName: "iTerm2")
-}
+    return executeAppleScript(script, appName: "iTerm2")
+  }
 
   private func readFromTerminalAppUsingAppleScript() -> String? {
     let script = """
