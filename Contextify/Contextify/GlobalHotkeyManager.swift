@@ -30,13 +30,15 @@ final class GlobalHotkeyManager {
 
   // MARK: - Lifecycle
 
-  /// Registers the Shift+G+G global hotkey.
+  /// Registers the Cmd+Shift+G+G global hotkey.
   ///
   /// Call this during app initialization (e.g., applicationDidFinishLaunching).
   func registerContextifyHotkey() {
-    // Register Shift+G using Carbon API
+    log.info("Attempting to register Cmd+Shift+G hotkey...")
+
+    // Register Cmd+Shift+G using Carbon API
     var glyph = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
-    let modifiers: UInt32 = UInt32(shiftKey) // Shift modifier
+    let modifiers: UInt32 = UInt32(cmdKey) + UInt32(shiftKey) // Cmd+Shift modifiers
     let keyCode: UInt32 = 5 // 'G' key code
 
     let status = RegisterEventHotKey(
@@ -50,8 +52,17 @@ final class GlobalHotkeyManager {
 
     if status != noErr {
       log.error("Failed to register hotkey: \(status, privacy: .public)")
+
+      // Show alert to user
+      let alert = NSAlert()
+      alert.messageText = "Hotkey Registration Failed"
+      alert.informativeText = "Failed to register Cmd+Shift+G hotkey. Error code: \(status)"
+      alert.alertStyle = .warning
+      alert.runModal()
       return
     }
+
+    log.info("Successfully called RegisterEventHotKey")
 
     // Install event handler
     var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
@@ -67,7 +78,7 @@ final class GlobalHotkeyManager {
       return noErr
     }
 
-    InstallEventHandler(
+    let handlerStatus = InstallEventHandler(
       GetEventDispatcherTarget(),
       callback,
       1,
@@ -76,7 +87,18 @@ final class GlobalHotkeyManager {
       &eventHandler
     )
 
-    log.info("Registered Shift+G+G global hotkey")
+    if handlerStatus != noErr {
+      log.error("Failed to install event handler: \(handlerStatus, privacy: .public)")
+
+      let alert = NSAlert()
+      alert.messageText = "Event Handler Failed"
+      alert.informativeText = "Failed to install event handler. Error code: \(handlerStatus)"
+      alert.alertStyle = .warning
+      alert.runModal()
+      return
+    }
+
+    log.info("✅ Successfully registered Cmd+Shift+G+G global hotkey")
   }
 
   /// Unregisters the global hotkey.
