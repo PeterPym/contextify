@@ -24,6 +24,13 @@ This folder contains the macOS SwiftUI app used for Contextify’s HUD.
 - “Checkpoint” writes a Markdown file under `outputs/checkpoints/`.
 - Ingest shows a spinner and disables controls.
 
+## Compose → iTerm2
+- Click “Compose → iTerm2” for a monospaced editor with newline toggle.
+- On first send, macOS prompts to allow Contextify to control iTerm2; choose **Allow**.
+- Delivery failures fall back to copying the payload to the clipboard with a toast reminder.
+- Success message shows in the HUD; automation copies include trailing newline when enabled.
+
+
 ## Pre‑commit Guard
 - Enable hooks at repo root: `git config core.hooksPath .githooks`.
 - Commits touching `Contextify/` will build the app; failures block the commit with logs.

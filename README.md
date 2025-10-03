@@ -6,7 +6,7 @@ Contextify is a lightweight macOS HUD for project-centric sessions. It ingests d
 - Requirements: Xcode 26.x (beta OK), macOS 15+ runtime.
 - Build (beta auto-detected): `bash scripts/xc.sh build`
 - Run in Xcode: open `Contextify/Contextify.xcodeproj` → scheme `Contextify` → Run on “My Mac”.
-- Outputs: `~/Contextify/outputs/` (ignored by git). Use the “Reveal Outputs” button or click “Last: …” in the header to open in Finder.
+- Outputs: `Application Support/Contextify/outputs` (ignored by git). Use the “Reveal Outputs” button or click “Last: …” in the header to open in Finder.
 
 ## Enable Build Guard (Pre-commit)
 - Turn on hooks: `git config core.hooksPath .githooks`
