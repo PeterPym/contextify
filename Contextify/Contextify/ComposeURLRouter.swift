@@ -1,5 +1,7 @@
 import Foundation
 import OSLog
+import AppKit
+import ContextifyCore
 
 @MainActor
 enum ComposeURLRouter {
@@ -50,11 +52,19 @@ enum ComposeURLRouter {
       "OpenURL compose title=\(title, privacy: .public) tmpfile=\(tmpFilePath ?? "-", privacy: .public) initial.len=\(initialText.count, privacy: .public)"
     )
 
-    ComposePresenter.present(
-      initialText: initialText,
-      title: title,
-      tmpFilePath: tmpFilePath,
-      sendToITermOnSubmit: sendOnSubmit
-    )
+    // Update main window instead of presenting modal
+    Task { @MainActor in
+      HUDViewModel.shared.updateComposeText(initialText)
+
+      // Bring main window to front
+      if let window = MainWindowTracker.shared.window {
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+      }
+
+      // Focus the compose textarea
+      try? await Task.sleep(nanoseconds: 20_000_000) // 20ms delay
+      NotificationCenter.default.post(name: .contextifyFocusEditor, object: nil)
+    }
   }
 }

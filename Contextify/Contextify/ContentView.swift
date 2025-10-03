@@ -20,17 +20,26 @@ struct ContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            if case .ingesting = model.state {
-                ProgressView().controlSize(.small)
-            }
-            urlEntry
-            IngestDropZone()
-            controls
+            Divider()
+            // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+            // Previously here:
+            // - urlEntry: TextField + "Ingest" button for URL ingestion
+            // - IngestDropZone: Drag-and-drop zone for files
+            // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+            // - Session label (e.g., "Session-001")
+            // - Status display / Last output URL
+            //
+            // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+            // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+            composeSection
         }
         .padding(16)
-        .background(WindowTitleWriter(title: "Project: \(model.projectDisplayName)"))
+        .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
-        .onAppear { model.updateGitInfo() }
+        .onAppear {
+            model.updateGitInfo()
+            Task { await refreshSession() }
+        }
         .alert("Project Root", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
@@ -48,90 +57,70 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 560, minHeight: 360)
+        .frame(minWidth: 640, minHeight: 480)
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            Label(model.projectDisplayName, systemImage: "folder")
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(0)
-            Label(model.branchDisplay, systemImage: "arrow.branch")
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(.secondary)
-                .layoutPriority(0)
-            Group {
-                if model.projectRootURL == nil {
-                    Button("Set Project Root…") {
-                        let ok = pickProjectRoot()
-                        uiLog.info("Set Project Root result=\(ok, privacy: .public)")
-                    }
-                    .buttonStyle(.link)
-                    .fixedSize()
-                    .accessibilityIdentifier("set-project-root")
-                } else {
-                    Button {
-                        _ = pickProjectRoot()
-                    } label: {
-                        Image(systemName: "folder.badge.plus")
-                    }
-                    .help("Change Project Root…")
-                    .accessibilityLabel("Change Project Root")
-                    .fixedSize()
-                }
-            }
-            .layoutPriority(2)
-            .contentShape(Rectangle())
-            Spacer(minLength: 8)
-            Divider().frame(height: 16)
-            Label(model.session, systemImage: "tag")
-            Spacer()
-            if let url = model.lastOutputURL {
-                Button("Last: \(url.lastPathComponent)") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
+            if model.projectRootURL != nil {
+                Label(model.projectDisplayName, systemImage: "folder")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Label(model.branchDisplay, systemImage: "arrow.branch")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Set Project Root…") {
+                    let ok = pickProjectRoot()
+                    uiLog.info("Set Project Root result=\(ok, privacy: .public)")
                 }
                 .buttonStyle(.link)
-            } else {
-                Text(model.status).foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-    }
-
-    private var urlEntry: some View {
-        HStack {
-            TextField(
-                "Paste a URL…",
-                text: Binding(
-                    get: { model.urlText },
-                    set: { model.urlText = $0 }
-                )
-            )
-            .textFieldStyle(.roundedBorder)
-            .onSubmit { Task { await model.ingestURLString() } }
-            Button("Ingest") { Task { await model.ingestURLString() } }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBusy)
-        }
-        .disabled(isBusy)
-    }
-
-    private var controls: some View {
-        HStack {
-            Button("New Session") { model.newSession() }
-                .disabled(isBusy)
-            Button("Checkpoint") { Task { await model.checkpoint() } }
-                .disabled(isBusy)
-            Button("Reveal Outputs") {
-                Task {
-                    let dir = await model.prepareOutputsDirectory()
-                    NSWorkspace.shared.open(dir)
-                }
+                .accessibilityIdentifier("set-project-root")
             }
             Spacer()
+        }
+    }
+
+    private var composeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Session header
+            HStack {
+                Text("Send to:")
+                    .foregroundStyle(.secondary)
+                if let sessionName = model.targetSessionName {
+                    Text("✳ \(sessionName)")
+                        .font(.system(.body, design: .monospaced))
+                } else {
+                    Text("iTerm2 (not running)")
+                        .foregroundStyle(.tertiary)
+                }
+                Button(action: { Task { await refreshSession() } }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .help("Refresh iTerm2 session")
+                Spacer()
+            }
+            .font(.subheadline)
+
+            // Text area
+            FocusableTextView(text: Binding(
+                get: { model.composeText },
+                set: { model.composeText = $0 }
+            ))
+            .frame(minHeight: 240)
+
+            // Send button
+            HStack {
+                Spacer()
+                Button("Send") {
+                    Task { await sendToTerminal() }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(model.composeText.isEmpty)
+            }
         }
     }
 
@@ -151,11 +140,6 @@ struct ContentView: View {
 #Preview { ContentView().environment(HUDViewModel()) }
 
 private extension ContentView {
-    var isBusy: Bool {
-        if case .ingesting = model.state { return true }
-        return false
-    }
-
     @discardableResult
     func pickProjectRoot() -> Bool {
         let panel = NSOpenPanel()
@@ -179,5 +163,28 @@ private extension ContentView {
             }
         }
         return false
+    }
+
+    func refreshSession() async {
+        model.targetSessionName = await ITerm2Bridge.getCurrentSessionName()
+    }
+
+    func sendToTerminal() async {
+        let result = await ITerm2Bridge.send(text: model.composeText, newline: true)
+        switch result {
+        case .success:
+            model.composeText = ""
+            toastText = "Sent to iTerm2"
+            withAnimation { showToast = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { showToast = false }
+            }
+        case .failure(let error):
+            toastText = "Failed: \(error.localizedDescription)"
+            withAnimation { showToast = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { showToast = false }
+            }
+        }
     }
 }

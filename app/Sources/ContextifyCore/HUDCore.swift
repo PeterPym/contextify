@@ -382,16 +382,24 @@ public final class HUDViewModel {
   private let watcherLog = Logger(subsystem: "dev.contextify", category: "Watcher")
 
   public var branch: String = "—"
-  public var session: String = "Session-001"
-  public var status: String = "Ready"
-  public var lastOutputURL: URL? = nil
-  public var state: UIState = .idle
+
+  // DEPRECATED (2025-10-02): Ingestion/session UI removed in favor of inline compose
+  // These properties remain for potential future restoration:
+  public var session: String = "Session-001"       // Was: session identifier for checkpoints
+  public var status: String = "Ready"              // Was: status text display
+  public var lastOutputURL: URL? = nil             // Was: last ingested file/checkpoint
+  public var state: UIState = .idle                // Was: ingestion state (idle/ingesting/success/error)
+  public var urlText: String = ""                  // Was: URL entry field binding
+
   public var projectDisplayName: String {
     projectRootURL?.lastPathComponent ?? "Unknown Project"
   }
-  public var urlText: String = ""
   public var alertMessage: String? = nil
   public private(set) var projectRootURL: URL? = nil
+
+  // Compose state (active as of 2025-10-02)
+  public var composeText: String = ""
+  public var targetSessionName: String? = nil
 
   private var branchTimer: Timer? = nil
   private let coalesceQueue = DispatchQueue(label: "dev.contextify.git-coalesce")
@@ -760,6 +768,24 @@ public final class HUDViewModel {
     adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true, scopedURL: url)
     updateGitInfo()
     return .success(repo)
+  }
+
+  // MARK: - Compose Methods
+
+  public func updateComposeText(_ text: String) {
+    composeText = text
+  }
+
+  public func refreshTargetSession() async {
+    // Import ITerm2Bridge will be handled in the app layer
+    // This is just a placeholder for now
+    targetSessionName = nil
+  }
+
+  public func sendToTerminal() async {
+    // Will be implemented in the app layer with ITerm2Bridge
+    // For now, just clear the text on "success"
+    composeText = ""
   }
 
   private func startBranchMonitor(interval: TimeInterval = 2.0) {
