@@ -38,9 +38,7 @@ function _contextify_compose() {
   zle redisplay
 }
 zle -N _contextify_compose
-bindkey -M emacs '^G^G' _contextify_compose
-bindkey -M vicmd '^G^G' _contextify_compose
-bindkey -M viins '^G^G' _contextify_compose
+bindkey '^G^G' _contextify_compose
 $ENDMARK
 EOF2
   echo "Installed zsh keybinding in $rc (scheme: ${SCHEME})."
