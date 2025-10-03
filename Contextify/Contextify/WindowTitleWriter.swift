@@ -11,6 +11,7 @@ struct WindowTitleWriter: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             window?.title = title
+            window?.titleVisibility = .visible
         }
     }
 
