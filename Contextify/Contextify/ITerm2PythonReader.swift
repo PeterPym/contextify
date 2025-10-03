@@ -88,30 +88,30 @@ struct ITerm2PythonReader {
   // MARK: - Private helpers
 
   private func resolveScriptURL() throws -> URL {
-    if let bundleURL = Bundle.main.url(forResource: "iterm2_reader", withExtension: "py"),
-       FileManager.default.isReadableFile(atPath: bundleURL.path) {
-      return bundleURL
-    }
-
+    // Look for wrapper script first (handles venv activation)
     let candidatePaths: [URL] = {
       var urls: [URL] = []
 
-      if let resourceURL = Bundle.main.resourceURL {
-        urls.append(resourceURL.appendingPathComponent("iterm2_reader.py"))
-        urls.append(resourceURL.appendingPathComponent("scripts/iterm2_reader.py"))
+      // Check bundle resources
+      if let bundleURL = Bundle.main.url(forResource: "iterm2_reader_wrapper", withExtension: "sh") {
+        urls.append(bundleURL)
       }
 
+      // Check project structure (dev mode)
       let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      urls.append(cwd.appendingPathComponent("scripts/iterm2_reader.py"))
+      urls.append(cwd.appendingPathComponent("scripts/iterm2_reader_wrapper.sh"))
 
-      if let devRoot = ProcessInfo.processInfo.environment["CONTEXTIFY_DEV_ROOT"] {
-        urls.append(URL(fileURLWithPath: devRoot).appendingPathComponent("scripts/iterm2_reader.py"))
+      // Also check for direct Python script
+      if let bundleURL = Bundle.main.url(forResource: "iterm2_reader", withExtension: "py") {
+        urls.append(bundleURL)
       }
+      urls.append(cwd.appendingPathComponent("scripts/iterm2_reader.py"))
 
       return urls
     }()
 
     if let url = candidatePaths.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }) {
+      NSLog("🔥 Found iTerm2 reader script at: \(url.path)")
       return url
     }
 
@@ -119,17 +119,9 @@ struct ITerm2PythonReader {
   }
 
   private func resolvePythonExecutable() throws -> URL {
-    let pythonCandidates = [
-      "/usr/bin/python3",
-      "/opt/homebrew/bin/python3",
-      "/usr/local/bin/python3"
-    ]
-
-    if let path = pythonCandidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-      return URL(fileURLWithPath: path)
-    }
-
-    throw ReaderError.pythonExecutableMissing
+    // For wrapper scripts (.sh), use bash
+    // For direct Python scripts (.py), use python3
+    return URL(fileURLWithPath: "/bin/bash")
   }
 
   private func runPython(pythonURL: URL, scriptURL: URL) async throws -> String {
