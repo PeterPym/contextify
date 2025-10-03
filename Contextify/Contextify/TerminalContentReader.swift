@@ -58,9 +58,10 @@ final class TerminalContentReader {
   }
 
   private func promptForAccessibilityPermissions() {
-    let options: NSDictionary = [
-      kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-    ]
+    // Trigger system prompt (suppress concurrency warning for C API)
+    let options = NSDictionary(dictionary: [
+      "AXTrustedCheckOptionPrompt" as CFString: true
+    ])
     _ = AXIsProcessTrustedWithOptions(options)
 
     // Show user-friendly alert
