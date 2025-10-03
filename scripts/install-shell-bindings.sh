@@ -19,7 +19,7 @@ install_zsh() {
   remove_block "$rc"
   cat >>"$rc" <<EOF2
 $MARK
-# Contextify keybinding: Ctrl-G Ctrl-G
+# Contextify keybinding: Alt-K (Option-K on Mac)
 # Sends the current ZLE buffer (or selection) to Contextify.
 function _contextify_compose() {
   local txt=""
@@ -38,7 +38,7 @@ function _contextify_compose() {
   zle redisplay
 }
 zle -N _contextify_compose
-bindkey '^G^G' _contextify_compose
+bindkey '^[k' _contextify_compose
 $ENDMARK
 EOF2
   echo "Installed zsh keybinding in $rc (scheme: ${SCHEME})."
