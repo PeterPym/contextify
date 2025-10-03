@@ -19,7 +19,7 @@ install_zsh() {
   remove_block "$rc"
   cat >>"$rc" <<EOF2
 $MARK
-# Contextify keybinding: Ctrl-K Ctrl-K
+# Contextify keybinding: Ctrl-G Ctrl-G
 # Sends the current ZLE buffer (or selection) to Contextify.
 function _contextify_compose() {
   local txt=""
@@ -38,9 +38,9 @@ function _contextify_compose() {
   zle redisplay
 }
 zle -N _contextify_compose
-bindkey -M emacs '^K^K' _contextify_compose
-bindkey -M vicmd '^K^K' _contextify_compose
-bindkey -M viins '^K^K' _contextify_compose
+bindkey -M emacs '^G^G' _contextify_compose
+bindkey -M vicmd '^G^G' _contextify_compose
+bindkey -M viins '^G^G' _contextify_compose
 $ENDMARK
 EOF2
   echo "Installed zsh keybinding in $rc (scheme: ${SCHEME})."
@@ -51,7 +51,7 @@ install_bash() {
   remove_block "$rc"
   cat >>"$rc" <<EOF2
 $MARK
-# Contextify keybinding: Ctrl-K Ctrl-K
+# Contextify keybinding: Ctrl-G Ctrl-G
 # Sends the last command line from history to Contextify.
 contextify_compose() {
   local txt="\$(history 1 | sed 's/^[ ]*[0-9]\+[ ]*//')"
@@ -59,7 +59,7 @@ contextify_compose() {
   local b64_enc="\$(printf "%s" "\$b64_raw" | /usr/bin/python3 -c 'import sys, urllib.parse as u; import sys; sys.stdout.write(u.quote(sys.stdin.read()))')"
   /usr/bin/open "${SCHEME}://compose?title=Compose&text64=\${b64_enc}"
 }
-bind -x '"\C-k\C-k": contextify_compose'
+bind -x '"\C-g\C-g": contextify_compose'
 $ENDMARK
 EOF2
   echo "Installed bash keybinding in $rc (scheme: ${SCHEME})."

@@ -170,7 +170,7 @@ private extension ContentView {
     }
 
     func sendToTerminal() async {
-        let result = await ITerm2Bridge.send(text: model.composeText, newline: true)
+        let result = await ITerm2Bridge.send(text: model.composeText, newline: false)
         switch result {
         case .success:
             model.composeText = ""
