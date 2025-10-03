@@ -24,10 +24,15 @@ enum ComposeURLRouter {
         case "text":
           initialText = (item.value ?? "").removingPercentEncoding ?? ""
         case "text64":
-          if let value = item.value,
-             let data = Data(base64Encoded: value),
-             let decoded = String(data: data, encoding: .utf8) {
-            initialText = decoded
+          if let value = item.value {
+            log.info("text64 raw value: \(value, privacy: .public)")
+            if let data = Data(base64Encoded: value),
+               let decoded = String(data: data, encoding: .utf8) {
+              initialText = decoded
+              log.info("text64 decoded: \(decoded, privacy: .public)")
+            } else {
+              log.error("Failed to decode text64: \(value, privacy: .public)")
+            }
           }
         case "title":
           title = (item.value ?? "Compose").removingPercentEncoding ?? "Compose"
