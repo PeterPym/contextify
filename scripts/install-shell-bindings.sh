@@ -28,7 +28,7 @@ function _contextify_compose() {
     if (( start > end )); then
       integer tmp=start; start=end; end=tmp
     fi
-    txt="\${BUFFER:start:end-start}"
+    txt="\${BUFFER[\$start+1,\$end]}"
   else
     txt="\$BUFFER"
   fi
