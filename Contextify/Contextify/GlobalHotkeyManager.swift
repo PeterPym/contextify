@@ -1,152 +1,169 @@
 import Foundation
 import AppKit
-import Carbon
+import CoreGraphics
 import OSLog
 
-/// Manages global hotkey registration for Contextify.
+/// Modern global hotkey manager using CGEventTap API.
 ///
-/// Implements Shift+G+G chord detection to trigger terminal content capture.
-/// Uses Carbon's RegisterEventHotKey API for system-wide keyboard monitoring.
+/// Implements Cmd+Shift+K+K chord detection to trigger terminal content capture.
+/// Uses CGEventTap for reliable system-wide keyboard monitoring on macOS 14+.
 @MainActor
 final class GlobalHotkeyManager {
   static let shared = GlobalHotkeyManager()
 
   private let log = Logger(subsystem: "dev.contextify", category: "Hotkey")
 
-  // Carbon hotkey registration
-  private var eventHotKeyRef: EventHotKeyRef?
-  private var eventHandler: EventHandlerRef?
+  // Event tap
+  private var eventTap: CFMachPort?
+  private var runLoopSource: CFRunLoopSource?
 
-  // State tracking for G+G chord
-  private var firstShiftGPressed = false
+  // State tracking for K+K chord
+  private var firstCmdShiftKPressed = false
   private var chordResetTimer: Timer?
 
   // Configuration
-  private let chordTimeout: TimeInterval = 0.5 // 500ms window for second G
-  private let hotkeyID: UInt32 = 1
-  private let hotkeySignature: OSType = UTGetOSTypeFromString("CTFY" as CFString)
+  private let chordTimeout: TimeInterval = 0.5 // 500ms window for second K
+  private let targetKeyCode: CGKeyCode = 40 // K key
+  private let targetModifiers: CGEventFlags = [.maskCommand, .maskShift]
 
   private init() {}
 
   // MARK: - Lifecycle
 
-  /// Registers the Cmd+Shift+G+G global hotkey.
+  /// Registers the Cmd+Shift+K+K global hotkey using CGEventTap.
   ///
   /// Call this during app initialization (e.g., applicationDidFinishLaunching).
   func registerContextifyHotkey() {
-    log.info("Attempting to register Cmd+Shift+G hotkey...")
+    NSLog("🔥 GlobalHotkeyManager: registerContextifyHotkey called")
+    log.info("Setting up CGEventTap for Cmd+Shift+K+K hotkey")
 
-    // Register Cmd+Shift+G using Carbon API
-    var glyph = EventHotKeyID(signature: hotkeySignature, id: hotkeyID)
-    let modifiers: UInt32 = UInt32(cmdKey) + UInt32(shiftKey) // Cmd+Shift modifiers
-    let keyCode: UInt32 = 5 // 'G' key code
+    // Check accessibility permissions first
+    let hasPermissions = checkAccessibilityPermissions()
+    NSLog("🔥 Accessibility permissions: \(hasPermissions)")
 
-    let status = RegisterEventHotKey(
-      keyCode,
-      modifiers,
-      glyph,
-      GetEventDispatcherTarget(),
-      0,
-      &eventHotKeyRef
-    )
-
-    if status != noErr {
-      log.error("Failed to register hotkey: \(status, privacy: .public)")
-
-      // Show alert to user
-      let alert = NSAlert()
-      alert.messageText = "Hotkey Registration Failed"
-      alert.informativeText = "Failed to register Cmd+Shift+G hotkey. Error code: \(status)"
-      alert.alertStyle = .warning
-      alert.runModal()
+    guard hasPermissions else {
+      log.error("Accessibility permissions not granted")
+      promptForAccessibilityPermissions()
       return
     }
 
-    log.info("Successfully called RegisterEventHotKey")
+    // Create event tap for key down events
+    let eventMask = (1 << CGEventType.keyDown.rawValue)
 
-    // Install event handler
-    var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                    eventKind: UInt32(kEventHotKeyPressed))]
-    let callback: EventHandlerUPP = { (_, event, userData) -> OSStatus in
-      guard let userData = userData else { return OSStatus(eventNotHandledErr) }
-      let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+    let tap = CGEvent.tapCreate(
+      tap: .cgSessionEventTap,
+      place: .headInsertEventTap,
+      options: .defaultTap,
+      eventsOfInterest: CGEventMask(eventMask),
+      callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
+        guard let refcon = refcon else { return Unmanaged.passRetained(event) }
 
-      Task { @MainActor in
-        manager.handleShiftGPressed()
-      }
+        let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
 
-      return noErr
-    }
+        // Handle on main actor
+        Task { @MainActor in
+          manager.handleKeyDown(event: event)
+        }
 
-    let handlerStatus = InstallEventHandler(
-      GetEventDispatcherTarget(),
-      callback,
-      1,
-      &eventTypes,
-      Unmanaged.passUnretained(self).toOpaque(),
-      &eventHandler
+        // Pass through the event (don't consume it)
+        return Unmanaged.passRetained(event)
+      },
+      userInfo: Unmanaged.passUnretained(self).toOpaque()
     )
 
-    if handlerStatus != noErr {
-      log.error("Failed to install event handler: \(handlerStatus, privacy: .public)")
+    NSLog("🔥 Event tap created: \(tap != nil)")
 
-      let alert = NSAlert()
-      alert.messageText = "Event Handler Failed"
-      alert.informativeText = "Failed to install event handler. Error code: \(handlerStatus)"
-      alert.alertStyle = .warning
-      alert.runModal()
+    guard let tap = tap else {
+      log.error("Failed to create event tap")
+      NSLog("🔥 FAILED to create event tap - showing alert")
+      showAlert(
+        title: "Event Tap Failed",
+        message: "Failed to create keyboard event monitor.\n\nPlease ensure Contextify has Accessibility permissions in:\nSystem Settings > Privacy & Security > Accessibility"
+      )
       return
     }
 
-    log.info("✅ Successfully registered Cmd+Shift+G+G global hotkey")
+    eventTap = tap
+
+    // Create run loop source and add to current run loop
+    let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+    CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
+
+    self.runLoopSource = runLoopSource
+
+    // Enable the event tap
+    CGEvent.tapEnable(tap: tap, enable: true)
+
+    NSLog("🔥 ✅ Successfully registered CGEventTap for Cmd+Shift+K+K hotkey")
+    log.info("✅ Successfully registered CGEventTap for Cmd+Shift+K+K hotkey")
   }
 
   /// Unregisters the global hotkey.
   ///
   /// Call this during app termination (e.g., applicationWillTerminate).
   func unregister() {
-    if let ref = eventHotKeyRef {
-      UnregisterEventHotKey(ref)
-      eventHotKeyRef = nil
+    if let tap = eventTap {
+      CGEvent.tapEnable(tap: tap, enable: false)
+      eventTap = nil
     }
 
-    if let handler = eventHandler {
-      RemoveEventHandler(handler)
-      eventHandler = nil
+    if let source = runLoopSource {
+      CFRunLoopRemoveSource(CFRunLoopGetCurrent(), source, .commonModes)
+      runLoopSource = nil
     }
 
     chordResetTimer?.invalidate()
     chordResetTimer = nil
-    firstShiftGPressed = false
+    firstCmdShiftKPressed = false
 
-    log.info("Unregistered global hotkey")
+    log.info("Unregistered event tap")
   }
 
-  // MARK: - Hotkey Handling
+  // MARK: - Event Handling
 
-  private func handleShiftGPressed() {
-    if firstShiftGPressed {
-      // Second G detected - trigger capture!
-      log.info("Shift+G+G detected - triggering capture")
+  private func handleKeyDown(event: CGEvent) {
+    let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+    let flags = event.flags
+
+    // Check if this is Cmd+Shift+K
+    guard keyCode == Int64(targetKeyCode),
+          flags.contains(.maskCommand),
+          flags.contains(.maskShift) else {
+      return
+    }
+
+    // Filter out extra modifiers (allow only Cmd+Shift, not Cmd+Shift+Ctrl+etc)
+    let relevantFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+    let activeModifiers = flags.intersection(relevantFlags)
+
+    guard activeModifiers == targetModifiers else {
+      return
+    }
+
+    log.debug("Cmd+Shift+K detected")
+
+    if firstCmdShiftKPressed {
+      // Second K detected - trigger capture!
+      log.info("Cmd+Shift+K+K chord completed - triggering capture")
 
       chordResetTimer?.invalidate()
-      firstShiftGPressed = false
+      firstCmdShiftKPressed = false
 
       triggerContextifyCapture()
     } else {
-      // First G detected - start timer
-      log.debug("First Shift+G pressed - waiting for second")
+      // First K detected - start timer
+      log.debug("First Cmd+Shift+K pressed - waiting for second")
 
-      firstShiftGPressed = true
+      firstCmdShiftKPressed = true
 
-      // Reset state after timeout if second G not pressed
+      // Reset state after timeout if second K not pressed
       chordResetTimer?.invalidate()
       chordResetTimer = Timer.scheduledTimer(
         withTimeInterval: chordTimeout,
         repeats: false
       ) { [weak self] _ in
         self?.log.debug("Chord timeout - resetting state")
-        self?.firstShiftGPressed = false
+        self?.firstCmdShiftKPressed = false
       }
     }
   }
@@ -154,5 +171,41 @@ final class GlobalHotkeyManager {
   private func triggerContextifyCapture() {
     log.info("Triggering terminal content capture")
     TerminalContentReader.shared.captureAndSendToContextify()
+  }
+
+  // MARK: - Accessibility Permissions
+
+  private func checkAccessibilityPermissions() -> Bool {
+    return AXIsProcessTrusted()
+  }
+
+  private func promptForAccessibilityPermissions() {
+    // Trigger system prompt
+    let options = NSDictionary(dictionary: [
+      "AXTrustedCheckOptionPrompt" as CFString: true
+    ])
+    _ = AXIsProcessTrustedWithOptions(options)
+
+    showAlert(
+      title: "Accessibility Permission Required",
+      message: """
+      Contextify needs accessibility access to monitor keyboard events for the global hotkey (Cmd+Shift+K+K).
+
+      Please enable it in:
+      System Settings > Privacy & Security > Accessibility
+
+      Then restart Contextify.
+      """
+    )
+  }
+
+  // MARK: - Helper
+
+  private func showAlert(title: String, message: String) {
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = message
+    alert.alertStyle = .warning
+    alert.runModal()
   }
 }

@@ -18,6 +18,10 @@
       <array>
         <string>com.apple.preference.security</string>
       </array>
+      <key>com.googlecode.iterm2</key>
+      <array>
+        <string>com.apple.accessibility.api</string>
+      </array>
     </dict>
   </dict>
 </plist>

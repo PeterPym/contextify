@@ -18,24 +18,33 @@ enum ClaudeCodeParser {
   /// - Parameter terminalContent: Raw text from terminal (from Accessibility API)
   /// - Returns: Extracted input text, or nil if no valid input found
   static func parseInput(from terminalContent: String) -> String? {
-    let lines = terminalContent.components(separatedBy: .newlines)
+  let lines = terminalContent.components(separatedBy: .newlines)
 
-    // Find the last occurrence of "> " (most recent input)
-    for line in lines.reversed() {
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
+  NSLog("🔥 Parser: Scanning \(lines.count) lines for '> ' marker")
 
-      if trimmed.hasPrefix("> ") {
-        let input = String(trimmed.dropFirst(2)) // Remove "> "
-        let cleaned = input.trimmingCharacters(in: .whitespacesAndNewlines)
+  // Find the last occurrence of "> " (most recent input)
+  for (index, line) in lines.reversed().enumerated() {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-        // Only return non-empty input
-        guard !cleaned.isEmpty else { continue }
-        return cleaned
+    if trimmed.hasPrefix("> ") {
+      NSLog("🔥 Parser: Found '> ' at line \(lines.count - index): [\(trimmed)]")
+      let input = String(trimmed.dropFirst(2)) // Remove "> "
+      let cleaned = input.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      // Only return non-empty input
+      guard !cleaned.isEmpty else {
+        NSLog("🔥 Parser: Line was empty after removing '> ', continuing search...")
+        continue
       }
-    }
 
-    return nil
+      NSLog("🔥 Parser: ✅ Extracted: [\(cleaned)]")
+      return cleaned
+    }
   }
+
+  NSLog("🔥 Parser: ❌ No lines starting with '> ' found")
+  return nil
+}
 
   /// Advanced parser supporting multi-line input (future enhancement).
   ///
