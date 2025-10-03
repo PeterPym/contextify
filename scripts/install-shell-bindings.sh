@@ -33,7 +33,7 @@ function _contextify_compose() {
     txt="\$BUFFER"
   fi
   local b64_raw="\$(printf "%s" "\$txt" | /usr/bin/base64 | tr -d '\n')"
-  local b64_enc="\$(printf "%s" "\$b64_raw" | /usr/bin/python3 -c 'import sys, urllib.parse as u; print(u.quote(sys.stdin.read()), end=\"\")')"
+  local b64_enc="\$(printf "%s" "\$b64_raw" | /usr/bin/python3 -c 'import sys, urllib.parse as u; import sys; sys.stdout.write(u.quote(sys.stdin.read()))')"
   /usr/bin/open "${SCHEME}://compose?title=Compose&text64=\${b64_enc}"
   zle redisplay
 }
@@ -56,7 +56,7 @@ $MARK
 contextify_compose() {
   local txt="\$(history 1 | sed 's/^[ ]*[0-9]\+[ ]*//')"
   local b64_raw="\$(printf "%s" "\$txt" | /usr/bin/base64 | tr -d '\n')"
-  local b64_enc="\$(printf "%s" "\$b64_raw" | /usr/bin/python3 -c 'import sys, urllib.parse as u; print(u.quote(sys.stdin.read()), end=\"\")')"
+  local b64_enc="\$(printf "%s" "\$b64_raw" | /usr/bin/python3 -c 'import sys, urllib.parse as u; import sys; sys.stdout.write(u.quote(sys.stdin.read()))')"
   /usr/bin/open "${SCHEME}://compose?title=Compose&text64=\${b64_enc}"
 }
 bind -x '"\C-x\C-k": contextify_compose'
