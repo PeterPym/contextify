@@ -33,7 +33,7 @@ build/
 .swiftpm/
 .build/
 Packages/
-
+.derived/
 # CocoaPods (if ever used)
 Pods/
 
