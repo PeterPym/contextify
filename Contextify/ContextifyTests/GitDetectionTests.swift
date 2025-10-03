@@ -1,5 +1,5 @@
 import XCTest
-@testable import Contextify
+@testable import ContextifyCore
 
 private enum TestGitRepoBuilder {
     static func makeRepo(withPackedRefs: Bool = true) throws -> URL {
@@ -22,7 +22,6 @@ private enum TestGitRepoBuilder {
 @MainActor
 final class GitDetectionTests: XCTestCase {
 #if os(macOS)
-    private var scopedResources: [URL] = []
     private var isSandboxed: Bool {
         ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
     }
@@ -32,44 +31,25 @@ final class GitDetectionTests: XCTestCase {
         clearPersistedRoot()
         HUDPreferences.setAutoPersist(true)
 #if os(macOS)
-        scopedResources.removeAll()
-        if let repo = locateRepoRoot() {
-            _ = allowSecurityScopedAccess(to: repo)
+        MainActor.assumeIsolated {
+            resetSecurityScopedAccess()
+            if let repo = locateRepoRoot() {
+                _ = allowSecurityScopedAccess(to: repo)
+            }
         }
 #endif
     }
 
     override func tearDown() {
 #if os(macOS)
-        scopedResources.forEach { $0.stopAccessingSecurityScopedResource() }
-        scopedResources.removeAll()
+        MainActor.assumeIsolated {
+            resetSecurityScopedAccess()
+        }
 #endif
         clearPersistedRoot()
         HUDPreferences.setAutoPersist(true)
         super.tearDown()
     }
-
-#if os(macOS)
-    @discardableResult
-    private func allowSecurityScopedAccess(to url: URL, file: StaticString = #file, line: UInt = #line) -> URL {
-        do {
-            let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-            var stale = false
-            let scoped = try URL(resolvingBookmarkData: bookmark, options: [.withSecurityScope], relativeTo: nil, bookmarkDataIsStale: &stale)
-            if !scoped.startAccessingSecurityScopedResource() {
-                XCTFail("Failed to start security scope for \(url.path)", file: file, line: line)
-            }
-            scopedResources.append(scoped)
-            return scoped
-        } catch {
-            XCTFail("Unable to create security scope for \(url.path): \(error)", file: file, line: line)
-            return url
-        }
-    }
-#else
-    @discardableResult
-    private func allowSecurityScopedAccess(to url: URL, file: StaticString = #file, line: UInt = #line) -> URL { url }
-#endif
 
     func testBranchDetectionViaSetProjectRoot() async throws {
         guard let repo = locateRepoRoot() else {
@@ -555,33 +535,4 @@ final class GitDetectionTests: XCTestCase {
         XCTAssertTrue(model.debugRefWatcherActive)
     }
     #endif
-}
-
-private func locateRepoRoot(from filePath: String = #filePath) -> URL? {
-    var dir = URL(fileURLWithPath: filePath).deletingLastPathComponent()
-    let fm = FileManager.default
-    for _ in 0..<12 {
-        let dotGit = dir.appendingPathComponent(".git")
-        var isDir: ObjCBool = false
-        if fm.fileExists(atPath: dotGit.path, isDirectory: &isDir) { return dir }
-        let parent = dir.deletingLastPathComponent()
-        if parent.path == dir.path { break }
-        dir = parent
-    }
-    return nil
-}
-
-private func clearPersistedRoot() {
-    HUDPreferences.clearPersistedRoot()
-}
-
-@MainActor
-private func waitForCondition(_ message: String, timeout: TimeInterval = 2.0, predicate: @escaping () -> Bool) async throws {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if predicate() { return }
-        try await Task.sleep(nanoseconds: 50_000_000)
-    }
-    if predicate() { return }
-    XCTFail(message)
 }
