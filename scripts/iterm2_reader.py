@@ -24,8 +24,16 @@ import sys
 import os
 
 # Add bundled Python packages to path if they exist
+# When run from app bundle: /path/to/App.app/Contents/Resources/iterm2_reader.py
+# Bundled packages at: /path/to/App.app/Contents/Resources/Python/lib/python/site-packages
 script_dir = os.path.dirname(os.path.abspath(__file__))
-bundled_packages = os.path.join(os.path.dirname(script_dir), "Resources", "Python", "lib", "python", "site-packages")
+bundled_packages = os.path.join(script_dir, "Python", "lib", "python", "site-packages")
+
+# Also try project structure for dev mode
+if not os.path.exists(bundled_packages):
+    project_root = os.path.dirname(script_dir)  # Up from scripts/
+    bundled_packages = os.path.join(project_root, "Resources", "Python", "lib", "python", "site-packages")
+
 if os.path.exists(bundled_packages):
     sys.path.insert(0, bundled_packages)
 
