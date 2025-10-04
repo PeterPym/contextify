@@ -116,16 +116,29 @@ final class TerminalContentReader {
     log.info("Reading from app: \(frontmostApp.localizedName ?? "unknown", privacy: .public) (Bundle: \(bundleID, privacy: .public))")
     NSLog("🔥 Reading from: \(frontmostApp.localizedName ?? "unknown") - Bundle: \(bundleID)")
 
-    // Use Python API for iTerm2 with AppleScript fallback
+    // Use daemon for iTerm2 with fallback to legacy Python reader
     if bundleID == "com.googlecode.iterm2" {
-      NSLog("🔥 Using Python API method for iTerm2")
+      // Ensure daemon is running
+      await ITerm2DaemonClient.shared.ensureRunning()
 
-      switch await ITerm2PythonReader().readTerminalContent() {
+      // Try daemon first (fast path)
+      switch await ITerm2DaemonClient.shared.getContent(maxLines: 100) {
       case .success(let content):
+        NSLog("🔥 ✅ Got content from daemon: \(content.count) chars")
         return content
+
       case .failure(let error):
-        log.error("Python reader failed: \(error.description, privacy: .public)")
-        return readFromITerm2UsingAppleScript()
+        NSLog("🔥 ⚠️ Daemon failed: \(error), falling back to legacy")
+        log.warning("Daemon failed: \(error.description, privacy: .public), falling back")
+
+        // Fallback: Legacy Python reader (process-per-request)
+        switch await ITerm2PythonReader().readTerminalContent() {
+        case .success(let content):
+          return content
+        case .failure(let readerError):
+          log.error("Legacy Python reader failed: \(readerError.description, privacy: .public)")
+          return readFromITerm2UsingAppleScript()
+        }
       }
     }
 
