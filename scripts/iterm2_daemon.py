@@ -74,8 +74,8 @@ async def read_exact(reader: asyncio.StreamReader, n: int, timeout: float) -> by
 async def read_framed_json(reader: asyncio.StreamReader, timeout: float) -> Dict[str, Any]:
     hdr = await read_exact(reader, 4, timeout)
     ln = struct.unpack(">I", hdr)[0]
-    if ln > MAX_REQ:
-        raise ValueError(f"payload_too_large:{ln}")
+    if ln == 0 or ln > MAX_REQ:
+        raise ValueError(f"bad_length:{ln}")
     body = await read_exact(reader, ln, timeout)
     return json.loads(body.decode("utf-8", errors="replace"))
 
@@ -158,6 +158,7 @@ class Daemon:
             "iterm2_down": False,
             "health_probes": 0,
             "health_failures": 0,
+            "last_health_attempt_ms": 0,
         }
 
     # ---- setup helpers -------------------------------------------------------
@@ -199,13 +200,20 @@ class Daemon:
     # ---- health monitor ------------------------------------------------------
     async def health_monitor(self) -> None:
         while self.running:
-            base = HEALTH_BASE_INTERVAL_S * (2 ** min(self.health_fail_streak, 3))
+            capped = min(self.health_fail_streak, 3)
+            base = HEALTH_BASE_INTERVAL_S * (2 ** capped)
             sleep_for = base + random.uniform(-5, 5)
             await asyncio.sleep(max(10, sleep_for))
             if not self.running:
                 break
 
+            now_ms = int(time.time() * 1000)
             self.metrics["health_probes"] += 1
+            last = self.metrics.get("last_health_attempt_ms", 0)
+            if self.health_fail_streak > 0 and (now_ms - last) > 600_000:
+                slog("INFO", "health_streak_reset_timeout")
+                self.health_fail_streak = 0
+            self.metrics["last_health_attempt_ms"] = now_ms
             try:
                 async with self.iterm_lock:
                     if not self.iterm_app or not self.conn_healthy:
@@ -418,7 +426,9 @@ class Daemon:
         if not statmod.S_ISSOCK(st.st_mode) or st.st_uid != os.getuid():
             raise RuntimeError("socket_security_failure")
 
+        discovery_written = False
         self._atomic_write_discovery(self.socket_path)
+        discovery_written = True
         slog("INFO", "daemon_started", socket=self.socket_path, pid=os.getpid())
         self.running = True
 
@@ -435,11 +445,12 @@ class Daemon:
                     os.unlink(self.socket_path)
             except Exception as e:
                 slog("WARN", "socket_cleanup_failed", err=str(e))
-            try:
-                if self.discovery_path.exists():
-                    self.discovery_path.unlink()
-            except Exception as e:
-                slog("WARN", "discovery_cleanup_failed", err=str(e))
+            if discovery_written:
+                try:
+                    if self.discovery_path.exists():
+                        self.discovery_path.unlink()
+                except Exception as e:
+                    slog("WARN", "discovery_cleanup_failed", err=str(e))
             slog("INFO", "daemon_stopped")
 
 
