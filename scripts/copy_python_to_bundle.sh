@@ -10,8 +10,12 @@ if [ -z "$BUILT_PRODUCTS_DIR" ] || [ -z "$CONTENTS_FOLDER_PATH" ]; then
     exit 0
 fi
 
+# Find the actual project root (one level up from Xcode project folder)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
 BUNDLE_RESOURCES="$BUILT_PRODUCTS_DIR/$CONTENTS_FOLDER_PATH/Resources"
-SOURCE_PYTHON="$PROJECT_DIR/Resources/Python"
+SOURCE_PYTHON="$REPO_ROOT/Resources/Python"
 
 echo "📦 Copying bundled Python dependencies to app bundle..."
 echo "   Source: $SOURCE_PYTHON"
@@ -31,12 +35,12 @@ else
 fi
 
 # Copy Python script
-if [ -f "$PROJECT_DIR/scripts/iterm2_reader.py" ]; then
-    cp "$PROJECT_DIR/scripts/iterm2_reader.py" "$BUNDLE_RESOURCES/"
+if [ -f "$REPO_ROOT/scripts/iterm2_reader.py" ]; then
+    cp "$REPO_ROOT/scripts/iterm2_reader.py" "$BUNDLE_RESOURCES/"
     chmod +x "$BUNDLE_RESOURCES/iterm2_reader.py"
     echo "✅ Copied iterm2_reader.py"
 else
-    echo "❌ ERROR: iterm2_reader.py not found"
+    echo "❌ ERROR: iterm2_reader.py not found at $REPO_ROOT/scripts/iterm2_reader.py"
     exit 1
 fi
 
