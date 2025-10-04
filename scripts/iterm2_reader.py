@@ -20,10 +20,18 @@ Or on error:
 }
 """
 
+import sys
+import os
+
+# Add bundled Python packages to path if they exist
+script_dir = os.path.dirname(os.path.abspath(__file__))
+bundled_packages = os.path.join(os.path.dirname(script_dir), "Resources", "Python", "lib", "python", "site-packages")
+if os.path.exists(bundled_packages):
+    sys.path.insert(0, bundled_packages)
+
 import iterm2
 import asyncio
 import json
-import sys
 
 
 async def get_session_content():
