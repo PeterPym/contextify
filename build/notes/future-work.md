@@ -359,6 +359,108 @@ This document tracks work items for Contextify, organized by priority and catego
 
 ---
 
+## 🟢 Terminal Support Expansion
+
+### Terminal.app Support
+**Priority:** P2 (After iTerm2 polished)
+
+**Current state:**
+- ✅ AppleScript fallback exists for Terminal.app (TerminalContentReader.swift:146-176)
+- ✅ Basic text capture works (slower than daemon, but functional)
+- ❌ Text replacement mode not implemented
+- ❌ Parsing may differ from iTerm2 output format
+- ❌ Not tested/validated as primary use case
+
+**Why Terminal.app is actually easier than iTerm2:**
+1. **No Python dependency** - Native AppleScript API is excellent
+2. **No daemon complexity** - Direct AppleScript calls work fine
+3. **Simpler text manipulation** - AppleScript can directly set terminal content
+4. **Already partially working** - Just needs polish and testing
+
+**Expected performance:**
+- Read latency: 50-100ms (vs iTerm2 daemon's 10ms)
+- Still feels instant to users
+- Much better than 1-2s legacy Python subprocess
+
+**Work required:**
+
+1. **Enhance AppleScript reader:**
+   ```swift
+   // Improve Terminal.app content reading
+   private func readFromTerminalAppUsingAppleScript() -> String? {
+       let script = """
+       tell application "Terminal"
+           get contents of selected tab of front window
+       end tell
+       """
+       return executeAppleScript(script, appName: "Terminal")
+   }
+   ```
+
+2. **Implement text replacement:**
+   ```applescript
+   tell application "Terminal"
+       tell selected tab of front window
+           -- Clear current input (send Ctrl+U)
+           do script (ASCII character 21) in it
+
+           -- Insert new text (don't execute)
+           set contents to "new command text"
+       end tell
+   end tell
+   ```
+
+3. **Parser compatibility:**
+   - Verify ClaudeCodeParser works with Terminal.app output
+   - Terminal.app may format text differently than iTerm2
+   - Test multi-line commands, ANSI colors, etc.
+
+4. **Testing:**
+   - Capture Claude Code input from Terminal.app
+   - Send text back with replace mode
+   - Verify undo/history works
+   - Edge cases: empty prompt, multi-line, backgrounded app
+
+**Acceptance criteria:**
+- [ ] Text capture works in Terminal.app (<100ms P95)
+- [ ] Text replacement clears input before inserting
+- [ ] ClaudeCodeParser extracts input correctly
+- [ ] Undo/history works same as iTerm2
+- [ ] No errors on empty prompts or multi-line input
+- [ ] Preference to set default terminal app (iTerm2 vs Terminal.app)
+
+**Effort:** Small-Medium (1-2 hours)
+**Value:** High (expands user base to all macOS users, not just iTerm2 users)
+
+**Notes:**
+- Terminal.app is the default macOS terminal
+- Many users prefer it for simplicity
+- AppleScript is more reliable than Python across macOS versions
+- Could be implemented in parallel with iTerm2 polish
+
+---
+
+### Other Terminal Emulators
+**Priority:** P3 (Nice to have)
+
+**Potential targets:**
+- **Warp:** Modern terminal with API - May have better integration than AppleScript
+- **Kitty:** GPU-accelerated - Likely needs Accessibility API fallback
+- **Alacritty:** Minimal terminal - Accessibility API only
+- **Hyper:** Electron-based - May support AppleScript or custom protocol
+
+**General approach for unknown terminals:**
+1. Try iTerm2 daemon (only works for iTerm2)
+2. Try Terminal.app AppleScript (works for some)
+3. Fall back to Accessibility API (works for all, but slower and unreliable)
+
+**Effort:** Medium per terminal
+**Value:** Low (iTerm2 + Terminal.app cover 95%+ of users)
+
+**Decision:** Focus on iTerm2 (daemon) and Terminal.app (AppleScript) first. Others can be added based on user demand.
+
+---
+
 **Last updated:** 2025-10-04
 
 ### Window Flashing on Text Capture
