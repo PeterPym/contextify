@@ -116,16 +116,43 @@ final class TerminalContentReader {
     log.info("Reading from app: \(frontmostApp.localizedName ?? "unknown", privacy: .public) (Bundle: \(bundleID, privacy: .public))")
     NSLog("🔥 Reading from: \(frontmostApp.localizedName ?? "unknown") - Bundle: \(bundleID)")
 
-    // Use Python API for iTerm2 with AppleScript fallback
+    // Use daemon for iTerm2 with fallback to legacy Python reader
     if bundleID == "com.googlecode.iterm2" {
-      NSLog("🔥 Using Python API method for iTerm2")
+      // Ensure daemon is running
+      await ITerm2DaemonClient.shared.ensureRunning()
 
-      switch await ITerm2PythonReader().readTerminalContent() {
+      // Wait briefly for daemon to initialize on first start (discovery file race)
+      try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+      // Try daemon first (fast path)
+      switch await ITerm2DaemonClient.shared.getContent(maxLines: 100) {
       case .success(let content):
+        NSLog("🔥 ✅ Got content from daemon: \(content.count) chars")
         return content
+
       case .failure(let error):
-        log.error("Python reader failed: \(error.description, privacy: .public)")
-        return readFromITerm2UsingAppleScript()
+        NSLog("🔥 ❌ Daemon failed: \(error) - CANNOT USE LEGACY (too slow)")
+        log.error("Daemon failed: \(error.description, privacy: .public)")
+
+        // Show user-friendly error alert
+        let alert = NSAlert()
+        alert.messageText = "iTerm2 Daemon Not Available"
+        alert.informativeText = """
+        The fast iTerm2 daemon failed to start: \(error.description)
+
+        This is likely because the Python environment is not bundled in the app.
+
+        Expected: <30ms response time
+        Legacy fallback: 1-2 seconds (unacceptable)
+
+        Please check the daemon logs:
+        ~/Library/Application Support/Contextify/logs/daemon.stderr.log
+        """
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+
+        return nil
       }
     }
 

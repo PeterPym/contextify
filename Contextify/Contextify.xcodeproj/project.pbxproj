@@ -11,6 +11,7 @@
 		D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
 		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
 		D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877B2E90D882008F8118 /* iterm2_reader.py */; };
+		D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877E2E90D884008F811A /* iterm2_daemon.py */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,6 +40,7 @@
 			files = (
 				D4A0392C2E90D9F40049EE02 /* Python in CopyFiles */,
 				D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */,
+			D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -350,6 +352,7 @@
 		D4A773B42E76936800747100 /* ContextifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4D887792E90D85E008F8118 /* Python */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Python; path = ../Resources/Python; sourceTree = "<group>"; };
 		D4D8877B2E90D882008F8118 /* iterm2_reader.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; name = iterm2_reader.py; path = ../scripts/iterm2_reader.py; sourceTree = "<group>"; };
+		D4D8877E2E90D884008F811A /* iterm2_daemon.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; name = iterm2_daemon.py; path = ../scripts/iterm2_daemon.py; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -974,6 +977,7 @@
 			children = (
 				D4A0392B2E90D9AB0049EE02 /* Python */,
 				D4D8877B2E90D882008F8118 /* iterm2_reader.py */,
+			D4D8877E2E90D884008F811A /* iterm2_daemon.py */,
 				D4D887792E90D85E008F8118 /* Python */,
 				D4A7739F2E76936700747100 /* Contextify */,
 				D4A773AD2E76936800747100 /* ContextifyTests */,
