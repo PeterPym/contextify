@@ -28,9 +28,16 @@ if VENV_SITE.exists():
     sys.path.insert(0, str(VENV_SITE))
 else:
     script_dir = Path(__file__).resolve().parent
+    # Try app bundle structure (Resources/iterm2_daemon.py -> Resources/Python/...)
     bundle_site = script_dir / "Python" / "lib" / "python" / "site-packages"
     if bundle_site.exists():
         sys.path.insert(0, str(bundle_site))
+    else:
+        # Try project dev structure (scripts/iterm2_daemon.py -> ../Resources/Python/...)
+        project_root = script_dir.parent
+        dev_site = project_root / "Resources" / "Python" / "lib" / "python" / "site-packages"
+        if dev_site.exists():
+            sys.path.insert(0, str(dev_site))
 
 # ---- Dependencies ------------------------------------------------------------
 try:
