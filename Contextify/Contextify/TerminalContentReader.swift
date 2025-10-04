@@ -121,6 +121,9 @@ final class TerminalContentReader {
       // Ensure daemon is running
       await ITerm2DaemonClient.shared.ensureRunning()
 
+      // Wait briefly for daemon to initialize on first start (discovery file race)
+      try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
       // Try daemon first (fast path)
       switch await ITerm2DaemonClient.shared.getContent(maxLines: 100) {
       case .success(let content):
@@ -128,17 +131,28 @@ final class TerminalContentReader {
         return content
 
       case .failure(let error):
-        NSLog("🔥 ⚠️ Daemon failed: \(error), falling back to legacy")
-        log.warning("Daemon failed: \(error.description, privacy: .public), falling back")
+        NSLog("🔥 ❌ Daemon failed: \(error) - CANNOT USE LEGACY (too slow)")
+        log.error("Daemon failed: \(error.description, privacy: .public)")
 
-        // Fallback: Legacy Python reader (process-per-request)
-        switch await ITerm2PythonReader().readTerminalContent() {
-        case .success(let content):
-          return content
-        case .failure(let readerError):
-          log.error("Legacy Python reader failed: \(readerError.description, privacy: .public)")
-          return readFromITerm2UsingAppleScript()
-        }
+        // Show user-friendly error alert
+        let alert = NSAlert()
+        alert.messageText = "iTerm2 Daemon Not Available"
+        alert.informativeText = """
+        The fast iTerm2 daemon failed to start: \(error.description)
+
+        This is likely because the Python environment is not bundled in the app.
+
+        Expected: <30ms response time
+        Legacy fallback: 1-2 seconds (unacceptable)
+
+        Please check the daemon logs:
+        ~/Library/Application Support/Contextify/logs/daemon.stderr.log
+        """
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+
+        return nil
       }
     }
 

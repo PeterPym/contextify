@@ -64,19 +64,25 @@ actor LaunchAgentManager {
         }
         try fm.copyItem(at: daemonSrc, to: daemonDst)
 
-        guard let venvSrc = Bundle.main.url(forResource: "PythonVenv", withExtension: nil) else {
-            throw NSError(domain: "Contextify", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "bundled PythonVenv missing"])
-        }
-        if fm.fileExists(atPath: venvDir.path) {
-            try? fm.removeItem(at: venvDir)
-        }
-        try fm.copyItem(at: venvSrc, to: venvDir)
-
+        // Check if venv already exists and is valid (e.g., manually installed during dev)
         let pythonBin = venvDir.appendingPathComponent("bin/python3")
-        guard fm.isExecutableFile(atPath: pythonBin.path) else {
-            throw NSError(domain: "Contextify", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "venv python3 not executable at \(pythonBin.path)"])
+        if fm.isExecutableFile(atPath: pythonBin.path) {
+            log.info("Using existing valid venv at \(self.venvDir.path)")
+        } else {
+            // Try to copy from bundle
+            guard let venvSrc = Bundle.main.url(forResource: "PythonVenv", withExtension: nil) else {
+                throw NSError(domain: "Contextify", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "bundled PythonVenv missing and no valid venv exists at \(self.venvDir.path)"])
+            }
+            if fm.fileExists(atPath: venvDir.path) {
+                try? fm.removeItem(at: venvDir)
+            }
+            try fm.copyItem(at: venvSrc, to: venvDir)
+
+            guard fm.isExecutableFile(atPath: pythonBin.path) else {
+                throw NSError(domain: "Contextify", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "venv python3 not executable at \(pythonBin.path)"])
+            }
         }
     }
 
