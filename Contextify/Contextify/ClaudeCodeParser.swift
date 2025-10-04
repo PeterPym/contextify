@@ -18,33 +18,68 @@ enum ClaudeCodeParser {
   /// - Parameter terminalContent: Raw text from terminal (from Accessibility API)
   /// - Returns: Extracted input text, or nil if no valid input found
   static func parseInput(from terminalContent: String) -> String? {
-  let lines = terminalContent.components(separatedBy: .newlines)
+    let lines = terminalContent.components(separatedBy: .newlines)
 
-  NSLog("🔥 Parser: Scanning \(lines.count) lines for '> ' marker")
+    NSLog("🔥 Parser: Scanning \(lines.count) lines for active input section")
 
-  // Find the last occurrence of "> " (most recent input)
-  for (index, line) in lines.reversed().enumerated() {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    // Look for the active input section pattern:
+    // ─────────────────────────
+    // > your input here
+    // ─────────────────────────
+    // ⏵⏵ bypass permissions on
 
-    if trimmed.hasPrefix("> ") {
-      NSLog("🔥 Parser: Found '> ' at line \(lines.count - index): [\(trimmed)]")
-      let input = String(trimmed.dropFirst(2)) // Remove "> "
-      let cleaned = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Scan from bottom to find the status line (⏵⏵), then look above it
+    for (index, line) in lines.reversed().enumerated() {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
 
-      // Only return non-empty input
-      guard !cleaned.isEmpty else {
-        NSLog("🔥 Parser: Line was empty after removing '> ', continuing search...")
-        continue
+      // Found the status line (⏵⏵ bypass permissions on)
+      if trimmed.hasPrefix("⏵") {
+        NSLog("🔥 Parser: Found status line at position \(lines.count - index)")
+
+        // Now look backwards from here for the input section
+        let actualIndex = lines.count - index - 1
+
+        // Check if there's a separator above the status line
+        if actualIndex > 0 {
+          let aboveLine = lines[actualIndex - 1].trimmingCharacters(in: .whitespaces)
+
+          if aboveLine.hasPrefix("─") {
+            NSLog("🔥 Parser: Found bottom separator")
+
+            // Now collect all lines with "> " above this separator
+            var inputLines: [String] = []
+            var foundTopSeparator = false
+
+            for i in stride(from: actualIndex - 2, through: 0, by: -1) {
+              let currentLine = lines[i].trimmingCharacters(in: .whitespaces)
+
+              // Hit top separator - we're done
+              if currentLine.hasPrefix("─") {
+                NSLog("🔥 Parser: Found top separator at line \(i)")
+                foundTopSeparator = true
+                break
+              }
+
+              // Collect input lines
+              if currentLine.hasPrefix("> ") {
+                let input = String(currentLine.dropFirst(2))
+                inputLines.insert(input, at: 0)
+              }
+            }
+
+            if foundTopSeparator && !inputLines.isEmpty {
+              let result = inputLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+              NSLog("🔥 Parser: ✅ Extracted active input: [\(result)]")
+              return result
+            }
+          }
+        }
       }
-
-      NSLog("🔥 Parser: ✅ Extracted: [\(cleaned)]")
-      return cleaned
     }
-  }
 
-  NSLog("🔥 Parser: ❌ No lines starting with '> ' found")
-  return nil
-}
+    NSLog("🔥 Parser: ❌ No active input section found")
+    return nil
+  }
 
   /// Advanced parser supporting multi-line input (future enhancement).
   ///
