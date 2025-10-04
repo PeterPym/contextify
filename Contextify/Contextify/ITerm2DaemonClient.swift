@@ -76,6 +76,8 @@ actor ITerm2DaemonClient {
     func getContent(maxLines: Int = 100, deadlineMs: Int = 500) async -> Result<String, DaemonError> {
         if disabled() { return .failure(.disabled) }
 
+        let safeDeadline = max(100, min(deadlineMs, 2000))
+
         func performOnce() async throws -> String {
             let (fd, _) = try openSocket()
             defer { close(fd) }
@@ -92,7 +94,9 @@ actor ITerm2DaemonClient {
             var one: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout.size(ofValue: one)))
 
-            var timeout = timeval(tv_sec: 0, tv_usec: Int32(deadlineMs) * 1000)
+            let timeoutSec = safeDeadline / 1000
+            let timeoutUsec = Int32((safeDeadline % 1000) * 1000)
+            var timeout = timeval(tv_sec: timeoutSec, tv_usec: timeoutUsec)
             setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
@@ -104,7 +108,7 @@ actor ITerm2DaemonClient {
             }
             guard sent == frame.count else { throw DaemonError.connectFailed }
 
-            let respData = try await readFramed(fd: fd, deadlineMs: deadlineMs)
+            let respData = try await readFramed(fd: fd, deadlineMs: safeDeadline)
             let resp = try JSONDecoder().decode(Response.self, from: respData)
 
             guard (resp.protocol_version ?? 1) == 1 else { throw DaemonError.invalidResponse }
@@ -122,23 +126,23 @@ actor ITerm2DaemonClient {
         do {
             return .success(try await performOnce())
         } catch {
-            _ = try? refreshDiscoveryMtime()
+            _ = refreshDiscoveryMtime()
             do { return .success(try await performOnce()) }
             catch let err as DaemonError { return .failure(err) }
             catch { return .failure(.invalidResponse) }
         }
     }
 
-    private func refreshDiscoveryMtime() throws -> Date? {
-        let attrs = try FileManager.default.attributesOfItem(atPath: discoveryURL.path)
-        if let mtime = attrs[.modificationDate] as? Date {
-            if let last = lastDiscoveryMtime, mtime > last {
-                log.info("Discovery file updated, daemon likely restarted")
-            }
-            lastDiscoveryMtime = mtime
-            return mtime
+    private func refreshDiscoveryMtime() -> Date? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: discoveryURL.path),
+              let mtime = attrs[.modificationDate] as? Date else {
+            return nil
         }
-        return nil
+        if let last = lastDiscoveryMtime, mtime > last {
+            log.info("Discovery file updated, daemon likely restarted")
+        }
+        lastDiscoveryMtime = mtime
+        return mtime
     }
 
     /// Open Unix socket connection to daemon.
@@ -149,18 +153,31 @@ actor ITerm2DaemonClient {
 
         var attempts = 0
         var socketPath: String?
+        var currentMtime: Date?
         while attempts < 3 {
-            if let content = try? String(contentsOf: discoveryURL, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
-                socketPath = content
-                break
+            do {
+                let attrs = try FileManager.default.attributesOfItem(atPath: discoveryURL.path)
+                currentMtime = attrs[.modificationDate] as? Date
+                let content = try String(contentsOf: discoveryURL, encoding: .utf8)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !content.isEmpty {
+                    socketPath = content
+                    break
+                }
+            } catch {
+                // fall through to retry
             }
             attempts += 1
-            usleep(10_000) // 10ms
+            usleep(10_000)
         }
 
         guard let path = socketPath else { throw DaemonError.discoveryMissing }
-        _ = try? refreshDiscoveryMtime()
+        if let mtime = currentMtime {
+            if let last = lastDiscoveryMtime, mtime > last {
+                log.info("Discovery file updated, daemon likely restarted")
+            }
+            lastDiscoveryMtime = mtime
+        }
 
         var sb = stat()
         guard lstat(path, &sb) == 0,

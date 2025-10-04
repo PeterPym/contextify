@@ -29,6 +29,7 @@ actor LaunchAgentManager {
     /// Copies daemon script and venv, writes plist, bootstraps agent.
     func installIfNeeded() async throws {
         try createDirs()
+        rotateLogsIfNeeded()
         try copyDaemonAndVenvIfNeeded()
         try writePlist()
         try bootstrapAndEnable()
@@ -100,7 +101,8 @@ actor LaunchAgentManager {
             "StandardErrorPath": stderr,
             "ThrottleInterval": 10,
             "LimitLoadToSessionType": "Aqua",
-            "WorkingDirectory": appSupport.path
+            "Umask": 0o077,
+            "ProcessType": "Background"
         ]
 
         let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
@@ -141,5 +143,21 @@ actor LaunchAgentManager {
                           userInfo: [NSLocalizedDescriptionKey: "launchctl \(args.joined(separator: " ")) failed: \(e)\(o)"])
         }
         return (p.terminationStatus, o)
+    }
+
+    private func rotateLogsIfNeeded() {
+        let fm = FileManager.default
+        let maxBytes: UInt64 = 10 * 1024 * 1024
+        for name in ["daemon.stdout.log", "daemon.stderr.log"] {
+            let logURL = logsDir.appendingPathComponent(name)
+            guard let attrs = try? fm.attributesOfItem(atPath: logURL.path),
+                  let size = attrs[.size] as? UInt64,
+                  size > maxBytes else {
+                continue
+            }
+            let rotated = logsDir.appendingPathComponent("\(name).1")
+            try? fm.removeItem(at: rotated)
+            try? fm.moveItem(at: logURL, to: rotated)
+        }
     }
 }
