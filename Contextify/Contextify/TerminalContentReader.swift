@@ -46,9 +46,13 @@ final class TerminalContentReader {
 
     log.info("Captured terminal content: \(terminalContent.count, privacy: .public) chars")
 
-    // TEMPORARY DEBUG: Log FULL content to see everything
-    NSLog("🔥 ========== FULL TERMINAL CONTENT ==========")
-    NSLog("🔥 \(terminalContent)")
+    // TEMPORARY DEBUG: Log FULL content line-by-line to avoid truncation
+    NSLog("🔥 ========== FULL TERMINAL CONTENT (\(terminalContent.count) chars) ==========")
+    let lines = terminalContent.components(separatedBy: .newlines)
+    NSLog("🔥 Total lines: \(lines.count)")
+    for (i, line) in lines.enumerated() {
+      NSLog("🔥 Line \(i): [\(line)]")
+    }
     NSLog("🔥 ========== END TERMINAL CONTENT ==========")
 
     // Parse Claude Code input
@@ -121,8 +125,6 @@ final class TerminalContentReader {
         return content
       case .failure(let error):
         log.error("Python reader failed: \(error.description, privacy: .public)")
-        NSLog("🔥 Python reader failed: \(error.description)")
-        NSLog("🔥 Falling back to AppleScript for iTerm2")
         return readFromITerm2UsingAppleScript()
       }
     }

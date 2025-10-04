@@ -33,7 +33,8 @@ enum ClaudeCodeParser {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
 
       // Found the status line (⏵⏵ bypass permissions on)
-      if trimmed.hasPrefix("⏵") {
+      // Check both ⏵ (triangle) and also common variants
+      if trimmed.hasPrefix("⏵") || trimmed.contains("⏵⏵") || trimmed.contains("bypass permissions") {
         NSLog("🔥 Parser: Found status line at position \(lines.count - index)")
 
         // Now look backwards from here for the input section
@@ -60,17 +61,28 @@ enum ClaudeCodeParser {
                 break
               }
 
-              // Collect input lines
-              if currentLine.hasPrefix("> ") {
-                let input = String(currentLine.dropFirst(2))
-                inputLines.insert(input, at: 0)
+              // Extract input: line starts with > followed by any char
+              if currentLine.hasPrefix(">") && currentLine.count > 1 {
+                // Just grab everything after position 2 (skip > and the next char which is the space)
+                let startIndex = currentLine.index(currentLine.startIndex, offsetBy: 2)
+                if startIndex < currentLine.endIndex {
+                  let input = String(currentLine[startIndex...])
+                  NSLog("🔥 Parser: ✅ Extracted input from line \(i): [\(input)]")
+                  inputLines.insert(input, at: 0)
+                }
               }
             }
 
             if foundTopSeparator && !inputLines.isEmpty {
               let result = inputLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-              NSLog("🔥 Parser: ✅ Extracted active input: [\(result)]")
-              return result
+
+              // Only return if there's actual content (not just empty "> ")
+              if !result.isEmpty {
+                NSLog("🔥 Parser: ✅ Extracted active input: [\(result)]")
+                return result
+              } else {
+                NSLog("🔥 Parser: Input section was empty, continuing search...")
+              }
             }
           }
         }

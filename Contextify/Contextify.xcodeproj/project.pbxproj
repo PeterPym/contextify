@@ -33,14 +33,14 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		D4D887782E90D7EE008F8118 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 8;
+			buildActionMask = 12;
 			dstPath = "";
 			dstSubfolderSpec = 7;
 			files = (
 				D4A0392C2E90D9F40049EE02 /* Python in CopyFiles */,
 				D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */,
 			);
-			runOnlyForDeploymentPostprocessing = 1;
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -999,10 +999,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D4A773BE2E76936800747100 /* Build configuration list for PBXNativeTarget "Contextify" */;
 			buildPhases = (
+				D4D887782E90D7EE008F8118 /* CopyFiles */,
 				D4A773992E76936700747100 /* Sources */,
 				D4A7739A2E76936700747100 /* Frameworks */,
 				D4A7739B2E76936700747100 /* Resources */,
-				D4D887782E90D7EE008F8118 /* CopyFiles */,
 			);
 			buildRules = (
 			);
@@ -1306,7 +1306,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = J8P5B23FK7;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
@@ -1342,7 +1342,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = J8P5B23FK7;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;

@@ -75,7 +75,24 @@ async def get_session_content():
                 "details": "No active session in current tab"
             }
 
-        # Get screen contents (visible + scrollback)
+        # Try to get selection first (captures active input buffer)
+        try:
+            selection = await session.async_get_selection()
+            selected_text = await session.async_get_selection_text()
+
+            if selected_text and selected_text.strip():
+                return {
+                    "success": True,
+                    "content": selected_text,
+                    "line_count": selected_text.count('\n') + 1,
+                    "session_name": session.name if hasattr(session, 'name') else None,
+                    "source": "selection"
+                }
+        except (AttributeError, TypeError):
+            # Selection API not available or no selection
+            pass
+
+        # Fallback: Get screen contents (visible + scrollback)
         screen = await session.async_get_screen_contents()
 
         # Extract all lines
@@ -90,7 +107,8 @@ async def get_session_content():
             "success": True,
             "content": content,
             "line_count": len(lines),
-            "session_name": session.name if hasattr(session, 'name') else None
+            "session_name": session.name if hasattr(session, 'name') else None,
+            "source": "screen_contents"
         }
 
     except ConnectionRefusedError as e:
