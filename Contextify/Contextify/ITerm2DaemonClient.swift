@@ -3,7 +3,8 @@ import OSLog
 import Darwin
 
 /// Client for communicating with the long-running iTerm2 daemon via Unix socket.
-/// Implements length-prefixed JSON protocol with request IDs and timeout enforcement.
+/// Implements length-prefixed JSON protocol with request IDs, retries, and
+/// additional socket hardening.
 actor ITerm2DaemonClient {
     static let shared = ITerm2DaemonClient()
 
@@ -24,8 +25,9 @@ actor ITerm2DaemonClient {
             case .connectFailed: return "connect failed"
             case .requestTimeout: return "request timeout"
             case .invalidResponse: return "invalid response"
-            case .daemonError(let e, let d):
-                return "daemon error: \(e)\(d.map { " (\($0))" } ?? "")"
+            case .daemonError(let error, let details):
+                let suffix = details.map { " (\($0))" } ?? ""
+                return "daemon error: \(error)\(suffix)"
             }
         }
     }
@@ -42,12 +44,15 @@ actor ITerm2DaemonClient {
         let connection_healthy: Bool?
         let iterm2_down: Bool?
         let uptime_ms: Int?
+        let protocol_version: Int?
+        let truncated: Bool?
     }
 
     private let log = Logger(subsystem: "dev.contextify", category: "iTerm2Daemon")
     private let discoveryURL: URL = FileManager.default
         .homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Contextify/run/daemon.path")
+    private var lastDiscoveryMtime: Date?
 
     private func disabled() -> Bool {
         UserDefaults.standard.bool(forKey: "DisableDaemonMode")
@@ -64,94 +69,126 @@ actor ITerm2DaemonClient {
         }
     }
 
-    /// Request terminal content from the daemon.
+    /// Request terminal content from the daemon with bounded retries.
     /// - Parameters:
-    ///   - maxLines: Maximum number of lines to retrieve (default 100)
+    ///   - maxLines: Maximum number of lines to retrieve (default 100, clamped to 1...10_000)
     ///   - deadlineMs: Timeout in milliseconds (default 500)
-    /// - Returns: Result with content string or error
     func getContent(maxLines: Int = 100, deadlineMs: Int = 500) async -> Result<String, DaemonError> {
         if disabled() { return .failure(.disabled) }
 
-        do {
+        func performOnce() async throws -> String {
             let (fd, _) = try openSocket()
             defer { close(fd) }
 
-            let reqID = UUID().uuidString
-            let req: [String: Any] = ["id": reqID, "command": "get_content", "max_lines": maxLines]
-            let payload = try JSONSerialization.data(withJSONObject: req)
-            var len = UInt32(payload.count).bigEndian
-            var header = Data(bytes: &len, count: 4)
-            header.append(payload)
+            let requestID = UUID().uuidString
+            let safeLines = max(1, min(maxLines, 10_000))
+            let request: [String: Any] = ["id": requestID, "command": "get_content", "max_lines": safeLines]
+            let payload = try JSONSerialization.data(withJSONObject: request)
 
-            // Set SO_NOSIGPIPE to prevent SIGPIPE on broken connection
+            var length = UInt32(payload.count).bigEndian
+            var frame = Data(bytes: &length, count: 4)
+            frame.append(payload)
+
             var one: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout.size(ofValue: one)))
 
-            // Send request
-            let sent = header.withUnsafeBytes { ptr in
+            var timeout = timeval(tv_sec: 0, tv_usec: Int32(deadlineMs) * 1000)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+
+            var flags = fcntl(fd, F_GETFD)
+            if flags != -1 { _ = fcntl(fd, F_SETFD, flags | FD_CLOEXEC) }
+
+            let sent = frame.withUnsafeBytes { ptr in
                 Darwin.send(fd, ptr.baseAddress!, ptr.count, 0)
             }
-            guard sent == header.count else { throw DaemonError.connectFailed }
+            guard sent == frame.count else { throw DaemonError.connectFailed }
 
-            // Read response with timeout
             let respData = try await readFramed(fd: fd, deadlineMs: deadlineMs)
             let resp = try JSONDecoder().decode(Response.self, from: respData)
 
+            guard (resp.protocol_version ?? 1) == 1 else { throw DaemonError.invalidResponse }
             guard resp.success, let content = resp.content else {
                 throw DaemonError.daemonError(resp.error ?? "unknown", details: resp.details)
             }
 
-            if let ms = resp.latency_ms {
-                log.debug("daemon \(ms, privacy: .public) ms source=\(resp.source ?? "n/a")")
+            if let latency = resp.latency_ms {
+                log.debug("daemon \(latency, privacy: .public) ms source=\(resp.source ?? "n/a") truncated=\(resp.truncated == true)")
             }
 
-            return .success(content)
-        } catch let e as DaemonError {
-            return .failure(e)
+            return content
+        }
+
+        do {
+            return .success(try await performOnce())
         } catch {
-            return .failure(.invalidResponse)
+            _ = try? refreshDiscoveryMtime()
+            do { return .success(try await performOnce()) }
+            catch let err as DaemonError { return .failure(err) }
+            catch { return .failure(.invalidResponse) }
         }
     }
 
-    // MARK: - Private helpers
+    private func refreshDiscoveryMtime() throws -> Date? {
+        let attrs = try FileManager.default.attributesOfItem(atPath: discoveryURL.path)
+        if let mtime = attrs[.modificationDate] as? Date {
+            if let last = lastDiscoveryMtime, mtime > last {
+                log.info("Discovery file updated, daemon likely restarted")
+            }
+            lastDiscoveryMtime = mtime
+            return mtime
+        }
+        return nil
+    }
 
     /// Open Unix socket connection to daemon.
-    /// Validates socket exists and is owned by current user.
     private func openSocket() throws -> (Int32, String) {
         guard FileManager.default.fileExists(atPath: discoveryURL.path) else {
             throw DaemonError.discoveryMissing
         }
 
-        guard let path = try? String(contentsOf: discoveryURL, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !path.isEmpty else {
-            throw DaemonError.discoveryMissing
+        var attempts = 0
+        var socketPath: String?
+        while attempts < 3 {
+            if let content = try? String(contentsOf: discoveryURL, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty {
+                socketPath = content
+                break
+            }
+            attempts += 1
+            usleep(10_000) // 10ms
         }
 
-        // Validate socket file with lstat
+        guard let path = socketPath else { throw DaemonError.discoveryMissing }
+        _ = try? refreshDiscoveryMtime()
+
         var sb = stat()
-        guard lstat(path, &sb) == 0, (sb.st_mode & S_IFMT) == S_IFSOCK else {
+        guard lstat(path, &sb) == 0,
+              (sb.st_mode & S_IFMT) == S_IFSOCK,
+              sb.st_uid == getuid() else {
             throw DaemonError.socketInvalid
         }
 
-        // Create socket
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw DaemonError.connectFailed }
 
-        // Connect to Unix socket
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
+        let maxLen = MemoryLayout.size(ofValue: addr.sun_path)
+        guard path.utf8.count < maxLen else {
+            close(fd)
+            throw DaemonError.connectFailed
+        }
         withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
             path.withCString { strcpy(ptr, $0) }
         }
 
-        let res = withUnsafePointer(to: &addr) { aptr in
-            aptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-
-        guard res == 0 else {
+        guard result == 0 else {
             close(fd)
             throw DaemonError.connectFailed
         }
@@ -159,13 +196,11 @@ actor ITerm2DaemonClient {
         return (fd, path)
     }
 
-    /// Read length-prefixed JSON response with timeout.
-    /// Implements proper partial read handling.
+    /// Read length-prefixed JSON response with timeout and partial read handling.
     private func readFramed(fd: Int32, deadlineMs: Int) async throws -> Data {
-        try await withThrowingTaskGroup(of: Data.self) { group in
-            // Task 1: Read data
+        let maxResp = 256 * 1024
+        return try await withThrowingTaskGroup(of: Data.self) { group in
             group.addTask {
-                // Read 4-byte length header
                 var lenBuf = Data(count: 4)
                 var readBytes = 0
                 while readBytes < 4 {
@@ -176,23 +211,21 @@ actor ITerm2DaemonClient {
                     readBytes += r
                 }
 
-                let n = lenBuf.withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
+                let length = lenBuf.withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
+                guard length <= maxResp else { throw DaemonError.invalidResponse }
 
-                // Read body
-                var body = Data(count: Int(n))
+                var body = Data(count: Int(length))
                 var got = 0
-                while got < Int(n) {
+                while got < Int(length) {
                     let r = body.withUnsafeMutableBytes { ptr in
-                        Darwin.recv(fd, ptr.baseAddress!.advanced(by: got), Int(n) - got, 0)
+                        Darwin.recv(fd, ptr.baseAddress!.advanced(by: got), Int(length) - got, 0)
                     }
                     guard r > 0 else { throw DaemonError.invalidResponse }
                     got += r
                 }
-
                 return body
             }
 
-            // Task 2: Timeout
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(deadlineMs) * 1_000_000)
                 throw DaemonError.requestTimeout

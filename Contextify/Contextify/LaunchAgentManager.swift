@@ -53,7 +53,6 @@ actor LaunchAgentManager {
     private func copyDaemonAndVenvIfNeeded() throws {
         let fm = FileManager.default
 
-        // Copy daemon script
         guard let daemonSrc = Bundle.main.url(forResource: "iterm2_daemon", withExtension: "py") else {
             throw NSError(domain: "Contextify", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "daemon script missing in bundle"])
@@ -64,26 +63,30 @@ actor LaunchAgentManager {
         }
         try fm.copyItem(at: daemonSrc, to: daemonDst)
 
-        // Copy Python venv if bundled
-        if let venvSrc = Bundle.main.url(forResource: "PythonVenv", withExtension: nil) {
-            if fm.fileExists(atPath: venvDir.path) {
-                try? fm.removeItem(at: venvDir)
-            }
-            try fm.copyItem(at: venvSrc, to: venvDir)
+        guard let venvSrc = Bundle.main.url(forResource: "PythonVenv", withExtension: nil) else {
+            throw NSError(domain: "Contextify", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "bundled PythonVenv missing"])
+        }
+        if fm.fileExists(atPath: venvDir.path) {
+            try? fm.removeItem(at: venvDir)
+        }
+        try fm.copyItem(at: venvSrc, to: venvDir)
+
+        let pythonBin = venvDir.appendingPathComponent("bin/python3")
+        guard fm.isExecutableFile(atPath: pythonBin.path) else {
+            throw NSError(domain: "Contextify", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "venv python3 not executable at \(pythonBin.path)"])
         }
     }
 
     private func writePlist() throws {
-        // Determine Python executable path
-        let venvPython = venvDir.appendingPathComponent("bin/python3")
-        let pythonPath: String
-        if FileManager.default.fileExists(atPath: venvPython.path) {
-            pythonPath = venvPython.path
-        } else {
-            // Fallback to system python3
-            pythonPath = "/usr/bin/python3"
+        let pythonBin = venvDir.appendingPathComponent("bin/python3")
+        guard FileManager.default.isExecutableFile(atPath: pythonBin.path) else {
+            throw NSError(domain: "Contextify", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "bundled Python venv missing or not executable"])
         }
 
+        let pythonPath = pythonBin.path
         let scriptPath = scriptsDir.appendingPathComponent("iterm2_daemon.py").path
         let stdout = logsDir.appendingPathComponent("daemon.stdout.log").path
         let stderr = logsDir.appendingPathComponent("daemon.stderr.log").path
@@ -95,7 +98,9 @@ actor LaunchAgentManager {
             "KeepAlive": ["Crashed": true, "SuccessfulExit": false],
             "StandardOutPath": stdout,
             "StandardErrorPath": stderr,
-            "ThrottleInterval": 10
+            "ThrottleInterval": 10,
+            "LimitLoadToSessionType": "Aqua",
+            "WorkingDirectory": appSupport.path
         ]
 
         let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
@@ -103,16 +108,22 @@ actor LaunchAgentManager {
     }
 
     private func bootstrapAndEnable() throws {
-        // Check if already bootstrapped
-        let listResult = try? run("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"])
-        if listResult?.0 == 0 {
+        let uid = getuid()
+        let domain = "gui/\(uid)"
+
+        let whoami = try? run("/usr/bin/id", ["-u"]).1.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard whoami == "\(uid)" else {
+            throw NSError(domain: "Contextify", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "UID mismatch: expected \(uid) got \(whoami ?? "nil")"])
+        }
+
+        if (try? run("/bin/launchctl", ["print", "\(domain)/\(label)"]).0) == 0 {
             log.info("LaunchAgent already bootstrapped")
             return
         }
 
-        // Bootstrap and enable
-        try run("/bin/launchctl", ["bootstrap", "gui/\(getuid())", plistURL.path])
-        try run("/bin/launchctl", ["enable", "gui/\(getuid())/\(label)"])
+        try run("/bin/launchctl", ["bootstrap", domain, plistURL.path])
+        try run("/bin/launchctl", ["enable", "\(domain)/\(label)"])
     }
 
     @discardableResult
