@@ -74,6 +74,17 @@ PY
 * Run the venv creation before `xcodebuild`.
 * Cache `dist/PythonVenv` keyed by your `requirements.lock` hash.
 
+#### Local Development
+
+To run the daemon against dev site-packages without installing the bundled venv:
+
+```bash
+export CONTEXTIFY_DEV=1
+python3 scripts/iterm2_daemon.py
+```
+
+The daemon searches `scripts/Python/lib/python/site-packages` and `Resources/Python/lib/python/site-packages` when `CONTEXTIFY_DEV` is set.
+
 ---
 
 ## Next Steps (Ideas)
