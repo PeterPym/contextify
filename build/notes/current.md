@@ -44,6 +44,36 @@ Fallback chain:
 - `Contextify/Contextify/ITerm2DaemonClient.swift` - Unix socket client
 - `Contextify/Contextify/TerminalContentReader.swift` - Integration (modified)
 
+### Build Requirements
+
+#### Python venv packaging (one-time per dependency change)
+```bash
+# Create isolated venv for bundling
+rm -rf dist/PythonVenv
+python3 -m venv dist/PythonVenv
+
+# Install pinned dependencies
+dist/PythonVenv/bin/python -m pip install --upgrade pip
+dist/PythonVenv/bin/python -m pip install 'iterm2==2.7'  # PIN THIS
+
+# Verify installation
+dist/PythonVenv/bin/python - <<'PY'
+import iterm2
+print("iterm2", iterm2.__version__)
+PY
+```
+
+#### Xcode integration
+
+1. Add `dist/PythonVenv` to the project as a **folder reference**.
+2. Copy Files build phase → **Resources** → set destination **Resources/PythonVenv**.
+3. Ensure LaunchAgent `ProgramArguments` includes `-I -s -E`.
+
+#### CI/CD
+
+* Run the venv creation before `xcodebuild`.
+* Cache `dist/PythonVenv` keyed by your `requirements.lock` hash.
+
 ---
 
 ## Next Steps (Ideas)
