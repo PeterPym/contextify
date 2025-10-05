@@ -61,7 +61,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 640, minHeight: 360)
     }
 
     private var header: some View {
@@ -113,7 +113,7 @@ struct ContentView: View {
                 get: { model.composeText },
                 set: { model.composeText = $0 }
             ))
-            .frame(minHeight: 240)
+            .frame(minHeight: 120)
 
             // Send button
             HStack {
