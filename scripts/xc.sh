@@ -56,6 +56,12 @@ case "$action" in
     rm -rf "$dd"
     ;;
   build|test)
+    if [[ ! -x dist/PythonVenv/bin/python3 ]]; then
+      echo "❌ Missing bundled Python venv at dist/PythonVenv" >&2
+      echo "   Run: python3 -m venv dist/PythonVenv && dist/PythonVenv/bin/python -m pip install --upgrade pip" >&2
+      echo "   Then: dist/PythonVenv/bin/python -m pip install 'iterm2==2.7'" >&2
+      exit 1
+    fi
     run_xcodebuild -project "$proj" -scheme "$scheme" \
       -configuration "$config" -destination "platform=macOS" \
       -derivedDataPath "$dd" "$action"

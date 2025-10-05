@@ -12,6 +12,7 @@
 		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
 		D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877B2E90D882008F8118 /* iterm2_reader.py */; };
 		D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877E2E90D884008F811A /* iterm2_daemon.py */; };
+		C752BFDF244441BEB040F09227F66E4C /* PythonVenv in CopyFiles */ = {isa = PBXBuildFile; fileRef = 0236576BB8DF4ECFB6D4519D3DE91D56 /* PythonVenv */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,13 +41,17 @@
 			files = (
 				D4A0392C2E90D9F40049EE02 /* Python in CopyFiles */,
 				D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */,
-			D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */,
+				D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */,
+				C752BFDF244441BEB040F09227F66E4C /* PythonVenv in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0236576BB8DF4ECFB6D4519D3DE91D56 /* PythonVenv */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PythonVenv; path = ../dist/PythonVenv; sourceTree = "<group>"; };
+		43584A98AE6A48C8B600354BB4041D2D /* LaunchAgentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/LaunchAgentManager.swift; sourceTree = SOURCE_ROOT; };
+		71D15D3226D94598B321C960A30DC387 /* ITerm2DaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/ITerm2DaemonClient.swift; sourceTree = SOURCE_ROOT; };
 		D4A037DE2E90D9AB0049EE02 /* websockets */ = {isa = PBXFileReference; lastKnownFileType = text; path = websockets; sourceTree = "<group>"; };
 		D4A037E02E90D9AB0049EE02 /* _message.abi3.so */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = _message.abi3.so; sourceTree = "<group>"; };
 		D4A037E22E90D9AB0049EE02 /* __init__.cpython-313.pyc */ = {isa = PBXFileReference; lastKnownFileType = file; path = "__init__.cpython-313.pyc"; sourceTree = "<group>"; };
@@ -972,12 +977,23 @@
 			path = ../Resources/Python;
 			sourceTree = "<group>";
 		};
+		DA49BDDF3640459D92526CE7730A5719 /* App Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				43584A98AE6A48C8B600354BB4041D2D /* LaunchAgentManager.swift */,
+				71D15D3226D94598B321C960A30DC387 /* ITerm2DaemonClient.swift */,
+			);
+			name = "App Infrastructure";
+			sourceTree = "<group>";
+		};
 		D4A773942E76936700747100 = {
 			isa = PBXGroup;
 			children = (
+				0236576BB8DF4ECFB6D4519D3DE91D56 /* PythonVenv */,
+				DA49BDDF3640459D92526CE7730A5719 /* App Infrastructure */,
 				D4A0392B2E90D9AB0049EE02 /* Python */,
 				D4D8877B2E90D882008F8118 /* iterm2_reader.py */,
-			D4D8877E2E90D884008F811A /* iterm2_daemon.py */,
+				D4D8877E2E90D884008F811A /* iterm2_daemon.py */,
 				D4D887792E90D85E008F8118 /* Python */,
 				D4A7739F2E76936700747100 /* Contextify */,
 				D4A773AD2E76936800747100 /* ContextifyTests */,
