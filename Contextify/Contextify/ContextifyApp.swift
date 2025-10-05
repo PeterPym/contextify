@@ -13,7 +13,7 @@ struct ContextifyApp: App {
         .environment(model)
         .background(WindowAccessor())
     }
-    .defaultSize(width: 1000, height: 700)
+    .defaultSize(width: 640, height: 360)
     .commands {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
