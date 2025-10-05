@@ -54,17 +54,7 @@ enum ComposeURLRouter {
 
     // Update main window instead of presenting modal
     Task { @MainActor in
-      HUDViewModel.shared.updateComposeText(initialText)
-
-      // Bring main window to front
-      if let window = MainWindowTracker.shared.window {
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-      }
-
-      // Focus the compose textarea
-      try? await Task.sleep(nanoseconds: 20_000_000) // 20ms delay
-      NotificationCenter.default.post(name: .contextifyFocusEditor, object: nil)
+      ComposeWindowManager.shared.present(initialText: initialText, title: title, sendOnSubmit: sendOnSubmit)
     }
   }
 }
