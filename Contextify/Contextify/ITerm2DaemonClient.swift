@@ -100,7 +100,7 @@ actor ITerm2DaemonClient {
             setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
 
-            var flags = fcntl(fd, F_GETFD)
+            let flags = fcntl(fd, F_GETFD)
             if flags != -1 { _ = fcntl(fd, F_SETFD, flags | FD_CLOEXEC) }
 
             let sent = frame.withUnsafeBytes { ptr in
@@ -196,7 +196,7 @@ actor ITerm2DaemonClient {
             close(fd)
             throw DaemonError.connectFailed
         }
-        withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
+        _ = withUnsafeMutablePointer(to: &addr.sun_path.0) { ptr in
             path.withCString { strcpy(ptr, $0) }
         }
 
