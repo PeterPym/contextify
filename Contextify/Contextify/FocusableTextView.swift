@@ -1,10 +1,6 @@
 import AppKit
 import SwiftUI
 
-extension Notification.Name {
-  static let contextifyFocusEditor = Notification.Name("contextifyFocusEditor")
-}
-
 struct FocusableTextView: NSViewRepresentable {
   @Binding var text: String
 

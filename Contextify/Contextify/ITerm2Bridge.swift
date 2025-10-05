@@ -18,6 +18,11 @@ enum ITerm2Bridge {
   private static let log = Logger(subsystem: "dev.contextify", category: "ITerm2")
   private static let iTermBundleID = "com.googlecode.iterm2"
 
+  enum SendMode {
+    case append
+    case replace
+  }
+
   enum BridgeError: LocalizedError {
     case notAuthorized            // TCC denied (-1743)
     case notRunning               // iTerm not found/couldn’t be launched (-600/-1728 path)
@@ -64,7 +69,7 @@ enum ITerm2Bridge {
 
   /// Ensures iTerm2 is available, then delivers `text` to the current session.
   /// Attempts to foreground iTerm2 afterward (may be ignored under SKE).
-  static func send(text: String, newline: Bool) async -> Result<Void, Error> {
+  static func send(text: String, newline: Bool, mode: SendMode = .append) async -> Result<Void, Error> {
     do {
       // 1) Launch (non-activating) or grab the running instance.
       let app = try await ensureITermIsRunning()
@@ -78,6 +83,19 @@ enum ITerm2Bridge {
 
       // 4) AppleScript: read file → ensure window/session → write text.
       let escapedPath = payloadURL.path.replacingOccurrences(of: "\"", with: "\\\"")
+      let clearSequence: String
+      switch mode {
+      case .append:
+        clearSequence = ""
+      case .replace:
+        clearSequence = """
+        write text (ASCII character 1) newline false
+        delay 0.05
+        write text (ASCII character 11) newline false
+        delay 0.05
+        """
+      }
+
       let script = """
       set payload to read POSIX file "\(escapedPath)" as «class utf8»
       tell application id "\(iTermBundleID)"
@@ -85,6 +103,7 @@ enum ITerm2Bridge {
           create window with default profile
         end if
         tell current session of current window
+          \(clearSequence)
           write text payload newline \(newline ? "true" : "false")
         end tell
       end tell

@@ -25,6 +25,7 @@ final class GlobalHotkeyManager {
   private let chordTimeout: TimeInterval = 0.5 // 500ms window for second K
   private let targetKeyCode: CGKeyCode = 40 // K key
   private let targetModifiers: CGEventFlags = [.maskCommand, .maskShift]
+  private let undoKeyCode: CGKeyCode = 6 // Z key
 
   private init() {}
 
@@ -124,6 +125,17 @@ final class GlobalHotkeyManager {
   private func handleKeyDown(event: CGEvent) {
     let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
     let flags = event.flags
+    let relevantFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+    let activeModifiers = flags.intersection(relevantFlags)
+
+    if keyCode == Int64(undoKeyCode), activeModifiers == [.maskCommand] {
+      if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.googlecode.iterm2" {
+        Task { @MainActor in
+          await TerminalUndoManager.shared.performUndo()
+        }
+      }
+      return
+    }
 
     // Check if this is Cmd+Shift+K
     guard keyCode == Int64(targetKeyCode),
@@ -133,9 +145,6 @@ final class GlobalHotkeyManager {
     }
 
     // Filter out extra modifiers (allow only Cmd+Shift, not Cmd+Shift+Ctrl+etc)
-    let relevantFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
-    let activeModifiers = flags.intersection(relevantFlags)
-
     guard activeModifiers == targetModifiers else {
       return
     }

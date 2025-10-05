@@ -40,6 +40,10 @@ struct ContentView: View {
             model.updateGitInfo()
             Task { await refreshSession() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
+            guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
+            presentToast(payload)
+        }
         .alert("Project Root", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
@@ -170,21 +174,29 @@ private extension ContentView {
     }
 
     func sendToTerminal() async {
-        let result = await ITerm2Bridge.send(text: model.composeText, newline: false)
+        let original = model.lastCapturedTerminalText
+        let textToSend = model.composeText
+
+        if let original, !original.isEmpty {
+            TerminalTextHistory.shared.push(original)
+        }
+
+        let result = await ITerm2Bridge.send(text: textToSend, newline: false, mode: .replace)
         switch result {
         case .success:
+            model.lastCapturedTerminalText = textToSend
             model.composeText = ""
-            toastText = "Sent to iTerm2"
-            withAnimation { showToast = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation { showToast = false }
-            }
+            presentToast("Sent to iTerm2 (Cmd+Z to undo)")
         case .failure(let error):
-            toastText = "Failed: \(error.localizedDescription)"
-            withAnimation { showToast = true }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation { showToast = false }
-            }
+            presentToast("Failed: \(error.localizedDescription)")
+        }
+    }
+
+    func presentToast(_ message: String) {
+        toastText = message
+        withAnimation { showToast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation { showToast = false }
         }
     }
 }

@@ -400,6 +400,7 @@ public final class HUDViewModel {
   // Compose state (active as of 2025-10-02)
   public var composeText: String = ""
   public var targetSessionName: String? = nil
+  public var lastCapturedTerminalText: String? = nil
 
   private var branchTimer: Timer? = nil
   private let coalesceQueue = DispatchQueue(label: "dev.contextify.git-coalesce")
@@ -774,6 +775,7 @@ public final class HUDViewModel {
 
   public func updateComposeText(_ text: String) {
     composeText = text
+    lastCapturedTerminalText = text
   }
 
   public func refreshTargetSession() async {
