@@ -230,10 +230,10 @@ enum ITerm2Bridge {
     let line = existingLine ?? ""
     let count = line.count
     guard count > 0 else { return ("", false) }
+    // Ctrl+A (0x01) to move to start, Ctrl+K (0x0B) to clear to end.
     let sequence = """
-          repeat \(count) times
-            write text (ASCII character 8) newline false
-          end repeat
+          write text (ASCII character 1) newline false
+          write text (ASCII character 11) newline false
     """
     return (sequence, false)
   }
