@@ -175,13 +175,14 @@ private extension ContentView {
 
     func sendToTerminal() async {
         let textToSend = model.composeText
-        let currentLine = await TerminalContentReader.shared.captureCurrentLineFast()
 
-        if let currentLine, !currentLine.isEmpty {
+        // Capture current terminal line before sending (for undo history)
+        if let currentLine = await TerminalContentReader.shared.captureCurrentLineFast(),
+           !currentLine.isEmpty {
             TerminalTextHistory.shared.push(currentLine)
         }
 
-        let result = await ITerm2Bridge.send(text: textToSend, newline: false, mode: .replace(existingLine: currentLine))
+        let result = await ITerm2Bridge.send(text: textToSend, newline: false)
         switch result {
         case .success:
             model.lastCapturedTerminalText = textToSend

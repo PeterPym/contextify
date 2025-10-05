@@ -18,11 +18,6 @@ enum ITerm2Bridge {
   private static let log = Logger(subsystem: "dev.contextify", category: "ITerm2")
   private static let iTermBundleID = "com.googlecode.iterm2"
 
-  enum SendMode {
-    case append
-    case replace(existingLine: String?)
-  }
-
   enum BridgeError: LocalizedError {
     case notAuthorized            // TCC denied (-1743)
     case notRunning               // iTerm not found/couldn’t be launched (-600/-1728 path)
@@ -69,7 +64,7 @@ enum ITerm2Bridge {
 
   /// Ensures iTerm2 is available, then delivers `text` to the current session.
   /// Attempts to foreground iTerm2 afterward (may be ignored under SKE).
-  static func send(text: String, newline: Bool, mode: SendMode = .append) async -> Result<Void, Error> {
+  static func send(text: String, newline: Bool) async -> Result<Void, Error> {
     do {
       // 1) Launch (non-activating) or grab the running instance.
       let app = try await ensureITermIsRunning()
@@ -81,9 +76,8 @@ enum ITerm2Bridge {
       let payloadURL = try writePayload(text: text)
       defer { try? FileManager.default.removeItem(at: payloadURL) }
 
-      // 4) AppleScript: read file → ensure window/session → delete → bracketed paste.
+      // 4) AppleScript: read file → ensure window/session → bracketed paste.
       let escapedPath = payloadURL.path.replacingOccurrences(of: "\"", with: "\\\"")
-      let (clearSequence, requiresNewline) = deleteSequence(for: mode)
 
       let script = """
       set payload to read POSIX file "\(escapedPath)" as «class utf8»
@@ -92,12 +86,10 @@ enum ITerm2Bridge {
           create window with default profile
         end if
         tell current session of current window
-          \(clearSequence)
           write text ((ASCII character 27) & "[200~") newline false
           write text payload newline false
           write text ((ASCII character 27) & "[201~") newline false
           \(newline ? "write text \"\" newline true" : "")
-          \(requiresNewline ? "write text \"\" newline true" : "")
         end tell
       end tell
       """
@@ -223,18 +215,5 @@ enum ITerm2Bridge {
   private static func copyToClipboard(_ text: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
-  }
-
-  private static func deleteSequence(for mode: SendMode) -> (String, Bool) {
-    guard case .replace(let existingLine) = mode else { return ("", false) }
-    let line = existingLine ?? ""
-    let count = line.count
-    guard count > 0 else { return ("", false) }
-    let sequence = """
-          repeat \(count) times
-            write text (ASCII character 8) newline false
-          end repeat
-    """
-    return (sequence, false)
   }
 }
