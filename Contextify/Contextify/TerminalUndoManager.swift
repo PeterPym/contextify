@@ -17,7 +17,8 @@ final class TerminalUndoManager {
             return
         }
 
-        let result = await ITerm2Bridge.send(text: entry.text, newline: false)
+        let currentLine = await TerminalContentReader.shared.captureCurrentLineFast()
+        let result = await ITerm2Bridge.send(text: entry.text, newline: false, mode: .replace(existingLine: currentLine))
         switch result {
         case .success:
             HUDViewModel.shared.composeText = entry.text
