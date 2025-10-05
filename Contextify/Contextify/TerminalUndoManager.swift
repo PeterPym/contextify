@@ -17,11 +17,13 @@ final class TerminalUndoManager {
             return
         }
 
-        let result = await ITerm2Bridge.send(text: entry.text, newline: false, mode: .replace)
+        let currentLine = await TerminalContentReader.shared.captureCurrentLineFast()
+        let result = await ITerm2Bridge.send(text: entry.text, newline: false, mode: .replace(existingLine: currentLine))
         switch result {
         case .success:
             HUDViewModel.shared.composeText = entry.text
             HUDViewModel.shared.lastCapturedTerminalText = entry.text
+            NotificationCenter.default.post(name: .contextifyFocusEditor, object: nil)
             NotificationCenter.default.post(
                 name: .contextifyShowToast,
                 object: nil,

@@ -128,11 +128,12 @@ final class GlobalHotkeyManager {
     let relevantFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
     let activeModifiers = flags.intersection(relevantFlags)
 
-    if keyCode == Int64(undoKeyCode), activeModifiers == [.maskCommand] {
-      if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.googlecode.iterm2" {
-        Task { @MainActor in
-          await TerminalUndoManager.shared.performUndo()
-        }
+    if keyCode == Int64(undoKeyCode),
+       activeModifiers == [.maskCommand],
+       TerminalTextHistory.shared.hasEntries,
+       NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.googlecode.iterm2" {
+      Task { @MainActor in
+        await TerminalUndoManager.shared.performUndo()
       }
       return
     }

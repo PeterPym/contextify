@@ -26,12 +26,6 @@ final class TerminalTextHistory {
         if entries.count > maxEntries {
             entries.removeLast(entries.count - maxEntries)
         }
-
-        NotificationCenter.default.post(
-            name: .contextifyShowToast,
-            object: nil,
-            userInfo: [ToastPayloadKey.message: "Saved previous command (Cmd+Z to undo)"]
-        )
     }
 
     func pop() -> Entry? {

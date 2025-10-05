@@ -20,7 +20,7 @@ enum ITerm2Bridge {
 
   enum SendMode {
     case append
-    case replace
+    case replace(existingLine: String?)
   }
 
   enum BridgeError: LocalizedError {
@@ -81,20 +81,9 @@ enum ITerm2Bridge {
       let payloadURL = try writePayload(text: text)
       defer { try? FileManager.default.removeItem(at: payloadURL) }
 
-      // 4) AppleScript: read file → ensure window/session → write text.
+      // 4) AppleScript: read file → ensure window/session → delete → bracketed paste.
       let escapedPath = payloadURL.path.replacingOccurrences(of: "\"", with: "\\\"")
-      let clearSequence: String
-      switch mode {
-      case .append:
-        clearSequence = ""
-      case .replace:
-        clearSequence = """
-        write text (ASCII character 1) newline false
-        delay 0.05
-        write text (ASCII character 11) newline false
-        delay 0.05
-        """
-      }
+      let (clearSequence, requiresNewline) = deleteSequence(for: mode)
 
       let script = """
       set payload to read POSIX file "\(escapedPath)" as «class utf8»
@@ -104,7 +93,11 @@ enum ITerm2Bridge {
         end if
         tell current session of current window
           \(clearSequence)
-          write text payload newline \(newline ? "true" : "false")
+          write text ((ASCII character 27) & "[200~") newline false
+          write text payload newline false
+          write text ((ASCII character 27) & "[201~") newline false
+          \(newline ? "write text \"\" newline true" : "")
+          \(requiresNewline ? "write text \"\" newline true" : "")
         end tell
       end tell
       """
@@ -230,5 +223,18 @@ enum ITerm2Bridge {
   private static func copyToClipboard(_ text: String) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
+  }
+
+  private static func deleteSequence(for mode: SendMode) -> (String, Bool) {
+    guard case .replace(let existingLine) = mode else { return ("", false) }
+    let line = existingLine ?? ""
+    let count = line.count
+    guard count > 0 else { return ("", false) }
+    let sequence = """
+          repeat \(count) times
+            write text (ASCII character 8) newline false
+          end repeat
+    """
+    return (sequence, false)
   }
 }

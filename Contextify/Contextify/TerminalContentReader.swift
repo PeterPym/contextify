@@ -190,6 +190,49 @@ final class TerminalContentReader {
     return executeAppleScript(script, appName: "Terminal")
   }
 
+  func captureCurrentLineFast() async -> String? {
+    guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return nil }
+    let bundleID = frontmostApp.bundleIdentifier ?? "unknown"
+
+    if bundleID == "com.googlecode.iterm2" {
+      await ITerm2DaemonClient.shared.ensureRunning()
+      switch await ITerm2DaemonClient.shared.getContent(maxLines: 4) {
+      case .success(let content):
+        if let parsed = ClaudeCodeParser.parseInput(from: content) {
+          return parsed
+        }
+        return content.components(separatedBy: .newlines).last?.trimmingCharacters(in: .whitespacesAndNewlines)
+      case .failure:
+        if let fallback = readFromITerm2UsingAppleScript() {
+          if let parsed = ClaudeCodeParser.parseInput(from: fallback) {
+            return parsed
+          }
+          return fallback.components(separatedBy: .newlines).last?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
+      }
+    }
+
+    if bundleID == "com.apple.Terminal" {
+      if let text = readFromTerminalAppUsingAppleScript() {
+        if let parsed = ClaudeCodeParser.parseInput(from: text) {
+          return parsed
+        }
+        return text.components(separatedBy: .newlines).last?.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+      return nil
+    }
+
+    if let accessibilityText = readUsingAccessibilityAPI(frontmostApp) {
+      if let parsed = ClaudeCodeParser.parseInput(from: accessibilityText) {
+        return parsed
+      }
+      return accessibilityText.components(separatedBy: .newlines).last?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    return nil
+  }
+
   private func executeAppleScript(_ source: String, appName: String) -> String? {
     var error: NSDictionary?
     guard let scriptObject = NSAppleScript(source: source) else {

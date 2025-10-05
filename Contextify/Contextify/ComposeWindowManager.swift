@@ -12,8 +12,17 @@ final class ComposeWindowManager {
         model.updateComposeText(initialText)
         model.lastCapturedTerminalText = initialText
 
-        guard let window = MainWindowTracker.shared.window else {
-            NotificationCenter.default.post(name: .contextifyFocusEditor, object: nil)
+        var window = MainWindowTracker.shared.window
+        if window == nil {
+            NSApp.activate(ignoringOtherApps: true)
+            if let candidate = NSApp.windows.first {
+                MainWindowTracker.shared.window = candidate
+                window = candidate
+            }
+        }
+
+        guard let window else {
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
 
@@ -30,8 +39,7 @@ final class ComposeWindowManager {
             NSApp.activate(ignoringOtherApps: true)
         }
 
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 20_000_000)
+        DispatchQueue.main.async {
             NotificationCenter.default.post(name: .contextifyFocusEditor, object: nil)
         }
     }
