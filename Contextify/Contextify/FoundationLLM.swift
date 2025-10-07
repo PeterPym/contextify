@@ -121,20 +121,29 @@ actor FoundationLLM {
 }
 
 private extension FoundationLLM {
+    struct PrefixPolicy {
+        let allowed: [String]
+        let fallback: String
+    }
+
     func fallback(for kind: TimelineEntryKind, text: String) -> String {
         let normalized = collapseWhitespace(text)
-        guard !normalized.isEmpty else { return prefix(for: kind) }
-        return "\(prefix(for: kind)) \(normalized)"
+        let policy = prefixPolicy(for: kind)
+        guard !normalized.isEmpty else { return policy.fallback }
+        if policy.allowed.contains(where: { normalized.hasPrefix($0) }) {
+            return normalized
+        }
+        return "\(policy.fallback) \(normalized)"
     }
 
     func sanitize(_ summary: String, kind: TimelineEntryKind) -> String {
         var normalized = collapseWhitespace(summary)
 
-        let requiredPrefix = prefix(for: kind)
+        let policy = prefixPolicy(for: kind)
         if normalized.isEmpty {
-            normalized = requiredPrefix
-        } else if !normalized.hasPrefix(requiredPrefix) {
-            normalized = "\(requiredPrefix) \(normalized)"
+            normalized = policy.fallback
+        } else if !policy.allowed.contains(where: { normalized.hasPrefix($0) }) {
+            normalized = "\(policy.fallback) \(normalized)"
         }
 
         if normalized.count > 110 {
@@ -143,11 +152,27 @@ private extension FoundationLLM {
         return normalized
     }
 
-    func prefix(for kind: TimelineEntryKind) -> String {
+    func prefixPolicy(for kind: TimelineEntryKind) -> PrefixPolicy {
         switch kind {
-        case .user: return "You requested Claude"
-        case .assistant: return "Claude"
-        case .system: return "System"
+        case .user:
+            return PrefixPolicy(
+                allowed: [
+                    "You made",
+                    "You asked",
+                    "You requested Claude"
+                ],
+                fallback: "You requested Claude"
+            )
+        case .assistant:
+            return PrefixPolicy(
+                allowed: ["Claude"],
+                fallback: "Claude"
+            )
+        case .system:
+            return PrefixPolicy(
+                allowed: ["System"],
+                fallback: "System"
+            )
         }
     }
 
@@ -208,9 +233,9 @@ private extension FoundationLLM {
             summary rules:
             - Output ONE sentence starting with “Claude”, ≤110 chars.
             - Use past tense whenever the assistant reports completion (tokens like done/fixed/completed/resolved/built ✅/"finished", etc.).
-            - Use present continuous ONLY for in-progress execution ("is running Bash('pytest -q')").
+            - Use present continuous ONLY for clear in-progress execution (e.g., “is running the test suite”).
             - Otherwise use simple present ("explains", "confirms", "proposes", "asks").
-            - Mention tool names (Write/Edit/Read/Bash) only if the assistant confirms they were executed.
+            - Do not invent tool names. Mention tools (Write/Edit/Read/Bash/etc.) only if the MESSAGE explicitly says they were executed.
             - When the input mentions specific subjects (files, features, bugs), use those concrete nouns instead of vague verbs.
 
             isCompletion rules:
@@ -222,12 +247,12 @@ private extension FoundationLLM {
             → summary: “Claude wrote /tmp/out.md after a successful build.”
             → isCompletion: true
 
-            Input: “Running Bash('pytest -q')… collecting…”
-            → summary: “Claude is running Bash('pytest -q').”
+            Input: “Running unit tests… 38%… collecting results…”
+            → summary: “Claude is running the unit tests.”
             → isCompletion: false
 
-            Input: “Tool calls are skipped; we could use Edit('/foo') later.”
-            → summary: “Claude proposes using displayable-entry counting and notes tool calls are skipped.”
+            Input: “We should review the backfill logic for edge cases.”
+            → summary: “Claude proposes reviewing the backfill logic for edge cases.”
             → isCompletion: false
             """
         case .system:
