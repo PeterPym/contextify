@@ -66,7 +66,7 @@ struct ContextifyApp: App {
         $0.bundleIdentifier == Bundle.main.bundleIdentifier &&
         $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
       }) {
-        existing.activate(options: .activateIgnoringOtherApps)
+        existing.activate()
       }
     }
   }
