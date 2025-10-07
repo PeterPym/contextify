@@ -274,32 +274,45 @@ final class ConversationMonitor {
             }
 
             let newLines: ArraySlice<String>
+            let shouldBackfillLimitedEntries: Bool
             if lastProcessedLine == 0 {
                 // Initial load: Check if timeline is effectively empty (only system messages)
                 let hasNonSystemMessages = entries.contains { $0.kind != .system }
 
                 if !hasNonSystemMessages {
-                    // Timeline is empty, only process last 5 entries to avoid overwhelming the timeline
-                    let startIndex = max(0, lines.count - 5)
-                    newLines = lines[startIndex...]
-                    log.info("🟢 processConversationFile: Initial load (empty timeline), processing last \(newLines.count) entries from \(lines.count) total")
+                    // Timeline is empty, backfill last 5 displayable entries
+                    newLines = lines[...]
+                    shouldBackfillLimitedEntries = true
+                    log.info("🟢 processConversationFile: Initial load (empty timeline), will backfill last 5 displayable entries from \(lines.count) total lines")
                 } else {
                     // Timeline already has content, don't backfill old messages
                     newLines = []
+                    shouldBackfillLimitedEntries = false
                     log.info("🟢 processConversationFile: Initial load (existing timeline), skipping backfill")
                 }
                 lastProcessedLine = lines.count
             } else {
                 // Incremental update: process all new lines
                 newLines = lines[lastProcessedLine...]
+                shouldBackfillLimitedEntries = false
                 lastProcessedLine = lines.count
                 log.info("🟢 processConversationFile: Incremental update, processing \(newLines.count) new lines")
             }
 
             var processedCount = 0
             var skippedCount = 0
+            let entriesBeforeProcessing = entries.count
 
-            for line in newLines {
+            for line in newLines.reversed() {
+                // If backfilling with limit, stop once we have 5 new displayable entries
+                if shouldBackfillLimitedEntries {
+                    let newDisplayableEntries = entries.count - entriesBeforeProcessing
+                    if newDisplayableEntries >= 5 {
+                        log.info("🟢 processConversationFile: Reached 5 displayable entries limit, stopping backfill")
+                        break
+                    }
+                }
+
                 guard let data = line.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     skippedCount += 1
@@ -308,6 +321,13 @@ final class ConversationMonitor {
 
                 await processConversationEntry(json)
                 processedCount += 1
+            }
+
+            // Reverse entries if we were backfilling (since we processed in reverse)
+            if shouldBackfillLimitedEntries, entries.count > entriesBeforeProcessing {
+                let backfilledEntries = entries[entriesBeforeProcessing...]
+                entries.removeLast(backfilledEntries.count)
+                entries.append(contentsOf: backfilledEntries.reversed())
             }
 
             log.info("🟢 processConversationFile: processed \(processedCount) entries, skipped \(skippedCount), total timeline entries now: \(self.entries.count)")
