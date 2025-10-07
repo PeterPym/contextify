@@ -11,7 +11,7 @@ struct TimelineSummaryResult: Sendable {
 }
 
 #if canImport(FoundationModels)
-@available(macOS 26.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *)
+@available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 @Generable(description: "Timeline summary metadata for HUD entries")
 struct GuidedTimelineSummary {
     @Guide(description: "One sentence (≤110 chars) starting with the appropriate prefix.")
@@ -30,8 +30,10 @@ actor FoundationLLM {
 
     func isAvailable() -> Bool {
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            return SystemLanguageModel.default.isAvailable
+        if #available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *) {
+            if case .available = SystemLanguageModel.default.availability {
+                return true
+            }
         }
         #endif
         return false
@@ -51,8 +53,18 @@ actor FoundationLLM {
         }
 
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *) {
-            guard isAvailable() else {
+        if #available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *) {
+            switch SystemLanguageModel.default.availability {
+            case .available:
+                break
+            case .unavailable(let reason):
+                log.info("LLM unavailable: \(String(describing: reason), privacy: .public)")
+                return TimelineSummaryResult(
+                    summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+                    isCompletion: false
+                )
+            @unknown default:
+                log.info("LLM unavailable by unknown reason")
                 return TimelineSummaryResult(
                     summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
                     isCompletion: false
@@ -70,9 +82,10 @@ actor FoundationLLM {
                 let clamped = String(trimmed.prefix(1200))
                 let payloadInput: String
                 if kind == .user, let hint = actionHint?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
-                    payloadInput = "MESSAGE:\n\(clamped)\n\nACTION_HINT:\n\(hint)"
+                    let safeHint = String(hint.prefix(300))
+                    payloadInput = "MESSAGE:\n<<<\(clamped)>>>\n\nACTION_HINT:\n<<<\(safeHint)>>>"
                 } else {
-                    payloadInput = clamped
+                    payloadInput = "MESSAGE:\n<<<\(clamped)>>>"
                 }
 
                 let response = try await session.respond(
@@ -130,7 +143,7 @@ private extension FoundationLLM {
         let normalized = collapseWhitespace(text)
         let policy = prefixPolicy(for: kind)
         guard !normalized.isEmpty else { return policy.fallback }
-        if policy.allowed.contains(where: { normalized.hasPrefix($0) }) {
+        if hasAllowedPrefix(normalized, policy: policy) {
             return normalized
         }
         return "\(policy.fallback) \(normalized)"
@@ -142,7 +155,7 @@ private extension FoundationLLM {
         let policy = prefixPolicy(for: kind)
         if normalized.isEmpty {
             normalized = policy.fallback
-        } else if !policy.allowed.contains(where: { normalized.hasPrefix($0) }) {
+        } else if !hasAllowedPrefix(normalized, policy: policy) {
             normalized = "\(policy.fallback) \(normalized)"
         }
 
@@ -176,11 +189,28 @@ private extension FoundationLLM {
         }
     }
 
+    func hasAllowedPrefix(_ text: String, policy: PrefixPolicy) -> Bool {
+        let lower = text.lowercased()
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "-:;,."))
+        for prefix in policy.allowed {
+            let lowerPrefix = prefix.lowercased()
+            guard lower.hasPrefix(lowerPrefix) else { continue }
+            let boundary = lower.index(lower.startIndex, offsetBy: lowerPrefix.count)
+            if boundary == lower.endIndex {
+                return true
+            }
+            let nextCharacter = lower[boundary]
+            if String(nextCharacter).rangeOfCharacter(from: separators) != nil {
+                return true
+            }
+        }
+        return false
+    }
+
     func hasCompletionSignal(in summary: String) -> Bool {
-        let completionTokens = [
-            "done", "completed", "complete", "fixed", "resolved", "finished", "ready", "shipped",
-            "build succeeded", "wrote", "saved", "applied", "merged", "implemented", "processed",
-            "updated", "ensured", "finalized", "✅"
+        let completionTokens: [Substring] = [
+            "✅", "done", "completed", "finished", "fixed", "resolved", "ready",
+            "build succeeded", "wrote", "saved", "applied", "merged", "shipped", "implemented"
         ]
         let lower = summary.lowercased()
         return completionTokens.contains { lower.contains($0) }

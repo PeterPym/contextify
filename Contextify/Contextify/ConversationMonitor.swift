@@ -11,12 +11,16 @@ final class ConversationMonitor {
     private let log = Logger(subsystem: "dev.contextify", category: "Timeline")
     private let config = MonitorConfig()
     private let conversationResolver = ActiveConversationResolver(providers: [ClaudeTranscriptProvider()])
-    private let affirmativeActionHints: Set<String> = [
-        "yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "sounds good", "go ahead",
-        "proceed", "do it", "please do", "sgtm", "roger", "affirmative", "yeah", "yah"
+    private let affirmativeLexicon: Set<String> = [
+        "yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "sounds", "good", "go", "ahead",
+        "proceed", "do", "it", "please", "sgtm", "roger", "affirmative", "yeah", "yah", "make", "so"
     ]
-    private let negativeActionHints: Set<String> = [
-        "no", "not now", "hold off", "stop", "don't", "do not", "nope", "nah", "cancel", "abort"
+    private let negativeLexicon: Set<String> = [
+        "no", "nope", "nah", "not", "now", "yet", "hold", "off", "stop", "don't", "do", "cancel", "abort"
+    ]
+    private let actionHintCues: [String] = [
+        "would you like me to", "shall i", "i can ", "i will ",
+        "proceed", "change it to", "ensure ", "run ", "fix ", "update ", "refactor ", "implement "
     ]
 
     private(set) var entries: [TimelineEntry] = []
@@ -557,28 +561,62 @@ final class ConversationMonitor {
         guard let lastAssistant = entries.reversed().first(where: { $0.kind == .assistant }) else {
             return nil
         }
-        if let content = lastAssistant.sourceContent, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return content
+        let raw = lastAssistant.sourceContent?.isEmpty == false
+            ? lastAssistant.sourceContent
+            : lastAssistant.detail
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
         }
-        if !lastAssistant.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return lastAssistant.detail
+        return distilledActionHint(from: raw)
+    }
+
+    private func distilledActionHint(from text: String) -> String? {
+        let lines = text.split(whereSeparator: \.isNewline).map(String.init)
+        let candidate = lines.first { line in
+            let lower = line.lowercased()
+            return actionHintCues.contains { lower.contains($0) }
+        } ?? lines.first
+
+        guard var hint = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty else {
+            return nil
         }
-        return nil
+
+        hint = hint.replacingOccurrences(
+            of: "^(yes|no|ok|okay|sure|please)[\\s,:-]*",
+            with: "",
+            options: .regularExpression
+        )
+        hint = hint.replacingOccurrences(
+            of: "[?.!…]+$",
+            with: "",
+            options: .regularExpression
+        )
+
+        let trimmed = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return String(trimmed.prefix(300))
     }
 
     private func shouldUseActionHint(for text: String) -> Bool {
         let normalized = normalizeForActionHint(text)
         guard !normalized.isEmpty else { return false }
-        return affirmativeActionHints.contains(normalized) || negativeActionHints.contains(normalized)
+        let tokens = normalized.split(separator: " ")
+        guard tokens.count <= 3 else { return false }
+        let allAffirmative = tokens.allSatisfy { affirmativeLexicon.contains(String($0)) }
+        let allNegative = tokens.allSatisfy { negativeLexicon.contains(String($0)) }
+        return allAffirmative || allNegative
     }
 
     private func normalizeForActionHint(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        let punctuationTrimmed = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
-        let parts = punctuationTrimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-        let collapsed = parts.joined(separator: " ")
-        return collapsed.lowercased()
+        var normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let punctuation = CharacterSet.punctuationCharacters.union(CharacterSet(charactersIn: "…“”\"'"))
+        normalized = normalized.trimmingCharacters(in: punctuation)
+        normalized = normalized.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+        return normalized.lowercased()
     }
 
     private func ensureSessionStartEntry() {
