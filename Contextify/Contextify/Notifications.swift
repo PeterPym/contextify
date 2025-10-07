@@ -7,4 +7,5 @@ enum ToastPayloadKey {
 extension Notification.Name {
     static let contextifyFocusEditor = Notification.Name("contextifyFocusEditor")
     static let contextifyShowToast = Notification.Name("contextifyShowToast")
+    static let contextifyTimelineManualRefresh = Notification.Name("contextifyTimelineManualRefresh")
 }

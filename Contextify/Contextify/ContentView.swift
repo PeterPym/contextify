@@ -14,31 +14,38 @@ private let uiLog = Logger(subsystem: "dev.contextify", category: "UI")
 
 struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
+    @Environment(ConversationMonitor.self) private var timeline
     @State private var showToast = false
     @State private var toastText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            header
-            Divider()
-            // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-            // Previously here:
-            // - urlEntry: TextField + "Ingest" button for URL ingestion
-            // - IngestDropZone: Drag-and-drop zone for files
-            // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-            // - Session label (e.g., "Session-001")
-            // - Status display / Last output URL
-            //
-            // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-            // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-            composeSection
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                Divider()
+                // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+                // Previously here:
+                // - urlEntry: TextField + "Ingest" button for URL ingestion
+                // - IngestDropZone: Drag-and-drop zone for files
+                // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+                // - Session label (e.g., "Session-001")
+                // - Status display / Last output URL
+                //
+                // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+                // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+                composeSection
+            }
+            .frame(minWidth: 640)
+            .padding(16)
+
+            ConversationTimelineView()
         }
-        .padding(16)
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
         .onAppear {
             model.updateGitInfo()
             Task { await refreshSession() }
+            TimelineIntegration.shared.startMonitoring()
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
@@ -61,7 +68,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 940, minHeight: 360)
     }
 
     private var header: some View {
@@ -113,7 +120,7 @@ struct ContentView: View {
                 get: { model.composeText },
                 set: { model.composeText = $0 }
             ))
-            .frame(minHeight: 240)
+            .frame(minHeight: 120)
 
             // Send button
             HStack {
@@ -187,6 +194,7 @@ private extension ContentView {
             model.lastCapturedTerminalText = textToSend
             model.composeText = ""
             presentToast("Sent to iTerm2 (Cmd+Z to undo)")
+            TimelineIntegration.shared.requestManualRefresh(trigger: .hudSend)
         case .failure(let error):
             presentToast("Failed: \(error.localizedDescription)")
         }
