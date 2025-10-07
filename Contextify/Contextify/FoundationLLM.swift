@@ -170,17 +170,30 @@ private extension FoundationLLM {
         switch kind {
         case .user:
             return """
-            You fill the fields of a TimelineSummary for a developer’s message.
+            You fill the fields of a TimelineSummary for a developer's message.
 
             summary rules:
-            - Output ONE sentence starting with “You requested Claude”, ≤110 chars.
-            - Use past tense.
-            - If the message is a bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
-              → “You requested Claude to proceed as proposed.”
-            - If it’s a bare negative (no/not now/hold off/stop/don’t):
-              → “You requested Claude not to proceed.”
-            - Otherwise, summarize the explicit request in past tense. Mention tools only if explicitly requested.
-            - If ACTION_HINT text is provided, treat it as the action the user is approving or rejecting.
+            - Output ONE sentence, ≤110 chars, past tense.
+            - Choose the appropriate prefix based on message type:
+              • "You made" - user reports completing their own action (e.g., "I've made the change", "I updated the file", "I fixed the bug")
+              • "You asked" - user asks a question (e.g., "What does this do?", "Can you explain?")
+              • "You requested Claude" - user requests Claude to take action (e.g., "Fix this", "Update the parser", "Run tests")
+            - Special cases:
+              • Bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
+                → "You requested Claude to proceed as proposed."
+              • Bare negative (no/not now/hold off/stop/don't):
+                → "You requested Claude not to proceed."
+            - If ACTION_HINT text is provided, treat it as context for affirm/deny messages.
+
+            Examples:
+            Input: "I've made the change to the prompt."
+            → "You made the change to the prompt."
+
+            Input: "Can you explain how this works?"
+            → "You asked how this works."
+
+            Input: "Fix the build warnings"
+            → "You requested Claude to fix the build warnings."
 
             Input format:
             MESSAGE:<newline>user text
@@ -198,7 +211,7 @@ private extension FoundationLLM {
             - Use present continuous ONLY for in-progress execution ("is running Bash('pytest -q')").
             - Otherwise use simple present ("explains", "confirms", "proposes", "asks").
             - Mention tool names (Write/Edit/Read/Bash) only if the assistant confirms they were executed.
-            - Prefer concrete subjects ("backfill logic", "timeline parser") over vague verbs.
+            - When the input mentions specific subjects (files, features, bugs), use those concrete nouns instead of vague verbs.
 
             isCompletion rules:
             - true when the assistant explicitly indicates work is done/completed/fixed/resolved/ready.
