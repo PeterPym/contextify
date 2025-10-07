@@ -275,11 +275,20 @@ final class ConversationMonitor {
 
             let newLines: ArraySlice<String>
             if lastProcessedLine == 0 {
-                // Initial load: only process last 10 entries to avoid overwhelming the timeline
-                let startIndex = max(0, lines.count - 10)
-                newLines = lines[startIndex...]
+                // Initial load: Check if timeline is effectively empty (only system messages)
+                let hasNonSystemMessages = entries.contains { $0.kind != .system }
+
+                if !hasNonSystemMessages {
+                    // Timeline is empty, only process last 5 entries to avoid overwhelming the timeline
+                    let startIndex = max(0, lines.count - 5)
+                    newLines = lines[startIndex...]
+                    log.info("🟢 processConversationFile: Initial load (empty timeline), processing last \(newLines.count) entries from \(lines.count) total")
+                } else {
+                    // Timeline already has content, don't backfill old messages
+                    newLines = []
+                    log.info("🟢 processConversationFile: Initial load (existing timeline), skipping backfill")
+                }
                 lastProcessedLine = lines.count
-                log.info("🟢 processConversationFile: Initial load, processing last \(newLines.count) entries from \(lines.count) total")
             } else {
                 // Incremental update: process all new lines
                 newLines = lines[lastProcessedLine...]

@@ -127,7 +127,7 @@ struct ConversationTimelineView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: monitor.entries.map { $0.id }) { ids in
+            .onChange(of: monitor.entries.map { $0.id }) { _, ids in
                 guard monitor.autoScroll, !ids.isEmpty else { return }
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.3)) {
