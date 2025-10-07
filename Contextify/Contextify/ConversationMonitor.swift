@@ -11,6 +11,13 @@ final class ConversationMonitor {
     private let log = Logger(subsystem: "dev.contextify", category: "Timeline")
     private let config = MonitorConfig()
     private let conversationResolver = ActiveConversationResolver(providers: [ClaudeTranscriptProvider()])
+    private let affirmativeActionHints: Set<String> = [
+        "yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "sounds good", "go ahead",
+        "proceed", "do it", "please do", "sgtm", "roger", "affirmative", "yeah", "yah"
+    ]
+    private let negativeActionHints: Set<String> = [
+        "no", "not now", "hold off", "stop", "don't", "do not", "nope", "nah", "cancel", "abort"
+    ]
 
     private(set) var entries: [TimelineEntry] = []
     private(set) var isCollapsed = false
@@ -350,6 +357,11 @@ final class ConversationMonitor {
         }
         seenMessageUUIDs.insert(uuid)
 
+        if (json["isSidechain"] as? Bool) == true {
+            log.info("🟡 processConversationEntry: skipping sidechain message")
+            return
+        }
+
         guard let type = json["type"] as? String else {
             log.error("🔴 processConversationEntry: no type for uuid=\(uuid, privacy: .public)")
             return
@@ -456,7 +468,7 @@ final class ConversationMonitor {
 
         log.info("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
 
-        let actionHint = latestAssistantActionHint()
+        let actionHint = shouldUseActionHint(for: text) ? latestAssistantActionHint() : nil
         let summaryResult = await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
@@ -552,6 +564,21 @@ final class ConversationMonitor {
             return lastAssistant.detail
         }
         return nil
+    }
+
+    private func shouldUseActionHint(for text: String) -> Bool {
+        let normalized = normalizeForActionHint(text)
+        guard !normalized.isEmpty else { return false }
+        return affirmativeActionHints.contains(normalized) || negativeActionHints.contains(normalized)
+    }
+
+    private func normalizeForActionHint(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let punctuationTrimmed = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: ".!?"))
+        let parts = punctuationTrimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        let collapsed = parts.joined(separator: " ")
+        return collapsed.lowercased()
     }
 
     private func ensureSessionStartEntry() {
