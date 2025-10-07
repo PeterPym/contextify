@@ -172,8 +172,11 @@ final class GlobalHotkeyManager {
         withTimeInterval: chordTimeout,
         repeats: false
       ) { [weak self] _ in
-        self?.log.debug("Chord timeout - resetting state")
-        self?.firstCmdShiftKPressed = false
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          self.log.debug("Chord timeout - resetting state")
+          self.firstCmdShiftKPressed = false
+        }
       }
     }
   }
