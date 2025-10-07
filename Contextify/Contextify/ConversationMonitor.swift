@@ -318,7 +318,7 @@ final class ConversationMonitor {
                 // If backfilling with limit, stop once we have 5 new displayable entries
                 if shouldBackfillLimitedEntries {
                     let newDisplayableEntries = entries.count - entriesBeforeProcessing
-                    if newDisplayableEntries >= 5 {
+                    if newDisplayableEntries >= 50 {
                         log.info("🟢 processConversationFile: Reached 5 displayable entries limit, stopping backfill")
                         break
                     }
