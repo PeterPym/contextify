@@ -86,7 +86,7 @@ When files in `Contextify/` are staged, the pre-commit hook runs a headless buil
 - **Concurrency:** Swift 6 strict concurrency. Use async/await, `@MainActor` for UI, `Sendable` across threads. Avoid detached tasks.
 - **State:** Prefer `@Observable` or `@StateObject` ViewModels. Keep Views declarative, side-effect-free.
 - **Availability:** Gate macOS 26+ APIs with `@available(macOS 26, *)` and working fallbacks.
-- **Commits:** Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`). Atomic commits, present tense, imperative mood.
+- **Commits:** Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`). Atomic commits, present tense, imperative mood. **DO NOT** add Claude Code attribution footers or Co-Authored-By tags in this project.
 
 ## Testing
 

@@ -56,16 +56,18 @@ final class TerminalContentReader {
     NSLog("🔥 ========== END TERMINAL CONTENT ==========")
 
     // Parse Claude Code input
-    guard let extractedText = ClaudeCodeParser.parseInput(from: terminalContent) else {
-      log.warning("No valid Claude Code input found in terminal content")
-      NSLog("🔥 ERROR: Parser couldn't find '> ' marker in content")
-      return
+    let extractedText = ClaudeCodeParser.parseInput(from: terminalContent) ?? ""
+
+    if extractedText.isEmpty {
+      log.warning("No valid Claude Code input found in terminal content - focusing compose area anyway")
+      NSLog("🔥 No '> ' marker found, but still focusing compose window")
+    } else {
+      log.info("Extracted Claude Code input: \(extractedText.count, privacy: .public) chars")
     }
 
-    log.info("Extracted Claude Code input: \(extractedText.count, privacy: .public) chars")
-
-    // Send to Contextify using URL scheme
+    // Send to Contextify using URL scheme (even if empty, to focus the window)
     openComposeWithText(extractedText)
+    NotificationCenter.default.post(name: .contextifyTimelineManualRefresh, object: nil)
   }
 
   // MARK: - Accessibility Permissions
