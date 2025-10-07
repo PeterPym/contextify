@@ -358,8 +358,48 @@ final class ConversationMonitor {
             return
         }
 
-        // User messages have content as a string, not an array
-        guard let text = message["content"] as? String else {
+        let toolUseStdout = (json["toolUseResult"] as? [String: Any])?["stdout"] as? String
+        let fallbackToolText = (toolUseStdout?.isEmpty == false) ? toolUseStdout : nil
+
+        let text: String
+        if let directContent = message["content"] as? String {
+            text = directContent
+        } else if let contentBlocks = message["content"] as? [[String: Any]] {
+            let blockText = contentBlocks.compactMap { block -> String? in
+                guard let blockType = block["type"] as? String else { return nil }
+
+                switch blockType {
+                case "text":
+                    if let text = block["text"] as? String, !text.isEmpty { return text }
+                    if let text = block["content"] as? String, !text.isEmpty { return text }
+                    return nil
+                case "tool_result":
+                    if let text = block["content"] as? String, !text.isEmpty {
+                        return text
+                    }
+                    return nil
+                default:
+                    return nil
+                }
+            }.first
+
+            if let blockText {
+                text = blockText
+            } else if let stdout = fallbackToolText {
+                // Prefer inline block content when available; fall back to tool output if the array omits it.
+                text = stdout
+            } else {
+                let contentType = type(of: message["content"] as Any)
+                log.error("🔴 processUserMessage: no usable content in array for uuid=\(uuid, privacy: .public), content type=\(String(describing: contentType))")
+                return
+            }
+        } else if let stringArray = message["content"] as? [String],
+                  let first = stringArray.first(where: { !$0.isEmpty }) {
+            text = first
+        } else if let stdout = fallbackToolText {
+            // Prefer inline block content when available; fall back to tool output if the array omits it.
+            text = stdout
+        } else {
             let contentType = type(of: message["content"] as Any)
             log.error("🔴 processUserMessage: content not a string for uuid=\(uuid, privacy: .public), content type=\(String(describing: contentType))")
             return
