@@ -66,6 +66,7 @@ assets/ icons/
 - Commits: Conventional Commits (e.g., `feat(hud): add drop target`, `fix(cli): checkpoint writes timestamp`).
 - Scope small, descriptive commits; prefer present tense, imperative mood.
 - Keep commits atomic—each commit should represent a single logical change; never bundle unrelated edits.
+- Do not attribute work to Codex (or other agents) in commit messages, PR descriptions, or change logs; keep authorship human-focused.
 - PRs: clear summary, linked issues, screenshots/GIFs for UI, reproduction or acceptance steps, and notes on risks.
 - Require passing checks and reviewer approval before merge; rebase onto `main`.
 
