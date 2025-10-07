@@ -370,6 +370,14 @@ final class ConversationMonitor {
         let toolUseStdout = (json["toolUseResult"] as? [String: Any])?["stdout"] as? String
         let fallbackToolText = (toolUseStdout?.isEmpty == false) ? toolUseStdout : nil
 
+        if let contentBlocks = message["content"] as? [[String: Any]] {
+            let blockTypes = contentBlocks.compactMap { $0["type"] as? String }
+            if !blockTypes.isEmpty, blockTypes.allSatisfy({ $0 == "tool_result" }) {
+                log.info("🟡 processUserMessage: skipping assistant tool_result relay for uuid=\(uuid, privacy: .public)")
+                return
+            }
+        }
+
         let text: String
         if let directContent = message["content"] as? String {
             text = directContent
@@ -463,7 +471,7 @@ final class ConversationMonitor {
 
         log.info("🟢 processAssistantMessage: content blocks count=\(content.count)")
 
-        // Process each content block (could be text or tool_use)
+        // Process each content block (skip tool invokes, only surface text)
         for (index, block) in content.enumerated() {
             guard let blockType = block["type"] as? String else {
                 log.error("🔴 processAssistantMessage: no type in block \(index) for uuid=\(uuid, privacy: .public)")
@@ -480,12 +488,7 @@ final class ConversationMonitor {
                     log.error("🔴 processAssistantMessage: text block has no text field")
                 }
             case "tool_use":
-                if let toolName = block["name"] as? String,
-                   let input = block["input"] as? [String: Any] {
-                    await addAssistantToolEntry(toolName: toolName, input: input, timestamp: timestamp, uuid: uuid)
-                } else {
-                    log.error("🔴 processAssistantMessage: tool_use block missing name or input")
-                }
+                log.info("🟡 processAssistantMessage: skipping tool_use block for uuid=\(uuid, privacy: .public)")
             default:
                 log.info("🟡 processAssistantMessage: skipping unknown block type=\(blockType, privacy: .public)")
                 break
@@ -513,36 +516,6 @@ final class ConversationMonitor {
 
         entries.append(entry)
         log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(summary, privacy: .public), total entries=\(self.entries.count)")
-    }
-
-    private func addAssistantToolEntry(toolName: String, input: [String: Any], timestamp: Date, uuid: String) async {
-        log.info("🟢 addAssistantToolEntry: tool=\(toolName, privacy: .public), uuid=\(uuid, privacy: .public)")
-
-        // Build a description of the tool use
-        var description = "Tool: \(toolName)"
-
-        if let command = input["command"] as? String {
-            description += "\nCommand: \(command)"
-        } else if let filePath = input["file_path"] as? String {
-            description += "\nFile: \(filePath)"
-        } else if let pattern = input["pattern"] as? String {
-            description += "\nPattern: \(pattern)"
-        }
-
-        let summary = await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: description)
-
-        let entry = TimelineEntry(
-            kind: .assistant,
-            timestamp: timestamp,
-            summary: summary,
-            detail: description,
-            sourceContent: description,
-            sourceContext: makeSourceContext(identifier: uuid),
-            sourceIdentifier: "msg-\(uuid)-tool-\(toolName)"
-        )
-
-        entries.append(entry)
-        log.info("✅ addAssistantToolEntry: Added tool entry, summary=\(summary, privacy: .public), total entries=\(self.entries.count)")
     }
 
     private func ensureSessionStartEntry() {
