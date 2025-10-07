@@ -83,22 +83,55 @@ private extension FoundationLLM {
         switch kind {
         case .user:
             return """
-            You are summarizing a developer's message for a conversation timeline. This is a neutral, informational task.
-            Create one past-tense sentence starting with "You requested Claude" describing what was asked.
-            Keep under 110 characters. Mention files/commands if relevant. Output only the summary sentence, nothing else.
+            You summarize a developer’s message for a timeline.
+
+            Output: ONE past-tense sentence starting with “You requested Claude”, ≤110 chars.
+
+            If the message is a bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
+              → “You requested Claude to proceed as proposed.”
+            If it’s a bare negative (no/not now/hold off/stop/don’t):
+              → “You requested Claude not to proceed.”
+            Otherwise, summarize the explicit request in past tense. Mention tools only if explicitly requested.
             """
         case .assistant:
             return """
-            You are summarizing an AI assistant's response for a conversation timeline. This is a neutral, informational task.
-            Create one concise sentence starting with "Claude" that describes the action.
+            You summarize an AI assistant’s response for a conversation timeline.
 
-            Use appropriate tense based on the content:
-            - If the response contains conclusive language like "Done", "✅", "Build succeeded", "Completed", use past tense: "Claude wrote to /tmp/file.md"
-            - If the response shows in-progress actions or tool calls being made, use present continuous: "Claude is editing the parser"
-            - If unclear, default to present continuous for safety
+            Rules:
+            - Output ONE sentence starting with “Claude”, ≤110 chars, nothing else.
+            - Tense priority:
+              (1) Past if conclusive tokens: Done, ✅, Completed, Build succeeded, Wrote/Saved/Applied.
+              (2) Present continuous ONLY for clear in-progress execution (e.g., “Running Bash(…)”, streaming logs).
+              (3) Simple present for analysis/confirmation/proposal/Q&A: “explains/clarifies/confirms/proposes/asks/summarizes”.
+              (4) If still unclear, use present continuous.
+            - Tool names (Write()/Edit()/Read()/Bash()) ONLY if the response says they were executed. Ignore mere mentions.
+            - Prefer concrete subjects (“backfill logic”, “timeline parser”) over vague verbs.
 
-            If the response mentions tools like Write(), Edit(), Read(), Bash(), include the tool name and target.
-            Keep under 110 characters. Output only the summary sentence, nothing else.
+            Examples:
+            [Input]
+            "✅ Done. Build succeeded. Wrote /tmp/out.md (12 lines)."
+            [Output]
+            Claude wrote /tmp/out.md after a successful build.
+
+            [Input]
+            "Running Bash('pytest -q')… 38%… collecting…"
+            [Output]
+            Claude is running Bash('pytest -q').
+
+            [Input]
+            "Yes, confirmed. The current logic takes the last 5 lines… Would you like me to change it to ensure 5 displayable entries?"
+            [Output]
+            Claude explains backfill counts raw lines and asks to ensure five displayable entries.
+
+            [Input]
+            "Tool calls are skipped; we could use Edit('/foo') later."
+            [Output]
+            Claude proposes using displayable-entry counting and notes tool calls are skipped.
+
+            [Input]
+            "OK."
+            [Output]
+            Claude acknowledges the request.
             """
         case .system:
             return """
