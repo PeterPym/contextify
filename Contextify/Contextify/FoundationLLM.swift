@@ -26,7 +26,7 @@ actor FoundationLLM {
 
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
-            guard await isAvailable() else { return fallback(for: kind, text: trimmed) }
+            guard isAvailable() else { return fallback(for: kind, text: trimmed) }
 
             do {
                 let instructions = instructionsForTimeline(kind: kind)
