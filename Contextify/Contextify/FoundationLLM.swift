@@ -5,6 +5,23 @@ import OSLog
 import FoundationModels
 #endif
 
+struct TimelineSummaryResult: Sendable {
+    let summary: String
+    let isCompletion: Bool
+}
+
+#if canImport(FoundationModels)
+@available(macOS 26.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *)
+@Generable(description: "Timeline summary metadata for HUD entries")
+struct GuidedTimelineSummary {
+    @Guide(description: "One sentence (≤110 chars) starting with the appropriate prefix.")
+    var summary: String
+
+    @Guide(description: "true when the assistant states the task is finished (done/fixed/completed). false otherwise." )
+    var isCompletion: Bool
+}
+#endif
+
 actor FoundationLLM {
     static let shared = FoundationLLM()
 
@@ -20,138 +37,193 @@ actor FoundationLLM {
         return false
     }
 
-    func summarizeTimeline(kind: TimelineEntryKind, text: String) async -> String {
+    func summarizeTimeline(
+        kind: TimelineEntryKind,
+        text: String,
+        actionHint: String? = nil
+    ) async -> TimelineSummaryResult {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return fallback(for: kind, text: text) }
+        guard !trimmed.isEmpty else {
+            return TimelineSummaryResult(
+                summary: sanitize(fallback(for: kind, text: text), kind: kind),
+                isCompletion: false
+            )
+        }
 
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            guard isAvailable() else { return fallback(for: kind, text: trimmed) }
+        if #available(macOS 26.0, iOS 18.0, tvOS 18.0, visionOS 2.0, *) {
+            guard isAvailable() else {
+                return TimelineSummaryResult(
+                    summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+                    isCompletion: false
+                )
+            }
 
             do {
                 let instructions = instructionsForTimeline(kind: kind)
                 let session = LanguageModelSession(instructions: instructions)
                 let options = GenerationOptions(
                     sampling: .greedy,
-                    temperature: 0.2,
-                    maximumResponseTokens: 96
+                    temperature: 0.0,
+                    maximumResponseTokens: 48
                 )
                 let clamped = String(trimmed.prefix(1200))
-                let response = try await session.respond(to: clamped, options: options)
-                let cleaned = stripCodeFence(from: response.content)
-
-                // Check if LLM refused the request
-                let refusalPatterns = ["cannot assist", "i apologize", "i'm sorry", "i can't"]
-                let lowerResponse = cleaned.lowercased()
-                if refusalPatterns.contains(where: { lowerResponse.contains($0) }) {
-                    log.warning("LLM refused summarization request. Response: '\(cleaned, privacy: .public)' | Original text: '\(String(clamped.prefix(200)), privacy: .public)'")
-                    return fallback(for: kind, text: trimmed)
+                let payloadInput: String
+                if kind == .user, let hint = actionHint?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
+                    payloadInput = "MESSAGE:\n\(clamped)\n\nACTION_HINT:\n\(hint)"
+                } else {
+                    payloadInput = clamped
                 }
 
-                // Strip preambles like "Sure, here's a possible response:", "Here's the summary:", etc.
-                let final = stripPreamble(from: cleaned)
-                return final.isEmpty ? fallback(for: kind, text: trimmed) : final
+                let response = try await session.respond(
+                    to: payloadInput,
+                    generating: GuidedTimelineSummary.self,
+                    includeSchemaInPrompt: true,
+                    options: options
+                )
+                let payload = response.content
+
+                let cleanedSummary = stripPreamble(from: payload.summary)
+                let normalizedSummary = sanitize(cleanedSummary, kind: kind)
+                if normalizedSummary.isEmpty {
+                    return TimelineSummaryResult(
+                        summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+                        isCompletion: false
+                    )
+                }
+
+                let finalCompletion = kind == .assistant
+                    ? (payload.isCompletion && hasCompletionSignal(in: normalizedSummary))
+                    : false
+
+                return TimelineSummaryResult(summary: normalizedSummary, isCompletion: finalCompletion)
+            } catch let guardedError as LanguageModelSession.GenerationError {
+                log.error("timeline summarize guardrail triggered: \(String(describing: guardedError), privacy: .public)")
+                return TimelineSummaryResult(
+                    summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+                    isCompletion: false
+                )
             } catch {
                 log.error("timeline summarize failed: \(error.localizedDescription, privacy: .public)")
-                return fallback(for: kind, text: trimmed)
+                return TimelineSummaryResult(
+                    summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+                    isCompletion: false
+                )
             }
         }
         #endif
 
-        return fallback(for: kind, text: trimmed)
+        return TimelineSummaryResult(
+            summary: sanitize(fallback(for: kind, text: trimmed), kind: kind),
+            isCompletion: false
+        )
     }
 }
 
 private extension FoundationLLM {
     func fallback(for kind: TimelineEntryKind, text: String) -> String {
-        let normalized = text
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let prefix: String
-        switch kind {
-        case .user: prefix = "You requested Claude"
-        case .assistant: prefix = "Claude"
-        case .system: prefix = "System"
+        let normalized = collapseWhitespace(text)
+        guard !normalized.isEmpty else { return prefix(for: kind) }
+        return "\(prefix(for: kind)) \(normalized)"
+    }
+
+    func sanitize(_ summary: String, kind: TimelineEntryKind) -> String {
+        var normalized = collapseWhitespace(summary)
+
+        let requiredPrefix = prefix(for: kind)
+        if normalized.isEmpty {
+            normalized = requiredPrefix
+        } else if !normalized.hasPrefix(requiredPrefix) {
+            normalized = "\(requiredPrefix) \(normalized)"
         }
-        guard !normalized.isEmpty else { return prefix }
-        if normalized.count <= 160 { return "\(prefix) \(normalized)" }
-        let snippet = normalized.prefix(157)
-        return "\(prefix) \(snippet)…"
+
+        if normalized.count > 110 {
+            normalized = String(normalized.prefix(110))
+        }
+        return normalized
+    }
+
+    func prefix(for kind: TimelineEntryKind) -> String {
+        switch kind {
+        case .user: return "You requested Claude"
+        case .assistant: return "Claude"
+        case .system: return "System"
+        }
+    }
+
+    func hasCompletionSignal(in summary: String) -> Bool {
+        let completionTokens = [
+            "done", "completed", "complete", "fixed", "resolved", "finished", "ready", "shipped",
+            "build succeeded", "wrote", "saved", "applied", "merged", "implemented", "processed",
+            "updated", "ensured", "finalized", "✅"
+        ]
+        let lower = summary.lowercased()
+        return completionTokens.contains { lower.contains($0) }
+    }
+
+    func collapseWhitespace(_ text: String) -> String {
+        let parts = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        return parts.joined(separator: " ")
     }
 
     func instructionsForTimeline(kind: TimelineEntryKind) -> String {
         switch kind {
         case .user:
             return """
-            You summarize a developer’s message for a timeline.
+            You fill the fields of a TimelineSummary for a developer’s message.
 
-            Output: ONE past-tense sentence starting with “You requested Claude”, ≤110 chars.
-
-            If the message is a bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
+            summary rules:
+            - Output ONE sentence starting with “You requested Claude”, ≤110 chars.
+            - Use past tense.
+            - If the message is a bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
               → “You requested Claude to proceed as proposed.”
-            If it’s a bare negative (no/not now/hold off/stop/don’t):
+            - If it’s a bare negative (no/not now/hold off/stop/don’t):
               → “You requested Claude not to proceed.”
-            Otherwise, summarize the explicit request in past tense. Mention tools only if explicitly requested.
+            - Otherwise, summarize the explicit request in past tense. Mention tools only if explicitly requested.
+            - If ACTION_HINT text is provided, treat it as the action the user is approving or rejecting.
+
+            Input format:
+            MESSAGE:<newline>user text
+            Optional ACTION_HINT:<newline>assistant proposal to reference for affirm/deny messages.
+
+            isCompletion: Always false for user messages.
             """
         case .assistant:
             return """
-            You summarize an AI assistant’s response for a conversation timeline.
+            You fill the fields of a TimelineSummary for an AI assistant response.
 
-            Rules:
-            - Output ONE sentence starting with “Claude”, ≤110 chars, nothing else.
-            - Tense priority:
-              (1) Past if conclusive tokens: Done, ✅, Completed, Build succeeded, Wrote/Saved/Applied.
-              (2) Present continuous ONLY for clear in-progress execution (e.g., “Running Bash(…)”, streaming logs).
-              (3) Simple present for analysis/confirmation/proposal/Q&A: “explains/clarifies/confirms/proposes/asks/summarizes”.
-              (4) If still unclear, use present continuous.
-            - Tool names (Write()/Edit()/Read()/Bash()) ONLY if the response says they were executed. Ignore mere mentions.
-            - Prefer concrete subjects (“backfill logic”, “timeline parser”) over vague verbs.
+            summary rules:
+            - Output ONE sentence starting with “Claude”, ≤110 chars.
+            - Use past tense whenever the assistant reports completion (tokens like done/fixed/completed/resolved/built ✅/"finished", etc.).
+            - Use present continuous ONLY for in-progress execution ("is running Bash('pytest -q')").
+            - Otherwise use simple present ("explains", "confirms", "proposes", "asks").
+            - Mention tool names (Write/Edit/Read/Bash) only if the assistant confirms they were executed.
+            - Prefer concrete subjects ("backfill logic", "timeline parser") over vague verbs.
+
+            isCompletion rules:
+            - true when the assistant explicitly indicates work is done/completed/fixed/resolved/ready.
+            - false for analysis, planning, questions, or work-in-progress updates.
 
             Examples:
-            [Input]
-            "✅ Done. Build succeeded. Wrote /tmp/out.md (12 lines)."
-            [Output]
-            Claude wrote /tmp/out.md after a successful build.
+            Input: “✅ Done. Build succeeded. Wrote /tmp/out.md (12 lines).”
+            → summary: “Claude wrote /tmp/out.md after a successful build.”
+            → isCompletion: true
 
-            [Input]
-            "Running Bash('pytest -q')… 38%… collecting…"
-            [Output]
-            Claude is running Bash('pytest -q').
+            Input: “Running Bash('pytest -q')… collecting…”
+            → summary: “Claude is running Bash('pytest -q').”
+            → isCompletion: false
 
-            [Input]
-            "Yes, confirmed. The current logic takes the last 5 lines… Would you like me to change it to ensure 5 displayable entries?"
-            [Output]
-            Claude explains backfill counts raw lines and asks to ensure five displayable entries.
-
-            [Input]
-            "Tool calls are skipped; we could use Edit('/foo') later."
-            [Output]
-            Claude proposes using displayable-entry counting and notes tool calls are skipped.
-
-            [Input]
-            "OK."
-            [Output]
-            Claude acknowledges the request.
+            Input: “Tool calls are skipped; we could use Edit('/foo') later.”
+            → summary: “Claude proposes using displayable-entry counting and notes tool calls are skipped.”
+            → isCompletion: false
             """
         case .system:
             return """
-            You are summarizing a system event for a timeline. This is a neutral, informational task.
-            Create one concise sentence under 110 characters. Output only the summary sentence, nothing else.
+            You fill a TimelineSummary for a neutral system event.
+            - summary: One concise sentence under 110 characters.
+            - isCompletion: false.
             """
         }
-    }
-
-    func stripCodeFence(from response: String) -> String {
-        var output = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard output.hasPrefix("```") else { return output }
-        output.removeFirst(3)
-        if let newline = output.firstIndex(of: "\n") {
-            output = String(output[output.index(after: newline)...])
-        }
-        if let closing = output.range(of: "```", options: .backwards) {
-            output.removeSubrange(closing.lowerBound..<output.endIndex)
-        }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func stripPreamble(from response: String) -> String {

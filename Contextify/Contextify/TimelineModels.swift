@@ -24,6 +24,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let sourceContext: TimelineSourceContext?
     let sourceIdentifier: String
     let isError: Bool
+    let isCompletion: Bool
 
     init(
         id: UUID = UUID(),
@@ -34,7 +35,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         sourceContent: String? = nil,
         sourceContext: TimelineSourceContext? = nil,
         sourceIdentifier: String,
-        isError: Bool = false
+        isError: Bool = false,
+        isCompletion: Bool = false
     ) {
         self.id = id
         self.kind = kind
@@ -45,6 +47,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.sourceContext = sourceContext
         self.sourceIdentifier = sourceIdentifier
         self.isError = isError
+        self.isCompletion = isCompletion
     }
 }
 

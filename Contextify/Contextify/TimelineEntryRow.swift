@@ -66,6 +66,13 @@ struct TimelineEntryRow: View {
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
+            if entry.isCompletion {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                    .accessibilityLabel("Task completed")
+            }
             Spacer()
             Button(action: { copy(entry.markdownPayload()) }) {
                 Image(systemName: "doc.on.doc")

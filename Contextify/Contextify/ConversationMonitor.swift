@@ -456,7 +456,8 @@ final class ConversationMonitor {
 
         log.info("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
 
-        let summary = await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text)
+        let actionHint = latestAssistantActionHint()
+        let summaryResult = await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
             : text
@@ -464,11 +465,12 @@ final class ConversationMonitor {
         let entry = TimelineEntry(
             kind: .user,
             timestamp: timestamp,
-            summary: summary,
+            summary: summaryResult.summary,
             detail: detail,
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid),
-            sourceIdentifier: "msg-\(uuid)"
+            sourceIdentifier: "msg-\(uuid)",
+            isCompletion: false
         )
 
         entries.append(entry)
@@ -477,7 +479,7 @@ final class ConversationMonitor {
             entries = Array(entries.suffix(config.maxEntries))
         }
 
-        log.info("✅ processUserMessage: Added user entry, summary=\(summary, privacy: .public), total entries=\(self.entries.count)")
+        log.info("✅ processUserMessage: Added user entry, summary=\(summaryResult.summary, privacy: .private), total entries=\(self.entries.count)")
     }
 
     private func processAssistantMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
@@ -519,7 +521,7 @@ final class ConversationMonitor {
     private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
         log.info("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
 
-        let summary = await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+        let summaryResult = await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
             : text
@@ -527,15 +529,29 @@ final class ConversationMonitor {
         let entry = TimelineEntry(
             kind: .assistant,
             timestamp: timestamp,
-            summary: summary,
+            summary: summaryResult.summary,
             detail: detail,
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid),
-            sourceIdentifier: "msg-\(uuid)-text"
+            sourceIdentifier: "msg-\(uuid)-text",
+            isCompletion: summaryResult.isCompletion
         )
 
         entries.append(entry)
-        log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(summary, privacy: .public), total entries=\(self.entries.count)")
+        log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(summaryResult.summary, privacy: .private), completion=\(summaryResult.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
+    }
+
+    private func latestAssistantActionHint() -> String? {
+        guard let lastAssistant = entries.reversed().first(where: { $0.kind == .assistant }) else {
+            return nil
+        }
+        if let content = lastAssistant.sourceContent, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return content
+        }
+        if !lastAssistant.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return lastAssistant.detail
+        }
+        return nil
     }
 
     private func ensureSessionStartEntry() {
