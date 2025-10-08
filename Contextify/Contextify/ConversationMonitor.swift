@@ -318,8 +318,8 @@ final class ConversationMonitor {
                 // If backfilling with limit, stop once we have 5 new displayable entries
                 if shouldBackfillLimitedEntries {
                     let newDisplayableEntries = entries.count - entriesBeforeProcessing
-                    if newDisplayableEntries >= 50 {
-                        log.info("🟢 processConversationFile: Reached 5 displayable entries limit, stopping backfill")
+                    if newDisplayableEntries >= 20 {
+                        log.info("🟢 processConversationFile: Reached displayable entries limit, (newDisplayableEntries) stopping backfill")
                         break
                     }
                 }
@@ -473,7 +473,13 @@ final class ConversationMonitor {
         log.info("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
 
         let actionHint = shouldUseActionHint(for: text) ? latestAssistantActionHint() : nil
-        let summaryResult = await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
+        let summaryResult: FoundationLLM.TimelineSummaryResult
+        do {
+            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
+        } catch {
+            log.error("🔴 processUserMessage: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
             : text
@@ -537,7 +543,13 @@ final class ConversationMonitor {
     private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
         log.info("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
 
-        let summaryResult = await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+        let summaryResult: FoundationLLM.TimelineSummaryResult
+        do {
+            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+        } catch {
+            log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
             : text
@@ -645,3 +657,15 @@ final class ConversationMonitor {
         entries.append(entry)
     }
 }
+
+#if DEBUG
+extension ConversationMonitor {
+    func _testShouldUseActionHint(_ text: String) -> Bool {
+        shouldUseActionHint(for: text)
+    }
+
+    func _testDistilledActionHint(from text: String) -> String? {
+        distilledActionHint(from: text)
+    }
+}
+#endif
