@@ -25,6 +25,7 @@ actor FoundationLLM {
     struct TimelineSummaryResult: Sendable {
         let summary: String
         let isCompletion: Bool
+        let icon: String?  // Optional emoji prefix (✅, 👉, ❓, etc.)
     }
 
     func summarizeTimeline(
@@ -55,10 +56,10 @@ actor FoundationLLM {
             return fallbackSummary(kind: kind, text: text)
         }
 
-        if kind == .assistant, let fastPath = summarizeAssistantFastPath(message) {
-            let sanitized = sanitize(fastPath.summary, kind: .assistant)
-            log.info("[\(reqNum)] timeline: fastPath triggered (\(fastPath.summary))")
-            return TimelineSummaryResult(summary: sanitized, isCompletion: fastPath.isCompletion)
+        // Check for simple acks - these can skip LLM
+        if kind == .assistant, isAck(message) {
+            log.info("[\(reqNum)] timeline: ack detected, skipping LLM")
+            return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, icon: nil)
         }
 
         #if canImport(FoundationModels)
@@ -86,7 +87,7 @@ actor FoundationLLM {
             let options = GenerationOptions(
                 sampling: .greedy,
                 temperature: temperature,
-                maximumResponseTokens: 128  // Need space for JSON structure + 110 char summary
+                maximumResponseTokens: 150  // Need space for JSON structure + 140 char summary
             )
 
             let clamped = String(message.prefix(1200))
@@ -114,7 +115,17 @@ actor FoundationLLM {
                 log.info("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
                 log.info("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
                 do {
-                    let result = try postProcess(kind: kind, payload: payload, message: clamped)
+                    var result = try postProcess(kind: kind, payload: payload, message: clamped)
+
+                    // Detect completion and add icon
+                    if result.isCompletion {
+                        result = TimelineSummaryResult(summary: result.summary, isCompletion: true, icon: "✅")
+                        log.info("[\(reqNum)] timeline: completion detected, adding ✅ icon")
+                    } else if kind == .user, isDirective(message) {
+                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, icon: "👉")
+                        log.info("[\(reqNum)] timeline: user directive detected, adding 👉 icon")
+                    }
+
                     log.info("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
                     // Reset failure count on success
                     failureCount = 0
@@ -187,7 +198,7 @@ actor FoundationLLM {
 
     func fallbackSummary(kind: TimelineEntryKind, text: String) -> TimelineSummaryResult {
         let summary = sanitize(fallback(for: kind, text: text), kind: kind)
-        return TimelineSummaryResult(summary: summary, isCompletion: false)
+        return TimelineSummaryResult(summary: summary, isCompletion: false, icon: nil)
     }
 }
 
@@ -195,7 +206,7 @@ actor FoundationLLM {
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 @Generable(description: "Timeline summary metadata for HUD entries")
 struct GuidedTimelineSummary {
-    @Guide(description: "One sentence (≤110 chars) starting with an allowed prefix. Use only MESSAGE content.")
+    @Guide(description: "One sentence (≤140 chars) starting with an allowed prefix. Use only MESSAGE content.")
     var summary: String
 
     @Guide(description: "true only if the MESSAGE explicitly reports completion (done/fixed/completed/merged/wrote/saved/✅).")
@@ -236,8 +247,8 @@ private extension FoundationLLM {
         } else if !hasAllowedPrefix(output, policy: policy) {
             output = "\(policy.fallback) \(output)"
         }
-        if output.count > 110 {
-            output = String(output.prefix(110))
+        if output.count > 140 {
+            output = String(output.prefix(140))
         }
         return output
     }
@@ -272,15 +283,6 @@ private extension FoundationLLM {
         return false
     }
 
-    func summarizeAssistantFastPath(_ message: String) -> (summary: String, isCompletion: Bool)? {
-        if isAck(message) {
-            return ("Claude acknowledges the request.", false)
-        }
-        if hasCompletionToken(message) {
-            return ("Claude reported the task as completed.", true)
-        }
-        return nil
-    }
 
     func instructionsForTimeline(kind: TimelineEntryKind) -> String {
         switch kind {
@@ -289,7 +291,7 @@ private extension FoundationLLM {
             You fill a TimelineSummary for an AI assistant response.
 
             Rules:
-            - Output ONE sentence starting with “Claude”, ≤110 chars.
+            - Output ONE sentence starting with "Claude", ≤140 chars.
             - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
             - Tense:
               * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
@@ -313,7 +315,7 @@ private extension FoundationLLM {
             You fill a TimelineSummary for a developer’s message.
 
             summary rules:
-            - ONE sentence, ≤110 chars, past tense.
+            - ONE sentence, ≤140 chars, past tense.
             - Allowed prefixes:
               • “You made …” — user reports a completed action (e.g., “I updated the file”).
               • “You asked …” — user asks a question (e.g., “Can you explain?”).
@@ -338,7 +340,7 @@ private extension FoundationLLM {
         case .system:
             return """
             You fill a TimelineSummary for a neutral system event.
-            - summary: one concise sentence under 110 characters.
+            - summary: one concise sentence under 140 characters.
             - isCompletion: false.
             """
         }
@@ -393,8 +395,25 @@ private extension FoundationLLM {
         return tokens.allSatisfy { acknowledgementLexicon.contains(String($0)) }
     }
 
+    func isDirective(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        // Detect command/directive patterns
+        return directiveLexicon.contains { lower.contains($0) }
+    }
+
     var acknowledgementLexicon: Set<String> {
         ["ack", "ok", "okay", "k", "👍", "roger", "thanks", "thx", "ty", "got", "it", "understood", "noted", "sure"]
+    }
+
+    var directiveLexicon: [Substring] {
+        [
+            "please", "can you", "could you", "would you", "go ahead",
+            "proceed", "continue", "commit", "fix", "update", "add",
+            "create", "make", "build", "run", "test", "deploy",
+            "implement", "refactor", "change", "modify", "remove", "delete",
+            "we should", "we need to", "we could", "let's", "i want",
+            "i need", "help me"
+        ]
     }
 
     var completionLexicon: [Substring] {
@@ -419,7 +438,6 @@ private extension FoundationLLM {
             let leaked = introducedTopics(message: message, summary: summary)
             let grounding = payload.grounding.lowercased()
             let isGrounded = grounding == "grounded"
-            let isUngrounded = grounding == "ungrounded"
 
             // Multi-factor acceptance decision:
             // Accept if ANY of:
@@ -441,7 +459,7 @@ private extension FoundationLLM {
                 log.warning("timeline summary REJECTED (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
                 // Special case: if it's just an ack, accept the generic ack message
                 if isAck(message) {
-                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false)
+                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, icon: nil)
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")
@@ -457,7 +475,7 @@ private extension FoundationLLM {
             ? (payload.isCompletion && hasCompletionToken(summary))
             : false
 
-        return TimelineSummaryResult(summary: summary, isCompletion: completion)
+        return TimelineSummaryResult(summary: summary, isCompletion: completion, icon: nil)
     }
 }
 #endif
@@ -466,10 +484,6 @@ private extension FoundationLLM {
 extension FoundationLLM {
     func _testSanitize(_ summary: String, kind: TimelineEntryKind) async -> String {
         sanitize(summary, kind: kind)
-    }
-
-    func _testSummarizeAssistantFastPath(_ text: String) -> (summary: String, isCompletion: Bool)? {
-        summarizeAssistantFastPath(text)
     }
 
     #if canImport(FoundationModels)

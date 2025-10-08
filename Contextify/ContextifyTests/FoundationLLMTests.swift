@@ -1,27 +1,11 @@
 import XCTest
 @testable import Contextify
 
-final class TimelineFastPathTests: XCTestCase {
-    func testAssistantAckFastPath() async {
-        let result = await FoundationLLM.shared._testSummarizeAssistantFastPath("Ack!")
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result?.summary, "Claude acknowledges the request.")
-        XCTAssertEqual(result?.isCompletion, false)
-    }
-
-    func testAssistantCompletionFastPath() async {
-        let result = await FoundationLLM.shared._testSummarizeAssistantFastPath("✅ Done. Wrote /tmp/out.md.")
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result?.summary, "Claude reported the task as completed.")
-        XCTAssertEqual(result?.isCompletion, true)
-    }
-}
-
 final class FormattingTests: XCTestCase {
     func testAssistantPrefixAndLength() async {
         let sanitized = await FoundationLLM.shared._testSanitize(String(repeating: "x", count: 200), kind: .assistant)
         XCTAssertTrue(sanitized.hasPrefix("Claude"))
-        XCTAssertLessThanOrEqual(sanitized.count, 110)
+        XCTAssertLessThanOrEqual(sanitized.count, 140)
     }
 
     func testUserPrefixesRespected() async {
