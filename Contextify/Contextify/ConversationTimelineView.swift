@@ -2,8 +2,7 @@ import SwiftUI
 
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
-
-    @State private var showTranscriptInventory = false
+    @Environment(\.openWindow) private var openWindow
 
     private let collapsedWidth: CGFloat = 52
     private let expandedWidth: CGFloat = 320
@@ -35,19 +34,6 @@ struct ConversationTimelineView: View {
                 .help("Timeline fetch failed. Retry now.")
             }
         }
-        .sheet(isPresented: $showTranscriptInventory) {
-            TranscriptInventoryView(
-                sessions: monitor.allSessions,
-                activeSessionURL: monitor.activeSession?.fileURL,
-                onSelectSession: { session in
-                    showTranscriptInventory = false
-                    // TODO: Add method to ConversationMonitor to switch to specific session
-                },
-                onDismiss: {
-                    showTranscriptInventory = false
-                }
-            )
-        }
     }
 
     private var header: some View {
@@ -73,7 +59,7 @@ struct ConversationTimelineView: View {
                 }
                 Menu {
                     Button {
-                        showTranscriptInventory = true
+                        openWindow(id: "transcript-inventory")
                     } label: {
                         Label("Show All Transcripts (\(monitor.allSessions.count))", systemImage: "doc.text.magnifyingglass")
                     }

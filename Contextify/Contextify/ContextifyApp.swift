@@ -2,6 +2,19 @@ import SwiftUI
 import AppKit
 import ContextifyCore
 
+struct TranscriptInventoryCommands: Commands {
+  @Environment(\.openWindow) private var openWindow
+
+  var body: some Commands {
+    CommandMenu("Window") {
+      Button("Show Transcript Inventory") {
+        openWindow(id: "transcript-inventory")
+      }
+      .keyboardShortcut("i", modifiers: [.command, .control])
+    }
+  }
+}
+
 @main
 struct ContextifyApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -40,7 +53,15 @@ struct ContextifyApp: App {
     .commands {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
+      TranscriptInventoryCommands()
     }
+
+    Window("Transcript Inventory", id: "transcript-inventory") {
+      TranscriptInventoryWindow()
+        .environment(HUDViewModel.shared)
+        .environment(ConversationMonitor.shared)
+    }
+    .defaultSize(width: 1000, height: 700)
   }
 
   private func isAnotherInstanceRunning() -> Bool {

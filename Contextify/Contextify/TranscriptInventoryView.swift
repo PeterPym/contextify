@@ -4,10 +4,8 @@ import ContextifyCore
 /// Displays all discovered transcripts for the current project, including worktrees.
 /// Uses HSplitView for macOS-native sidebar + detail layout.
 struct TranscriptInventoryView: View {
-  let sessions: [TranscriptSession]
-  let activeSessionURL: URL?
+  @Environment(ConversationMonitor.self) private var monitor
   let onSelectSession: (TranscriptSession) -> Void
-  let onDismiss: () -> Void
 
   @State private var selectedSessionURL: URL?
   @State private var searchText = ""
@@ -22,29 +20,37 @@ struct TranscriptInventoryView: View {
   }
 
   var body: some View {
-    HSplitView {
-      // Session list
-      sessionListView
-        .frame(minWidth: 250)
-
-      // Detail view
-      detailView
-        .frame(minWidth: 500)
-    }
-    .frame(minWidth: 800, minHeight: 600)
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Done") {
-          onDismiss()
+    Group {
+      if let error = monitor.lastError, monitor.allSessions.isEmpty {
+        // Show error when no transcripts found
+        VStack(spacing: 12) {
+          Image(systemName: "exclamationmark.triangle")
+            .font(.largeTitle)
+            .foregroundStyle(.secondary)
+          Text("Unable to Load Transcripts")
+            .font(.headline)
+          Text(error)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
         }
-        .keyboardShortcut(.cancelAction)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        HSplitView {
+          // Session list
+          sessionListView
+            .frame(minWidth: 250)
+
+          // Detail view
+          detailView
+            .frame(minWidth: 500)
+        }
       }
     }
   }
 
   private var selectedSession: TranscriptSession? {
     guard let url = selectedSessionURL else { return nil }
-    return sessions.first(where: { $0.fileURL == url })
+    return monitor.allSessions.first(where: { $0.fileURL == url })
   }
 
   @ViewBuilder
@@ -87,13 +93,13 @@ struct TranscriptInventoryView: View {
       Divider()
 
       // Session list with URL-based selection
-      List(sessions, id: \.fileURL, selection: $selectedSessionURL) { session in
+      List(monitor.allSessions, id: \.fileURL, selection: $selectedSessionURL) { session in
         sessionRow(session)
           .tag(session.fileURL)
       }
       .listStyle(.sidebar)
       .searchable(text: $searchText, prompt: "Search transcripts")
-      .onChange(of: sessions) { _, newSessions in
+      .onChange(of: monitor.allSessions) { _, newSessions in
         // Clear selection if selected session no longer exists
         if let selectedURL = selectedSessionURL,
            !newSessions.contains(where: { $0.fileURL == selectedURL }) {
@@ -108,7 +114,7 @@ struct TranscriptInventoryView: View {
     if let session = selectedSession {
       TranscriptDetailView(
         session: session,
-        isActive: session.fileURL == activeSessionURL,
+        isActive: session.fileURL == monitor.activeSession?.fileURL,
         onSelect: {
           onSelectSession(session)
         }
@@ -146,7 +152,7 @@ struct TranscriptInventoryView: View {
           .font(.callout)
           .lineLimit(1)
 
-        if session.fileURL == activeSessionURL {
+        if session.fileURL == monitor.activeSession?.fileURL {
           Image(systemName: "circle.fill")
             .font(.system(size: 6))
             .foregroundStyle(.green)
@@ -174,6 +180,7 @@ struct TranscriptInventoryView: View {
   // MARK: - Helpers
 
   private var filteredSessions: [TranscriptSession] {
+    let sessions = monitor.allSessions
     if searchText.isEmpty {
       return sessions
     }
@@ -214,8 +221,7 @@ struct TranscriptInventoryView: View {
   }
 
   private func refreshSessions() {
-    // Trigger refresh in parent
-    // This will be wired up when integrated
+    // Refresh handled by window wrapper via monitor.refresh()
   }
 }
 
@@ -368,31 +374,10 @@ struct TranscriptDetailView: View {
 #if DEBUG
 struct TranscriptInventoryView_Previews: PreviewProvider {
   static var previews: some View {
-    TranscriptInventoryView(
-      sessions: [
-        TranscriptSession(
-          provider: .claudeCode,
-          identifier: "conversation-1.jsonl",
-          fileURL: URL(fileURLWithPath: "/Users/rob/.claude/projects/contextify/conversation-1.jsonl"),
-          lastActivity: Date()
-        ),
-        TranscriptSession(
-          provider: .claudeCode,
-          identifier: "conversation-2.jsonl",
-          fileURL: URL(fileURLWithPath: "/Users/rob/.claude/projects/contextify/conversation-2.jsonl"),
-          lastActivity: Date().addingTimeInterval(-3600)
-        ),
-        TranscriptSession(
-          provider: .codexCLI,
-          identifier: "session-123.jsonl",
-          fileURL: URL(fileURLWithPath: "/Users/rob/.codex/sessions/session-123.jsonl"),
-          lastActivity: Date().addingTimeInterval(-86400)
-        )
-      ],
-      activeSessionURL: URL(fileURLWithPath: "/Users/rob/.claude/projects/contextify/conversation-1.jsonl"),
-      onSelectSession: { _ in },
-      onDismiss: { }
-    )
+    TranscriptInventoryView { _ in
+      // Session selection handler
+    }
+    .environment(ConversationMonitor.shared)
   }
 }
 #endif
