@@ -1,5 +1,7 @@
 #!/bin/bash
-# Migrate Claude Code transcripts from old project path to new project path
+# Migrate AI assistant transcripts from old project path to new project path
+# Supports: Claude Code and Codex/AI CLI
+#
 # Usage: ./scripts/migrate-transcripts.sh <old-path> <new-path>
 #
 # Example:
@@ -7,7 +9,8 @@
 #
 # This script:
 # - Creates a timestamped backup of original transcripts
-# - Copies transcripts to new location
+# - Migrates Claude Code transcripts to new location
+# - Updates Codex transcripts in-place (with backup)
 # - Replaces all instances of old path with new path in content
 # - Preserves JSONL structure and timestamps
 
@@ -97,44 +100,90 @@ mkdir -p "$backup_dir"
 cp -r "$OLD_DIR" "$backup_dir/"
 log "Backup saved to: $backup_dir"
 
-# Process each transcript file
-log "Migrating transcripts..."
-migrated=0
-failed=0
+# Migrate Claude Code transcripts
+log "Migrating Claude Code transcripts..."
+claude_migrated=0
+claude_failed=0
 
 for file in "$OLD_DIR"/*.jsonl; do
     filename=$(basename "$file")
 
     # Use sed to replace all occurrences of old path with new path
     if sed "s|$OLD_PATH|$NEW_PATH|g" "$file" > "$NEW_DIR/$filename"; then
-        migrated=$((migrated + 1))
+        claude_migrated=$((claude_migrated + 1))
         echo "  ✓ $filename"
     else
-        failed=$((failed + 1))
+        claude_failed=$((claude_failed + 1))
         warn "Failed to migrate: $filename"
     fi
 done
 
+# Migrate Codex transcripts
+log "Migrating Codex/AI CLI transcripts..."
+codex_dir="$HOME/.codex/sessions"
+codex_migrated=0
+codex_failed=0
+
+if [ -d "$codex_dir" ]; then
+    # Find all JSONL files in Codex sessions directory (including subdirectories)
+    while IFS= read -r -d '' file; do
+        # Check if file contains session_meta with matching cwd
+        if grep -q "\"cwd\":\"$OLD_PATH\"" "$file" 2>/dev/null; then
+            filename=$(basename "$file")
+            relative_path="${file#$codex_dir/}"
+
+            # Create backup of original file
+            backup_file="$backup_dir/codex/$relative_path"
+            mkdir -p "$(dirname "$backup_file")"
+            cp "$file" "$backup_file"
+
+            # Replace paths in place with backup
+            if sed -i.bak "s|$OLD_PATH|$NEW_PATH|g" "$file"; then
+                rm -f "$file.bak"
+                codex_migrated=$((codex_migrated + 1))
+                echo "  ✓ $filename (Codex)"
+            else
+                codex_failed=$((codex_failed + 1))
+                warn "Failed to migrate Codex file: $filename"
+            fi
+        fi
+    done < <(find "$codex_dir" -name "*.jsonl" -type f -print0)
+
+    if [ $codex_migrated -eq 0 ]; then
+        log "No Codex transcripts found for old path"
+    fi
+else
+    log "Codex sessions directory not found, skipping Codex migration"
+fi
+
 echo ""
 log "Migration Summary:"
-echo "  ✓ Migrated: $migrated files"
-if [ $failed -gt 0 ]; then
-    warn "Failed: $failed files"
+echo "  ✓ Claude Code: $claude_migrated files"
+if [ $codex_migrated -gt 0 ]; then
+    echo "  ✓ Codex/AI CLI: $codex_migrated files"
+fi
+total_migrated=$((claude_migrated + codex_migrated))
+total_failed=$((claude_failed + codex_failed))
+if [ $total_failed -gt 0 ]; then
+    warn "Failed: $total_failed files"
 fi
 echo "  📦 Backup: $backup_dir"
-echo "  📁 New location: $NEW_DIR"
+echo "  📁 Claude Code location: $NEW_DIR"
+if [ $codex_migrated -gt 0 ]; then
+    echo "  📁 Codex location: $codex_dir (in-place updates)"
+fi
 echo ""
 
-if [ $failed -eq 0 ]; then
+if [ $total_failed -eq 0 ]; then
     log "Migration completed successfully!"
     echo ""
     echo "Your transcripts are now available at the new project path."
-    echo "The old transcripts remain at: $OLD_DIR"
+    echo "The old Claude Code transcripts remain at: $OLD_DIR"
     echo ""
     echo "To verify in Contextify:"
     echo "  1. Ensure project root is set to: $NEW_PATH"
     echo "  2. Open Timeline → Show All Transcripts"
-    echo "  3. You should see $migrated transcript(s)"
+    echo "  3. You should see $total_migrated transcript(s)"
 else
     warn "Migration completed with errors. Check failed files manually."
 fi
