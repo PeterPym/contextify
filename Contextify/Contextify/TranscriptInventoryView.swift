@@ -332,13 +332,22 @@ struct TranscriptDetailView: View {
         // Header with status badge
         HStack {
           VStack(alignment: .leading, spacing: 4) {
-            Text(session.identifier)
+            // Use metadata title if available, otherwise fall back to identifier
+            Text(metadata?.title ?? session.identifier)
               .font(.title2)
               .fontWeight(.semibold)
 
-            Text(providerName)
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
+            // Show description if available, otherwise show provider + filename
+            if let meta = metadata, !meta.description.isEmpty {
+              Text(meta.description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            } else {
+              Text("\(providerName) • \(session.fileURL.lastPathComponent)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
           }
 
           Spacer()
