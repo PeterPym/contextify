@@ -12,6 +12,34 @@ final class FormattingTests: XCTestCase {
         let made = await FoundationLLM.shared._testSanitize("You made the change.", kind: .user)
         XCTAssertEqual(made, "You made the change.")
     }
+
+    func testTruncationRespectsWordBoundaries() async {
+        // Test that truncation doesn't cut words mid-character
+        let longText = "You made a detailed implementation plan for converting existing files to /build/notes/current.md, replacing prior contents, and appending the complete state of all related files."
+        let sanitized = await FoundationLLM.shared._testSanitize(longText, kind: .user)
+
+        // Should be truncated but not mid-word
+        XCTAssertLessThanOrEqual(sanitized.count, 140)
+        XCTAssertFalse(sanitized.hasSuffix("th"), "Should not truncate mid-word like 'th'")
+        XCTAssertFalse(sanitized.hasSuffix("app"), "Should not truncate mid-word like 'app'")
+
+        // Should end with ellipsis if truncated
+        if sanitized.count < longText.count {
+            XCTAssertTrue(sanitized.hasSuffix("…"), "Truncated text should end with ellipsis")
+        }
+
+        // Should not cut in the middle of a word - last char before ellipsis should be alphanumeric
+        if sanitized.hasSuffix("…") {
+            let beforeEllipsis = sanitized.dropLast()
+            let lastChar = beforeEllipsis.last
+            XCTAssertNotNil(lastChar)
+            // Last character should be alphanumeric or punctuation, not whitespace
+            if let lastChar = lastChar {
+                XCTAssertTrue(lastChar.isLetter || lastChar.isNumber || lastChar.isPunctuation,
+                             "Character before ellipsis should not be whitespace")
+            }
+        }
+    }
 }
 
 #if canImport(FoundationModels)

@@ -248,9 +248,31 @@ private extension FoundationLLM {
             output = "\(policy.fallback) \(output)"
         }
         if output.count > 140 {
-            output = String(output.prefix(140))
+            output = truncateAtWordBoundary(output, limit: 140)
         }
         return output
+    }
+
+    /// Truncates text at the last complete word before the character limit
+    /// to avoid cutting mid-word. Adds ellipsis if truncated.
+    func truncateAtWordBoundary(_ text: String, limit: Int) -> String {
+        guard text.count > limit else { return text }
+
+        // Try to find last space before the limit
+        let truncated = String(text.prefix(limit))
+
+        // Find the last word boundary (space, punctuation, etc.)
+        if let lastSpace = truncated.lastIndex(where: { $0.isWhitespace || $0.isPunctuation }) {
+            let result = String(truncated[..<lastSpace]).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only add ellipsis if we actually truncated meaningful content
+            if !result.isEmpty && text.count > result.count + 5 {
+                return result + "…"
+            }
+            return result
+        }
+
+        // No word boundary found - fall back to hard truncation but with ellipsis
+        return String(text.prefix(limit - 1)) + "…"
     }
 
     func prefixPolicy(for kind: TimelineEntryKind) -> PrefixPolicy {
