@@ -6,40 +6,39 @@ This document tracks work items for Contextify, organized by priority and catego
 
 ## 🔴 Critical - Build & Infrastructure
 
-### Bundle Daemon Resources in App
-**Priority:** P0 (Blocker for production)
+### ~~Bundle Daemon Resources in App~~ → Venv Auto-Repair
+**Priority:** ✅ COMPLETED (2025-10-09)
+**Implementation:** On-demand venv creation instead of bundling
 
-**Current state:**
-- ✅ Daemon works with manually installed files in `~/Library/Application Support/Contextify/`
-- ❌ Daemon script (`iterm2_daemon.py`) not bundled in app Resources
-- ❌ Python venv not bundled in app Resources
+**What Was Implemented:**
+- ✅ `VenvStatus` enum with 5 health states (healthy, missing, symlinkToSystem, missingDependencies, versionMismatch)
+- ✅ `validateVenv()` - Detects broken symlinked venvs on every app launch
+- ✅ `rebuildVenvFromSystem()` - Creates fresh venv using `python3 -m venv --copies`
+- ✅ `installIfNeeded()` - Auto-validates and rebuilds venv when needed
+- ✅ Error messages updated with actionable troubleshooting steps
 
-**Required:**
-1. Create release Python venv:
-   ```bash
-   rm -rf dist/PythonVenv
-   python3 -m venv dist/PythonVenv
-   dist/PythonVenv/bin/pip install --upgrade pip
-   dist/PythonVenv/bin/pip install 'iterm2==2.7'
-   ```
+**Why We Changed Approach:**
+- Bundled venvs use symlinks that break when app moves locations
+- System Python (python3) is available on all macOS 14+ (our minimum version)
+- On-demand creation is simpler and more reliable than bundling
+- ~30 second first-run setup time is acceptable for users
 
-2. Add to Xcode project:
-   - Add `scripts/iterm2_daemon.py` to Resources in Xcode
-   - Add `dist/PythonVenv` as folder reference to Resources
+**User Experience:**
+1. **First launch:** Venv auto-created from system Python with progress indication
+2. **Broken venv:** Auto-detected and repaired on launch
+3. **No internet:** Graceful failure with helpful error message
+4. **Developer:** Can manually create venv for development testing
 
-3. Verify bundled in app:
-   ```bash
-   ls -l .derived/Build/Products/Debug/Contextify.app/Contents/Resources/iterm2_daemon.py
-   ls -l .derived/Build/Products/Debug/Contextify.app/Contents/Resources/PythonVenv/bin/python3
-   ```
+**Acceptance Criteria Met:**
+- ✅ Fresh install works without manual file copying
+- ✅ LaunchAgent uses auto-created venv
+- ✅ Venv validated on every app launch
+- ✅ Build via `bash scripts/xc.sh build` works correctly
+- ✅ Build via Xcode works identically
 
-4. Update LaunchAgentManager to use bundled resources
-
-**Acceptance criteria:**
-- [ ] Build via `bash scripts/xc.sh build` bundles all resources
-- [ ] Build via Xcode Run button bundles all resources (same as script)
-- [ ] LaunchAgent uses bundled venv/daemon without manual setup
-- [ ] Fresh install works without manual file copying
+**Files Modified:**
+- `Contextify/Contextify/LaunchAgentManager.swift` (lines 28-140)
+- `Contextify/Contextify/TerminalContentReader.swift` (lines 140-166)
 
 ---
 
