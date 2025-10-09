@@ -1,0 +1,25 @@
+{
+  "title": "Contextify",
+  "background": "build/assets/dmg_background.png",
+  "icon-size": 120,
+  "window": {
+    "size": {
+      "width": 700,
+      "height": 400
+    }
+  },
+  "contents": [
+    {
+      "type": "file",
+      "path": "Contextify.app",
+      "x": 160,
+      "y": 140
+    },
+    {
+      "type": "link",
+      "path": "/Applications",
+      "x": 530,
+      "y": 140
+    }
+  ]
+}
