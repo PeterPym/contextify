@@ -20,8 +20,6 @@ extension ConversationTranscriptProvider {
 }
 
 struct ClaudeTranscriptProvider: ConversationTranscriptProvider {
-    private let fileManager = FileManager.default
-
     func sessions(for projectPath: String) -> [TranscriptSession] {
         return sessionsForPath(projectPath)
     }
@@ -42,14 +40,15 @@ struct ClaudeTranscriptProvider: ConversationTranscriptProvider {
     }
 
     private func sessionsForPath(_ projectPath: String) -> [TranscriptSession] {
+        let fm = FileManager.default
         let projectDirName = projectPath.replacingOccurrences(of: "/", with: "-")
-        let projectsDir = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
+        let projectsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
         let projectDir = projectsDir.appendingPathComponent(projectDirName)
 
-        guard fileManager.fileExists(atPath: projectDir.path) else { return [] }
+        guard fm.fileExists(atPath: projectDir.path) else { return [] }
 
         do {
-            let files = try fileManager.contentsOfDirectory(
+            let files = try fm.contentsOfDirectory(
                 at: projectDir,
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
@@ -73,8 +72,6 @@ struct ClaudeTranscriptProvider: ConversationTranscriptProvider {
 }
 
 struct CodexTranscriptProvider: ConversationTranscriptProvider {
-    private let fileManager = FileManager.default
-
     func sessions(for projectPath: String) -> [TranscriptSession] {
         return sessionsForPath(projectPath)
     }
@@ -95,10 +92,11 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
     }
 
     private func sessionsForPath(_ projectPath: String) -> [TranscriptSession] {
-        let codexSessionsDir = fileManager.homeDirectoryForCurrentUser
+        let fm = FileManager.default
+        let codexSessionsDir = fm.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions")
 
-        guard fileManager.fileExists(atPath: codexSessionsDir.path) else { return [] }
+        guard fm.fileExists(atPath: codexSessionsDir.path) else { return [] }
 
         // Get git repository URL for this path (if available)
         let gitRepoURL = getGitRepositoryURL(for: projectPath)
@@ -113,7 +111,8 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
     }
 
     private func findJSONLFiles(in directory: URL) -> [URL] {
-        guard let enumerator = fileManager.enumerator(
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
