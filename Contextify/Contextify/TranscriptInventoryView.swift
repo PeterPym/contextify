@@ -12,6 +12,8 @@ struct TranscriptInventoryView: View {
   @State private var groupingMode: GroupingMode = .provider
   @State private var metadata: [URL: TranscriptMetadata] = [:]
   @State private var loadingMetadata: Set<URL> = []
+  @State private var showingFlushAlert = false
+  @State private var lastFlushCount = 0
 
   enum GroupingMode: String, CaseIterable, Identifiable {
     case provider = "Provider"
@@ -63,6 +65,16 @@ struct TranscriptInventoryView: View {
         Text("Transcript Inventory")
           .font(.headline)
         Spacer()
+
+        Button {
+          flushHeuristicCache()
+        } label: {
+          Label("Flush Heuristic Cache", systemImage: "trash")
+            .labelStyle(.iconOnly)
+        }
+        .buttonStyle(.borderless)
+        .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+
         Button {
           refreshSessions()
         } label: {
@@ -72,6 +84,11 @@ struct TranscriptInventoryView: View {
         .buttonStyle(.borderless)
       }
       .padding()
+      .alert("Cache Flushed", isPresented: $showingFlushAlert) {
+        Button("OK") { }
+      } message: {
+        Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
+      }
 
       // Toolbar with grouping
       HStack {
@@ -278,6 +295,31 @@ struct TranscriptInventoryView: View {
 
   private func refreshSessions() {
     // Refresh handled by window wrapper via monitor.refresh()
+  }
+
+  private func flushHeuristicCache() {
+    let store = SidecarMetadataStore()
+    let flushedCount = store.flushHeuristicMetadata(for: monitor.allSessions)
+
+    if flushedCount > 0 {
+      // Clear in-memory cache for flushed items
+      for session in monitor.allSessions {
+        if let meta = metadata[session.fileURL],
+           meta.model == "heuristic" ||
+           meta.title == "Developer Chat" ||
+           meta.title == "Brief Session" {
+          metadata.removeValue(forKey: session.fileURL)
+        }
+      }
+
+      lastFlushCount = flushedCount
+      showingFlushAlert = true
+
+      // Trigger re-loading of metadata
+      Task {
+        await loadMetadataForSessions(monitor.allSessions)
+      }
+    }
   }
 
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {

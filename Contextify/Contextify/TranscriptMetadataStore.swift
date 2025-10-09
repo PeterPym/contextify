@@ -74,4 +74,41 @@ struct SidecarMetadataStore: Sendable {
     let digest = SHA256.hash(data: data)
     return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
   }
+
+  /// Deletes the sidecar metadata file for a transcript
+  func delete(for url: URL) throws {
+    let sidecarPath = sidecarURL(for: url)
+    let fm = FileManager.default
+
+    guard fm.fileExists(atPath: sidecarPath.path) else {
+      return // Already deleted
+    }
+
+    try fm.removeItem(at: sidecarPath)
+  }
+
+  /// Flushes all heuristic-generated metadata (Developer Chat, Brief Session)
+  /// Returns count of flushed files
+  func flushHeuristicMetadata(for sessions: [TranscriptSession]) -> Int {
+    var flushedCount = 0
+
+    for session in sessions {
+      guard let metadata = try? load(for: session.fileURL) else {
+        continue
+      }
+
+      // Check if it's heuristic metadata
+      let isHeuristic = metadata.model == "heuristic" ||
+                        metadata.title == "Developer Chat" ||
+                        metadata.title == "Brief Session" ||
+                        metadata.strategy.contains("heuristic")
+
+      if isHeuristic {
+        try? delete(for: session.fileURL)
+        flushedCount += 1
+      }
+    }
+
+    return flushedCount
+  }
 }
