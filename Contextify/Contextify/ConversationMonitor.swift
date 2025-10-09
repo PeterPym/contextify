@@ -34,11 +34,13 @@ final class ConversationMonitor {
     @ObservationIgnored private var fileWatcher: DispatchSourceFileSystemObject?
     @ObservationIgnored private var conversationFileDescriptor: CInt = -1
     @ObservationIgnored private var lastProcessedLine: Int = 0
+    @ObservationIgnored private var currentLineNumber: Int = 0
     @ObservationIgnored private var seenMessageUUIDs: Set<String> = []
     @ObservationIgnored private var didEmitSessionStart = false
     @ObservationIgnored private var currentConversationFile: URL?
     @ObservationIgnored private var activeSession: TranscriptSession?
     @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
 
     private init() {}
 
@@ -242,10 +244,10 @@ final class ConversationMonitor {
         }
     }
 
-    private func makeSourceContext(identifier: String) -> TimelineSourceContext {
+    private func makeSourceContext(identifier: String, line: Int? = nil) -> TimelineSourceContext {
         let provider = activeSession?.provider ?? .other
         let filePath = activeSession?.fileURL.path
-        return TimelineSourceContext(provider: provider, identifier: identifier, filePath: filePath)
+        return TimelineSourceContext(provider: provider, identifier: identifier, filePath: filePath, line: line)
     }
 
     // MARK: - Processing
@@ -314,7 +316,12 @@ final class ConversationMonitor {
             var skippedCount = 0
             let entriesBeforeProcessing = entries.count
 
-            for line in newLines.reversed() {
+            for (index, line) in newLines.reversed().enumerated() {
+                // Calculate actual line number in file
+                let lineNumber = shouldBackfillLimitedEntries
+                    ? lastProcessedLine - newLines.count + index + 1
+                    : lastProcessedLine - newLines.count + index + 1
+
                 // If backfilling with limit, stop once we have 5 new displayable entries
                 if shouldBackfillLimitedEntries {
                     let newDisplayableEntries = entries.count - entriesBeforeProcessing
@@ -330,6 +337,7 @@ final class ConversationMonitor {
                     continue
                 }
 
+                currentLineNumber = lineNumber
                 await processConversationEntry(json)
                 processedCount += 1
             }
@@ -490,7 +498,7 @@ final class ConversationMonitor {
             summary: summaryResult.summary,
             detail: detail,
             sourceContent: text,
-            sourceContext: makeSourceContext(identifier: uuid),
+            sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)",
             isCompletion: false
         )
@@ -560,7 +568,7 @@ final class ConversationMonitor {
             summary: summaryResult.summary,
             detail: detail,
             sourceContent: text,
-            sourceContext: makeSourceContext(identifier: uuid),
+            sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)-text",
             isCompletion: summaryResult.isCompletion
         )
