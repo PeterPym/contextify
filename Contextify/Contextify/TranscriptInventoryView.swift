@@ -2,13 +2,14 @@ import SwiftUI
 import ContextifyCore
 
 /// Displays all discovered transcripts for the current project, including worktrees.
-/// Uses NavigationSplitView for macOS-native sidebar + detail layout.
+/// Uses HSplitView for macOS-native sidebar + detail layout.
 struct TranscriptInventoryView: View {
   let sessions: [TranscriptSession]
   let activeSessionURL: URL?
   let onSelectSession: (TranscriptSession) -> Void
+  let onDismiss: () -> Void
 
-  @State private var selectedSession: TranscriptSession?
+  @State private var selectedSessionURL: URL?
   @State private var searchText = ""
   @State private var groupingMode: GroupingMode = .provider
 
@@ -21,18 +22,50 @@ struct TranscriptInventoryView: View {
   }
 
   var body: some View {
-    NavigationSplitView {
-      sidebarContent
-    } detail: {
-      detailContent
+    HSplitView {
+      // Session list
+      sessionListView
+        .frame(minWidth: 250)
+
+      // Detail view
+      detailView
+        .frame(minWidth: 500)
     }
-    .frame(minWidth: 600, minHeight: 400)
+    .frame(minWidth: 800, minHeight: 600)
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Done") {
+          onDismiss()
+        }
+        .keyboardShortcut(.cancelAction)
+      }
+    }
+  }
+
+  private var selectedSession: TranscriptSession? {
+    guard let url = selectedSessionURL else { return nil }
+    return sessions.first(where: { $0.fileURL == url })
   }
 
   @ViewBuilder
-  private var sidebarContent: some View {
+  private var sessionListView: some View {
     VStack(spacing: 0) {
-      // Toolbar with search and grouping
+      // Header
+      HStack {
+        Text("Transcript Inventory")
+          .font(.headline)
+        Spacer()
+        Button {
+          refreshSessions()
+        } label: {
+          Label("Refresh", systemImage: "arrow.clockwise")
+            .labelStyle(.iconOnly)
+        }
+        .buttonStyle(.borderless)
+      }
+      .padding()
+
+      // Toolbar with grouping
       HStack {
         Picker("Group by", selection: $groupingMode) {
           ForEach(GroupingMode.allCases) { mode in
@@ -49,152 +82,93 @@ struct TranscriptInventoryView: View {
           .foregroundStyle(.secondary)
       }
       .padding(.horizontal)
-      .padding(.vertical, 8)
+      .padding(.bottom, 8)
 
       Divider()
 
-      // Session list
-      List(selection: $selectedSession) {
-        switch groupingMode {
-        case .provider:
-          providerGroupedSessions
-        case .date:
-          dateGroupedSessions
-        case .flat:
-          flatSessions
-        }
+      // Session list with URL-based selection
+      List(sessions, id: \.fileURL, selection: $selectedSessionURL) { session in
+        sessionRow(session)
+          .tag(session.fileURL)
       }
       .listStyle(.sidebar)
       .searchable(text: $searchText, prompt: "Search transcripts")
-    }
-    .navigationTitle("Transcript Inventory")
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          refreshSessions()
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
+      .onChange(of: sessions) { _, newSessions in
+        // Clear selection if selected session no longer exists
+        if let selectedURL = selectedSessionURL,
+           !newSessions.contains(where: { $0.fileURL == selectedURL }) {
+          selectedSessionURL = nil
         }
       }
     }
   }
 
   @ViewBuilder
-  private var detailContent: some View {
+  private var detailView: some View {
     if let session = selectedSession {
-      TranscriptDetailView(session: session, isActive: session.fileURL == activeSessionURL)
-    } else {
-      ContentUnavailableView(
-        "No Transcript Selected",
-        systemImage: "doc.text",
-        description: Text("Select a transcript from the sidebar to view details")
+      TranscriptDetailView(
+        session: session,
+        isActive: session.fileURL == activeSessionURL,
+        onSelect: {
+          onSelectSession(session)
+        }
       )
+    } else {
+      emptyDetailView
     }
   }
 
-  // MARK: - Grouping Views
-
-  @ViewBuilder
-  private var providerGroupedSessions: some View {
-    let grouped = Dictionary(grouping: filteredSessions) { $0.provider }
-    let sortedKeys = grouped.keys.sorted { providerName($0) < providerName($1) }
-
-    ForEach(sortedKeys, id: \.self) { provider in
-      let sessions = grouped[provider] ?? []
-      Section(header: Text(providerName(provider))) {
-        ForEach(Array(sessions.indices), id: \.self) { index in
-          sessionRow(sessions[index])
-            .tag(sessions[index] as TranscriptSession?)
-        }
-      }
+  private var emptyDetailView: some View {
+    VStack(spacing: 12) {
+      Image(systemName: "doc.text")
+        .font(.largeTitle)
+        .foregroundStyle(.secondary)
+      Text("No Transcript Selected")
+        .font(.headline)
+      Text("Select a transcript from the sidebar to view details")
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
-  @ViewBuilder
-  private var dateGroupedSessions: some View {
-    let grouped = Dictionary(grouping: filteredSessions) { session -> String in
-      let calendar = Calendar.current
-      if calendar.isDateInToday(session.lastActivity) {
-        return "Today"
-      } else if calendar.isDateInYesterday(session.lastActivity) {
-        return "Yesterday"
-      } else if calendar.isDate(session.lastActivity, equalTo: Date(), toGranularity: .weekOfYear) {
-        return "This Week"
-      } else {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: session.lastActivity)
-      }
-    }
-
-    let sortedKeys = ["Today", "Yesterday", "This Week"]
-      + grouped.keys.filter { !["Today", "Yesterday", "This Week"].contains($0) }.sorted(by: >)
-
-    ForEach(sortedKeys.filter { grouped[$0] != nil }, id: \.self) { dateGroup in
-      let sessions = grouped[dateGroup] ?? []
-      Section(header: Text(dateGroup)) {
-        ForEach(Array(sessions.indices), id: \.self) { index in
-          sessionRow(sessions[index])
-            .tag(sessions[index] as TranscriptSession?)
-        }
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var flatSessions: some View {
-    ForEach(Array(filteredSessions.indices), id: \.self) { index in
-      sessionRow(filteredSessions[index])
-        .tag(filteredSessions[index] as TranscriptSession?)
-    }
-  }
+  // MARK: - Session Row
 
   @ViewBuilder
   private func sessionRow(_ session: TranscriptSession) -> some View {
-    HStack(spacing: 8) {
-      // Provider icon
-      Image(systemName: providerIcon(session.provider))
-        .foregroundStyle(providerColor(session.provider))
-        .frame(width: 20)
+    VStack(alignment: .leading, spacing: 4) {
+      HStack {
+        Image(systemName: providerIcon(session.provider))
+          .foregroundStyle(providerColor(session.provider))
+          .frame(width: 16)
 
-      VStack(alignment: .leading, spacing: 2) {
-        HStack {
-          Text(session.identifier)
-            .font(.body)
-            .lineLimit(1)
+        Text(session.identifier)
+          .font(.callout)
+          .lineLimit(1)
 
-          if session.fileURL == activeSessionURL {
-            Image(systemName: "circle.fill")
-              .font(.system(size: 6))
-              .foregroundStyle(.green)
-          }
+        if session.fileURL == activeSessionURL {
+          Image(systemName: "circle.fill")
+            .font(.system(size: 6))
+            .foregroundStyle(.green)
         }
+      }
+
+      HStack(spacing: 4) {
+        Label(providerName(session.provider), systemImage: providerIcon(session.provider))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .labelStyle(.titleOnly)
+
+        Text("•")
+          .font(.caption)
+          .foregroundStyle(.secondary)
 
         Text(relativeTime(session.lastActivity))
           .font(.caption)
           .foregroundStyle(.secondary)
       }
-
-      Spacer()
     }
     .padding(.vertical, 4)
-    .contentShape(Rectangle())
-    .contextMenu {
-      Button("Select for Monitoring") {
-        onSelectSession(session)
-      }
-
-      Button("Reveal in Finder") {
-        NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
-      }
-
-      Divider()
-
-      Button("Copy Path") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(session.fileURL.path, forType: .string)
-      }
-    }
   }
 
   // MARK: - Helpers
@@ -249,6 +223,7 @@ struct TranscriptInventoryView: View {
 struct TranscriptDetailView: View {
   let session: TranscriptSession
   let isActive: Bool
+  let onSelect: () -> Void
 
   var body: some View {
     ScrollView {
@@ -300,6 +275,16 @@ struct TranscriptDetailView: View {
 
         // Actions
         VStack(spacing: 8) {
+          if !isActive {
+            Button {
+              onSelect()
+            } label: {
+              Label("Select for Monitoring", systemImage: "play.circle.fill")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+          }
+
           Button {
             NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
           } label: {
@@ -405,7 +390,8 @@ struct TranscriptInventoryView_Previews: PreviewProvider {
         )
       ],
       activeSessionURL: URL(fileURLWithPath: "/Users/rob/.claude/projects/contextify/conversation-1.jsonl"),
-      onSelectSession: { _ in }
+      onSelectSession: { _ in },
+      onDismiss: { }
     )
   }
 }

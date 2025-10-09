@@ -42,6 +42,9 @@ struct ConversationTimelineView: View {
                 onSelectSession: { session in
                     showTranscriptInventory = false
                     // TODO: Add method to ConversationMonitor to switch to specific session
+                },
+                onDismiss: {
+                    showTranscriptInventory = false
                 }
             )
         }
