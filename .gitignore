@@ -19,7 +19,6 @@ Thumbs.db
 **/*.xcuserstate
 **/*.xcuserdatad
 DerivedData/
-build/
 *.moved-aside
 *.pbxuser
 *.mode1v3
@@ -56,7 +55,15 @@ fastlane/test_output/
 *.swo
 *.tmp
 
-# Project artifacts (ensure non-source outputs aren’t committed)
+# Project artifacts (ensure non-source outputs aren't committed)
 outputs/
 Contextify/outputs/
 **/docs/sessions/**/outputs/
+
+# Distribution artifacts
+dist/
+
+# Build artifacts (keep notes and assets, ignore staging and logs)
+build/Contextify-Staging/
+build/logs/
+build/ResultBundles/
