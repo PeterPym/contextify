@@ -25,12 +25,45 @@ actor LaunchAgentManager {
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
+    /// Status of the Python venv health check
+    enum VenvStatus: CustomStringConvertible {
+        case healthy
+        case missing
+        case symlinkToSystem  // BROKEN - needs rebuild
+        case missingDependencies
+        case versionMismatch
+
+        var description: String {
+            switch self {
+            case .healthy: return "healthy"
+            case .missing: return "missing"
+            case .symlinkToSystem: return "symlinkToSystem"
+            case .missingDependencies: return "missingDependencies"
+            case .versionMismatch: return "versionMismatch"
+            }
+        }
+    }
+
     /// Install LaunchAgent if not already installed.
-    /// Copies daemon script and venv, writes plist, bootstraps agent.
+    /// Validates venv health and rebuilds if needed, copies daemon script, writes plist, bootstraps agent.
     func installIfNeeded() async throws {
         try createDirs()
         rotateLogsIfNeeded()
-        try copyDaemonAndVenvIfNeeded()
+
+        // Copy daemon script (always)
+        try copyDaemonScript()
+
+        // Check venv health and rebuild if needed
+        let status = await validateVenv()
+        switch status {
+        case .healthy:
+            log.info("Venv is healthy, using existing")
+
+        case .missing, .symlinkToSystem, .missingDependencies, .versionMismatch:
+            log.info("Venv needs rebuild (status: \(status))")
+            try await rebuildVenvFromSystem()
+        }
+
         try writePlist()
         try bootstrapAndEnable()
     }
@@ -38,6 +71,96 @@ actor LaunchAgentManager {
     /// Kickstart the daemon to ensure it's running.
     func kickstart() async throws {
         try run("/bin/launchctl", ["kickstart", "gui/\(getuid())/\(label)"])
+    }
+
+    /// Validate the health of the Python venv.
+    /// Checks for symlinks to system Python, missing dependencies, and version mismatches.
+    func validateVenv() async -> VenvStatus {
+        let pythonBin = venvDir.appendingPathComponent("bin/python3")
+
+        // Check 1: Executable exists
+        guard FileManager.default.isExecutableFile(atPath: pythonBin.path) else {
+            log.info("Venv validation: python3 executable not found")
+            return .missing
+        }
+
+        // Check 2: Not a symlink to system Python (CRITICAL CHECK - currently missing)
+        do {
+            let resolved = try FileManager.default.destinationOfSymbolicLink(atPath: pythonBin.path)
+            if resolved.contains("/usr/bin") ||
+               resolved.contains("Xcode.app") ||
+               resolved.contains("/opt/homebrew") {
+                log.warning("Venv validation: python is symlinked to system: \(resolved)")
+                return .symlinkToSystem  // BROKEN - will fail when app bundle moves
+            }
+        } catch {
+            // Not a symlink - good (or unreadable - proceed to next check)
+        }
+
+        // Check 3: Can import iterm2 with correct version
+        let testCmd = "\(pythonBin.path) -c 'import iterm2; print(iterm2.__version__)'"
+        do {
+            let (exitCode, output) = try run("/bin/sh", ["-c", testCmd])
+            guard exitCode == 0 else {
+                log.warning("Venv validation: iterm2 module import failed")
+                return .missingDependencies
+            }
+
+            // Check 4: Version matches expectation
+            let expectedVersion = "2.7"  // or read from config
+            let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedOutput.contains(expectedVersion) {
+                log.warning("Venv validation: iterm2 version mismatch: got \(trimmedOutput), expected \(expectedVersion)")
+                return .versionMismatch
+            }
+        } catch {
+            log.warning("Venv validation: iterm2 check failed: \(error)")
+            return .missingDependencies
+        }
+
+        log.info("Venv validation: healthy")
+        return .healthy
+    }
+
+    /// Rebuild the Python venv from system Python.
+    /// Creates a fresh venv with --copies to avoid symlinks, then installs iterm2==2.7.
+    /// Throws if venv creation or pip install fails.
+    func rebuildVenvFromSystem() async throws {
+        log.info("Rebuilding venv from system Python")
+
+        // Clean slate
+        let fm = FileManager.default
+        if fm.fileExists(atPath: self.venvDir.path) {
+            log.info("Removing existing venv at \(self.venvDir.path)")
+            try fm.removeItem(at: self.venvDir)
+        }
+
+        // Create fresh venv with --copies to avoid symlinks
+        log.info("Creating venv with --copies flag")
+        let (exitCode1, output1) = try run("/usr/bin/python3", [
+            "-m", "venv",
+            "--copies",  // CRITICAL: Avoid symlinks
+            self.venvDir.path
+        ])
+        guard exitCode1 == 0 else {
+            throw NSError(domain: "Contextify", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "venv creation failed: \(output1)"])
+        }
+
+        // Install iterm2
+        log.info("Installing iterm2==2.7 via pip")
+        let pip = self.venvDir.appendingPathComponent("bin/pip3")
+        let (exitCode2, output2) = try run(pip.path, [
+            "install",
+            "--no-cache-dir",  // Fresh download
+            "iterm2==2.7"      // Pin version
+        ])
+        guard exitCode2 == 0 else {
+            throw NSError(domain: "Contextify", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "pip install failed: \(output2)"])
+        }
+
+        log.info("Venv rebuild complete")
     }
 
     // MARK: - Private helpers
@@ -51,7 +174,7 @@ actor LaunchAgentManager {
                                                attributes: [FileAttributeKey.posixPermissions: 0o700])
     }
 
-    private func copyDaemonAndVenvIfNeeded() throws {
+    private func copyDaemonScript() throws {
         let fm = FileManager.default
 
         guard let daemonSrc = Bundle.main.url(forResource: "iterm2_daemon", withExtension: "py") else {
@@ -63,27 +186,7 @@ actor LaunchAgentManager {
             try? fm.removeItem(at: daemonDst)
         }
         try fm.copyItem(at: daemonSrc, to: daemonDst)
-
-        // Check if venv already exists and is valid (e.g., manually installed during dev)
-        let pythonBin = venvDir.appendingPathComponent("bin/python3")
-        if fm.isExecutableFile(atPath: pythonBin.path) {
-            log.info("Using existing valid venv at \(self.venvDir.path)")
-        } else {
-            // Try to copy from bundle
-            guard let venvSrc = Bundle.main.url(forResource: "PythonVenv", withExtension: nil) else {
-                throw NSError(domain: "Contextify", code: 2,
-                              userInfo: [NSLocalizedDescriptionKey: "bundled PythonVenv missing and no valid venv exists at \(self.venvDir.path)"])
-            }
-            if fm.fileExists(atPath: venvDir.path) {
-                try? fm.removeItem(at: venvDir)
-            }
-            try fm.copyItem(at: venvSrc, to: venvDir)
-
-            guard fm.isExecutableFile(atPath: pythonBin.path) else {
-                throw NSError(domain: "Contextify", code: 2,
-                              userInfo: [NSLocalizedDescriptionKey: "venv python3 not executable at \(pythonBin.path)"])
-            }
-        }
+        log.info("Copied daemon script to \(daemonDst.path)")
     }
 
     private func writePlist() throws {

@@ -138,21 +138,32 @@ final class TerminalContentReader {
 
         // Show user-friendly error alert
         let alert = NSAlert()
-        alert.messageText = "iTerm2 Daemon Not Available"
+        alert.messageText = "iTerm2 Integration Failed"
         alert.informativeText = """
-        The fast iTerm2 daemon failed to start: \(error.description)
+        The iTerm2 daemon cannot connect: \(error.description)
 
-        This is likely because the Python environment is not bundled in the app.
+        This could mean:
+        • iTerm2 Python API is disabled (check iTerm2 → Preferences → General → Magic)
+        • iTerm2 version incompatibility
+        • Python environment needs to be rebuilt
 
-        Expected: <30ms response time
-        Legacy fallback: 1-2 seconds (unacceptable)
+        The daemon will attempt to auto-repair on next launch.
 
-        Please check the daemon logs:
+        To troubleshoot, check the logs:
         ~/Library/Application Support/Contextify/logs/daemon.stderr.log
         """
-        alert.alertStyle = .critical
+        alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        alert.addButton(withTitle: "Open Logs Folder")
+
+        if alert.runModal() == .alertSecondButtonReturn {
+          let logsURL = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+          )[0]
+            .appendingPathComponent("Contextify/logs", isDirectory: true)
+          NSWorkspace.shared.open(logsURL)
+        }
 
         return nil
       }
