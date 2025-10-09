@@ -108,8 +108,10 @@ actor TranscriptMetadataOrchestrator {
       return metadata
     }
 
-    // Select strategy
-    let strategy: GenerationStrategy = exchanges.count <= 60 ? .full : .adaptive
+    // Select strategy based on context window constraints
+    // Full strategy: ~60-100 tokens per exchange avg, limit to 25 exchanges (~2500 tokens max)
+    // Adaptive: intelligently samples to fit 2000 token budget
+    let strategy: GenerationStrategy = exchanges.count <= 25 ? .full : .adaptive
 
     // Check circuit breaker
     if shouldUseCircuitBreaker() {

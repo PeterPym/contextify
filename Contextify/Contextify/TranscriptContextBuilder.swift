@@ -22,8 +22,10 @@ struct ContextBuilder: Sendable {
       )
 
     case .bookends:
-      let head = Array(exchanges.prefix(20))
-      let tail = Array(exchanges.suffix(20))
+      // Limit bookends to fit within context window
+      // Each exchange ~50-100 tokens avg, so 10+10 = ~1000-2000 tokens
+      let head = Array(exchanges.prefix(10))
+      let tail = Array(exchanges.suffix(10))
       let seq = (head + tail).sorted { $0.timestamp < $1.timestamp }
       let formatted = seq.map(Self.format).joined(separator: "\n")
       return BuiltContext(
@@ -32,7 +34,9 @@ struct ContextBuilder: Sendable {
       )
 
     case .adaptive:
-      let seq = AdaptiveSampler.sample(exchanges: exchanges, budgetTokens: 3000)
+      // Budget: 4096 total - 300 output - 250 prompt/overhead = ~3500 input max
+      // Use 2000 to be conservative and allow for token estimation error
+      let seq = AdaptiveSampler.sample(exchanges: exchanges, budgetTokens: 2000)
       let formatted = seq.map(Self.format).joined(separator: "\n")
       return BuiltContext(
         text: header(sampled: seq.count, total: exchanges.count) + formatted,
