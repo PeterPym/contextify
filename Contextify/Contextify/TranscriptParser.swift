@@ -73,6 +73,16 @@ struct TranscriptParser: Sendable {
         if let parsedExchanges = parseAssistantMessage(json, timestamp: timestamp) {
           exchanges.append(contentsOf: parsedExchanges)
         }
+      case "response_item":
+        // Codex format: extract payload
+        if let parsedExchanges = parseCodexResponseItem(json, timestamp: timestamp) {
+          exchanges.append(contentsOf: parsedExchanges)
+        }
+      case "message":
+        // Older Codex format: direct message type
+        if let exchange = parseCodexMessage(json, timestamp: timestamp) {
+          exchanges.append(exchange)
+        }
       default:
         // Skip other types (session_meta, tool_use, etc.)
         continue
@@ -216,5 +226,73 @@ struct TranscriptParser: Sendable {
     }
 
     return sanitized
+  }
+
+  // MARK: - Codex Format Parsing
+
+  /// Parse Codex response_item record (newer format)
+  private func parseCodexResponseItem(_ json: [String: Any], timestamp: Date) -> [Exchange]? {
+    guard let payload = json["payload"] as? [String: Any],
+          payload["type"] as? String == "message",
+          let role = payload["role"] as? String else {
+      return nil
+    }
+
+    // Extract text from content array
+    guard let text = extractCodexContent(payload["content"]) else {
+      return nil
+    }
+
+    let sanitized = sanitizeText(text)
+    guard !sanitized.isEmpty else {
+      return nil
+    }
+
+    let exchangeRole: Exchange.Role = (role == "user") ? .user : .assistant
+    return [Exchange(role: exchangeRole, text: sanitized, timestamp: timestamp)]
+  }
+
+  /// Parse Codex message record (older format without response_item wrapper)
+  private func parseCodexMessage(_ json: [String: Any], timestamp: Date) -> Exchange? {
+    guard let role = json["role"] as? String else {
+      return nil
+    }
+
+    // Extract text from content array
+    guard let text = extractCodexContent(json["content"]) else {
+      return nil
+    }
+
+    let sanitized = sanitizeText(text)
+    guard !sanitized.isEmpty else {
+      return nil
+    }
+
+    let exchangeRole: Exchange.Role = (role == "user") ? .user : .assistant
+    return Exchange(role: exchangeRole, text: sanitized, timestamp: timestamp)
+  }
+
+  /// Extract text from Codex content array format
+  /// Codex uses: content: [{"type": "input_text", "text": "..."}]
+  private func extractCodexContent(_ content: Any?) -> String? {
+    guard let contentBlocks = content as? [[String: Any]] else {
+      return nil
+    }
+
+    // Find first text block
+    for block in contentBlocks {
+      guard let blockType = block["type"] as? String else { continue }
+
+      switch blockType {
+      case "input_text", "text":
+        if let text = block["text"] as? String, !text.isEmpty {
+          return text
+        }
+      default:
+        continue
+      }
+    }
+
+    return nil
   }
 }
