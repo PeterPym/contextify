@@ -52,7 +52,9 @@ struct ContextBuilder: Sendable {
   private static func format(_ exchange: Exchange) -> String {
     let role = (exchange.role == .user) ? "U" : "A"
     let stamp = ISO8601DateFormatter().string(from: exchange.timestamp)
-    let oneLine = Sanitizers.collapse(exchange.text, hardLimit: 2000)
+    // Limit to 300 chars (~75 tokens) to fit context window
+    // 25 exchanges × 75 tokens = ~1875 tokens (safe for 4096 window)
+    let oneLine = Sanitizers.collapse(exchange.text, hardLimit: 300)
     return "\(role) [\(stamp)]: \(oneLine)"
   }
 }
@@ -140,8 +142,11 @@ enum AdaptiveSampler {
 
   private static func estimateTokens(for exchanges: [Exchange]) -> Int {
     exchanges.reduce(0) { acc, exchange in
-      let wordCount = exchange.text.split(whereSeparator: \.isWhitespace).count
-      return acc + Int(Double(wordCount) * 1.3) + 8 // 1.3x multiplier + overhead
+      // Account for formatting (300 char hard limit per exchange)
+      let limitedText = Sanitizers.collapse(exchange.text, hardLimit: 300)
+      let charCount = limitedText.count
+      // ~4 chars per token + timestamp/role overhead (~20 tokens)
+      return acc + (charCount / 4) + 25
     }
   }
 }

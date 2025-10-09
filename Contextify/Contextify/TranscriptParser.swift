@@ -273,26 +273,30 @@ struct TranscriptParser: Sendable {
   }
 
   /// Extract text from Codex content array format
-  /// Codex uses: content: [{"type": "input_text", "text": "..."}]
+  /// Codex uses: content: [{"type": "input_text"|"output_text"|"markdown", "text": "..."}]
   private func extractCodexContent(_ content: Any?) -> String? {
     guard let contentBlocks = content as? [[String: Any]] else {
       return nil
     }
 
-    // Find first text block
+    // Collect all text blocks (Codex can have multiple content blocks per message)
+    var textParts: [String] = []
+
     for block in contentBlocks {
       guard let blockType = block["type"] as? String else { continue }
 
       switch blockType {
-      case "input_text", "text":
+      case "input_text", "output_text", "text", "markdown":
         if let text = block["text"] as? String, !text.isEmpty {
-          return text
+          textParts.append(text)
         }
       default:
         continue
       }
     }
 
-    return nil
+    // Join multiple parts with newline
+    let combined = textParts.joined(separator: "\n")
+    return combined.isEmpty ? nil : combined
   }
 }
