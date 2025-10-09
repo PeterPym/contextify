@@ -22,13 +22,13 @@ actor TranscriptMetadataLLM {
 
   // MARK: - Single Pass Generation
 
+#if canImport(FoundationModels)
   @available(macOS 26, *)
   func singlePass(
     context: String,
     sampledCount: Int,
     totalCount: Int
   ) async throws -> GuidedTranscriptMetadata {
-    #if canImport(FoundationModels)
     let availability = SystemLanguageModel.default.availability
     switch availability {
     case .available:
@@ -87,14 +87,20 @@ actor TranscriptMetadataLLM {
         log.info("Retry succeeded")
         return retryResponse.content
       }
-
       throw LLMError.decodingFailure(String(describing: error))
     }
-    #endif
-
+  }
+#else
+  @available(macOS 26, *)
+  func singlePass(
+    context: String,
+    sampledCount: Int,
+    totalCount: Int
+  ) async throws -> Never {
     log.error("FoundationModels not available (macOS < 26)")
     throw LLMError.unexpectedEnvironment
   }
+#endif
 }
 
 // MARK: - Guided Schema
