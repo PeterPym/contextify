@@ -43,13 +43,12 @@ Once you have your app-specific password, run this command to store it securely:
 
 ```bash
 xcrun notarytool store-credentials "NotaryProfile" \
-  --apple-id "YOUR_APPLE_ID@email.com" \
+  --apple-id "rob@banagale.com" \
   --team-id "J8P5B23FK7" \
   --password "xxxx-xxxx-xxxx-xxxx"
 ```
 
 **Replace:**
-- `YOUR_APPLE_ID@email.com` with your Apple ID email
 - `xxxx-xxxx-xxxx-xxxx` with the app-specific password from Step 1
 
 **What this does:**
@@ -129,7 +128,7 @@ security delete-generic-password -s "NotaryProfile"
 
 # Recreate with correct info
 xcrun notarytool store-credentials "NotaryProfile" \
-  --apple-id "correct@email.com" \
+  --apple-id "rob@banagale.com" \
   --team-id "J8P5B23FK7" \
   --password "new-app-password"
 ```
@@ -186,6 +185,7 @@ gh release create v1.0.0 dist/Contextify.dmg \
 ## Quick Reference
 
 **Your Info:**
+- Apple ID: `rob@banagale.com`
 - Team ID: `J8P5B23FK7`
 - Certificate Hash: `B46F8E29955991D15267BE5B5C019DFF17405554`
 - Keychain Profile: `NotaryProfile`
