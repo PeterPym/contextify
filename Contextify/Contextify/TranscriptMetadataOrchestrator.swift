@@ -101,8 +101,8 @@ actor TranscriptMetadataOrchestrator {
     let parseTime = Date().timeIntervalSince(parseStart)
 
     // Handle very short transcripts with heuristic
-    if exchanges.count < 5 {
-      log.info("Short transcript (\(exchanges.count) exchanges), using heuristic")
+    if exchanges.count < 3 {
+      log.info("Very short transcript (\(exchanges.count) exchanges), using heuristic")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
       try await store.save(metadata, for: session.fileURL)
       return metadata

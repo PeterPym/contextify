@@ -47,7 +47,7 @@ actor TranscriptMetadataLLM {
     let options = GenerationOptions(
       sampling: .greedy,
       temperature: 0,
-      maximumResponseTokens: 220
+      maximumResponseTokens: 300
     )
 
     log.info("Requesting transcript metadata from LLM (sampled: \(sampledCount)/\(totalCount))")
@@ -74,7 +74,7 @@ actor TranscriptMetadataLLM {
         let retryOptions = GenerationOptions(
           sampling: .greedy,
           temperature: 0.1,
-          maximumResponseTokens: 220
+          maximumResponseTokens: 300
         )
 
         let retryResponse = try await session.respond(
@@ -148,7 +148,7 @@ enum Prompts: Sendable {
 
 enum HeuristicMetadata: Sendable {
   nonisolated static func generate(exchanges: [Exchange]) -> TranscriptMetadata {
-    let title = exchanges.count < 5 ? "Brief Session" : "Developer Chat"
+    let title = exchanges.count < 3 ? "Brief Session" : "Developer Chat"
     let description = generateDescription(exchanges: exchanges)
     let topics = ["general"]
 
@@ -177,8 +177,8 @@ enum HeuristicMetadata: Sendable {
       return "Empty transcript."
     }
 
-    if exchanges.count < 5 {
-      return "Short conversation under five exchanges."
+    if exchanges.count < 3 {
+      return "Very short conversation."
     }
 
     // Extract first and last user messages
