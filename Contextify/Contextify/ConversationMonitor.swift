@@ -87,6 +87,21 @@ final class ConversationMonitor {
         }
     }
 
+    /// Public method for user-initiated session switch from transcript inventory
+    func switchToSessionFromUser(_ session: TranscriptSession) async {
+        await switchToSession(session, reason: .userSelection)
+    }
+
+    /// Public refresh method for manual refresh requests
+    nonisolated func refresh() async {
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.refreshActiveConversation(force: true)
+            }
+        }
+    }
+
     // MARK: - File Discovery & Watching
 
     private func refreshActiveConversation(force: Bool = false) async {
@@ -142,6 +157,7 @@ final class ConversationMonitor {
     private enum SessionSwitchReason {
         case initial
         case providerChange
+        case userSelection
     }
 
     private func switchToSession(_ session: TranscriptSession, reason: SessionSwitchReason) async {
@@ -247,9 +263,9 @@ final class ConversationMonitor {
 
     private func startConversationResolverLoop() {
         conversationResolverTask?.cancel()
-        conversationResolverTask = Task { [weak self] in
+        conversationResolverTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let interval = await MainActor.run { self.config.pollInterval }
+            let interval = self.config.pollInterval
             let delay = UInt64(max(interval, 1) * 1_000_000_000)
 
             while !Task.isCancelled {
