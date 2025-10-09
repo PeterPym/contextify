@@ -107,9 +107,12 @@ claude_failed=0
 
 for file in "$OLD_DIR"/*.jsonl; do
     filename=$(basename "$file")
+    dest_file="$NEW_DIR/$filename"
 
     # Use sed to replace all occurrences of old path with new path
-    if sed "s|$OLD_PATH|$NEW_PATH|g" "$file" > "$NEW_DIR/$filename"; then
+    if sed "s|$OLD_PATH|$NEW_PATH|g" "$file" > "$dest_file"; then
+        # Preserve original timestamp
+        touch -r "$file" "$dest_file"
         claude_migrated=$((claude_migrated + 1))
         echo "  ✓ $filename"
     else
@@ -137,9 +140,19 @@ if [ -d "$codex_dir" ]; then
             mkdir -p "$(dirname "$backup_file")"
             cp "$file" "$backup_file"
 
+            # Preserve original timestamp
+            orig_timestamp=$(stat -f "%m" "$file" 2>/dev/null || stat -c "%Y" "$file" 2>/dev/null)
+
             # Replace paths in place with backup
             if sed -i.bak "s|$OLD_PATH|$NEW_PATH|g" "$file"; then
                 rm -f "$file.bak"
+
+                # Restore original timestamp
+                if [ -n "$orig_timestamp" ]; then
+                    touch -t $(date -r "$orig_timestamp" "+%Y%m%d%H%M.%S" 2>/dev/null) "$file" 2>/dev/null || \
+                    touch -d "@$orig_timestamp" "$file" 2>/dev/null
+                fi
+
                 codex_migrated=$((codex_migrated + 1))
                 echo "  ✓ $filename (Codex)"
             else

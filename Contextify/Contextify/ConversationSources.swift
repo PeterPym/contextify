@@ -100,12 +100,15 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
 
         guard fileManager.fileExists(atPath: codexSessionsDir.path) else { return [] }
 
+        // Get git repository URL for this path (if available)
+        let gitRepoURL = getGitRepositoryURL(for: projectPath)
+
         // Find all JSONL files in sessions directory (including subdirectories)
         let jsonlFiles = findJSONLFiles(in: codexSessionsDir)
 
-        // Parse each file looking for session_meta with matching cwd
+        // Parse each file looking for session_meta with matching cwd or git repo
         return jsonlFiles.compactMap { fileURL in
-            parseCodexSession(fileURL, matchingPath: projectPath)
+            parseCodexSession(fileURL, matchingPath: projectPath, gitRepoURL: gitRepoURL)
         }
     }
 
@@ -127,7 +130,7 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
         return jsonlFiles
     }
 
-    private func parseCodexSession(_ fileURL: URL, matchingPath: String) -> TranscriptSession? {
+    private func parseCodexSession(_ fileURL: URL, matchingPath: String, gitRepoURL: String?) -> TranscriptSession? {
         guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             return nil
         }
@@ -145,11 +148,19 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
                   let jsonData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                   json["type"] as? String == "session_meta",
-                  let payload = json["payload"] as? [String: Any],
-                  let cwd = payload["cwd"] as? String,
-                  cwd == matchingPath else {
+                  let payload = json["payload"] as? [String: Any] else {
                 continue
             }
+
+            // Check if this session matches our project by cwd or git repo URL
+            let sessionCwd = payload["cwd"] as? String
+            let sessionGitInfo = payload["git"] as? [String: Any]
+            let sessionRepoURL = sessionGitInfo?["repository_url"] as? String
+
+            let isMatch = sessionCwd == matchingPath ||
+                          (gitRepoURL != nil && sessionRepoURL == gitRepoURL)
+
+            guard isMatch else { continue }
 
             // Found a matching session_meta
             let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey])
@@ -161,6 +172,38 @@ struct CodexTranscriptProvider: ConversationTranscriptProvider {
                 fileURL: fileURL,
                 lastActivity: lastMod
             )
+        }
+
+        return nil
+    }
+
+    private func getGitRepositoryURL(for path: String) -> String? {
+        let gitDir = URL(fileURLWithPath: path).appendingPathComponent(".git")
+        let configFile = gitDir.appendingPathComponent("config")
+
+        guard let configData = try? String(contentsOf: configFile, encoding: .utf8) else {
+            return nil
+        }
+
+        // Parse git config to find remote origin URL
+        let lines = configData.components(separatedBy: .newlines)
+        var inOriginSection = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed == "[remote \"origin\"]" {
+                inOriginSection = true
+                continue
+            }
+
+            if trimmed.hasPrefix("[") && inOriginSection {
+                inOriginSection = false
+            }
+
+            if inOriginSection && trimmed.hasPrefix("url = ") {
+                return String(trimmed.dropFirst("url = ".count))
+            }
         }
 
         return nil
