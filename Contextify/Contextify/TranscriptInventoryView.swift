@@ -188,7 +188,8 @@ struct TranscriptInventoryView: View {
             ProgressView()
               .controlSize(.mini)
               .scaleEffect(0.7)
-            Text("Analyzing… (~3s)")
+              .frame(width: 10, height: 10)
+            Text("Analyzing…")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
@@ -441,6 +442,7 @@ struct TranscriptDetailView: View {
                   if isRegenerating {
                     ProgressView()
                       .controlSize(.mini)
+                      .frame(width: 10, height: 10)
                   } else {
                     Image(systemName: "arrow.clockwise")
                   }
@@ -490,6 +492,7 @@ struct TranscriptDetailView: View {
               Spacer()
               ProgressView()
                 .controlSize(.mini)
+                .frame(width: 10, height: 10)
             }
             Text("Generating metadata…")
               .font(.caption)
