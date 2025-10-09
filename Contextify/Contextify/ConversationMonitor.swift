@@ -94,15 +94,27 @@ final class ConversationMonitor {
             }
             activeSession = nil
             currentConversationFile = nil
+            allSessions = []
             lastError = "No project root set"
             log.error("Timeline: No project root URL available from HUDViewModel")
             return
         }
 
-        let projectPath = projectURL.path
-        log.info("Timeline: Resolving conversation for project: \(projectPath, privacy: .public)")
+        log.info("Timeline: Resolving conversations for project: \(projectURL.path, privacy: .public)")
 
-        guard let session = conversationResolver.resolveActiveSession(for: projectPath) else {
+        // Use ProjectContext for worktree-aware session discovery
+        guard let context = ProjectContext.current() else {
+            log.error("Timeline: Failed to create ProjectContext")
+            lastError = "Failed to create project context"
+            return
+        }
+
+        let sessions = conversationResolver.resolveAllSessions(for: context)
+        allSessions = sessions
+
+        log.info("Timeline: Found \(sessions.count) total sessions for project (including worktrees)")
+
+        guard let session = sessions.first else {
             if activeSession != nil {
                 log.info("No active conversation sessions found; tearing down watcher")
                 tearDownFileWatcher()
@@ -110,11 +122,11 @@ final class ConversationMonitor {
             activeSession = nil
             currentConversationFile = nil
             lastError = "No conversation file found for this project"
-            log.error("Timeline: No session found for project path: \(projectPath, privacy: .public)")
+            log.error("Timeline: No sessions found for project")
             return
         }
 
-        log.info("Timeline: Found session at \(session.fileURL.path, privacy: .public)")
+        log.info("Timeline: Active session at \(session.fileURL.path, privacy: .public)")
 
         if !force, let current = activeSession, current.fileURL == session.fileURL {
             activeSession = session
