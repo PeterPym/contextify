@@ -128,6 +128,9 @@ struct TranscriptInventoryView: View {
         isActive: session.fileURL == monitor.activeSession?.fileURL,
         onSelect: {
           onSelectSession(session)
+        },
+        onMetadataUpdate: { url, newMetadata in
+          metadata[url] = newMetadata
         }
       )
     } else {
@@ -288,29 +291,21 @@ struct TranscriptInventoryView: View {
       // Check for cached metadata first
       let store = SidecarMetadataStore()
       if let cached = try? store.load(for: session.fileURL) {
-        await MainActor.run {
-          metadata[session.fileURL] = cached
-        }
+        metadata[session.fileURL] = cached
         continue
       }
 
       // Trigger generation
-      await MainActor.run {
-        loadingMetadata.insert(session.fileURL)
-      }
+      loadingMetadata.insert(session.fileURL)
 
       Task {
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
-          await MainActor.run {
-            metadata[session.fileURL] = generated
-            loadingMetadata.remove(session.fileURL)
-          }
+          metadata[session.fileURL] = generated
+          loadingMetadata.remove(session.fileURL)
         } catch {
           // Failed to generate, remove loading indicator
-          await MainActor.run {
-            loadingMetadata.remove(session.fileURL)
-          }
+          loadingMetadata.remove(session.fileURL)
         }
       }
     }
@@ -322,6 +317,7 @@ struct TranscriptDetailView: View {
   let session: TranscriptSession
   let isActive: Bool
   let onSelect: () -> Void
+  let onMetadataUpdate: ((URL, TranscriptMetadata) -> Void)?
 
   @State private var metadata: TranscriptMetadata?
   @State private var isRegenerating = false
@@ -521,8 +517,8 @@ struct TranscriptDetailView: View {
       .padding()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .task {
-      // Load metadata on appearance
+    .task(id: session.fileURL) {
+      // Load metadata on appearance or when session changes
       await loadMetadata()
     }
   }
@@ -546,10 +542,14 @@ struct TranscriptDetailView: View {
     defer { isRegenerating = false }
 
     do {
-      metadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+      let newMetadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
         for: session,
         forceRegenerate: true
       )
+      metadata = newMetadata
+
+      // Notify parent view to update list
+      onMetadataUpdate?(session.fileURL, newMetadata)
     } catch {
       // Failed to regenerate, keep existing metadata
     }
