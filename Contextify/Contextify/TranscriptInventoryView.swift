@@ -100,9 +100,11 @@ struct TranscriptInventoryView: View {
     let sortedKeys = grouped.keys.sorted { providerName($0) < providerName($1) }
 
     ForEach(sortedKeys, id: \.self) { provider in
+      let sessions = grouped[provider] ?? []
       Section(header: Text(providerName(provider))) {
-        ForEach(grouped[provider] ?? [], id: \.fileURL) { session in
-          sessionRow(session)
+        ForEach(Array(sessions.indices), id: \.self) { index in
+          sessionRow(sessions[index])
+            .tag(sessions[index] as TranscriptSession?)
         }
       }
     }
@@ -129,9 +131,11 @@ struct TranscriptInventoryView: View {
       + grouped.keys.filter { !["Today", "Yesterday", "This Week"].contains($0) }.sorted(by: >)
 
     ForEach(sortedKeys.filter { grouped[$0] != nil }, id: \.self) { dateGroup in
+      let sessions = grouped[dateGroup] ?? []
       Section(header: Text(dateGroup)) {
-        ForEach(grouped[dateGroup] ?? [], id: \.fileURL) { session in
-          sessionRow(session)
+        ForEach(Array(sessions.indices), id: \.self) { index in
+          sessionRow(sessions[index])
+            .tag(sessions[index] as TranscriptSession?)
         }
       }
     }
@@ -139,13 +143,14 @@ struct TranscriptInventoryView: View {
 
   @ViewBuilder
   private var flatSessions: some View {
-    ForEach(filteredSessions, id: \.fileURL) { session in
-      sessionRow(session)
+    ForEach(Array(filteredSessions.indices), id: \.self) { index in
+      sessionRow(filteredSessions[index])
+        .tag(filteredSessions[index] as TranscriptSession?)
     }
   }
 
   @ViewBuilder
-  private func sessionRow(_ session: TranscriptSession) -> View {
+  private func sessionRow(_ session: TranscriptSession) -> some View {
     HStack(spacing: 8) {
       // Provider icon
       Image(systemName: providerIcon(session.provider))
