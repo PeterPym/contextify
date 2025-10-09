@@ -3,6 +3,8 @@ import SwiftUI
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
 
+    @State private var showTranscriptInventory = false
+
     private let collapsedWidth: CGFloat = 52
     private let expandedWidth: CGFloat = 320
     private let scrollAnchorID = "timeline-scroll-anchor"
@@ -33,6 +35,16 @@ struct ConversationTimelineView: View {
                 .help("Timeline fetch failed. Retry now.")
             }
         }
+        .sheet(isPresented: $showTranscriptInventory) {
+            TranscriptInventoryView(
+                sessions: monitor.allSessions,
+                activeSessionURL: monitor.activeSession?.fileURL,
+                onSelectSession: { session in
+                    showTranscriptInventory = false
+                    // TODO: Add method to ConversationMonitor to switch to specific session
+                }
+            )
+        }
     }
 
     private var header: some View {
@@ -57,6 +69,12 @@ struct ConversationTimelineView: View {
                         .controlSize(.small)
                 }
                 Menu {
+                    Button {
+                        showTranscriptInventory = true
+                    } label: {
+                        Label("Show All Transcripts (\(monitor.allSessions.count))", systemImage: "doc.text.magnifyingglass")
+                    }
+                    Divider()
                     Button("Refresh Now") {
                         TimelineIntegration.shared.requestManualRefresh(trigger: .manualHotkey)
                     }

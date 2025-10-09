@@ -38,7 +38,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var seenMessageUUIDs: Set<String> = []
     @ObservationIgnored private var didEmitSessionStart = false
     @ObservationIgnored private var currentConversationFile: URL?
-    @ObservationIgnored private var activeSession: TranscriptSession?
+    @ObservationIgnored private(set) var activeSession: TranscriptSession?
     @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
     @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
 
