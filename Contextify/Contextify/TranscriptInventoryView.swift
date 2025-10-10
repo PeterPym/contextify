@@ -10,6 +10,10 @@ struct TranscriptInventoryView: View {
   @State private var selectedSessionURL: URL?
   @State private var searchText = ""
   @State private var groupingMode: GroupingMode = .provider
+  @State private var metadata: [URL: TranscriptMetadata] = [:]
+  @State private var loadingMetadata: Set<URL> = []
+  @State private var showingFlushAlert = false
+  @State private var lastFlushCount = 0
 
   enum GroupingMode: String, CaseIterable, Identifiable {
     case provider = "Provider"
@@ -61,6 +65,16 @@ struct TranscriptInventoryView: View {
         Text("Transcript Inventory")
           .font(.headline)
         Spacer()
+
+        Button {
+          flushHeuristicCache()
+        } label: {
+          Label("Flush Heuristic Cache", systemImage: "trash")
+            .labelStyle(.iconOnly)
+        }
+        .buttonStyle(.borderless)
+        .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+
         Button {
           refreshSessions()
         } label: {
@@ -70,6 +84,11 @@ struct TranscriptInventoryView: View {
         .buttonStyle(.borderless)
       }
       .padding()
+      .alert("Cache Flushed", isPresented: $showingFlushAlert) {
+        Button("OK") { }
+      } message: {
+        Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
+      }
 
       // Toolbar with grouping
       HStack {
@@ -105,6 +124,15 @@ struct TranscriptInventoryView: View {
            !newSessions.contains(where: { $0.fileURL == selectedURL }) {
           selectedSessionURL = nil
         }
+
+        // Load metadata for new sessions
+        Task {
+          await loadMetadataForSessions(newSessions)
+        }
+      }
+      .task {
+        // Load metadata on initial appearance
+        await loadMetadataForSessions(monitor.allSessions)
       }
     }
   }
@@ -117,6 +145,9 @@ struct TranscriptInventoryView: View {
         isActive: session.fileURL == monitor.activeSession?.fileURL,
         onSelect: {
           onSelectSession(session)
+        },
+        onMetadataUpdate: { url, newMetadata in
+          metadata[url] = newMetadata
         }
       )
     } else {
@@ -148,15 +179,42 @@ struct TranscriptInventoryView: View {
           .foregroundStyle(providerColor(session.provider))
           .frame(width: 16)
 
-        Text(session.identifier)
-          .font(.callout)
-          .lineLimit(1)
+        if let meta = metadata[session.fileURL] {
+          Text(meta.title)
+            .font(.callout)
+            .lineLimit(1)
+        } else if loadingMetadata.contains(session.fileURL) {
+          HStack(spacing: 4) {
+            ProgressView()
+              .controlSize(.mini)
+              .scaleEffect(0.7)
+              .frame(width: 10, height: 10)
+            Text("Analyzing…")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        } else {
+          Text(session.identifier)
+            .font(.callout)
+            .lineLimit(1)
+        }
+
+        Spacer()
 
         if session.fileURL == monitor.activeSession?.fileURL {
           Image(systemName: "circle.fill")
             .font(.system(size: 6))
             .foregroundStyle(.green)
         }
+      }
+
+      if let meta = metadata[session.fileURL] {
+        // Description (2 lines)
+        Text(meta.description)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(2)
+          .multilineTextAlignment(.leading)
       }
 
       HStack(spacing: 4) {
@@ -172,6 +230,22 @@ struct TranscriptInventoryView: View {
         Text(relativeTime(session.lastActivity))
           .font(.caption)
           .foregroundStyle(.secondary)
+
+        Spacer()
+
+        // Topic chips (max 2)
+        if let meta = metadata[session.fileURL] {
+          HStack(spacing: 4) {
+            ForEach(meta.topics.prefix(2), id: \.self) { topic in
+              Text(topic)
+                .font(.system(size: 9))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.2))
+                .clipShape(Capsule())
+            }
+          }
+        }
       }
     }
     .padding(.vertical, 4)
@@ -223,6 +297,73 @@ struct TranscriptInventoryView: View {
   private func refreshSessions() {
     // Refresh handled by window wrapper via monitor.refresh()
   }
+
+  private func flushHeuristicCache() {
+    let store = SidecarMetadataStore()
+    let flushedCount = store.flushHeuristicMetadata(for: monitor.allSessions)
+
+    if flushedCount > 0 {
+      lastFlushCount = flushedCount
+      showingFlushAlert = true
+
+      // Clear in-memory cache and trigger regeneration for flushed items
+      Task { @MainActor in
+        for session in monitor.allSessions {
+          if let meta = metadata[session.fileURL],
+             meta.model == "heuristic" ||
+             meta.title == "Developer Chat" ||
+             meta.title == "Brief Session" {
+            metadata.removeValue(forKey: session.fileURL)
+            loadingMetadata.insert(session.fileURL)
+
+            Task { @MainActor in
+              defer { loadingMetadata.remove(session.fileURL) }
+              do {
+                let newMeta = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+                  for: session,
+                  forceRegenerate: true
+                )
+                metadata[session.fileURL] = newMeta
+              } catch {
+                // Failed to regenerate, loading indicator removed by defer
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @MainActor
+  private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
+    for session in sessions {
+      // Skip if already loaded or loading
+      guard metadata[session.fileURL] == nil,
+            !loadingMetadata.contains(session.fileURL) else {
+        continue
+      }
+
+      // Check for cached metadata first
+      let store = SidecarMetadataStore()
+      if let cached = try? store.load(for: session.fileURL) {
+        metadata[session.fileURL] = cached
+        continue
+      }
+
+      // Trigger generation
+      loadingMetadata.insert(session.fileURL)
+
+      Task { @MainActor in
+        defer { loadingMetadata.remove(session.fileURL) }
+        do {
+          let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
+          metadata[session.fileURL] = generated
+        } catch {
+          // Failed to generate, loading indicator removed by defer
+        }
+      }
+    }
+  }
 }
 
 /// Detail view for a selected transcript session
@@ -230,6 +371,10 @@ struct TranscriptDetailView: View {
   let session: TranscriptSession
   let isActive: Bool
   let onSelect: () -> Void
+  let onMetadataUpdate: ((URL, TranscriptMetadata) -> Void)?
+
+  @State private var metadata: TranscriptMetadata?
+  @State private var isRegenerating = false
 
   var body: some View {
     ScrollView {
@@ -237,13 +382,22 @@ struct TranscriptDetailView: View {
         // Header with status badge
         HStack {
           VStack(alignment: .leading, spacing: 4) {
-            Text(session.identifier)
+            // Use metadata title if available, otherwise fall back to identifier
+            Text(metadata?.title ?? session.identifier)
               .font(.title2)
               .fontWeight(.semibold)
 
-            Text(providerName)
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
+            // Show description if available, otherwise show provider + filename
+            if let meta = metadata, !meta.description.isEmpty {
+              Text(meta.description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            } else {
+              Text("\(providerName) • \(session.fileURL.lastPathComponent)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            }
           }
 
           Spacer()
@@ -261,8 +415,109 @@ struct TranscriptDetailView: View {
 
         Divider()
 
-        // Metadata
+        // AI-Generated Metadata
+        if let meta = metadata {
+          VStack(alignment: .leading, spacing: 12) {
+            HStack {
+              Text("AI Summary")
+                .font(.headline)
+
+              if meta.needsReview {
+                Text("Needs Review")
+                  .font(.caption)
+                  .foregroundStyle(.white)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 2)
+                  .background(Color.orange)
+                  .clipShape(Capsule())
+              }
+
+              if meta.promptVersion < 2 {
+                Text("Stale")
+                  .font(.caption)
+                  .foregroundStyle(.white)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 2)
+                  .background(Color.yellow)
+                  .clipShape(Capsule())
+              }
+
+              Spacer()
+
+              Button {
+                Task {
+                  await regenerateMetadata()
+                }
+              } label: {
+                HStack(spacing: 4) {
+                  if isRegenerating {
+                    ProgressView()
+                      .controlSize(.mini)
+                      .frame(width: 10, height: 10)
+                  } else {
+                    Image(systemName: "arrow.clockwise")
+                  }
+                  Text("Regenerate")
+                }
+                .font(.caption)
+              }
+              .buttonStyle(.bordered)
+              .disabled(isRegenerating)
+            }
+
+            metadataRow(label: "Title", value: meta.title)
+            metadataRow(label: "Description", value: meta.description)
+
+            HStack(alignment: .top) {
+              Text("Topics")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 100, alignment: .leading)
+
+              HStack(spacing: 6) {
+                ForEach(meta.topics, id: \.self) { topic in
+                  Text(topic)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.2))
+                    .clipShape(Capsule())
+                }
+              }
+            }
+
+            metadataRow(label: "Confidence", value: String(format: "%.2f", meta.confidence))
+            metadataRow(label: "Generated", value: formattedDate(meta.generatedAt))
+            metadataRow(label: "Strategy", value: meta.strategy)
+            metadataRow(label: "Model", value: meta.model)
+            metadataRow(label: "Messages", value: "\(meta.messageCount)")
+            metadataRow(label: "Latency", value: "\(meta.latencyMs)ms")
+          }
+
+          Divider()
+        } else {
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text("AI Summary")
+                .font(.headline)
+              Spacer()
+              ProgressView()
+                .controlSize(.mini)
+                .frame(width: 10, height: 10)
+            }
+            Text("Generating metadata…")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
+          Divider()
+        }
+
+        // File Metadata
         VStack(alignment: .leading, spacing: 12) {
+          Text("File Info")
+            .font(.headline)
+
           metadataRow(label: "Last Modified", value: formattedDate(session.lastActivity))
           metadataRow(label: "File Path", value: session.fileURL.path)
           metadataRow(label: "File Name", value: session.fileURL.lastPathComponent)
@@ -318,6 +573,44 @@ struct TranscriptDetailView: View {
       .padding()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .task(id: session.fileURL) {
+      // Load metadata on appearance or when session changes
+      await loadMetadata()
+    }
+  }
+
+  @MainActor
+  private func loadMetadata() async {
+    let store = SidecarMetadataStore()
+    metadata = try? store.load(for: session.fileURL)
+
+    // If no cached metadata, trigger generation
+    if metadata == nil {
+      do {
+        metadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
+      } catch {
+        // Failed to generate, metadata stays nil
+      }
+    }
+  }
+
+  @MainActor
+  private func regenerateMetadata() async {
+    isRegenerating = true
+    defer { isRegenerating = false }
+
+    do {
+      let newMetadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+        for: session,
+        forceRegenerate: true
+      )
+      metadata = newMetadata
+
+      // Notify parent view to update list
+      onMetadataUpdate?(session.fileURL, newMetadata)
+    } catch {
+      // Failed to regenerate, keep existing metadata
+    }
   }
 
   @ViewBuilder
