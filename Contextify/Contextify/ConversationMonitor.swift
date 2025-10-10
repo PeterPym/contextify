@@ -92,7 +92,8 @@ final class ConversationMonitor {
         lastProcessedLine = 0
         seenMessageUUIDs.removeAll()
         didEmitSessionStart = false
-        ensureSessionStartEntry()
+        // Don't add system entry immediately - it will be added at the end
+        // after backfill when processConversationFile() completes
     }
 
     func requestImmediateRefresh(trigger: TimelineRefreshTrigger) {
@@ -193,8 +194,12 @@ final class ConversationMonitor {
 
         activeSession = session
         currentConversationFile = session.fileURL
+
+        // Clear state for new session
+        entries.removeAll()
         lastProcessedLine = 0
         seenMessageUUIDs.removeAll()
+        didEmitSessionStart = false
         lastError = nil
 
         // Load cache for this conversation BEFORE processing
@@ -568,7 +573,7 @@ final class ConversationMonitor {
             detail: detail,
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
-            sourceIdentifier: "msg-\(uuid)",
+            sourceIdentifier: uuid,  // Use raw UUID for consistency
             isCompletion: false,
             isDirective: summaryResult.isDirective,
             requestId: nil
@@ -707,7 +712,7 @@ final class ConversationMonitor {
             detail: detail,
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
-            sourceIdentifier: "msg-\(uuid)-text",
+            sourceIdentifier: uuid,  // Use raw UUID for cache key matching
             isCompletion: rendered.isCompletion,
             isDirective: rendered.isDirective,
             requestId: requestId
