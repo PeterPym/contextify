@@ -30,54 +30,41 @@ The horizontal rule/divider in the right conversation log panel does not align v
 - Main content view layout - Left panel divider position
 
 #### Codex Icon Color Incorrect
-**Status:** Open
+**Status:** Completed (2025-10-10)
 **Priority:** Medium (visual accuracy)
 
-When Codex log messages are being created/displayed, the Codex icon appears in blue but should be white (or the correct theme color).
+~~When Codex log messages are being created/displayed, the Codex icon appears in blue but should be white (or the correct theme color).~~
 
-**To Fix:**
-- Check `TimelineEntryRow.swift` or related view code where provider icons are rendered
-- Ensure Codex icon uses correct color scheme (white or matches Claude Code icon styling)
-- Verify icon color in both light and dark mode
-
-**Files to Check:**
-- `TimelineEntryRow.swift` - Entry rendering with provider icons
-- `Assets.xcassets/codex-icon.imageset/` - Icon assets
+**Solution Implemented:**
+Changed Codex CLI provider color from `.blue` to `.white` in `TimelineEntryRow.swift` `providerColor()` function. Claude Code icon remains orange.
 
 #### Provider Name in Timeline Summaries
-**Status:** Open
+**Status:** Completed (2025-10-10)
 **Priority:** Medium (accuracy)
 
-Timeline entry summaries for Codex messages incorrectly say "Claude [did something]" when they should say "Codex [did something]" to accurately reflect which AI provider performed the action.
+~~Timeline entry summaries for Codex messages incorrectly say "Claude [did something]" when they should say "Codex [did something]" to accurately reflect which AI provider performed the action.~~
 
-**Problem:**
-- LLM-generated summaries are hardcoded to start with "Claude"
-- Should dynamically use the actual provider name (Claude, Codex, etc.)
+**Solution Implemented:**
+- Added `provider` parameter throughout LLM summarization pipeline
+- Updated LLM instructions in `instructionsForTimeline()` to dynamically use provider displayName
+- Modified prefix policies, fast-path acknowledgements, and fallback summaries
+- Marked `Provider.displayName` as `nonisolated` for cross-actor access
+- Now correctly generates summaries like "Codex CLI proposes..." for Codex entries
 
-**To Fix:**
-- Update `FoundationLLM.swift` instructions to be provider-aware
-- Pass provider name to summarization functions
-- Generate summaries like "Codex proposes..." for Codex entries
-- May need separate instruction templates per provider
-
-**Files to Check:**
-- `FoundationLLM.swift` - Summary generation instructions
-- `ConversationMonitor.swift` - Where summaries are requested
-- Consider adding `provider` parameter to `summarizeTimeline()`
+**Files Modified:**
+- `FoundationLLM.swift` - Added provider parameter to all summarization methods
+- `ConversationMonitor.swift` - Pass provider from activeSession
+- `TimelineCacheOrchestrator.swift` - Pass provider to LLM calls
+- `TimelineModels.swift` - Made displayName nonisolated
 
 #### System Message Provider Name
-**Status:** Open
+**Status:** Completed (2025-10-10)
 **Priority:** Low (polish)
 
-System messages like "Switched to a new conversation" should include the provider name: "Switched to a new Claude Code conversation" or "Switched to a new Codex conversation" for clarity.
+~~System messages like "Switched to a new conversation" should include the provider name: "Switched to a new Claude Code conversation" or "Switched to a new Codex conversation" for clarity.~~
 
-**To Fix:**
-- Update `emitProviderSwitchEntry()` in `ConversationMonitor.swift`
-- Use `session.provider.displayName` in summary text
-- Apply to all session switch system messages
-
-**Files to Check:**
-- `ConversationMonitor.swift:320-370` - `emitProviderSwitchEntry()` and related methods
+**Solution Implemented:**
+Updated `emitProviderSwitchEntry()` in `ConversationMonitor.swift` to include provider displayName in system messages. Now shows "Switched to a new Codex CLI conversation" etc.
 
 #### Timeline Entry Tense Inconsistency
 **Status:** Completed (2025-10-10)
