@@ -29,6 +29,56 @@ The horizontal rule/divider in the right conversation log panel does not align v
 - `ConversationTimelineView.swift` - Timeline panel layout
 - Main content view layout - Left panel divider position
 
+#### Codex Icon Color Incorrect
+**Status:** Open
+**Priority:** Medium (visual accuracy)
+
+When Codex log messages are being created/displayed, the Codex icon appears in blue but should be white (or the correct theme color).
+
+**To Fix:**
+- Check `TimelineEntryRow.swift` or related view code where provider icons are rendered
+- Ensure Codex icon uses correct color scheme (white or matches Claude Code icon styling)
+- Verify icon color in both light and dark mode
+
+**Files to Check:**
+- `TimelineEntryRow.swift` - Entry rendering with provider icons
+- `Assets.xcassets/codex-icon.imageset/` - Icon assets
+
+#### Provider Name in Timeline Summaries
+**Status:** Open
+**Priority:** Medium (accuracy)
+
+Timeline entry summaries for Codex messages incorrectly say "Claude [did something]" when they should say "Codex [did something]" to accurately reflect which AI provider performed the action.
+
+**Problem:**
+- LLM-generated summaries are hardcoded to start with "Claude"
+- Should dynamically use the actual provider name (Claude, Codex, etc.)
+
+**To Fix:**
+- Update `FoundationLLM.swift` instructions to be provider-aware
+- Pass provider name to summarization functions
+- Generate summaries like "Codex proposes..." for Codex entries
+- May need separate instruction templates per provider
+
+**Files to Check:**
+- `FoundationLLM.swift` - Summary generation instructions
+- `ConversationMonitor.swift` - Where summaries are requested
+- Consider adding `provider` parameter to `summarizeTimeline()`
+
+#### System Message Provider Name
+**Status:** Open
+**Priority:** Low (polish)
+
+System messages like "Switched to a new conversation" should include the provider name: "Switched to a new Claude Code conversation" or "Switched to a new Codex conversation" for clarity.
+
+**To Fix:**
+- Update `emitProviderSwitchEntry()` in `ConversationMonitor.swift`
+- Use `session.provider.displayName` in summary text
+- Apply to all session switch system messages
+
+**Files to Check:**
+- `ConversationMonitor.swift:320-370` - `emitProviderSwitchEntry()` and related methods
+
 #### Timeline Entry Tense Inconsistency
 **Status:** Completed (2025-10-10)
 **Priority:** Medium
