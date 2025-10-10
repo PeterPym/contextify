@@ -66,7 +66,13 @@ struct TimelineEntryRow: View {
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-            if entry.isCompletion {
+            if entry.isDirective {
+                Image(systemName: "arrow.forward.circle.fill")
+                    .font(.caption)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("User directive")
+            } else if entry.isCompletion {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.caption)
                     .symbolRenderingMode(.hierarchical)

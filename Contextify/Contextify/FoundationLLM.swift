@@ -25,7 +25,7 @@ actor FoundationLLM {
     struct TimelineSummaryResult: Sendable {
         let summary: String
         let isCompletion: Bool
-        let icon: String?  // Optional emoji prefix (✅, 👉, ❓, etc.)
+        let isDirective: Bool
     }
 
     enum UserIntent: String {
@@ -176,7 +176,9 @@ actor FoundationLLM {
                     grounding: "grounded",
                     confidence: 0.95
                 )
-                return try postProcess(kind: kind, payload: fp, message: message)
+                var result = try postProcess(kind: kind, payload: fp, message: message)
+                result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: false)
+                return result
             } else if kind == .user {
                 let intent = classifyUserIntent(message)
 
@@ -190,7 +192,9 @@ actor FoundationLLM {
                         grounding: "grounded",
                         confidence: 0.95
                     )
-                    return try postProcess(kind: kind, payload: fp, message: message)
+                    var result = try postProcess(kind: kind, payload: fp, message: message)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true)
+                    return result
                 } else if intent == .negative {
                     log.info("[\(reqNum)] timeline: negative detected, using fast path")
                     let fp = GuidedTimelineSummary(
@@ -200,7 +204,9 @@ actor FoundationLLM {
                         grounding: "grounded",
                         confidence: 0.95
                     )
-                    return try postProcess(kind: kind, payload: fp, message: message)
+                    var result = try postProcess(kind: kind, payload: fp, message: message)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true)
+                    return result
                 }
             }
 
@@ -257,13 +263,10 @@ actor FoundationLLM {
                 do {
                     var result = try postProcess(kind: kind, payload: payload, message: clamped)
 
-                    // Detect completion and add icon
-                    if result.isCompletion {
-                        result = TimelineSummaryResult(summary: result.summary, isCompletion: true, icon: "✅")
-                        log.info("[\(reqNum)] timeline: completion detected, adding ✅ icon")
-                    } else if kind == .user, isDirective(message) {
-                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, icon: "👉")
-                        log.info("[\(reqNum)] timeline: user directive detected, adding 👉 icon")
+                    // Detect directive
+                    if kind == .user, isDirective(message) {
+                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true)
+                        log.info("[\(reqNum)] timeline: user directive detected")
                     }
 
                     log.info("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
@@ -338,7 +341,7 @@ actor FoundationLLM {
 
     func fallbackSummary(kind: TimelineEntryKind, text: String) -> TimelineSummaryResult {
         let summary = sanitize(fallback(for: kind, text: text), kind: kind)
-        return TimelineSummaryResult(summary: summary, isCompletion: false, icon: nil)
+        return TimelineSummaryResult(summary: summary, isCompletion: false, isDirective: false)
     }
 }
 
@@ -628,7 +631,7 @@ private extension FoundationLLM {
                 log.warning("timeline summary REJECTED (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
                 // Special case: if it's just an ack, accept the generic ack message
                 if isAck(message) {
-                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, icon: nil)
+                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, isDirective: false)
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")
@@ -689,7 +692,7 @@ private extension FoundationLLM {
             ? (payload.isCompletion && hasCompletionToken(summary))
             : false
 
-        return TimelineSummaryResult(summary: summary, isCompletion: completion, icon: nil)
+        return TimelineSummaryResult(summary: summary, isCompletion: completion, isDirective: false)
     }
 }
 #endif

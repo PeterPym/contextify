@@ -531,7 +531,8 @@ final class ConversationMonitor {
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)",
-            isCompletion: false
+            isCompletion: false,
+            isDirective: summaryResult.isDirective
         )
 
         entries.append(entry)
@@ -601,7 +602,8 @@ final class ConversationMonitor {
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)-text",
-            isCompletion: summaryResult.isCompletion
+            isCompletion: summaryResult.isCompletion,
+            isDirective: summaryResult.isDirective
         )
 
         entries.append(entry)
