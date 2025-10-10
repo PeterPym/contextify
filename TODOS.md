@@ -14,6 +14,21 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ### Bugs
 
+#### Horizontal Rule Alignment (UI Polish)
+**Status:** Open
+**Priority:** Low (visual nit)
+
+The horizontal rule/divider in the right conversation log panel does not align vertically with the horizontal rule in the main left panel. The right panel divider sits slightly lower, creating a visual misalignment.
+
+**To Fix:**
+- Adjust padding/spacing in the conversation timeline view header
+- Ensure both panels have matching vertical spacing from top
+- Likely a margin or padding discrepancy in SwiftUI layout
+
+**Files to Check:**
+- `ConversationTimelineView.swift` - Timeline panel layout
+- Main content view layout - Left panel divider position
+
 #### Timeline Entry Tense Inconsistency
 **Status:** Completed (2025-10-10)
 **Priority:** Medium
