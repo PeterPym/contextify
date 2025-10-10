@@ -17,8 +17,7 @@ struct Exchange: Sendable, Equatable {
 // MARK: - Transcript Metadata
 
 /// Metadata generated for a transcript session, stored in sidecar JSON
-@preconcurrency
-struct TranscriptMetadata: Codable, Sendable, Equatable {
+nonisolated struct TranscriptMetadata: Codable, Sendable, Equatable {
   var version: Int = 1
   var title: String
   var description: String

@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 /// Parses JSONL transcript files into Exchange structs
-struct TranscriptParser: Sendable {
+nonisolated struct TranscriptParser: Sendable {
   private let log = Logger(subsystem: "dev.contextify.metadata", category: "TranscriptParser")
   private let maxMessageLength = 2000
   private let maxCorruptionRate = 0.10 // 10%
