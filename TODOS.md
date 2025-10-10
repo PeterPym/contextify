@@ -332,6 +332,256 @@ Wrap the script in UI:
 - One-click migration with progress indicator
 - Automatic backup before migration
 
+#### SQL Backend for Comprehensive Transcript Analysis
+**Status:** Backlog
+**Priority:** High (Foundation for AI-driven project insights)
+**Category:** Infrastructure / Intelligence
+
+Store all transcript entries (user messages, assistant responses, tool calls, metadata) in a local SQLite database to enable deep project analysis and intelligent assistance features.
+
+**Grand Theory:**
+By analyzing the full project history stored in a relational database, Contextify can:
+- Understand project direction and velocity
+- Track progress toward stated goals
+- Identify patterns (abandoned features, recurring issues)
+- Help users remember where they left off
+- Suggest next steps based on project trajectory
+- Keep commits clean and atomic
+- Detect documentation drift
+- Correlate code changes with conversations
+
+**Database Schema (preliminary):**
+```sql
+-- Core transcript entries
+CREATE TABLE transcript_entries (
+  id INTEGER PRIMARY KEY,
+  uuid TEXT UNIQUE NOT NULL,           -- Original message UUID
+  session_id TEXT NOT NULL,             -- Conversation session
+  provider TEXT NOT NULL,               -- 'claude-code', 'codex', etc.
+  kind TEXT NOT NULL,                   -- 'user', 'assistant', 'system'
+  timestamp DATETIME NOT NULL,
+  content TEXT NOT NULL,                -- Full message content
+  summary TEXT,                         -- Timeline summary
+  disposition TEXT,                     -- 'completion', 'question', etc.
+  display_in_timeline BOOLEAN DEFAULT 1, -- Show in UI or not
+  is_completion BOOLEAN DEFAULT 0,
+  is_directive BOOLEAN DEFAULT 0,
+  parent_uuid TEXT,                     -- For threading
+
+  -- Analysis fields
+  topics TEXT,                          -- JSON array of detected topics
+  intent TEXT,                          -- Classified user intent
+  entities TEXT,                        -- JSON: files, functions, features mentioned
+  sentiment REAL,                       -- -1.0 to 1.0
+
+  -- Correlation
+  related_commit_hash TEXT,             -- Git commit this relates to
+  request_id TEXT,                      -- Links completion to directive
+  duration_seconds REAL,                -- Time from request to completion
+
+  -- Metadata
+  project_path TEXT NOT NULL,
+  git_branch TEXT,
+  git_commit TEXT,
+  cwd TEXT,
+
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tool invocations
+CREATE TABLE tool_calls (
+  id INTEGER PRIMARY KEY,
+  entry_id INTEGER REFERENCES transcript_entries(id),
+  tool_name TEXT NOT NULL,
+  arguments TEXT,                       -- JSON
+  result TEXT,                          -- stdout/stderr
+  exit_code INTEGER,
+  duration_seconds REAL,
+  timestamp DATETIME NOT NULL
+);
+
+-- Project insights (cached analysis)
+CREATE TABLE project_insights (
+  id INTEGER PRIMARY KEY,
+  project_path TEXT NOT NULL,
+  insight_type TEXT NOT NULL,           -- 'goal', 'pattern', 'blocker', 'drift'
+  title TEXT NOT NULL,
+  description TEXT,
+  confidence REAL,                      -- 0.0 to 1.0
+  supporting_entries TEXT,              -- JSON array of entry UUIDs
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  acknowledged BOOLEAN DEFAULT 0        -- User saw/dismissed
+);
+
+-- Git commits (for correlation)
+CREATE TABLE git_commits (
+  id INTEGER PRIMARY KEY,
+  project_path TEXT NOT NULL,
+  commit_hash TEXT NOT NULL,
+  author TEXT NOT NULL,
+  message TEXT NOT NULL,
+  timestamp DATETIME NOT NULL,
+  files_changed TEXT,                   -- JSON array
+  conversation_uuid TEXT,               -- Linked to transcript entry
+
+  UNIQUE(project_path, commit_hash)
+);
+```
+
+**Key Features:**
+1. **Full History Import**: Parse all existing transcripts and backfill database
+2. **Real-time Ingestion**: Write to DB as entries arrive in ConversationMonitor
+3. **Display Filtering**: `display_in_timeline` flag controls UI visibility without losing data
+4. **Semantic Search**: Full-text search across all conversation history
+5. **Pattern Detection**: Identify recurring themes, blockers, abandoned work
+6. **Progress Tracking**: Correlate stated goals with actual progress
+7. **Commit Attribution**: Link AI suggestions to actual git commits
+8. **Context Resurrection**: "What was I working on last Tuesday?" queries
+
+**Use Cases:**
+- "Show me all entries about authentication this month"
+- "What features did we start but never finish?"
+- "Find all commits where Claude suggested changes"
+- "What were my goals in the last standup message?"
+- "Show timeline entries related to this file"
+
+**Implementation Phases:**
+1. **Phase 1**: Basic schema + import existing transcripts
+2. **Phase 2**: Real-time ingestion in ConversationMonitor
+3. **Phase 3**: Analysis engine (pattern detection, insights)
+4. **Phase 4**: Smart suggestions UI ("You might want to...")
+
+**Integration Points:**
+- `ConversationMonitor`: Write all entries to DB
+- New `AnalysisEngine` actor: Run queries and generate insights
+- New `InsightsPanel`: Display suggestions and patterns
+- Transcript Inventory: Enhanced search powered by SQL
+
+#### Git Commit Rewriting Assistance
+**Status:** Backlog
+**Priority:** High (Complements SQL backend)
+**Category:** Developer Workflow
+
+Intelligent assistance for rewriting git history with atomic, well-structured commits using interactive squash, soft reset, and commit message generation.
+
+**The Problem:**
+During development with AI assistance, commits can become messy:
+- Many small "fix typo" or "oops" commits
+- Commits with unclear or AI-generated messages
+- Multiple unrelated changes bundled together
+- Features split across too many commits
+- No logical atomic structure
+
+**The Solution:**
+Guided UI for rewriting branch history into clean, atomic commits with well-written messages.
+
+**Core Features:**
+
+1. **Branch Analysis**
+   - Parse all commits since branch diverged from main
+   - Show file changes, message quality, logical groupings
+   - Identify related changes that should be combined
+   - Detect commits that should be split (multiple concerns)
+
+2. **Smart Grouping**
+   - Use SQL transcript backend to correlate commits with conversations
+   - Group commits by feature/task based on Claude/Codex directives
+   - Suggest logical atomic commits: "These 8 commits are all about auth"
+   - Show conversation context for each commit group
+
+3. **Interactive Rewrite UI**
+   ```
+   ┌─────────────────────────────────────────────────────┐
+   │ Rewrite History: feature/timeline-improvements      │
+   ├─────────────────────────────────────────────────────┤
+   │ 23 commits since main │ Suggested: 5 atomic commits│
+   │                                                      │
+   │ Suggested Grouping:                                 │
+   │                                                      │
+   │ ☐ Atomic Commit 1: "Timeline cache infrastructure"  │
+   │   • 8e9a0b2 Add cache store                         │
+   │   • f2b1c4a Add orchestrator                        │
+   │   • 9d5e3f0 Add cache models                        │
+   │   • 4a7c2b1 Wire up cache loading                   │
+   │   Conversation: "Help me cache timeline entries"    │
+   │   [Edit Message] [Split] [Reorder]                  │
+   │                                                      │
+   │ ☐ Atomic Commit 2: "Implement dual-form tense..."   │
+   │   • 3b8f1d9 Add present/past forms                  │
+   │   • 6e2a9c4 Update cache schema                     │
+   │   Conversation: "Timeline should show past tense"   │
+   │   [Edit Message] [Split] [Reorder]                  │
+   │                                                      │
+   │ [Preview Rewrite] [Execute] [Cancel]                │
+   └─────────────────────────────────────────────────────┘
+   ```
+
+4. **Commit Message Generation**
+   - Analyze combined changes and conversation context
+   - Generate conventional commit messages (feat/fix/refactor)
+   - Include relevant details from conversation
+   - Show diff of what changed in each atomic commit
+   - User edits and approves before applying
+
+5. **Safe Execution**
+   - Create backup branch automatically
+   - Show exact git commands that will run
+   - Allow preview before execution
+   - Dry-run mode: show result without changing history
+   - Rollback option if user doesn't like result
+
+**Workflow Example:**
+1. User: "Help me clean up this feature branch"
+2. App analyzes 23 commits + SQL transcript entries
+3. Identifies 4 logical features worked on
+4. Suggests 5 atomic commits with messages
+5. User reviews, edits messages, reorders groups
+6. App creates backup branch: `feature/timeline-improvements-backup`
+7. App executes: `git reset --soft main` + `git commit` × 5
+8. Shows before/after comparison
+9. User pushes cleaned history
+
+**Technical Implementation:**
+- Use SQL backend to correlate commits with transcript entries
+- Parse `git log` output and diff stats
+- Use LLM to generate commit messages from conversation context
+- Execute git commands via `Process` (git reset, git commit)
+- Integration with ConversationMonitor to link commits to directives
+
+**Git Commands Used:**
+```bash
+# Backup
+git branch feature-backup
+
+# Get commits to rewrite
+git log main..HEAD --oneline
+
+# Reset to base
+git reset --soft main
+
+# Stage and commit atomically
+git add <files for commit 1>
+git commit -m "Generated message 1"
+...
+
+# Verify
+git log --oneline
+```
+
+**Safety Features:**
+- Always create backup branch first
+- Require user confirmation before rewriting
+- Show warning if branch is pushed to remote
+- Detect if branch is merged or has downstream branches
+- Provide undo command if user regrets rewrite
+
+**Advanced Features (Future):**
+- Detect co-authored commits (Claude + User)
+- Preserve commit signatures where appropriate
+- Handle merge commits intelligently
+- Support rebasing onto updated main
+- "Squash all tiny commits" quick action
+
 ---
 
 ## Completed

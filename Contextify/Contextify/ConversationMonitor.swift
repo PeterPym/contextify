@@ -501,12 +501,22 @@ final class ConversationMonitor {
     }
 
     private func processConversationEntry(_ json: [String: Any]) async {
-        // Detect format: Claude Code vs Codex
-        let isCodexFormat = (json["type"] as? String) == "response_item"
+        guard let type = json["type"] as? String else {
+            log.debug("🟢 processConversationEntry: no type field, skipping")
+            return
+        }
 
-        if isCodexFormat {
+        // Skip non-conversational records (metadata/snapshots)
+        switch type {
+        case "file-history-snapshot":
+            // File versioning metadata - not conversation content
+            log.debug("🟢 processConversationEntry: skipping file-history-snapshot")
+            return
+        case "response_item":
+            // Codex CLI format
             await processCodexEntry(json)
-        } else {
+        default:
+            // Claude Code format (user/assistant messages)
             await processClaudeCodeEntry(json)
         }
     }
