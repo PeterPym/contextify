@@ -5,11 +5,9 @@ This document tracks feature ideas, enhancements, and known issues for future de
 ## Active Development
 
 ### P0 - In Progress
-- Transcript inventory with worktree support (feature/transcript-inventory)
 - Line number tracking for narrative composition
 
 ### P1 - Next Up
-- Session switching from transcript inventory UI
 - Narrative composition from selected timeline entries
 
 ## Backlog
@@ -328,3 +326,8 @@ Wrap the script in UI:
 - ✅ Git repository and worktree detection
 - ✅ Security-scoped bookmarks for sandboxed access
 - ✅ Real-time file watching with DispatchSource
+- ✅ Transcript inventory with worktree support (2025-10-10)
+- ✅ Session switching from transcript inventory UI (2025-10-10)
+- ✅ Provider-specific icons in timeline (2025-10-10)
+- ✅ Timeline entry persistence across session switches (2025-10-10)
+- ✅ Reveal-in-inventory action for system messages (2025-10-10)
