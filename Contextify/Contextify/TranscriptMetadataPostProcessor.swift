@@ -6,7 +6,7 @@ import FoundationModels
 #endif
 
 /// Post-processes LLM-generated metadata for quality and grounding
-struct MetadataPostProcessor: Sendable {
+nonisolated struct MetadataPostProcessor: Sendable {
   private let log = Logger(subsystem: "dev.contextify.metadata", category: "PostProcessor")
 
   private let allowedTopics: Set<String> = [
@@ -117,21 +117,19 @@ struct MetadataPostProcessor: Sendable {
   // MARK: - Filename Grounding
 
   func stripUnseenFilenames(in text: String, from context: String) -> (String, Bool) {
-    // Extract candidate filenames from text
-    let filenamePattern = #"([A-Za-z0-9_.\-/]+\.(swift|md|ts|js|kt|py|rb|java|go|rs|c|cpp|h|hpp|json|yaml|yml|toml|txt|sh))"#
-    guard let regex = try? NSRegularExpression(pattern: filenamePattern, options: []) else {
-      return (text, false)
-    }
-
-    let nsText = text as NSString
-    let matches = regex.matches(in: text, options: [], range: NSRange(location: 0, length: nsText.length))
-
-    var hasUnseenFilenames = false
     var cleanedText = text
+    var hasUnseenFilenames = false
 
-    for match in matches.reversed() {
-      let range = match.range
-      let filename = nsText.substring(with: range)
+    // Walk matches from the end while mapping ranges into the *current* string
+    let matches = Formatters.filenamePattern.matches(
+      in: cleanedText,
+      options: [],
+      range: NSRange(cleanedText.startIndex..., in: cleanedText)
+    ).reversed()
+
+    for match in matches {
+      guard let range = Range(match.range, in: cleanedText) else { continue }
+      let filename = String(cleanedText[range])
 
       // Check if filename appears in context
       if !context.contains(filename) {
@@ -139,17 +137,17 @@ struct MetadataPostProcessor: Sendable {
         log.warning("Found unseen filename in description: \(filename, privacy: .public)")
 
         // Remove the filename from the description
-        let startIndex = text.index(text.startIndex, offsetBy: range.location)
-        let endIndex = text.index(startIndex, offsetBy: range.length)
-        cleanedText.removeSubrange(startIndex..<endIndex)
+        cleanedText.removeSubrange(range)
       }
     }
 
     // Clean up any double spaces left from removals
-    cleanedText = cleanedText.replacingOccurrences(
-      of: #"\s+"#,
-      with: " ",
-      options: .regularExpression
+    let range = NSRange(location: 0, length: (cleanedText as NSString).length)
+    cleanedText = Formatters.collapseWhitespace.stringByReplacingMatches(
+      in: cleanedText,
+      options: [],
+      range: range,
+      withTemplate: " "
     ).trimmingCharacters(in: .whitespacesAndNewlines)
 
     return (cleanedText, hasUnseenFilenames)
