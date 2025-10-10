@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import OSLog
 import ContextifyCore
+import AppKit
 
 @Observable
 @MainActor
@@ -60,6 +61,17 @@ final class ConversationMonitor {
             await self?.refreshActiveConversation(force: true)
         }
         startConversationResolverLoop()
+
+        // Set up cache flush on app terminate
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task {
+                try? await TimelineCacheOrchestrator.shared.persistCache()
+            }
+        }
     }
 
     func stopMonitoring() {
@@ -185,15 +197,25 @@ final class ConversationMonitor {
         seenMessageUUIDs.removeAll()
         lastError = nil
 
+        // Load cache for this conversation BEFORE processing
+        do {
+            try await TimelineCacheOrchestrator.shared.loadCache(for: session.fileURL)
+            log.info("Timeline cache loaded for \(session.fileURL.lastPathComponent, privacy: .public)")
+        } catch {
+            log.error("Failed to load timeline cache: \(error.localizedDescription, privacy: .public)")
+        }
+
         configureFileWatcher(for: session.fileURL)
 
+        // Process conversation file FIRST to backfill historical entries
+        await processConversationFile()
+
+        // Then add system message at the END (most recent position)
         if reason == .initial {
             ensureSessionStartEntry()
         } else if reason == .providerChange {
             emitProviderSwitchEntry(for: session)
         }
-
-        await processConversationFile()
     }
 
     private func configureFileWatcher(for fileURL: URL) {
@@ -371,17 +393,16 @@ final class ConversationMonitor {
             var skippedCount = 0
             let entriesBeforeProcessing = entries.count
 
-            for (index, line) in newLines.reversed().enumerated() {
+            // Process lines in forward order (chronological)
+            for (index, line) in newLines.enumerated() {
                 // Calculate actual line number in file
-                let lineNumber = shouldBackfillLimitedEntries
-                    ? lastProcessedLine - newLines.count + index + 1
-                    : lastProcessedLine - newLines.count + index + 1
+                let lineNumber = (shouldBackfillLimitedEntries ? 0 : lastProcessedLine - newLines.count) + index + 1
 
-                // If backfilling with limit, stop once we have 5 new displayable entries
+                // If backfilling with limit, check if we have enough displayable entries
                 if shouldBackfillLimitedEntries {
                     let newDisplayableEntries = entries.count - entriesBeforeProcessing
                     if newDisplayableEntries >= 20 {
-                        log.info("🟢 processConversationFile: Reached displayable entries limit, (newDisplayableEntries) stopping backfill")
+                        log.info("🟢 processConversationFile: Reached displayable entries limit (\(newDisplayableEntries)), stopping backfill")
                         break
                     }
                 }
@@ -395,13 +416,6 @@ final class ConversationMonitor {
                 currentLineNumber = lineNumber
                 await processConversationEntry(json)
                 processedCount += 1
-            }
-
-            // Reverse entries if we were backfilling (since we processed in reverse)
-            if shouldBackfillLimitedEntries, entries.count > entriesBeforeProcessing {
-                let backfilledEntries = entries[entriesBeforeProcessing...]
-                entries.removeLast(backfilledEntries.count)
-                entries.append(contentsOf: backfilledEntries.reversed())
             }
 
             log.info("🟢 processConversationFile: processed \(processedCount) entries, skipped \(skippedCount), total timeline entries now: \(self.entries.count)")
@@ -615,27 +629,63 @@ final class ConversationMonitor {
     private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
         log.info("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
 
-        let summaryResult: FoundationLLM.TimelineSummaryResult
+        // Try to use cache, fall back to direct LLM call on failure
+        let rendered: RenderedTimelineEntry
         do {
-            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+            // Build message JSON for content hashing (exclude timestamp for stability)
+            let messageJSON: [String: Any] = [
+                "uuid": uuid,
+                "role": "assistant",
+                "text": text
+            ]
+
+            // Context window: last 2 message UUIDs for better disposition detection
+            // TODO: Use transcript message UUIDs, not UI entry identifiers
+            let contextUUIDs = Array(entries.suffix(2).map { $0.sourceIdentifier })
+
+            rendered = try await TimelineCacheOrchestrator.shared.getCachedEntry(
+                messageUUID: uuid,
+                messageJSON: messageJSON,
+                contextWindow: contextUUIDs,
+                text: text,
+                kind: .assistant
+            )
         } catch {
-            log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
-            return
+            log.error("🔴 addAssistantTextEntry: Cache lookup failed, falling back to direct LLM: \(error.localizedDescription, privacy: .public)")
+
+            // Fallback to direct LLM call
+            let summaryResult: FoundationLLM.TimelineSummaryResult
+            do {
+                summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+            } catch {
+                log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+
+            // Convert to RenderedTimelineEntry format
+            let disp = Disposition(rawValue: summaryResult.disposition) ?? .unknown
+            rendered = RenderedTimelineEntry(
+                summary: summaryResult.summary,
+                disposition: disp,
+                isCompletion: summaryResult.isCompletion,
+                isDirective: summaryResult.isDirective,
+                requestId: nil,
+                duration: nil
+            )
         }
 
         // Disposition-based filtering to reduce noise
         // TODO: Make this configurable via user settings (see TODOS.md - Timeline Verbosity Settings)
         // Current level: Option 1 (Recommended) - Suppress ack, wip, analysis
-        let disposition = summaryResult.disposition.lowercased()
-        let suppressibleDispositions: Set<String> = ["ack", "wip", "analysis"]
+        let suppressibleDispositions: Set<Disposition> = [.note, .progress, .analysis]
 
-        if suppressibleDispositions.contains(disposition) {
-            log.info("🟡 addAssistantTextEntry: Suppressing low-value entry (disposition=\(disposition, privacy: .public))")
+        if suppressibleDispositions.contains(rendered.disposition) {
+            log.info("🟡 addAssistantTextEntry: Suppressing low-value entry (disposition=\(rendered.disposition.rawValue, privacy: .public))")
             return
         }
 
         // Deduplicate sequential completion entries
-        if summaryResult.isCompletion {
+        if rendered.isCompletion {
             // Find the last assistant entry
             if let lastAssistantEntry = entries.last(where: { $0.kind == .assistant }), lastAssistantEntry.isCompletion {
                 log.info("🟡 addAssistantTextEntry: Suppressing sequential completion entry (previous entry was also completion)")
@@ -648,23 +698,23 @@ final class ConversationMonitor {
             : text
 
         // Link completion to the last user directive for duration tracking
-        let requestId = summaryResult.isCompletion ? lastUserDirectiveId : nil
+        let requestId = rendered.isCompletion ? lastUserDirectiveId : nil
 
         let entry = TimelineEntry(
             kind: .assistant,
             timestamp: timestamp,
-            summary: summaryResult.summary,
+            summary: rendered.summary,
             detail: detail,
             sourceContent: text,
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)-text",
-            isCompletion: summaryResult.isCompletion,
-            isDirective: summaryResult.isDirective,
+            isCompletion: rendered.isCompletion,
+            isDirective: rendered.isDirective,
             requestId: requestId
         )
 
         entries.append(entry)
-        log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(summaryResult.summary, privacy: .private), completion=\(summaryResult.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
+        log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(rendered.summary, privacy: .private), completion=\(rendered.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
     }
 
     private func latestAssistantActionHint() -> String? {
