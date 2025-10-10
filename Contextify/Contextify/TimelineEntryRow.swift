@@ -186,11 +186,11 @@ private extension TimelineEntryKind {
     var accentColor: Color {
         switch self {
         case .user:
-            // Warm blue with orange undertone for harmony with Claude Code icon
-            return Color(red: 0.357, green: 0.553, blue: 0.745) // #5B8DBE
+            // Rich blue - professional, distinct
+            return Color(red: 0.290, green: 0.482, blue: 0.655) // #4A7BA7
         case .assistant:
-            // Teal - complementary to orange (Claude Code), harmonizes with blue (Codex)
-            return Color(red: 0.251, green: 0.710, blue: 0.769) // #40B5C4
+            // Warm gray/taupe - universal compatibility with any provider branding
+            return Color(red: 0.608, green: 0.545, blue: 0.494) // #9B8B7E
         case .system:
             return .gray
         }
