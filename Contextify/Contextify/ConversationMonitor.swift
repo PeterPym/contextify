@@ -624,8 +624,10 @@ final class ConversationMonitor {
         }
 
         // Disposition-based filtering to reduce noise
+        // TODO: Make this configurable via user settings (see TODOS.md - Timeline Verbosity Settings)
+        // Current level: Option 1 (Recommended) - Suppress ack, wip, analysis
         let disposition = summaryResult.disposition.lowercased()
-        let suppressibleDispositions: Set<String> = ["ack", "wip"]
+        let suppressibleDispositions: Set<String> = ["ack", "wip", "analysis"]
 
         if suppressibleDispositions.contains(disposition) {
             log.info("🟡 addAssistantTextEntry: Suppressing low-value entry (disposition=\(disposition, privacy: .public))")

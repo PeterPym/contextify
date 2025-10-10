@@ -99,8 +99,38 @@ When processing timeline entries marked as "completed":
 - Could use confidence scoring on completion detection
 - Should preserve important context even when merging
 
-##### 2. Task Duration Tracking
+##### 2. Timeline Verbosity Settings
 **Status:** Backlog
+**Priority:** Medium
+
+Add user-configurable verbosity control for timeline entries to balance detail vs clarity.
+
+**Proposed UI:**
+- Settings panel with a slider control
+- 4 verbosity levels from minimal to verbose
+- Real-time preview showing what gets filtered at each level
+- Persisted preference in UserDefaults
+
+**Verbosity Levels:**
+
+| Level | Name | Suppressed Dispositions | Kept Dispositions | Est. Entries/Cycle |
+|-------|------|------------------------|-------------------|-------------------|
+| 0 | Minimal | ack, wip, analysis, proposal | completion, question, refusal | 1-2 |
+| 1 | Balanced (Default) | ack, wip, analysis | completion, proposal, question, refusal | 3-5 |
+| 2 | Detailed | ack, wip | completion, analysis, proposal, question, refusal | 6-8 |
+| 3 | Verbose | (none) | (all) | 10-14 |
+
+**Implementation:**
+- Add `TimelineVerbosity` enum with levels 0-3
+- Store preference in `MonitorConfig` or `HUDPreferences`
+- Update `addAssistantTextEntry()` to check verbosity level
+- Add settings UI in ConversationTimelineView menu or separate preferences window
+
+**Current Implementation:**
+Level 1 (Balanced) is hard-coded in `ConversationMonitor.swift:630`
+
+##### 3. Task Duration Tracking
+**Status:** Completed (2025-10-10)
 **Priority:** Medium
 **Depends on:** Enhancement #1 (completed entry detection)
 
