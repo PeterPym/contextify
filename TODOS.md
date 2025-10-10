@@ -16,6 +16,39 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ### Bugs
 
+#### Timeline Entry Tense Inconsistency
+**Status:** Backlog
+**Priority:** Medium
+
+Timeline entries are generated immediately when messages arrive, using present tense ("Claude proposes...", "Claude implements..."). This looks odd because they're historical log entries that should use past tense ("Claude proposed...", "Claude implemented...").
+
+**The Challenge:**
+- Entries are created as messages arrive (present moment)
+- They should look like past events once logged
+- Ideally, "in-progress" entries could flip to past tense once completed
+- But we don't want to re-compute summaries (expensive LLM calls)
+
+**Possible Solutions:**
+
+1. **Simple fix:** Just use past tense in LLM instructions
+   - Pro: Easy, one-line change
+   - Con: "Claude proposed..." for in-progress work feels weird
+   - Con: No distinction between active vs completed work
+
+2. **Smart tense with completion detection:**
+   - Use present continuous for in-progress ("Claude is implementing...")
+   - Use past tense only when isCompletion=true ("Claude implemented...")
+   - Pro: Natural language feel
+   - Con: Still doesn't "flip" existing entries
+
+3. **Post-completion tense flip** (requires caching):
+   - Generate in present tense initially
+   - When completion detected, update previous entry to past tense
+   - Pro: Most natural, shows progression
+   - Con: Requires cached summaries + entry mutation
+
+**Related:** Timeline Summary Caching (see below)
+
 #### Conversation Switch: Excessive System Messages + Missing User Messages
 **Status:** Active Investigation
 **Priority:** Critical
@@ -41,6 +74,65 @@ Multiple related issues with timeline display:
 - Add logging to see why user messages aren't making it through `processUserMessage()`
 - Check if `switchToSession()` is being called too frequently
 - Verify `seenMessageUUIDs` prevents duplicate system messages
+
+### Performance
+
+#### Timeline Summary Caching
+**Status:** Backlog
+**Priority:** High
+**Related:** Transcript metadata system
+
+Currently, timeline entries are re-generated from scratch on every app launch by re-parsing the entire JSONL transcript and calling the LLM for each message. This is slow and expensive.
+
+**Current Flow:**
+1. App starts, reads `conversation.jsonl`
+2. For each JSONL line: parse → LLM summarize → create TimelineEntry
+3. On refresh: repeat the entire process
+4. No persistence of generated summaries
+
+**Problems:**
+- Expensive: LLM calls for every message on every launch
+- Slow: Summarization takes ~150ms per message minimum
+- Wasteful: Re-computing the same summaries repeatedly
+- Blocks future features: Can't do tense-flipping without cached summaries
+
+**Proposed Solution:**
+Similar to transcript metadata system (`TranscriptMetadata.json`), create a timeline cache:
+
+**File structure:** `~/Library/Application Support/Contextify/timeline-cache/{project-hash}/`
+- `timeline-entries.json` - Cached TimelineEntry objects
+- `summary-cache.json` - Map of message UUID → summary metadata
+
+**Cache entry format:**
+```json
+{
+  "messageUUID": "abc-123",
+  "summary": "Claude proposed fixing the refresh logic",
+  "disposition": "proposal",
+  "isCompletion": false,
+  "isDirective": false,
+  "generatedAt": "2025-10-10T12:15:00Z",
+  "schemaVersion": 1
+}
+```
+
+**Implementation:**
+1. Check cache before calling LLM
+2. Only summarize new/unseen message UUIDs
+3. Persist cache after each summarization
+4. Invalidate cache on schema version changes
+5. Support cache migration/upgrade
+
+**Benefits:**
+- Fast startup: Only summarize new messages
+- Enables tense-flipping: Can mutate cached summaries
+- Enables summary editing: User could manually fix bad summaries
+- Foundation for offline mode: Work without LLM available
+
+**Challenges:**
+- Cache invalidation: When to regenerate summaries?
+- Storage management: Prune old entries
+- Migration: Handle schema changes gracefully
 
 ### Features
 
