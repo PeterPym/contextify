@@ -44,6 +44,8 @@ final class ConversationMonitor {
     @ObservationIgnored private(set) var activeSession: TranscriptSession?
     @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
     @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
+    @ObservationIgnored private var lastUserDirectiveId: UUID?
+    @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
 
     private init() {}
 
@@ -532,10 +534,18 @@ final class ConversationMonitor {
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)",
             isCompletion: false,
-            isDirective: summaryResult.isDirective
+            isDirective: summaryResult.isDirective,
+            requestId: nil
         )
 
         entries.append(entry)
+
+        // Track this directive for correlation with future completions
+        if summaryResult.isDirective {
+            lastUserDirectiveId = entry.id
+            lastUserDirectiveTimestamp = timestamp
+            log.info("🟢 processUserMessage: Tracking directive id=\(entry.id) for completion correlation")
+        }
 
         if entries.count > config.maxEntries {
             entries = Array(entries.suffix(config.maxEntries))
@@ -590,9 +600,22 @@ final class ConversationMonitor {
             log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
             return
         }
+
+        // Deduplicate sequential completion entries
+        if summaryResult.isCompletion {
+            // Find the last assistant entry
+            if let lastAssistantEntry = entries.last(where: { $0.kind == .assistant }), lastAssistantEntry.isCompletion {
+                log.info("🟡 addAssistantTextEntry: Suppressing sequential completion entry (previous entry was also completion)")
+                return
+            }
+        }
+
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
             : text
+
+        // Link completion to the last user directive for duration tracking
+        let requestId = summaryResult.isCompletion ? lastUserDirectiveId : nil
 
         let entry = TimelineEntry(
             kind: .assistant,
@@ -603,7 +626,8 @@ final class ConversationMonitor {
             sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
             sourceIdentifier: "msg-\(uuid)-text",
             isCompletion: summaryResult.isCompletion,
-            isDirective: summaryResult.isDirective
+            isDirective: summaryResult.isDirective,
+            requestId: requestId
         )
 
         entries.append(entry)

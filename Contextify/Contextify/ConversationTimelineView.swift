@@ -123,9 +123,17 @@ struct ConversationTimelineView: View {
                         emptyState
                     } else {
                         ForEach(monitor.entries) { entry in
-                            TimelineEntryRow(entry: entry)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
-                                .id(entry.id)
+                            TimelineEntryRow(
+                                entry: entry,
+                                allEntries: monitor.entries,
+                                onScrollToEntry: { entryId in
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        proxy.scrollTo(entryId, anchor: .center)
+                                    }
+                                }
+                            )
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .id(entry.id)
                         }
                         Color.clear
                             .frame(height: 1)

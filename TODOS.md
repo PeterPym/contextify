@@ -14,6 +14,27 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Backlog
 
+### Bugs
+
+#### Conversation Switch: New Logs Not Displayed
+**Status:** Backlog
+**Priority:** High
+**Reported:** 2025-10-10
+
+When switching to a new Claude Code conversation, the system message indicating the switch appears correctly, but no new conversation logs are displayed after that system message entry. The timeline stops updating even though the file watcher should be monitoring the new conversation file.
+
+**Symptoms:**
+- System message "Switched to Claude Code conversation" appears
+- No subsequent timeline entries are added
+- File watcher appears to be set up correctly
+- Issue occurs after provider switch
+
+**Investigation areas:**
+- Check if `lastProcessedLine` is being reset correctly in `switchToSession()`
+- Verify file watcher is properly attached to new conversation file
+- Check if `seenMessageUUIDs` needs to be cleared on switch
+- Verify `processConversationFile()` is being triggered after switch
+
 ### Features
 
 #### Conversation Log Enhancements
@@ -67,8 +88,9 @@ Once we can reliably identify completed entries, show the elapsed time from the 
 - Calculate duration from first relevant assistant message to completion marker
 - Handle cases where tasks span multiple timeline entries
 
-#### Transcript Migration UI (Low Priority)
+#### Transcript Migration UI
 **Status:** Backlog
+**Priority:** Super Low (manual script works fine, edge case)
 **Related:** `scripts/migrate-transcripts.sh`
 
 When users move their project to a new directory (e.g., `~/code/contextify` → `~/code/projects/contextify`), Claude Code creates a new transcript directory. Old transcripts remain at the old location with outdated paths in content.
@@ -86,8 +108,6 @@ Wrap the script in UI:
 - Show preview of what will be migrated
 - One-click migration with progress indicator
 - Automatic backup before migration
-
-**Priority:** Low (manual script works fine, edge case)
 
 ---
 

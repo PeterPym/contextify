@@ -3,6 +3,8 @@ import AppKit
 
 struct TimelineEntryRow: View {
     let entry: TimelineEntry
+    let allEntries: [TimelineEntry]
+    let onScrollToEntry: (UUID) -> Void
 
     @State private var isExpanded = false
     @State private var showCopiedToast = false
@@ -78,6 +80,21 @@ struct TimelineEntryRow: View {
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.tint)
                     .accessibilityLabel("Task completed")
+
+                if let duration = calculateDuration() {
+                    Text(duration)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+
+                if let requestId = entry.requestId {
+                    Button(action: { onScrollToEntry(requestId) }) {
+                        Image(systemName: "arrow.up.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Jump to original request")
+                }
             }
             Spacer()
             Button(action: { copy(entry.markdownPayload()) }) {
@@ -86,6 +103,25 @@ struct TimelineEntryRow: View {
             }
             .buttonStyle(.plain)
             .help("Copy markdown snippet")
+        }
+    }
+
+    private func calculateDuration() -> String? {
+        guard let requestId = entry.requestId,
+              let requestEntry = allEntries.first(where: { $0.id == requestId }) else {
+            return nil
+        }
+
+        let duration = entry.timestamp.timeIntervalSince(requestEntry.timestamp)
+        guard duration > 0 else { return nil }
+
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+
+        if minutes > 0 {
+            return "(\(minutes)m \(seconds)s)"
+        } else {
+            return "(\(seconds)s)"
         }
     }
 
