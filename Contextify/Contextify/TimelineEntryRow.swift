@@ -185,9 +185,14 @@ struct TimelineEntryRow: View {
 private extension TimelineEntryKind {
     var accentColor: Color {
         switch self {
-        case .user: return .blue
-        case .assistant: return .purple
-        case .system: return .gray
+        case .user:
+            // Warm blue with orange undertone for harmony with Claude Code icon
+            return Color(red: 0.357, green: 0.553, blue: 0.745) // #5B8DBE
+        case .assistant:
+            // Teal - complementary to orange (Claude Code), harmonizes with blue (Codex)
+            return Color(red: 0.251, green: 0.710, blue: 0.769) // #40B5C4
+        case .system:
+            return .gray
         }
     }
 
