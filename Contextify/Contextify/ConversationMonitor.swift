@@ -326,20 +326,18 @@ final class ConversationMonitor {
             return
         }
 
-        let providerName = session.provider.displayName
-
         let summary: String
         switch reason {
         case .newConversation:
-            summary = "Switched to a new \(providerName) conversation"
+            summary = "Switched to a new conversation"
         case .userSelection, .providerChange:
-            summary = "Switched to \(providerName) conversation"
+            summary = "Switched to conversation"
         case .initial:
-            summary = "Timeline monitoring started for \(providerName)"
+            summary = "Timeline monitoring started"
         }
 
         let detail = """
-        Timeline switched to \(providerName) conversation
+        Timeline switched to conversation
 
         Monitoring: \(session.fileURL.lastPathComponent)
         Path: \(session.fileURL.path)
@@ -935,14 +933,11 @@ final class ConversationMonitor {
         guard !didEmitSessionStart else { return }
         didEmitSessionStart = true
 
-        let provider = activeSession?.provider ?? .other
-        let providerName = provider.displayName
-
-        let summary = "Timeline monitoring started for \(providerName)"
+        let summary = "Timeline monitoring started"
         let detail: String
         if let fileURL = currentConversationFile {
             detail = """
-            Timeline monitoring started for \(providerName)
+            Timeline monitoring started
 
             Monitoring: \(fileURL.lastPathComponent)
             Path: \(fileURL.path)

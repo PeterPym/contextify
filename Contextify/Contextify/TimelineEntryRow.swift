@@ -68,8 +68,8 @@ struct TimelineEntryRow: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            // Use provider-specific icon for system messages, default icon for others
-            if entry.kind == .system, let provider = entry.sourceContext?.provider {
+            // Use provider-specific icon for assistant messages, default icons for others
+            if entry.kind == .assistant, let provider = entry.sourceContext?.provider {
                 Image(provider.iconImage)
                     .renderingMode(.template)
                     .foregroundStyle(providerColor(provider))
