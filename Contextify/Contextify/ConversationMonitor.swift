@@ -149,11 +149,25 @@ final class ConversationMonitor {
         log.info("Timeline: Active session at \(session.fileURL.path, privacy: .public)")
 
         if !force, let current = activeSession, current.fileURL == session.fileURL {
+            // Same session, just update the reference
             activeSession = session
+            log.info("Timeline: Session unchanged, skipping switch")
             return
         }
 
-        await switchToSession(session, reason: force ? .initial : .providerChange)
+        // Only emit provider switch if we're actually changing sessions
+        let switchReason: SessionSwitchReason
+        if force {
+            switchReason = .initial
+        } else if activeSession != nil {
+            // We had a previous session and it's different - this is a real provider change
+            switchReason = .providerChange
+        } else {
+            // First time setting up - treat as initial
+            switchReason = .initial
+        }
+
+        await switchToSession(session, reason: switchReason)
     }
 
     private enum SessionSwitchReason {
@@ -227,6 +241,14 @@ final class ConversationMonitor {
     }
 
     private func emitProviderSwitchEntry(for session: TranscriptSession) {
+        let sourceId = "provider-switch-\(session.identifier)"
+
+        // Deduplicate: don't add if we already have this exact system message
+        if entries.contains(where: { $0.sourceIdentifier == sourceId && $0.kind == .system }) {
+            log.info("🟡 emitProviderSwitchEntry: Already have provider switch entry for \(session.identifier), skipping")
+            return
+        }
+
         let providerName: String
         switch session.provider {
         case .claudeCode: providerName = "Claude Code"
@@ -254,7 +276,7 @@ final class ConversationMonitor {
             detail: detail,
             sourceContent: detail,
             sourceContext: context,
-            sourceIdentifier: "provider-switch-\(session.identifier)"
+            sourceIdentifier: sourceId
         )
 
         entries.append(entry)

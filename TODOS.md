@@ -16,24 +16,31 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ### Bugs
 
-#### Conversation Switch: New Logs Not Displayed
-**Status:** Backlog
-**Priority:** High
+#### Conversation Switch: Excessive System Messages + Missing User Messages
+**Status:** Active Investigation
+**Priority:** Critical
 **Reported:** 2025-10-10
 
-When switching to a new Claude Code conversation, the system message indicating the switch appears correctly, but no new conversation logs are displayed after that system message entry. The timeline stops updating even though the file watcher should be monitoring the new conversation file.
+Multiple related issues with timeline display:
+1. Too many system "provider switch" messages appearing
+2. User messages not showing up at all in timeline
 
 **Symptoms:**
-- System message "Switched to Claude Code conversation" appears
-- No subsequent timeline entries are added
-- File watcher appears to be set up correctly
-- Issue occurs after provider switch
+- Tons of system messages (likely repeated "Switched to..." messages)
+- User messages completely absent from timeline
+- File watcher may be functioning but messages aren't being added
+
+**Root cause hypothesis:**
+- `refreshActiveConversation()` polling loop (every 10s) may be repeatedly detecting "provider change" even when conversation hasn't changed
+- This causes repeated `emitProviderSwitchEntry()` calls
+- OR: LLM summarization for user messages is failing silently and returning early
+- OR: User messages being filtered by meta/command-wrapper checks
 
 **Investigation areas:**
-- Check if `lastProcessedLine` is being reset correctly in `switchToSession()`
-- Verify file watcher is properly attached to new conversation file
-- Check if `seenMessageUUIDs` needs to be cleared on switch
-- Verify `processConversationFile()` is being triggered after switch
+- Check if `refreshActiveConversation()` properly detects when session hasn't changed (line 151-154)
+- Add logging to see why user messages aren't making it through `processUserMessage()`
+- Check if `switchToSession()` is being called too frequently
+- Verify `seenMessageUUIDs` prevents duplicate system messages
 
 ### Features
 
