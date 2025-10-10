@@ -25,7 +25,7 @@ nonisolated enum MetadataBudgets {
 // MARK: - Shared Formatters
 
 /// Cached formatters and regex instances to avoid repeated allocations
-enum Formatters {
+nonisolated enum Formatters {
   /// ISO8601 formatter with fractional seconds
   nonisolated(unsafe) static let isoWithFrac: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
@@ -41,12 +41,12 @@ enum Formatters {
   }()
 
   /// Regex for collapsing whitespace
-  nonisolated(unsafe) static let collapseWhitespace: NSRegularExpression = {
+  static let collapseWhitespace: NSRegularExpression = {
     try! NSRegularExpression(pattern: #"\s+"#, options: [])
   }()
 
   /// Regex for filename detection
-  nonisolated(unsafe) static let filenamePattern: NSRegularExpression = {
+  static let filenamePattern: NSRegularExpression = {
     let pattern = #"([A-Za-z0-9_.\-/]+\.(swift|md|ts|js|kt|py|rb|java|go|rs|c|cpp|h|hpp|json|yaml|yml|toml|txt|sh))"#
     return try! NSRegularExpression(pattern: pattern, options: [])
   }()

@@ -77,7 +77,7 @@ actor TranscriptMetadataOrchestrator {
     // Create new task
     let task = Task<TranscriptMetadata, Error> {
       defer {
-        Task { await self.removeTask(for: session.fileURL) }
+        Task { self.removeTask(for: session.fileURL) }
       }
       return try await self.generateMetadata(for: session, forceRegenerate: forceRegenerate)
     }
