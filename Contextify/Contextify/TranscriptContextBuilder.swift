@@ -11,65 +11,87 @@ struct BuiltContext: Sendable {
 // MARK: - Context Builder
 
 /// Builds LLM-ready context from exchanges using various strategies
-struct ContextBuilder: Sendable {
-  func build(exchanges: [Exchange], strategy: GenerationStrategy) throws -> BuiltContext {
+nonisolated struct ContextBuilder: Sendable {
+  func build(
+    exchanges: [Exchange],
+    strategy: GenerationStrategy,
+    budgetTokens: Int? = nil
+  ) throws -> BuiltContext {
     switch strategy {
     case .full:
-      let formatted = exchanges.map(Self.format).joined(separator: "\n")
+      let formatted = Self.formatWithDeltas(exchanges)
       return BuiltContext(
-        text: header(sampled: exchanges.count, total: exchanges.count) + formatted,
+        text: formatted,
         sampledCount: exchanges.count
       )
 
     case .bookends:
-      // Limit bookends to fit within context window
-      // Each exchange ~50-100 tokens avg, so 10+10 = ~1000-2000 tokens
-      let head = Array(exchanges.prefix(10))
-      let tail = Array(exchanges.suffix(10))
+      let head = Array(exchanges.prefix(MetadataBudgets.bookendCount))
+      let tail = Array(exchanges.suffix(MetadataBudgets.bookendCount))
       let seq = (head + tail).sorted { $0.timestamp < $1.timestamp }
-      let formatted = seq.map(Self.format).joined(separator: "\n")
+      let formatted = Self.formatWithDeltas(seq)
       return BuiltContext(
-        text: header(sampled: seq.count, total: exchanges.count) + formatted,
+        text: formatted,
         sampledCount: seq.count
       )
 
     case .adaptive:
-      // Budget: 4096 total - 300 output - 250 prompt/overhead = ~3500 input max
-      // Use 2000 to be conservative and allow for token estimation error
-      let seq = AdaptiveSampler.sample(exchanges: exchanges, budgetTokens: 2000)
-      let formatted = seq.map(Self.format).joined(separator: "\n")
+      let budget = budgetTokens ?? MetadataBudgets.samplerBudget
+      let seq = AdaptiveSampler.sample(exchanges: exchanges, budgetTokens: budget)
+      let formatted = Self.formatWithDeltas(seq)
       return BuiltContext(
-        text: header(sampled: seq.count, total: exchanges.count) + formatted,
+        text: formatted,
         sampledCount: seq.count
       )
     }
   }
 
-  private func header(sampled: Int, total: Int) -> String {
-    "SAMPLED \(sampled) OF \(total)\n"
+  private static func formatWithDeltas(_ exchanges: [Exchange]) -> String {
+    guard !exchanges.isEmpty else { return "" }
+
+    let startTime = exchanges.first!.timestamp
+    var lines: [String] = []
+
+    for exchange in exchanges {
+      let role = (exchange.role == .user) ? "U" : "A"
+      let delta = formatTimeDelta(exchange.timestamp.timeIntervalSince(startTime))
+      let oneLine = Sanitizers.collapse(exchange.text, hardLimit: MetadataBudgets.perExchangeCharLimit)
+      lines.append("\(role) +\(delta): \(oneLine)")
+    }
+
+    return lines.joined(separator: "\n")
   }
 
-  private static func format(_ exchange: Exchange) -> String {
-    let role = (exchange.role == .user) ? "U" : "A"
-    let stamp = ISO8601DateFormatter().string(from: exchange.timestamp)
-    // Limit to 300 chars (~75 tokens) to fit context window
-    // 25 exchanges × 75 tokens = ~1875 tokens (safe for 4096 window)
-    let oneLine = Sanitizers.collapse(exchange.text, hardLimit: 300)
-    return "\(role) [\(stamp)]: \(oneLine)"
+  private static func formatTimeDelta(_ seconds: TimeInterval) -> String {
+    let absSeconds = abs(seconds)
+
+    if absSeconds < 1 {
+      return "0s"
+    } else if absSeconds < 60 {
+      return "\(Int(absSeconds))s"
+    } else if absSeconds < 3600 {
+      let minutes = Int(absSeconds / 60)
+      let secs = Int(absSeconds.truncatingRemainder(dividingBy: 60))
+      return secs > 0 ? "\(minutes)m\(secs)s" : "\(minutes)m"
+    } else {
+      let hours = Int(absSeconds / 3600)
+      let mins = Int((absSeconds.truncatingRemainder(dividingBy: 3600)) / 60)
+      return mins > 0 ? "\(hours)h\(mins)m" : "\(hours)h"
+    }
   }
 }
 
 // MARK: - Adaptive Sampler
 
 /// Samples exchanges using importance scoring to fit within token budget
-enum AdaptiveSampler {
+nonisolated enum AdaptiveSampler {
   static func sample(exchanges: [Exchange], budgetTokens: Int) -> [Exchange] {
     // If small enough, return all
-    guard exchanges.count > 20 else { return exchanges }
+    guard exchanges.count > (MetadataBudgets.bookendCount * 2) else { return exchanges }
 
-    let head = Array(exchanges.prefix(10))
-    let tail = Array(exchanges.suffix(10))
-    let middle = Array(exchanges.dropFirst(10).dropLast(10))
+    let head = Array(exchanges.prefix(MetadataBudgets.bookendCount))
+    let tail = Array(exchanges.suffix(MetadataBudgets.bookendCount))
+    let middle = Array(exchanges.dropFirst(MetadataBudgets.bookendCount).dropLast(MetadataBudgets.bookendCount))
 
     // Score each middle exchange
     struct Scored {
@@ -142,8 +164,7 @@ enum AdaptiveSampler {
 
   private static func estimateTokens(for exchanges: [Exchange]) -> Int {
     exchanges.reduce(0) { acc, exchange in
-      // Account for formatting (300 char hard limit per exchange)
-      let limitedText = Sanitizers.collapse(exchange.text, hardLimit: 300)
+      let limitedText = Sanitizers.collapse(exchange.text, hardLimit: MetadataBudgets.perExchangeCharLimit)
       let charCount = limitedText.count
       // ~4 chars per token + timestamp/role overhead (~20 tokens)
       return acc + (charCount / 4) + 25
@@ -154,13 +175,15 @@ enum AdaptiveSampler {
 // MARK: - Sanitizers
 
 /// Text sanitization utilities
-enum Sanitizers {
+nonisolated enum Sanitizers {
   /// Collapses whitespace and truncates to hard limit
   static func collapse(_ text: String, hardLimit: Int) -> String {
-    var sanitized = text.replacingOccurrences(
-      of: #"\s+"#,
-      with: " ",
-      options: .regularExpression
+    let range = NSRange(location: 0, length: (text as NSString).length)
+    var sanitized = Formatters.collapseWhitespace.stringByReplacingMatches(
+      in: text,
+      options: [],
+      range: range,
+      withTemplate: " "
     ).trimmingCharacters(in: .whitespacesAndNewlines)
 
     if sanitized.count > hardLimit {
