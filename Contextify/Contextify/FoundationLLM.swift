@@ -29,6 +29,13 @@ actor FoundationLLM {
         let disposition: String
     }
 
+    struct TimelineSummaryWithForms: Sendable {
+        let presentForm: String
+        let pastForm: String
+        let disposition: Disposition
+        let verbLemma: String?
+    }
+
     enum UserIntent: String {
         case directive
         case question
@@ -343,6 +350,72 @@ actor FoundationLLM {
     func fallbackSummary(kind: TimelineEntryKind, text: String) -> TimelineSummaryResult {
         let summary = sanitize(fallback(for: kind, text: text), kind: kind)
         return TimelineSummaryResult(summary: summary, isCompletion: false, isDirective: false, disposition: "unknown")
+    }
+
+    /// Generate dual-form (present + past) timeline summary for cache storage
+    func summarizeTimelineWithForms(
+        kind: TimelineEntryKind,
+        text: String,
+        contextWindow: [String] = []
+    ) async throws -> TimelineSummaryWithForms {
+        // Call existing LLM summarization
+        let result = try await summarizeTimeline(kind: kind, text: text)
+
+        // Parse disposition string to enum
+        let disp = Disposition(rawValue: result.disposition) ?? .unknown
+
+        // For now, use simple transformation to generate both forms
+        // TODO: Phase 2 will have LLM generate both forms natively
+        let present = result.summary
+        let past = convertToPastTense(result.summary, disposition: disp)
+
+        return TimelineSummaryWithForms(
+            presentForm: present,
+            pastForm: past,
+            disposition: disp,
+            verbLemma: nil  // TODO: LLM should provide this in Phase 2
+        )
+    }
+
+    /// Simple fallback for converting present tense to past tense
+    /// This is temporary until Phase 2 when LLM generates both forms
+    /// Guards against code blocks and unsafe transformations
+    private func convertToPastTense(_ text: String, disposition: Disposition) -> String {
+        // If already past tense (completion), return as-is
+        if disposition == .completion {
+            return text
+        }
+
+        // Guard: Don't transform if text contains code blocks or inline code
+        if text.contains("```") || text.contains("`") {
+            return text
+        }
+
+        // Guard: Don't transform if text contains colons (likely code/paths)
+        if text.contains(":") {
+            return text
+        }
+
+        // Use anchored regex patterns to only match sentence starts
+        var result = text
+
+        // Pattern: "Claude is <verb>ing" → "Claude <verb>ed"
+        if let regex = try? NSRegularExpression(pattern: #"^Claude is (\w+?)ing\b"#, options: []) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "Claude $1ed")
+        }
+
+        // Pattern: "Claude <verb>s" → "Claude <verb>ed" (only for safe verbs)
+        let safeVerbs = ["proposes", "implements", "fixes", "adds", "creates", "updates", "modifies"]
+        for verb in safeVerbs {
+            if result.hasPrefix("Claude \(verb)") {
+                let replacement = String(verb.dropLast()) + "ed"
+                result = result.replacingOccurrences(of: "Claude \(verb)", with: "Claude \(replacement)")
+                break
+            }
+        }
+
+        return result
     }
 }
 
