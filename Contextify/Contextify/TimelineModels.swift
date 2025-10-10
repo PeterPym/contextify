@@ -147,6 +147,29 @@ extension TimelineEntry {
 
         return "\(logText)\n---\n\(sourceText)\n---\n\(reference)"
     }
+
+    /// Create a copy with modified fields
+    func copyWith(
+        sessionId: String? = nil,
+        action: TimelineEntryAction? = nil
+    ) -> TimelineEntry {
+        TimelineEntry(
+            id: id,
+            kind: kind,
+            timestamp: timestamp,
+            summary: summary,
+            detail: detail,
+            sourceContent: sourceContent,
+            sourceContext: sourceContext,
+            sourceIdentifier: sourceIdentifier,
+            isError: isError,
+            isCompletion: isCompletion,
+            isDirective: isDirective,
+            requestId: requestId,
+            action: action ?? self.action,
+            sessionId: sessionId ?? self.sessionId
+        )
+    }
 }
 
 struct ConversationExchange: Sendable {

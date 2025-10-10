@@ -120,13 +120,13 @@ struct ConversationTimelineView: View {
                         errorBanner(error)
                     }
 
-                    if monitor.entries.isEmpty {
+                    if monitor.visibleEntries.isEmpty {
                         emptyState
                     } else {
-                        ForEach(monitor.entries) { entry in
+                        ForEach(monitor.visibleEntries) { entry in
                             TimelineEntryRow(
                                 entry: entry,
-                                allEntries: monitor.entries,
+                                allEntries: monitor.visibleEntries,
                                 onScrollToEntry: { entryId in
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         proxy.scrollTo(entryId, anchor: .center)
@@ -143,11 +143,11 @@ struct ConversationTimelineView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: monitor.entries.count) { _, _ in
+            .onChange(of: monitor.visibleEntries.count) { _, _ in
                 // Cancel any pending scroll task
                 scrollTask?.cancel()
 
-                guard monitor.autoScroll, !monitor.entries.isEmpty else { return }
+                guard monitor.autoScroll, !monitor.visibleEntries.isEmpty else { return }
 
                 // Create new debounced scroll task (150ms delay to coalesce rapid updates)
                 scrollTask = Task { @MainActor in

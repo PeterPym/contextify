@@ -28,6 +28,13 @@ final class ConversationMonitor {
     ]
 
     private(set) var entries: [TimelineEntry] = []
+
+    /// Entries filtered to the active session (UI-visible subset)
+    var visibleEntries: [TimelineEntry] {
+        guard let id = currentSessionId else { return [] }
+        return entries.filter { $0.sessionId == id }
+    }
+
     private(set) var isCollapsed = false
     private(set) var isMonitoring = false
     private(set) var isProcessing = false
@@ -219,6 +226,14 @@ final class ConversationMonitor {
             log.error("Failed to load timeline cache: \(error.localizedDescription, privacy: .public)")
         }
 
+        // Backfill sessionId on cache-loaded and legacy entries
+        let sid = session.identifier
+        for i in entries.indices {
+            if entries[i].sessionId == nil {
+                entries[i] = entries[i].copyWith(sessionId: sid)
+            }
+        }
+
         configureFileWatcher(for: session.fileURL)
 
         // Add initializing placeholder entry to improve startup UX
@@ -393,7 +408,14 @@ final class ConversationMonitor {
             return
         }
 
-        entries.append(entry)
+        // Guarantee sessionId is set (safety net for future code changes)
+        var e = entry
+        if e.sessionId == nil {
+            e = e.copyWith(sessionId: currentSessionId)
+            log.debug("🟡 appendEntryIfCurrentEpoch: Backfilled missing sessionId for entry")
+        }
+
+        entries.append(e)
         if entries.count > config.maxEntries {
             entries = Array(entries.suffix(config.maxEntries))
         }
