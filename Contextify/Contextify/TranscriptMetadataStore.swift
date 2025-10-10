@@ -11,7 +11,7 @@ struct SidecarMetadataStore: Sendable {
   }
 
   /// Loads metadata from sidecar file if it exists
-  func load(for url: URL) throws -> TranscriptMetadata? {
+  nonisolated func load(for url: URL) throws -> TranscriptMetadata? {
     let sidecarPath = sidecarURL(for: url)
 
     guard FileManager.default.fileExists(atPath: sidecarPath.path) else {
@@ -20,40 +20,39 @@ struct SidecarMetadataStore: Sendable {
 
     let data = try Data(contentsOf: sidecarPath)
     let decoder = JSONDecoder()
-    decoder.dateDecodingStrategy = .iso8601
+    decoder.dateDecodingStrategy = .custom { decoder in
+      let container = try decoder.singleValueContainer()
+      let string = try container.decode(String.self)
+      guard let date = ISO8601ms.decode(string) else {
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date: \(string)")
+      }
+      return date
+    }
     return try decoder.decode(TranscriptMetadata.self, from: data)
   }
 
   /// Saves metadata to sidecar file atomically
-  func save(_ metadata: TranscriptMetadata, for url: URL) async throws {
+  nonisolated func save(_ metadata: TranscriptMetadata, for url: URL) async throws {
     let sidecarPath = sidecarURL(for: url)
-    let tmpPath = sidecarPath
-      .deletingLastPathComponent()
-      .appendingPathComponent(".\(UUID().uuidString).tmp")
+
+    // Ensure parent directory exists
+    let parentDir = sidecarPath.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
     let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
+    encoder.dateEncodingStrategy = .custom { date, encoder in
+      var container = encoder.singleValueContainer()
+      try container.encode(ISO8601ms.encode(date))
+    }
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
 
     let data = try encoder.encode(metadata)
-    try data.write(to: tmpPath, options: .atomic)
-
-    // Atomic replace
-    let fm = FileManager.default
-    if fm.fileExists(atPath: sidecarPath.path) {
-      _ = try? fm.replaceItemAt(
-        sidecarPath,
-        withItemAt: tmpPath,
-        backupItemName: nil,
-        options: .usingNewMetadataOnly
-      )
-    } else {
-      try fm.moveItem(at: tmpPath, to: sidecarPath)
-    }
+    // Write directly with .atomic option - no need for manual temp file
+    try data.write(to: sidecarPath, options: .atomic)
   }
 
   /// Checks if cached metadata is still fresh
-  func isFresh(
+  nonisolated func isFresh(
     _ metadata: TranscriptMetadata,
     for url: URL,
     promptVersion: Int,
@@ -68,15 +67,36 @@ struct SidecarMetadataStore: Sendable {
       && metadata.generatorVersion == generatorVersion
   }
 
-  /// Computes SHA256 hash of transcript file
-  func sha256(url: URL) throws -> String {
-    let data = try Data(contentsOf: url)
-    let digest = SHA256.hash(data: data)
+  /// Computes SHA256 hash of transcript file using streaming to avoid memory spikes
+  nonisolated func sha256(url: URL) throws -> String {
+    let bufferSize = 64 * 1024 // 64 KB chunks
+    guard let inputStream = InputStream(url: url) else {
+      throw NSError(domain: "SidecarMetadataStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to open input stream"])
+    }
+
+    inputStream.open()
+    defer { inputStream.close() }
+
+    var hasher = SHA256()
+    var buffer = [UInt8](repeating: 0, count: bufferSize)
+
+    while inputStream.hasBytesAvailable {
+      let bytesRead = inputStream.read(&buffer, maxLength: bufferSize)
+      if bytesRead > 0 {
+        hasher.update(data: Data(buffer[0..<bytesRead]))
+      } else if bytesRead < 0 {
+        throw inputStream.streamError ?? NSError(domain: "SidecarMetadataStore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Stream read error"])
+      } else {
+        break
+      }
+    }
+
+    let digest = hasher.finalize()
     return "sha256:" + digest.map { String(format: "%02x", $0) }.joined()
   }
 
   /// Deletes the sidecar metadata file for a transcript
-  func delete(for url: URL) throws {
+  nonisolated func delete(for url: URL) throws {
     let sidecarPath = sidecarURL(for: url)
     let fm = FileManager.default
 
@@ -89,7 +109,7 @@ struct SidecarMetadataStore: Sendable {
 
   /// Flushes all heuristic-generated metadata (Developer Chat, Brief Session)
   /// Returns count of flushed files
-  func flushHeuristicMetadata(for sessions: [TranscriptSession]) -> Int {
+  nonisolated func flushHeuristicMetadata(for sessions: [TranscriptSession]) -> Int {
     var flushedCount = 0
 
     for session in sessions {
