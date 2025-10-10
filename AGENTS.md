@@ -93,83 +93,27 @@ Common commands:
 
 ## Logging Guidelines
 
-**Framework:** Use `OSLog` (`import OSLog`) with structured logging via `Logger(subsystem: "dev.contextify", category: "CategoryName")`
+**Framework:** Use `OSLog` with `Logger(subsystem: "dev.contextify", category: "CategoryName")`
 
-### Log Level Policy
+**Two-Phase Approach:**
+1. **Development:** Use `.info` generously to track execution flow; `.debug` for verbose details
+2. **Pre-merge:** Move routine operations to `.debug`; keep `.info` only for significant state changes
 
-Follow Apple's Unified Logging semantics with this **two-phase approach**:
+**Level Usage:**
+- `.debug` - Normal operation, success paths (hidden with `TYPE Info` filter)
+- `.info` - Significant state changes (e.g., "Watching transcript: [file]", session switches)
+- `.warning` - Retries, fallbacks, recoverable issues (e.g., "LLM retry 2/3")
+- `.error` - Failures requiring intervention (parse errors, missing files)
+- `.fault` - Use `assertionFailure()` instead
 
-**Phase 1: Initial Development (feature branch)**
-- Use `.info` generously during feature buildout to track execution flow
-- Add `.debug` for verbose implementation details
-- Use `.warning` for unexpected-but-handled conditions
-- Use `.error` for actual errors requiring attention
+**Special Cases:**
+- Retry logic: first attempt `.debug`, retries 1+ use `.warning`
+- Initialization: key steps `.info`, routine sub-steps `.debug`
+- Emojis: use sparingly in development; remove before merge (except error indicators)
 
-**Phase 2: Pre-merge Cleanup (before PR/commit)**
-- **Move routine operations to `.debug`** - anything that happens during normal, successful execution
-- **Keep `.info` for significant state changes** - session switches, monitoring started/stopped, file watching
-- **Keep `.warning` for retries, fallbacks, unusual conditions** - LLM retries, cache regenerations, timeout warnings
-- **Keep `.error` for failures** - parse errors, missing files, LLM unavailable
+Configure Xcode console with `TYPE Info` filter to hide debug logs in production.
 
-### Level Guidelines
-
-| Level | When to Use | Examples | User Visibility |
-|-------|-------------|----------|-----------------|
-| `.debug` | Normal operation details, success paths, routine events | "Cache HIT", "Loaded 10 entries", "LLM SUCCESS", "SystemLanguageModel available" | Hidden with `TYPE Info` filter |
-| `.info` | Significant state changes, important milestones | "Watching transcript: [file]", "Switched to Codex conversation", "Created new cache" | Visible in production |
-| `.notice` | Not used in this project | N/A | N/A |
-| `.warning` | Recoverable issues, retries, degraded operation | "LLM retry 2/3", "Cache REGENERATE (content changed)", "Accessibility permissions not granted" | Visible, needs attention |
-| `.error` | Failures requiring intervention | "Failed to parse JSON", "LLM unavailable", "No conversation file found" | Visible, actionable |
-| `.fault` | Critical bugs, should-never-happen conditions | Use `assertionFailure()` instead | Crashes in debug builds |
-
-### Practical Examples
-
-**During Development:**
-```swift
-log.info("🟢 processConversationFile: read \(lines.count) lines")  // OK during development
-log.info("Cache HIT for \(uuid)")  // OK during development
-log.info("LLM SUCCESS - disposition=\(payload.disposition)")  // OK during development
-```
-
-**Before Merge (move to debug):**
-```swift
-log.debug("🟢 processConversationFile: read \(lines.count) lines")  // Normal operation
-log.debug("Cache HIT for \(uuid)")  // Normal operation
-log.debug("LLM SUCCESS - disposition=\(payload.disposition)")  // Success path
-```
-
-**Always keep at info+:**
-```swift
-log.info("Watching transcript: \(fileURL.lastPathComponent)")  // State change
-log.warning("LLM retry \(retryCount)/\(maxRetries)")  // Retry attempt
-log.error("Failed to load timeline cache: \(error)")  // Error condition
-```
-
-### Special Cases
-
-**Retry Logic:**
-- First attempt: `.debug` (normal)
-- Retries (1+): `.warning` (something's wrong)
-```swift
-if retryCount == 0 {
-  log.debug("Requesting LLM summary (retry 0/3)")
-} else {
-  log.warning("Requesting LLM summary (retry \(retryCount)/3)")
-}
-```
-
-**Startup/Initialization:**
-- Keep key initialization at `.info` (helps debug startup issues)
-- Move routine sub-steps to `.debug`
-
-**Emojis in Logs:**
-- Use sparingly, only for visual scanning in development
-- Remove or simplify before merge (e.g., "🟢" → none, "✅" → none)
-- Keep error indicators: "🔴" or "⚠️" acceptable for warnings/errors
-
-### Console Filtering
-
-Users should configure Xcode console with `TYPE Info` filter to hide debug logs (see README.md). This creates clean production logs while preserving detailed debug info for troubleshooting.
+**Detailed reference:** See `build/notes/technical-reference/logging-preferences.md` for comprehensive guidelines, code examples, and anti-patterns.
 
 ## Testing Guidelines
 - **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
