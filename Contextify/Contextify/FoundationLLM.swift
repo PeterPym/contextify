@@ -26,6 +26,7 @@ actor FoundationLLM {
         let summary: String
         let isCompletion: Bool
         let isDirective: Bool
+        let disposition: String
     }
 
     enum UserIntent: String {
@@ -177,7 +178,7 @@ actor FoundationLLM {
                     confidence: 0.95
                 )
                 var result = try postProcess(kind: kind, payload: fp, message: message)
-                result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: false)
+                result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: false, disposition: "ack")
                 return result
             } else if kind == .user {
                 let intent = classifyUserIntent(message)
@@ -193,7 +194,7 @@ actor FoundationLLM {
                         confidence: 0.95
                     )
                     var result = try postProcess(kind: kind, payload: fp, message: message)
-                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "affirmative")
                     return result
                 } else if intent == .negative {
                     log.info("[\(reqNum)] timeline: negative detected, using fast path")
@@ -205,7 +206,7 @@ actor FoundationLLM {
                         confidence: 0.95
                     )
                     var result = try postProcess(kind: kind, payload: fp, message: message)
-                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "negative")
                     return result
                 }
             }
@@ -265,7 +266,7 @@ actor FoundationLLM {
 
                     // Detect directive
                     if kind == .user, isDirective(message) {
-                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true)
+                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true, disposition: result.disposition)
                         log.info("[\(reqNum)] timeline: user directive detected")
                     }
 
@@ -341,7 +342,7 @@ actor FoundationLLM {
 
     func fallbackSummary(kind: TimelineEntryKind, text: String) -> TimelineSummaryResult {
         let summary = sanitize(fallback(for: kind, text: text), kind: kind)
-        return TimelineSummaryResult(summary: summary, isCompletion: false, isDirective: false)
+        return TimelineSummaryResult(summary: summary, isCompletion: false, isDirective: false, disposition: "unknown")
     }
 }
 
@@ -631,7 +632,7 @@ private extension FoundationLLM {
                 log.warning("timeline summary REJECTED (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
                 // Special case: if it's just an ack, accept the generic ack message
                 if isAck(message) {
-                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, isDirective: false)
+                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, isDirective: false, disposition: "ack")
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")
@@ -692,7 +693,7 @@ private extension FoundationLLM {
             ? (payload.isCompletion && hasCompletionToken(summary))
             : false
 
-        return TimelineSummaryResult(summary: summary, isCompletion: completion, isDirective: false)
+        return TimelineSummaryResult(summary: summary, isCompletion: completion, isDirective: false, disposition: payload.disposition)
     }
 }
 #endif

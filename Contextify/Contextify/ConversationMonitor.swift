@@ -601,6 +601,15 @@ final class ConversationMonitor {
             return
         }
 
+        // Disposition-based filtering to reduce noise
+        let disposition = summaryResult.disposition.lowercased()
+        let suppressibleDispositions: Set<String> = ["ack", "wip"]
+
+        if suppressibleDispositions.contains(disposition) {
+            log.info("🟡 addAssistantTextEntry: Suppressing low-value entry (disposition=\(disposition, privacy: .public))")
+            return
+        }
+
         // Deduplicate sequential completion entries
         if summaryResult.isCompletion {
             // Find the last assistant entry

@@ -39,11 +39,34 @@ When switching to a new Claude Code conversation, the system message indicating 
 
 #### Conversation Log Enhancements
 
-##### 1. Avoid Sequential Completed Entries
-**Status:** Backlog
+##### 1. Reduce Assistant Entry Density
+**Status:** Active Development
+**Priority:** High
+**Branch:** feature/timeline-completion-improvements
+
+The conversation log shows too many assistant entries for a single directive/response cycle (e.g., 14 entries before a completion marker). This creates excessive noise and makes it hard to follow the conversation flow.
+
+**Root cause:**
+Claude Code generates many small text blocks as the assistant works, each becoming a timeline entry. This includes acknowledgements, progress updates, and intermediate thoughts.
+
+**Proposed solutions:**
+1. **Disposition-based filtering** (recommended): Use the LLM's `disposition` field to filter entries:
+   - Always show: `completion`, `proposal`, `question`, `refusal`
+   - Sometimes show: `analysis` (if >100 chars or first in sequence)
+   - Suppress: `ack`, `wip` (work-in-progress)
+
+2. **Time-based throttling**: Suppress assistant entries within N seconds of the previous one (unless completion)
+
+3. **Content-based suppression**: Skip very short assistant messages (<50 chars) unless they're completions
+
+**Implementation approach:**
+Add filtering logic in `addAssistantTextEntry()` based on `disposition` from `GuidedTimelineSummary`.
+
+##### 2. Avoid Sequential Completed Entries
+**Status:** Completed (2025-10-10)
 **Priority:** Medium
 
-The conversation log currently can show multiple sequential "completed" entries, which creates redundancy and clutters the timeline.
+~~The conversation log currently can show multiple sequential "completed" entries, which creates redundancy and clutters the timeline.~~
 
 **Example of redundancy:**
 ```
