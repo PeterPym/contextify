@@ -28,6 +28,99 @@ actor FoundationLLM {
         let icon: String?  // Optional emoji prefix (✅, 👉, ❓, etc.)
     }
 
+    enum UserIntent: String {
+        case directive
+        case question
+        case report
+        case affirmative
+        case negative
+        case unknown
+    }
+
+    /// Strip quoted content, code blocks, and blockquotes from user message
+    func stripQuotedAndCode(_ text: String) -> String {
+        var result = text
+
+        // Remove fenced code blocks (```...```)
+        result = result.replacingOccurrences(
+            of: #"```[\s\S]*?```"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove inline code (`...`)
+        result = result.replacingOccurrences(
+            of: #"`[^`]+`"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove triple-quoted strings ("""...""")
+        result = result.replacingOccurrences(
+            of: #""{3}[\s\S]*?"{3}"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove blockquotes (> ...)
+        // Use NSRegularExpression for multiline matching
+        if let regex = try? NSRegularExpression(pattern: #"^>\s*.*$"#, options: [.anchorsMatchLines]) {
+            let nsRange = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: nsRange, withTemplate: "")
+        }
+
+        return collapseWhitespace(result)
+    }
+
+    /// Authoritatively classify user intent using deterministic rules
+    func classifyUserIntent(_ text: String) -> UserIntent {
+        let clean = stripQuotedAndCode(text)
+        let normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Gate for short utterances (affirmative/negative)
+        let tokens = normalized.split(separator: " ")
+        if tokens.count <= 3 {
+            let allAffirmative = tokens.allSatisfy {
+                ["yes", "y", "ok", "okay", "sure", "👍", "yep", "go", "ahead", "proceed", "do", "it", "please", "sgtm", "roger"].contains(String($0))
+            }
+            if allAffirmative { return .affirmative }
+
+            let allNegative = tokens.allSatisfy {
+                ["no", "nope", "not", "now", "hold", "off", "stop", "don't", "cancel"].contains(String($0))
+            }
+            if allNegative { return .negative }
+        }
+
+        // Check for directive patterns (request phrases)
+        let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i want", "i need"]
+        for pattern in directivePatterns {
+            if normalized.contains(pattern) { return .directive }
+        }
+
+        // Check for imperative verbs at start
+        let firstWord = tokens.first.map(String.init) ?? ""
+        let imperatives: Set<String> = [
+            "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
+            "write", "explain", "show", "make", "delete", "remove", "check", "refactor",
+            "optimize", "implement", "modify", "debug", "install", "configure"
+        ]
+        if imperatives.contains(firstWord) { return .directive }
+
+        // Check for question patterns
+        let questionWords = ["what", "why", "how", "when", "where", "which", "who"]
+        if questionWords.contains(where: { normalized.hasPrefix($0) }) { return .question }
+        if normalized.hasSuffix("?") { return .question }
+
+        // Check for past-tense self-reports
+        let reportPatterns = ["i updated", "i fixed", "i created", "i modified", "i changed", "i added"]
+        for pattern in reportPatterns {
+            if normalized.contains(pattern) { return .report }
+        }
+
+        // Default to unknown
+        return .unknown
+    }
+
     func summarizeTimeline(
         kind: TimelineEntryKind,
         text: String,
@@ -56,12 +149,6 @@ actor FoundationLLM {
             return fallbackSummary(kind: kind, text: text)
         }
 
-        // Check for simple acks - these can skip LLM
-        if kind == .assistant, isAck(message) {
-            log.info("[\(reqNum)] timeline: ack detected, skipping LLM")
-            return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, icon: nil)
-        }
-
         #if canImport(FoundationModels)
         if #available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *) {
             let availability = SystemLanguageModel.default.availability
@@ -79,6 +166,44 @@ actor FoundationLLM {
                 throw Error.unavailable
             }
 
+            // Fast paths to skip LLM call (all routed through postProcess for validation)
+            if kind == .assistant, isAck(message) {
+                log.info("[\(reqNum)] timeline: ack detected, using fast path")
+                let fp = GuidedTimelineSummary(
+                    summary: "Claude acknowledges the request.",
+                    isCompletion: false,
+                    disposition: "ack",
+                    grounding: "grounded",
+                    confidence: 0.95
+                )
+                return try postProcess(kind: kind, payload: fp, message: message)
+            } else if kind == .user {
+                let intent = classifyUserIntent(message)
+
+                // Fast path for affirmative/negative
+                if intent == .affirmative {
+                    log.info("[\(reqNum)] timeline: affirmative detected, using fast path")
+                    let fp = GuidedTimelineSummary(
+                        summary: "You requested Claude to proceed as proposed.",
+                        isCompletion: false,
+                        disposition: "affirmative",
+                        grounding: "grounded",
+                        confidence: 0.95
+                    )
+                    return try postProcess(kind: kind, payload: fp, message: message)
+                } else if intent == .negative {
+                    log.info("[\(reqNum)] timeline: negative detected, using fast path")
+                    let fp = GuidedTimelineSummary(
+                        summary: "You requested Claude not to proceed.",
+                        isCompletion: false,
+                        disposition: "negative",
+                        grounding: "grounded",
+                        confidence: 0.95
+                    )
+                    return try postProcess(kind: kind, payload: fp, message: message)
+                }
+            }
+
             let instructions = instructionsForTimeline(kind: kind)
             let session = LanguageModelSession(instructions: instructions)
 
@@ -91,14 +216,29 @@ actor FoundationLLM {
             )
 
             let clamped = String(message.prefix(1200))
-            let payloadInput: String
-            if kind == .user,
-               let hint = actionHint?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !hint.isEmpty {
-                let safeHint = String(hint.prefix(300))
-                payloadInput = "MESSAGE:\n<<<\(clamped)>>>\nACTION_HINT:\n<<<\(safeHint)>>>"
+
+            // Preprocess and classify for user messages
+            let intent: UserIntent?
+            let cleanMessage: String
+            if kind == .user {
+                intent = classifyUserIntent(clamped)
+                cleanMessage = stripQuotedAndCode(clamped)
             } else {
-                payloadInput = "MESSAGE:\n<<<\(clamped)>>>"
+                intent = nil
+                cleanMessage = clamped
+            }
+
+            let payloadInput: String
+            if kind == .user {
+                let intentStr = intent?.rawValue.uppercased() ?? "UNKNOWN"
+                if let hint = actionHint?.trimmingCharacters(in: .whitespacesAndNewlines), !hint.isEmpty {
+                    let safeHint = String(hint.prefix(300))
+                    payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>\nDETECTED_INTENT: \(intentStr)\nACTION_HINT:\n<<<\(safeHint)>>>"
+                } else {
+                    payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>\nDETECTED_INTENT: \(intentStr)"
+                }
+            } else {
+                payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>"
             }
 
             do {
@@ -212,7 +352,7 @@ struct GuidedTimelineSummary {
     @Guide(description: "true only if the MESSAGE explicitly reports completion (done/fixed/completed/merged/wrote/saved/✅).")
     var isCompletion: Bool
 
-    @Guide(description: "Assistant disposition: ack, completion, wip, analysis, proposal, question, refusal.")
+    @Guide(description: "Message disposition: directive, question, report, affirmative, negative (user), ack, completion, wip, analysis, proposal, refusal (assistant).")
     var disposition: String
 
     @Guide(description: "Grounding: grounded, ungrounded, insufficient.")
@@ -334,28 +474,35 @@ private extension FoundationLLM {
             """
         case .user:
             return """
-            You fill a TimelineSummary for a developer’s message.
+            You produce a ONE-sentence timeline summary (≤140 chars) for a developer message.
 
-            summary rules:
-            - ONE sentence, ≤140 chars, past tense.
-            - Allowed prefixes:
-              • “You made …” — user reports a completed action (e.g., “I updated the file”).
-              • “You asked …” — user asks a question (e.g., “Can you explain?”).
-              • “You requested Claude …” — user asks Claude to act (e.g., “Fix this”, “Run tests”).
-            - Special cases:
-              • Bare affirmative (yes/ok/sure/y/👍/go ahead/proceed/do it/please do/sgtm/roger):
-                → “You requested Claude to proceed as proposed.”
-              • Bare negative (no/not now/hold off/stop/don’t):
-                → “You requested Claude not to proceed.”
-            - If ACTION_HINT is present, treat it as the action being approved or rejected.
+            DETECTED_INTENT will be provided as: DIRECTIVE | QUESTION | REPORT | AFFIRMATIVE | NEGATIVE | UNKNOWN
+
+            Use these prefixes based on DETECTED_INTENT:
+            - DIRECTIVE   → "You requested Claude to [action]"
+            - QUESTION    → "You asked [question]"
+            - REPORT      → "You made [description]"
+            - AFFIRMATIVE → "You requested Claude to proceed as proposed."
+            - NEGATIVE    → "You requested Claude not to proceed."
+            - UNKNOWN     → "You requested Claude to [infer from message]"
+
+            Rules:
+            - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
+            - If ACTION_HINT is present, it provides context but should NOT appear in the summary text
+            - Use past-tense verb in the prefix ("requested", "asked", "made")
+            - Focus on user's intent, not implementation details
 
             Fields:
-            - summary: one sentence following the rules.
-            - isCompletion: false.
+            - summary: one sentence following the rules above
+            - isCompletion: false (users don't complete tasks, Claude does)
+            - disposition: echo the DETECTED_INTENT value
+            - grounding: "grounded" if summary matches MESSAGE, "ungrounded" if not
+            - confidence: 0.0–1.0 (higher when intent is clear and MESSAGE is unambiguous)
 
             Input format:
             MESSAGE:
             <<<user text>>>
+            DETECTED_INTENT: <intent>
             Optional ACTION_HINT:
             <<<assistant proposal>>>
             """
@@ -491,6 +638,51 @@ private extension FoundationLLM {
             if !isGrounded && leaked.count > 0 {
                 log.info("timeline summary ACCEPTED despite leakage (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
             }
+        } else if kind == .user {
+            // NEW: User message validation (parity with assistant)
+            let autoIntent = classifyUserIntent(message)
+            let s = summary.lowercased()
+
+            // Validate prefix matches detected intent
+            let prefixMatchesIntent: Bool
+            switch autoIntent {
+            case .directive:
+                prefixMatchesIntent = s.hasPrefix("you requested")
+            case .question:
+                prefixMatchesIntent = s.hasPrefix("you asked")
+            case .report:
+                prefixMatchesIntent = s.hasPrefix("you made")
+            case .affirmative:
+                prefixMatchesIntent = s.contains("proceed as proposed")
+            case .negative:
+                prefixMatchesIntent = s.contains("not to proceed")
+            case .unknown:
+                prefixMatchesIntent = true // Allow LLM to decide
+            }
+
+            if !prefixMatchesIntent {
+                log.warning("User summary prefix mismatch: intent=\(autoIntent.rawValue), summary=\(summary, privacy: .public)")
+                throw Error.retryExhausted
+            }
+
+            // Validate length
+            if summary.count > 140 {
+                log.warning("User summary too long: \(summary.count) chars")
+                throw Error.retryExhausted
+            }
+
+            // Validate leakage
+            let leaked = introducedTopics(message: message, summary: summary)
+            if leaked.count > 6 {
+                log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
+                throw Error.retryExhausted
+            }
+
+            // Validate confidence/grounding
+            if payload.confidence < 0.45 && payload.grounding.lowercased() != "grounded" {
+                log.warning("User summary has low confidence (\(payload.confidence, privacy: .public)) and is not grounded")
+                throw Error.retryExhausted
+            }
         }
 
         let completion = kind == .assistant
@@ -506,6 +698,14 @@ private extension FoundationLLM {
 extension FoundationLLM {
     func _testSanitize(_ summary: String, kind: TimelineEntryKind) async -> String {
         sanitize(summary, kind: kind)
+    }
+
+    func _testClassifyUserIntent(_ text: String) async -> UserIntent {
+        classifyUserIntent(text)
+    }
+
+    func _testStripQuotedAndCode(_ text: String) async -> String {
+        stripQuotedAndCode(text)
     }
 
     #if canImport(FoundationModels)

@@ -191,3 +191,47 @@ final class ActionHintTests: XCTestCase {
         XCTAssertFalse(ConversationMonitor.shared._testShouldUseActionHint("Yes, but also explain why."))
     }
 }
+
+final class UserIntentTests: XCTestCase {
+    func testImperativeDirectiveAtStart() async throws {
+        // Classify "Commit your changes" as directive
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("Commit your changes with a note")
+        XCTAssertEqual(intent, .directive)
+    }
+
+    func testDirectiveByRequestPattern() async throws {
+        // Classify "See if you can find" as directive
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("See if you can find discussion in the project")
+        XCTAssertEqual(intent, .directive)
+    }
+
+    func testQuestionDetection() async throws {
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("What does the validateVenv function do?")
+        XCTAssertEqual(intent, .question)
+    }
+
+    func testPastTenseReport() async throws {
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("I updated the configuration file")
+        XCTAssertEqual(intent, .report)
+    }
+
+    func testBareAffirmative() async throws {
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("ok proceed")
+        XCTAssertEqual(intent, .affirmative)
+    }
+
+    func testBareNegative() async throws {
+        let intent = await FoundationLLM.shared._testClassifyUserIntent("no don't")
+        XCTAssertEqual(intent, .negative)
+    }
+
+    func testNestedQuotesStripped() async throws {
+        let cleaned = await FoundationLLM.shared._testStripQuotedAndCode(#"See if you can find "convert to /build/notes""#)
+        XCTAssertFalse(cleaned.contains("convert to /build/notes"))
+    }
+
+    func testCodeBlocksStripped() async throws {
+        let cleaned = await FoundationLLM.shared._testStripQuotedAndCode("Fix this:\n```swift\nfunc foo() {}\n```\nplease")
+        XCTAssertFalse(cleaned.contains("func foo"))
+    }
+}
