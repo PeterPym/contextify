@@ -104,6 +104,8 @@ final class ConversationMonitor {
 
     /// Public method for user-initiated session switch from transcript inventory
     func switchToSessionFromUser(_ session: TranscriptSession) async {
+        // Idempotent: do nothing if already on this session
+        if session.identifier == currentSessionId { return }
         let reason: SessionSwitchReason = isNewConversation(session) ? .newConversation : .userSelection
         await switchToSession(session, reason: reason)
     }
@@ -308,28 +310,50 @@ final class ConversationMonitor {
         conversationFileDescriptor = -1
     }
 
-    /// Detects if a conversation session is brand new based on file age and content
+    /// Tunables for new conversation detection (keep small – app detects almost immediately)
+    private let newConversationWindowSeconds: TimeInterval = 5
+    private let newConversationMaxTurnsExclusive: Int = 5
+
+    /// Detects if a conversation session is brand new based on file creation time and turn count.
+    /// Returns true ONLY if (created within N seconds) AND (turns < maxTurns)
     private func isNewConversation(_ session: TranscriptSession) -> Bool {
         let fileURL = session.fileURL
 
-        // Check file creation/modification time (if created in last 5 seconds, likely new)
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-           let modDate = attrs[.modificationDate] as? Date {
-            let age = Date().timeIntervalSince(modDate)
-            if age < 5 {
-                return true
+        // 1) Creation time within window
+        guard
+            let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+            let created = (attrs[.creationDate] as? Date) ?? (attrs[.modificationDate] as? Date),
+            Date().timeIntervalSince(created) <= newConversationWindowSeconds
+        else {
+            return false
+        }
+
+        // 2) Conversational turns < threshold (fast path; stop early once threshold reached)
+        let allowedTypes: Set<String> = ["user_message", "assistant_message", "response_item", "user", "assistant"]
+
+        guard let fh = try? FileHandle(forReadingFrom: fileURL) else { return false }
+        defer { try? fh.close() }
+
+        // Read a small head chunk; most brand-new files will fit here.
+        // If not, we still early-stop when we hit the threshold.
+        let chunkSize = 32 * 1024
+        let data = (try? fh.read(upToCount: chunkSize)) ?? Data()
+        guard let head = String(data: data, encoding: .utf8), !head.isEmpty else { return true }
+
+        var turns = 0
+        for line in head.split(whereSeparator: \.isNewline) {
+            if line.isEmpty { continue }
+            if let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+               let t = obj["type"] as? String,
+               allowedTypes.contains(t) {
+                turns += 1
+                if turns >= newConversationMaxTurnsExclusive {
+                    return false // too many turns → not "new"
+                }
             }
         }
 
-        // Check line count (if fewer than 3 lines, likely new)
-        if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
-            let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
-            if lines.count < 3 {
-                return true
-            }
-        }
-
-        return false
+        return true // within window AND turns < threshold
     }
 
     private func emitProviderSwitchEntry(for session: TranscriptSession, reason: SessionSwitchReason) {
