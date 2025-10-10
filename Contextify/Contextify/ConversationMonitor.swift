@@ -56,6 +56,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
     @ObservationIgnored private var currentSessionId: String?  // Current session identifier for timeline entries
+    @ObservationIgnored private var pendingReprocess = false  // Coalesce reprocessing when busy
 
     private init() {}
 
@@ -214,10 +215,14 @@ final class ConversationMonitor {
         lastError = nil
 
         // DON'T clear entries - we preserve history across sessions
-        // Only trim to max retention limit
-        let maxRetention = 100
-        if entries.count > maxRetention {
-            entries = Array(entries.suffix(maxRetention))
+        let sid = session.identifier
+
+        // Trim per-session to configured retention limit
+        let filtered = entries.filter { $0.sessionId == sid }
+        if filtered.count > config.timelineMaxEntriesPerSession {
+            let keep = Array(filtered.suffix(config.timelineMaxEntriesPerSession))
+            entries.removeAll { $0.sessionId == sid }
+            entries.append(contentsOf: keep)
         }
 
         // Load cache for this conversation BEFORE processing
@@ -229,7 +234,6 @@ final class ConversationMonitor {
         }
 
         // Backfill sessionId on cache-loaded and legacy entries
-        let sid = session.identifier
         for i in entries.indices {
             if entries[i].sessionId == nil {
                 entries[i] = entries[i].copyWith(sessionId: sid)
@@ -452,12 +456,15 @@ final class ConversationMonitor {
             log.error("🔴 processConversationFile: not monitoring")
             return
         }
-        guard !isProcessing else {
-            log.debug("🟢 processConversationFile: already processing, skipping")
-            return
-        }
         guard let fileURL = currentConversationFile else {
             log.error("🔴 processConversationFile: no conversation file")
+            return
+        }
+
+        // Coalesce: if already processing, mark pending and return
+        if isProcessing {
+            pendingReprocess = true
+            log.debug("🟢 processConversationFile: already processing, coalescing request")
             return
         }
 
@@ -467,6 +474,13 @@ final class ConversationMonitor {
         defer {
             isProcessing = false
             lastUpdate = Date()
+            // If work arrived while processing, schedule one more pass
+            if pendingReprocess {
+                pendingReprocess = false
+                Task { @MainActor in
+                    await self.processConversationFile()
+                }
+            }
         }
 
         do {
