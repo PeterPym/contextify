@@ -17,6 +17,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    // Synchronous flush of timeline cache before termination
+    let sema = DispatchSemaphore(value: 0)
+    Task {
+      do {
+        try await TimelineCacheOrchestrator.shared.forceFlushSynchronously()
+      } catch {
+        print("Failed to flush timeline cache on termination: \(error)")
+      }
+      sema.signal()
+    }
+
+    // Wait up to 2 seconds for flush to complete
+    let result = sema.wait(timeout: .now() + .seconds(2))
+    if result == .timedOut {
+      print("Timeline cache flush timed out on termination")
+    }
+
+    return .terminateNow
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
     // Unregister global hotkey
     Task { @MainActor in

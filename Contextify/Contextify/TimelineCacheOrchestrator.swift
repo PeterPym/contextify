@@ -200,6 +200,25 @@ actor TimelineCacheOrchestrator {
     log.info("Flushed cache in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
   }
 
+  /// Force synchronous flush without debounce (for app termination)
+  func forceFlushSynchronously() async throws {
+    // Cancel any pending debounced flush
+    pendingFlush?.cancel()
+    pendingFlush = nil
+
+    // Flush immediately if dirty
+    guard dirty, let cache = cache, let url = conversationURL else { return }
+
+    let start = Date()
+    try await store.save(cache, for: url)
+    let elapsed = Date().timeIntervalSince(start)
+
+    lastFlush = Date()
+    dirty = false
+
+    log.info("Force flushed cache synchronously in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
+  }
+
   /// Invalidate cache (forces regeneration)
   func invalidateCache(for url: URL) async throws {
     conversationURL = nil

@@ -47,6 +47,7 @@ final class ConversationMonitor {
     @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
+    @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
 
     private init() {}
 
@@ -62,16 +63,7 @@ final class ConversationMonitor {
         }
         startConversationResolverLoop()
 
-        // Set up cache flush on app terminate
-        NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task {
-                try? await TimelineCacheOrchestrator.shared.persistCache()
-            }
-        }
+        // Cache flush on app terminate is now handled by AppDelegate.applicationShouldTerminate
     }
 
     func stopMonitoring() {
@@ -195,7 +187,8 @@ final class ConversationMonitor {
         activeSession = session
         currentConversationFile = session.fileURL
 
-        // Clear state for new session
+        // Clear state for new session - generate new epoch to invalidate in-flight tasks
+        sessionEpoch = UUID()
         entries.removeAll()
         lastProcessedLine = 0
         seenMessageUUIDs.removeAll()
@@ -212,10 +205,24 @@ final class ConversationMonitor {
 
         configureFileWatcher(for: session.fileURL)
 
+        // Add initializing placeholder entry to improve startup UX
+        let placeholderEntry = TimelineEntry(
+            kind: .system,
+            timestamp: Date(),
+            summary: "Initializing timeline…",
+            detail: "Loading conversation history",
+            sourceContext: makeSourceContext(identifier: "system-initializing"),
+            sourceIdentifier: "system-initializing"
+        )
+        entries.append(placeholderEntry)
+
         // Process conversation file FIRST to backfill historical entries
         await processConversationFile()
 
-        // Then add system message at the END (most recent position)
+        // Remove placeholder after processing completes
+        entries.removeAll { $0.sourceIdentifier == "system-initializing" }
+
+        // Add system message at the END (most recent position)
         if reason == .initial {
             ensureSessionStartEntry()
         } else if reason == .providerChange {
@@ -332,6 +339,28 @@ final class ConversationMonitor {
         return TimelineSourceContext(provider: provider, identifier: identifier, filePath: filePath, line: line)
     }
 
+    /// Append entry only if it belongs to the current session epoch (prevents cross-session leaks)
+    private func appendEntryIfCurrentEpoch(_ epoch: UUID, entry: TimelineEntry) {
+        guard epoch == sessionEpoch else {
+            log.warning("🟡 appendEntryIfCurrentEpoch: Dropping late entry from previous session (epoch mismatch)")
+            return
+        }
+
+        #if DEBUG
+        // Validate that sourceIdentifier is a valid UUID for user/assistant entries
+        if entry.kind == .user || entry.kind == .assistant {
+            if UUID(uuidString: entry.sourceIdentifier) == nil {
+                assertionFailure("sourceIdentifier must be a valid UUID for user/assistant entries, got: \(entry.sourceIdentifier)")
+            }
+        }
+        #endif
+
+        entries.append(entry)
+        if entries.count > config.maxEntries {
+            entries = Array(entries.suffix(config.maxEntries))
+        }
+    }
+
     // MARK: - Processing
 
     private func processConversationFile() async {
@@ -400,8 +429,9 @@ final class ConversationMonitor {
 
             // Process lines in forward order (chronological)
             for (index, line) in newLines.enumerated() {
-                // Calculate actual line number in file
-                let lineNumber = (shouldBackfillLimitedEntries ? 0 : lastProcessedLine - newLines.count) + index + 1
+                // Calculate actual line number in file - always use true file line number
+                let startLine = lastProcessedLine - newLines.count
+                let lineNumber = startLine + index + 1
 
                 // If backfilling with limit, check if we have enough displayable entries
                 if shouldBackfillLimitedEntries {
@@ -479,6 +509,9 @@ final class ConversationMonitor {
 
     private func processUserMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
         log.info("🟢 processUserMessage: uuid=\(uuid, privacy: .public)")
+
+        // Capture current epoch at the start of async processing
+        let epoch = sessionEpoch
 
         guard let message = json["message"] as? [String: Any] else {
             log.error("🔴 processUserMessage: no message dict for uuid=\(uuid, privacy: .public)")
@@ -579,17 +612,13 @@ final class ConversationMonitor {
             requestId: nil
         )
 
-        entries.append(entry)
+        appendEntryIfCurrentEpoch(epoch, entry: entry)
 
         // Track this directive for correlation with future completions
         if summaryResult.isDirective {
             lastUserDirectiveId = entry.id
             lastUserDirectiveTimestamp = timestamp
             log.info("🟢 processUserMessage: Tracking directive id=\(entry.id) for completion correlation")
-        }
-
-        if entries.count > config.maxEntries {
-            entries = Array(entries.suffix(config.maxEntries))
         }
 
         log.info("✅ processUserMessage: Added user entry, summary=\(summaryResult.summary, privacy: .private), total entries=\(self.entries.count)")
@@ -634,6 +663,9 @@ final class ConversationMonitor {
     private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
         log.info("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
 
+        // Capture current epoch at the start of async processing
+        let epoch = sessionEpoch
+
         // Try to use cache, fall back to direct LLM call on failure
         let rendered: RenderedTimelineEntry
         do {
@@ -645,7 +677,7 @@ final class ConversationMonitor {
             ]
 
             // Context window: last 2 message UUIDs for better disposition detection
-            // TODO: Use transcript message UUIDs, not UI entry identifiers
+            // Now uses raw transcript UUIDs from sourceIdentifier
             let contextUUIDs = Array(entries.suffix(2).map { $0.sourceIdentifier })
 
             rendered = try await TimelineCacheOrchestrator.shared.getCachedEntry(
@@ -718,7 +750,7 @@ final class ConversationMonitor {
             requestId: requestId
         )
 
-        entries.append(entry)
+        appendEntryIfCurrentEpoch(epoch, entry: entry)
         log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(rendered.summary, privacy: .private), completion=\(rendered.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
     }
 

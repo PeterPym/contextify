@@ -658,7 +658,7 @@ private extension FoundationLLM {
             "create", "make", "build", "run", "test", "deploy",
             "implement", "refactor", "change", "modify", "remove", "delete",
             "we should", "we need to", "we could", "let's", "i want",
-            "i need", "help me"
+            "i need", "help me", "figure out"
         ]
     }
 
