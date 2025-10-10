@@ -303,26 +303,38 @@ struct TranscriptInventoryView: View {
     let flushedCount = store.flushHeuristicMetadata(for: monitor.allSessions)
 
     if flushedCount > 0 {
-      // Clear in-memory cache for flushed items
-      for session in monitor.allSessions {
-        if let meta = metadata[session.fileURL],
-           meta.model == "heuristic" ||
-           meta.title == "Developer Chat" ||
-           meta.title == "Brief Session" {
-          metadata.removeValue(forKey: session.fileURL)
-        }
-      }
-
       lastFlushCount = flushedCount
       showingFlushAlert = true
 
-      // Trigger re-loading of metadata
-      Task {
-        await loadMetadataForSessions(monitor.allSessions)
+      // Clear in-memory cache and trigger regeneration for flushed items
+      Task { @MainActor in
+        for session in monitor.allSessions {
+          if let meta = metadata[session.fileURL],
+             meta.model == "heuristic" ||
+             meta.title == "Developer Chat" ||
+             meta.title == "Brief Session" {
+            metadata.removeValue(forKey: session.fileURL)
+            loadingMetadata.insert(session.fileURL)
+
+            Task { @MainActor in
+              defer { loadingMetadata.remove(session.fileURL) }
+              do {
+                let newMeta = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+                  for: session,
+                  forceRegenerate: true
+                )
+                metadata[session.fileURL] = newMeta
+              } catch {
+                // Failed to regenerate, loading indicator removed by defer
+              }
+            }
+          }
+        }
       }
     }
   }
 
+  @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
     for session in sessions {
       // Skip if already loaded or loading
@@ -341,14 +353,13 @@ struct TranscriptInventoryView: View {
       // Trigger generation
       loadingMetadata.insert(session.fileURL)
 
-      Task {
+      Task { @MainActor in
+        defer { loadingMetadata.remove(session.fileURL) }
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
           metadata[session.fileURL] = generated
-          loadingMetadata.remove(session.fileURL)
         } catch {
-          // Failed to generate, remove loading indicator
-          loadingMetadata.remove(session.fileURL)
+          // Failed to generate, loading indicator removed by defer
         }
       }
     }
@@ -568,6 +579,7 @@ struct TranscriptDetailView: View {
     }
   }
 
+  @MainActor
   private func loadMetadata() async {
     let store = SidecarMetadataStore()
     metadata = try? store.load(for: session.fileURL)
@@ -582,6 +594,7 @@ struct TranscriptDetailView: View {
     }
   }
 
+  @MainActor
   private func regenerateMetadata() async {
     isRegenerating = true
     defer { isRegenerating = false }
