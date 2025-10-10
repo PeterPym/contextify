@@ -65,7 +65,8 @@ actor TimelineCacheOrchestrator {
     messageJSON: [String: Any],
     contextWindow: [String],  // UUIDs of context messages
     text: String,
-    kind: TimelineEntryKind
+    kind: TimelineEntryKind,
+    provider: TimelineSourceContext.Provider? = nil
   ) async throws -> RenderedTimelineEntry {
 
     guard var cache = cache else {
@@ -120,6 +121,7 @@ actor TimelineCacheOrchestrator {
     let llmResult = try await FoundationLLM.shared.summarizeTimelineWithForms(
       kind: kind,
       text: text,
+      provider: provider,
       contextWindow: contextWindow
     )
 

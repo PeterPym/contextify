@@ -369,14 +369,15 @@ final class ConversationMonitor {
             return
         }
 
+        let providerName = session.provider.displayName
         let summary: String
         switch reason {
         case .newConversation:
-            summary = "Switched to a new conversation"
+            summary = "Switched to a new \(providerName) conversation"
         case .userSelection, .providerChange:
-            summary = "Switched to conversation"
+            summary = "Switched to \(providerName) conversation"
         case .initial:
-            summary = "Timeline monitoring started"
+            summary = "Timeline monitoring started (\(providerName))"
         }
 
         let detail = """
@@ -768,13 +769,14 @@ final class ConversationMonitor {
         log.debug("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
 
         let actionHint = shouldUseActionHint(for: text) ? latestAssistantActionHint() : nil
+        let provider = activeSession?.provider
         let summaryResult: FoundationLLM.TimelineSummaryResult
         do {
-            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
+            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, provider: provider, actionHint: actionHint)
         } catch {
             log.error("🔴 processUserMessage: summarization failed after retries, using fallback: \(error.localizedDescription, privacy: .public)")
             // Use fallback instead of skipping entry to ensure user messages always appear
-            summaryResult = await FoundationLLM.shared.fallbackSummary(kind: .user, text: text)
+            summaryResult = await FoundationLLM.shared.fallbackSummary(kind: .user, text: text, provider: provider)
         }
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
@@ -861,21 +863,24 @@ final class ConversationMonitor {
             // Context window: last 2 message UUIDs for better disposition detection
             // Now uses raw transcript UUIDs from sourceIdentifier
             let contextUUIDs = Array(entries.suffix(2).map { $0.sourceIdentifier })
+            let provider = activeSession?.provider
 
             rendered = try await TimelineCacheOrchestrator.shared.getCachedEntry(
                 messageUUID: uuid,
                 messageJSON: messageJSON,
                 contextWindow: contextUUIDs,
                 text: text,
-                kind: .assistant
+                kind: .assistant,
+                provider: provider
             )
         } catch {
             log.error("🔴 addAssistantTextEntry: Cache lookup failed, falling back to direct LLM: \(error.localizedDescription, privacy: .public)")
 
             // Fallback to direct LLM call
+            let provider = activeSession?.provider
             let summaryResult: FoundationLLM.TimelineSummaryResult
             do {
-                summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text)
+                summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text, provider: provider)
             } catch {
                 log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
                 return

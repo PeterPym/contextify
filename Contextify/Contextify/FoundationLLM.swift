@@ -132,6 +132,7 @@ actor FoundationLLM {
     func summarizeTimeline(
         kind: TimelineEntryKind,
         text: String,
+        provider: TimelineSourceContext.Provider? = nil,
         actionHint: String? = nil,
         retryCount: Int = 0
     ) async throws -> TimelineSummaryResult {
@@ -175,16 +176,17 @@ actor FoundationLLM {
             }
 
             // Fast paths to skip LLM call (all routed through postProcess for validation)
+            let assistantName = provider?.displayName ?? "Claude Code"
             if kind == .assistant, isAck(message) {
                 log.debug("[\(reqNum)] timeline: ack detected, using fast path")
                 let fp = GuidedTimelineSummary(
-                    summary: "Claude acknowledges the request.",
+                    summary: "\(assistantName) acknowledges the request.",
                     isCompletion: false,
                     disposition: "ack",
                     grounding: "grounded",
                     confidence: 0.95
                 )
-                var result = try postProcess(kind: kind, payload: fp, message: message)
+                var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
                 result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: false, disposition: "ack")
                 return result
             } else if kind == .user {
@@ -194,31 +196,31 @@ actor FoundationLLM {
                 if intent == .affirmative {
                     log.debug("[\(reqNum)] timeline: affirmative detected, using fast path")
                     let fp = GuidedTimelineSummary(
-                        summary: "You requested Claude to proceed as proposed.",
+                        summary: "You requested \(assistantName) to proceed as proposed.",
                         isCompletion: false,
                         disposition: "affirmative",
                         grounding: "grounded",
                         confidence: 0.95
                     )
-                    var result = try postProcess(kind: kind, payload: fp, message: message)
+                    var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
                     result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "affirmative")
                     return result
                 } else if intent == .negative {
                     log.debug("[\(reqNum)] timeline: negative detected, using fast path")
                     let fp = GuidedTimelineSummary(
-                        summary: "You requested Claude not to proceed.",
+                        summary: "You requested \(assistantName) not to proceed.",
                         isCompletion: false,
                         disposition: "negative",
                         grounding: "grounded",
                         confidence: 0.95
                     )
-                    var result = try postProcess(kind: kind, payload: fp, message: message)
+                    var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
                     result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "negative")
                     return result
                 }
             }
 
-            let instructions = instructionsForTimeline(kind: kind)
+            let instructions = instructionsForTimeline(kind: kind, provider: provider)
             let session = LanguageModelSession(instructions: instructions)
 
             // Use slight temperature on retries to help unstick from bad states
@@ -273,7 +275,7 @@ actor FoundationLLM {
                 log.debug("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
                 log.debug("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
                 do {
-                    var result = try postProcess(kind: kind, payload: payload, message: clamped)
+                    var result = try postProcess(kind: kind, payload: payload, message: clamped, provider: provider)
 
                     // Detect directive
                     if kind == .user, isDirective(message) {
@@ -351,8 +353,8 @@ actor FoundationLLM {
         throw Error.unexpectedEnvironment
     }
 
-    func fallbackSummary(kind: TimelineEntryKind, text: String) -> TimelineSummaryResult {
-        let summary = sanitize(fallback(for: kind, text: text), kind: kind)
+    func fallbackSummary(kind: TimelineEntryKind, text: String, provider: TimelineSourceContext.Provider? = nil) -> TimelineSummaryResult {
+        let summary = sanitize(fallback(for: kind, text: text, provider: provider), kind: kind, provider: provider)
         return TimelineSummaryResult(summary: summary, isCompletion: false, isDirective: false, disposition: "unknown")
     }
 
@@ -360,10 +362,11 @@ actor FoundationLLM {
     func summarizeTimelineWithForms(
         kind: TimelineEntryKind,
         text: String,
+        provider: TimelineSourceContext.Provider? = nil,
         contextWindow: [String] = []
     ) async throws -> TimelineSummaryWithForms {
         // Call existing LLM summarization
-        let result = try await summarizeTimeline(kind: kind, text: text)
+        let result = try await summarizeTimeline(kind: kind, text: text, provider: provider)
 
         // Parse disposition string to enum
         let disp = Disposition(rawValue: result.disposition) ?? .unknown
@@ -371,7 +374,7 @@ actor FoundationLLM {
         // For now, use simple transformation to generate both forms
         // TODO: Phase 2 will have LLM generate both forms natively
         let present = result.summary
-        let past = convertToPastTense(result.summary, disposition: disp)
+        let past = convertToPastTense(result.summary, disposition: disp, provider: provider)
 
         return TimelineSummaryWithForms(
             presentForm: present,
@@ -384,7 +387,7 @@ actor FoundationLLM {
     /// Simple fallback for converting present tense to past tense
     /// This is temporary until Phase 2 when LLM generates both forms
     /// Guards against code blocks and unsafe transformations
-    private func convertToPastTense(_ text: String, disposition: Disposition) -> String {
+    private func convertToPastTense(_ text: String, disposition: Disposition, provider: TimelineSourceContext.Provider? = nil) -> String {
         // If already past tense (completion), return as-is
         if disposition == .completion {
             return text
@@ -402,19 +405,22 @@ actor FoundationLLM {
 
         // Use anchored regex patterns to only match sentence starts
         var result = text
+        let assistantName = provider?.displayName ?? "Claude Code"
 
-        // Pattern: "Claude is <verb>ing" → "Claude <verb>ed"
-        if let regex = try? NSRegularExpression(pattern: #"^Claude is (\w+?)ing\b"#, options: []) {
+        // Pattern: "<AssistantName> is <verb>ing" → "<AssistantName> <verb>ed"
+        let escapedName = NSRegularExpression.escapedPattern(for: assistantName)
+        let patternString = "^\(escapedName) is (\\w+?)ing\\b"
+        if let regex = try? NSRegularExpression(pattern: patternString, options: []) {
             let range = NSRange(result.startIndex..., in: result)
-            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "Claude $1ed")
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "\(assistantName) $1ed")
         }
 
-        // Pattern: "Claude <verb>s" → "Claude <verb>ed" (only for safe verbs)
+        // Pattern: "<AssistantName> <verb>s" → "<AssistantName> <verb>ed" (only for safe verbs)
         let safeVerbs = ["proposes", "implements", "fixes", "adds", "creates", "updates", "modifies"]
         for verb in safeVerbs {
-            if result.hasPrefix("Claude \(verb)") {
+            if result.hasPrefix("\(assistantName) \(verb)") {
                 let replacement = String(verb.dropLast()) + "ed"
-                result = result.replacingOccurrences(of: "Claude \(verb)", with: "Claude \(replacement)")
+                result = result.replacingOccurrences(of: "\(assistantName) \(verb)", with: "\(assistantName) \(replacement)")
                 break
             }
         }
@@ -450,9 +456,9 @@ private extension FoundationLLM {
         let fallback: String
     }
 
-    func fallback(for kind: TimelineEntryKind, text: String) -> String {
+    func fallback(for kind: TimelineEntryKind, text: String, provider: TimelineSourceContext.Provider? = nil) -> String {
         let normalized = collapseWhitespace(text)
-        let policy = prefixPolicy(for: kind)
+        let policy = prefixPolicy(for: kind, provider: provider)
         guard !normalized.isEmpty else { return policy.fallback }
         if hasAllowedPrefix(normalized, policy: policy) {
             return normalized
@@ -460,9 +466,9 @@ private extension FoundationLLM {
         return "\(policy.fallback) \(normalized)"
     }
 
-    func sanitize(_ summary: String, kind: TimelineEntryKind) -> String {
+    func sanitize(_ summary: String, kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) -> String {
         var output = collapseWhitespace(summary)
-        let policy = prefixPolicy(for: kind)
+        let policy = prefixPolicy(for: kind, provider: provider)
         if output.isEmpty {
             output = policy.fallback
         } else if !hasAllowedPrefix(output, policy: policy) {
@@ -496,14 +502,15 @@ private extension FoundationLLM {
         return String(text.prefix(limit - 1)) + "…"
     }
 
-    func prefixPolicy(for kind: TimelineEntryKind) -> PrefixPolicy {
+    func prefixPolicy(for kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) -> PrefixPolicy {
+        let assistantName = provider?.displayName ?? "Claude Code"
         switch kind {
         case .assistant:
-            return PrefixPolicy(allowed: ["Claude"], fallback: "Claude")
+            return PrefixPolicy(allowed: [assistantName], fallback: assistantName)
         case .user:
             return PrefixPolicy(
-                allowed: ["You made", "You asked", "You requested Claude"],
-                fallback: "You requested Claude"
+                allowed: ["You made", "You asked", "You requested \(assistantName)"],
+                fallback: "You requested \(assistantName)"
             )
         case .system:
             return PrefixPolicy(allowed: ["System"], fallback: "System")
@@ -527,14 +534,15 @@ private extension FoundationLLM {
     }
 
 
-    func instructionsForTimeline(kind: TimelineEntryKind) -> String {
+    func instructionsForTimeline(kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) -> String {
+        let assistantName = provider?.displayName ?? "Claude Code"
         switch kind {
         case .assistant:
             return """
             You fill a TimelineSummary for an AI assistant response.
 
             Rules:
-            - Output ONE sentence starting with "Claude", ≤140 chars.
+            - Output ONE sentence starting with "\(assistantName)", ≤140 chars.
             - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
             - Tense:
               * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
@@ -560,12 +568,12 @@ private extension FoundationLLM {
             DETECTED_INTENT will be provided as: DIRECTIVE | QUESTION | REPORT | AFFIRMATIVE | NEGATIVE | UNKNOWN
 
             Use these prefixes based on DETECTED_INTENT:
-            - DIRECTIVE   → "You requested Claude to [action]"
+            - DIRECTIVE   → "You requested \(assistantName) to [action]"
             - QUESTION    → "You asked [question]"
             - REPORT      → "You made [description]"
-            - AFFIRMATIVE → "You requested Claude to proceed as proposed."
-            - NEGATIVE    → "You requested Claude not to proceed."
-            - UNKNOWN     → "You requested Claude to [infer from message]"
+            - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
+            - NEGATIVE    → "You requested \(assistantName) not to proceed."
+            - UNKNOWN     → "You requested \(assistantName) to [infer from message]"
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
@@ -695,9 +703,10 @@ private extension FoundationLLM {
     func postProcess(
         kind: TimelineEntryKind,
         payload: GuidedTimelineSummary,
-        message: String
+        message: String,
+        provider: TimelineSourceContext.Provider? = nil
     ) throws -> TimelineSummaryResult {
-        let summary = sanitize(payload.summary, kind: kind)
+        let summary = sanitize(payload.summary, kind: kind, provider: provider)
 
         if kind == .assistant {
             let leaked = introducedTopics(message: message, summary: summary)
@@ -723,8 +732,9 @@ private extension FoundationLLM {
             if shouldReject {
                 log.warning("timeline summary REJECTED (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
                 // Special case: if it's just an ack, accept the generic ack message
+                let assistantName = provider?.displayName ?? "Claude Code"
                 if isAck(message) {
-                    return TimelineSummaryResult(summary: "Claude acknowledges the request.", isCompletion: false, isDirective: false, disposition: "ack")
+                    return TimelineSummaryResult(summary: "\(assistantName) acknowledges the request.", isCompletion: false, isDirective: false, disposition: "ack")
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")

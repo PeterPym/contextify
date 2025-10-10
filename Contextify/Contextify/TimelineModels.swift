@@ -97,7 +97,7 @@ struct TimelineSourceContext: Hashable, Sendable {
             }
         }
 
-        var displayName: String {
+        nonisolated var displayName: String {
             switch self {
             case .claudeCode:
                 return "Claude Code"
