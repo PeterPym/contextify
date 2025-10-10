@@ -55,7 +55,7 @@ actor TimelineCacheOrchestrator {
       )
       log.info("Created new cache for \(url.lastPathComponent, privacy: .public)")
     } else {
-      log.info("Loaded cache with \(self.cache?.entries.count ?? 0) entries for \(url.lastPathComponent, privacy: .public)")
+      log.debug("Loaded cache with \(self.cache?.entries.count ?? 0) entries for \(url.lastPathComponent, privacy: .public)")
     }
   }
 
@@ -88,7 +88,7 @@ actor TimelineCacheOrchestrator {
       self.cache = cache
       markDirty()
 
-      log.info("Cache HIT for \(messageUUID, privacy: .public)")
+      log.debug("Cache HIT for \(messageUUID, privacy: .public)")
       let summary = entry.render()
       let disposition = entry.disposition
       let isCompletion = entry.isCompletion
@@ -111,9 +111,9 @@ actor TimelineCacheOrchestrator {
 
     if cache.entries[messageUUID] != nil {
       cache.metadata.regenerations += 1
-      log.info("Cache REGENERATE for \(messageUUID, privacy: .public) (content/window/signature changed)")
+      log.debug("Cache REGENERATE for \(messageUUID, privacy: .public) (content/window/signature changed)")
     } else {
-      log.info("Cache MISS for \(messageUUID, privacy: .public) (new message)")
+      log.debug("Cache MISS for \(messageUUID, privacy: .public) (new message)")
     }
 
     // Call LLM (this is the slow path)
@@ -197,7 +197,7 @@ actor TimelineCacheOrchestrator {
     lastFlush = Date()
     dirty = false
 
-    log.info("Flushed cache in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
+    log.debug("Flushed cache in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
   }
 
   /// Force synchronous flush without debounce (for app termination)
@@ -216,7 +216,7 @@ actor TimelineCacheOrchestrator {
     lastFlush = Date()
     dirty = false
 
-    log.info("Force flushed cache synchronously in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
+    log.debug("Force flushed cache synchronously in \(Int(elapsed * 1000))ms (\(cache.entries.count) entries)")
   }
 
   /// Invalidate cache (forces regeneration)

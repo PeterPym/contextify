@@ -143,7 +143,7 @@ actor FoundationLLM {
             let elapsed = Date().timeIntervalSince(lastTime)
             if elapsed < minRequestInterval {
                 let delay = minRequestInterval - elapsed
-                log.info("Throttling: sleeping \(Int(delay * 1000))ms before next request")
+                log.debug("Throttling: sleeping \(Int(delay * 1000))ms before next request")
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
         }
@@ -163,7 +163,7 @@ actor FoundationLLM {
             switch availability {
             case .available:
                 if retryCount == 0 {
-                    log.info("[\(reqNum)] timeline: SystemLanguageModel available")
+                    log.debug("[\(reqNum)] timeline: SystemLanguageModel available")
                 }
                 break
             case .unavailable:
@@ -176,7 +176,7 @@ actor FoundationLLM {
 
             // Fast paths to skip LLM call (all routed through postProcess for validation)
             if kind == .assistant, isAck(message) {
-                log.info("[\(reqNum)] timeline: ack detected, using fast path")
+                log.debug("[\(reqNum)] timeline: ack detected, using fast path")
                 let fp = GuidedTimelineSummary(
                     summary: "Claude acknowledges the request.",
                     isCompletion: false,
@@ -192,7 +192,7 @@ actor FoundationLLM {
 
                 // Fast path for affirmative/negative
                 if intent == .affirmative {
-                    log.info("[\(reqNum)] timeline: affirmative detected, using fast path")
+                    log.debug("[\(reqNum)] timeline: affirmative detected, using fast path")
                     let fp = GuidedTimelineSummary(
                         summary: "You requested Claude to proceed as proposed.",
                         isCompletion: false,
@@ -204,7 +204,7 @@ actor FoundationLLM {
                     result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "affirmative")
                     return result
                 } else if intent == .negative {
-                    log.info("[\(reqNum)] timeline: negative detected, using fast path")
+                    log.debug("[\(reqNum)] timeline: negative detected, using fast path")
                     let fp = GuidedTimelineSummary(
                         summary: "You requested Claude not to proceed.",
                         isCompletion: false,
@@ -256,8 +256,12 @@ actor FoundationLLM {
             }
 
             do {
-                log.info("[\(reqNum)] timeline: requesting LLM summary (retry \(retryCount)/\(maxRetries))")
-                log.info("[\(reqNum)] input: \(payloadInput, privacy: .public)")
+                if retryCount == 0 {
+                    log.debug("[\(reqNum)] timeline: requesting LLM summary (retry \(retryCount)/\(maxRetries))")
+                } else {
+                    log.warning("[\(reqNum)] timeline: requesting LLM summary (retry \(retryCount)/\(maxRetries))")
+                }
+                log.debug("[\(reqNum)] input: \(payloadInput, privacy: .public)")
 
                 let response = try await session.respond(
                     to: payloadInput,
@@ -266,18 +270,18 @@ actor FoundationLLM {
                     options: options
                 )
                 let payload = response.content
-                log.info("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
-                log.info("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
+                log.debug("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
+                log.debug("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
                 do {
                     var result = try postProcess(kind: kind, payload: payload, message: clamped)
 
                     // Detect directive
                     if kind == .user, isDirective(message) {
                         result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true, disposition: result.disposition)
-                        log.info("[\(reqNum)] timeline: user directive detected")
+                        log.debug("[\(reqNum)] timeline: user directive detected")
                     }
 
-                    log.info("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
+                    log.debug("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
                     // Reset failure count on success
                     failureCount = 0
                     return result

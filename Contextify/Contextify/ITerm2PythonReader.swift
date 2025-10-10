@@ -104,7 +104,7 @@ struct ITerm2PythonReader {
     }()
 
     if let url = candidatePaths.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }) {
-      NSLog("🔥 Found iTerm2 reader script at: \(url.path)")
+      NSLog("Found iTerm2 reader script at: \(url.path)")
       return url
     }
 

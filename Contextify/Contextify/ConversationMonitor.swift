@@ -54,7 +54,7 @@ final class ConversationMonitor {
     func startMonitoring() {
         guard fileWatcher == nil else { return }
         log.info("Starting conversation timeline monitoring via project conversation files")
-        log.info("HUDViewModel projectRootURL: \(String(describing: HUDViewModel.shared.projectRootURL?.path), privacy: .public)")
+        log.debug("HUDViewModel projectRootURL: \(String(describing: HUDViewModel.shared.projectRootURL?.path), privacy: .public)")
         isMonitoring = true
 
         // Find and watch the current project's conversation file
@@ -125,7 +125,7 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("Timeline: Resolving conversations for project: \(projectURL.path, privacy: .public)")
+        log.debug("Timeline: Resolving conversations for project: \(projectURL.path, privacy: .public)")
 
         // Use ProjectContext for worktree-aware session discovery
         guard let context = ProjectContext.current() else {
@@ -137,7 +137,7 @@ final class ConversationMonitor {
         let sessions = conversationResolver.resolveAllSessions(for: context)
         allSessions = sessions
 
-        log.info("Timeline: Found \(sessions.count) total sessions for project (including worktrees)")
+        log.debug("Timeline: Found \(sessions.count) total sessions for project (including worktrees)")
 
         guard let session = sessions.first else {
             if activeSession != nil {
@@ -151,12 +151,12 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("Timeline: Active session at \(session.fileURL.path, privacy: .public)")
+        log.debug("Timeline: Active session at \(session.fileURL.path, privacy: .public)")
 
         if !force, let current = activeSession, current.fileURL == session.fileURL {
             // Same session, just update the reference
             activeSession = session
-            log.info("Timeline: Session unchanged, skipping switch")
+            log.debug("Timeline: Session unchanged, skipping switch")
             return
         }
 
@@ -198,7 +198,7 @@ final class ConversationMonitor {
         // Load cache for this conversation BEFORE processing
         do {
             try await TimelineCacheOrchestrator.shared.loadCache(for: session.fileURL)
-            log.info("Timeline cache loaded for \(session.fileURL.lastPathComponent, privacy: .public)")
+            log.debug("Timeline cache loaded for \(session.fileURL.lastPathComponent, privacy: .public)")
         } catch {
             log.error("Failed to load timeline cache: \(error.localizedDescription, privacy: .public)")
         }
@@ -279,7 +279,7 @@ final class ConversationMonitor {
 
         // Deduplicate: don't add if we already have this exact system message
         if entries.contains(where: { $0.sourceIdentifier == sourceId && $0.kind == .system }) {
-            log.info("🟡 emitProviderSwitchEntry: Already have provider switch entry for \(session.identifier), skipping")
+            log.debug("🟢 emitProviderSwitchEntry: Already have provider switch entry for \(session.identifier), skipping")
             return
         }
 
@@ -346,15 +346,6 @@ final class ConversationMonitor {
             return
         }
 
-        #if DEBUG
-        // Validate that sourceIdentifier is a valid UUID for user/assistant entries
-        if entry.kind == .user || entry.kind == .assistant {
-            if UUID(uuidString: entry.sourceIdentifier) == nil {
-                assertionFailure("sourceIdentifier must be a valid UUID for user/assistant entries, got: \(entry.sourceIdentifier)")
-            }
-        }
-        #endif
-
         entries.append(entry)
         if entries.count > config.maxEntries {
             entries = Array(entries.suffix(config.maxEntries))
@@ -377,7 +368,7 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("🟢 processConversationFile: starting, file=\(fileURL.lastPathComponent, privacy: .public)")
+        log.debug("🟢 processConversationFile: starting, file=\(fileURL.lastPathComponent, privacy: .public)")
 
         isProcessing = true
         defer {
@@ -389,11 +380,11 @@ final class ConversationMonitor {
             let content = try String(contentsOf: fileURL, encoding: .utf8)
             let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
 
-            log.info("🟢 processConversationFile: read \(lines.count) lines, lastProcessedLine=\(self.lastProcessedLine)")
+            log.debug("🟢 processConversationFile: read \(lines.count) lines, lastProcessedLine=\(self.lastProcessedLine)")
 
             // Only process new lines since last check
             guard lines.count > lastProcessedLine else {
-                log.info("🟡 processConversationFile: no new lines to process")
+                log.debug("🟢 processConversationFile: no new lines to process")
                 return
             }
 
@@ -407,12 +398,12 @@ final class ConversationMonitor {
                     // Timeline is empty, backfill last 5 displayable entries
                     newLines = lines[...]
                     shouldBackfillLimitedEntries = true
-                    log.info("🟢 processConversationFile: Initial load (empty timeline), will backfill last 5 displayable entries from \(lines.count) total lines")
+                    log.debug("🟢 processConversationFile: Initial load (empty timeline), will backfill last 5 displayable entries from \(lines.count) total lines")
                 } else {
                     // Timeline already has content, don't backfill old messages
                     newLines = []
                     shouldBackfillLimitedEntries = false
-                    log.info("🟢 processConversationFile: Initial load (existing timeline), skipping backfill")
+                    log.debug("🟢 processConversationFile: Initial load (existing timeline), skipping backfill")
                 }
                 lastProcessedLine = lines.count
             } else {
@@ -420,7 +411,7 @@ final class ConversationMonitor {
                 newLines = lines[lastProcessedLine...]
                 shouldBackfillLimitedEntries = false
                 lastProcessedLine = lines.count
-                log.info("🟢 processConversationFile: Incremental update, processing \(newLines.count) new lines")
+                log.debug("🟢 processConversationFile: Incremental update, processing \(newLines.count) new lines")
             }
 
             var processedCount = 0
@@ -437,7 +428,7 @@ final class ConversationMonitor {
                 if shouldBackfillLimitedEntries {
                     let newDisplayableEntries = entries.count - entriesBeforeProcessing
                     if newDisplayableEntries >= 20 {
-                        log.info("🟢 processConversationFile: Reached displayable entries limit (\(newDisplayableEntries)), stopping backfill")
+                        log.debug("🟢 processConversationFile: Reached displayable entries limit (\(newDisplayableEntries)), stopping backfill")
                         break
                     }
                 }
@@ -453,7 +444,7 @@ final class ConversationMonitor {
                 processedCount += 1
             }
 
-            log.info("🟢 processConversationFile: processed \(processedCount) entries, skipped \(skippedCount), total timeline entries now: \(self.entries.count)")
+            log.debug("🟢 processConversationFile: processed \(processedCount) entries, skipped \(skippedCount), total timeline entries now: \(self.entries.count)")
 
             lastError = nil
         } catch {
@@ -463,38 +454,49 @@ final class ConversationMonitor {
     }
 
     private func processConversationEntry(_ json: [String: Any]) async {
+        // Detect format: Claude Code vs Codex
+        let isCodexFormat = (json["type"] as? String) == "response_item"
+
+        if isCodexFormat {
+            await processCodexEntry(json)
+        } else {
+            await processClaudeCodeEntry(json)
+        }
+    }
+
+    private func processClaudeCodeEntry(_ json: [String: Any]) async {
         guard let uuid = json["uuid"] as? String else {
-            log.error("🔴 processConversationEntry: no uuid")
+            log.error("🔴 processClaudeCodeEntry: no uuid")
             return
         }
         guard !seenMessageUUIDs.contains(uuid) else {
-            log.info("🟡 processConversationEntry: already seen uuid=\(uuid, privacy: .public)")
+            log.debug("🟢 processClaudeCodeEntry: already seen uuid=\(uuid, privacy: .public)")
             return
         }
         seenMessageUUIDs.insert(uuid)
 
         if (json["isSidechain"] as? Bool) == true {
-            log.info("🟡 processConversationEntry: skipping sidechain message")
+            log.debug("🟢 processClaudeCodeEntry: skipping sidechain message")
             return
         }
 
         guard let type = json["type"] as? String else {
-            log.error("🔴 processConversationEntry: no type for uuid=\(uuid, privacy: .public)")
+            log.error("🔴 processClaudeCodeEntry: no type for uuid=\(uuid, privacy: .public)")
             return
         }
         guard let timestampStr = json["timestamp"] as? String else {
-            log.error("🔴 processConversationEntry: no timestamp for uuid=\(uuid, privacy: .public)")
+            log.error("🔴 processClaudeCodeEntry: no timestamp for uuid=\(uuid, privacy: .public)")
             return
         }
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let timestamp = formatter.date(from: timestampStr) else {
-            log.error("🔴 processConversationEntry: invalid timestamp '\(timestampStr, privacy: .public)' for uuid=\(uuid, privacy: .public)")
+            log.error("🔴 processClaudeCodeEntry: invalid timestamp '\(timestampStr, privacy: .public)' for uuid=\(uuid, privacy: .public)")
             return
         }
 
-        log.info("🟢 processConversationEntry: type=\(type, privacy: .public), uuid=\(uuid, privacy: .public)")
+        log.debug("🟢 processClaudeCodeEntry: type=\(type, privacy: .public), uuid=\(uuid, privacy: .public)")
 
         switch type {
         case "user":
@@ -502,13 +504,74 @@ final class ConversationMonitor {
         case "assistant":
             await processAssistantMessage(json, timestamp: timestamp, uuid: uuid)
         default:
-            log.info("🟡 processConversationEntry: skipping unknown type=\(type, privacy: .public)")
+            log.debug("🟢 processClaudeCodeEntry: skipping unknown type=\(type, privacy: .public)")
+            break
+        }
+    }
+
+    private func processCodexEntry(_ json: [String: Any]) async {
+        guard let timestampStr = json["timestamp"] as? String else {
+            log.error("🔴 processCodexEntry: no timestamp")
+            return
+        }
+
+        guard let payload = json["payload"] as? [String: Any] else {
+            log.error("🔴 processCodexEntry: no payload")
+            return
+        }
+
+        guard payload["type"] as? String == "message" else {
+            log.debug("🟢 processCodexEntry: skipping non-message payload")
+            return
+        }
+
+        guard let role = payload["role"] as? String else {
+            log.error("🔴 processCodexEntry: no role in payload")
+            return
+        }
+
+        // Generate UUID from timestamp + role + line number for deduplication
+        let uuid = "\(timestampStr)-\(role)-\(currentLineNumber)".data(using: .utf8)!.base64EncodedString()
+
+        guard !seenMessageUUIDs.contains(uuid) else {
+            log.debug("🟢 processCodexEntry: already seen uuid=\(uuid, privacy: .public)")
+            return
+        }
+        seenMessageUUIDs.insert(uuid)
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let timestamp = formatter.date(from: timestampStr) else {
+            log.error("🔴 processCodexEntry: invalid timestamp '\(timestampStr, privacy: .public)'")
+            return
+        }
+
+        log.debug("🟢 processCodexEntry: role=\(role, privacy: .public), uuid=\(uuid, privacy: .public)")
+
+        // Convert Codex format to Claude Code-compatible format
+        let normalizedJSON: [String: Any] = [
+            "uuid": uuid,
+            "type": role, // "user" or "assistant"
+            "timestamp": timestampStr,
+            "message": [
+                "role": role,
+                "content": payload["content"] ?? []
+            ]
+        ]
+
+        switch role {
+        case "user":
+            await processUserMessage(normalizedJSON, timestamp: timestamp, uuid: uuid)
+        case "assistant":
+            await processAssistantMessage(normalizedJSON, timestamp: timestamp, uuid: uuid)
+        default:
+            log.debug("🟢 processCodexEntry: skipping unknown role=\(role, privacy: .public)")
             break
         }
     }
 
     private func processUserMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
-        log.info("🟢 processUserMessage: uuid=\(uuid, privacy: .public)")
+        log.debug("🟢 processUserMessage: uuid=\(uuid, privacy: .public)")
 
         // Capture current epoch at the start of async processing
         let epoch = sessionEpoch
@@ -524,7 +587,7 @@ final class ConversationMonitor {
         if let contentBlocks = message["content"] as? [[String: Any]] {
             let blockTypes = contentBlocks.compactMap { $0["type"] as? String }
             if !blockTypes.isEmpty, blockTypes.allSatisfy({ $0 == "tool_result" }) {
-                log.info("🟡 processUserMessage: skipping assistant tool_result relay for uuid=\(uuid, privacy: .public)")
+                log.debug("🟢 processUserMessage: skipping assistant tool_result relay for uuid=\(uuid, privacy: .public)")
                 return
             }
         }
@@ -537,7 +600,7 @@ final class ConversationMonitor {
                 guard let blockType = block["type"] as? String else { return nil }
 
                 switch blockType {
-                case "text":
+                case "text", "input_text": // Codex uses "input_text"
                     if let text = block["text"] as? String, !text.isEmpty { return text }
                     if let text = block["content"] as? String, !text.isEmpty { return text }
                     return nil
@@ -574,18 +637,18 @@ final class ConversationMonitor {
         }
 
         let isMeta = json["isMeta"] as? Bool ?? false
-        log.info("🟢 processUserMessage: text length=\(text.count), isMeta=\(isMeta)")
+        log.debug("🟢 processUserMessage: text length=\(text.count), isMeta=\(isMeta)")
 
         // Skip meta messages and command wrappers
         guard !text.isEmpty,
               !(json["isMeta"] as? Bool ?? false),
               !text.contains("<command-name>"),
               !text.contains("<local-command-stdout>") else {
-            log.info("🟡 processUserMessage: skipping (empty/meta/command) for uuid=\(uuid, privacy: .public)")
+            log.debug("🟢 processUserMessage: skipping (empty/meta/command) for uuid=\(uuid, privacy: .public)")
             return
         }
 
-        log.info("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
+        log.debug("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
 
         let actionHint = shouldUseActionHint(for: text) ? latestAssistantActionHint() : nil
         let summaryResult: FoundationLLM.TimelineSummaryResult
@@ -618,14 +681,14 @@ final class ConversationMonitor {
         if summaryResult.isDirective {
             lastUserDirectiveId = entry.id
             lastUserDirectiveTimestamp = timestamp
-            log.info("🟢 processUserMessage: Tracking directive id=\(entry.id) for completion correlation")
+            log.debug("🟢 processUserMessage: Tracking directive id=\(entry.id) for completion correlation")
         }
 
-        log.info("✅ processUserMessage: Added user entry, summary=\(summaryResult.summary, privacy: .private), total entries=\(self.entries.count)")
+        log.debug("✅ processUserMessage: Added user entry, summary=\(summaryResult.summary, privacy: .private), total entries=\(self.entries.count)")
     }
 
     private func processAssistantMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
-        log.info("🟢 processAssistantMessage: uuid=\(uuid, privacy: .public)")
+        log.debug("🟢 processAssistantMessage: uuid=\(uuid, privacy: .public)")
 
         guard let message = json["message"] as? [String: Any],
               let content = message["content"] as? [[String: Any]] else {
@@ -633,7 +696,7 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("🟢 processAssistantMessage: content blocks count=\(content.count)")
+        log.debug("🟢 processAssistantMessage: content blocks count=\(content.count)")
 
         // Process each content block (skip tool invokes, only surface text)
         for (index, block) in content.enumerated() {
@@ -642,26 +705,26 @@ final class ConversationMonitor {
                 continue
             }
 
-            log.info("🟢 processAssistantMessage: block \(index) type=\(blockType, privacy: .public)")
+            log.debug("🟢 processAssistantMessage: block \(index) type=\(blockType, privacy: .public)")
 
             switch blockType {
-            case "text":
+            case "text", "output_text": // Codex uses "output_text"
                 if let text = block["text"] as? String {
                     await addAssistantTextEntry(text: text, timestamp: timestamp, uuid: uuid)
                 } else {
                     log.error("🔴 processAssistantMessage: text block has no text field")
                 }
             case "tool_use":
-                log.info("🟡 processAssistantMessage: skipping tool_use block for uuid=\(uuid, privacy: .public)")
+                log.debug("🟢 processAssistantMessage: skipping tool_use block for uuid=\(uuid, privacy: .public)")
             default:
-                log.info("🟡 processAssistantMessage: skipping unknown block type=\(blockType, privacy: .public)")
+                log.debug("🟢 processAssistantMessage: skipping unknown block type=\(blockType, privacy: .public)")
                 break
             }
         }
     }
 
     private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
-        log.info("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
+        log.debug("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
 
         // Capture current epoch at the start of async processing
         let epoch = sessionEpoch
@@ -717,7 +780,7 @@ final class ConversationMonitor {
         let suppressibleDispositions: Set<Disposition> = [.note, .progress, .analysis]
 
         if suppressibleDispositions.contains(rendered.disposition) {
-            log.info("🟡 addAssistantTextEntry: Suppressing low-value entry (disposition=\(rendered.disposition.rawValue, privacy: .public))")
+            log.debug("🟢 addAssistantTextEntry: Suppressing low-value entry (disposition=\(rendered.disposition.rawValue, privacy: .public))")
             return
         }
 
@@ -725,7 +788,7 @@ final class ConversationMonitor {
         if rendered.isCompletion {
             // Find the last assistant entry
             if let lastAssistantEntry = entries.last(where: { $0.kind == .assistant }), lastAssistantEntry.isCompletion {
-                log.info("🟡 addAssistantTextEntry: Suppressing sequential completion entry (previous entry was also completion)")
+                log.debug("🟢 addAssistantTextEntry: Suppressing sequential completion entry (previous entry was also completion)")
                 return
             }
         }
@@ -751,7 +814,7 @@ final class ConversationMonitor {
         )
 
         appendEntryIfCurrentEpoch(epoch, entry: entry)
-        log.info("✅ addAssistantTextEntry: Added assistant text entry, summary=\(rendered.summary, privacy: .private), completion=\(rendered.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
+        log.debug("✅ addAssistantTextEntry: Added assistant text entry, summary=\(rendered.summary, privacy: .private), completion=\(rendered.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
     }
 
     private func latestAssistantActionHint() -> String? {

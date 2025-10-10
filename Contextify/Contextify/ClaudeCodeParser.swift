@@ -20,7 +20,7 @@ enum ClaudeCodeParser {
   static func parseInput(from terminalContent: String) -> String? {
     let lines = terminalContent.components(separatedBy: .newlines)
 
-    NSLog("🔥 Parser: Scanning \(lines.count) lines for active input section")
+    NSLog("Parser: Scanning \(lines.count) lines for active input section")
 
     // Look for the active input section pattern:
     // ─────────────────────────
@@ -35,7 +35,7 @@ enum ClaudeCodeParser {
       // Found the status line (⏵⏵ bypass permissions on)
       // Check both ⏵ (triangle) and also common variants
       if trimmed.hasPrefix("⏵") || trimmed.contains("⏵⏵") || trimmed.contains("bypass permissions") {
-        NSLog("🔥 Parser: Found status line at position \(lines.count - index)")
+        NSLog("Parser: Found status line at position \(lines.count - index)")
 
         // Now look backwards from here for the input section
         let actualIndex = lines.count - index - 1
@@ -45,7 +45,7 @@ enum ClaudeCodeParser {
           let aboveLine = lines[actualIndex - 1].trimmingCharacters(in: .whitespaces)
 
           if aboveLine.hasPrefix("─") {
-            NSLog("🔥 Parser: Found bottom separator")
+            NSLog("Parser: Found bottom separator")
 
             // Now collect all lines with "> " above this separator
             var inputLines: [String] = []
@@ -56,7 +56,7 @@ enum ClaudeCodeParser {
 
               // Hit top separator - we're done
               if currentLine.hasPrefix("─") {
-                NSLog("🔥 Parser: Found top separator at line \(i)")
+                NSLog("Parser: Found top separator at line \(i)")
                 foundTopSeparator = true
                 break
               }
@@ -67,7 +67,7 @@ enum ClaudeCodeParser {
                 let startIndex = currentLine.index(currentLine.startIndex, offsetBy: 2)
                 if startIndex < currentLine.endIndex {
                   let input = String(currentLine[startIndex...])
-                  NSLog("🔥 Parser: ✅ Extracted input from line \(i): [\(input)]")
+                  NSLog("Parser: ✅ Extracted input from line \(i): [\(input)]")
                   inputLines.insert(input, at: 0)
                 }
               }
@@ -78,10 +78,10 @@ enum ClaudeCodeParser {
 
               // Only return if there's actual content (not just empty "> ")
               if !result.isEmpty {
-                NSLog("🔥 Parser: ✅ Extracted active input: [\(result)]")
+                NSLog("Parser: ✅ Extracted active input: [\(result)]")
                 return result
               } else {
-                NSLog("🔥 Parser: Input section was empty, continuing search...")
+                NSLog("Parser: Input section was empty, continuing search...")
               }
             }
           }
@@ -89,7 +89,7 @@ enum ClaudeCodeParser {
       }
     }
 
-    NSLog("🔥 Parser: ❌ No active input section found")
+    NSLog("Parser: ❌ No active input section found")
     return nil
   }
 

@@ -47,20 +47,20 @@ final class TerminalContentReader {
     log.info("Captured terminal content: \(terminalContent.count, privacy: .public) chars")
 
     // TEMPORARY DEBUG: Log FULL content line-by-line to avoid truncation
-    NSLog("🔥 ========== FULL TERMINAL CONTENT (\(terminalContent.count) chars) ==========")
+    NSLog("========== FULL TERMINAL CONTENT (\(terminalContent.count) chars) ==========")
     let lines = terminalContent.components(separatedBy: .newlines)
-    NSLog("🔥 Total lines: \(lines.count)")
+    NSLog("Total lines: \(lines.count)")
     for (i, line) in lines.enumerated() {
-      NSLog("🔥 Line \(i): [\(line)]")
+      NSLog("Line \(i): [\(line)]")
     }
-    NSLog("🔥 ========== END TERMINAL CONTENT ==========")
+    NSLog("========== END TERMINAL CONTENT ==========")
 
     // Parse Claude Code input
     let extractedText = ClaudeCodeParser.parseInput(from: terminalContent) ?? ""
 
     if extractedText.isEmpty {
       log.warning("No valid Claude Code input found in terminal content - focusing compose area anyway")
-      NSLog("🔥 No '> ' marker found, but still focusing compose window")
+      NSLog("No '> ' marker found, but still focusing compose window")
     } else {
       log.info("Extracted Claude Code input: \(extractedText.count, privacy: .public) chars")
     }
@@ -116,7 +116,7 @@ final class TerminalContentReader {
 
     let bundleID = frontmostApp.bundleIdentifier ?? "unknown"
     log.info("Reading from app: \(frontmostApp.localizedName ?? "unknown", privacy: .public) (Bundle: \(bundleID, privacy: .public))")
-    NSLog("🔥 Reading from: \(frontmostApp.localizedName ?? "unknown") - Bundle: \(bundleID)")
+    NSLog("Reading from: \(frontmostApp.localizedName ?? "unknown") - Bundle: \(bundleID)")
 
     // Use daemon for iTerm2 with fallback to legacy Python reader
     if bundleID == "com.googlecode.iterm2" {
@@ -129,11 +129,11 @@ final class TerminalContentReader {
       // Try daemon first (fast path)
       switch await ITerm2DaemonClient.shared.getContent(maxLines: 100) {
       case .success(let content):
-        NSLog("🔥 ✅ Got content from daemon: \(content.count) chars")
+        NSLog("✅ Got content from daemon: \(content.count) chars")
         return content
 
       case .failure(let error):
-        NSLog("🔥 ❌ Daemon failed: \(error) - CANNOT USE LEGACY (too slow)")
+        NSLog("❌ Daemon failed: \(error) - CANNOT USE LEGACY (too slow)")
         log.error("Daemon failed: \(error.description, privacy: .public)")
 
         // Show user-friendly error alert
@@ -171,12 +171,12 @@ final class TerminalContentReader {
 
     // Use AppleScript for Terminal.app
     if bundleID == "com.apple.Terminal" {
-      NSLog("🔥 Using AppleScript method for Terminal.app")
+      NSLog("Using AppleScript method for Terminal.app")
       return readFromTerminalAppUsingAppleScript()
     }
 
     // Fall back to Accessibility API for other terminal apps
-    NSLog("🔥 Using Accessibility API for \(bundleID)")
+    NSLog("Using Accessibility API for \(bundleID)")
     return readUsingAccessibilityAPI(frontmostApp)
   }
 
@@ -250,7 +250,7 @@ final class TerminalContentReader {
     var error: NSDictionary?
     guard let scriptObject = NSAppleScript(source: source) else {
       log.error("Failed to create AppleScript for \(appName)")
-      NSLog("🔥 ERROR: Failed to create AppleScript for \(appName)")
+      NSLog("ERROR: Failed to create AppleScript for \(appName)")
       return nil
     }
 
@@ -258,12 +258,12 @@ final class TerminalContentReader {
 
     if let error = error {
       log.error("AppleScript error for \(appName): \(error)")
-      NSLog("🔥 AppleScript error for \(appName): \(error)")
+      NSLog("AppleScript error for \(appName): \(error)")
       return nil
     }
 
     let content = output.stringValue ?? ""
-    NSLog("🔥 ✅ Got \(appName) content via AppleScript: \(content.count) chars")
+    NSLog("✅ Got \(appName) content via AppleScript: \(content.count) chars")
     log.info("Got \(appName) content via AppleScript: \(content.count, privacy: .public) chars")
     return content
   }
@@ -286,12 +286,12 @@ final class TerminalContentReader {
     guard focusedError == .success,
           let element = focusedElement as! AXUIElement? else {
       log.error("Failed to get focused element: \(focusedError.rawValue, privacy: .public)")
-      NSLog("🔥 ERROR: Failed to get focused element from \(bundleID). Error: \(focusedError.rawValue)")
-      NSLog("🔥 This error (-25204) = kAXErrorInvalidUIElement")
-      NSLog("🔥 Possible causes:")
-      NSLog("🔥   1. App doesn't have permission to access \(bundleID)")
-      NSLog("🔥   2. Focused element doesn't support Accessibility API")
-      NSLog("🔥   3. Terminal app may require AppleScript instead")
+      NSLog("ERROR: Failed to get focused element from \(bundleID). Error: \(focusedError.rawValue)")
+      NSLog("This error (-25204) = kAXErrorInvalidUIElement")
+      NSLog("Possible causes:")
+      NSLog("  1. App doesn't have permission to access \(bundleID)")
+      NSLog("  2. Focused element doesn't support Accessibility API")
+      NSLog("  3. Terminal app may require AppleScript instead")
       return nil
     }
 
@@ -305,7 +305,7 @@ final class TerminalContentReader {
 
     if valueError == .success, let textValue = value as? String {
       log.info("Got value attribute: \(textValue.count, privacy: .public) chars")
-      NSLog("🔥 ✅ Got content via Accessibility API: \(textValue.count) chars")
+      NSLog("✅ Got content via Accessibility API: \(textValue.count) chars")
       return textValue
     }
 
@@ -319,7 +319,7 @@ final class TerminalContentReader {
 
     if selectedError == .success, let selected = selectedText as? String {
       log.info("Got selected text: \(selected.count, privacy: .public) chars")
-      NSLog("🔥 ✅ Got selected text via Accessibility API: \(selected.count) chars")
+      NSLog("✅ Got selected text via Accessibility API: \(selected.count) chars")
       return selected
     }
 
@@ -342,13 +342,13 @@ final class TerminalContentReader {
 
       if parentValueError == .success, let parentText = parentValue as? String {
         log.info("Got parent value: \(parentText.count, privacy: .public) chars")
-        NSLog("🔥 ✅ Got parent content via Accessibility API: \(parentText.count) chars")
+        NSLog("✅ Got parent content via Accessibility API: \(parentText.count) chars")
         return parentText
       }
     }
 
     log.error("All fallback methods failed. valueError=\(valueError.rawValue, privacy: .public), selectedError=\(selectedError.rawValue, privacy: .public)")
-    NSLog("🔥 ERROR: All Accessibility API methods failed")
+    NSLog("ERROR: All Accessibility API methods failed")
     return nil
   }
 

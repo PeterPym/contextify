@@ -35,12 +35,16 @@ final class GlobalHotkeyManager {
   ///
   /// Call this during app initialization (e.g., applicationDidFinishLaunching).
   func registerContextifyHotkey() {
-    NSLog("🔥 GlobalHotkeyManager: registerContextifyHotkey called")
-    log.info("Setting up CGEventTap for Cmd+Shift+K+K hotkey")
+    log.debug("GlobalHotkeyManager: registerContextifyHotkey called")
+    log.debug("Setting up CGEventTap for Cmd+Shift+K+K hotkey")
 
     // Check accessibility permissions first
     let hasPermissions = checkAccessibilityPermissions()
-    NSLog("🔥 Accessibility permissions: \(hasPermissions)")
+    if hasPermissions {
+      log.debug("Accessibility permissions: granted")
+    } else {
+      log.warning("Accessibility permissions: NOT granted")
+    }
 
     guard hasPermissions else {
       log.error("Accessibility permissions not granted")
@@ -72,11 +76,10 @@ final class GlobalHotkeyManager {
       userInfo: Unmanaged.passUnretained(self).toOpaque()
     )
 
-    NSLog("🔥 Event tap created: \(tap != nil)")
+    log.debug("Event tap created: \(tap != nil)")
 
     guard let tap = tap else {
-      log.error("Failed to create event tap")
-      NSLog("🔥 FAILED to create event tap - showing alert")
+      log.error("Failed to create event tap - showing alert")
       showAlert(
         title: "Event Tap Failed",
         message: "Failed to create keyboard event monitor.\n\nPlease ensure Contextify has Accessibility permissions in:\nSystem Settings > Privacy & Security > Accessibility"
@@ -95,8 +98,7 @@ final class GlobalHotkeyManager {
     // Enable the event tap
     CGEvent.tapEnable(tap: tap, enable: true)
 
-    NSLog("🔥 ✅ Successfully registered CGEventTap for Cmd+Shift+K+K hotkey")
-    log.info("✅ Successfully registered CGEventTap for Cmd+Shift+K+K hotkey")
+    log.debug("Successfully registered CGEventTap for Cmd+Shift+K+K hotkey")
   }
 
   /// Unregisters the global hotkey.
