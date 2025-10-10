@@ -176,7 +176,7 @@ struct TimelineEntryRow: View {
     private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
         switch provider {
         case .claudeCode: return .orange
-        case .codexCLI: return .blue
+        case .codexCLI: return .white
         case .other: return .gray
         }
     }
