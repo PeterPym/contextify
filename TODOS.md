@@ -86,6 +86,57 @@ struct CachedTimelineEntry {
 
 ### Features
 
+#### Agent Instructions Management View
+**Status:** Backlog
+**Priority:** Medium
+**Related:** AGENTS.md / CLAUDE.md consolidation
+
+Build an auxiliary view to help users maintain Agent Rules v1.0 compliance and avoid documentation drift between AGENTS.md and CLAUDE.md files.
+
+**Functionality:**
+1. **File Discovery**: Scan project directory and detect all `AGENTS.md` and `CLAUDE.md` files
+2. **Symlink Detection**: Check if CLAUDE.md is a symlink to AGENTS.md (recommended setup)
+3. **Diff Display**: Show side-by-side comparison if files exist as separate documents
+4. **Warning System**: Visual indicator (⚠️) when files have diverged or are not symlinked
+5. **One-Click Actions**:
+   - "Create Symlink" - Convert CLAUDE.md to symlink → AGENTS.md
+   - "Merge Files" - Interactive merge with conflict resolution
+   - "View Diff" - Detailed line-by-line comparison
+
+**Integration Points:**
+- **Transcript Discovery Warning**: When ConversationMonitor discovers the first Codex session focused on the same project directory, if AGENTS.md and CLAUDE.md are not set up as symlinks, show a banner warning:
+  ```
+  ⚠️ Multiple agent instruction files detected
+  AGENTS.md and CLAUDE.md are not linked. View comparison →
+  ```
+- Menu item: **Tools → Agent Instructions Setup**
+- Status bar indicator when drift is detected
+
+**UI Design:**
+```
+┌─────────────────────────────────────────────┐
+│ Agent Instructions Setup                    │
+├─────────────────────────────────────────────┤
+│                                             │
+│ Status: ⚠️ Files are separate              │
+│                                             │
+│ AGENTS.md          vs          CLAUDE.md   │
+│ ┌──────────────┐              ┌──────────┐ │
+│ │ 175 lines    │              │ 125 lines│ │
+│ │ Modified: 2h │              │ Modified:│ │
+│ │              │              │  1 week  │ │
+│ └──────────────┘              └──────────┘ │
+│                                             │
+│ [Create Symlink]  [Merge Files]  [View Diff]│
+└─────────────────────────────────────────────┘
+```
+
+**Technical Notes:**
+- Use `FileManager` to detect symlinks (`FileManager.default.destinationOfSymbolicLink(atPath:)`)
+- Leverage SwiftUI `TextEditor` for diff display
+- Store user preference for "don't warn again" in UserDefaults
+- Follow Agent Rules v1.0 spec (AGENTS.md as single source of truth)
+
 #### Conversation Log Enhancements
 
 ##### 1. Reduce Assistant Entry Density
