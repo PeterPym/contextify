@@ -5,6 +5,28 @@ import OSLog
 import FoundationModels
 #endif
 
+/// Simple async semaphore for controlling concurrent access
+actor AsyncSemaphore {
+  private let limit: Int
+  private var permits: Int
+
+  init(_ limit: Int) {
+    self.limit = limit
+    self.permits = limit
+  }
+
+  func acquire() async {
+    while permits == 0 {
+      try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+    }
+    permits -= 1
+  }
+
+  func release() {
+    permits = min(permits + 1, limit)
+  }
+}
+
 /// Orchestrates transcript metadata generation with caching, retries, and circuit breaking
 actor TranscriptMetadataOrchestrator {
   static let shared = TranscriptMetadataOrchestrator()
@@ -23,16 +45,15 @@ actor TranscriptMetadataOrchestrator {
   private let currentPromptVersion = 2
   private let currentGeneratorVersion = 1
 
-  // Circuit breaker state
+  // Circuit breaker state with sliding window
+  private var requestWindow: [Date] = []
   private var failureCount = 0
-  private var lastFailureTime: Date?
-  private let circuitBreakerWindow: TimeInterval = 300 // 5 minutes
+  private let windowSpan: TimeInterval = 300 // 5 minutes
   private let circuitBreakerThreshold = 5
 
   // Concurrency control
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
-  private let maxConcurrentLLMCalls = 2
-  private var currentLLMCalls = 0
+  private let llmGate = AsyncSemaphore(2)
 
   // MARK: - Public API
 
@@ -41,6 +62,12 @@ actor TranscriptMetadataOrchestrator {
     for session: TranscriptSession,
     forceRegenerate: Bool = false
   ) async throws -> TranscriptMetadata {
+    // Cancel existing task if forcing regeneration
+    if forceRegenerate, let existingTask = activeTasks[session.fileURL] {
+      existingTask.cancel()
+      activeTasks.removeValue(forKey: session.fileURL)
+    }
+
     // Check for existing task
     if let existingTask = activeTasks[session.fileURL] {
       log.info("Reusing existing generation task for \(session.identifier, privacy: .public)")
@@ -50,7 +77,7 @@ actor TranscriptMetadataOrchestrator {
     // Create new task
     let task = Task<TranscriptMetadata, Error> {
       defer {
-        Task { self.removeTask(for: session.fileURL) }
+        Task { await self.removeTask(for: session.fileURL) }
       }
       return try await self.generateMetadata(for: session, forceRegenerate: forceRegenerate)
     }
@@ -72,32 +99,23 @@ actor TranscriptMetadataOrchestrator {
     let startTime = Date()
 
     // Check cache unless forcing regeneration
-    let cachedMetadata: TranscriptMetadata? = await MainActor.run {
-      if !forceRegenerate,
-         let cached = try? store.load(for: session.fileURL),
-         store.isFresh(
-          cached,
-          for: session.fileURL,
-          promptVersion: currentPromptVersion,
-          generatorVersion: currentGeneratorVersion
-         ) {
-        return cached
-      }
-      return nil
-    }
-
-    if let cached = cachedMetadata {
+    if !forceRegenerate,
+       let cached = try? store.load(for: session.fileURL),
+       store.isFresh(
+        cached,
+        for: session.fileURL,
+        promptVersion: currentPromptVersion,
+        generatorVersion: currentGeneratorVersion
+       ) {
       log.info("Using cached metadata for \(session.identifier, privacy: .public)")
       return cached
     }
 
     log.info("Generating metadata for \(session.identifier, privacy: .public)")
 
-    // Parse exchanges
+    // Parse exchanges (background-safe, no MainActor needed)
     let parseStart = Date()
-    let exchanges = try await MainActor.run {
-      try parser.parseExchanges(url: session.fileURL)
-    }
+    let exchanges = try parser.parseExchanges(url: session.fileURL)
     let parseTime = Date().timeIntervalSince(parseStart)
 
     // Handle very short transcripts with heuristic
@@ -108,11 +126,6 @@ actor TranscriptMetadataOrchestrator {
       return metadata
     }
 
-    // Select strategy based on context window constraints
-    // Full strategy: ~60-100 tokens per exchange avg, limit to 25 exchanges (~2500 tokens max)
-    // Adaptive: intelligently samples to fit 2000 token budget
-    let strategy: GenerationStrategy = exchanges.count <= 25 ? .full : .adaptive
-
     // Check circuit breaker
     if shouldUseCircuitBreaker() {
       log.warning("Circuit breaker active, using heuristic fallback")
@@ -121,12 +134,44 @@ actor TranscriptMetadataOrchestrator {
       return metadata
     }
 
-    // Build context
-    let samplingStart = Date()
-    let context = try await MainActor.run {
-      try builder.build(exchanges: exchanges, strategy: strategy)
+    // Calculate available token budget using actual LLM tokenizer
+    #if canImport(FoundationModels)
+    let availableTokens: Int
+    if #available(macOS 26, *) {
+      // For adaptive strategy, we need to know the budget first
+      // Use a preliminary count estimate to decide strategy
+      let preliminaryCount = exchanges.count
+      availableTokens = await llm.calculateAvailableContextTokens(
+        sampledCount: min(preliminaryCount, MetadataBudgets.bookendCount * 2),
+        totalCount: preliminaryCount
+      )
+    } else {
+      // Fallback to static budget if LLM not available
+      availableTokens = MetadataBudgets.samplerBudget
     }
+    #else
+    let availableTokens = MetadataBudgets.samplerBudget
+    #endif
+
+    // Select strategy based on available budget and exchange count
+    let strategy: GenerationStrategy
+    if exchanges.count <= MetadataBudgets.fullStrategyLimit {
+      strategy = .full
+    } else {
+      strategy = .adaptive
+    }
+
+    // Build context with dynamic budget (background-safe, no MainActor needed)
+    let samplingStart = Date()
+    let context = try builder.build(
+      exchanges: exchanges,
+      strategy: strategy,
+      budgetTokens: availableTokens
+    )
     let samplingTime = Date().timeIntervalSince(samplingStart)
+
+    // Log context size for debugging
+    log.info("Built context: \(context.text.count) chars, estimated \(context.text.count / 4) tokens, budget was \(availableTokens) tokens")
 
     // Call LLM (with fallback to bookends on failure)
     var metadata: TranscriptMetadata
@@ -134,8 +179,8 @@ actor TranscriptMetadataOrchestrator {
 
     do {
       // Wait for LLM slot
-      await waitForLLMSlot()
-      defer { releaseLLMSlot() }
+      await llmGate.acquire()
+      defer { Task { await llmGate.release() } }
 
       #if canImport(FoundationModels)
       if #available(macOS 26, *) {
@@ -145,10 +190,8 @@ actor TranscriptMetadataOrchestrator {
           totalCount: exchanges.count
         )
 
-        // Post-process
-        metadata = await MainActor.run {
-          postProcessor.apply(to: guided, context: context.text)
-        }
+        // Post-process (background-safe)
+        metadata = postProcessor.apply(to: guided, context: context.text)
         metadata.messageCount = exchanges.count
         metadata.strategy = "singlePass:\(strategy.rawValue)"
 
@@ -166,13 +209,15 @@ actor TranscriptMetadataOrchestrator {
       // Try bookends fallback if we weren't already using it
       if strategy != .bookends {
         log.info("Retrying with bookends strategy...")
-        let bookendContext = try await MainActor.run {
-          try builder.build(exchanges: exchanges, strategy: .bookends)
-        }
+        let bookendContext = try builder.build(
+          exchanges: exchanges,
+          strategy: .bookends,
+          budgetTokens: availableTokens
+        )
 
         do {
-          await waitForLLMSlot()
-          defer { releaseLLMSlot() }
+          await llmGate.acquire()
+          defer { Task { await llmGate.release() } }
 
           #if canImport(FoundationModels)
           if #available(macOS 26, *) {
@@ -182,9 +227,7 @@ actor TranscriptMetadataOrchestrator {
               totalCount: exchanges.count
             )
 
-            metadata = await MainActor.run {
-              postProcessor.apply(to: guided, context: bookendContext.text)
-            }
+            metadata = postProcessor.apply(to: guided, context: bookendContext.text)
             metadata.messageCount = exchanges.count
             metadata.strategy = "singlePass:bookends-fallback"
 
@@ -212,9 +255,7 @@ actor TranscriptMetadataOrchestrator {
 
     // Finalize metadata
     let storageStart = Date()
-    metadata.transcriptSHA256 = try await MainActor.run {
-      try store.sha256(url: session.fileURL)
-    }
+    metadata.transcriptSHA256 = try store.sha256(url: session.fileURL)
     metadata.promptVersion = currentPromptVersion
     metadata.generatorVersion = currentGeneratorVersion
     let totalTime = Date().timeIntervalSince(startTime)
@@ -245,46 +286,36 @@ actor TranscriptMetadataOrchestrator {
   // MARK: - Circuit Breaker
 
   private func shouldUseCircuitBreaker() -> Bool {
-    guard let lastFailure = lastFailureTime else {
-      return false
-    }
+    let now = Date()
+    // Clean up old entries outside the window
+    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
 
-    let elapsed = Date().timeIntervalSince(lastFailure)
-    if elapsed > circuitBreakerWindow {
-      // Window expired, reset
-      failureCount = 0
-      lastFailureTime = nil
-      return false
-    }
+    let total = max(1, requestWindow.count)
+    let ratio = Double(failureCount) / Double(total)
 
-    return failureCount >= circuitBreakerThreshold
+    // Open circuit if failure ratio >= 60% and we have at least 5 requests
+    return ratio >= 0.6 && total >= 5
   }
 
   private func recordSuccess() {
-    failureCount = 0
-    lastFailureTime = nil
+    let now = Date()
+    requestWindow.append(now)
+    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
+    // Decay failure count on success, but don't reset completely
+    failureCount = max(0, failureCount - 1)
   }
 
   private func recordFailure() {
+    let now = Date()
+    requestWindow.append(now)
+    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
     failureCount += 1
-    lastFailureTime = Date()
 
-    if failureCount >= circuitBreakerThreshold {
-      log.warning("Circuit breaker triggered after \(self.failureCount) failures")
+    let total = max(1, requestWindow.count)
+    let ratio = Double(failureCount) / Double(total)
+    if ratio >= 0.6 && total >= 5 {
+      log.warning("Circuit breaker triggered: \(self.failureCount) failures out of \(total) requests (\(String(format: "%.1f%%", ratio * 100)))")
     }
-  }
-
-  // MARK: - Concurrency Control
-
-  private func waitForLLMSlot() async {
-    while currentLLMCalls >= maxConcurrentLLMCalls {
-      try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-    }
-    currentLLMCalls += 1
-  }
-
-  private func releaseLLMSlot() {
-    currentLLMCalls -= 1
   }
 
   // MARK: - Metrics Logging
