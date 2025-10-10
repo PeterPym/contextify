@@ -46,6 +46,27 @@ open Contextify/Contextify.xcodeproj
 # Run on: My Mac
 ```
 
+### Xcode Setup (First Time)
+
+**1. Command Line Tools**
+```
+Xcode → Settings → Locations → Command Line Tools
+```
+Set to **Xcode 16** (or Xcode-beta if installed)
+
+**2. Console Filters (Recommended)**
+Reduce log noise:
+1. Open console (⇧⌘C)
+2. Click **"Add Filter"**
+3. Add: **TYPE Info**
+4. Set **Comparison Options** to **"Match Any"**
+
+This hides debug logs while showing Info/Notice/Error/Fault.
+
+**3. Scheme Selection**
+- Scheme: **Contextify**
+- Target: **My Mac** (macOS 15.6+)
+
 ### Setup Terminal Integration
 ```bash
 # Install shell bindings (adds Contextify commands to your shell)
