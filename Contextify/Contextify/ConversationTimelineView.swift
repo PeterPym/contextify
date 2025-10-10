@@ -3,6 +3,7 @@ import SwiftUI
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
     @Environment(\.openWindow) private var openWindow
+    @State private var scrollTask: Task<Void, Never>?
 
     private let collapsedWidth: CGFloat = 52
     private let expandedWidth: CGFloat = 320
@@ -142,9 +143,16 @@ struct ConversationTimelineView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: monitor.entries.count) { _, count in
-                guard monitor.autoScroll, count > 0 else { return }
-                DispatchQueue.main.async {
+            .onChange(of: monitor.entries.count) { _, _ in
+                // Cancel any pending scroll task
+                scrollTask?.cancel()
+
+                guard monitor.autoScroll, !monitor.entries.isEmpty else { return }
+
+                // Create new debounced scroll task (150ms delay to coalesce rapid updates)
+                scrollTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    guard !Task.isCancelled else { return }
                     withAnimation(.easeOut(duration: 0.3)) {
                         proxy.scrollTo(scrollAnchorID, anchor: .bottom)
                     }

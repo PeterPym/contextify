@@ -732,7 +732,7 @@ private extension FoundationLLM {
             }
 
             if !isGrounded && leaked.count > 0 {
-                log.info("timeline summary ACCEPTED despite leakage (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
+                log.debug("timeline summary ACCEPTED despite leakage (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
             }
         } else if kind == .user {
             // NEW: User message validation (parity with assistant)
