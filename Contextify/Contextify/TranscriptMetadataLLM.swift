@@ -20,6 +20,40 @@ actor TranscriptMetadataLLM {
     case decodingFailure(String)
   }
 
+  // MARK: - Token Budget Calculation
+
+#if canImport(FoundationModels)
+  @available(macOS 26, *)
+  func calculateAvailableContextTokens(sampledCount: Int, totalCount: Int) async -> Int {
+    let instructions = Prompts.singlePass(sampledCount: sampledCount, totalCount: totalCount)
+
+    // Estimate instruction tokens
+    // FoundationModels may not expose token counting, so use character-based estimation
+    // Typical ratio is ~4 chars per token for English text
+    let instructionTokens = instructions.count / 4
+
+    // Estimate schema tokens added by includeSchemaInPrompt: true
+    // The @Generable schema gets converted to JSON schema and added to the prompt
+    // Conservative estimate based on the GuidedTranscriptMetadata schema size
+    let schemaTokens = 250
+
+    // Budget calculation
+    let totalTokens = 4096
+    let maxOutputTokens = 300
+    // Safety margin for token estimation variance
+    // - Time deltas (+5m, +2h) are much more efficient than ISO8601 timestamps
+    // - Code symbols and punctuation still tokenize less efficiently
+    // - Conservative margin to avoid hitting context limit
+    let safetyMargin = 100
+
+    let availableForContext = totalTokens - maxOutputTokens - instructionTokens - schemaTokens - safetyMargin
+
+    log.info("Token budget: instructions=\(instructionTokens), schema=\(schemaTokens), output=\(maxOutputTokens), safety=\(safetyMargin), available=\(availableForContext)")
+
+    return max(0, availableForContext)
+  }
+#endif
+
   // MARK: - Single Pass Generation
 
 #if canImport(FoundationModels)
