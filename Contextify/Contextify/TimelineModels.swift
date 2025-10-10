@@ -77,11 +77,23 @@ struct TimelineSourceContext: Hashable, Sendable {
         var icon: String {
             switch self {
             case .claudeCode:
-                return "🟠"
+                return "🟠"  // Placeholder - replace with "claude-code-icon" when asset is added
             case .codexCLI:
-                return "🌀"
+                return "🌀"  // Placeholder - replace with "codex-icon" when asset is added
             case .other:
-                return "🔄"
+                return "🔄"  // Placeholder - could use "ai.sparkles" SF Symbol
+            }
+        }
+
+        /// Returns the asset name or SF Symbol name for the provider icon
+        var iconImage: String {
+            switch self {
+            case .claudeCode:
+                return "claude-code-icon"  // Custom asset (orange asterisk)
+            case .codexCLI:
+                return "codex-icon"  // Custom asset (blue swirly brackets)
+            case .other:
+                return "sparkles"  // SF Symbol fallback
             }
         }
 

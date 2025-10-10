@@ -622,13 +622,28 @@ private extension FoundationLLM {
 
     var bridgingLexicon: Set<String> {
         [
+            // Assistant-specific verbs
             "claude", "explains", "explained", "explaining", "clarifies", "clarified", "clarifying",
             "states", "stated", "says", "said", "notes", "noted", "acknowledges", "acknowledged",
             "confirms", "confirmed", "reports", "reported", "outlines", "outlined", "highlights",
             "highlighted", "advises", "advised", "suggests", "suggested", "proposes", "proposed",
             "asks", "asked", "observes", "observed", "mentions", "mentioned", "reminds", "reminded",
             "recommends", "recommended", "describes", "described", "details", "detailed", "responds",
-            "responded", "summarizes", "summarized", "states", "reports", "notes", "acknowledges"
+            "responded", "summarizes", "summarized",
+
+            // User message required words (from LLM instructions)
+            "you", "requested", "made",
+
+            // Instruction-derived words
+            "infer", "proceed", "proposed",
+
+            // Common prepositions and conjunctions
+            "about", "from", "during", "with", "for", "and", "the", "that", "this", "these", "those",
+            "regarding", "concerning", "without", "into", "onto", "upon",
+
+            // Generic action/context words that legitimately appear in summaries
+            "options", "types", "handling", "transitions", "moving", "changes", "updates",
+            "message", "messages", "logs", "issues", "errors", "them", "perhaps"
         ]
     }
 

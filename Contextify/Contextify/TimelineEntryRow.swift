@@ -68,8 +68,15 @@ struct TimelineEntryRow: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: entry.kind.iconName)
-                .foregroundStyle(entry.kind.accentColor)
+            // Use provider-specific icon for system messages, default icon for others
+            if entry.kind == .system, let provider = entry.sourceContext?.provider {
+                Image(provider.iconImage)
+                    .renderingMode(.template)
+                    .foregroundStyle(providerColor(provider))
+            } else {
+                Image(systemName: entry.kind.iconName)
+                    .foregroundStyle(entry.kind.accentColor)
+            }
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
@@ -164,6 +171,14 @@ struct TimelineEntryRow: View {
             object: nil,
             userInfo: ["path": transcriptPath]
         )
+    }
+
+    private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
+        switch provider {
+        case .claudeCode: return .orange
+        case .codexCLI: return .blue
+        case .other: return .gray
+        }
     }
 }
 

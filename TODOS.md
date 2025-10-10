@@ -241,6 +241,63 @@ Once we can reliably identify completed entries, show the elapsed time from the 
 - Calculate duration from first relevant assistant message to completion marker
 - Handle cases where tasks span multiple timeline entries
 
+##### 4. Activity Log (Git Events Integration)
+**Status:** Backlog
+**Priority:** Medium
+**Category:** New Feature
+
+Expand the conversation log into a unified "activity" log that includes git events alongside AI conversation entries, creating a complete project activity timeline.
+
+**Concept:**
+Instead of just showing what Claude/Codex did, show the full context of project activity:
+- AI conversation entries (current)
+- Git commits (with message, author, files changed)
+- Git branch switches
+- Git merges/rebases
+- Other version control events
+
+**Proposed Features:**
+1. **Unified Timeline**: Interleave git events with conversation entries in chronological order
+2. **Event Filtering**: Toggle visibility of different event types
+   - Show/hide: Commits, Branches, AI messages, Tool calls, etc.
+   - Filter by author (user, Claude, Codex, other collaborators)
+   - Filter by file/directory affected
+3. **Git Event Display**:
+   - Commit entry: "📝 Committed: [message]" with hash, author, timestamp
+   - Branch switch: "🔀 Switched to branch: [name]"
+   - Merge: "🔗 Merged [branch] into [branch]"
+4. **Correlation**:
+   - Link AI "completed" entries to the commits they generated
+   - Show which conversation led to which code changes
+   - Highlight when AI suggestions were committed vs modified
+
+**Implementation Considerations:**
+- Monitor `.git/` directory for changes (already doing this for branch detection)
+- Parse `git log` for commit history
+- Use `git reflog` for branch switches
+- Add event type system: `.conversation`, `.commit`, `.branch`, `.merge`
+- Extend filtering UI to support multiple event types
+- Consider performance impact of git log parsing
+
+**UI Mockup:**
+```
+Timeline (Filters: ✓ AI  ✓ Commits  ✓ Branches)
+┌──────────────────────────────────────────┐
+│ 2:34 PM  User: Fix the logging levels   │
+│ 2:35 PM  ✓ Claude moved logs to debug   │
+│ 2:36 PM  📝 feat: move routine logs...   │  ← Git commit
+│          (3 files changed)               │
+│ 2:40 PM  🔀 Switched to main             │  ← Branch change
+│ 2:41 PM  🔗 Merged feature/logging       │  ← Git merge
+└──────────────────────────────────────────┘
+```
+
+**Benefits:**
+- Complete project context in one view
+- Better understanding of what AI changes made it to main
+- Easier to review and correlate work
+- More useful for project retrospectives
+
 #### Transcript Migration UI
 **Status:** Backlog
 **Priority:** Super Low (manual script works fine, edge case)

@@ -142,8 +142,8 @@ struct ConversationTimelineView: View {
                 }
                 .padding(16)
             }
-            .onChange(of: monitor.entries.map { $0.id }) { _, ids in
-                guard monitor.autoScroll, !ids.isEmpty else { return }
+            .onChange(of: monitor.entries.count) { _, count in
+                guard monitor.autoScroll, count > 0 else { return }
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.3)) {
                         proxy.scrollTo(scrollAnchorID, anchor: .bottom)

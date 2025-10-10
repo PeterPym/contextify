@@ -326,17 +326,16 @@ final class ConversationMonitor {
             return
         }
 
-        let icon = session.provider.icon
         let providerName = session.provider.displayName
 
         let summary: String
         switch reason {
         case .newConversation:
-            summary = "\(icon) Switched to a new \(providerName) conversation"
+            summary = "Switched to a new \(providerName) conversation"
         case .userSelection, .providerChange:
-            summary = "\(icon) Switched to \(providerName) conversation"
+            summary = "Switched to \(providerName) conversation"
         case .initial:
-            summary = "\(icon) Timeline monitoring started for \(providerName)"
+            summary = "Timeline monitoring started for \(providerName)"
         }
 
         let detail = """
@@ -410,7 +409,7 @@ final class ConversationMonitor {
             return
         }
         guard !isProcessing else {
-            log.error("🔴 processConversationFile: already processing")
+            log.debug("🟢 processConversationFile: already processing, skipping")
             return
         }
         guard let fileURL = currentConversationFile else {
@@ -705,8 +704,9 @@ final class ConversationMonitor {
         do {
             summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, actionHint: actionHint)
         } catch {
-            log.error("🔴 processUserMessage: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
-            return
+            log.error("🔴 processUserMessage: summarization failed after retries, using fallback: \(error.localizedDescription, privacy: .public)")
+            // Use fallback instead of skipping entry to ensure user messages always appear
+            summaryResult = await FoundationLLM.shared.fallbackSummary(kind: .user, text: text)
         }
         let detail = text.count > config.previewCharacterLimit
             ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
@@ -936,10 +936,9 @@ final class ConversationMonitor {
         didEmitSessionStart = true
 
         let provider = activeSession?.provider ?? .other
-        let icon = provider.icon
         let providerName = provider.displayName
 
-        let summary = "\(icon) Timeline monitoring started for \(providerName)"
+        let summary = "Timeline monitoring started for \(providerName)"
         let detail: String
         if let fileURL = currentConversationFile {
             detail = """
