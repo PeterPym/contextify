@@ -48,6 +48,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
+    @ObservationIgnored private var currentSessionId: String?  // Current session identifier for timeline entries
 
     private init() {}
 
@@ -96,7 +97,8 @@ final class ConversationMonitor {
 
     /// Public method for user-initiated session switch from transcript inventory
     func switchToSessionFromUser(_ session: TranscriptSession) async {
-        await switchToSession(session, reason: .userSelection)
+        let reason: SessionSwitchReason = isNewConversation(session) ? .newConversation : .userSelection
+        await switchToSession(session, reason: reason)
     }
 
     /// Public refresh method for manual refresh requests
@@ -165,8 +167,13 @@ final class ConversationMonitor {
         if force {
             switchReason = .initial
         } else if activeSession != nil {
-            // We had a previous session and it's different - this is a real provider change
-            switchReason = .providerChange
+            // We had a previous session and it's different
+            // Check if the new session is brand new
+            if isNewConversation(session) {
+                switchReason = .newConversation
+            } else {
+                switchReason = .providerChange
+            }
         } else {
             // First time setting up - treat as initial
             switchReason = .initial
@@ -179,21 +186,30 @@ final class ConversationMonitor {
         case initial
         case providerChange
         case userSelection
+        case newConversation
     }
 
     private func switchToSession(_ session: TranscriptSession, reason: SessionSwitchReason) async {
         tearDownFileWatcher()
 
+        let previousSessionId = currentSessionId
         activeSession = session
         currentConversationFile = session.fileURL
+        currentSessionId = session.identifier
 
-        // Clear state for new session - generate new epoch to invalidate in-flight tasks
+        // Clear per-session state - generate new epoch to invalidate in-flight tasks
         sessionEpoch = UUID()
-        entries.removeAll()
         lastProcessedLine = 0
         seenMessageUUIDs.removeAll()
         didEmitSessionStart = false
         lastError = nil
+
+        // DON'T clear entries - we preserve history across sessions
+        // Only trim to max retention limit
+        let maxRetention = 100
+        if entries.count > maxRetention {
+            entries = Array(entries.suffix(maxRetention))
+        }
 
         // Load cache for this conversation BEFORE processing
         do {
@@ -212,7 +228,8 @@ final class ConversationMonitor {
             summary: "Initializing timeline…",
             detail: "Loading conversation history",
             sourceContext: makeSourceContext(identifier: "system-initializing"),
-            sourceIdentifier: "system-initializing"
+            sourceIdentifier: "system-initializing",
+            sessionId: session.identifier
         )
         entries.append(placeholderEntry)
 
@@ -223,10 +240,12 @@ final class ConversationMonitor {
         entries.removeAll { $0.sourceIdentifier == "system-initializing" }
 
         // Add system message at the END (most recent position)
+        // Only add separator if we're switching from a different session
         if reason == .initial {
             ensureSessionStartEntry()
-        } else if reason == .providerChange {
-            emitProviderSwitchEntry(for: session)
+        } else if previousSessionId != session.identifier {
+            // Switching to a different session - add separator
+            emitProviderSwitchEntry(for: session, reason: reason)
         }
     }
 
@@ -274,7 +293,31 @@ final class ConversationMonitor {
         conversationFileDescriptor = -1
     }
 
-    private func emitProviderSwitchEntry(for session: TranscriptSession) {
+    /// Detects if a conversation session is brand new based on file age and content
+    private func isNewConversation(_ session: TranscriptSession) -> Bool {
+        let fileURL = session.fileURL
+
+        // Check file creation/modification time (if created in last 5 seconds, likely new)
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+           let modDate = attrs[.modificationDate] as? Date {
+            let age = Date().timeIntervalSince(modDate)
+            if age < 5 {
+                return true
+            }
+        }
+
+        // Check line count (if fewer than 3 lines, likely new)
+        if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+            let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
+            if lines.count < 3 {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private func emitProviderSwitchEntry(for session: TranscriptSession, reason: SessionSwitchReason) {
         let sourceId = "provider-switch-\(session.identifier)"
 
         // Deduplicate: don't add if we already have this exact system message
@@ -283,14 +326,19 @@ final class ConversationMonitor {
             return
         }
 
-        let providerName: String
-        switch session.provider {
-        case .claudeCode: providerName = "Claude Code"
-        case .codexCLI: providerName = "Codex CLI"
-        case .other: providerName = "AI Source"
+        let icon = session.provider.icon
+        let providerName = session.provider.displayName
+
+        let summary: String
+        switch reason {
+        case .newConversation:
+            summary = "\(icon) Switched to a new \(providerName) conversation"
+        case .userSelection, .providerChange:
+            summary = "\(icon) Switched to \(providerName) conversation"
+        case .initial:
+            summary = "\(icon) Timeline monitoring started for \(providerName)"
         }
 
-        let summary = "Switched to \(providerName) conversation"
         let detail = """
         Timeline switched to \(providerName) conversation
 
@@ -310,7 +358,9 @@ final class ConversationMonitor {
             detail: detail,
             sourceContent: detail,
             sourceContext: context,
-            sourceIdentifier: sourceId
+            sourceIdentifier: sourceId,
+            action: .revealInInventory(transcriptPath: session.fileURL.path),
+            sessionId: session.identifier
         )
 
         entries.append(entry)
@@ -672,7 +722,8 @@ final class ConversationMonitor {
             sourceIdentifier: uuid,  // Use raw UUID for consistency
             isCompletion: false,
             isDirective: summaryResult.isDirective,
-            requestId: nil
+            requestId: nil,
+            sessionId: currentSessionId
         )
 
         appendEntryIfCurrentEpoch(epoch, entry: entry)
@@ -810,7 +861,8 @@ final class ConversationMonitor {
             sourceIdentifier: uuid,  // Use raw UUID for cache key matching
             isCompletion: rendered.isCompletion,
             isDirective: rendered.isDirective,
-            requestId: requestId
+            requestId: requestId,
+            sessionId: currentSessionId
         )
 
         appendEntryIfCurrentEpoch(epoch, entry: entry)
@@ -882,11 +934,16 @@ final class ConversationMonitor {
     private func ensureSessionStartEntry() {
         guard !didEmitSessionStart else { return }
         didEmitSessionStart = true
-        let summary = "Timeline monitoring started"
+
+        let provider = activeSession?.provider ?? .other
+        let icon = provider.icon
+        let providerName = provider.displayName
+
+        let summary = "\(icon) Timeline monitoring started for \(providerName)"
         let detail: String
         if let fileURL = currentConversationFile {
             detail = """
-            Timeline monitoring started
+            Timeline monitoring started for \(providerName)
 
             Monitoring: \(fileURL.lastPathComponent)
             Path: \(fileURL.path)
@@ -894,13 +951,22 @@ final class ConversationMonitor {
         } else {
             detail = "Timeline monitoring started (no conversation file found yet)"
         }
+        let action: TimelineEntryAction
+        if let fileURL = currentConversationFile {
+            action = .revealInInventory(transcriptPath: fileURL.path)
+        } else {
+            action = .none
+        }
+
         let entry = TimelineEntry(
             kind: .system,
             summary: summary,
             detail: detail,
             sourceContent: detail,
             sourceContext: makeSourceContext(identifier: "system-start"),
-            sourceIdentifier: "system-start"
+            sourceIdentifier: "system-start",
+            action: action,
+            sessionId: currentSessionId
         )
         entries.append(entry)
     }

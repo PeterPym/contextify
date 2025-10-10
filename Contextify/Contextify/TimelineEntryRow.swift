@@ -1,6 +1,10 @@
 import SwiftUI
 import AppKit
 
+extension Notification.Name {
+    static let revealTranscript = Notification.Name("revealTranscript")
+}
+
 struct TimelineEntryRow: View {
     let entry: TimelineEntry
     let allEntries: [TimelineEntry]
@@ -8,6 +12,7 @@ struct TimelineEntryRow: View {
 
     @State private var isExpanded = false
     @State private var showCopiedToast = false
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -97,6 +102,14 @@ struct TimelineEntryRow: View {
                 }
             }
             Spacer()
+            if case .revealInInventory = entry.action {
+                Button(action: revealInInventory) {
+                    Image(systemName: "arrow.up.forward.square")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .help("Reveal in transcript inventory")
+            }
             Button(action: { copy(entry.markdownPayload()) }) {
                 Image(systemName: "doc.on.doc")
                     .font(.caption)
@@ -137,6 +150,20 @@ struct TimelineEntryRow: View {
                 showCopiedToast = false
             }
         }
+    }
+
+    private func revealInInventory() {
+        guard case .revealInInventory(let transcriptPath) = entry.action else { return }
+
+        // Open the inventory window
+        openWindow(id: "transcript-inventory")
+
+        // Post notification to select the transcript
+        NotificationCenter.default.post(
+            name: .revealTranscript,
+            object: nil,
+            userInfo: ["path": transcriptPath]
+        )
     }
 }
 

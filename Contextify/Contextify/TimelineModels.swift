@@ -14,6 +14,11 @@ enum TimelineEntryKind: String, Codable, Sendable {
     }
 }
 
+enum TimelineEntryAction: Hashable, Sendable {
+    case none
+    case revealInInventory(transcriptPath: String)
+}
+
 struct TimelineEntry: Identifiable, Hashable, Sendable {
     let id: UUID
     let kind: TimelineEntryKind
@@ -27,6 +32,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let isCompletion: Bool
     let isDirective: Bool
     let requestId: UUID?
+    let action: TimelineEntryAction
+    let sessionId: String?  // Identifies which session this entry belongs to
 
     init(
         id: UUID = UUID(),
@@ -40,7 +47,9 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         isError: Bool = false,
         isCompletion: Bool = false,
         isDirective: Bool = false,
-        requestId: UUID? = nil
+        requestId: UUID? = nil,
+        action: TimelineEntryAction = .none,
+        sessionId: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -54,6 +63,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.isCompletion = isCompletion
         self.isDirective = isDirective
         self.requestId = requestId
+        self.action = action
+        self.sessionId = sessionId
     }
 }
 
@@ -62,6 +73,28 @@ struct TimelineSourceContext: Hashable, Sendable {
         case claudeCode = "claude.code"
         case codexCLI = "codex.cli"
         case other
+
+        var icon: String {
+            switch self {
+            case .claudeCode:
+                return "🟠"
+            case .codexCLI:
+                return "🌀"
+            case .other:
+                return "🔄"
+            }
+        }
+
+        var displayName: String {
+            switch self {
+            case .claudeCode:
+                return "Claude Code"
+            case .codexCLI:
+                return "Codex CLI"
+            case .other:
+                return "AI Source"
+            }
+        }
     }
 
     let provider: Provider

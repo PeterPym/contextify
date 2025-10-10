@@ -134,6 +134,17 @@ struct TranscriptInventoryView: View {
         // Load metadata on initial appearance
         await loadMetadataForSessions(monitor.allSessions)
       }
+      .onReceive(NotificationCenter.default.publisher(for: .revealTranscript)) { notification in
+        guard let path = notification.userInfo?["path"] as? String else { return }
+
+        // Find session with matching path
+        if let session = monitor.allSessions.first(where: { $0.fileURL.path == path }) {
+          // Select the session
+          selectedSessionURL = session.fileURL
+
+          // TODO: Add scroll-to-item logic when List supports programmatic scrolling
+        }
+      }
     }
   }
 
