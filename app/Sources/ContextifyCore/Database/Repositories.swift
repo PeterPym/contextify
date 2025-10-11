@@ -286,7 +286,7 @@ public final class MetadataRepositoryImpl: MetadataRepository {
   public func stale(promptVersion: Int, generatorVersion: Int) throws -> [String] {
     try db.read { db in
       try TranscriptMetadataRecord
-        .filter(Column("prompt_version") < promptVersion || Column("generator_version") < generatorVersion)
+        .filter(sql: "prompt_version < ? OR generator_version < ?", arguments: [promptVersion, generatorVersion])
         .fetchAll(db)
         .map { $0.transcriptId }
     }
