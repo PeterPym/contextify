@@ -1,7 +1,7 @@
 # Repository Guidelines
 
-**For AI Agents:** This file provides guidance for all AI coding assistants (Claude Code, Codex, etc.) working with code in this repository.
-
+DO NOT attribute work to Claude or Codex in commit messages, or as a co-author.
+ 
 ## Project Overview
 
 Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It ingests dropped files or URLs, creates timestamped Markdown artifacts, provides checkpoints, and monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries. Built with Swift 6 + SwiftUI on Xcode 16 (macOS 26 SDK, minimum deployment macOS 14/15).
