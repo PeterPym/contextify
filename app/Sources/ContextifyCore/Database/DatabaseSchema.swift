@@ -75,28 +75,34 @@ enum DatabaseSchema {
     try db.create(index: "idx_entries_project_time", on: "transcript_entries", columns: ["project_id", "timestamp"], ifNotExists: true)
     try db.create(index: "idx_entries_project_feed", on: "transcript_entries", columns: ["project_id", "timestamp"], ifNotExists: true, condition: "display_in_timeline = 1")
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
-    try db.create(index: "idx_entries_completion", on: "transcript_entries", columns: ["project_id", "is_completion", "timestamp"], ifNotExists: true, condition: "is_completion = 1")
+    // Completion index with DESC for ORDER BY performance
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_entries_completion
+      ON transcript_entries(project_id, is_completion, timestamp DESC)
+      WHERE is_completion = 1
+    """)
 
-    // Timeline cache table
-    try db.create(table: "timeline_cache", ifNotExists: true) { t in
-      t.column("content_sha256", .text).notNull()
-      t.column("window_sha256", .text).notNull()
-      t.column("entry_id", .text).notNull().references("transcript_entries", onDelete: .cascade)
-      t.column("generator_signature", .text).notNull()
-      t.column("disposition", .text).notNull()
-      t.column("present_form", .text).notNull()
-      t.column("past_form", .text).notNull()
-      t.column("selected_form", .text).notNull().check(sql: "selected_form IN ('present','past')")
-      t.column("verb_lemma", .text)
-      t.column("generated_at", .integer).notNull()
-      t.column("user_edited", .integer).notNull().defaults(to: 0)
-      t.column("user_text", .text)
-      t.column("edited_at", .integer)
-      t.column("request_id", .text)
-      t.column("duration", .double)
-
-      t.primaryKey(["content_sha256", "window_sha256"])
-    }
+    // Timeline cache table (WITHOUT ROWID for composite PK optimization)
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS timeline_cache (
+        content_sha256 TEXT NOT NULL,
+        window_sha256 TEXT NOT NULL,
+        entry_id TEXT NOT NULL REFERENCES transcript_entries(id) ON DELETE CASCADE,
+        generator_signature TEXT NOT NULL,
+        disposition TEXT NOT NULL,
+        present_form TEXT NOT NULL,
+        past_form TEXT NOT NULL,
+        selected_form TEXT NOT NULL CHECK (selected_form IN ('present','past')),
+        verb_lemma TEXT,
+        generated_at INTEGER NOT NULL,
+        user_edited INTEGER NOT NULL DEFAULT 0,
+        user_text TEXT,
+        edited_at INTEGER,
+        request_id TEXT,
+        duration REAL,
+        PRIMARY KEY (content_sha256, window_sha256)
+      ) WITHOUT ROWID
+    """)
     try db.create(index: "idx_cache_entry_window", on: "timeline_cache", columns: ["entry_id", "window_sha256"], unique: true, ifNotExists: true)
 
     // Transcript metadata table
