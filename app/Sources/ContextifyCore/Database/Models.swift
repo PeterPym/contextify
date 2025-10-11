@@ -36,6 +36,7 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord {
   public var lineCount: Int
   public var bookmark: Data?
   public var lastProcessedLine: Int
+  public var lastProcessedEntryId: String?
   public var parserVersion: Int
   public var status: String
   public var lastError: String?
@@ -55,6 +56,7 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord {
     case lineCount = "line_count"
     case bookmark
     case lastProcessedLine = "last_processed_line"
+    case lastProcessedEntryId = "last_processed_entry_id"
     case parserVersion = "parser_version"
     case status
     case lastError = "last_error"

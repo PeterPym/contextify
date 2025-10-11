@@ -23,14 +23,80 @@ enum DatabaseSchema {
         t.add(column: "window_sha256", .text)
       }
 
-      // Covering index for feed+cache join (single round trip)
+      // Expanded covering index for feed+cache join (eliminates table lookups)
       try db.create(
         index: "idx_entries_feed_cover",
         on: "transcript_entries",
-        columns: ["project_id", "timestamp", "content_sha256", "window_sha256"],
+        columns: [
+          "project_id",
+          "timestamp",
+          "content_sha256",
+          "window_sha256",
+          "id",
+          "kind",
+          "is_completion",
+          "session_id"
+        ],
         ifNotExists: true,
         condition: "display_in_timeline = 1"
       )
+    }
+
+    // v2: Resume checkpoint for correct window state across restarts
+    migrator.registerMigration("v2_resume_checkpoint") { db in
+      try db.alter(table: "transcripts") { t in
+        t.add(column: "last_processed_entry_id", .text)
+      }
+
+      // Best-effort backfill: set to last chronological entry per transcript
+      let tids = try String.fetchAll(db, sql: "SELECT id FROM transcripts")
+      for tid in tids {
+        if let lastId = try String.fetchOne(
+          db,
+          sql: """
+            SELECT id FROM transcript_entries
+            WHERE transcript_id = ?
+            ORDER BY timestamp DESC, created_at DESC, id DESC
+            LIMIT 1
+          """,
+          arguments: [tid]
+        ) {
+          try db.execute(
+            sql: "UPDATE transcripts SET last_processed_entry_id = ? WHERE id = ?",
+            arguments: [lastId, tid]
+          )
+        }
+      }
+    }
+
+    // v2: Backfill window fields for existing data
+    migrator.registerMigration("v2_window_sha_backfill") { db in
+      let tids = try String.fetchAll(db, sql: "SELECT id FROM transcripts")
+      for tid in tids {
+        let rows = try Row.fetchAll(db, sql: """
+          SELECT id
+          FROM transcript_entries
+          WHERE transcript_id = ?
+          ORDER BY timestamp ASC, created_at ASC, id ASC
+        """, arguments: [tid])
+
+        var prev2: String? = nil
+        var prev1: String? = nil
+        for r in rows {
+          let id: String = r["id"]
+          let win = SHA256Utils.computeWindowSHA256(prev2: prev2, prev1: prev1)
+          try db.execute(
+            sql: """
+              UPDATE transcript_entries
+              SET prev2_id = ?, prev1_id = ?, window_sha256 = ?
+              WHERE id = ?
+            """,
+            arguments: [prev2, prev1, win, id]
+          )
+          prev2 = prev1
+          prev1 = id
+        }
+      }
     }
 
     return migrator

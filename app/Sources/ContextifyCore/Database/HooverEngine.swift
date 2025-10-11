@@ -133,7 +133,31 @@ public final class HooverEngine {
     var batch: [EntryInsert] = []
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
-    var previousEntries: [String] = [] // Track last 2 entry IDs for window computation
+
+    // Seed previousEntries from last processed entry for correct window state on resume
+    var previousEntries: [String] = []
+    if let lastId = transcript.lastProcessedEntryId {
+      // Seed from the last processed entry (and its prev1)
+      if let last = try? db.read({ db in try TranscriptEntry.fetchOne(db, key: lastId) }) {
+        var seed: [String] = []
+        if let p1 = last.prev1Id { seed.append(p1) } // oldest first
+        seed.append(last.id)
+        previousEntries = seed
+      }
+    } else {
+      // Fresh transcript or old DB: seed with last two existing (if any)
+      let seed = try db.read { db in
+        try Row.fetchAll(db, sql: """
+          SELECT id FROM transcript_entries
+          WHERE transcript_id = ?
+          ORDER BY timestamp DESC, created_at DESC, id DESC
+          LIMIT 2
+        """, arguments: [transcript.id])
+        .compactMap { $0["id"] as String? }
+        .reversed()
+      }
+      previousEntries = Array(seed.suffix(2))
+    }
 
     let nl: UInt8 = 0x0A // '\n'
 
@@ -315,10 +339,12 @@ public final class HooverEngine {
         )
       """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
 
-      // Update transcript checkpoint
+      // Update transcript checkpoint with last processed entry ID
+      let lastEntryId = entries.last?.id
       try db.execute(sql: """
         UPDATE transcripts
         SET last_processed_line = ?,
+            last_processed_entry_id = ?,
             line_count = ?,
             parser_version = ?,
             status = 'active',
@@ -327,6 +353,7 @@ public final class HooverEngine {
         WHERE id = ?
       """, arguments: [
         lastProcessedLine,
+        lastEntryId,
         lineCount,
         1,
         Int(Date().timeIntervalSince1970),

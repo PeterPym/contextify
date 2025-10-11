@@ -18,10 +18,11 @@ public enum SHA256Utils {
   }
 
   /// Computes window SHA256 for timeline cache
-  /// N=2 for v1 (two previous entry IDs)
+  /// Explicit versioned format: "win:v1|{prev2}|{prev1}"
+  /// Uses "-" for nil entries to ensure stable cache keys
   public static func computeWindowSHA256(prev2: String?, prev1: String?) -> String {
-    let window = [prev2 ?? "", prev1 ?? ""].joined(separator: "|")
-    return hash(window)
+    let s = "win:v1|\(prev2 ?? "-")|\(prev1 ?? "-")"
+    return hash(s)
   }
 
   /// Incremental SHA256 hasher for streaming transcript hashing
