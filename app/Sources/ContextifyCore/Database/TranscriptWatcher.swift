@@ -64,7 +64,7 @@ public final class TranscriptWatcher {
 
   /// Stop all watchers
   public func stopAll() {
-    for (transcriptId, _) in watchers {
+    for transcriptId in Array(watchers.keys) {
       stopWatching(transcriptId: transcriptId)
     }
   }
@@ -82,11 +82,12 @@ public final class TranscriptWatcher {
     debounceTimers[transcriptId] = timer
   }
 
-  /// Process file change after debounce
+  /// Process file change after debounce (runs off main thread)
   private func processFileChange(transcriptId: String, fileURL: URL) {
-    Task { @MainActor in
+    Task.detached(priority: .utility) { [weak self] in
+      guard let self else { return }
       do {
-        guard let transcript = try transcriptRepo.get(transcriptId) else {
+        guard let transcript = try self.transcriptRepo.get(transcriptId) else {
           log.error("Transcript not found: \(transcriptId)")
           return
         }
@@ -94,17 +95,19 @@ public final class TranscriptWatcher {
         log.debug("Processing file change for transcript: \(transcriptId)")
 
         // Stream new lines using hoover engine (it will resume from checkpoint)
-        try hooverEngine.hooverTranscript(
+        _ = try self.hooverEngine.hooverTranscript(
           transcript,
           fileURL: fileURL,
           progress: NoOpProgressSink()
         )
 
-        // Notify observers
-        NotificationCenter.default.post(
-          name: NSNotification.Name("TranscriptUpdated"),
-          object: transcriptId
-        )
+        // Notify observers on main thread
+        await MainActor.run {
+          NotificationCenter.default.post(
+            name: NSNotification.Name("TranscriptUpdated"),
+            object: transcriptId
+          )
+        }
 
         log.debug("Streamed new content for transcript: \(transcriptId)")
       } catch {
