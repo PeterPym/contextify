@@ -225,6 +225,93 @@ make test
 bash scripts/xc.sh test
 ```
 
+## Inspecting the Database
+
+### Recommended macOS Tools
+
+**1. DB Browser for SQLite (Free, Open Source)**
+- Download: https://sqlitebrowser.org
+- Best for: Browsing tables, running queries, viewing schema
+- Install: `brew install --cask db-browser-for-sqlite`
+- Open: `/Users/rob/Library/Application Support/Contextify/transcripts.db`
+
+**2. TablePlus (Free tier available)**
+- Download: https://tableplus.com
+- Best for: Beautiful UI, real-time updates, query tabs
+- Install: `brew install --cask tableplus`
+- Supports live refresh when database changes
+
+**3. DataGrip (JetBrains, paid)**
+- Download: https://www.jetbrains.com/datagrip/
+- Best for: Advanced SQL IDE, autocomplete, refactoring
+- Install: `brew install --cask datagrip`
+
+**4. Command Line (Built-in)**
+```bash
+# Open SQLite CLI
+sqlite3 ~/Library/Application\ Support/Contextify/transcripts.db
+
+# Useful commands:
+.tables                    # List all tables
+.schema transcript_entries # Show table schema
+SELECT COUNT(*) FROM transcript_entries;
+SELECT * FROM transcript_entries ORDER BY timestamp DESC LIMIT 10;
+.quit
+```
+
+### Useful Queries
+
+```sql
+-- Recent entries by project
+SELECT e.content, e.timestamp, e.kind
+FROM transcript_entries e
+WHERE e.project_id = 'YOUR-PROJECT-ID'
+ORDER BY e.timestamp DESC
+LIMIT 20;
+
+-- Parse errors
+SELECT transcript_id, line_number, error_message
+FROM parse_errors
+ORDER BY created_at DESC;
+
+-- Timeline cache hit rate
+SELECT
+  (SELECT COUNT(*) FROM timeline_cache) as cached,
+  (SELECT COUNT(*) FROM transcript_entries) as total;
+
+-- Transcripts by status
+SELECT provider, status, COUNT(*)
+FROM transcripts
+GROUP BY provider, status;
+
+-- Denormalization invariant check (should return no rows)
+SELECT e.id
+FROM transcript_entries e
+LEFT JOIN transcripts t ON t.id = e.transcript_id
+WHERE t.project_id IS NULL OR e.project_id <> t.project_id
+LIMIT 1;
+```
+
+### Live Monitoring
+
+For real-time updates while the app runs, use **TablePlus**:
+1. Open the database in TablePlus
+2. Enable auto-refresh (⌘R or View → Auto Refresh)
+3. Set refresh interval to 1-2 seconds
+4. Run your app and watch entries appear in real-time!
+
+### Export Data
+
+```bash
+# Export to CSV
+sqlite3 -header -csv transcripts.db \
+  "SELECT * FROM transcript_entries LIMIT 1000" \
+  > entries.csv
+
+# Export entire database to SQL
+sqlite3 transcripts.db .dump > backup.sql
+```
+
 ## Troubleshooting
 
 ### "Database is locked"
