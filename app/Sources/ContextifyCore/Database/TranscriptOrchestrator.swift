@@ -165,6 +165,11 @@ public final class TranscriptOrchestrator {
     try entryRepo.search(content: content, projectId: projectId)
   }
 
+  // v2: Single-query feed with cache join
+  public func getRecentFeed(forProject projectId: String, limit: Int = 50) throws -> [(TranscriptEntry, TimelineCache?)] {
+    try entryRepo.recentFeed(projectId: projectId, limit: limit)
+  }
+
   // MARK: - Cache Management
 
   public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {

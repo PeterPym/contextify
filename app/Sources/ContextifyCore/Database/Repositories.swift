@@ -211,6 +211,9 @@ public protocol EntryRepository {
   func newByProject(_ projectId: String, afterTimestamp: Int) throws -> [TranscriptEntry]
   func byTranscript(_ transcriptId: String, afterTimestamp: Int?) throws -> [TranscriptEntry]
   func search(content: String, projectId: String?) throws -> [TranscriptEntry]
+
+  // v2: Single-query feed with cache join
+  func recentFeed(projectId: String, limit: Int) throws -> [(TranscriptEntry, TimelineCache?)]
 }
 
 public final class EntryRepositoryImpl: EntryRepository {
@@ -270,6 +273,60 @@ public final class EntryRepositoryImpl: EntryRepository {
         query = query.filter(Column("project_id") == projectId)
       }
       return try query.order(Column("timestamp").desc).fetchAll(db)
+    }
+  }
+
+  public func recentFeed(projectId: String, limit: Int) throws -> [(TranscriptEntry, TimelineCache?)] {
+    try db.read { db in
+      let sql = """
+        SELECT
+          e.*,
+          c.present_form,
+          c.past_form,
+          c.selected_form,
+          c.disposition,
+          c.verb_lemma,
+          c.user_edited,
+          c.user_text,
+          c.generator_signature
+        FROM transcript_entries e
+        LEFT JOIN timeline_cache c
+          ON c.content_sha256 = e.content_sha256
+         AND c.window_sha256  = e.window_sha256
+        WHERE e.project_id = ?
+          AND e.display_in_timeline = 1
+        ORDER BY e.timestamp DESC
+        LIMIT ?
+      """
+
+      return try Row.fetchAll(db, sql: sql, arguments: [projectId, limit]).map { row in
+        let entry = TranscriptEntry(row: row)
+
+        // Check if cache fields present
+        let cache: TimelineCache? = if row["present_form"] != nil {
+          TimelineCache(
+            contentSha256: entry.contentSha256,
+            windowSha256: entry.windowSha256 ?? "",
+            entryId: entry.id,
+            generatorSignature: row["generator_signature"] as? String ?? "",
+            disposition: row["disposition"] as? String ?? "active",
+            presentForm: row["present_form"] as? String ?? "",
+            pastForm: row["past_form"] as? String ?? "",
+            selectedForm: row["selected_form"] as? String ?? "present",
+            verbLemma: row["verb_lemma"] as? String,
+            generatedAt: 0,
+            userEdited: row["user_edited"] as? Int ?? 0,
+            userText: row["user_text"] as? String,
+            editedAt: nil,
+            requestId: nil,
+            duration: nil
+          )
+        } else {
+          nil
+        }
+
+        return (entry, cache)
+      }
     }
   }
 }
