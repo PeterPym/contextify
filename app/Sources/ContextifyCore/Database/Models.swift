@@ -125,7 +125,7 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
 
 // MARK: - Timeline Cache
 
-public struct TimelineCache: Codable, FetchableRecord, PersistableRecord {
+public struct TimelineCache: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var contentSha256: String
   public var windowSha256: String
   public var entryId: String
@@ -141,6 +141,40 @@ public struct TimelineCache: Codable, FetchableRecord, PersistableRecord {
   public var editedAt: Int?
   public var requestId: String?
   public var duration: Double?
+
+  public init(
+    contentSha256: String,
+    windowSha256: String,
+    entryId: String,
+    generatorSignature: String,
+    disposition: String,
+    presentForm: String,
+    pastForm: String,
+    selectedForm: String,
+    verbLemma: String? = nil,
+    generatedAt: Int,
+    userEdited: Int,
+    userText: String? = nil,
+    editedAt: Int? = nil,
+    requestId: String? = nil,
+    duration: Double? = nil
+  ) {
+    self.contentSha256 = contentSha256
+    self.windowSha256 = windowSha256
+    self.entryId = entryId
+    self.generatorSignature = generatorSignature
+    self.disposition = disposition
+    self.presentForm = presentForm
+    self.pastForm = pastForm
+    self.selectedForm = selectedForm
+    self.verbLemma = verbLemma
+    self.generatedAt = generatedAt
+    self.userEdited = userEdited
+    self.userText = userText
+    self.editedAt = editedAt
+    self.requestId = requestId
+    self.duration = duration
+  }
 
   public static let databaseTableName = "timeline_cache"
   public static let databaseColumnCount = 15
