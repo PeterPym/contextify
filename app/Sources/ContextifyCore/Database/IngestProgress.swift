@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - Progress Protocol
 
@@ -72,5 +73,3 @@ public final class LoggingProgressSink: IngestProgressSink {
     log.info("Completed project: \(name)")
   }
 }
-
-import OSLog

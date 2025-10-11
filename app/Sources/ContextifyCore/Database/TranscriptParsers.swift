@@ -126,10 +126,13 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
   }
 
   private func mapKind(_ type: String) -> String {
-    switch type {
+    switch type.lowercased() {
     case "user": return "user"
     case "assistant": return "assistant"
-    default: return "system"
+    case "system": return "system"
+    default:
+      // Unknown types default to system to avoid DB constraint violations
+      return "system"
     }
   }
 
@@ -220,15 +223,8 @@ public struct CodexLineParser: TranscriptLineParser {
       return ""
     }
 
-    return arr.compactMap { block -> String? in
-      if let text = block["input_text"] as? String {
-        return text
-      } else if let text = block["output_text"] as? String {
-        return text
-      } else if let text = block["text"] as? String {
-        return text
-      }
-      return nil
+    return arr.compactMap { block in
+      block["text"] as? String
     }.joined(separator: "\n")
   }
 
