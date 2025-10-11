@@ -359,6 +359,71 @@ final class DatabaseTests: XCTestCase {
 
   // MARK: - Crash Recovery Tests
 
+  // MARK: - Denormalization Tests
+
+  func testDenormalizationInvariant() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in try DatabaseSchema.migrate(db) }
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+
+    // Create project and transcript
+    let projectId = try projectRepo.create(name: "Test", rootPath: "/test", bookmark: nil)
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: URL(fileURLWithPath: "/test/t.jsonl"),
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: nil
+    )
+
+    // Create entry
+    let now = Int(Date().timeIntervalSince1970)
+    let entry = TranscriptEntry(
+      id: UUID().uuidString,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      sessionId: nil,
+      provider: "claude.code",
+      kind: "user",
+      timestamp: now,
+      content: "Test",
+      contentSha256: SHA256Utils.hash("Test"),
+      summary: nil,
+      disposition: nil,
+      displayInTimeline: 1,
+      isCompletion: 0,
+      isDirective: 0,
+      parentId: nil,
+      gitBranch: nil,
+      gitCommit: nil,
+      cwd: nil,
+      createdAt: now,
+      updatedAt: now
+    )
+    try entryRepo.insertBatch([entry])
+
+    // Run denormalization invariant check (should return no rows)
+    let row = try pool.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT e.id
+        FROM transcript_entries e
+        LEFT JOIN transcripts t ON t.id = e.transcript_id
+        WHERE t.project_id IS NULL OR e.project_id <> t.project_id
+        LIMIT 1
+      """)
+    }
+
+    XCTAssertNil(row, "Denormalization invariant violated")
+  }
+
   func testCrashRecovery() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
     var config = Configuration()
