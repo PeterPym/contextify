@@ -245,7 +245,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       try TranscriptEntry
         .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
-        .order(Column("timestamp").desc)
+        .order(Column("timestamp").desc, Column("created_at").desc, Column("id").desc)
         .limit(limit)
         .fetchAll(db)
     }
@@ -255,7 +255,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       try TranscriptEntry
         .filter(Column("project_id") == projectId && Column("timestamp") > afterTimestamp && Column("display_in_timeline") == 1)
-        .order(Column("timestamp").asc)
+        .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
         .fetchAll(db)
     }
   }
@@ -297,7 +297,7 @@ public final class EntryRepositoryImpl: EntryRepository {
          AND c.generator_signature = ?
         WHERE e.project_id = ?
           AND e.display_in_timeline = 1
-        ORDER BY e.timestamp DESC, e.id DESC
+        ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
         LIMIT ?
       """
 
