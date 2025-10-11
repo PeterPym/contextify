@@ -123,6 +123,22 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
   }
 }
 
+// MARK: - Cache Key
+
+public struct CacheKey: Hashable, Sendable {
+  public let content: String
+  public let window: String
+
+  public init(content: String, window: String) {
+    self.content = content
+    self.window = window
+  }
+
+  public var compositeKey: String {
+    "\(content)|\(window)"
+  }
+}
+
 // MARK: - Timeline Cache
 
 public struct TimelineCache: Codable, FetchableRecord, PersistableRecord, Sendable {

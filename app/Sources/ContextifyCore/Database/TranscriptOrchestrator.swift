@@ -180,8 +180,16 @@ public final class TranscriptOrchestrator {
     try cacheRepo.getMany(keys: keys)
   }
 
+  public func getCachedTimelineManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache] {
+    try cacheRepo.getManyWithSignature(keys: keys, generatorSignature: generatorSignature)
+  }
+
   public func saveCachedTimeline(_ cache: TimelineCache) throws {
     try cacheRepo.upsert(cache)
+  }
+
+  public func saveCachedTimelineMany(_ caches: [TimelineCache]) throws {
+    try cacheRepo.upsertMany(caches)
   }
 
   // MARK: - Metadata Management
