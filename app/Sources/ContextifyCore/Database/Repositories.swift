@@ -21,12 +21,13 @@ public final class ProjectRepositoryImpl: ProjectRepository {
   public func create(name: String?, rootPath: String, bookmark: Data?) throws -> String {
     let id = UUID().uuidString
     let now = Int(Date().timeIntervalSince1970)
+    let canonPath = PathUtils.canonicalizePath(rootPath)
 
     try db.write { db in
       let project = Project(
         id: id,
         name: name,
-        rootPath: rootPath,
+        rootPath: canonPath,
         rootBookmark: bookmark,
         createdAt: now,
         updatedAt: now
