@@ -53,9 +53,14 @@ final class ConversationMonitor {
     @ObservationIgnored private var currentProjectId: String?  // SQL project ID
     @ObservationIgnored private var lastSeenTimestamp: Int?  // Last timestamp seen for incremental updates
     @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
+    @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance
+    @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
+    @ObservationIgnored private var pendingNotificationTask: Task<Void, Never>?  // For debouncing
+    @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
 
     private init() {}
 
+    @MainActor
     func startMonitoring() {
         guard !isMonitoring else { return }
 
@@ -67,23 +72,24 @@ final class ConversationMonitor {
             // 1. Get project from HUD
             guard let projectRoot = HUDViewModel.shared.projectRootURL else {
                 self.lastError = "No project root set"
-                log.error("No project root URL available from HUDViewModel")
+                self.log.error("No project root URL available from HUDViewModel")
                 return
             }
 
-            // 2. Get or create project in SQL
+            // 2. Initialize shared orchestrator
             do {
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
 
-                self.currentProjectId = try orchestrator.getOrCreateProject(
+                self.currentProjectId = try self.orchestrator.getOrCreateProject(
                     name: projectRoot.lastPathComponent,
                     rootPath: projectRoot.path
                 )
 
                 // 3. Background discover + hoover of new transcripts
-                Task.detached(priority: .userInitiated) {
+                self.discoveryTask = Task.detached(priority: .userInitiated) { [weak self] in
+                    guard let self else { return }
                     do {
-                        try await self.discoverNewTranscripts(projectId: self.currentProjectId!, orchestrator: orchestrator)
+                        try await self.discoverNewTranscripts(projectId: self.currentProjectId!, orchestrator: self.orchestrator)
                     } catch {
                         await MainActor.run {
                             self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
@@ -106,47 +112,105 @@ final class ConversationMonitor {
         }
     }
 
+    @MainActor
     func stopMonitoring() {
         isMonitoring = false
         activeSession = nil
         conversationResolverTask?.cancel()
         conversationResolverTask = nil
+        pendingNotificationTask?.cancel()
+        pendingNotificationTask = nil
+        discoveryTask?.cancel()
+        discoveryTask = nil
+
         if let observer = notificationObserver {
             NotificationCenter.default.removeObserver(observer)
             notificationObserver = nil
         }
-        // Stop all watchers
-        if let projectId = currentProjectId {
-            do {
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                orchestrator.stopAllWatchers()
-            } catch {
-                log.error("Failed to stop watchers: \(error.localizedDescription, privacy: .public)")
-            }
+
+        // Stop all watchers using shared orchestrator
+        if orchestrator != nil {
+            orchestrator.stopAllWatchers()
         }
+
+        // Clear state
+        seenEntryIDs.removeAll()
+        lastSeenTimestamp = nil
+        currentProjectId = nil
     }
 
+    @MainActor
     func toggleCollapsed() {
         isCollapsed.toggle()
     }
 
+    @MainActor
     func clearEntries() {
         entries.removeAll()
         didEmitSessionStart = false
         lastSeenTimestamp = nil
+        seenEntryIDs.removeAll()
     }
 
+    @MainActor
     func requestImmediateRefresh(trigger: TimelineRefreshTrigger) {
-        Task {
+        Task { @MainActor in
             await loadFeedFromSQL()
         }
     }
 
     /// Public method for user-initiated session switch from transcript inventory
+    @MainActor
     func switchToSessionFromUser(_ session: TranscriptSession) async {
-        // With SQL backend, just reload the feed
-        // TODO: Implement session-specific filtering if needed
-        await loadFeedFromSQL()
+        // Filter by transcript file path
+        guard let projectId = currentProjectId, orchestrator != nil else {
+            log.warning("Cannot switch session: no project or orchestrator")
+            return
+        }
+
+        do {
+            // Find transcript ID by file path
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+            guard let transcript = transcripts.first(where: { $0.filePath == session.fileURL.path }) else {
+                log.warning("No transcript found for session: \(session.fileURL.path)")
+                // Fall back to loading all entries
+                await loadFeedFromSQL()
+                return
+            }
+
+            // Get entries for this specific transcript
+            let transcriptEntries = try orchestrator.getEntries(forTranscript: transcript.id, afterTimestamp: nil)
+
+            // Batch cache lookup for better performance
+            let cacheKeys = transcriptEntries.compactMap { entry -> (String, String)? in
+                guard let windowSha = entry.windowSha256 else { return nil }
+                return (entry.contentSha256, windowSha)
+            }
+
+            let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
+
+            // Map to timeline entries
+            seenEntryIDs.removeAll(keepingCapacity: true)
+            entries = transcriptEntries.map { entry in
+                seenEntryIDs.insert(entry.id)
+                let cacheKey = entry.windowSha256.map { "\(entry.contentSha256)|\($0)" }
+                let cache = cacheKey.flatMap { cacheMap[$0] }
+                return toTimelineEntry(entry, cached: cache)
+            }
+
+            // Update timestamp
+            if let latest = transcriptEntries.first {
+                lastSeenTimestamp = latest.timestamp
+            }
+
+            currentSessionId = session.identifier
+            lastUpdate = Date()
+
+            log.info("Switched to session: \(session.fileURL.lastPathComponent) (\(entries.count) entries)")
+        } catch {
+            lastError = "Failed to switch session: \(error.localizedDescription)"
+            log.error("Session switch failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Public refresh method for manual refresh requests
@@ -195,16 +259,32 @@ final class ConversationMonitor {
         // Use cached summary if available, otherwise fallback
         let summary: String
         if let cache = cached {
-            summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
+            // Honor user edits first
+            if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
+                summary = userText
+            } else {
+                // Use generated forms
+                summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
+            }
         } else {
-            // Fallback for cache miss (will trigger LLM generation)
+            // Fallback for cache miss (will trigger LLM generation in background)
             summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
         }
 
         let disposition = cached.flatMap { Disposition(rawValue: $0.disposition) } ?? .active
 
+        // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
+        let stableId: UUID
+        if let parsed = UUID(uuidString: entry.id) {
+            stableId = parsed
+        } else {
+            // Use UUIDv5 for stable identity from string IDs
+            stableId = UUID(uuidString: "00000000-0000-5000-8000-\(entry.id.prefix(12).padding(toLength: 12, withPad: "0", startingAt: 0))")
+                ?? UUID()
+        }
+
         return TimelineEntry(
-            id: UUID(uuidString: entry.id) ?? UUID(),
+            id: stableId,
             kind: TimelineEntryKind(rawValue: entry.kind) ?? .assistant,
             timestamp: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)),
             summary: summary,
@@ -225,33 +305,43 @@ final class ConversationMonitor {
         )
     }
 
+    @MainActor
     private func loadFeedFromSQL() async {
-        guard let projectId = currentProjectId else { return }
+        guard let projectId = currentProjectId, orchestrator != nil else { return }
 
         isProcessing = true
         defer { isProcessing = false }
 
         do {
+            let startTime = Date()
+
             // Single query gets entries + cache
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
             let feed = try orchestrator.getRecentFeed(
                 forProject: projectId,
                 limit: config.maxEntries,
                 generatorSignature: generatorSignature()
             )
 
-            // Map to UI entries
-            self.entries = feed.map { toTimelineEntry($0.0, cached: $0.1) }
+            // Map to UI entries and track seen IDs
+            seenEntryIDs.removeAll(keepingCapacity: true)
+            self.entries = feed.map { entry, cache in
+                seenEntryIDs.insert(entry.id)
+                return toTimelineEntry(entry, cached: cache)
+            }
 
             // Track latest timestamp for incremental updates
-            if let latest = entries.first {
-                lastSeenTimestamp = Int(latest.timestamp.timeIntervalSince1970)
+            if let latestEntry = feed.first {
+                lastSeenTimestamp = latestEntry.0.timestamp
             }
 
             lastUpdate = Date()
             lastError = nil
 
-            log.info("Loaded \(entries.count) entries from SQL feed")
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > 0.02 {
+                log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
+            }
+            log.info("Loaded \(entries.count) entries from SQL feed in \(Int(elapsed * 1000))ms")
         } catch {
             lastError = "Failed to load timeline: \(error.localizedDescription)"
             log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
@@ -270,40 +360,105 @@ final class ConversationMonitor {
         }
     }
 
+    @MainActor
     private func handleTranscriptUpdate(_ notification: Notification) async {
-        guard let projectId = currentProjectId,
-              let lastTimestamp = lastSeenTimestamp else { return }
+        // Filter by project
+        if let notifProjectId = notification.userInfo?["projectId"] as? String,
+           notifProjectId != currentProjectId {
+            log.debug("Ignoring notification for different project: \(notifProjectId)")
+            return
+        }
+
+        guard let projectId = currentProjectId, orchestrator != nil else {
+            log.warning("Ignoring notification: no project or orchestrator")
+            return
+        }
+
+        // Debounce: cancel pending task and schedule new one
+        pendingNotificationTask?.cancel()
+        pendingNotificationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            // Wait for debounce interval
+            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+            guard !Task.isCancelled else { return }
+
+            await self.processIncrementalUpdate()
+        }
+    }
+
+    @MainActor
+    private func processIncrementalUpdate() async {
+        guard let projectId = currentProjectId, orchestrator != nil else { return }
+
+        // If no lastSeenTimestamp, do full reload instead
+        guard let lastTimestamp = lastSeenTimestamp else {
+            log.info("No lastSeenTimestamp, doing full reload")
+            await loadFeedFromSQL()
+            return
+        }
 
         do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let startTime = Date()
+
+            // Get new entries (strict > to avoid replays)
             let newEntries = try orchestrator.getNewEntries(
                 forProject: projectId,
                 afterTimestamp: lastTimestamp
             )
 
-            guard !newEntries.isEmpty else { return }
+            guard !newEntries.isEmpty else {
+                log.debug("No new entries in incremental update")
+                return
+            }
 
-            // Convert to timeline entries (no cache initially)
-            let timelineEntries = newEntries.map { toTimelineEntry($0, cached: nil) }
+            // Convert to timeline entries with cache lookup
+            // TODO: Batch cache lookup for better performance
+            var addedCount = 0
+            for entry in newEntries {
+                // Deduplicate using seenEntryIDs
+                guard !seenEntryIDs.contains(entry.id) else {
+                    log.debug("Skipping duplicate entry: \(entry.id)")
+                    continue
+                }
 
-            // Append to feed
-            entries.append(contentsOf: timelineEntries)
+                seenEntryIDs.insert(entry.id)
+
+                // Try to get cache for this entry
+                let cache = try? orchestrator.getCachedTimeline(
+                    contentSha256: entry.contentSha256,
+                    windowSha256: entry.windowSha256 ?? ""
+                )
+
+                let timelineEntry = toTimelineEntry(entry, cached: cache)
+                entries.append(timelineEntry)
+                addedCount += 1
+            }
+
+            // Sort to maintain deterministic ordering: timestamp DESC, then id DESC
+            entries.sort { a, b in
+                if a.timestamp != b.timestamp {
+                    return a.timestamp > b.timestamp
+                }
+                return a.sourceIdentifier > b.sourceIdentifier
+            }
 
             // Trim to max size
             if entries.count > config.maxEntries {
                 entries = Array(entries.suffix(config.maxEntries))
             }
 
-            // Update timestamp
-            if let latest = newEntries.last {
-                lastSeenTimestamp = latest.timestamp
-            }
+            // Update timestamp with max to handle out-of-order deliveries
+            let maxTimestamp = newEntries.map(\.timestamp).max() ?? lastTimestamp
+            lastSeenTimestamp = max(lastSeenTimestamp ?? 0, maxTimestamp)
 
             lastUpdate = Date()
 
-            log.debug("Added \(newEntries.count) new entries from SQL")
+            let elapsed = Date().timeIntervalSince(startTime)
+            log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
         } catch {
-            log.error("Failed to fetch new entries: \(error.localizedDescription, privacy: .public)")
+            lastError = "Failed to fetch new entries: \(error.localizedDescription)"
+            log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
