@@ -92,7 +92,10 @@ public final class DatabaseManager {
       try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
     }
 
-    guard let row = row, row.count > 1 else { return }
+    guard let row = row, row.count >= 2 else {
+      log.warning("WAL checkpoint returned unexpected result")
+      return
+    }
     let logPages = row[1] as? Int ?? 0
     let walMB = (logPages * pageSize) / 1_048_576
 
