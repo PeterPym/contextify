@@ -115,11 +115,13 @@ public final class HooverEngine {
   }
 
   /// Hoover a transcript with streaming parser
+  /// Returns the SHA256 hash of the entire transcript content
+  @discardableResult
   public func hooverTranscript(
     _ transcript: Transcript,
     fileURL: URL,
     progress: IngestProgressSink
-  ) throws {
+  ) throws -> String {
     let startTime = Date()
     let handle = try FileHandle(forReadingFrom: fileURL)
     defer { try? handle.close() }
@@ -239,7 +241,11 @@ public final class HooverEngine {
     let duration = Date().timeIntervalSince(startTime)
     progress.didCompleteTranscript(durationMs: Int(duration * 1000))
 
-    log.info("Hoovered transcript \(transcript.id): \(lineNo) lines in \(Int(duration * 1000))ms")
+    let transcriptSHA256 = transcriptHasher.finalize()
+    let linesPerSec = duration > 0 ? Int(Double(lineNo) / duration) : 0
+    log.info("Hoovered transcript \(transcript.id): \(lineNo) lines in \(Int(duration * 1000))ms (\(linesPerSec)/s)")
+
+    return transcriptSHA256
   }
 
   /// Commit a batch of entries and errors to the database

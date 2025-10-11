@@ -94,7 +94,8 @@ public final class TranscriptOrchestrator {
 
     // Hoover the transcript
     let progressSink = progress ?? NoOpProgressSink()
-    try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
+    let transcriptSHA256 = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
+    // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 
     // Start watching if requested
     if startWatching {
