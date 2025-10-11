@@ -53,6 +53,17 @@ public final class TranscriptOrchestrator {
     try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
   }
 
+  public func getOrCreateProject(name: String?, rootPath: String, bookmark: Data? = nil) throws -> String {
+    // Try to find existing project by canonicalized path
+    let canon = PathUtils.canonicalizePath(rootPath)
+    if let existing = try projectRepo.list().first(where: { $0.rootPath == canon }) {
+      return existing.id
+    }
+
+    // Create new project
+    return try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
+  }
+
   public func listProjects() throws -> [Project] {
     try projectRepo.list()
   }
