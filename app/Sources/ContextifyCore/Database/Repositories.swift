@@ -205,9 +205,11 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
 // MARK: - Entry Repository
 
 public protocol EntryRepository {
+  func insert(_ entry: TranscriptEntry) throws
   func insertBatch(_ entries: [TranscriptEntry]) throws
   func recentByProject(_ projectId: String, limit: Int) throws -> [TranscriptEntry]
-  func byTranscript(_ transcriptId: String, afterTimestamp: Date?) throws -> [TranscriptEntry]
+  func newByProject(_ projectId: String, afterTimestamp: Int) throws -> [TranscriptEntry]
+  func byTranscript(_ transcriptId: String, afterTimestamp: Int?) throws -> [TranscriptEntry]
   func search(content: String, projectId: String?) throws -> [TranscriptEntry]
 }
 
@@ -216,6 +218,12 @@ public final class EntryRepositoryImpl: EntryRepository {
 
   public init(db: DatabasePool) {
     self.db = db
+  }
+
+  public func insert(_ entry: TranscriptEntry) throws {
+    try db.write { db in
+      try entry.insert(db, onConflict: .ignore)
+    }
   }
 
   public func insertBatch(_ entries: [TranscriptEntry]) throws {
@@ -229,18 +237,27 @@ public final class EntryRepositoryImpl: EntryRepository {
   public func recentByProject(_ projectId: String, limit: Int) throws -> [TranscriptEntry] {
     try db.read { db in
       try TranscriptEntry
-        .filter(Column("project_id") == projectId)
+        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
         .order(Column("timestamp").desc)
         .limit(limit)
         .fetchAll(db)
     }
   }
 
-  public func byTranscript(_ transcriptId: String, afterTimestamp: Date? = nil) throws -> [TranscriptEntry] {
+  public func newByProject(_ projectId: String, afterTimestamp: Int) throws -> [TranscriptEntry] {
+    try db.read { db in
+      try TranscriptEntry
+        .filter(Column("project_id") == projectId && Column("timestamp") > afterTimestamp && Column("display_in_timeline") == 1)
+        .order(Column("timestamp").asc)
+        .fetchAll(db)
+    }
+  }
+
+  public func byTranscript(_ transcriptId: String, afterTimestamp: Int? = nil) throws -> [TranscriptEntry] {
     try db.read { db in
       var query = TranscriptEntry.filter(Column("transcript_id") == transcriptId)
       if let after = afterTimestamp {
-        query = query.filter(Column("timestamp") > Int(after.timeIntervalSince1970))
+        query = query.filter(Column("timestamp") > after)
       }
       return try query.order(Column("timestamp").asc).fetchAll(db)
     }
