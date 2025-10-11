@@ -342,10 +342,13 @@ final class ConversationMonitor {
                 // Collect cache miss for background generation
                 if cache == nil, let windowSha = entry.windowSha256 {
                     let miss = CacheMiss(
+                        entryId: entry.id,
                         contentSha256: entry.contentSha256,
                         windowSha256: windowSha,
                         content: entry.content,
-                        context: entry.content  // TODO: Add surrounding context
+                        context: entry.content,  // TODO: Add surrounding context
+                        kind: entry.kind,
+                        provider: entry.provider
                     )
                     misses.append(miss)
                 }
@@ -515,10 +518,13 @@ final class ConversationMonitor {
                 // Collect cache miss for background generation
                 if cache == nil, let windowSha = entry.windowSha256 {
                     let miss = CacheMiss(
+                        entryId: entry.id,
                         contentSha256: entry.contentSha256,
                         windowSha256: windowSha,
                         content: entry.content,
-                        context: entry.content  // TODO: Add surrounding context
+                        context: entry.content,  // TODO: Add surrounding context
+                        kind: entry.kind,
+                        provider: entry.provider
                     )
                     misses.append(miss)
                 }

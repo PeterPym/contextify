@@ -13,7 +13,7 @@ public final class TranscriptOrchestrator {
   private let entryRepo: EntryRepository
   private let errorRepo: ParseErrorRepository
   private let metadataRepo: MetadataRepository
-  private let cacheRepo: CacheRepository
+  nonisolated(unsafe) private let cacheRepo: CacheRepository  // Thread-safe via GRDB pool
 
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
@@ -172,23 +172,23 @@ public final class TranscriptOrchestrator {
 
   // MARK: - Cache Management
 
-  public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {
+  nonisolated public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {
     try cacheRepo.get(contentSha256: contentSha256, windowSha256: windowSha256)
   }
 
-  public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
+  nonisolated public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
     try cacheRepo.getMany(keys: keys)
   }
 
-  public func getCachedTimelineManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache] {
+  nonisolated public func getCachedTimelineManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache] {
     try cacheRepo.getManyWithSignature(keys: keys, generatorSignature: generatorSignature)
   }
 
-  public func saveCachedTimeline(_ cache: TimelineCache) throws {
+  nonisolated public func saveCachedTimeline(_ cache: TimelineCache) throws {
     try cacheRepo.upsert(cache)
   }
 
-  public func saveCachedTimelineMany(_ caches: [TimelineCache]) throws {
+  nonisolated public func saveCachedTimelineMany(_ caches: [TimelineCache]) throws {
     try cacheRepo.upsertMany(caches)
   }
 
