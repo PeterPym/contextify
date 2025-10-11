@@ -84,6 +84,10 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
   public var gitBranch: String?
   public var gitCommit: String?
   public var cwd: String?
+  // v2 fields for fast cache joins
+  public var prev1Id: String?
+  public var prev2Id: String?
+  public var windowSha256: String?
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -108,6 +112,9 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
     case gitBranch = "git_branch"
     case gitCommit = "git_commit"
     case cwd
+    case prev1Id = "prev1_id"
+    case prev2Id = "prev2_id"
+    case windowSha256 = "window_sha256"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }

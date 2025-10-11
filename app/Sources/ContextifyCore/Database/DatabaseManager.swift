@@ -41,10 +41,9 @@ public final class DatabaseManager {
 
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
 
-    // Run migrations
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    // Run migrations using DatabaseMigrator
+    let migrator = DatabaseSchema.createMigrator()
+    try migrator.migrate(pool)
 
     // Validate database
     try validateDatabase(pool)

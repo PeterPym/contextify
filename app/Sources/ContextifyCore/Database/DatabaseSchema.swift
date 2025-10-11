@@ -2,12 +2,42 @@ import Foundation
 import GRDB
 
 /// SQLite schema for Contextify transcript storage
-/// Based on sql-implementation-plan-05.md
+/// Based on sql-implementation-plan-05.md and sql-integration-plan-v2.md
 enum DatabaseSchema {
-  static let version = 1
+  static let version = 2
 
-  /// Create all tables and indexes for the database
-  static func migrate(_ db: Database) throws {
+  /// Create migrator for schema evolution
+  static func createMigrator() -> DatabaseMigrator {
+    var migrator = DatabaseMigrator()
+
+    // v1: Base schema (all tables and indexes)
+    migrator.registerMigration("v1_base") { db in
+      try createBaseSchema(db)
+    }
+
+    // v2: Window fields for fast cache joins
+    migrator.registerMigration("v2_window_sha") { db in
+      try db.alter(table: "transcript_entries") { t in
+        t.add(column: "prev1_id", .text)
+        t.add(column: "prev2_id", .text)
+        t.add(column: "window_sha256", .text)
+      }
+
+      // Covering index for feed+cache join (single round trip)
+      try db.create(
+        index: "idx_entries_feed_cover",
+        on: "transcript_entries",
+        columns: ["project_id", "timestamp", "content_sha256", "window_sha256"],
+        condition: "display_in_timeline = 1",
+        ifNotExists: true
+      )
+    }
+
+    return migrator
+  }
+
+  /// Create all tables and indexes for the database (v1 base schema)
+  private static func createBaseSchema(_ db: Database) throws {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
