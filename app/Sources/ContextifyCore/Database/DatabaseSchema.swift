@@ -72,9 +72,17 @@ enum DatabaseSchema {
       t.column("updated_at", .integer).notNull()
     }
     try db.create(index: "idx_entries_transcript_time", on: "transcript_entries", columns: ["transcript_id", "timestamp"], ifNotExists: true)
-    try db.create(index: "idx_entries_project_time", on: "transcript_entries", columns: ["project_id", "timestamp"], ifNotExists: true)
-    try db.create(index: "idx_entries_project_feed", on: "transcript_entries", columns: ["project_id", "timestamp"], ifNotExists: true, condition: "display_in_timeline = 1")
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
+    // Project time indexes with DESC for ORDER BY performance
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_entries_project_time
+      ON transcript_entries(project_id, timestamp DESC)
+    """)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_entries_project_feed
+      ON transcript_entries(project_id, timestamp DESC)
+      WHERE display_in_timeline = 1
+    """)
     // Completion index with DESC for ORDER BY performance
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_entries_completion
