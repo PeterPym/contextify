@@ -4,12 +4,12 @@ import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatcher")
 
 /// Watches transcript files for changes and triggers incremental streaming
-@MainActor
 public final class TranscriptWatcher {
   private let hooverEngine: HooverEngine
   private let transcriptRepo: TranscriptRepository
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var debounceTimers: [String: Timer] = [:]
+  private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
 
   public init(hooverEngine: HooverEngine, transcriptRepo: TranscriptRepository) {
     self.hooverEngine = hooverEngine
@@ -84,7 +84,8 @@ public final class TranscriptWatcher {
 
   /// Process file change after debounce (runs off main thread)
   private func processFileChange(transcriptId: String, fileURL: URL) {
-    Task.detached(priority: .utility) { [weak self] in
+    // Use background queue to avoid blocking UI
+    watcherQueue.async { [weak self] in
       guard let self else { return }
       do {
         guard let transcript = try self.transcriptRepo.get(transcriptId) else {
@@ -102,7 +103,7 @@ public final class TranscriptWatcher {
         )
 
         // Notify observers on main thread
-        await MainActor.run {
+        DispatchQueue.main.async {
           NotificationCenter.default.post(
             name: NSNotification.Name("TranscriptUpdated"),
             object: transcriptId
