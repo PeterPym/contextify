@@ -249,6 +249,7 @@ public final class HooverEngine {
   }
 
   /// Commit a batch of entries and errors to the database
+  /// All operations are atomic within a single transaction
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
@@ -256,35 +257,61 @@ public final class HooverEngine {
     lastProcessedLine: Int,
     lineCount: Int
   ) throws {
-    // Insert entries
-    let models = entries.map { $0.toModel() }
-    try entryRepo.insertBatch(models)
+    try db.write { db in
+      // Insert entries (ON CONFLICT IGNORE for idempotence)
+      for entry in entries.map({ $0.toModel() }) {
+        try entry.insert(db, onConflict: .ignore)
+      }
 
-    // Insert errors
-    for error in errors {
-      try errorRepo.insert(
-        transcriptId: transcriptId,
-        lineNumber: error.lineNumber,
-        rawLine: error.rawLine,
-        errorMessage: error.error
-      )
+      // Insert errors (bulk insert)
+      if !errors.isEmpty {
+        let now = Int(Date().timeIntervalSince1970)
+        let stmt = try db.makeStatement(sql: """
+          INSERT INTO parse_errors (id, transcript_id, line_number, raw_line, error_message, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        """)
+        for error in errors {
+          let truncated = String(error.rawLine.prefix(MonitorConfig.parseErrorMaxChars))
+          try stmt.execute(arguments: [
+            UUID().uuidString,
+            transcriptId,
+            error.lineNumber,
+            truncated,
+            error.error,
+            now
+          ])
+        }
+      }
+
+      // Prune old errors (single SQL)
+      try db.execute(sql: """
+        DELETE FROM parse_errors
+        WHERE id IN (
+          SELECT id FROM parse_errors
+          WHERE transcript_id = ?
+          ORDER BY created_at DESC
+          LIMIT -1 OFFSET ?
+        )
+      """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
+
+      // Update transcript checkpoint
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET last_processed_line = ?,
+            line_count = ?,
+            parser_version = ?,
+            status = 'active',
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+      """, arguments: [
+        lastProcessedLine,
+        lineCount,
+        1,
+        Int(Date().timeIntervalSince1970),
+        transcriptId
+      ])
     }
-
-    // Prune old errors
-    try errorRepo.pruneOldest(
-      transcriptId: transcriptId,
-      keepLast: MonitorConfig.parseErrorRetentionPerTranscript
-    )
-
-    // Update transcript checkpoint
-    try transcriptRepo.setIngestionState(
-      id: transcriptId,
-      lastProcessedLine: lastProcessedLine,
-      lineCount: lineCount,
-      parserVersion: 1,
-      status: "active",
-      lastError: nil
-    )
   }
 }
 
