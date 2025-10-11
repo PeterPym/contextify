@@ -166,8 +166,8 @@ public final class TranscriptOrchestrator {
   }
 
   // v2: Single-query feed with cache join
-  public func getRecentFeed(forProject projectId: String, limit: Int = 50) throws -> [(TranscriptEntry, TimelineCache?)] {
-    try entryRepo.recentFeed(projectId: projectId, limit: limit)
+  public func getRecentFeed(forProject projectId: String, limit: Int = 50, generatorSignature: String) throws -> [(TranscriptEntry, TimelineCache?)] {
+    try entryRepo.recentFeed(projectId: projectId, limit: limit, generatorSignature: generatorSignature)
   }
 
   // MARK: - Cache Management

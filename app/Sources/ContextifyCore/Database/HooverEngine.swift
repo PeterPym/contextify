@@ -143,6 +143,19 @@ public final class HooverEngine {
         if let p1 = last.prev1Id { seed.append(p1) } // oldest first
         seed.append(last.id)
         previousEntries = seed
+      } else {
+        // Graceful fallback: lastId is stale/deleted, fall back to 2-row seed
+        let seed = try db.read { db in
+          try Row.fetchAll(db, sql: """
+            SELECT id FROM transcript_entries
+            WHERE transcript_id = ?
+            ORDER BY timestamp DESC, id DESC
+            LIMIT 2
+          """, arguments: [transcript.id])
+          .compactMap { $0["id"] as String? }
+          .reversed()
+        }
+        previousEntries = Array(seed.suffix(2))
       }
     } else {
       // Fresh transcript or old DB: seed with last two existing (if any)
@@ -150,7 +163,7 @@ public final class HooverEngine {
         try Row.fetchAll(db, sql: """
           SELECT id FROM transcript_entries
           WHERE transcript_id = ?
-          ORDER BY timestamp DESC, created_at DESC, id DESC
+          ORDER BY timestamp DESC, id DESC
           LIMIT 2
         """, arguments: [transcript.id])
         .compactMap { $0["id"] as String? }
@@ -340,11 +353,12 @@ public final class HooverEngine {
       """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
 
       // Update transcript checkpoint with last processed entry ID
+      // Use COALESCE to preserve existing ID if this batch had only errors
       let lastEntryId = entries.last?.id
       try db.execute(sql: """
         UPDATE transcripts
         SET last_processed_line = ?,
-            last_processed_entry_id = ?,
+            last_processed_entry_id = COALESCE(?, last_processed_entry_id),
             line_count = ?,
             parser_version = ?,
             status = 'active',

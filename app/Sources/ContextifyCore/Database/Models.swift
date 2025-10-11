@@ -94,6 +94,7 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
   public var updatedAt: Int
 
   public static let databaseTableName = "transcript_entries"
+  public static let databaseColumnCount = 23
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -142,6 +143,7 @@ public struct TimelineCache: Codable, FetchableRecord, PersistableRecord {
   public var duration: Double?
 
   public static let databaseTableName = "timeline_cache"
+  public static let databaseColumnCount = 15
 
   enum CodingKeys: String, CodingKey {
     case contentSha256 = "content_sha256"

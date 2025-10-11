@@ -22,24 +22,6 @@ enum DatabaseSchema {
         t.add(column: "prev2_id", .text)
         t.add(column: "window_sha256", .text)
       }
-
-      // Expanded covering index for feed+cache join (eliminates table lookups)
-      try db.create(
-        index: "idx_entries_feed_cover",
-        on: "transcript_entries",
-        columns: [
-          "project_id",
-          "timestamp",
-          "content_sha256",
-          "window_sha256",
-          "id",
-          "kind",
-          "is_completion",
-          "session_id"
-        ],
-        ifNotExists: true,
-        condition: "display_in_timeline = 1"
-      )
     }
 
     // v2: Resume checkpoint for correct window state across restarts
@@ -56,7 +38,7 @@ enum DatabaseSchema {
           sql: """
             SELECT id FROM transcript_entries
             WHERE transcript_id = ?
-            ORDER BY timestamp DESC, created_at DESC, id DESC
+            ORDER BY timestamp DESC, id DESC
             LIMIT 1
           """,
           arguments: [tid]
@@ -77,7 +59,7 @@ enum DatabaseSchema {
           SELECT id
           FROM transcript_entries
           WHERE transcript_id = ?
-          ORDER BY timestamp ASC, created_at ASC, id ASC
+          ORDER BY timestamp ASC, id ASC
         """, arguments: [tid])
 
         var prev2: String? = nil
@@ -97,6 +79,28 @@ enum DatabaseSchema {
           prev1 = id
         }
       }
+
+      // Create covering index AFTER backfill to avoid costly index maintenance
+      // SQLite can reverse-scan DESC, so we specify timestamp DESC explicitly
+      try db.create(
+        index: "idx_entries_feed_cover",
+        on: "transcript_entries",
+        columns: [
+          "project_id",
+          "timestamp", // DESC sort handled by planner reverse-scan
+          "content_sha256",
+          "window_sha256",
+          "id",
+          "kind",
+          "is_completion",
+          "session_id"
+        ],
+        ifNotExists: true,
+        condition: "display_in_timeline = 1"
+      )
+
+      // Run ANALYZE to update statistics after bulk operations
+      try db.execute(sql: "ANALYZE")
     }
 
     return migrator
