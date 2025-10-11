@@ -133,6 +133,7 @@ public final class HooverEngine {
     var batch: [EntryInsert] = []
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
+    var previousEntries: [String] = [] // Track last 2 entry IDs for window computation
 
     let nl: UInt8 = 0x0A // '\n'
 
@@ -192,7 +193,8 @@ public final class HooverEngine {
             entries: batch,
             errors: errors,
             lastProcessedLine: lineNo,
-            lineCount: lineNo
+            lineCount: lineNo,
+            previousEntries: &previousEntries
           )
           batch.removeAll()
           errors.removeAll()
@@ -234,7 +236,8 @@ public final class HooverEngine {
         entries: batch,
         errors: errors,
         lastProcessedLine: lineNo,
-        lineCount: lineNo
+        lineCount: lineNo,
+        previousEntries: &previousEntries
       )
     }
 
@@ -250,17 +253,35 @@ public final class HooverEngine {
 
   /// Commit a batch of entries and errors to the database
   /// All operations are atomic within a single transaction
+  /// Tracks previous entries for window SHA256 computation
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
     errors: [(lineNumber: Int, rawLine: String, error: String)],
     lastProcessedLine: Int,
-    lineCount: Int
+    lineCount: Int,
+    previousEntries: inout [String]
   ) throws {
     try db.write { db in
-      // Insert entries (ON CONFLICT IGNORE for idempotence)
-      for entry in entries.map({ $0.toModel() }) {
-        try entry.insert(db, onConflict: .ignore)
+      // Insert entries with window tracking
+      for entry in entries {
+        // Compute window from previous 2 entries
+        let prev1 = previousEntries.last
+        let prev2 = previousEntries.count >= 2 ? previousEntries[previousEntries.count - 2] : nil
+        let windowSha = SHA256Utils.computeWindowSHA256(prev2: prev2, prev1: prev1)
+
+        var model = entry.toModel()
+        model.prev1Id = prev1
+        model.prev2Id = prev2
+        model.windowSha256 = windowSha
+
+        try model.insert(db, onConflict: .ignore)
+
+        // Update tracking (keep last 2)
+        previousEntries.append(entry.id)
+        if previousEntries.count > 2 {
+          previousEntries.removeFirst()
+        }
       }
 
       // Insert errors (bulk insert)
