@@ -28,8 +28,8 @@ enum DatabaseSchema {
         index: "idx_entries_feed_cover",
         on: "transcript_entries",
         columns: ["project_id", "timestamp", "content_sha256", "window_sha256"],
-        condition: "display_in_timeline = 1",
-        ifNotExists: true
+        ifNotExists: true,
+        condition: "display_in_timeline = 1"
       )
     }
 

@@ -106,7 +106,8 @@ public final class TranscriptWatcher {
         DispatchQueue.main.async {
           NotificationCenter.default.post(
             name: NSNotification.Name("TranscriptUpdated"),
-            object: transcriptId
+            object: transcriptId,
+            userInfo: ["projectId": transcript.projectId]
           )
         }
 

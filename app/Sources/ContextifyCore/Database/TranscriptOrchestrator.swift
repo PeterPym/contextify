@@ -176,6 +176,10 @@ public final class TranscriptOrchestrator {
     try cacheRepo.get(contentSha256: contentSha256, windowSha256: windowSha256)
   }
 
+  public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
+    try cacheRepo.getMany(keys: keys)
+  }
+
   public func saveCachedTimeline(_ cache: TimelineCache) throws {
     try cacheRepo.upsert(cache)
   }
@@ -205,6 +209,32 @@ public final class TranscriptOrchestrator {
     try dbManager.vacuumIfNeeded()
 
     log.info("Database maintenance completed")
+  }
+
+  /// Reconcile transcripts against filesystem - mark missing files as deleted
+  public func reconcileDeletedTranscripts(projectId: String) throws {
+    let transcripts = try transcriptRepo.byProject(projectId)
+    var markedDeleted = 0
+
+    for transcript in transcripts {
+      let fileURL = URL(fileURLWithPath: transcript.filePath)
+      if !FileManager.default.fileExists(atPath: fileURL.path) {
+        // Mark as deleted
+        try transcriptRepo.setIngestionState(
+          id: transcript.id,
+          lastProcessedLine: transcript.lastProcessedLine,
+          lineCount: transcript.lineCount,
+          parserVersion: transcript.parserVersion,
+          status: "deleted",
+          lastError: "File no longer exists"
+        )
+        markedDeleted += 1
+      }
+    }
+
+    if markedDeleted > 0 {
+      log.info("Reconciled project \(projectId): marked \(markedDeleted) transcripts as deleted")
+    }
   }
 
   // MARK: - Cleanup

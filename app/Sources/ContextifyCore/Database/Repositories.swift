@@ -300,7 +300,7 @@ public final class EntryRepositoryImpl: EntryRepository {
       """
 
       return try Row.fetchAll(db, sql: sql, arguments: [projectId, limit]).map { row in
-        let entry = TranscriptEntry(row: row)
+        let entry = try TranscriptEntry(row: row)
 
         // Check if cache fields present
         let cache: TimelineCache? = if row["present_form"] != nil {
@@ -372,6 +372,7 @@ public final class MetadataRepositoryImpl: MetadataRepository {
 
 public protocol CacheRepository {
   func get(contentSha256: String, windowSha256: String) throws -> TimelineCache?
+  func getMany(keys: [(String, String)]) throws -> [String: TimelineCache]
   func upsert(_ cache: TimelineCache) throws
 }
 
@@ -387,6 +388,30 @@ public final class CacheRepositoryImpl: CacheRepository {
       try TimelineCache
         .filter(Column("content_sha256") == contentSha256 && Column("window_sha256") == windowSha256)
         .fetchOne(db)
+    }
+  }
+
+  public func getMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
+    guard !keys.isEmpty else { return [:] }
+
+    return try db.read { db in
+      // Build SQL with IN clause for composite keys
+      let placeholders = Array(repeating: "(?, ?)", count: keys.count).joined(separator: ", ")
+      let sql = """
+        SELECT * FROM timeline_cache
+        WHERE (content_sha256, window_sha256) IN (\(placeholders))
+      """
+
+      let args = keys.flatMap { [$0.0, $0.1] }
+      let caches = try TimelineCache.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+
+      // Build result map keyed by "contentSha|windowSha"
+      var result: [String: TimelineCache] = [:]
+      for cache in caches {
+        let key = "\(cache.contentSha256)|\(cache.windowSha256)"
+        result[key] = cache
+      }
+      return result
     }
   }
 
