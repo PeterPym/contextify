@@ -138,7 +138,7 @@ public final class TranscriptOrchestrator {
   }
 
   public func getEntries(forTranscript transcriptId: String) throws -> [TranscriptEntry] {
-    try entryRepo.byTranscript(transcriptId)
+    try entryRepo.byTranscript(transcriptId, afterTimestamp: nil)
   }
 
   public func getRecentEntries(forProject projectId: String, limit: Int = 50) throws -> [TranscriptEntry] {

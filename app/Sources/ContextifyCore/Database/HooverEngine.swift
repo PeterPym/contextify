@@ -138,8 +138,7 @@ public final class HooverEngine {
     if lineNo > 0 {
       var skippedLines = 0
       while skippedLines < lineNo {
-        let chunk = try handle.read(upToCount: 64 * 1024)
-        if chunk.isEmpty { break }
+        guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else { break }
         buffer.append(chunk)
 
         while let i = buffer.firstIndex(of: nl) {
@@ -155,8 +154,7 @@ public final class HooverEngine {
 
     // Process remaining lines
     while true {
-      let chunk = try handle.read(upToCount: 64 * 1024)
-      if chunk.isEmpty { break }
+      guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else { break }
       buffer.append(chunk)
 
       while let i = buffer.firstIndex(of: nl) {
@@ -203,18 +201,13 @@ public final class HooverEngine {
 
     // Handle final partial line (no trailing newline)
     if !buffer.isEmpty {
-      guard let lineString = String(data: buffer, encoding: .utf8) else {
-        errors.append((lineNo + 1, "<invalid UTF-8>", "Final line is not valid UTF-8"))
-        buffer.removeAll()
-      }
-
-      if !buffer.isEmpty {
+      if let lineString = String(data: buffer, encoding: .utf8) {
         lineNo += 1
         transcriptHasher.update(lineData: buffer)
 
         do {
           let entry = try parser.parse(
-            line: lineString!,
+            line: lineString,
             lineNumber: lineNo,
             transcriptId: transcript.id,
             projectId: transcript.projectId,
@@ -223,11 +216,13 @@ public final class HooverEngine {
           )
           batch.append(entry)
         } catch {
-          let truncated = String(lineString!.prefix(MonitorConfig.parseErrorMaxChars))
+          let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
           errors.append((lineNo, truncated, error.localizedDescription))
         }
-        buffer.removeAll()
+      } else {
+        errors.append((lineNo + 1, "<invalid UTF-8>", "Final line is not valid UTF-8"))
       }
+      buffer.removeAll()
     }
 
     // Final batch
