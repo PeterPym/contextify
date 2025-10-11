@@ -57,6 +57,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var pendingNotificationTask: Task<Void, Never>?  // For debouncing
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
+    @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
+    @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
 
     private init() {}
 
@@ -85,7 +87,10 @@ final class ConversationMonitor {
                     rootPath: projectRoot.path
                 )
 
-                // 3. Background discover + hoover of new transcripts
+                // 3. Initialize cache miss generator
+                self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
+
+                // 4. Background discover + hoover of new transcripts
                 self.discoveryTask = Task.detached(priority: .userInitiated) { [weak self] in
                     guard let self else { return }
                     do {
@@ -97,11 +102,12 @@ final class ConversationMonitor {
                     }
                 }
 
-                // 4. Load initial feed (fast - single query)
+                // 5. Load initial feed (fast - single query)
                 await self.loadFeedFromSQL()
 
-                // 5. Subscribe to realtime updates
+                // 6. Subscribe to realtime updates
                 self.setupSQLNotifications()
+                self.setupCacheUpdateNotifications()
 
                 self.isMonitoring = true
                 self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
@@ -128,6 +134,11 @@ final class ConversationMonitor {
             notificationObserver = nil
         }
 
+        if let observer = cacheUpdateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            cacheUpdateObserver = nil
+        }
+
         // Stop all watchers using shared orchestrator
         if orchestrator != nil {
             orchestrator.stopAllWatchers()
@@ -137,6 +148,7 @@ final class ConversationMonitor {
         seenEntryIDs.removeAll()
         lastSeenTimestamp = nil
         currentProjectId = nil
+        cacheMissGenerator = nil
     }
 
     @MainActor
@@ -206,7 +218,7 @@ final class ConversationMonitor {
             currentSessionId = session.identifier
             lastUpdate = Date()
 
-            log.info("Switched to session: \(session.fileURL.lastPathComponent) (\(entries.count) entries)")
+            log.info("Switched to session: \(session.fileURL.lastPathComponent) (\(self.entries.count) entries)")
         } catch {
             lastError = "Failed to switch session: \(error.localizedDescription)"
             log.error("Session switch failed: \(error.localizedDescription, privacy: .public)")
@@ -271,8 +283,6 @@ final class ConversationMonitor {
             summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
         }
 
-        let disposition = cached.flatMap { Disposition(rawValue: $0.disposition) } ?? .active
-
         // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
         let stableId: UUID
         if let parsed = UUID(uuidString: entry.id) {
@@ -322,11 +332,32 @@ final class ConversationMonitor {
                 generatorSignature: generatorSignature()
             )
 
-            // Map to UI entries and track seen IDs
+            // Map to UI entries and track seen IDs + collect cache misses
             seenEntryIDs.removeAll(keepingCapacity: true)
+            var misses: [CacheMiss] = []
+
             self.entries = feed.map { entry, cache in
                 seenEntryIDs.insert(entry.id)
+
+                // Collect cache miss for background generation
+                if cache == nil, let windowSha = entry.windowSha256 {
+                    let miss = CacheMiss(
+                        contentSha256: entry.contentSha256,
+                        windowSha256: windowSha,
+                        content: entry.content,
+                        context: entry.content  // TODO: Add surrounding context
+                    )
+                    misses.append(miss)
+                }
+
                 return toTimelineEntry(entry, cached: cache)
+            }
+
+            // Queue cache misses for background generation
+            if !misses.isEmpty, let generator = cacheMissGenerator {
+                Task {
+                    await generator.queueMisses(misses)
+                }
             }
 
             // Track latest timestamp for incremental updates
@@ -341,7 +372,7 @@ final class ConversationMonitor {
             if elapsed > 0.02 {
                 log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
             }
-            log.info("Loaded \(entries.count) entries from SQL feed in \(Int(elapsed * 1000))ms")
+            log.info("Loaded \(self.entries.count) entries from SQL feed in \(Int(elapsed * 1000))ms")
         } catch {
             lastError = "Failed to load timeline: \(error.localizedDescription)"
             log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
@@ -354,16 +385,65 @@ final class ConversationMonitor {
             object: nil,
             queue: .main
         ) { [weak self] notification in
+            // Extract sendable data before crossing isolation boundary
+            let projectId = notification.userInfo?["projectId"] as? String
             Task { @MainActor [weak self] in
-                await self?.handleTranscriptUpdate(notification)
+                await self?.handleTranscriptUpdate(projectId: projectId)
+            }
+        }
+    }
+
+    private func setupCacheUpdateNotifications() {
+        cacheUpdateObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TimelineCacheUpdated"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.handleCacheUpdate()
             }
         }
     }
 
     @MainActor
-    private func handleTranscriptUpdate(_ notification: Notification) async {
+    private func handleCacheUpdate() async {
+        // Lightweight refresh: re-query cache for existing entries without full reload
+        guard let projectId = currentProjectId, orchestrator != nil else { return }
+
+        log.debug("Cache updated, refreshing summaries for existing entries")
+
+        do {
+            // Batch cache lookup for all current entries
+            let cacheKeys = entries.compactMap { entry -> (String, String)? in
+                // Extract hashes from sourceIdentifier or entry data
+                // For now, skip entries without window SHA
+                return nil  // TODO: Store hashes in TimelineEntry for efficient refresh
+            }
+
+            if cacheKeys.isEmpty {
+                // Fallback: do full reload to re-bind all summaries
+                log.info("No cache keys available for lightweight refresh, doing full reload")
+                await loadFeedFromSQL()
+                return
+            }
+
+            // Re-query cache
+            let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
+
+            // Update summaries in place (keep stable IDs)
+            // TODO: Implement efficient in-place update
+            // For now, just reload
+            await loadFeedFromSQL()
+
+        } catch {
+            log.error("Cache refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    @MainActor
+    private func handleTranscriptUpdate(projectId: String?) async {
         // Filter by project
-        if let notifProjectId = notification.userInfo?["projectId"] as? String,
+        if let notifProjectId = projectId,
            notifProjectId != currentProjectId {
             log.debug("Ignoring notification for different project: \(notifProjectId)")
             return
@@ -412,9 +492,11 @@ final class ConversationMonitor {
                 return
             }
 
-            // Convert to timeline entries with cache lookup
+            // Convert to timeline entries with cache lookup + collect misses
             // TODO: Batch cache lookup for better performance
             var addedCount = 0
+            var misses: [CacheMiss] = []
+
             for entry in newEntries {
                 // Deduplicate using seenEntryIDs
                 guard !seenEntryIDs.contains(entry.id) else {
@@ -430,9 +512,27 @@ final class ConversationMonitor {
                     windowSha256: entry.windowSha256 ?? ""
                 )
 
+                // Collect cache miss for background generation
+                if cache == nil, let windowSha = entry.windowSha256 {
+                    let miss = CacheMiss(
+                        contentSha256: entry.contentSha256,
+                        windowSha256: windowSha,
+                        content: entry.content,
+                        context: entry.content  // TODO: Add surrounding context
+                    )
+                    misses.append(miss)
+                }
+
                 let timelineEntry = toTimelineEntry(entry, cached: cache)
                 entries.append(timelineEntry)
                 addedCount += 1
+            }
+
+            // Queue cache misses for background generation
+            if !misses.isEmpty, let generator = cacheMissGenerator {
+                Task {
+                    await generator.queueMisses(misses)
+                }
             }
 
             // Sort to maintain deterministic ordering: timestamp DESC, then id DESC
@@ -489,7 +589,7 @@ final class ConversationMonitor {
         log.info("Discovering \(newFiles.count) new transcripts")
 
         // Batch discover with progress
-        let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil) }
+        let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
 
         try orchestrator.discoverTranscripts(
             projectId: projectId,
@@ -509,24 +609,8 @@ final class ConversationMonitor {
     }
 
     private func generatorSignature() -> String {
-        // Centralize and bump when prompt/model changes
-        struct GeneratorSignature {
-            let model: String
-            let modelVersion: String
-            let prompt: String
-            let promptVersion: String
-
-            var string: String {
-                "\(model)@\(modelVersion)::\(prompt)@\(promptVersion)"
-            }
-        }
-
-        return GeneratorSignature(
-            model: "gpt-4o",
-            modelVersion: "2025-09",
-            prompt: "timeline",
-            promptVersion: "3"
-        ).string
+        // Use centralized generator signature from Core module
+        return timelineGeneratorSignature()
     }
 
     private func latestAssistantActionHint() -> String? {
@@ -595,36 +679,8 @@ final class ConversationMonitor {
         guard !didEmitSessionStart else { return }
         didEmitSessionStart = true
 
-        let summary = "Timeline monitoring started"
-        let detail: String
-        if let fileURL = currentConversationFile {
-            detail = """
-            Timeline monitoring started
-
-            Monitoring: \(fileURL.lastPathComponent)
-            Path: \(fileURL.path)
-            """
-        } else {
-            detail = "Timeline monitoring started (no conversation file found yet)"
-        }
-        let action: TimelineEntryAction
-        if let fileURL = currentConversationFile {
-            action = .revealInInventory(transcriptPath: fileURL.path)
-        } else {
-            action = .none
-        }
-
-        let entry = TimelineEntry(
-            kind: .system,
-            summary: summary,
-            detail: detail,
-            sourceContent: detail,
-            sourceContext: makeSourceContext(identifier: "system-start"),
-            sourceIdentifier: "system-start",
-            action: action,
-            sessionId: currentSessionId
-        )
-        entries.append(entry)
+        // With SQL backend, session start is tracked automatically
+        // This legacy method is kept for compatibility but does nothing
     }
 }
 
