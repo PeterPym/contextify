@@ -46,15 +46,17 @@ final class ConversationMonitor {
     @ObservationIgnored private var didEmitSessionStart = false
     @ObservationIgnored private(set) var activeSession: TranscriptSession?
     @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
-    @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
+    // MUST be observable for UI - inventory and session switching depend on this
+    private(set) var allSessions: [TranscriptSession] = []
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
-    @ObservationIgnored private var currentSessionId: String?  // Current session identifier for timeline entries
+    // MUST be observable for UI - visibleEntries filtering depends on this
+    private var currentSessionId: String?  // Current session identifier for timeline entries
     @ObservationIgnored private var currentProjectId: String?  // SQL project ID
     @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
     @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
-    @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance
+    @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var pendingNotificationTask: Task<Void, Never>?  // For debouncing
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
@@ -68,6 +70,7 @@ final class ConversationMonitor {
     func startMonitoring() {
         guard !isMonitoring else { return }
 
+        log.info("⭐️ Timeline integration starting")
         log.info("Starting SQL-based timeline monitoring")
 
         Task { @MainActor [weak self] in
@@ -80,23 +83,38 @@ final class ConversationMonitor {
                 return
             }
 
-            // 2. Initialize shared orchestrator
+            // 2. Initialize shared orchestrator (nonisolated - safe for concurrent access)
             do {
                 self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
 
+                // CRITICAL: Create project on main actor and wait for DB commit
+                // This ensures the project exists before background tasks access it
                 self.currentProjectId = try self.orchestrator.getOrCreateProject(
                     name: projectRoot.lastPathComponent,
                     rootPath: projectRoot.path
                 )
+                self.log.info("📁 Project ID set: \(self.currentProjectId ?? "nil")")
+
+                // Verify project was persisted (forces read from DB, ensures commit)
+                let projectId = self.currentProjectId!
+                guard let _ = try self.orchestrator.getProject(id: projectId) else {
+                    self.lastError = "Failed to verify project creation"
+                    self.log.error("❌ Project \(projectId) not found after creation")
+                    return
+                }
+                self.log.info("✅ Project \(projectId) verified in database")
 
                 // 3. Initialize cache miss generator
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
 
                 // 4. Background discover + hoover of new transcripts
+                // Safe to use detached task now - project is committed to DB
+                let orchestrator = self.orchestrator!
+                self.log.info("🚀 Spawning background discovery for project: \(projectId)")
                 self.discoveryTask = Task.detached(priority: .userInitiated) { [weak self] in
                     guard let self else { return }
                     do {
-                        try await self.discoverNewTranscripts(projectId: self.currentProjectId!, orchestrator: self.orchestrator)
+                        try await self.discoverNewTranscripts(projectId: projectId, orchestrator: orchestrator)
                     } catch {
                         await MainActor.run {
                             self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
@@ -284,7 +302,11 @@ final class ConversationMonitor {
             action = .none
         } else {
             // Fallback for cache miss (will trigger LLM generation in background)
-            summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
+            if entry.content.isEmpty {
+                summary = "[No content]"
+            } else {
+                summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
+            }
             action = .generating  // Mark as pending generation
         }
 
@@ -415,103 +437,88 @@ final class ConversationMonitor {
 
     private func setupCacheUpdateNotifications() {
         cacheUpdateObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("TimelineCacheUpdated"),
+            forName: .timelineCacheUpdated,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            guard let self else { return }
+            let keys = (note.userInfo?["keys"] as? [CacheKey]) ?? []
             Task { @MainActor [weak self] in
-                await self?.handleCacheUpdate()
+                await self?.refreshCachedEntries(keys: keys)
             }
         }
     }
 
+    /// Keyed bulk refresh: Update specific entries when their caches are ready
+    @MainActor
+    private func refreshCachedEntries(keys: [CacheKey]) async {
+        guard let orchestrator else { return }
+        guard !keys.isEmpty else { return }
+
+        log.debug("Refreshing \(keys.count) specific entries with fresh cache")
+
+        // Only update entries currently in the feed (prevents orphan updates across filters)
+        let sig = generatorSignature()
+
+        do {
+            // Fetch caches with signature verification (off-main is safe)
+            let cacheMap = try orchestrator.getCachedTimelineManyWithSignature(
+                keys: keys,
+                generatorSignature: sig
+            )
+
+            // Build updates for indices we currently show
+            var updates: [(Int, TimelineCache)] = []
+            for key in keys {
+                // indexByCacheKey uses compositeKey format "content|window"
+                let composite = key.compositeKey
+                if let index = indexByCacheKey[composite],
+                   index < entries.count,
+                   let cache = cacheMap[key] {
+                    updates.append((index, cache))
+                }
+            }
+
+            guard !updates.isEmpty else {
+                log.debug("No matching entries in current feed for cache update")
+                return
+            }
+
+            // Apply updates in place, preserving scroll and order
+            for (index, cache) in updates.sorted(by: { $0.0 < $1.0 }) {
+                let old = entries[index]
+
+                let summary: String
+                if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
+                    summary = userText
+                } else {
+                    summary = (cache.selectedForm == "present") ? cache.presentForm : cache.pastForm
+                }
+
+                entries[index] = old.copyWith(
+                    summary: summary,
+                    action: old.action == .generating ? .none : old.action
+                )
+            }
+
+            log.info("Updated \(updates.count) entries with fresh cache summaries")
+        } catch {
+            log.error("Cache bulk refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Legacy handler - kept for backward compatibility, now delegates to keyed refresh
     @MainActor
     private func handleCacheUpdate() async {
-        // Lightweight refresh: re-query cache for existing entries without full reload
-        guard currentProjectId != nil, let orchestrator else { return }
-
-        log.debug("Cache updated, refreshing summaries for existing entries")
-
-        // Extract cache keys from current entries
-        let cacheKeys = entries.compactMap { entry -> (String, String)? in
+        // Extract all keys and delegate to new method
+        let keys = entries.compactMap { entry -> CacheKey? in
             guard let content = entry.contentSha256, let window = entry.windowSha256 else {
                 return nil
             }
-            return (content, window)
+            return CacheKey(content: content, window: window)
         }
 
-        guard !cacheKeys.isEmpty else {
-            log.info("No cache keys available for lightweight refresh, doing full reload")
-            await loadFeedFromSQL()
-            return
-        }
-
-        // Fetch updated caches off-main
-        Task.detached { [weak self, cacheKeys, orchestrator] in
-            guard let self else { return }
-
-            do {
-                // Get caches with current generator signature
-                let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
-
-                // Build updates for entries that match
-                var updates: [(index: Int, cache: TimelineCache)] = []
-                let entriesCount = await self.getEntriesCount()
-                for (content, window) in cacheKeys {
-                    let compositeKey = "\(content)|\(window)"
-                    if let index = await self.getIndexForCacheKey(compositeKey),
-                       index < entriesCount,
-                       let cache = cacheMap[compositeKey] {
-                        updates.append((index, cache))
-                    }
-                }
-
-                // Apply updates on main thread
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-
-                    for (index, cache) in updates {
-                        guard index < self.entries.count else { continue }
-
-                        let old = self.entries[index]
-
-                        // Extract summary from cache
-                        let summary: String
-                        if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
-                            summary = userText
-                        } else {
-                            summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
-                        }
-
-                        // Clear generating action and update summary
-                        self.entries[index] = old.copyWith(
-                            summary: summary,
-                            action: old.action == .generating ? .none : old.action
-                        )
-                    }
-
-                    if !updates.isEmpty {
-                        self.log.info("Updated \(updates.count) entries with fresh cache summaries")
-                    }
-                }
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.log.error("Cache refresh failed: \(error.localizedDescription, privacy: .public)")
-                }
-            }
-        }
-    }
-
-    private nonisolated func getIndexForCacheKey(_ key: String) async -> Int? {
-        await MainActor.run {
-            indexByCacheKey[key]
-        }
-    }
-
-    private nonisolated func getEntriesCount() async -> Int {
-        await MainActor.run {
-            entries.count
-        }
+        await refreshCachedEntries(keys: keys)
     }
 
     private func rebuildIndexByCacheKey() {
@@ -655,36 +662,50 @@ final class ConversationMonitor {
         }
     }
 
-    private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
-        // Find JSONL files on disk
-        guard HUDViewModel.shared.projectRootURL != nil else { return }
+    nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
+        await MainActor.run {
+            log.info("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
+        }
+
+        // Verify project exists before discovering
+        guard try orchestrator.getProject(id: projectId) != nil else {
+            await MainActor.run {
+                log.error("❌ discoverNewTranscripts: project \(projectId) not found in database")
+            }
+            throw RepositoryError.notFound
+        }
+        await MainActor.run {
+            log.info("✅ discoverNewTranscripts: verified project \(projectId) exists")
+        }
+
+        // Find JSONL files on disk for THIS project only
+        guard let projectRoot = await HUDViewModel.shared.projectRootURL else { return }
+
+        // Build expected directory name: Claude Code mangles paths like:
+        // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
+        let expectedDirName = projectRoot.path.replacingOccurrences(of: "/", with: "-")
 
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(expectedDirName)
 
-        // Claude Code stores transcripts in project subdirectories
-        // e.g., ~/.claude/projects/-Users-rob-code-projects-contextify/*.jsonl
-        let projectDirs = try FileManager.default.contentsOfDirectory(
+        // Check if this project's directory exists
+        guard FileManager.default.fileExists(atPath: claudeDir.path) else {
+            await MainActor.run {
+                log.info("No Claude Code directory found for project: \(expectedDirName)")
+            }
+            return
+        }
+
+        // Get all .jsonl files from this project's directory
+        let filesOnDisk = try FileManager.default.contentsOfDirectory(
             at: claudeDir,
-            includingPropertiesForKeys: [.isDirectoryKey],
+            includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ).filter { url in
-            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-        }
-
-        // Collect all .jsonl files from all project directories
-        var filesOnDisk: [URL] = []
-        for dir in projectDirs {
-            let jsonlFiles = try FileManager.default.contentsOfDirectory(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ).filter { $0.pathExtension == "jsonl" }
-            filesOnDisk.append(contentsOf: jsonlFiles)
-        }
+        ).filter { $0.pathExtension == "jsonl" }
 
         await MainActor.run {
-            log.info("🔍 Discovery: Found \(projectDirs.count) project dirs, \(filesOnDisk.count) total .jsonl files")
+            log.info("🔍 Discovery: Found \(filesOnDisk.count) .jsonl files in \(expectedDirName)")
         }
 
         // Get files already in SQL
@@ -699,7 +720,9 @@ final class ConversationMonitor {
         let newFiles = filesOnDisk.filter { !filesInSQL.contains($0.path) }
 
         if !newFiles.isEmpty {
-            log.info("Discovering \(newFiles.count) new transcripts")
+            await MainActor.run {
+                log.info("Discovering \(newFiles.count) new transcripts for project \(projectId)")
+            }
 
             // Batch discover with progress
             let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
@@ -718,17 +741,18 @@ final class ConversationMonitor {
             log.info("No new transcripts to discover")
         }
 
-        // Refresh sessions list for transcript inventory
-        let sessions = mapTranscriptsToSessions(transcripts: transcripts)
+        // Refresh sessions list for transcript inventory (re-fetch after discovery)
+        let updatedTranscripts = try orchestrator.getTranscripts(forProject: projectId)
+        let sessions = Self.mapTranscriptsToSessions(transcripts: updatedTranscripts)
         await MainActor.run {
-            self.log.info("📝 Mapped \(sessions.count) transcripts to sessions")
+            self.log.info("📝 Mapped \(updatedTranscripts.count) transcripts to sessions")
             self.allSessions = sessions
             self.log.info("✅ allSessions updated with \(self.allSessions.count) sessions")
             Task { await self.loadFeedFromSQL() }
         }
     }
 
-    private func mapTranscriptsToSessions(transcripts: [Transcript]) -> [TranscriptSession] {
+    nonisolated private static func mapTranscriptsToSessions(transcripts: [Transcript]) -> [TranscriptSession] {
         return transcripts.compactMap { transcript in
             let fileURL = URL(fileURLWithPath: transcript.filePath)
             let provider: TimelineSourceContext.Provider

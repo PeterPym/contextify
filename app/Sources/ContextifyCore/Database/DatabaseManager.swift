@@ -5,14 +5,18 @@ import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager")
 
 /// Manages the SQLite database connection and lifecycle
-@MainActor
-public final class DatabaseManager {
+/// Thread-safe singleton - GRDB pool handles concurrency internally
+public final class DatabaseManager: @unchecked Sendable {
   public static let shared = DatabaseManager()
 
+  private let poolLock = NSLock()
   private var _pool: DatabasePool?
 
   public var pool: DatabasePool {
     get throws {
+      poolLock.lock()
+      defer { poolLock.unlock() }
+
       if let pool = _pool {
         return pool
       }
