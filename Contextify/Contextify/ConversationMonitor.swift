@@ -656,11 +656,26 @@ final class ConversationMonitor {
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
 
-        let filesOnDisk = try FileManager.default.contentsOfDirectory(
+        // Claude Code stores transcripts in project subdirectories
+        // e.g., ~/.claude/projects/-Users-rob-code-projects-contextify/*.jsonl
+        let projectDirs = try FileManager.default.contentsOfDirectory(
             at: claudeDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "jsonl" }
+        ).filter { url in
+            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+
+        // Collect all .jsonl files from all project directories
+        var filesOnDisk: [URL] = []
+        for dir in projectDirs {
+            let jsonlFiles = try FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ).filter { $0.pathExtension == "jsonl" }
+            filesOnDisk.append(contentsOf: jsonlFiles)
+        }
 
         // Get files already in SQL
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
