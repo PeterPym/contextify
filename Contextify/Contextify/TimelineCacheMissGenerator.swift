@@ -154,8 +154,18 @@ actor TimelineCacheMissGenerator {
                     windowSha256: miss.windowSha256
                 )
 
+                // Skip if user edited
                 if let existing = existing, existing.userEdited == 1 {
                     log.debug("Skipping - user edited entry exists")
+                    onSkip()
+                    return
+                }
+
+                // Skip if already fresh (same generator signature) - P0.10
+                if let existing = existing,
+                   existing.userEdited == 0,
+                   existing.generatorSignature == timelineGeneratorSignature() {
+                    log.debug("Skipping - cache already fresh with matching signature")
                     onSkip()
                     return
                 }
@@ -185,8 +195,11 @@ actor TimelineCacheMissGenerator {
             }
         }
 
-        // All attempts exhausted
-        throw lastError ?? NSError(domain: "CacheMissGenerator", code: -1, userInfo: [NSLocalizedDescriptionKey: "All retry attempts failed"])
+        // All attempts exhausted - P0.11: Preserve root error
+        guard let error = lastError else {
+            fatalError("Retry exhausted without capturing error")
+        }
+        throw error
     }
 
     /// Generate summary for a cache miss using LLM
