@@ -30,8 +30,9 @@ final class ConversationMonitor {
     private(set) var entries: [TimelineEntry] = []
 
     /// Entries filtered to the active session (UI-visible subset)
+    /// When no session is selected, shows all entries (project-wide view)
     var visibleEntries: [TimelineEntry] {
-        guard let id = currentSessionId else { return [] }
+        guard let id = currentSessionId else { return entries }  // Show all when no session filter
         return entries.filter { $0.sessionId == id }
     }
 
