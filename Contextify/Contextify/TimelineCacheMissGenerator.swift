@@ -206,21 +206,25 @@ actor TimelineCacheMissGenerator {
 
     /// Generate summary for a cache miss using LLM
     private func generateSummary(for miss: CacheMiss) async throws -> GeneratedSummary {
-        // TODO: Replace with actual LLM API call
-        // For now, use simple heuristic as placeholder
+        // Parse kind and provider
+        let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
+        let provider = TimelineSourceContext.Provider(rawValue: miss.provider) ?? .other
 
-        let content = miss.content
-        let truncated = String(content.prefix(150))
+        // Call FoundationLLM for dual-form generation
+        let llm = FoundationLLM.shared
+        let result = try await llm.summarizeTimelineWithForms(
+            kind: kind,
+            text: miss.content,
+            provider: provider,
+            contextWindow: [] // TODO: Add prev1/prev2 context if needed
+        )
 
-        // Generate present and past forms
-        let presentForm = truncated + (content.count > 150 ? "…" : "")
-        let pastForm = truncated + (content.count > 150 ? "…" : "")
-
+        // Map to GeneratedSummary
         return GeneratedSummary(
-            presentForm: presentForm,
-            pastForm: pastForm,
-            selectedForm: "present",
-            disposition: "active"
+            presentForm: result.presentForm,
+            pastForm: result.pastForm,
+            selectedForm: result.disposition == .completion ? "past" : "present",
+            disposition: result.disposition.rawValue
         )
     }
 

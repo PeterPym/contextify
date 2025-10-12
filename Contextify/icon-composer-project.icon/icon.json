@@ -1,0 +1,52 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : "system-light"
+    },
+    {
+      "appearance" : "light",
+      "value" : {
+        "solid" : "display-p3:0.84180,0.84180,0.84180,1.00000"
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "Infinity.png",
+          "name" : "Infinity"
+        },
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "Buttons.png",
+          "name" : "Buttons",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -244.50541288107493,
+              -346.5128629622524
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
