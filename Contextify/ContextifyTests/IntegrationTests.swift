@@ -1,5 +1,6 @@
 import XCTest
 import GRDB
+import OSLog
 @testable import ContextifyCore
 
 /// Integration tests demonstrating full hoover workflow
@@ -27,7 +28,8 @@ final class IntegrationTests: XCTestCase {
     var config = Configuration()
     config.foreignKeysEnabled = true
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    var migrator = DatabaseSchema.createMigrator()
+    try migrator.migrate(pool)
 
     // 2. Create repositories
     let projectRepo = ProjectRepositoryImpl(db: pool)
@@ -160,7 +162,8 @@ final class IntegrationTests: XCTestCase {
     var config = Configuration()
     config.foreignKeysEnabled = true
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    var migrator = DatabaseSchema.createMigrator()
+    try migrator.migrate(pool)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)

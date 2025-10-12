@@ -125,7 +125,7 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
 
 // MARK: - Cache Key
 
-public struct CacheKey: Hashable, Sendable {
+public struct CacheKey: Hashable, Codable, Sendable {
   public let content: String
   public let window: String
 
@@ -137,6 +137,12 @@ public struct CacheKey: Hashable, Sendable {
   public var compositeKey: String {
     "\(content)|\(window)"
   }
+}
+
+// MARK: - Notifications
+
+public extension Notification.Name {
+    static let timelineCacheUpdated = Notification.Name("TimelineCacheUpdated")
 }
 
 // MARK: - Timeline Cache

@@ -120,11 +120,13 @@ actor TimelineCacheMissGenerator {
         var successCount = 0
         var skipCount = 0
         var errorCount = 0
+        var successfulMisses: [CacheMiss] = []
 
         for miss in batch {
             do {
                 try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
                 successCount += 1
+                successfulMisses.append(miss)
             } catch {
                 log.error("Failed to generate cache after retries: \(error.localizedDescription, privacy: .public)")
                 errorCount += 1
@@ -134,9 +136,9 @@ actor TimelineCacheMissGenerator {
         let elapsed = Date().timeIntervalSince(startTime)
         log.info("Batch complete: \(successCount) generated, \(skipCount) skipped, \(errorCount) errors in \(Int(elapsed * 1000))ms")
 
-        // Post notification for UI refresh if any succeeded
-        if successCount > 0 {
-            await postCacheUpdateNotification()
+        // Post notification with specific keys that were successfully updated
+        if !successfulMisses.isEmpty {
+            await postCacheUpdateNotification(for: successfulMisses)
         }
     }
 
@@ -254,12 +256,18 @@ actor TimelineCacheMissGenerator {
         try orchestrator.saveCachedTimeline(cache)
     }
 
-    /// Post notification to trigger lightweight UI refresh
-    private func postCacheUpdateNotification() async {
+    /// Post notification to trigger lightweight UI refresh with specific keys
+    private func postCacheUpdateNotification(for successfulMisses: [CacheMiss]) async {
+        // Convert to CacheKey for type-safe notification
+        let keys = successfulMisses.map { miss in
+            CacheKey(content: miss.contentSha256, window: miss.windowSha256)
+        }
+
         await MainActor.run {
             NotificationCenter.default.post(
-                name: NSNotification.Name("TimelineCacheUpdated"),
-                object: nil
+                name: .timelineCacheUpdated,
+                object: nil,
+                userInfo: ["keys": keys]
             )
         }
     }
