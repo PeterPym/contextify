@@ -81,16 +81,17 @@ enum DatabaseSchema {
       }
 
       // Create covering index AFTER backfill to avoid costly index maintenance
-      // SQLite can reverse-scan DESC, so we specify timestamp DESC explicitly
+      // Includes (timestamp, created_at, id) to match feed query ORDER BY for consistent sorting
       try db.create(
         index: "idx_entries_feed_cover",
         on: "transcript_entries",
         columns: [
           "project_id",
-          "timestamp", // DESC sort handled by planner reverse-scan
+          "timestamp",   // Primary sort key
+          "created_at",  // Secondary sort key for tie-breaking
+          "id",          // Tertiary sort key for stable ordering
           "content_sha256",
           "window_sha256",
-          "id",
           "kind",
           "is_completion",
           "session_id"

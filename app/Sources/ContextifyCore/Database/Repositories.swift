@@ -218,6 +218,9 @@ public protocol EntryRepository {
 
   // v2: Single-query feed with cache join
   func recentFeed(projectId: String, limit: Int, generatorSignature: String) throws -> [(TranscriptEntry, TimelineCache?)]
+
+  // v2: Keyset pagination for incremental updates
+  func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry]
 }
 
 public final class EntryRepositoryImpl: EntryRepository {
@@ -245,7 +248,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       try TranscriptEntry
         .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
-        .order(Column("timestamp").desc)
+        .order(Column("timestamp").desc, Column("created_at").desc, Column("id").desc)
         .limit(limit)
         .fetchAll(db)
     }
@@ -255,7 +258,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       try TranscriptEntry
         .filter(Column("project_id") == projectId && Column("timestamp") > afterTimestamp && Column("display_in_timeline") == 1)
-        .order(Column("timestamp").asc)
+        .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
         .fetchAll(db)
     }
   }
@@ -297,7 +300,7 @@ public final class EntryRepositoryImpl: EntryRepository {
          AND c.generator_signature = ?
         WHERE e.project_id = ?
           AND e.display_in_timeline = 1
-        ORDER BY e.timestamp DESC, e.id DESC
+        ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
         LIMIT ?
       """
 
@@ -321,6 +324,16 @@ public final class EntryRepositoryImpl: EntryRepository {
 
           return (entry, cache)
         }
+    }
+  }
+
+  public func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
+    try db.read { db in
+      try TranscriptEntry
+        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
+        .filter(sql: "(timestamp, created_at, id) > (?, ?, ?)", arguments: [after.timestamp, after.createdAt, after.id])
+        .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
+        .fetchAll(db)
     }
   }
 }
@@ -367,7 +380,9 @@ public final class MetadataRepositoryImpl: MetadataRepository {
 public protocol CacheRepository {
   func get(contentSha256: String, windowSha256: String) throws -> TimelineCache?
   func getMany(keys: [(String, String)]) throws -> [String: TimelineCache]
+  func getManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache]
   func upsert(_ cache: TimelineCache) throws
+  func upsertMany(_ caches: [TimelineCache]) throws
 }
 
 public final class CacheRepositoryImpl: CacheRepository {
@@ -448,6 +463,80 @@ public final class CacheRepositoryImpl: CacheRepository {
         cache.requestId,
         cache.duration
       ])
+    }
+  }
+
+  public func getManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache] {
+    guard !keys.isEmpty else { return [:] }
+
+    return try db.read { db in
+      var result: [CacheKey: TimelineCache] = [:]
+
+      // Chunk by 300 pairs (~900 params + 1 signature per clause = ~901 total params per chunk)
+      let chunkSize = 300
+      for chunk in stride(from: 0, to: keys.count, by: chunkSize).map({ Array(keys[$0..<min($0 + chunkSize, keys.count)]) }) {
+        let clauses = chunk.map { _ in
+          "(content_sha256 = ? AND window_sha256 = ? AND generator_signature = ?)"
+        }.joined(separator: " OR ")
+
+        let sql = "SELECT * FROM timeline_cache WHERE \(clauses)"
+
+        var args: [DatabaseValueConvertible] = []
+        for key in chunk {
+          args += [key.content, key.window, generatorSignature]
+        }
+
+        let caches = try TimelineCache.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        for cache in caches {
+          let key = CacheKey(content: cache.contentSha256, window: cache.windowSha256)
+          result[key] = cache
+        }
+      }
+
+      return result
+    }
+  }
+
+  public func upsertMany(_ caches: [TimelineCache]) throws {
+    guard !caches.isEmpty else { return }
+
+    try db.write { db in
+      for cache in caches {
+        // Use same conditional upsert logic as single upsert
+        // CASE expressions ensure user_edited=1 rows are never clobbered
+        try db.execute(sql: """
+          INSERT INTO timeline_cache (
+            content_sha256, window_sha256, entry_id, generator_signature,
+            disposition, present_form, past_form, selected_form, verb_lemma,
+            generated_at, user_edited, user_text, edited_at, request_id, duration
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(content_sha256, window_sha256) DO UPDATE SET
+            entry_id = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.entry_id ELSE excluded.entry_id END,
+            generator_signature = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.generator_signature ELSE excluded.generator_signature END,
+            disposition = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.disposition ELSE excluded.disposition END,
+            present_form = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.present_form ELSE excluded.present_form END,
+            past_form = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.past_form ELSE excluded.past_form END,
+            selected_form = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.selected_form ELSE excluded.selected_form END,
+            verb_lemma = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.verb_lemma ELSE excluded.verb_lemma END,
+            generated_at = CASE WHEN timeline_cache.user_edited = 1 THEN timeline_cache.generated_at ELSE excluded.generated_at END
+        """, arguments: [
+          cache.contentSha256,
+          cache.windowSha256,
+          cache.entryId,
+          cache.generatorSignature,
+          cache.disposition,
+          cache.presentForm,
+          cache.pastForm,
+          cache.selectedForm,
+          cache.verbLemma,
+          cache.generatedAt,
+          cache.userEdited,
+          cache.userText,
+          cache.editedAt,
+          cache.requestId,
+          cache.duration
+        ])
+      }
     }
   }
 }

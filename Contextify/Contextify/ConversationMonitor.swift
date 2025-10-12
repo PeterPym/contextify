@@ -30,8 +30,9 @@ final class ConversationMonitor {
     private(set) var entries: [TimelineEntry] = []
 
     /// Entries filtered to the active session (UI-visible subset)
+    /// When no session is selected, shows all entries (project-wide view)
     var visibleEntries: [TimelineEntry] {
-        guard let id = currentSessionId else { return [] }
+        guard let id = currentSessionId else { return entries }  // Show all when no session filter
         return entries.filter { $0.sessionId == id }
     }
 
@@ -42,73 +43,206 @@ final class ConversationMonitor {
     private(set) var lastUpdate: Date?
     var autoScroll = true
 
-    @ObservationIgnored private var fileWatcher: DispatchSourceFileSystemObject?
-    @ObservationIgnored private var conversationFileDescriptor: CInt = -1
-    @ObservationIgnored private var lastProcessedLine: Int = 0
-    @ObservationIgnored private var currentLineNumber: Int = 0
-    @ObservationIgnored private var seenMessageUUIDs: Set<String> = []
     @ObservationIgnored private var didEmitSessionStart = false
-    @ObservationIgnored private var currentConversationFile: URL?
     @ObservationIgnored private(set) var activeSession: TranscriptSession?
     @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
-    @ObservationIgnored private(set) var allSessions: [TranscriptSession] = []
+    // MUST be observable for UI - inventory and session switching depend on this
+    private(set) var allSessions: [TranscriptSession] = []
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
-    @ObservationIgnored private var currentSessionId: String?  // Current session identifier for timeline entries
-    @ObservationIgnored private var pendingReprocess = false  // Coalesce reprocessing when busy
+    // MUST be observable for UI - visibleEntries filtering depends on this
+    private var currentSessionId: String?  // Current session identifier for timeline entries
+    @ObservationIgnored private var currentProjectId: String?  // SQL project ID
+    @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
+    @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
+    @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
+    @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
+    @ObservationIgnored private var pendingNotificationTask: Task<Void, Never>?  // For debouncing
+    @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
+    @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
+    @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
+    @ObservationIgnored private var indexByCacheKey: [String: Int] = [:]  // "content|window" -> row index for in-place updates
 
     private init() {}
 
+    @MainActor
     func startMonitoring() {
-        guard fileWatcher == nil else { return }
-        log.info("Starting conversation timeline monitoring via project conversation files")
-        log.debug("HUDViewModel projectRootURL: \(String(describing: HUDViewModel.shared.projectRootURL?.path), privacy: .public)")
-        isMonitoring = true
+        guard !isMonitoring else { return }
 
-        // Find and watch the current project's conversation file
-        Task { [weak self] in
-            await self?.refreshActiveConversation(force: true)
+        log.info("⭐️ Timeline integration starting")
+        log.info("Starting SQL-based timeline monitoring")
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            // 1. Get project from HUD
+            guard let projectRoot = HUDViewModel.shared.projectRootURL else {
+                self.lastError = "No project root set"
+                self.log.error("No project root URL available from HUDViewModel")
+                return
+            }
+
+            // 2. Initialize shared orchestrator (nonisolated - safe for concurrent access)
+            do {
+                self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+
+                // CRITICAL: Create project on main actor and wait for DB commit
+                // This ensures the project exists before background tasks access it
+                self.currentProjectId = try self.orchestrator.getOrCreateProject(
+                    name: projectRoot.lastPathComponent,
+                    rootPath: projectRoot.path
+                )
+                self.log.info("📁 Project ID set: \(self.currentProjectId ?? "nil")")
+
+                // Verify project was persisted (forces read from DB, ensures commit)
+                let projectId = self.currentProjectId!
+                guard let _ = try self.orchestrator.getProject(id: projectId) else {
+                    self.lastError = "Failed to verify project creation"
+                    self.log.error("❌ Project \(projectId) not found after creation")
+                    return
+                }
+                self.log.info("✅ Project \(projectId) verified in database")
+
+                // 3. Initialize cache miss generator
+                self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
+
+                // 4. Background discover + hoover of new transcripts
+                // Safe to use detached task now - project is committed to DB
+                let orchestrator = self.orchestrator!
+                self.log.info("🚀 Spawning background discovery for project: \(projectId)")
+                self.discoveryTask = Task.detached(priority: .userInitiated) { [weak self] in
+                    guard let self else { return }
+                    do {
+                        try await self.discoverNewTranscripts(projectId: projectId, orchestrator: orchestrator)
+                    } catch {
+                        await MainActor.run {
+                            self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
+                        }
+                    }
+                }
+
+                // 5. Load initial feed (fast - single query)
+                await self.loadFeedFromSQL()
+
+                // 6. Subscribe to realtime updates
+                self.setupSQLNotifications()
+                self.setupCacheUpdateNotifications()
+
+                self.isMonitoring = true
+                self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
+            } catch {
+                self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
+                self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
-        startConversationResolverLoop()
-
-        // Cache flush on app terminate is now handled by AppDelegate.applicationShouldTerminate
     }
 
+    @MainActor
     func stopMonitoring() {
-        tearDownFileWatcher()
         isMonitoring = false
-        currentConversationFile = nil
         activeSession = nil
         conversationResolverTask?.cancel()
         conversationResolverTask = nil
+        pendingNotificationTask?.cancel()
+        pendingNotificationTask = nil
+        discoveryTask?.cancel()
+        discoveryTask = nil
+
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            notificationObserver = nil
+        }
+
+        if let observer = cacheUpdateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            cacheUpdateObserver = nil
+        }
+
+        // Stop all watchers using shared orchestrator
+        if orchestrator != nil {
+            orchestrator.stopAllWatchers()
+        }
+
+        // Clear state
+        seenEntryIDs.removeAll()
+        lastSeenCursor = nil
+        currentProjectId = nil
+        cacheMissGenerator = nil
     }
 
+    @MainActor
     func toggleCollapsed() {
         isCollapsed.toggle()
     }
 
+    @MainActor
     func clearEntries() {
         entries.removeAll()
-        lastProcessedLine = 0
-        seenMessageUUIDs.removeAll()
         didEmitSessionStart = false
-        // Don't add system entry immediately - it will be added at the end
-        // after backfill when processConversationFile() completes
+        lastSeenCursor = nil
+        seenEntryIDs.removeAll()
     }
 
+    @MainActor
     func requestImmediateRefresh(trigger: TimelineRefreshTrigger) {
-        Task {
-            await processConversationFile()
+        Task { @MainActor in
+            await loadFeedFromSQL()
         }
     }
 
     /// Public method for user-initiated session switch from transcript inventory
+    @MainActor
     func switchToSessionFromUser(_ session: TranscriptSession) async {
-        // Idempotent: do nothing if already on this session
-        if session.identifier == currentSessionId { return }
-        let reason: SessionSwitchReason = isNewConversation(session) ? .newConversation : .userSelection
-        await switchToSession(session, reason: reason)
+        // Filter by transcript file path
+        guard let projectId = currentProjectId, orchestrator != nil else {
+            log.warning("Cannot switch session: no project or orchestrator")
+            return
+        }
+
+        do {
+            // Find transcript ID by file path
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+            guard let transcript = transcripts.first(where: { $0.filePath == session.fileURL.path }) else {
+                log.warning("No transcript found for session: \(session.fileURL.path)")
+                // Fall back to loading all entries
+                await loadFeedFromSQL()
+                return
+            }
+
+            // Get entries for this specific transcript
+            let transcriptEntries = try orchestrator.getEntries(forTranscript: transcript.id, afterTimestamp: nil)
+
+            // Batch cache lookup for better performance
+            let cacheKeys = transcriptEntries.compactMap { entry -> (String, String)? in
+                guard let windowSha = entry.windowSha256 else { return nil }
+                return (entry.contentSha256, windowSha)
+            }
+
+            let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
+
+            // Map to timeline entries
+            seenEntryIDs.removeAll(keepingCapacity: true)
+            entries = transcriptEntries.map { entry in
+                seenEntryIDs.insert(entry.id)
+                let cacheKey = entry.windowSha256.map { "\(entry.contentSha256)|\($0)" }
+                let cache = cacheKey.flatMap { cacheMap[$0] }
+                return toTimelineEntry(entry, cached: cache)
+            }
+
+            // Update cursor from latest entry
+            if let latest = transcriptEntries.first {
+                lastSeenCursor = (timestamp: latest.timestamp, createdAt: latest.createdAt, id: latest.id)
+            }
+
+            currentSessionId = session.identifier
+            lastUpdate = Date()
+
+            log.info("Switched to session: \(session.fileURL.lastPathComponent) (\(self.entries.count) entries)")
+        } catch {
+            lastError = "Failed to switch session: \(error.localizedDescription)"
+            log.error("Session switch failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Public refresh method for manual refresh requests
@@ -116,313 +250,14 @@ final class ConversationMonitor {
         await MainActor.run { [weak self] in
             guard let self else { return }
             Task { @MainActor in
-                await self.refreshActiveConversation(force: true)
+                await self.loadFeedFromSQL()
             }
         }
     }
 
-    // MARK: - File Discovery & Watching
+    // MARK: - Session Management (Legacy)
 
-    private func refreshActiveConversation(force: Bool = false) async {
-        guard let projectURL = HUDViewModel.shared.projectRootURL else {
-            if activeSession != nil {
-                log.info("No project root set; tearing down watcher")
-                tearDownFileWatcher()
-            }
-            activeSession = nil
-            currentConversationFile = nil
-            allSessions = []
-            lastError = "No project root set"
-            log.error("Timeline: No project root URL available from HUDViewModel")
-            return
-        }
 
-        log.debug("Timeline: Resolving conversations for project: \(projectURL.path, privacy: .public)")
-
-        // Use ProjectContext for worktree-aware session discovery
-        guard let context = ProjectContext.current() else {
-            log.error("Timeline: Failed to create ProjectContext")
-            lastError = "Failed to create project context"
-            return
-        }
-
-        let sessions = conversationResolver.resolveAllSessions(for: context)
-        allSessions = sessions
-
-        log.debug("Timeline: Found \(sessions.count) total sessions for project (including worktrees)")
-
-        guard let session = sessions.first else {
-            if activeSession != nil {
-                log.info("No active conversation sessions found; tearing down watcher")
-                tearDownFileWatcher()
-            }
-            activeSession = nil
-            currentConversationFile = nil
-            lastError = "No conversation file found for this project"
-            log.error("Timeline: No sessions found for project")
-            return
-        }
-
-        log.debug("Timeline: Active session at \(session.fileURL.path, privacy: .public)")
-
-        if !force, let current = activeSession, current.fileURL == session.fileURL {
-            // Same session, just update the reference
-            activeSession = session
-            log.debug("Timeline: Session unchanged, skipping switch")
-            return
-        }
-
-        // Only emit provider switch if we're actually changing sessions
-        let switchReason: SessionSwitchReason
-        if force {
-            switchReason = .initial
-        } else if activeSession != nil {
-            // We had a previous session and it's different
-            // Check if the new session is brand new
-            if isNewConversation(session) {
-                switchReason = .newConversation
-            } else {
-                switchReason = .providerChange
-            }
-        } else {
-            // First time setting up - treat as initial
-            switchReason = .initial
-        }
-
-        await switchToSession(session, reason: switchReason)
-    }
-
-    private enum SessionSwitchReason {
-        case initial
-        case providerChange
-        case userSelection
-        case newConversation
-    }
-
-    private func switchToSession(_ session: TranscriptSession, reason: SessionSwitchReason) async {
-        tearDownFileWatcher()
-
-        let previousSessionId = currentSessionId
-        activeSession = session
-        currentConversationFile = session.fileURL
-        currentSessionId = session.identifier
-
-        // Clear per-session state - generate new epoch to invalidate in-flight tasks
-        sessionEpoch = UUID()
-        lastProcessedLine = 0
-        seenMessageUUIDs.removeAll()
-        didEmitSessionStart = false
-        lastError = nil
-
-        // DON'T clear entries - we preserve history across sessions
-        let sid = session.identifier
-
-        // Trim per-session to configured retention limit
-        let filtered = entries.filter { $0.sessionId == sid }
-        if filtered.count > config.timelineMaxEntriesPerSession {
-            let keep = Array(filtered.suffix(config.timelineMaxEntriesPerSession))
-            entries.removeAll { $0.sessionId == sid }
-            entries.append(contentsOf: keep)
-        }
-
-        // Load cache for this conversation BEFORE processing
-        do {
-            try await TimelineCacheOrchestrator.shared.loadCache(for: session.fileURL)
-            log.debug("Timeline cache loaded for \(session.fileURL.lastPathComponent, privacy: .public)")
-        } catch {
-            log.error("Failed to load timeline cache: \(error.localizedDescription, privacy: .public)")
-        }
-
-        // Backfill sessionId on cache-loaded and legacy entries
-        for i in entries.indices {
-            if entries[i].sessionId == nil {
-                entries[i] = entries[i].copyWith(sessionId: sid)
-            }
-        }
-
-        configureFileWatcher(for: session.fileURL)
-
-        // Add initializing placeholder entry to improve startup UX
-        let placeholderEntry = TimelineEntry(
-            kind: .system,
-            timestamp: Date(),
-            summary: "Initializing timeline…",
-            detail: "Loading conversation history",
-            sourceContext: makeSourceContext(identifier: "system-initializing"),
-            sourceIdentifier: "system-initializing",
-            sessionId: session.identifier
-        )
-        entries.append(placeholderEntry)
-
-        // Process conversation file FIRST to backfill historical entries
-        await processConversationFile()
-
-        // Remove placeholder after processing completes
-        entries.removeAll { $0.sourceIdentifier == "system-initializing" }
-
-        // Add system message at the END (most recent position)
-        // Only add separator if we're switching from a different session
-        if reason == .initial {
-            ensureSessionStartEntry()
-        } else if previousSessionId != session.identifier {
-            // Switching to a different session - add separator
-            emitProviderSwitchEntry(for: session, reason: reason)
-        }
-    }
-
-    private func configureFileWatcher(for fileURL: URL) {
-        let path = fileURL.path
-        conversationFileDescriptor = open(path, O_EVTONLY)
-        guard conversationFileDescriptor >= 0 else {
-            log.error("Failed to open conversation file for watching")
-            return
-        }
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: conversationFileDescriptor,
-            eventMask: [.write, .extend, .delete, .rename],
-            queue: DispatchQueue.main
-        )
-
-        source.setEventHandler { [weak self] in
-            Task { @MainActor [weak self] in
-                await self?.processConversationFile()
-            }
-        }
-
-        source.setCancelHandler { [weak self] in
-            guard let self = self else { return }
-            if self.conversationFileDescriptor >= 0 {
-                close(self.conversationFileDescriptor)
-                self.conversationFileDescriptor = -1
-            }
-        }
-
-        source.resume()
-        fileWatcher = source
-        log.info("Watching transcript: \(fileURL.lastPathComponent, privacy: .public)")
-    }
-
-    private func tearDownFileWatcher() {
-        if let watcher = fileWatcher {
-            watcher.cancel()
-            fileWatcher = nil
-        } else if conversationFileDescriptor >= 0 {
-            close(conversationFileDescriptor)
-        }
-
-        conversationFileDescriptor = -1
-    }
-
-    /// Tunables for new conversation detection (keep small – app detects almost immediately)
-    private let newConversationWindowSeconds: TimeInterval = 5
-    private let newConversationMaxTurnsExclusive: Int = 5
-
-    /// Detects if a conversation session is brand new based on file creation time and turn count.
-    /// Returns true ONLY if (created within N seconds) AND (turns < maxTurns)
-    private func isNewConversation(_ session: TranscriptSession) -> Bool {
-        let fileURL = session.fileURL
-
-        // 1) Creation time within window
-        guard
-            let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-            let created = (attrs[.creationDate] as? Date) ?? (attrs[.modificationDate] as? Date),
-            Date().timeIntervalSince(created) <= newConversationWindowSeconds
-        else {
-            return false
-        }
-
-        // 2) Conversational turns < threshold (fast path; stop early once threshold reached)
-        let allowedTypes: Set<String> = ["user_message", "assistant_message", "response_item", "user", "assistant"]
-
-        guard let fh = try? FileHandle(forReadingFrom: fileURL) else { return false }
-        defer { try? fh.close() }
-
-        // Read a small head chunk; most brand-new files will fit here.
-        // If not, we still early-stop when we hit the threshold.
-        let chunkSize = 32 * 1024
-        let data = (try? fh.read(upToCount: chunkSize)) ?? Data()
-        guard let head = String(data: data, encoding: .utf8), !head.isEmpty else { return true }
-
-        var turns = 0
-        for line in head.split(whereSeparator: \.isNewline) {
-            if line.isEmpty { continue }
-            if let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-               let t = obj["type"] as? String,
-               allowedTypes.contains(t) {
-                turns += 1
-                if turns >= newConversationMaxTurnsExclusive {
-                    return false // too many turns → not "new"
-                }
-            }
-        }
-
-        return true // within window AND turns < threshold
-    }
-
-    private func emitProviderSwitchEntry(for session: TranscriptSession, reason: SessionSwitchReason) {
-        let sourceId = "provider-switch-\(session.identifier)"
-
-        // Deduplicate: don't add if we already have this exact system message
-        if entries.contains(where: { $0.sourceIdentifier == sourceId && $0.kind == .system }) {
-            log.debug("🟢 emitProviderSwitchEntry: Already have provider switch entry for \(session.identifier), skipping")
-            return
-        }
-
-        let providerName = session.provider.displayName
-        let summary: String
-        switch reason {
-        case .newConversation:
-            summary = "Switched to a new \(providerName) conversation"
-        case .userSelection, .providerChange:
-            summary = "Switched to \(providerName) conversation"
-        case .initial:
-            summary = "Timeline monitoring started (\(providerName))"
-        }
-
-        let detail = """
-        Timeline switched to conversation
-
-        Monitoring: \(session.fileURL.lastPathComponent)
-        Path: \(session.fileURL.path)
-        """
-        let context = TimelineSourceContext(
-            provider: session.provider,
-            identifier: session.identifier,
-            filePath: session.fileURL.path
-        )
-
-        let entry = TimelineEntry(
-            kind: .system,
-            timestamp: Date(),
-            summary: summary,
-            detail: detail,
-            sourceContent: detail,
-            sourceContext: context,
-            sourceIdentifier: sourceId,
-            action: .revealInInventory(transcriptPath: session.fileURL.path),
-            sessionId: session.identifier
-        )
-
-        entries.append(entry)
-        if entries.count > config.maxEntries {
-            entries = Array(entries.suffix(config.maxEntries))
-        }
-    }
-
-    private func startConversationResolverLoop() {
-        conversationResolverTask?.cancel()
-        conversationResolverTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let interval = self.config.pollInterval
-            let delay = UInt64(max(interval, 1) * 1_000_000_000)
-
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: delay)
-                await self.refreshActiveConversation()
-            }
-        }
-    }
 
     private func makeSourceContext(identifier: String, line: Int? = nil) -> TimelineSourceContext {
         let provider = activeSession?.provider ?? .other
@@ -450,496 +285,497 @@ final class ConversationMonitor {
         }
     }
 
-    // MARK: - Processing
+    // MARK: - SQL-based Processing
 
-    private func processConversationFile() async {
-        guard isMonitoring else {
-            log.error("🔴 processConversationFile: not monitoring")
-            return
-        }
-        guard let fileURL = currentConversationFile else {
-            log.error("🔴 processConversationFile: no conversation file")
-            return
+    private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?) -> TimelineEntry {
+        // Use cached summary if available, otherwise fallback
+        let summary: String
+        let action: TimelineEntryAction
+        if let cache = cached {
+            // Honor user edits first
+            if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
+                summary = userText
+            } else {
+                // Use generated forms
+                summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
+            }
+            action = .none
+        } else {
+            // Fallback for cache miss (will trigger LLM generation in background)
+            if entry.content.isEmpty {
+                summary = "[No content]"
+            } else {
+                summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
+            }
+            action = .generating  // Mark as pending generation
         }
 
-        // Coalesce: if already processing, mark pending and return
-        if isProcessing {
-            pendingReprocess = true
-            log.debug("🟢 processConversationFile: already processing, coalescing request")
-            return
+        // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
+        let stableId: UUID
+        if let parsed = UUID(uuidString: entry.id) {
+            stableId = parsed
+        } else {
+            // Use UUIDv5 for stable identity from string IDs
+            stableId = UUID(uuidString: "00000000-0000-5000-8000-\(entry.id.prefix(12).padding(toLength: 12, withPad: "0", startingAt: 0))")
+                ?? UUID()
         }
 
-        log.debug("🟢 processConversationFile: starting, file=\(fileURL.lastPathComponent, privacy: .public)")
+        return TimelineEntry(
+            id: stableId,
+            kind: TimelineEntryKind(rawValue: entry.kind) ?? .assistant,
+            timestamp: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)),
+            summary: summary,
+            detail: entry.content,
+            sourceContent: entry.content,
+            sourceContext: TimelineSourceContext(
+                provider: TimelineSourceContext.Provider(rawValue: entry.provider) ?? .other,
+                identifier: entry.id,
+                filePath: nil,
+                line: nil
+            ),
+            sourceIdentifier: entry.id,
+            isCompletion: entry.isCompletion == 1,
+            isDirective: entry.isDirective == 1,
+            requestId: nil,
+            action: action,
+            sessionId: entry.sessionId,
+            contentSha256: entry.contentSha256,
+            windowSha256: entry.windowSha256
+        )
+    }
+
+    @MainActor
+    private func loadFeedFromSQL() async {
+        guard let projectId = currentProjectId, orchestrator != nil else { return }
 
         isProcessing = true
-        defer {
-            isProcessing = false
-            lastUpdate = Date()
-            // If work arrived while processing, schedule one more pass
-            if pendingReprocess {
-                pendingReprocess = false
-                Task { @MainActor in
-                    await self.processConversationFile()
-                }
-            }
-        }
+        defer { isProcessing = false }
 
         do {
-            let content = try String(contentsOf: fileURL, encoding: .utf8)
-            let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
+            let startTime = Date()
 
-            log.debug("🟢 processConversationFile: read \(lines.count) lines, lastProcessedLine=\(self.lastProcessedLine)")
+            // Single query gets entries + cache
+            let feed = try orchestrator.getRecentFeed(
+                forProject: projectId,
+                limit: config.maxEntries,
+                generatorSignature: generatorSignature()
+            )
 
-            // Only process new lines since last check
-            guard lines.count > lastProcessedLine else {
-                log.debug("🟢 processConversationFile: no new lines to process")
+            log.info("📊 Feed loaded: \(feed.count) entries from DB")
+
+            // Map to UI entries and track seen IDs + collect cache misses
+            seenEntryIDs.removeAll(keepingCapacity: true)
+            var misses: [CacheMiss] = []
+
+            self.entries = feed.map { entry, cache in
+                seenEntryIDs.insert(entry.id)
+
+                // Collect cache miss for background generation
+                if cache == nil, let windowSha = entry.windowSha256 {
+                    let miss = CacheMiss(
+                        entryId: entry.id,
+                        contentSha256: entry.contentSha256,
+                        windowSha256: windowSha,
+                        content: entry.content,
+                        context: entry.content,  // TODO: Add surrounding context
+                        kind: entry.kind,
+                        provider: entry.provider
+                    )
+                    misses.append(miss)
+                }
+
+                return toTimelineEntry(entry, cached: cache)
+            }
+
+            // Rebuild cache key index for in-place updates
+            rebuildIndexByCacheKey()
+
+            // Queue cache misses for background generation
+            if !misses.isEmpty, let generator = cacheMissGenerator {
+                Task {
+                    await generator.queueMisses(misses)
+                }
+            }
+
+            // Track latest cursor for incremental updates
+            if let latestEntry = feed.first {
+                let e = latestEntry.0
+                lastSeenCursor = (timestamp: e.timestamp, createdAt: e.createdAt, id: e.id)
+            }
+
+            lastUpdate = Date()
+            lastError = nil
+
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > 0.02 {
+                log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
+            }
+
+            // Diagnostic: Check entry content
+            let nonEmptyCount = self.entries.filter { !$0.summary.isEmpty && !$0.detail.isEmpty }.count
+            let emptyCount = self.entries.count - nonEmptyCount
+            log.info("Loaded \(self.entries.count) entries (\(nonEmptyCount) with content, \(emptyCount) empty) in \(Int(elapsed * 1000))ms")
+        } catch {
+            lastError = "Failed to load timeline: \(error.localizedDescription)"
+            log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func setupSQLNotifications() {
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("TranscriptUpdated"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // Extract sendable data before crossing isolation boundary
+            let projectId = notification.userInfo?["projectId"] as? String
+            Task { @MainActor [weak self] in
+                await self?.handleTranscriptUpdate(projectId: projectId)
+            }
+        }
+    }
+
+    private func setupCacheUpdateNotifications() {
+        cacheUpdateObserver = NotificationCenter.default.addObserver(
+            forName: .timelineCacheUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let keys = (note.userInfo?["keys"] as? [CacheKey]) ?? []
+            Task { @MainActor [weak self] in
+                await self?.refreshCachedEntries(keys: keys)
+            }
+        }
+    }
+
+    /// Keyed bulk refresh: Update specific entries when their caches are ready
+    @MainActor
+    private func refreshCachedEntries(keys: [CacheKey]) async {
+        guard let orchestrator else { return }
+        guard !keys.isEmpty else { return }
+
+        log.debug("Refreshing \(keys.count) specific entries with fresh cache")
+
+        // Only update entries currently in the feed (prevents orphan updates across filters)
+        let sig = generatorSignature()
+
+        do {
+            // Fetch caches with signature verification (off-main is safe)
+            let cacheMap = try orchestrator.getCachedTimelineManyWithSignature(
+                keys: keys,
+                generatorSignature: sig
+            )
+
+            // Build updates for indices we currently show
+            var updates: [(Int, TimelineCache)] = []
+            for key in keys {
+                // indexByCacheKey uses compositeKey format "content|window"
+                let composite = key.compositeKey
+                if let index = indexByCacheKey[composite],
+                   index < entries.count,
+                   let cache = cacheMap[key] {
+                    updates.append((index, cache))
+                }
+            }
+
+            guard !updates.isEmpty else {
+                log.debug("No matching entries in current feed for cache update")
                 return
             }
 
-            let newLines: ArraySlice<String>
-            let shouldBackfillLimitedEntries: Bool
-            if lastProcessedLine == 0 {
-                // Initial load: Check if timeline is effectively empty (only system messages)
-                let hasNonSystemMessages = entries.contains { $0.kind != .system }
+            // Apply updates in place, preserving scroll and order
+            for (index, cache) in updates.sorted(by: { $0.0 < $1.0 }) {
+                let old = entries[index]
 
-                if !hasNonSystemMessages {
-                    // Timeline is empty, backfill last 5 displayable entries
-                    newLines = lines[...]
-                    shouldBackfillLimitedEntries = true
-                    log.debug("🟢 processConversationFile: Initial load (empty timeline), will backfill last 5 displayable entries from \(lines.count) total lines")
+                let summary: String
+                if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
+                    summary = userText
                 } else {
-                    // Timeline already has content, don't backfill old messages
-                    newLines = []
-                    shouldBackfillLimitedEntries = false
-                    log.debug("🟢 processConversationFile: Initial load (existing timeline), skipping backfill")
+                    summary = (cache.selectedForm == "present") ? cache.presentForm : cache.pastForm
                 }
-                lastProcessedLine = lines.count
-            } else {
-                // Incremental update: process all new lines
-                newLines = lines[lastProcessedLine...]
-                shouldBackfillLimitedEntries = false
-                lastProcessedLine = lines.count
-                log.debug("🟢 processConversationFile: Incremental update, processing \(newLines.count) new lines")
+
+                entries[index] = old.copyWith(
+                    summary: summary,
+                    action: old.action == .generating ? .none : old.action
+                )
             }
 
-            var processedCount = 0
-            var skippedCount = 0
-            let entriesBeforeProcessing = entries.count
+            log.info("Updated \(updates.count) entries with fresh cache summaries")
+        } catch {
+            log.error("Cache bulk refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
 
-            // Process lines in forward order (chronological)
-            for (index, line) in newLines.enumerated() {
-                // Calculate actual line number in file - always use true file line number
-                let startLine = lastProcessedLine - newLines.count
-                let lineNumber = startLine + index + 1
+    /// Legacy handler - kept for backward compatibility, now delegates to keyed refresh
+    @MainActor
+    private func handleCacheUpdate() async {
+        // Extract all keys and delegate to new method
+        let keys = entries.compactMap { entry -> CacheKey? in
+            guard let content = entry.contentSha256, let window = entry.windowSha256 else {
+                return nil
+            }
+            return CacheKey(content: content, window: window)
+        }
 
-                // If backfilling with limit, check if we have enough displayable entries
-                if shouldBackfillLimitedEntries {
-                    let newDisplayableEntries = entries.count - entriesBeforeProcessing
-                    if newDisplayableEntries >= 20 {
-                        log.debug("🟢 processConversationFile: Reached displayable entries limit (\(newDisplayableEntries)), stopping backfill")
-                        break
-                    }
-                }
+        await refreshCachedEntries(keys: keys)
+    }
 
-                guard let data = line.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    skippedCount += 1
+    private func rebuildIndexByCacheKey() {
+        indexByCacheKey.removeAll(keepingCapacity: true)
+        for (i, entry) in entries.enumerated() {
+            if let content = entry.contentSha256, let window = entry.windowSha256 {
+                indexByCacheKey["\(content)|\(window)"] = i
+            }
+        }
+    }
+
+    @MainActor
+    private func handleTranscriptUpdate(projectId: String?) async {
+        // Filter by project
+        if let notifProjectId = projectId,
+           notifProjectId != currentProjectId {
+            log.debug("Ignoring notification for different project: \(notifProjectId)")
+            return
+        }
+
+        guard currentProjectId != nil, orchestrator != nil else {
+            log.warning("Ignoring notification: no project or orchestrator")
+            return
+        }
+
+        // Debounce: cancel pending task and schedule new one
+        pendingNotificationTask?.cancel()
+        pendingNotificationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            // Wait for debounce interval
+            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+            guard !Task.isCancelled else { return }
+
+            await self.processIncrementalUpdate()
+        }
+    }
+
+    @MainActor
+    private func processIncrementalUpdate() async {
+        guard let projectId = currentProjectId, orchestrator != nil else { return }
+
+        // If no cursor, do full reload instead
+        guard let cursor = lastSeenCursor else {
+            log.info("No cursor available, doing full reload")
+            await loadFeedFromSQL()
+            return
+        }
+
+        do {
+            let startTime = Date()
+
+            // Get new entries using keyset pagination (prevents duplicates/skips)
+            let newEntries = try orchestrator.getEntriesAfterCursor(
+                forProject: projectId,
+                after: cursor
+            )
+
+            guard !newEntries.isEmpty else {
+                log.debug("No new entries in incremental update")
+                return
+            }
+
+            // Convert to timeline entries with cache lookup + collect misses
+            // TODO: Batch cache lookup for better performance
+            var addedCount = 0
+            var misses: [CacheMiss] = []
+
+            for entry in newEntries {
+                // Deduplicate using seenEntryIDs
+                guard !seenEntryIDs.contains(entry.id) else {
+                    log.debug("Skipping duplicate entry: \(entry.id)")
                     continue
                 }
 
-                currentLineNumber = lineNumber
-                await processConversationEntry(json)
-                processedCount += 1
-            }
+                seenEntryIDs.insert(entry.id)
 
-            log.debug("🟢 processConversationFile: processed \(processedCount) entries, skipped \(skippedCount), total timeline entries now: \(self.entries.count)")
+                // Try to get cache for this entry
+                let cache = try? orchestrator.getCachedTimeline(
+                    contentSha256: entry.contentSha256,
+                    windowSha256: entry.windowSha256 ?? ""
+                )
 
-            lastError = nil
-        } catch {
-            lastError = "Failed to read conversation: \(error.localizedDescription)"
-            log.error("🔴 processConversationFile: Failed to process conversation file: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    private func processConversationEntry(_ json: [String: Any]) async {
-        guard let type = json["type"] as? String else {
-            log.debug("🟢 processConversationEntry: no type field, skipping")
-            return
-        }
-
-        // Skip non-conversational records (metadata/snapshots)
-        switch type {
-        case "file-history-snapshot":
-            // File versioning metadata - not conversation content
-            log.debug("🟢 processConversationEntry: skipping file-history-snapshot")
-            return
-        case "response_item":
-            // Codex CLI format
-            await processCodexEntry(json)
-        default:
-            // Claude Code format (user/assistant messages)
-            await processClaudeCodeEntry(json)
-        }
-    }
-
-    private func processClaudeCodeEntry(_ json: [String: Any]) async {
-        guard let uuid = json["uuid"] as? String else {
-            log.error("🔴 processClaudeCodeEntry: no uuid")
-            return
-        }
-        guard !seenMessageUUIDs.contains(uuid) else {
-            log.debug("🟢 processClaudeCodeEntry: already seen uuid=\(uuid, privacy: .public)")
-            return
-        }
-        seenMessageUUIDs.insert(uuid)
-
-        if (json["isSidechain"] as? Bool) == true {
-            log.debug("🟢 processClaudeCodeEntry: skipping sidechain message")
-            return
-        }
-
-        guard let type = json["type"] as? String else {
-            log.error("🔴 processClaudeCodeEntry: no type for uuid=\(uuid, privacy: .public)")
-            return
-        }
-        guard let timestampStr = json["timestamp"] as? String else {
-            log.error("🔴 processClaudeCodeEntry: no timestamp for uuid=\(uuid, privacy: .public)")
-            return
-        }
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let timestamp = formatter.date(from: timestampStr) else {
-            log.error("🔴 processClaudeCodeEntry: invalid timestamp '\(timestampStr, privacy: .public)' for uuid=\(uuid, privacy: .public)")
-            return
-        }
-
-        log.debug("🟢 processClaudeCodeEntry: type=\(type, privacy: .public), uuid=\(uuid, privacy: .public)")
-
-        switch type {
-        case "user":
-            await processUserMessage(json, timestamp: timestamp, uuid: uuid)
-        case "assistant":
-            await processAssistantMessage(json, timestamp: timestamp, uuid: uuid)
-        default:
-            log.debug("🟢 processClaudeCodeEntry: skipping unknown type=\(type, privacy: .public)")
-            break
-        }
-    }
-
-    private func processCodexEntry(_ json: [String: Any]) async {
-        guard let timestampStr = json["timestamp"] as? String else {
-            log.error("🔴 processCodexEntry: no timestamp")
-            return
-        }
-
-        guard let payload = json["payload"] as? [String: Any] else {
-            log.error("🔴 processCodexEntry: no payload")
-            return
-        }
-
-        guard payload["type"] as? String == "message" else {
-            log.debug("🟢 processCodexEntry: skipping non-message payload")
-            return
-        }
-
-        guard let role = payload["role"] as? String else {
-            log.error("🔴 processCodexEntry: no role in payload")
-            return
-        }
-
-        // Generate UUID from timestamp + role + line number for deduplication
-        let uuid = "\(timestampStr)-\(role)-\(currentLineNumber)".data(using: .utf8)!.base64EncodedString()
-
-        guard !seenMessageUUIDs.contains(uuid) else {
-            log.debug("🟢 processCodexEntry: already seen uuid=\(uuid, privacy: .public)")
-            return
-        }
-        seenMessageUUIDs.insert(uuid)
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let timestamp = formatter.date(from: timestampStr) else {
-            log.error("🔴 processCodexEntry: invalid timestamp '\(timestampStr, privacy: .public)'")
-            return
-        }
-
-        log.debug("🟢 processCodexEntry: role=\(role, privacy: .public), uuid=\(uuid, privacy: .public)")
-
-        // Convert Codex format to Claude Code-compatible format
-        let normalizedJSON: [String: Any] = [
-            "uuid": uuid,
-            "type": role, // "user" or "assistant"
-            "timestamp": timestampStr,
-            "message": [
-                "role": role,
-                "content": payload["content"] ?? []
-            ]
-        ]
-
-        switch role {
-        case "user":
-            await processUserMessage(normalizedJSON, timestamp: timestamp, uuid: uuid)
-        case "assistant":
-            await processAssistantMessage(normalizedJSON, timestamp: timestamp, uuid: uuid)
-        default:
-            log.debug("🟢 processCodexEntry: skipping unknown role=\(role, privacy: .public)")
-            break
-        }
-    }
-
-    private func processUserMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
-        log.debug("🟢 processUserMessage: uuid=\(uuid, privacy: .public)")
-
-        // Capture current epoch at the start of async processing
-        let epoch = sessionEpoch
-
-        guard let message = json["message"] as? [String: Any] else {
-            log.error("🔴 processUserMessage: no message dict for uuid=\(uuid, privacy: .public)")
-            return
-        }
-
-        let toolUseStdout = (json["toolUseResult"] as? [String: Any])?["stdout"] as? String
-        let fallbackToolText = (toolUseStdout?.isEmpty == false) ? toolUseStdout : nil
-
-        if let contentBlocks = message["content"] as? [[String: Any]] {
-            let blockTypes = contentBlocks.compactMap { $0["type"] as? String }
-            if !blockTypes.isEmpty, blockTypes.allSatisfy({ $0 == "tool_result" }) {
-                log.debug("🟢 processUserMessage: skipping assistant tool_result relay for uuid=\(uuid, privacy: .public)")
-                return
-            }
-        }
-
-        let text: String
-        if let directContent = message["content"] as? String {
-            text = directContent
-        } else if let contentBlocks = message["content"] as? [[String: Any]] {
-            let blockText = contentBlocks.compactMap { block -> String? in
-                guard let blockType = block["type"] as? String else { return nil }
-
-                switch blockType {
-                case "text", "input_text": // Codex uses "input_text"
-                    if let text = block["text"] as? String, !text.isEmpty { return text }
-                    if let text = block["content"] as? String, !text.isEmpty { return text }
-                    return nil
-                case "tool_result":
-                    if let text = block["content"] as? String, !text.isEmpty {
-                        return text
-                    }
-                    return nil
-                default:
-                    return nil
+                // Collect cache miss for background generation
+                if cache == nil, let windowSha = entry.windowSha256 {
+                    let miss = CacheMiss(
+                        entryId: entry.id,
+                        contentSha256: entry.contentSha256,
+                        windowSha256: windowSha,
+                        content: entry.content,
+                        context: entry.content,  // TODO: Add surrounding context
+                        kind: entry.kind,
+                        provider: entry.provider
+                    )
+                    misses.append(miss)
                 }
-            }.first
 
-            if let blockText {
-                text = blockText
-            } else if let stdout = fallbackToolText {
-                // Prefer inline block content when available; fall back to tool output if the array omits it.
-                text = stdout
-            } else {
-                let contentType = type(of: message["content"] as Any)
-                log.error("🔴 processUserMessage: no usable content in array for uuid=\(uuid, privacy: .public), content type=\(String(describing: contentType))")
-                return
+                let timelineEntry = toTimelineEntry(entry, cached: cache)
+                entries.append(timelineEntry)
+                addedCount += 1
             }
-        } else if let stringArray = message["content"] as? [String],
-                  let first = stringArray.first(where: { !$0.isEmpty }) {
-            text = first
-        } else if let stdout = fallbackToolText {
-            // Prefer inline block content when available; fall back to tool output if the array omits it.
-            text = stdout
+
+            // Queue cache misses for background generation
+            if !misses.isEmpty, let generator = cacheMissGenerator {
+                Task {
+                    await generator.queueMisses(misses)
+                }
+            }
+
+            // Sort to maintain deterministic ordering: timestamp DESC, createdAt DESC, id DESC
+            entries.sort { a, b in
+                if a.timestamp != b.timestamp {
+                    return a.timestamp > b.timestamp
+                }
+                // Note: Can't compare createdAt here as TimelineEntry doesn't have it
+                // Stable sort relies on DB ordering being correct
+                return a.sourceIdentifier > b.sourceIdentifier
+            }
+
+            // Trim to max size
+            if entries.count > config.maxEntries {
+                entries = Array(entries.suffix(config.maxEntries))
+            }
+
+            // Update cursor to latest entry added
+            if let latestNew = newEntries.max(by: { a, b in
+                if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                return a.id < b.id
+            }) {
+                lastSeenCursor = (timestamp: latestNew.timestamp, createdAt: latestNew.createdAt, id: latestNew.id)
+            }
+
+            lastUpdate = Date()
+
+            let elapsed = Date().timeIntervalSince(startTime)
+            log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
+        } catch {
+            lastError = "Failed to fetch new entries: \(error.localizedDescription)"
+            log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
+        await MainActor.run {
+            log.info("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
+        }
+
+        // Verify project exists before discovering
+        guard try orchestrator.getProject(id: projectId) != nil else {
+            await MainActor.run {
+                log.error("❌ discoverNewTranscripts: project \(projectId) not found in database")
+            }
+            throw RepositoryError.notFound
+        }
+        await MainActor.run {
+            log.info("✅ discoverNewTranscripts: verified project \(projectId) exists")
+        }
+
+        // Find JSONL files on disk for THIS project only
+        guard let projectRoot = await HUDViewModel.shared.projectRootURL else { return }
+
+        // Build expected directory name: Claude Code mangles paths like:
+        // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
+        let expectedDirName = projectRoot.path.replacingOccurrences(of: "/", with: "-")
+
+        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects")
+            .appendingPathComponent(expectedDirName)
+
+        // Check if this project's directory exists
+        guard FileManager.default.fileExists(atPath: claudeDir.path) else {
+            await MainActor.run {
+                log.info("No Claude Code directory found for project: \(expectedDirName)")
+            }
+            return
+        }
+
+        // Get all .jsonl files from this project's directory
+        let filesOnDisk = try FileManager.default.contentsOfDirectory(
+            at: claudeDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "jsonl" }
+
+        await MainActor.run {
+            log.info("🔍 Discovery: Found \(filesOnDisk.count) .jsonl files in \(expectedDirName)")
+        }
+
+        // Get files already in SQL
+        let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+        let filesInSQL = Set(transcripts.map { $0.filePath })
+
+        await MainActor.run {
+            log.info("📚 Discovery: \(transcripts.count) transcripts already in DB")
+        }
+
+        // Find new files
+        let newFiles = filesOnDisk.filter { !filesInSQL.contains($0.path) }
+
+        if !newFiles.isEmpty {
+            await MainActor.run {
+                log.info("Discovering \(newFiles.count) new transcripts for project \(projectId)")
+            }
+
+            // Batch discover with progress
+            let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
+
+            try orchestrator.discoverTranscripts(
+                projectId: projectId,
+                transcriptFiles: files,
+                progress: nil
+            )
+
+            // Run maintenance after bulk ingest
+            try orchestrator.performMaintenance()
+
+            log.info("Discovery complete")
         } else {
-            let contentType = type(of: message["content"] as Any)
-            log.error("🔴 processUserMessage: content not a string for uuid=\(uuid, privacy: .public), content type=\(String(describing: contentType))")
-            return
+            log.info("No new transcripts to discover")
         }
 
-        let isMeta = json["isMeta"] as? Bool ?? false
-        log.debug("🟢 processUserMessage: text length=\(text.count), isMeta=\(isMeta)")
-
-        // Skip meta messages and command wrappers
-        guard !text.isEmpty,
-              !(json["isMeta"] as? Bool ?? false),
-              !text.contains("<command-name>"),
-              !text.contains("<local-command-stdout>") else {
-            log.debug("🟢 processUserMessage: skipping (empty/meta/command) for uuid=\(uuid, privacy: .public)")
-            return
-        }
-
-        log.debug("🟢 processUserMessage: creating timeline entry for uuid=\(uuid, privacy: .public)")
-
-        let actionHint = shouldUseActionHint(for: text) ? latestAssistantActionHint() : nil
-        let provider = activeSession?.provider
-        let summaryResult: FoundationLLM.TimelineSummaryResult
-        do {
-            summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .user, text: text, provider: provider, actionHint: actionHint)
-        } catch {
-            log.error("🔴 processUserMessage: summarization failed after retries, using fallback: \(error.localizedDescription, privacy: .public)")
-            // Use fallback instead of skipping entry to ensure user messages always appear
-            summaryResult = await FoundationLLM.shared.fallbackSummary(kind: .user, text: text, provider: provider)
-        }
-        let detail = text.count > config.previewCharacterLimit
-            ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
-            : text
-
-        let entry = TimelineEntry(
-            kind: .user,
-            timestamp: timestamp,
-            summary: summaryResult.summary,
-            detail: detail,
-            sourceContent: text,
-            sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
-            sourceIdentifier: uuid,  // Use raw UUID for consistency
-            isCompletion: false,
-            isDirective: summaryResult.isDirective,
-            requestId: nil,
-            sessionId: currentSessionId
-        )
-
-        appendEntryIfCurrentEpoch(epoch, entry: entry)
-
-        // Track this directive for correlation with future completions
-        if summaryResult.isDirective {
-            lastUserDirectiveId = entry.id
-            lastUserDirectiveTimestamp = timestamp
-            log.debug("🟢 processUserMessage: Tracking directive id=\(entry.id) for completion correlation")
-        }
-
-        log.debug("✅ processUserMessage: Added user entry, summary=\(summaryResult.summary, privacy: .private), total entries=\(self.entries.count)")
-    }
-
-    private func processAssistantMessage(_ json: [String: Any], timestamp: Date, uuid: String) async {
-        log.debug("🟢 processAssistantMessage: uuid=\(uuid, privacy: .public)")
-
-        guard let message = json["message"] as? [String: Any],
-              let content = message["content"] as? [[String: Any]] else {
-            log.error("🔴 processAssistantMessage: no message or content array for uuid=\(uuid, privacy: .public)")
-            return
-        }
-
-        log.debug("🟢 processAssistantMessage: content blocks count=\(content.count)")
-
-        // Process each content block (skip tool invokes, only surface text)
-        for (index, block) in content.enumerated() {
-            guard let blockType = block["type"] as? String else {
-                log.error("🔴 processAssistantMessage: no type in block \(index) for uuid=\(uuid, privacy: .public)")
-                continue
-            }
-
-            log.debug("🟢 processAssistantMessage: block \(index) type=\(blockType, privacy: .public)")
-
-            switch blockType {
-            case "text", "output_text": // Codex uses "output_text"
-                if let text = block["text"] as? String {
-                    await addAssistantTextEntry(text: text, timestamp: timestamp, uuid: uuid)
-                } else {
-                    log.error("🔴 processAssistantMessage: text block has no text field")
-                }
-            case "tool_use":
-                log.debug("🟢 processAssistantMessage: skipping tool_use block for uuid=\(uuid, privacy: .public)")
-            default:
-                log.debug("🟢 processAssistantMessage: skipping unknown block type=\(blockType, privacy: .public)")
-                break
-            }
+        // Refresh sessions list for transcript inventory (re-fetch after discovery)
+        let updatedTranscripts = try orchestrator.getTranscripts(forProject: projectId)
+        let sessions = Self.mapTranscriptsToSessions(transcripts: updatedTranscripts)
+        await MainActor.run {
+            self.log.info("📝 Mapped \(updatedTranscripts.count) transcripts to sessions")
+            self.allSessions = sessions
+            self.log.info("✅ allSessions updated with \(self.allSessions.count) sessions")
+            Task { await self.loadFeedFromSQL() }
         }
     }
 
-    private func addAssistantTextEntry(text: String, timestamp: Date, uuid: String) async {
-        log.debug("🟢 addAssistantTextEntry: text length=\(text.count), uuid=\(uuid, privacy: .public)")
-
-        // Capture current epoch at the start of async processing
-        let epoch = sessionEpoch
-
-        // Try to use cache, fall back to direct LLM call on failure
-        let rendered: RenderedTimelineEntry
-        do {
-            // Build message JSON for content hashing (exclude timestamp for stability)
-            let messageJSON: [String: Any] = [
-                "uuid": uuid,
-                "role": "assistant",
-                "text": text
-            ]
-
-            // Context window: last 2 message UUIDs for better disposition detection
-            // Now uses raw transcript UUIDs from sourceIdentifier
-            let contextUUIDs = Array(entries.suffix(2).map { $0.sourceIdentifier })
-            let provider = activeSession?.provider
-
-            rendered = try await TimelineCacheOrchestrator.shared.getCachedEntry(
-                messageUUID: uuid,
-                messageJSON: messageJSON,
-                contextWindow: contextUUIDs,
-                text: text,
-                kind: .assistant,
-                provider: provider
-            )
-        } catch {
-            log.error("🔴 addAssistantTextEntry: Cache lookup failed, falling back to direct LLM: \(error.localizedDescription, privacy: .public)")
-
-            // Fallback to direct LLM call
-            let provider = activeSession?.provider
-            let summaryResult: FoundationLLM.TimelineSummaryResult
-            do {
-                summaryResult = try await FoundationLLM.shared.summarizeTimeline(kind: .assistant, text: text, provider: provider)
-            } catch {
-                log.error("🔴 addAssistantTextEntry: summarization failed after retries, skipping entry: \(error.localizedDescription, privacy: .public)")
-                return
+    nonisolated private static func mapTranscriptsToSessions(transcripts: [Transcript]) -> [TranscriptSession] {
+        return transcripts.compactMap { transcript in
+            let fileURL = URL(fileURLWithPath: transcript.filePath)
+            let provider: TimelineSourceContext.Provider
+            switch transcript.provider {
+            case "claude.code": provider = .claudeCode
+            case "codex.cli": provider = .codexCLI
+            default: provider = .other
             }
 
-            // Convert to RenderedTimelineEntry format
-            let disp = Disposition(rawValue: summaryResult.disposition) ?? .unknown
-            rendered = RenderedTimelineEntry(
-                summary: summaryResult.summary,
-                disposition: disp,
-                isCompletion: summaryResult.isCompletion,
-                isDirective: summaryResult.isDirective,
-                requestId: nil,
-                duration: nil
+            let lastActivity = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
+
+            return TranscriptSession(
+                provider: provider,
+                identifier: transcript.id,
+                fileURL: fileURL,
+                lastActivity: lastActivity
             )
-        }
+        }.sorted { $0.lastActivity > $1.lastActivity }
+    }
 
-        // Disposition-based filtering to reduce noise
-        // TODO: Make this configurable via user settings (see TODOS.md - Timeline Verbosity Settings)
-        // Current level: Option 1 (Recommended) - Suppress ack, wip, analysis
-        let suppressibleDispositions: Set<Disposition> = [.note, .progress, .analysis]
-
-        if suppressibleDispositions.contains(rendered.disposition) {
-            log.debug("🟢 addAssistantTextEntry: Suppressing low-value entry (disposition=\(rendered.disposition.rawValue, privacy: .public))")
-            return
-        }
-
-        // Deduplicate sequential completion entries
-        if rendered.isCompletion {
-            // Find the last assistant entry
-            if let lastAssistantEntry = entries.last(where: { $0.kind == .assistant }), lastAssistantEntry.isCompletion {
-                log.debug("🟢 addAssistantTextEntry: Suppressing sequential completion entry (previous entry was also completion)")
-                return
-            }
-        }
-
-        let detail = text.count > config.previewCharacterLimit
-            ? String(text.prefix(config.previewCharacterLimit - 1)) + "…"
-            : text
-
-        // Link completion to the last user directive for duration tracking
-        let requestId = rendered.isCompletion ? lastUserDirectiveId : nil
-
-        let entry = TimelineEntry(
-            kind: .assistant,
-            timestamp: timestamp,
-            summary: rendered.summary,
-            detail: detail,
-            sourceContent: text,
-            sourceContext: makeSourceContext(identifier: uuid, line: currentLineNumber),
-            sourceIdentifier: uuid,  // Use raw UUID for cache key matching
-            isCompletion: rendered.isCompletion,
-            isDirective: rendered.isDirective,
-            requestId: requestId,
-            sessionId: currentSessionId
-        )
-
-        appendEntryIfCurrentEpoch(epoch, entry: entry)
-        log.debug("✅ addAssistantTextEntry: Added assistant text entry, summary=\(rendered.summary, privacy: .private), completion=\(rendered.isCompletion), uuid=\(uuid, privacy: .public), total entries=\(self.entries.count)")
+    private func generatorSignature() -> String {
+        // Use centralized generator signature from Core module
+        return timelineGeneratorSignature()
     }
 
     private func latestAssistantActionHint() -> String? {
@@ -1008,36 +844,8 @@ final class ConversationMonitor {
         guard !didEmitSessionStart else { return }
         didEmitSessionStart = true
 
-        let summary = "Timeline monitoring started"
-        let detail: String
-        if let fileURL = currentConversationFile {
-            detail = """
-            Timeline monitoring started
-
-            Monitoring: \(fileURL.lastPathComponent)
-            Path: \(fileURL.path)
-            """
-        } else {
-            detail = "Timeline monitoring started (no conversation file found yet)"
-        }
-        let action: TimelineEntryAction
-        if let fileURL = currentConversationFile {
-            action = .revealInInventory(transcriptPath: fileURL.path)
-        } else {
-            action = .none
-        }
-
-        let entry = TimelineEntry(
-            kind: .system,
-            summary: summary,
-            detail: detail,
-            sourceContent: detail,
-            sourceContext: makeSourceContext(identifier: "system-start"),
-            sourceIdentifier: "system-start",
-            action: action,
-            sessionId: currentSessionId
-        )
-        entries.append(entry)
+        // With SQL backend, session start is tracked automatically
+        // This legacy method is kept for compatibility but does nothing
     }
 }
 

@@ -310,15 +310,15 @@ struct TranscriptInventoryView: View {
   }
 
   private func flushHeuristicCache() {
-    let store = SidecarMetadataStore()
-    let flushedCount = store.flushHeuristicMetadata(for: monitor.allSessions)
+    Task { @MainActor in
+      let store = SidecarMetadataStore()
+      let flushedCount = await store.flushHeuristicMetadata(for: monitor.allSessions)
 
-    if flushedCount > 0 {
-      lastFlushCount = flushedCount
-      showingFlushAlert = true
+      if flushedCount > 0 {
+        lastFlushCount = flushedCount
+        showingFlushAlert = true
 
-      // Clear in-memory cache and trigger regeneration for flushed items
-      Task { @MainActor in
+        // Clear in-memory cache and trigger regeneration for flushed items
         for session in monitor.allSessions {
           if let meta = metadata[session.fileURL],
              meta.model == "heuristic" ||
@@ -356,7 +356,7 @@ struct TranscriptInventoryView: View {
 
       // Check for cached metadata first
       let store = SidecarMetadataStore()
-      if let cached = try? store.load(for: session.fileURL) {
+      if let cached = try? await store.load(for: session.fileURL) {
         metadata[session.fileURL] = cached
         continue
       }
@@ -593,7 +593,7 @@ struct TranscriptDetailView: View {
   @MainActor
   private func loadMetadata() async {
     let store = SidecarMetadataStore()
-    metadata = try? store.load(for: session.fileURL)
+    metadata = try? await store.load(for: session.fileURL)
 
     // If no cached metadata, trigger generation
     if metadata == nil {

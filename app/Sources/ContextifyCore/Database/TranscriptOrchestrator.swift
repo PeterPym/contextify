@@ -5,20 +5,21 @@ import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "TranscriptOrchestrator")
 
 /// High-level orchestrator for transcript ingestion and monitoring
-@MainActor
-public final class TranscriptOrchestrator {
+/// NOT @MainActor - allows safe concurrent access from background tasks
+/// Sendable: GRDB pool handles thread-safety, repositories are stateless
+public final class TranscriptOrchestrator: @unchecked Sendable {
   private let dbManager: DatabaseManager
   private let projectRepo: ProjectRepository
   private let transcriptRepo: TranscriptRepository
   private let entryRepo: EntryRepository
   private let errorRepo: ParseErrorRepository
   private let metadataRepo: MetadataRepository
-  private let cacheRepo: CacheRepository
+  nonisolated(unsafe) private let cacheRepo: CacheRepository  // Thread-safe via GRDB pool
 
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
 
-  public init(dbManager: DatabaseManager = .shared) throws {
+  public init(dbManager: DatabaseManager) throws {
     self.dbManager = dbManager
     let pool = try dbManager.pool
 
@@ -57,11 +58,22 @@ public final class TranscriptOrchestrator {
     // Try to find existing project by canonicalized path
     let canon = PathUtils.canonicalizePath(rootPath)
     if let existing = try projectRepo.list().first(where: { $0.rootPath == canon }) {
+      log.info("Found existing project: \(existing.id) for path: \(canon)")
       return existing.id
     }
 
     // Create new project
-    return try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
+    let projectId = try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
+    log.info("Created new project: \(projectId) for path: \(canon)")
+
+    // Verify the project was created
+    if let verified = try projectRepo.get(id: projectId) {
+      log.info("✅ Project creation verified: \(verified.id)")
+    } else {
+      log.error("❌ Project creation failed - cannot retrieve project \(projectId)")
+    }
+
+    return projectId
   }
 
   public func listProjects() throws -> [Project] {
@@ -83,12 +95,20 @@ public final class TranscriptOrchestrator {
     startWatching: Bool = true,
     progress: IngestProgressSink? = nil
   ) throws {
+    // Diagnostic: Verify project exists before proceeding
+    guard let project = try projectRepo.get(id: projectId) else {
+      log.error("❌ FK validation failed: project \(projectId) does not exist")
+      throw RepositoryError.notFound
+    }
+    log.debug("✅ FK validation: project \(projectId) exists")
+
     // Get file metadata
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let lastModified = attrs[.modificationDate] as? Date ?? Date()
     let fileSize = attrs[.size] as? Int
 
     // Upsert transcript record
+    log.debug("Upserting transcript for project \(projectId), file: \(fileURL.lastPathComponent)")
     let transcriptId = try transcriptRepo.upsert(
       projectId: projectId,
       fileURL: fileURL,
@@ -97,13 +117,22 @@ public final class TranscriptOrchestrator {
       lastModified: lastModified,
       fileSize: fileSize
     )
+    log.debug("✅ Transcript upserted: \(transcriptId)")
 
     // Get transcript
     guard let transcript = try transcriptRepo.get(transcriptId) else {
+      log.error("❌ Transcript \(transcriptId) not found after upsert")
       throw RepositoryError.notFound
     }
 
+    // Verify transcript has correct project ID
+    guard transcript.projectId == projectId else {
+      log.error("❌ Transcript projectId mismatch: expected \(projectId), got \(transcript.projectId)")
+      throw RepositoryError.invalidData
+    }
+
     // Hoover the transcript
+    log.debug("Hoovering transcript: \(transcriptId)")
     let progressSink = progress ?? NoOpProgressSink()
     let transcriptSHA256 = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
@@ -161,6 +190,10 @@ public final class TranscriptOrchestrator {
     try entryRepo.newByProject(projectId, afterTimestamp: afterTimestamp)
   }
 
+  public func getEntriesAfterCursor(forProject projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
+    try entryRepo.entriesAfterCursor(projectId: projectId, after: after)
+  }
+
   public func searchEntries(content: String, projectId: String?) throws -> [TranscriptEntry] {
     try entryRepo.search(content: content, projectId: projectId)
   }
@@ -172,16 +205,24 @@ public final class TranscriptOrchestrator {
 
   // MARK: - Cache Management
 
-  public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {
+  nonisolated public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {
     try cacheRepo.get(contentSha256: contentSha256, windowSha256: windowSha256)
   }
 
-  public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
+  nonisolated public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
     try cacheRepo.getMany(keys: keys)
   }
 
-  public func saveCachedTimeline(_ cache: TimelineCache) throws {
+  nonisolated public func getCachedTimelineManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache] {
+    try cacheRepo.getManyWithSignature(keys: keys, generatorSignature: generatorSignature)
+  }
+
+  nonisolated public func saveCachedTimeline(_ cache: TimelineCache) throws {
     try cacheRepo.upsert(cache)
+  }
+
+  nonisolated public func saveCachedTimelineMany(_ caches: [TimelineCache]) throws {
+    try cacheRepo.upsertMany(caches)
   }
 
   // MARK: - Metadata Management

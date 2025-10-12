@@ -11,6 +11,7 @@
 		D4A0392C2E90D9F40049EE02 /* Python in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D887792E90D85E008F8118 /* Python */; };
 		D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
 		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
+		D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 		D4D8877C2E90D882008F8118 /* iterm2_reader.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877B2E90D882008F8118 /* iterm2_reader.py */; };
 		D4D8877D2E90D883008F8119 /* iterm2_daemon.py in CopyFiles */ = {isa = PBXBuildFile; fileRef = D4D8877E2E90D884008F811A /* iterm2_daemon.py */; };
 /* End PBXBuildFile section */
@@ -355,6 +356,7 @@
 		D4A7739D2E76936700747100 /* Contextify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4A773AA2E76936800747100 /* ContextifyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4A773B42E76936800747100 /* ContextifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "icon-composer-project.icon"; sourceTree = "<group>"; };
 		D4D887792E90D85E008F8118 /* Python */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Python; path = ../Resources/Python; sourceTree = "<group>"; };
 		D4D8877B2E90D882008F8118 /* iterm2_reader.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; name = iterm2_reader.py; path = ../scripts/iterm2_reader.py; sourceTree = "<group>"; };
 		D4D8877E2E90D884008F811A /* iterm2_daemon.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; name = iterm2_daemon.py; path = ../scripts/iterm2_daemon.py; sourceTree = "<group>"; };
@@ -990,6 +992,7 @@
 				D4A773AD2E76936800747100 /* ContextifyTests */,
 				D4A773B72E76936800747100 /* ContextifyUITests */,
 				D4A7739E2E76936700747100 /* Products */,
+				D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1138,6 +1141,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1318,8 +1322,9 @@
 		D4A773BF2E76936800747100 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "icon-composer-project";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Contextify.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -1354,8 +1359,9 @@
 		D4A773C02E76936800747100 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "icon-composer-project";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Contextify.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;

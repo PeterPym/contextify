@@ -74,10 +74,24 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       throw ParserError.missingRequiredField("timestamp")
     }
 
+    // Skip meta messages (system/command wrappers)
+    if (json["isMeta"] as? Bool) == true {
+      throw ParserError.skipEntry
+    }
+
+    // Skip sidechain messages
+    if (json["isSidechain"] as? Bool) == true {
+      throw ParserError.skipEntry
+    }
+
     // Extract content
     let content: String
     if let message = json["message"] as? [String: Any] {
       content = extractContent(message["content"])
+      // Skip entries with empty content (tool_use blocks, etc.)
+      guard !content.isEmpty else {
+        throw ParserError.skipEntry
+      }
     } else {
       throw ParserError.missingRequiredField("message.content")
     }

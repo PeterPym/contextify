@@ -72,6 +72,14 @@ Common commands:
 - Clean: `make clean` (removes DerivedData)
 - Full setup with hooks: `make setup`
 
+**Log capture for debugging:**
+- Capture last 5 min: `make logs` → `/tmp/contextify-recent.log`
+- Stream live: `make logs-live` → `/tmp/contextify-live.log`
+- Build + capture: `make debug` → `build/logs/runtime/contextify-YYYYMMDD-HHMMSS.log`
+- Clean database: `make clean-db`
+
+**For detailed debugging workflows:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
+
 **Build output:** `.derived/Build/Products/Debug/Contextify.app`
 
 - Logs/Results: script writes logs to `build/logs/` and result bundles to `build/ResultBundles/`. Use these for error triage; builds fail fast on non-zero.

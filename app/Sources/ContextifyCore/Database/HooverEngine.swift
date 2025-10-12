@@ -218,6 +218,9 @@ public final class HooverEngine {
             sessionId: transcript.providerSessionId
           )
           batch.append(entry)
+        } catch ParserError.skipEntry {
+          // Silently skip - this is expected for meta messages, empty content, etc.
+          // Don't add to batch, don't record as error
         } catch {
           let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
           errors.append((lineNo, truncated, error.localizedDescription))
@@ -256,6 +259,9 @@ public final class HooverEngine {
             sessionId: transcript.providerSessionId
           )
           batch.append(entry)
+        } catch ParserError.skipEntry {
+          // Silently skip - this is expected for meta messages, empty content, etc.
+          // Don't add to batch, don't record as error
         } catch {
           let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
           errors.append((lineNo, truncated, error.localizedDescription))
@@ -312,7 +318,32 @@ public final class HooverEngine {
         model.prev2Id = prev2
         model.windowSha256 = windowSha
 
-        try model.insert(db, onConflict: .ignore)
+        // Check if parent exists before inserting (avoid FK constraint violation)
+        // This handles out-of-order entries where a child references a parent that hasn't been inserted yet
+        if let parentId = model.parentId {
+          let parentExists = try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM transcript_entries WHERE id = ?)
+          """, arguments: [parentId]) ?? false
+
+          if !parentExists {
+            log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
+            model.parentId = nil  // Will be backfilled later if needed
+          }
+        }
+
+        do {
+          try model.insert(db, onConflict: .ignore)
+        } catch {
+          // Log detailed FK error info
+          log.error("❌ Entry insert failed: \(error.localizedDescription)")
+          log.error("   Entry ID: \(model.id)")
+          log.error("   Transcript ID: \(model.transcriptId)")
+          log.error("   Project ID: \(model.projectId)")
+          log.error("   Parent ID: \(model.parentId ?? "nil")")
+          log.error("   Prev1 ID: \(model.prev1Id ?? "nil")")
+          log.error("   Prev2 ID: \(model.prev2Id ?? "nil")")
+          throw error
+        }
 
         // Update tracking (keep last 2)
         previousEntries.append(entry.id)
@@ -396,4 +427,5 @@ public enum ParserError: Error {
   case missingRequiredField(String)
   case unsupportedProvider(String)
   case invalidFormat(String)
+  case skipEntry  // Indicates entry should be skipped (meta messages, empty content, etc.)
 }

@@ -17,6 +17,7 @@ enum TimelineEntryKind: String, Codable, Sendable {
 enum TimelineEntryAction: Hashable, Sendable {
     case none
     case revealInInventory(transcriptPath: String)
+    case generating  // Background LLM generation in progress
 }
 
 struct TimelineEntry: Identifiable, Hashable, Sendable {
@@ -35,6 +36,10 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let action: TimelineEntryAction
     let sessionId: String?  // Identifies which session this entry belongs to
 
+    // Hidden cache keys for lightweight refresh (not displayed in UI)
+    let contentSha256: String?
+    let windowSha256: String?
+
     init(
         id: UUID = UUID(),
         kind: TimelineEntryKind,
@@ -49,7 +54,9 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         isDirective: Bool = false,
         requestId: UUID? = nil,
         action: TimelineEntryAction = .none,
-        sessionId: String? = nil
+        sessionId: String? = nil,
+        contentSha256: String? = nil,
+        windowSha256: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -65,6 +72,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.requestId = requestId
         self.action = action
         self.sessionId = sessionId
+        self.contentSha256 = contentSha256
+        self.windowSha256 = windowSha256
     }
 }
 
@@ -150,6 +159,7 @@ extension TimelineEntry {
 
     /// Create a copy with modified fields
     func copyWith(
+        summary: String? = nil,
         sessionId: String? = nil,
         action: TimelineEntryAction? = nil
     ) -> TimelineEntry {
@@ -157,7 +167,7 @@ extension TimelineEntry {
             id: id,
             kind: kind,
             timestamp: timestamp,
-            summary: summary,
+            summary: summary ?? self.summary,
             detail: detail,
             sourceContent: sourceContent,
             sourceContext: sourceContext,
@@ -167,7 +177,9 @@ extension TimelineEntry {
             isDirective: isDirective,
             requestId: requestId,
             action: action ?? self.action,
-            sessionId: sessionId ?? self.sessionId
+            sessionId: sessionId ?? self.sessionId,
+            contentSha256: contentSha256,
+            windowSha256: windowSha256
         )
     }
 }

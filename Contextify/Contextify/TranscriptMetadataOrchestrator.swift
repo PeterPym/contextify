@@ -100,8 +100,8 @@ actor TranscriptMetadataOrchestrator {
 
     // Check cache unless forcing regeneration
     if !forceRegenerate,
-       let cached = try? store.load(for: session.fileURL),
-       store.isFresh(
+       let cached = try? await store.load(for: session.fileURL),
+       await store.isFresh(
         cached,
         for: session.fileURL,
         promptVersion: currentPromptVersion,
@@ -255,7 +255,7 @@ actor TranscriptMetadataOrchestrator {
 
     // Finalize metadata
     let storageStart = Date()
-    metadata.transcriptSHA256 = try store.sha256(url: session.fileURL)
+    metadata.transcriptSHA256 = try await store.sha256(url: session.fileURL)
     metadata.promptVersion = currentPromptVersion
     metadata.generatorVersion = currentGeneratorVersion
     let totalTime = Date().timeIntervalSince(startTime)

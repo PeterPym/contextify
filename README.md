@@ -97,6 +97,29 @@ make setup  # Also runs initial build
 - **Clean**: `make clean` (removes DerivedData)
 - **Full setup**: `make setup` (hooks + build)
 
+## Debugging & Log Capture
+```bash
+# Capture recent logs (last 5 minutes)
+make logs  # → /tmp/contextify-recent.log
+
+# Stream live logs
+make logs-live  # → /tmp/contextify-live.log
+
+# Build and auto-capture logs for 30 seconds
+make debug  # → build/logs/runtime/contextify-YYYYMMDD-HHMMSS.log
+
+# Clean database for fresh testing
+make clean-db
+```
+
+**For Claude Code integration:** Captured logs can be shared directly:
+```bash
+make logs
+# Then in chat: "have a look at /tmp/contextify-recent.log"
+```
+
+**Detailed guide:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
+
 ## Architecture Notes
 
 ### Terminal Content Capture
@@ -156,18 +179,41 @@ make setup  # Also runs initial build
 
 ## Troubleshooting
 
+### Capturing logs for debugging
+**Quick capture:**
+```bash
+make logs  # Captures last 5 minutes
+```
+
+**Then share with Claude Code:**
+```
+have a look at /tmp/contextify-recent.log
+```
+
+This allows Claude Code to read logs directly and diagnose issues faster. See `scripts/QUICK-REFERENCE.md` for detailed workflows.
+
 ### Global hotkey not working
 1. Check accessibility permissions: System Settings > Privacy & Security > Accessibility
 2. Ensure Contextify is enabled
 3. Restart Contextify
+4. **Debug**: Capture logs with `make logs` and check for hotkey registration errors
 
 ### Terminal capture failing
 1. Verify iTerm2 is running
 2. Check daemon status: `ps aux | grep iterm2_daemon.py`
 3. Restart daemon via Launch Agent or `launchctl`
 4. Fallback to AppleScript (automatic if daemon unavailable)
+5. **Debug**: Run `make logs-live` while reproducing the issue
 
 ### URL scheme not working
 1. Reinstall shell bindings: `bash scripts/install-shell-bindings.sh`
 2. Verify URL handler registration: `defaults read com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers`
 3. Restart Contextify
+4. **Debug**: Check logs with `make logs` for URL handling errors
+
+### Database issues
+If you see FK constraint errors or corrupt data:
+```bash
+make clean-db  # Clears database for fresh start
+make debug     # Rebuilds and captures logs
+```
