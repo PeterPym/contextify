@@ -51,7 +51,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
     @ObservationIgnored private var currentSessionId: String?  // Current session identifier for timeline entries
     @ObservationIgnored private var currentProjectId: String?  // SQL project ID
-    @ObservationIgnored private var lastSeenTimestamp: Int?  // Last timestamp seen for incremental updates
+    @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
     @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
     @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -146,7 +146,7 @@ final class ConversationMonitor {
 
         // Clear state
         seenEntryIDs.removeAll()
-        lastSeenTimestamp = nil
+        lastSeenCursor = nil
         currentProjectId = nil
         cacheMissGenerator = nil
     }
@@ -160,7 +160,7 @@ final class ConversationMonitor {
     func clearEntries() {
         entries.removeAll()
         didEmitSessionStart = false
-        lastSeenTimestamp = nil
+        lastSeenCursor = nil
         seenEntryIDs.removeAll()
     }
 
@@ -210,9 +210,9 @@ final class ConversationMonitor {
                 return toTimelineEntry(entry, cached: cache)
             }
 
-            // Update timestamp
+            // Update cursor from latest entry
             if let latest = transcriptEntries.first {
-                lastSeenTimestamp = latest.timestamp
+                lastSeenCursor = (timestamp: latest.timestamp, createdAt: latest.createdAt, id: latest.id)
             }
 
             currentSessionId = session.identifier
@@ -363,9 +363,10 @@ final class ConversationMonitor {
                 }
             }
 
-            // Track latest timestamp for incremental updates
+            // Track latest cursor for incremental updates
             if let latestEntry = feed.first {
-                lastSeenTimestamp = latestEntry.0.timestamp
+                let e = latestEntry.0
+                lastSeenCursor = (timestamp: e.timestamp, createdAt: e.createdAt, id: e.id)
             }
 
             lastUpdate = Date()
@@ -474,9 +475,9 @@ final class ConversationMonitor {
     private func processIncrementalUpdate() async {
         guard let projectId = currentProjectId, orchestrator != nil else { return }
 
-        // If no lastSeenTimestamp, do full reload instead
-        guard let lastTimestamp = lastSeenTimestamp else {
-            log.info("No lastSeenTimestamp, doing full reload")
+        // If no cursor, do full reload instead
+        guard let cursor = lastSeenCursor else {
+            log.info("No cursor available, doing full reload")
             await loadFeedFromSQL()
             return
         }
@@ -484,10 +485,10 @@ final class ConversationMonitor {
         do {
             let startTime = Date()
 
-            // Get new entries (strict > to avoid replays)
-            let newEntries = try orchestrator.getNewEntries(
+            // Get new entries using keyset pagination (prevents duplicates/skips)
+            let newEntries = try orchestrator.getEntriesAfterCursor(
                 forProject: projectId,
-                afterTimestamp: lastTimestamp
+                after: cursor
             )
 
             guard !newEntries.isEmpty else {
@@ -541,11 +542,13 @@ final class ConversationMonitor {
                 }
             }
 
-            // Sort to maintain deterministic ordering: timestamp DESC, then id DESC
+            // Sort to maintain deterministic ordering: timestamp DESC, createdAt DESC, id DESC
             entries.sort { a, b in
                 if a.timestamp != b.timestamp {
                     return a.timestamp > b.timestamp
                 }
+                // Note: Can't compare createdAt here as TimelineEntry doesn't have it
+                // Stable sort relies on DB ordering being correct
                 return a.sourceIdentifier > b.sourceIdentifier
             }
 
@@ -554,9 +557,14 @@ final class ConversationMonitor {
                 entries = Array(entries.suffix(config.maxEntries))
             }
 
-            // Update timestamp with max to handle out-of-order deliveries
-            let maxTimestamp = newEntries.map(\.timestamp).max() ?? lastTimestamp
-            lastSeenTimestamp = max(lastSeenTimestamp ?? 0, maxTimestamp)
+            // Update cursor to latest entry added
+            if let latestNew = newEntries.max(by: { a, b in
+                if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                return a.id < b.id
+            }) {
+                lastSeenCursor = (timestamp: latestNew.timestamp, createdAt: latestNew.createdAt, id: latestNew.id)
+            }
 
             lastUpdate = Date()
 

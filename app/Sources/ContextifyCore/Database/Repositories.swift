@@ -218,6 +218,9 @@ public protocol EntryRepository {
 
   // v2: Single-query feed with cache join
   func recentFeed(projectId: String, limit: Int, generatorSignature: String) throws -> [(TranscriptEntry, TimelineCache?)]
+
+  // v2: Keyset pagination for incremental updates
+  func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry]
 }
 
 public final class EntryRepositoryImpl: EntryRepository {
@@ -321,6 +324,16 @@ public final class EntryRepositoryImpl: EntryRepository {
 
           return (entry, cache)
         }
+    }
+  }
+
+  public func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
+    try db.read { db in
+      try TranscriptEntry
+        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
+        .filter(sql: "(timestamp, created_at, id) > (?, ?, ?)", arguments: [after.timestamp, after.createdAt, after.id])
+        .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
+        .fetchAll(db)
     }
   }
 }

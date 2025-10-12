@@ -161,6 +161,10 @@ public final class TranscriptOrchestrator {
     try entryRepo.newByProject(projectId, afterTimestamp: afterTimestamp)
   }
 
+  public func getEntriesAfterCursor(forProject projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
+    try entryRepo.entriesAfterCursor(projectId: projectId, after: after)
+  }
+
   public func searchEntries(content: String, projectId: String?) throws -> [TranscriptEntry] {
     try entryRepo.search(content: content, projectId: projectId)
   }
