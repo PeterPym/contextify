@@ -413,7 +413,7 @@ final class ConversationMonitor {
     @MainActor
     private func handleCacheUpdate() async {
         // Lightweight refresh: re-query cache for existing entries without full reload
-        guard let projectId = currentProjectId, orchestrator != nil else { return }
+        guard currentProjectId != nil, orchestrator != nil else { return }
 
         log.debug("Cache updated, refreshing summaries for existing entries")
 
@@ -433,7 +433,7 @@ final class ConversationMonitor {
             }
 
             // Re-query cache
-            let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
+            _ = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
 
             // Update summaries in place (keep stable IDs)
             // TODO: Implement efficient in-place update
@@ -454,7 +454,7 @@ final class ConversationMonitor {
             return
         }
 
-        guard let projectId = currentProjectId, orchestrator != nil else {
+        guard currentProjectId != nil, orchestrator != nil else {
             log.warning("Ignoring notification: no project or orchestrator")
             return
         }
@@ -579,7 +579,7 @@ final class ConversationMonitor {
 
     private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
         // Find JSONL files on disk
-        guard let projectRoot = HUDViewModel.shared.projectRootURL else { return }
+        guard HUDViewModel.shared.projectRootURL != nil else { return }
 
         let claudeDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
@@ -591,36 +591,59 @@ final class ConversationMonitor {
         ).filter { $0.pathExtension == "jsonl" }
 
         // Get files already in SQL
-        let filesInSQL = Set(try orchestrator.getTranscripts(forProject: projectId).map { $0.filePath })
+        let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+        let filesInSQL = Set(transcripts.map { $0.filePath })
 
         // Find new files
         let newFiles = filesOnDisk.filter { !filesInSQL.contains($0.path) }
 
-        guard !newFiles.isEmpty else {
+        if !newFiles.isEmpty {
+            log.info("Discovering \(newFiles.count) new transcripts")
+
+            // Batch discover with progress
+            let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
+
+            try orchestrator.discoverTranscripts(
+                projectId: projectId,
+                transcriptFiles: files,
+                progress: nil
+            )
+
+            // Run maintenance after bulk ingest
+            try orchestrator.performMaintenance()
+
+            log.info("Discovery complete")
+        } else {
             log.info("No new transcripts to discover")
-            return
         }
 
-        log.info("Discovering \(newFiles.count) new transcripts")
-
-        // Batch discover with progress
-        let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
-
-        try orchestrator.discoverTranscripts(
-            projectId: projectId,
-            transcriptFiles: files,
-            progress: nil
-        )
-
-        // Run maintenance after bulk ingest
-        try orchestrator.performMaintenance()
-
-        log.info("Discovery complete, refreshing feed")
-
-        // Refresh feed on main
+        // Refresh sessions list for transcript inventory
+        let sessions = mapTranscriptsToSessions(transcripts: transcripts)
         await MainActor.run {
+            self.allSessions = sessions
             Task { await self.loadFeedFromSQL() }
         }
+    }
+
+    private func mapTranscriptsToSessions(transcripts: [Transcript]) -> [TranscriptSession] {
+        return transcripts.compactMap { transcript in
+            let fileURL = URL(fileURLWithPath: transcript.filePath)
+            let provider: TimelineSourceContext.Provider
+            switch transcript.provider {
+            case "claude.code": provider = .claudeCode
+            case "codex.cli": provider = .codexCLI
+            default: provider = .other
+            }
+
+            let lastActivity = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
+
+            return TranscriptSession(
+                provider: provider,
+                identifier: transcript.id,
+                fileURL: fileURL,
+                lastActivity: lastActivity
+            )
+        }.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     private func generatorSignature() -> String {
