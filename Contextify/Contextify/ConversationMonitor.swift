@@ -60,6 +60,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
     @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
+    @ObservationIgnored private var indexByCacheKey: [String: Int] = [:]  // "content|window" -> row index for in-place updates
 
     private init() {}
 
@@ -271,6 +272,7 @@ final class ConversationMonitor {
     private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?) -> TimelineEntry {
         // Use cached summary if available, otherwise fallback
         let summary: String
+        let action: TimelineEntryAction
         if let cache = cached {
             // Honor user edits first
             if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
@@ -279,9 +281,11 @@ final class ConversationMonitor {
                 // Use generated forms
                 summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
             }
+            action = .none
         } else {
             // Fallback for cache miss (will trigger LLM generation in background)
             summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
+            action = .generating  // Mark as pending generation
         }
 
         // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
@@ -311,8 +315,10 @@ final class ConversationMonitor {
             isCompletion: entry.isCompletion == 1,
             isDirective: entry.isDirective == 1,
             requestId: nil,
-            action: .none,
-            sessionId: entry.sessionId
+            action: action,
+            sessionId: entry.sessionId,
+            contentSha256: entry.contentSha256,
+            windowSha256: entry.windowSha256
         )
     }
 
@@ -356,6 +362,9 @@ final class ConversationMonitor {
 
                 return toTimelineEntry(entry, cached: cache)
             }
+
+            // Rebuild cache key index for in-place updates
+            rebuildIndexByCacheKey()
 
             // Queue cache misses for background generation
             if !misses.isEmpty, let generator = cacheMissGenerator {
@@ -413,35 +422,98 @@ final class ConversationMonitor {
     @MainActor
     private func handleCacheUpdate() async {
         // Lightweight refresh: re-query cache for existing entries without full reload
-        guard currentProjectId != nil, orchestrator != nil else { return }
+        guard currentProjectId != nil, let orchestrator else { return }
 
         log.debug("Cache updated, refreshing summaries for existing entries")
 
-        do {
-            // Batch cache lookup for all current entries
-            let cacheKeys = entries.compactMap { entry -> (String, String)? in
-                // Extract hashes from sourceIdentifier or entry data
-                // For now, skip entries without window SHA
-                return nil  // TODO: Store hashes in TimelineEntry for efficient refresh
+        // Extract cache keys from current entries
+        let cacheKeys = entries.compactMap { entry -> (String, String)? in
+            guard let content = entry.contentSha256, let window = entry.windowSha256 else {
+                return nil
             }
+            return (content, window)
+        }
 
-            if cacheKeys.isEmpty {
-                // Fallback: do full reload to re-bind all summaries
-                log.info("No cache keys available for lightweight refresh, doing full reload")
-                await loadFeedFromSQL()
-                return
-            }
-
-            // Re-query cache
-            _ = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
-
-            // Update summaries in place (keep stable IDs)
-            // TODO: Implement efficient in-place update
-            // For now, just reload
+        guard !cacheKeys.isEmpty else {
+            log.info("No cache keys available for lightweight refresh, doing full reload")
             await loadFeedFromSQL()
+            return
+        }
 
-        } catch {
-            log.error("Cache refresh failed: \(error.localizedDescription, privacy: .public)")
+        // Fetch updated caches off-main
+        Task.detached { [weak self, cacheKeys, orchestrator] in
+            guard let self else { return }
+
+            do {
+                // Get caches with current generator signature
+                let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
+
+                // Build updates for entries that match
+                var updates: [(index: Int, cache: TimelineCache)] = []
+                let entriesCount = await self.getEntriesCount()
+                for (content, window) in cacheKeys {
+                    let compositeKey = "\(content)|\(window)"
+                    if let index = await self.getIndexForCacheKey(compositeKey),
+                       index < entriesCount,
+                       let cache = cacheMap[compositeKey] {
+                        updates.append((index, cache))
+                    }
+                }
+
+                // Apply updates on main thread
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+
+                    for (index, cache) in updates {
+                        guard index < self.entries.count else { continue }
+
+                        let old = self.entries[index]
+
+                        // Extract summary from cache
+                        let summary: String
+                        if cache.userEdited == 1, let userText = cache.userText, !userText.isEmpty {
+                            summary = userText
+                        } else {
+                            summary = cache.selectedForm == "present" ? cache.presentForm : cache.pastForm
+                        }
+
+                        // Clear generating action and update summary
+                        self.entries[index] = old.copyWith(
+                            summary: summary,
+                            action: old.action == .generating ? .none : old.action
+                        )
+                    }
+
+                    if !updates.isEmpty {
+                        self.log.info("Updated \(updates.count) entries with fresh cache summaries")
+                    }
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.log.error("Cache refresh failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    private nonisolated func getIndexForCacheKey(_ key: String) async -> Int? {
+        await MainActor.run {
+            indexByCacheKey[key]
+        }
+    }
+
+    private nonisolated func getEntriesCount() async -> Int {
+        await MainActor.run {
+            entries.count
+        }
+    }
+
+    private func rebuildIndexByCacheKey() {
+        indexByCacheKey.removeAll(keepingCapacity: true)
+        for (i, entry) in entries.enumerated() {
+            if let content = entry.contentSha256, let window = entry.windowSha256 {
+                indexByCacheKey["\(content)|\(window)"] = i
+            }
         }
     }
 

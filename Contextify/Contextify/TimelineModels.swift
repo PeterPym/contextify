@@ -17,6 +17,7 @@ enum TimelineEntryKind: String, Codable, Sendable {
 enum TimelineEntryAction: Hashable, Sendable {
     case none
     case revealInInventory(transcriptPath: String)
+    case generating  // Background LLM generation in progress
 }
 
 struct TimelineEntry: Identifiable, Hashable, Sendable {
