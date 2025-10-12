@@ -339,6 +339,8 @@ final class ConversationMonitor {
                 generatorSignature: generatorSignature()
             )
 
+            log.info("📊 Feed loaded: \(feed.count) entries from DB")
+
             // Map to UI entries and track seen IDs + collect cache misses
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
@@ -386,7 +388,11 @@ final class ConversationMonitor {
             if elapsed > 0.02 {
                 log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
             }
-            log.info("Loaded \(self.entries.count) entries from SQL feed in \(Int(elapsed * 1000))ms")
+
+            // Diagnostic: Check entry content
+            let nonEmptyCount = self.entries.filter { !$0.summary.isEmpty && !$0.detail.isEmpty }.count
+            let emptyCount = self.entries.count - nonEmptyCount
+            log.info("Loaded \(self.entries.count) entries (\(nonEmptyCount) with content, \(emptyCount) empty) in \(Int(elapsed * 1000))ms")
         } catch {
             lastError = "Failed to load timeline: \(error.localizedDescription)"
             log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
@@ -677,9 +683,17 @@ final class ConversationMonitor {
             filesOnDisk.append(contentsOf: jsonlFiles)
         }
 
+        await MainActor.run {
+            log.info("🔍 Discovery: Found \(projectDirs.count) project dirs, \(filesOnDisk.count) total .jsonl files")
+        }
+
         // Get files already in SQL
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
         let filesInSQL = Set(transcripts.map { $0.filePath })
+
+        await MainActor.run {
+            log.info("📚 Discovery: \(transcripts.count) transcripts already in DB")
+        }
 
         // Find new files
         let newFiles = filesOnDisk.filter { !filesInSQL.contains($0.path) }
@@ -707,7 +721,9 @@ final class ConversationMonitor {
         // Refresh sessions list for transcript inventory
         let sessions = mapTranscriptsToSessions(transcripts: transcripts)
         await MainActor.run {
+            self.log.info("📝 Mapped \(sessions.count) transcripts to sessions")
             self.allSessions = sessions
+            self.log.info("✅ allSessions updated with \(self.allSessions.count) sessions")
             Task { await self.loadFeedFromSQL() }
         }
     }
