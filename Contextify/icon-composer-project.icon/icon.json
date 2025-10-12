@@ -4,10 +4,8 @@
       "value" : "system-light"
     },
     {
-      "appearance" : "light",
-      "value" : {
-        "solid" : "display-p3:0.84180,0.84180,0.84180,1.00000"
-      }
+      "idiom" : "square",
+      "value" : "system-dark"
     }
   ],
   "groups" : [
