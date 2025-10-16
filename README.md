@@ -48,13 +48,24 @@ open Contextify/Contextify.xcodeproj
 
 ### Xcode Setup (First Time)
 
-**1. Command Line Tools**
+**1. Code Signing**
+
+The project uses the personal Apple Developer certificate:
+- **Team**: `VQ7RPM8H77` (Robert Banagale - rob@banagale.com)
+- **Certificate**: Apple Development: rob@banagale.com (A4A8X8LW33)
+
+This should be automatically selected in Xcode. If you need to change it:
+1. Open `Contextify.xcodeproj` in Xcode
+2. Select the Contextify target → Signing & Capabilities
+3. Choose your preferred Team
+
+**2. Command Line Tools**
 ```
 Xcode → Settings → Locations → Command Line Tools
 ```
 Set to **Xcode 16** (or Xcode-beta if installed)
 
-**2. Console Filters (Recommended)**
+**3. Console Filters (Recommended)**
 Reduce log noise:
 1. Open console (⇧⌘C)
 2. Click **"Add Filter"**
@@ -63,7 +74,7 @@ Reduce log noise:
 
 This hides debug logs while showing Info/Notice/Error/Fault.
 
-**3. Scheme Selection**
+**4. Scheme Selection**
 - Scheme: **Contextify**
 - Target: **My Mac** (macOS 15.6+)
 
