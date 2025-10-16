@@ -243,6 +243,48 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
   public var createdAt: Int
   public var updatedAt: Int
 
+  public init(
+    transcriptId: String,
+    projectId: String,
+    title: String,
+    description: String,
+    topics: String,
+    confidence: Double,
+    mayContainHallucinations: Int,
+    needsReview: Int,
+    generatedAt: Int,
+    model: String,
+    promptVersion: Int,
+    generatorVersion: Int,
+    transcriptSha256: String,
+    messageCount: Int,
+    strategy: String,
+    llmCalls: Int,
+    latencyMs: Int,
+    createdAt: Int,
+    updatedAt: Int
+  ) {
+    self.transcriptId = transcriptId
+    self.projectId = projectId
+    self.title = title
+    self.description = description
+    self.topics = topics
+    self.confidence = confidence
+    self.mayContainHallucinations = mayContainHallucinations
+    self.needsReview = needsReview
+    self.generatedAt = generatedAt
+    self.model = model
+    self.promptVersion = promptVersion
+    self.generatorVersion = generatorVersion
+    self.transcriptSha256 = transcriptSha256
+    self.messageCount = messageCount
+    self.strategy = strategy
+    self.llmCalls = llmCalls
+    self.latencyMs = latencyMs
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+  }
+
   public static let databaseTableName = "transcript_metadata"
 
   enum CodingKeys: String, CodingKey {

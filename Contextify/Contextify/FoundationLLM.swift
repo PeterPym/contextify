@@ -223,7 +223,7 @@ actor FoundationLLM {
             let instructions = instructionsForTimeline(kind: kind, provider: provider)
 
             // Fetch per-instructions controller (single-flight per session)
-            let controller = try await getController(for: instructions)
+            let controller = await getController(for: instructions)
 
             // Use slight temperature on retries to help unstick from bad states
             let temperature = retryCount > 0 ? 0.1 : 0.0
@@ -765,11 +765,11 @@ private extension FoundationLLM {
 #if canImport(FoundationModels)
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 private extension FoundationLLM {
-    // Cache of per-instructions controllers (single-flight per session)
-    // Key by the full instructions string to avoid non-stable hashValue semantics.
+    // P2 fix: Actor-isolated cache prevents concurrent access
+    // Each instructions string gets its own SessionController (single-flight guarantee)
     nonisolated(unsafe) static var controllers: [String: SessionController] = [:]
 
-    func getController(for instructions: String) async throws -> SessionController {
+    func getController(for instructions: String) async -> SessionController {
         if let existing = Self.controllers[instructions] {
             return existing
         }

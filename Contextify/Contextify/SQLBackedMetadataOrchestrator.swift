@@ -31,13 +31,16 @@ final class SQLBackedMetadataOrchestrator: Sendable {
 
     /// Generate and save metadata (call from background)
     nonisolated func generateAndSave(transcript: Transcript, transcriptSHA256: String) async throws {
-        await Self.limiter.acquire()
-        defer { Task { await Self.limiter.release() } }
+        // Extract values before entering @Sendable closure
+        let transcriptId = transcript.id
+        let projectId = transcript.projectId
+        let filePath = transcript.filePath
 
-        let log = Logger(subsystem: "dev.contextify", category: "SQLMetadata")
+        try await Self.limiter.withPermit {
+            let log = Logger(subsystem: "dev.contextify", category: "SQLMetadata")
 
         // 1. Read entries from SQL
-        let entries = try orchestrator.getEntries(forTranscript: transcript.id, afterTimestamp: nil)
+        let entries = try orchestrator.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
         guard !entries.isEmpty else { return }
 
         // 2. Convert to exchanges
@@ -57,7 +60,7 @@ final class SQLBackedMetadataOrchestrator: Sendable {
         // 4. Generate metadata via LLM
         #if canImport(FoundationModels)
         if #available(macOS 26, *) {
-            log.info("Generating metadata for \(transcript.filePath)")
+            log.info("Generating metadata for \(filePath)")
             let started = Date()
             do {
                 let llmResult = try await TranscriptMetadataLLM.shared.singlePass(
@@ -73,8 +76,8 @@ final class SQLBackedMetadataOrchestrator: Sendable {
                 let topicsString = String(data: topicsJSON, encoding: .utf8) ?? "[]"
 
                 let metadata = TranscriptMetadataRecord(
-                    transcriptId: transcript.id,
-                    projectId: transcript.projectId,
+                    transcriptId: transcriptId,
+                    projectId: projectId,
                     title: llmResult.title,
                     description: llmResult.description,
                     topics: topicsString,
@@ -104,8 +107,8 @@ final class SQLBackedMetadataOrchestrator: Sendable {
                 let topicsString = String(data: topicsJSON, encoding: .utf8) ?? "[]"
 
                 let metadata = TranscriptMetadataRecord(
-                    transcriptId: transcript.id,
-                    projectId: transcript.projectId,
+                    transcriptId: transcriptId,
+                    projectId: projectId,
                     title: heuristic.title,
                     description: heuristic.description,
                     topics: topicsString,
@@ -126,10 +129,11 @@ final class SQLBackedMetadataOrchestrator: Sendable {
                 )
 
                 try orchestrator.saveMetadata(metadata)
-                log.info("Saved heuristic metadata for \(transcript.filePath)")
+                log.info("Saved heuristic metadata for \(filePath)")
             }
         }
         #endif
+        }
     }
 
     /// Convert TranscriptEntry[] to Exchange[]
@@ -171,7 +175,14 @@ actor ConcurrencyLimiter {
         self.max = maxConcurrent
     }
 
-    func acquire() async {
+    /// Scoped permit acquisition - guarantees release on exit
+    func withPermit<T>(_ body: @Sendable () async throws -> T) async rethrows -> T {
+        await acquire()
+        defer { release() }
+        return try await body()
+    }
+
+    private func acquire() async {
         if inFlight < max {
             inFlight += 1
             return
@@ -180,7 +191,7 @@ actor ConcurrencyLimiter {
         inFlight += 1
     }
 
-    func release() {
+    private func release() {
         inFlight = Swift.max(0, inFlight - 1)
         if !waiters.isEmpty {
             let cc = waiters.removeFirst()

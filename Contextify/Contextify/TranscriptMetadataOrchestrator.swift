@@ -100,7 +100,7 @@ actor TranscriptMetadataOrchestrator {
 
     // Check cache unless forcing regeneration
     if !forceRegenerate,
-       let cached = try? await store.load(for: session.fileURL),
+       let cached = await store.load(for: session.fileURL),
        await store.isFresh(
         cached,
         for: session.fileURL,
@@ -122,7 +122,7 @@ actor TranscriptMetadataOrchestrator {
     if exchanges.count < 3 {
       log.info("Very short transcript (\(exchanges.count) exchanges), using heuristic")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
-      try await store.save(metadata, for: session.fileURL)
+      await store.save(metadata, for: session.fileURL)
       return metadata
     }
 
@@ -130,7 +130,7 @@ actor TranscriptMetadataOrchestrator {
     if shouldUseCircuitBreaker() {
       log.warning("Circuit breaker active, using heuristic fallback")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
-      try await store.save(metadata, for: session.fileURL)
+      await store.save(metadata, for: session.fileURL)
       return metadata
     }
 
@@ -262,7 +262,7 @@ actor TranscriptMetadataOrchestrator {
     metadata.latencyMs = Int(totalTime * 1000)
 
     // Save to sidecar
-    try await store.save(metadata, for: session.fileURL)
+    await store.save(metadata, for: session.fileURL)
     let storageTime = Date().timeIntervalSince(storageStart)
 
     // Log metrics
