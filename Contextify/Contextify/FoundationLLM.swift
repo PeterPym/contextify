@@ -221,7 +221,9 @@ actor FoundationLLM {
             }
 
             let instructions = instructionsForTimeline(kind: kind, provider: provider)
-            let session = LanguageModelSession(instructions: instructions)
+
+            // Fetch per-instructions controller (single-flight per session)
+            let controller = try await getController(for: instructions)
 
             // Use slight temperature on retries to help unstick from bad states
             let temperature = retryCount > 0 ? 0.1 : 0.0
@@ -265,13 +267,12 @@ actor FoundationLLM {
                 }
                 log.debug("[\(reqNum)] input: \(payloadInput, privacy: .public)")
 
-                let response = try await session.respond(
-                    to: payloadInput,
+                let payload = try await controller.generate(
+                    payloadInput,
                     generating: GuidedTimelineSummary.self,
-                    includeSchemaInPrompt: true,
+                    includeSchema: true,
                     options: options
                 )
-                let payload = response.content
                 log.debug("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
                 log.debug("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
                 do {
@@ -314,8 +315,8 @@ actor FoundationLLM {
 
                     // Try to get raw response for debugging (makes second LLM call but only on failure)
                     do {
-                        let rawResponse = try await session.respond(to: payloadInput, options: options)
-                        log.error("[\(reqNum)] LLM actually returned (raw): \(rawResponse.content, privacy: .public)")
+                        let raw = try await controller.raw(payloadInput, options: options)
+                        log.error("[\(reqNum)] LLM actually returned (raw): \(raw, privacy: .public)")
                     } catch {
                         log.error("[\(reqNum)] Could not fetch raw response: \(error.localizedDescription, privacy: .public)")
                     }
@@ -447,6 +448,70 @@ struct GuidedTimelineSummary {
 
     @Guide(description: "Confidence value between 0.0 and 1.0", .range(0...1))
     var confidence: Double
+}
+
+/// One controller per unique instructions string; guarantees single-flight respond().
+@available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
+actor SessionController {
+    private let log = Logger(subsystem: "dev.contextify", category: "FoundationLLM.SessionController")
+    private let instructions: String
+    private var session: LanguageModelSession?
+
+    // async semaphore
+    private var inFlight = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(instructions: String) {
+        self.instructions = instructions
+    }
+
+    private func getOrCreateSession() -> LanguageModelSession {
+        if let s = session { return s }
+        let s = LanguageModelSession(instructions: self.instructions)
+        session = s
+        log.info("Created LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))…")
+        return s
+    }
+
+    private func acquire() async {
+        if !inFlight { inFlight = true; return }
+        await withCheckedContinuation { waiters.append($0) }
+        inFlight = true
+    }
+
+    private func release() {
+        inFlight = false
+        if !waiters.isEmpty {
+            let cc = waiters.removeFirst()
+            cc.resume()
+        }
+    }
+
+    func generate<T: Generable>(
+        _ prompt: String,
+        generating: T.Type,
+        includeSchema: Bool,
+        options: GenerationOptions
+    ) async throws -> T {
+        let s = getOrCreateSession()
+        await acquire()
+        defer { release() }
+        let resp = try await s.respond(
+            to: prompt,
+            generating: T.self,
+            includeSchemaInPrompt: includeSchema,
+            options: options
+        )
+        return resp.content
+    }
+
+    func raw(_ prompt: String, options: GenerationOptions) async throws -> String {
+        let s = getOrCreateSession()
+        await acquire()
+        defer { release() }
+        let resp = try await s.respond(to: prompt, options: options)
+        return resp.content
+    }
 }
 #endif
 
@@ -700,6 +765,19 @@ private extension FoundationLLM {
 #if canImport(FoundationModels)
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 private extension FoundationLLM {
+    // Cache of per-instructions controllers (single-flight per session)
+    // Key by the full instructions string to avoid non-stable hashValue semantics.
+    nonisolated(unsafe) static var controllers: [String: SessionController] = [:]
+
+    func getController(for instructions: String) async throws -> SessionController {
+        if let existing = Self.controllers[instructions] {
+            return existing
+        }
+        let controller = SessionController(instructions: instructions)
+        Self.controllers[instructions] = controller
+        return controller
+    }
+
     func postProcess(
         kind: TimelineEntryKind,
         payload: GuidedTimelineSummary,

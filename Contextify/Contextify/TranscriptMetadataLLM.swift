@@ -20,16 +20,68 @@ actor TranscriptMetadataLLM {
     case decodingFailure(String)
   }
 
+  // MARK: - Session & single-flight
+  // Store as Any? to avoid availability issues with stored properties
+  private var _sharedSessionStorage: Any?
+  private var initializing = false
+  private var inFlight = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  #if canImport(FoundationModels)
+  @available(macOS 26, *)
+  private var sharedSession: LanguageModelSession? {
+    get { _sharedSessionStorage as? LanguageModelSession }
+    set { _sharedSessionStorage = newValue }
+  }
+
+  @available(macOS 26, *)
+  private func acquire() async {
+    if !inFlight {
+      inFlight = true
+      return
+    }
+    await withCheckedContinuation { (cc: CheckedContinuation<Void, Never>) in
+      waiters.append(cc)
+    }
+    inFlight = true
+  }
+
+  @available(macOS 26, *)
+  private func release() {
+    inFlight = false
+    if !waiters.isEmpty {
+      let cc = waiters.removeFirst()
+      cc.resume()
+    }
+  }
+
+  @available(macOS 26, *)
+  private func getOrCreateSession() async throws -> LanguageModelSession {
+    if let s = sharedSession { return s }
+    if initializing {
+      try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+      return try await getOrCreateSession()
+    }
+    initializing = true
+    defer { initializing = false }
+
+    // static instructions → safe to reuse session
+    let s = LanguageModelSession(instructions: Prompts.sharedInstructions())
+    sharedSession = s
+    log.info("Created shared TranscriptMetadata LanguageModelSession")
+    return s
+  }
+  #endif
+
   // MARK: - Token Budget Calculation
 
 #if canImport(FoundationModels)
   @available(macOS 26, *)
   func calculateAvailableContextTokens(sampledCount: Int, totalCount: Int) async -> Int {
-    let instructions = Prompts.singlePass(sampledCount: sampledCount, totalCount: totalCount)
-
     // Estimate instruction tokens
     // FoundationModels may not expose token counting, so use character-based estimation
     // Typical ratio is ~4 chars per token for English text
+    let instructions = Prompts.sharedInstructions()
     let instructionTokens = instructions.count / 4
 
     // Estimate schema tokens added by includeSchemaInPrompt: true
@@ -55,8 +107,7 @@ actor TranscriptMetadataLLM {
 #endif
 
   // MARK: - Single Pass Generation
-
-#if canImport(FoundationModels)
+  #if canImport(FoundationModels)
   @available(macOS 26, *)
   func singlePass(
     context: String,
@@ -64,19 +115,19 @@ actor TranscriptMetadataLLM {
     totalCount: Int
   ) async throws -> GuidedTranscriptMetadata {
     let availability = SystemLanguageModel.default.availability
-    switch availability {
-    case .available:
-      break
-    case .unavailable:
+    guard case .available = availability else {
       log.warning("SystemLanguageModel unavailable")
-      throw LLMError.unavailable
-    @unknown default:
-      log.warning("SystemLanguageModel unknown availability")
       throw LLMError.unavailable
     }
 
-    let instructions = Prompts.singlePass(sampledCount: sampledCount, totalCount: totalCount)
-    let session = LanguageModelSession(instructions: instructions)
+    let session = try await getOrCreateSession()
+
+    // sampled/total move into input (not instructions)
+    let contextWithInfo = """
+    CONTEXT: This excerpt shows \(sampledCount) of \(totalCount) messages. First 10 and last 10 are always included; the middle is selected for importance.
+
+    \(context)
+    """
 
     let options = GenerationOptions(
       sampling: .greedy,
@@ -86,45 +137,28 @@ actor TranscriptMetadataLLM {
 
     log.info("Requesting transcript metadata from LLM (sampled: \(sampledCount)/\(totalCount))")
 
+    // strict single-flight: exactly one respond() in flight
+    await acquire()
+    defer { release() }
+
     do {
       let response = try await session.respond(
-        to: context,
+        to: contextWithInfo,
         generating: GuidedTranscriptMetadata.self,
         includeSchemaInPrompt: true,
         options: options
       )
-
       log.info("LLM returned metadata - title: '\(response.content.title, privacy: .public)'")
       return response.content
     } catch let error as LanguageModelSession.GenerationError {
       log.error("LLM generation error: \(String(describing: error), privacy: .public)")
-
-      // Try to get more details on decoding failures
-      if case .decodingFailure(let errorContext) = error {
-        log.error("Decoding failure details: \(errorContext.debugDescription, privacy: .public)")
-
-        // Retry once with higher temperature
-        log.info("Retrying with temperature 0.1...")
-        let retryOptions = GenerationOptions(
-          sampling: .greedy,
-          temperature: 0.1,
-          maximumResponseTokens: 300
-        )
-
-        let retryResponse = try await session.respond(
-          to: context,
-          generating: GuidedTranscriptMetadata.self,
-          includeSchemaInPrompt: true,
-          options: retryOptions
-        )
-
-        log.info("Retry succeeded")
-        return retryResponse.content
+      if case .decodingFailure(let ctx) = error {
+        log.error("Decoding failure details: \(ctx.debugDescription, privacy: .public)")
       }
       throw LLMError.decodingFailure(String(describing: error))
     }
   }
-#else
+  #else
   @available(macOS 26, *)
   func singlePass(
     context: String,
@@ -134,11 +168,10 @@ actor TranscriptMetadataLLM {
     log.error("FoundationModels not available (macOS < 26)")
     throw LLMError.unexpectedEnvironment
   }
-#endif
+  #endif
 }
 
 // MARK: - Guided Schema
-
 #if canImport(FoundationModels)
 @available(macOS 26, *)
 @Generable(description: "Transcript metadata")
@@ -161,23 +194,23 @@ struct GuidedTranscriptMetadata: Sendable {
 #endif
 
 // MARK: - Prompts
-
 enum Prompts: Sendable {
-  nonisolated static func singlePass(sampledCount: Int, totalCount: Int) -> String {
+  /// Static instructions so the session can be reused safely
+  nonisolated static func sharedInstructions() -> String {
     """
     You are analyzing a developer's AI-assisted coding session.
 
     OUTPUT RULES
     - Only include details explicitly present in the messages.
     - Do NOT invent filenames, APIs, bugs, or tools.
-    - Title: ≤60 chars; imperative or concise noun phrase; focus on the most discussed activity.
+    - Title: ≤60 chars; imperative or concise noun phrase focused on the most discussed activity.
     - Description: ≤200 chars; 2–3 key activities in chronological order; past tense; prefer concrete nouns from the text.
     - Topics: 2–5 from {feature-work, bug-fix, refactoring, testing, documentation, code-review, performance, security, architecture, deployment, general}.
     - Confidence: 0.0–1.0 based on clarity/specificity.
     - mayContainHallucinations: true if any referenced filename/module/API is not present verbatim in the messages.
 
-    CONTEXT
-    This excerpt shows \(sampledCount) of \(totalCount) messages. First 10 and last 10 are always included; the middle is selected for importance.
+    INPUT FORMAT
+    The input includes a CONTEXT preface with sampled/total counts and the sampled messages.
 
     Return ONLY the JSON object for the schema.
     """
@@ -185,7 +218,6 @@ enum Prompts: Sendable {
 }
 
 // MARK: - Heuristics Fallback
-
 enum HeuristicMetadata: Sendable {
   nonisolated static func generate(exchanges: [Exchange]) -> TranscriptMetadata {
     let title = exchanges.count < 3 ? "Brief Session" : "Developer Chat"
