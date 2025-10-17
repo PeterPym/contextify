@@ -189,7 +189,36 @@ Build an auxiliary view to help users maintain Agent Rules v1.0 compliance and a
 
 #### Conversation Log Enhancements
 
-##### 1. Reduce Assistant Entry Density
+##### 1. Date Separator Between Messages
+**Status:** Backlog
+**Priority:** Medium (UX polish)
+
+Add visual date separators when the timeline crosses into a new day, similar to macOS Messages app.
+
+**Example:**
+```
+Claude proposes to implement caching
+You requested Claude to proceed
+─────── Tuesday, October 15 ───────
+Claude implements the cache layer
+You asked about performance
+─────── Wednesday, October 16 ──────
+Claude optimizes the query
+```
+
+**Implementation:**
+- Check for date boundary between consecutive timeline entries
+- Insert a visual separator with formatted date
+- Use system date formatting (respects user's locale)
+- Style: subtle divider with centered date text
+- Consider: "Today", "Yesterday" for recent dates
+
+**Files to modify:**
+- `ConversationTimelineView.swift` - Add date separator logic
+- Check timestamp difference between entries
+- Insert Text/Divider view when date changes
+
+##### 2. Reduce Assistant Entry Density
 **Status:** Active Development
 **Priority:** High
 **Branch:** feature/timeline-completion-improvements

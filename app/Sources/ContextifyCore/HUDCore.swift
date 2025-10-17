@@ -768,6 +768,10 @@ public final class HUDViewModel {
     }
     adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true, scopedURL: url)
     updateGitInfo()
+
+    // Notify observers that project root has changed
+    NotificationCenter.default.post(name: .projectRootDidChange, object: repo)
+
     return .success(repo)
   }
 

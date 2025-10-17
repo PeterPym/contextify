@@ -62,6 +62,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
     @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
+    @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var indexByCacheKey: [String: Int] = [:]  // "content|window" -> row index for in-place updates
 
     private init() {}
@@ -128,6 +129,7 @@ final class ConversationMonitor {
                 // 6. Subscribe to realtime updates
                 self.setupSQLNotifications()
                 self.setupCacheUpdateNotifications()
+                self.setupProjectChangeNotifications()
 
                 self.isMonitoring = true
                 self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
@@ -159,6 +161,11 @@ final class ConversationMonitor {
             cacheUpdateObserver = nil
         }
 
+        if let observer = projectChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            projectChangeObserver = nil
+        }
+
         // Stop all watchers using shared orchestrator
         if orchestrator != nil {
             orchestrator.stopAllWatchers()
@@ -182,6 +189,20 @@ final class ConversationMonitor {
         didEmitSessionStart = false
         lastSeenCursor = nil
         seenEntryIDs.removeAll()
+    }
+
+    @MainActor
+    func handleProjectRootChange() {
+        log.info("🔄 Project root changed - reloading conversation timeline")
+
+        // Stop current monitoring
+        stopMonitoring()
+
+        // Clear all entries
+        clearEntries()
+
+        // Restart monitoring with new project
+        startMonitoring()
     }
 
     @MainActor
@@ -445,6 +466,19 @@ final class ConversationMonitor {
             let keys = (note.userInfo?["keys"] as? [CacheKey]) ?? []
             Task { @MainActor [weak self] in
                 await self?.refreshCachedEntries(keys: keys)
+            }
+        }
+    }
+
+    private func setupProjectChangeNotifications() {
+        projectChangeObserver = NotificationCenter.default.addObserver(
+            forName: .projectRootDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                self?.handleProjectRootChange()
             }
         }
     }

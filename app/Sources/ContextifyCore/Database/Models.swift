@@ -143,6 +143,7 @@ public struct CacheKey: Hashable, Codable, Sendable {
 
 public extension Notification.Name {
     static let timelineCacheUpdated = Notification.Name("TimelineCacheUpdated")
+    static let projectRootDidChange = Notification.Name("ProjectRootDidChange")
 }
 
 // MARK: - Timeline Cache

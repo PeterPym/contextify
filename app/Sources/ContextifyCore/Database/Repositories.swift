@@ -300,7 +300,7 @@ public final class EntryRepositoryImpl: EntryRepository {
          AND c.generator_signature = ?
         WHERE e.project_id = ?
           AND e.display_in_timeline = 1
-        ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
+        ORDER BY e.timestamp ASC, e.created_at ASC, e.id ASC
         LIMIT ?
       """
 
