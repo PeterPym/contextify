@@ -662,14 +662,14 @@ final class ConversationMonitor {
                 }
             }
 
-            // Sort to maintain deterministic ordering: timestamp DESC, createdAt DESC, id DESC
+            // Sort to maintain chronological ordering: timestamp ASC, id ASC
             entries.sort { a, b in
                 if a.timestamp != b.timestamp {
-                    return a.timestamp > b.timestamp
+                    return a.timestamp < b.timestamp
                 }
                 // Note: Can't compare createdAt here as TimelineEntry doesn't have it
                 // Stable sort relies on DB ordering being correct
-                return a.sourceIdentifier > b.sourceIdentifier
+                return a.sourceIdentifier < b.sourceIdentifier
             }
 
             // Trim to max size
