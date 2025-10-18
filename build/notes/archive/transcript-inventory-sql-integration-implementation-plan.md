@@ -21,6 +21,118 @@ Replace TranscriptInventory's file-system + in-memory metadata with full SQL per
 
 ---
 
+## Shared Utilities (Extract for Reuse)
+
+Both timeline cache and transcript metadata systems share common patterns. Extract these to `ContextifyCore/Database/Utilities/` for reuse:
+
+### ConcurrencyGate.swift
+```swift
+/// Continuation-based concurrency gate (no spin-wait)
+/// Used by: TimelineCacheMissGenerator, TranscriptMetadataOrchestrator
+actor ConcurrencyGate {
+    private let maxPermits: Int
+    private var availablePermits: Int
+    private var waiters: [(UUID, CheckedContinuation<Void, Never>)] = []
+
+    init(permits: Int) {
+        self.maxPermits = permits
+        self.availablePermits = permits
+    }
+
+    func acquire() async {
+        if availablePermits > 0 {
+            availablePermits -= 1
+            return
+        }
+
+        let id = UUID()
+        await withCheckedContinuation { continuation in
+            waiters.append((id, continuation))
+        }
+    }
+
+    func release() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.1.resume()
+        } else {
+            availablePermits = min(availablePermits + 1, maxPermits)
+        }
+    }
+}
+```
+
+### CircuitBreaker.swift
+```swift
+/// Sliding-window circuit breaker
+/// Used by: TimelineCacheMissGenerator, TranscriptMetadataOrchestrator
+actor CircuitBreaker {
+    private var requestHistory: Deque<RequestOutcome> = []
+    private let historyWindowSeconds: TimeInterval
+    private let failureThreshold: Double
+    private let minimumRequests: Int
+
+    struct RequestOutcome {
+        let timestamp: Date
+        let success: Bool
+    }
+
+    init(windowSeconds: TimeInterval = 300, failureThreshold: Double = 0.6, minimumRequests: Int = 5) {
+        self.historyWindowSeconds = windowSeconds
+        self.failureThreshold = failureThreshold
+        self.minimumRequests = minimumRequests
+    }
+
+    func shouldOpen() -> Bool {
+        cleanHistory()
+        guard requestHistory.count >= minimumRequests else { return false }
+
+        let failures = requestHistory.filter { !$0.success }.count
+        let ratio = Double(failures) / Double(requestHistory.count)
+        return ratio >= failureThreshold
+    }
+
+    func recordSuccess() {
+        requestHistory.append(RequestOutcome(timestamp: Date(), success: true))
+        cleanHistory()
+    }
+
+    func recordFailure() {
+        requestHistory.append(RequestOutcome(timestamp: Date(), success: false))
+        cleanHistory()
+    }
+
+    private func cleanHistory() {
+        let cutoff = Date().addingTimeInterval(-historyWindowSeconds)
+        while let first = requestHistory.first, first.timestamp < cutoff {
+            requestHistory.removeFirst()
+        }
+    }
+}
+```
+
+### PathNormalizer.swift
+✅ **Already implemented** in Phase 1
+
+### CacheNotifications.swift
+```swift
+/// Standardized notification names for cache updates
+extension NSNotification.Name {
+    /// Posted when timeline entry cache is updated (object: CacheKey)
+    static let timelineCacheUpdated = NSNotification.Name("TimelineCacheUpdated")
+
+    /// Posted when transcript metadata is updated (object: String transcript_id)
+    static let transcriptMetadataUpdated = NSNotification.Name("TranscriptMetadataUpdated")
+}
+```
+
+**Integration Points:**
+- `TimelineCacheMissGenerator`: Replace spin-sleep semaphore with `ConcurrencyGate`
+- `TranscriptMetadataOrchestrator`: Use `ConcurrencyGate` + `CircuitBreaker`
+- Both: Use standardized notification names
+
+---
+
 ## Phase 1: Foundation (Database Schema + Core APIs)
 
 ### 1.1 Database Schema Migration
