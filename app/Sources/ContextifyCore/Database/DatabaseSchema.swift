@@ -4,7 +4,7 @@ import GRDB
 /// SQLite schema for Contextify transcript storage
 /// Based on sql-implementation-plan-05.md and sql-integration-plan-v2.md
 enum DatabaseSchema {
-  static let version = 2
+  static let version = 3
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -102,6 +102,52 @@ enum DatabaseSchema {
 
       // Run ANALYZE to update statistics after bulk operations
       try db.execute(sql: "ANALYZE")
+    }
+
+    // v3: Path normalization and freshness tracking for transcript inventory
+    migrator.registerMigration("v3_transcript_identity") { db in
+      // Add new columns for path normalization and content tracking
+      try db.alter(table: "transcripts") { t in
+        t.add(column: "normalized_path", .text)
+        t.add(column: "path_hash", .text)
+        t.add(column: "content_length", .integer)
+        t.add(column: "mtime_ns", .integer)
+        t.add(column: "content_sha256", .text)
+      }
+
+      // Backfill existing transcripts with normalized paths and hashes
+      let existingTranscripts = try Row.fetchAll(db, sql: "SELECT id, file_path FROM transcripts")
+      for row in existingTranscripts {
+        let id: String = row["id"]
+        let filePath: String = row["file_path"]
+
+        // Normalize and hash the path
+        let (normalized, hash) = PathNormalizer.normalizeAndHash(filePath)
+
+        // Get file metadata if file still exists
+        var contentLength: Int64 = 0
+        var mtimeNs: Int = 0
+        var contentSHA: String = "pending"
+
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath) {
+          contentLength = (attrs[.size] as? Int64) ?? 0
+          if let modDate = attrs[.modificationDate] as? Date {
+            mtimeNs = Int(modDate.timeIntervalSince1970 * 1_000_000_000)
+          }
+        }
+
+        try db.execute(sql: """
+          UPDATE transcripts
+          SET normalized_path = ?, path_hash = ?, content_length = ?, mtime_ns = ?, content_sha256 = ?
+          WHERE id = ?
+        """, arguments: [normalized, hash, contentLength, mtimeNs, contentSHA, id])
+      }
+
+      // Create unique index on (provider, path_hash) for identity
+      try db.execute(sql: """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_path_hash
+          ON transcripts(provider, path_hash)
+      """)
     }
 
     return migrator
