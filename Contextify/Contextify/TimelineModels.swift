@@ -1,4 +1,5 @@
 import Foundation
+import ContextifyCore
 
 enum TimelineEntryKind: String, Codable, Sendable {
     case user
@@ -149,6 +150,12 @@ struct TimelineSourceContext: Hashable, Sendable {
 }
 
 extension TimelineEntry {
+    /// Stable cache key for this entry (nil if missing hashes)
+    var cacheKey: CacheKey? {
+        guard let content = contentSha256, let window = windowSha256 else { return nil }
+        return CacheKey(content: content, window: window)
+    }
+
     func markdownPayload() -> String {
         let logText = detail
         let sourceText = sourceContent ?? detail

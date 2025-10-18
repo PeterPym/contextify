@@ -10,10 +10,9 @@ final class TimelineState {
     private(set) var entries: [TimelineEntry] = []
 
     // Derived map stays in sync because it's computed
-    var indexByCacheKey: [String: Int] {
+    var indexByCacheKey: [CacheKey: Int] {
         Dictionary(uniqueKeysWithValues: entries.enumerated().compactMap { i, e in
-            guard let content = e.contentSha256, let window = e.windowSha256 else { return nil }
-            return ("\(content)|\(window)", i)
+            e.cacheKey.map { ($0, i) }
         })
     }
 
@@ -641,8 +640,7 @@ final class ConversationMonitor {
             // Build updates for indices we currently show
             var updates: [(Int, TimelineCache)] = []
             for key in keys {
-                let composite = key.compositeKey
-                if let index = indexMap[composite],
+                if let index = indexMap[key],
                    entries.indices.contains(index),
                    let cache = cacheMap[key] {
                     updates.append((index, cache))
