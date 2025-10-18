@@ -771,7 +771,9 @@ actor SessionController {
         if let idx = waitOrder.firstIndex(of: id) {
             waitOrder.remove(at: idx)
         }
-        waiters.removeValue(forKey: id)
+        if let cont = waiters.removeValue(forKey: id) {
+            cont.resume()  // MUST resume cancelled continuation to unblock task
+        }
         // Cancelled waiter is dropped; current holder keeps the token
     }
 
