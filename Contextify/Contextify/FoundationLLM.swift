@@ -324,6 +324,10 @@ actor FoundationLLM {
         provider: TimelineSourceContext.Provider? = nil,
         actionHint: String? = nil
     ) async throws -> TimelineSummaryResult {
+        guard #available(macOS 26.0, *) else {
+            throw TimelineError.llmUnavailable(reason: "FoundationModels requires macOS 26.0+")
+        }
+
         let maxRetries = 3
         var attempt = 0
         var backoffNs: UInt64 = 500_000_000 // 0.5s
@@ -602,6 +606,10 @@ actor FoundationLLM {
         provider: TimelineSourceContext.Provider? = nil,
         contextWindow: [String] = []
     ) async throws -> TimelineSummaryWithForms {
+        guard #available(macOS 26.0, *) else {
+            throw TimelineError.llmUnavailable(reason: "FoundationModels requires macOS 26.0+")
+        }
+
         // Call existing LLM summarization
         let result = try await summarizeTimeline(kind: kind, text: text, provider: provider)
 
