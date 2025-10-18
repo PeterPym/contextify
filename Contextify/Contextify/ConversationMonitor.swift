@@ -735,7 +735,10 @@ final class ConversationMonitor {
     private func processIncrementalUpdate() async {
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
-        defer { updateInFlight = false }
+        defer {
+            updateInFlight = false
+            updateDrainItersRemaining = updateDrainMaxItersDefault  // Always reset
+        }
 
         repeat {
             updateDirty = false
@@ -839,8 +842,6 @@ final class ConversationMonitor {
                 break
             }
         } while true
-
-        updateDrainItersRemaining = updateDrainMaxItersDefault  // Reset for next call
     }
 
     nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
