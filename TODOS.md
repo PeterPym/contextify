@@ -12,6 +12,45 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Backlog
 
+### Technical Debt / Optimizations
+
+#### Phase 2: LLM Session Management & Safety Optimizations
+**Status:** Deferred (Post-P0/P1 cleanup)
+**Priority:** High (P1.5) - Should proceed before new features
+**Effort:** Medium-Large (~3-5 sessions)
+**Risk:** Medium (requires careful actor isolation)
+**Documentation:** [`build/notes/archive/phase-2-llm-optimizations.md`](build/notes/archive/phase-2-llm-optimizations.md)
+
+Following comprehensive P0/P1 fixes (commits `b375246`, `fbe78a9`, `4941bdf`), 12 additional optimizations were identified during ultrathink review. These address **session lifecycle management**, **resource bounds**, and **operational safety** for production LLM usage.
+
+**Why prioritize this?**
+1. **Resource Efficiency**: Current unbounded controller pool leaks memory in long-running sessions
+2. **Privacy Compliance**: Raw prompts logged to console may contain user data
+3. **Operational Safety**: No per-session limits; risks context pollution and rate exhaustion
+4. **Production Resilience**: Missing circuit breakers, cancellation handling improvements needed
+
+**Core issues addressed:**
+- Actor-isolated LRU controller pool (eliminates race conditions, bounds memory)
+- Session age/request limits (automatic resource recycling)
+- Log sanitization (SHA256 hashing instead of raw prompts)
+- Enhanced cancellation safety (prevents continuation leaks)
+- Stable instruction templates (no per-message controller keys)
+
+**Recommended phasing:**
+- **Phase 2a** (High ROI, ~1 session): Session limits, log sanitization, sync simplification
+- **Phase 2b** (Architectural, ~2-3 sessions): Controller pool, cancellation fixes, circuit breaker
+- **Phase 2c** (Cleanup, ~1 session): Remove global counters, misc cleanup
+
+**Why defer from Phase 1?**
+Critical correctness bugs (index drift, memory leaks, retry paradoxes, error handling) are now resolved. These optimizations improve resource efficiency and resilience but don't fix observable production failures. They're important follow-up work that should happen before major new features.
+
+**Next steps:**
+1. Review detailed implementation plan in linked document
+2. Schedule Phase 2a as next sprint (quick wins)
+3. Plan Phase 2b for following sprint (larger refactor)
+
+---
+
 ### Bugs
 
 #### Horizontal Rule Alignment (UI Polish)
