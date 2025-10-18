@@ -692,8 +692,9 @@ actor SessionController {
     private let instructions: String
     private var session: LanguageModelSession?
 
-    // FIFO async semaphore with cancellation support (ID-keyed dictionary)
+    // FIFO async semaphore with cancellation support (ordered queue + dictionary)
     private var inFlight = false
+    private var waitOrder: [UUID] = []                          // preserves FIFO order
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     // Per-session lifetime tracking and circuit breaker
@@ -738,39 +739,44 @@ actor SessionController {
 
     private func acquire() async {
         if !inFlight {
-            inFlight = true
+            inFlight = true                                     // fast path gets the token
             return
         }
 
-        // FIFO queue with cancellation-safe handling using ID-keyed dictionary
+        // Enqueue waiter in FIFO order
         let id = UUID()
         try? await withTaskCancellationHandler {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                waitOrder.append(id)
                 waiters[id] = cont
             }
         } onCancel: {
-            // Resume and hand off token to next waiter
+            // Do NOT call release() here - just remove from queue
             Task {
-                await self.handleCancellation(id)
+                await self.cancelWaiter(id)
             }
         }
-        inFlight = true
+        // NOTE: do NOT set inFlight here - still held by current owner
     }
 
-    private func handleCancellation(_ id: UUID) {
-        if let cont = waiters.removeValue(forKey: id) {
-            cont.resume()   // Always resume cancelled continuations
-            release()       // Hand off token if someone else is waiting
+    private func cancelWaiter(_ id: UUID) {
+        if let idx = waitOrder.firstIndex(of: id) {
+            waitOrder.remove(at: idx)
         }
+        waiters.removeValue(forKey: id)
+        // Cancelled waiter is dropped; current holder keeps the token
     }
 
     private func release() {
-        if let (id, cont) = waiters.first {
-            waiters.removeValue(forKey: id)
-            cont.resume()
-        } else {
-            inFlight = false
+        // Give token to the next non-cancelled waiter or mark idle
+        while let id = waitOrder.first {
+            waitOrder.removeFirst()
+            if let cont = waiters.removeValue(forKey: id) {
+                cont.resume()
+                return                                      // token stays inFlight for resumed waiter
+            }
         }
+        inFlight = false                                     // no waiters → idle
     }
 
     func generate<T: Generable>(
