@@ -426,6 +426,55 @@ struct TranscriptDetailView: View {
 
         Divider()
 
+        // Transcript Details (File Info + LLM metadata if available)
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Transcript Details")
+            .font(.headline)
+
+          // Include Title and Description from LLM metadata if available
+          if let meta = metadata {
+            metadataRow(label: "Title", value: meta.title)
+            metadataRow(label: "Description", value: meta.description)
+          }
+
+          metadataRow(label: "Last Modified", value: formattedDate(session.lastActivity))
+
+          // File Path with Finder reveal button
+          HStack(alignment: .top) {
+            Text("File Path")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .frame(width: 100, alignment: .leading)
+
+            Text(session.fileURL.path)
+              .font(.subheadline)
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+              NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
+            } label: {
+              Image(systemName: "folder")
+                .font(.subheadline)
+            }
+            .buttonStyle(.borderless)
+            .help("Reveal in Finder")
+          }
+
+          metadataRow(label: "File Name", value: session.fileURL.lastPathComponent)
+          metadataRow(label: "Provider", value: providerName)
+
+          if let fileSize = fileSize() {
+            metadataRow(label: "File Size", value: fileSize)
+          }
+
+          if let lineCount = lineCount() {
+            metadataRow(label: "Lines", value: "\(lineCount)")
+          }
+        }
+
+        Divider()
+
         // AI-Generated Metadata
         if let meta = metadata {
           VStack(alignment: .leading, spacing: 12) {
@@ -476,9 +525,6 @@ struct TranscriptDetailView: View {
               .disabled(isRegenerating)
             }
 
-            metadataRow(label: "Title", value: meta.title)
-            metadataRow(label: "Description", value: meta.description)
-
             HStack(alignment: .top) {
               Text("Topics")
                 .font(.subheadline)
@@ -523,27 +569,6 @@ struct TranscriptDetailView: View {
 
           Divider()
         }
-
-        // File Metadata
-        VStack(alignment: .leading, spacing: 12) {
-          Text("File Info")
-            .font(.headline)
-
-          metadataRow(label: "Last Modified", value: formattedDate(session.lastActivity))
-          metadataRow(label: "File Path", value: session.fileURL.path)
-          metadataRow(label: "File Name", value: session.fileURL.lastPathComponent)
-          metadataRow(label: "Provider", value: providerName)
-
-          if let fileSize = fileSize() {
-            metadataRow(label: "File Size", value: fileSize)
-          }
-
-          if let lineCount = lineCount() {
-            metadataRow(label: "Lines", value: "\(lineCount)")
-          }
-        }
-
-        Divider()
 
         // Actions
         VStack(spacing: 8) {
