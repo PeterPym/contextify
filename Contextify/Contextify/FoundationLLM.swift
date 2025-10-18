@@ -679,6 +679,10 @@ actor SessionController {
     // Session epoch to prevent reset fighting
     private var epoch = 0
 
+    // Force stateless mode: reset session before every request
+    // Enable if benchmarks show session creation is very fast (<2ms)
+    private let forceStateless = false
+
     init(instructions: String) {
         self.instructions = instructions
     }
@@ -736,6 +740,8 @@ actor SessionController {
         await acquire()
         defer { release() }
 
+        if forceStateless { reset() }
+
         do {
             let s = try getOrCreateSession()
             let resp = try await s.respond(
@@ -760,6 +766,8 @@ actor SessionController {
     func raw(_ prompt: String, options: GenerationOptions) async throws -> String {
         await acquire()
         defer { release() }
+
+        if forceStateless { reset() }
 
         do {
             let s = try getOrCreateSession()
