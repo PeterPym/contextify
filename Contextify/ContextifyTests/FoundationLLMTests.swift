@@ -351,6 +351,7 @@ final class ConcurrencyAndLifecycleTests: XCTestCase {
         #endif
     }
 
+    @available(macOS 26.0, *)
     func testRuntimeConfigurableForceStateless() async throws {
         // Test that forceStateless mode can be toggled at runtime
         let envEnabled = ProcessInfo.processInfo.environment["CONTEXTIFY_FORCE_STATELESS_LLM"] == "1"
