@@ -65,7 +65,9 @@ final class ConversationMonitor {
     ]
 
     private let state = TimelineState()
-    private(set) var entries: [TimelineEntry] = []  // STORED, observed by @Observable
+
+    /// Read-only view over state.entries (single source of truth)
+    var entries: [TimelineEntry] { state.entries }
 
     /// Entries filtered to the active session (UI-visible subset)
     /// When no session is selected, shows all entries (project-wide view)
@@ -256,44 +258,34 @@ final class ConversationMonitor {
     private func pruneSeenIDsIfNeeded() {
         let cap = config.maxEntries * 2
         if seenEntryIDs.count > cap {
-            seenEntryIDs = Set(entries.map { $0.sourceIdentifier })
+            seenEntryIDs = Set(state.entries.map { $0.sourceIdentifier })
         }
     }
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
-        entries = new
         state.replace(with: new)
     }
 
     @MainActor
     private func appendEntry(_ e: TimelineEntry) {
-        entries.append(e)
         state.append(e)
     }
 
     @MainActor
     private func updateEntry(at i: Int, with e: TimelineEntry) {
-        guard entries.indices.contains(i) else { return }
-        entries[i] = e
         state.update(at: i, to: e)
     }
 
     @MainActor
     private func sortEntriesChronologically() {
-        entries.sort { a, b in
-            if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
-            return a.sourceIdentifier < b.sourceIdentifier
-        }
         state.sortChronologically()
     }
 
     @MainActor
     private func trimEntries() {
-        if entries.count > config.maxEntries {
-            entries = Array(entries.suffix(config.maxEntries))
-            state.trim(to: config.maxEntries)
-        }
+        state.trim(to: config.maxEntries)
+        pruneSeenIDsIfNeeded()  // Keep dedupe set bounded
     }
 
     @MainActor
@@ -303,7 +295,7 @@ final class ConversationMonitor {
 
     @MainActor
     func clearEntries() {
-        entries.removeAll()
+        setEntries([])
         didEmitSessionStart = false
         lastSeenCursor = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
@@ -442,10 +434,8 @@ final class ConversationMonitor {
             log.debug("🟡 appendEntryIfCurrentEpoch: Backfilled missing sessionId for entry")
         }
 
-        entries.append(e)
-        if entries.count > config.maxEntries {
-            entries = Array(entries.suffix(config.maxEntries))
-        }
+        appendEntry(e)
+        trimEntries()
     }
 
     // MARK: - SQL-based Processing
