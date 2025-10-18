@@ -249,7 +249,11 @@ actor TimelineCacheMissGenerator {
         let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
         let provider = TimelineSourceContext.Provider(rawValue: miss.provider) ?? .other
 
-        // Call FoundationLLM for dual-form generation
+        // Call FoundationLLM for dual-form generation (requires macOS 26+)
+        guard #available(macOS 26.0, *) else {
+            throw TimelineError.llmUnavailable(reason: "FoundationModels requires macOS 26.0+")
+        }
+
         let llm = FoundationLLM.shared
         let result = try await llm.summarizeTimelineWithForms(
             kind: kind,
