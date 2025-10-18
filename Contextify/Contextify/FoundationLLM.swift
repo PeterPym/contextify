@@ -97,6 +97,17 @@ actor FoundationLLM {
         #endif
     }
 
+    /// Set forceStateless mode at runtime (overrides environment variable)
+    /// When changed, all existing controllers are cleared to apply new setting
+    @available(macOS 26.0, *)
+    func setForceStateless(_ enabled: Bool) {
+        #if canImport(FoundationModels)
+        forceStatelessMode = enabled
+        controllers.removeAll()  // Clear cache to force recreation with new setting
+        log.info("ForceStateless mode \(enabled ? "enabled" : "disabled") - cleared controller cache")
+        #endif
+    }
+
     /// Legacy method - use resetSession(kind:provider:) instead
     @available(macOS 26.0, *)
     @available(*, deprecated, renamed: "resetSession(kind:provider:)")
@@ -116,8 +127,8 @@ actor FoundationLLM {
     // Throttle to prevent overwhelming the LLM
     private let minRequestInterval: TimeInterval = 0.15 // 150ms between requests
 
-    // Runtime-configurable forceStateless mode (set via CONTEXTIFY_FORCE_STATELESS_LLM=1)
-    private let forceStatelessMode: Bool = {
+    // Runtime-configurable forceStateless mode (set via CONTEXTIFY_FORCE_STATELESS_LLM=1 or setForceStateless)
+    private var forceStatelessMode: Bool = {
         ProcessInfo.processInfo.environment["CONTEXTIFY_FORCE_STATELESS_LLM"] == "1"
     }()
 
