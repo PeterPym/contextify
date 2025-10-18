@@ -108,7 +108,9 @@ actor TimelineCacheMissGenerator {
                     seenPairs.insert(pairKey)
                     let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
                     let provider = TimelineSourceContext.Provider(rawValue: miss.provider)
-                    await FoundationLLM.shared.resetSession(kind: kind, provider: provider)
+                    if #available(macOS 26.0, *) {
+                        await FoundationLLM.shared.resetSession(kind: kind, provider: provider)
+                    }
                 }
             }
 

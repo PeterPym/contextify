@@ -54,9 +54,16 @@ extension Digest {
 }
 
 actor FoundationLLM {
-    // Actor-isolated controller cache (prevents data races, only available when FoundationModels exists)
-    // Using AnyObject to avoid availability checking on stored property
-    private var controllersStorage: [String: AnyObject] = [:]
+    // Actor-isolated controller cache with idle eviction
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, *)
+    private struct ControllerEntry {
+        var controller: SessionController
+        var lastUsed: Date
+    }
+    // Type-erased storage to avoid availability restrictions on stored properties
+    private var controllers: [String: Any] = [:]  // Actually stores ControllerEntry values
+    #endif
 
     /// Helper to parse token overflow info from error context with targeted regex
     private static func parseOverflow(from s: String) -> (tokens: Int, limit: Int)? {
@@ -78,19 +85,19 @@ actor FoundationLLM {
     /// Additional timeout handling can be added per request as needed
 
     /// Reset session for a specific entry kind and provider (replaces resetTimelineSummarizerSession)
+    @available(macOS 26.0, *)
     func resetSession(kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) async {
         #if canImport(FoundationModels)
-        if #available(macOS 26.0, *) {
-            let key = instructionsForTimeline(kind: kind, provider: provider)
-            if let controller = controllersStorage[key] as? SessionController {
-                await controller.reset()
-                controllersStorage[key] = nil
-            }
+        let key = instructionsForTimeline(kind: kind, provider: provider)
+        if let entry = controllers[key] as? ControllerEntry {
+            await entry.controller.reset()
+            controllers[key] = nil
         }
         #endif
     }
 
     /// Legacy method - use resetSession(kind:provider:) instead
+    @available(macOS 26.0, *)
     @available(*, deprecated, renamed: "resetSession(kind:provider:)")
     func resetTimelineSummarizerSession() async {
         await resetSession(kind: .assistant, provider: nil)
@@ -314,8 +321,10 @@ actor FoundationLLM {
                 log.warning("Retryable error on attempt \(attempt): \(err.userMessage)")
 
                 // IMPORTANT: reset session before retry to prevent context accumulation
-                await resetSession(kind: kind, provider: provider)
-                log.info("Reset session before retry \(attempt)")
+                if #available(macOS 26.0, *) {
+                    await resetSession(kind: kind, provider: provider)
+                    log.info("Reset session before retry \(attempt)")
+                }
 
                 // Exponential backoff with jitter
                 let jitter = UInt64(Int.random(in: 0...(200_000_000)))
@@ -1040,12 +1049,42 @@ private extension FoundationLLM {
     // Controllers now moved to actor state (see top of FoundationLLM actor)
 
     func getController(for instructions: String) async -> SessionController {
-        if let existing = controllersStorage[instructions] as? SessionController {
-            return existing
+        if let entry = controllers[instructions] as? ControllerEntry {
+            // Update last-used timestamp
+            controllers[instructions] = ControllerEntry(controller: entry.controller, lastUsed: .now)
+            return entry.controller
         }
         let controller = SessionController(instructions: instructions)
-        controllersStorage[instructions] = controller
+        controllers[instructions] = ControllerEntry(controller: controller, lastUsed: .now)
+        await evictIdleControllers()
         return controller
+    }
+
+    /// Evict idle controllers to prevent unbounded growth
+    /// Default: 5 min idle timeout, max 16 total controllers
+    func evictIdleControllers(maxIdle: TimeInterval = 300, maxTotal: Int = 16) async {
+        let cutoff = Date().addingTimeInterval(-maxIdle)
+
+        // Remove idle controllers (cast to ControllerEntry for filtering)
+        controllers = controllers.filter { (key, value) in
+            guard let entry = value as? ControllerEntry else { return false }
+            return entry.lastUsed > cutoff
+        }
+
+        // Evict oldest if still over capacity
+        if controllers.count > maxTotal {
+            // Convert to typed entries for sorting
+            let typedEntries: [(key: String, entry: ControllerEntry)] = controllers.compactMap { (key, value) in
+                guard let entry = value as? ControllerEntry else { return nil }
+                return (key: key, entry: entry)
+            }
+
+            let victims = typedEntries.sorted { $0.entry.lastUsed < $1.entry.lastUsed }
+                                      .prefix(controllers.count - maxTotal)
+            for victim in victims {
+                controllers.removeValue(forKey: victim.key)
+            }
+        }
     }
 
     func postProcess(
