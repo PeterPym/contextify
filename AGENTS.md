@@ -29,7 +29,29 @@ assets/ icons/
 
 ## Architecture & Key Modules
 
-### Core Components
+### Database Layer (SQL Backend)
+- **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, and timeline cache.
+- **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, and WAL mode.
+- **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing.
+- **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository).
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations.
+- **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
+- **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, etc.).
+- **Documentation**:
+  - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
+  - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
+
+### Timeline & LLM Integration
+- **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`): Main `@Observable` `@MainActor` component for timeline display. Manages TimelineState, visible entries, and session filtering. Integrates with SQL backend via TranscriptOrchestrator.
+- **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): LLM-powered summary generation for cache misses. Uses FoundationLLM (Apple Intelligence) to generate present/past form summaries.
+- **FoundationLLM** (`Contextify/Contextify/FoundationLLM.swift`): Integration with Apple's LanguageModel/FoundationModels. **Requires macOS 26.0+**. On older macOS, the system falls back to basic summaries (no LLM).
+- **TimelineModels** (`Contextify/Contextify/TimelineModels.swift`): Timeline-specific data models (TimelineEntry, CacheKey, Disposition).
+- **TimelineState** (`ConversationMonitor.swift`): Observable state container for timeline entries, derived cache index, and revision tracking.
+- **Documentation**:
+  - Cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
+  - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+
+### Core Components (Project Context)
 - **HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`): Main `@Observable` `@MainActor` view model. Manages:
   - Project root detection (environment → persisted → CWD → existing)
   - Git repository discovery and branch monitoring via file watchers
@@ -43,16 +65,19 @@ assets/ icons/
 
 ### UI Layer
 - **ContentView** (`Contextify/Contextify/ContentView.swift`): Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications.
-
+- **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`): Timeline display UI with session filtering and real-time updates.
+- **TimelineEntryRow** (`Contextify/Contextify/TimelineEntryRow.swift`): Individual timeline entry row component.
+- **TranscriptInventoryView** (`Contextify/Contextify/TranscriptInventoryView.swift`): UI for browsing and switching between transcript sessions.
 - **IngestDropZone** (`Contextify/Contextify/IngestDropZone.swift`): Drag-and-drop target for files, uses SwiftUI `onDrop` with completion handlers and main actor marshaling.
 
 ### Supporting Components
 - **WindowTitleWriter** (`Contextify/Contextify/WindowTitleWriter.swift`): Updates window title to show current project name.
-- **ComposePresenter/ComposeSheet** (`Contextify/Contextify/ComposePresenter.swift`, `ComposeSheet.swift`): URL routing and compose workflows (automation support).
+- **ComposeURLRouter/ComposeWindowManager** (`Contextify/Contextify/ComposeURLRouter.swift`, `ComposeWindowManager.swift`): URL routing and compose window lifecycle (automation support).
 - **ITerm2Bridge** (`Contextify/Contextify/ITerm2Bridge.swift`): iTerm2 integration for shell bindings.
 
-### Conversation Timeline & Transcript Parsing
-- **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`): Parses and monitors conversation transcripts from Claude Code and Codex CLI
+### Transcript Parsing & Metadata
+- **TranscriptParsers** (`app/Sources/ContextifyCore/Database/TranscriptParsers.swift`): JSONL parsers for Claude Code and Codex CLI formats. Used by HooverEngine during ingestion (JSONL → DB).
+- **ConversationMonitor**: Consumes parsed entries from SQL; **does not parse JSONL**.
 - **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
   - Documents Claude Code vs Codex JSONL format differences (lines 118-131)
   - Record type taxonomy and field shapes (lines 47-115)
@@ -60,7 +85,8 @@ assets/ icons/
   - Content block types: Claude Code uses `text`, Codex uses `input_text`/`output_text`
   - Message structure: Claude Code has top-level `uuid`/`type`, Codex wraps in `payload.type:"message"`
 - **ConversationSources** (`Contextify/Contextify/ConversationSources.swift`): Provider-specific session discovery (Claude Code, Codex CLI)
-- **TranscriptInventoryView** (`Contextify/Contextify/TranscriptInventoryView.swift`): UI for browsing and switching between transcript sessions
+- **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics).
+- **SidecarMetadataStore** (`Contextify/Contextify/SidecarMetadataStore.swift`): JSON sidecar file persistence for transcript metadata.
 
 ## Build, Test, and Development Commands
 

@@ -133,6 +133,32 @@ make logs
 
 ## Architecture Notes
 
+### Data Layer
+- **Database**: SQLite backend via GRDB.swift
+- **Location**: `~/Library/Application Support/Contextify/transcripts.db`
+- **Features**:
+  - Streaming transcript ingestion with `HooverEngine`
+  - Real-time file monitoring via `TranscriptWatcher`
+  - LLM-powered timeline summaries (Apple Intelligence/FoundationLLM)
+  - Crash-safe checkpointing and WAL mode
+- **Components**:
+  - `TranscriptOrchestrator`: Coordinates all database operations
+  - `DatabaseManager`: Singleton connection pool
+  - `Repositories`: Type-safe GRDB repositories (Projects, Transcripts, Entries)
+- **Documentation**:
+  - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
+  - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
+
+### Timeline & Conversation Monitoring
+- **ConversationMonitor**: Main UI-facing component for timeline display
+- **TimelineCacheMissGenerator**: LLM-powered summary generation for cache misses
+- **TimelineState**: Observable state container for SwiftUI integration
+- **SQL-backed caching**: Timeline summaries cached by content+window hash
+- **Provider support**: Claude Code and Codex CLI formats
+- **Documentation**:
+  - Cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
+  - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+
 ### Terminal Content Capture
 - **Primary method**: iTerm2 Python API via daemon (`ITerm2DaemonClient.swift`)
 - **Fallback**: AppleScript when Python API unavailable
@@ -140,7 +166,7 @@ make logs
 - **Security**: Requires Accessibility permissions for keyboard monitoring
 
 ### Compose Workflow
-- **URL scheme handler**: `ComposePresenter.swift` - routes `contextify://` URLs
+- **URL scheme handler**: Routes `contextify://` URLs to compose interface
 - **Text editor**: SwiftUI `TextEditor` with focus management (`FocusableTextView.swift`)
 - **Undo manager**: `TerminalUndoManager.swift` - tracks text history for Cmd+Z
 
@@ -162,25 +188,54 @@ make logs
 - `@MainActor` for UI components and ViewModels
 - `async/await` for I/O operations
 - `Sendable` protocols for cross-actor data
+- Database operations isolated via GRDB's thread-safe queue
 
 ## Key Files
 
-### Core Components
+### Database Layer (ContextifyCore)
+- `DatabaseManager.swift` - Singleton GRDB connection pool
+- `DatabaseSchema.swift` - SQL schema and migrations
+- `TranscriptOrchestrator.swift` - High-level database coordinator
+- `Repositories.swift` - Type-safe GRDB repositories
+- `HooverEngine.swift` - Streaming transcript ingestion
+- `TranscriptWatcher.swift` - File system monitoring
+- `Models.swift` - Database models (Project, Transcript, Entry, etc.)
+- See `app/Sources/ContextifyCore/Database/README.md` for details
+
+### Timeline & Monitoring
+- `ConversationMonitor.swift` - Main timeline component (observable state)
+- `TimelineCacheMissGenerator.swift` - LLM-powered summary generation
+- `TimelineModels.swift` - Timeline data models
+- `FoundationLLM.swift` - Apple Intelligence integration
+- `TranscriptInventoryView.swift` - Session browser UI
+
+### Terminal Integration
 - `GlobalHotkeyManager.swift` - Cmd+Shift+K+K hotkey implementation
 - `TerminalContentReader.swift` - Terminal capture logic
 - `ITerm2DaemonClient.swift` - Python daemon integration
 - `ITerm2Bridge.swift` - iTerm2 automation bridge
-- `ComposePresenter.swift` - URL scheme handling
-- `HUDViewModel.swift` - Main view model (in `ContextifyCore`)
+- `ClaudeCodeParser.swift` - Extracts input from terminal buffer
+
+### Compose Workflow
+- `ComposeURLRouter.swift` - URL scheme handling
+- `ComposeWindowManager.swift` - Compose window lifecycle
+- `FocusableTextView.swift` - Enhanced text editor
+- `TerminalUndoManager.swift` - Undo functionality
+
+### Project Context (ContextifyCore)
+- `HUDViewModel.swift` - Main view model (project root, git monitoring)
+- `GitRepositoryResolver.swift` - Git detection and branch tracking
+- `HUDPreferences.swift` - UserDefaults management
 
 ### UI
 - `ContentView.swift` - Main window UI
-- `ComposeSheet.swift` - Compose workflow UI
-- `FocusableTextView.swift` - Enhanced text editor
+- `ConversationTimelineView.swift` - Timeline display
+- `TimelineEntryRow.swift` - Timeline entry UI
 
-### Integration
+### Metadata & Lifecycle
+- `TranscriptMetadataOrchestrator.swift` - Metadata generation coordinator
+- `SidecarMetadataStore.swift` - JSON sidecar metadata persistence
 - `LaunchAgentManager.swift` - Daemon lifecycle management
-- `TerminalUndoManager.swift` - Undo functionality
 - `WindowTitleWriter.swift` - Window title updates
 
 ## Documentation
