@@ -58,8 +58,8 @@ actor TimelineCacheMissGenerator {
                 continue
             }
 
-            // Compute key inline to avoid actor isolation issues
-            let key = "\(miss.contentSha256)|\(miss.windowSha256)"
+            // Use cached composite key for deduplication
+            let key = miss.cacheKey
             if pendingMisses[key] != nil {
                 skippedDuplicates += 1
             } else {
