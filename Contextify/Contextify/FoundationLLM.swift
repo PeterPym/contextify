@@ -680,19 +680,9 @@ actor SessionController {
     private let instructions: String
     private var session: LanguageModelSession?
 
-    // FIFO async semaphore with cancellation support
-    private class Waiter: @unchecked Sendable {
-        let id: UUID
-        let continuation: CheckedContinuation<Void, Never>
-        var cancelled = false
-
-        init(id: UUID, continuation: CheckedContinuation<Void, Never>) {
-            self.id = id
-            self.continuation = continuation
-        }
-    }
+    // FIFO async semaphore with cancellation support (ID-keyed dictionary)
     private var inFlight = false
-    private var waiters: [Waiter] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     // Per-session lifetime tracking and circuit breaker
     private var requestCount = 0
@@ -740,39 +730,32 @@ actor SessionController {
             return
         }
 
-        // FIFO queue with cancellation-safe handling using flag-based tracking
+        // FIFO queue with cancellation-safe handling using ID-keyed dictionary
         let id = UUID()
-
-        await withTaskCancellationHandler {
+        try? await withTaskCancellationHandler {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                let w = Waiter(id: id, continuation: cont)
-                waiters.append(w)
+                waiters[id] = cont
             }
-            inFlight = true
         } onCancel: {
-            // Mark waiter as cancelled
-            // Schedule back to actor since onCancel isn't actor-isolated
+            // Resume and hand off token to next waiter
             Task {
-                await self.markWaiterCancelled(id: id)
+                await self.handleCancellation(id)
             }
         }
+        inFlight = true
     }
 
-    private func markWaiterCancelled(id: UUID) {
-        if let w = waiters.first(where: { $0.id == id }) {
-            w.cancelled = true
+    private func handleCancellation(_ id: UUID) {
+        if let cont = waiters.removeValue(forKey: id) {
+            cont.resume()   // Always resume cancelled continuations
+            release()       // Hand off token if someone else is waiting
         }
     }
 
     private func release() {
-        // Skip any cancelled waiters at the front of the queue
-        while !waiters.isEmpty && waiters.first!.cancelled {
-            waiters.removeFirst()
-        }
-
-        if !waiters.isEmpty {
-            let waiter = waiters.removeFirst()
-            waiter.continuation.resume()
+        if let (id, cont) = waiters.first {
+            waiters.removeValue(forKey: id)
+            cont.resume()
         } else {
             inFlight = false
         }
