@@ -103,6 +103,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
 
     private init() {}
 
@@ -204,6 +205,8 @@ final class ConversationMonitor {
         conversationResolverTask = nil
         backgroundTasks?.cancel()   // NEW: cancels the whole background task group
         backgroundTasks = nil
+        debounceTask?.cancel()
+        debounceTask = nil
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -227,32 +230,26 @@ final class ConversationMonitor {
         cacheMissGenerator = nil
     }
 
-    /// Structured watcher for debounced transcript updates with proper coalescing
+    /// Structured watcher for debounced transcript updates (off main actor, no polling)
     private func watchForDebouncedTranscriptUpdates() async {
         let center = NotificationCenter.default
         let name = NSNotification.Name("TranscriptUpdated")
-        var pending = false
 
         for await note in center.notifications(named: name) {
             if Task.isCancelled { break }
+            let pid = note.userInfo?["projectId"] as? String
 
-            let notifProjectId = note.userInfo?["projectId"] as? String
-            if let pid = notifProjectId, pid != currentProjectId {
-                continue // ignore other projects
-            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard pid == nil || pid == self.currentProjectId else { return }
 
-            pending = true
-
-            // coalesce notifications over a window (prevents N× redundant refresh)
-            let deadline = ContinuousClock.now.advanced(by: .milliseconds(150))
-            while ContinuousClock.now < deadline {
-                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms poll
-                if Task.isCancelled { return }
-            }
-
-            if pending {
-                pending = false
-                await processIncrementalUpdate()
+                // Cancel existing debounce task and start new one
+                self.debounceTask?.cancel()
+                self.debounceTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+                    guard let self, !Task.isCancelled else { return }
+                    await self.processIncrementalUpdate()
+                }
             }
         }
     }
