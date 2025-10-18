@@ -102,6 +102,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
+    @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
 
     private init() {}
 
@@ -681,6 +682,10 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
+        if updateInFlight { return }
+        updateInFlight = true
+        defer { updateInFlight = false }
+
         guard let projectId = currentProjectId, orchestrator != nil else { return }
 
         // If no cursor, do full reload instead
