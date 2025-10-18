@@ -95,7 +95,6 @@ final class ConversationMonitor {
     private var currentSessionId: String?  // Current session identifier for timeline entries
     @ObservationIgnored private var currentProjectId: String?  // SQL project ID
     @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
-    @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
     @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
@@ -204,11 +203,6 @@ final class ConversationMonitor {
         conversationResolverTask = nil
         backgroundTasks?.cancel()   // NEW: cancels the whole background task group
         backgroundTasks = nil
-
-        if let observer = notificationObserver {
-            NotificationCenter.default.removeObserver(observer)
-            notificationObserver = nil
-        }
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -585,10 +579,8 @@ final class ConversationMonitor {
         }
     }
 
-    private func setupSQLNotifications() {
-        // NOTE: Disabled - SQL notifications are now handled by watchForDebouncedTranscriptUpdates()
-        // in the backgroundTasks group. Keeping method signature for potential future use.
-    }
+    @available(*, unavailable, message: "Use watchForDebouncedTranscriptUpdates() instead")
+    private func setupSQLNotifications() {}
 
     private func setupCacheUpdateNotifications() {
         cacheUpdateObserver = NotificationCenter.default.addObserver(
