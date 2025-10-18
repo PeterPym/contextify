@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import Observation
 import OSLog
 import ContextifyCore
@@ -7,8 +6,10 @@ import AppKit
 
 /// Single-source container for timeline entries and derived cache index
 @MainActor
-final class TimelineState: ObservableObject {
-    @Published private(set) var entries: [TimelineEntry] = []
+@Observable
+final class TimelineState {
+    var entries: [TimelineEntry] = []
+    private(set) var revision: UInt64 = 0
 
     // Derived map stays in sync because it's computed
     var indexByCacheKey: [CacheKey: Int] {
@@ -19,15 +20,18 @@ final class TimelineState: ObservableObject {
 
     func replace(with entries: [TimelineEntry]) {
         self.entries = entries
+        revision &+= 1
     }
 
     func append(_ e: TimelineEntry) {
         entries.append(e)
+        revision &+= 1
     }
 
     func update(at index: Int, to newValue: TimelineEntry) {
         guard entries.indices.contains(index) else { return }
         entries[index] = newValue
+        revision &+= 1
     }
 
     func sortChronologically() {
@@ -35,10 +39,11 @@ final class TimelineState: ObservableObject {
             if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
             return a.sourceIdentifier < b.sourceIdentifier
         }
+        revision &+= 1
     }
 
     func trim(to max: Int) {
-        if entries.count > max { entries = Array(entries.suffix(max)) }
+        if entries.count > max { entries = Array(entries.suffix(max)); revision &+= 1 }
     }
 }
 
@@ -73,7 +78,7 @@ final class ConversationMonitor {
     /// Cached filtered entries (invalidated when entries or currentSessionId changes)
     @ObservationIgnored private var cachedVisibleEntries: [TimelineEntry]?
     @ObservationIgnored private var cachedForSessionId: String??
-    @ObservationIgnored private var cachedForEntriesCount: Int = 0
+    @ObservationIgnored private var cachedForRevision: UInt64 = .max
 
     /// Entries filtered to the active session (UI-visible subset)
     /// When no session is selected, shows all entries (project-wide view)
@@ -82,7 +87,7 @@ final class ConversationMonitor {
         // Check if cache is valid
         if let cached = cachedVisibleEntries,
            cachedForSessionId == currentSessionId,
-           cachedForEntriesCount == entries.count {
+           cachedForRevision == state.revision {
             return cached
         }
 
@@ -96,7 +101,7 @@ final class ConversationMonitor {
 
         cachedVisibleEntries = filtered
         cachedForSessionId = currentSessionId
-        cachedForEntriesCount = entries.count
+        cachedForRevision = state.revision
         return filtered
     }
 
@@ -116,7 +121,13 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
     // MUST be observable for UI - visibleEntries filtering depends on this
-    private var currentSessionId: String?  // Current session identifier for timeline entries
+    private var currentSessionId: String? {  // Current session identifier for timeline entries
+        didSet {
+            cachedVisibleEntries = nil
+            cachedForSessionId = nil
+            cachedForRevision = .max
+        }
+    }
     @ObservationIgnored private var currentProjectId: String?  // SQL project ID
     @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
     @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
