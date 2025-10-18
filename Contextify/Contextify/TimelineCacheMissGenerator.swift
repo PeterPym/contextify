@@ -186,10 +186,8 @@ actor TimelineCacheMissGenerator {
             do {
                 // Check if cache already exists (race condition protection)
                 // No MainActor.run needed - TranscriptOrchestrator methods are nonisolated
-                let existing = try? orchestrator.getCachedTimeline(
-                    contentSha256: miss.contentSha256,
-                    windowSha256: miss.windowSha256
-                )
+                let key = CacheKey(content: miss.contentSha256, window: miss.windowSha256)
+                let existing = try? orchestrator.getCachedTimeline(key: key)
 
                 // Skip if user edited
                 if let existing = existing, existing.userEdited == 1 {
@@ -266,10 +264,8 @@ actor TimelineCacheMissGenerator {
     /// Upsert cache entry (never clobber user_edited=1)
     private func upsertCache(miss: CacheMiss, summary: GeneratedSummary) async throws {
         // Check if entry exists and is user-edited (double-check for safety)
-        let existing = try? orchestrator.getCachedTimeline(
-            contentSha256: miss.contentSha256,
-            windowSha256: miss.windowSha256
-        )
+        let key = CacheKey(content: miss.contentSha256, window: miss.windowSha256)
+        let existing = try? orchestrator.getCachedTimeline(key: key)
 
         if let existing = existing, existing.userEdited == 1 {
             log.warning("Refusing to overwrite user-edited cache entry")

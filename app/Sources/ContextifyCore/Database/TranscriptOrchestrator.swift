@@ -209,10 +209,33 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   // MARK: - Cache Management
 
+  // New CacheKey-based API
+  nonisolated public func getCachedTimeline(key: CacheKey) throws -> TimelineCache? {
+    try cacheRepo.get(contentSha256: key.content, windowSha256: key.window)
+  }
+
+  nonisolated public func getCachedTimelineMany(keys: [CacheKey]) throws -> [CacheKey: TimelineCache] {
+    let tuples = keys.map { ($0.content, $0.window) }
+    let stringMap = try cacheRepo.getMany(keys: tuples)
+
+    // Convert string-keyed result to CacheKey-keyed result
+    var result: [CacheKey: TimelineCache] = [:]
+    for key in keys {
+      let stringKey = "\(key.content)|\(key.window)"
+      if let cache = stringMap[stringKey] {
+        result[key] = cache
+      }
+    }
+    return result
+  }
+
+  // Legacy API - deprecated
+  @available(*, deprecated, message: "Use getCachedTimeline(key:) instead")
   nonisolated public func getCachedTimeline(contentSha256: String, windowSha256: String) throws -> TimelineCache? {
     try cacheRepo.get(contentSha256: contentSha256, windowSha256: windowSha256)
   }
 
+  @available(*, deprecated, message: "Use getCachedTimelineMany(keys:) with [CacheKey] instead")
   nonisolated public func getCachedTimelineMany(keys: [(String, String)]) throws -> [String: TimelineCache] {
     try cacheRepo.getMany(keys: keys)
   }

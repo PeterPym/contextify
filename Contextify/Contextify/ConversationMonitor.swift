@@ -348,9 +348,9 @@ final class ConversationMonitor {
             let transcriptEntries = try orchestrator.getEntries(forTranscript: transcript.id, afterTimestamp: nil)
 
             // Batch cache lookup for better performance
-            let cacheKeys = transcriptEntries.compactMap { entry -> (String, String)? in
+            let cacheKeys = transcriptEntries.compactMap { entry -> CacheKey? in
                 guard let windowSha = entry.windowSha256 else { return nil }
-                return (entry.contentSha256, windowSha)
+                return CacheKey(content: entry.contentSha256, window: windowSha)
             }
 
             let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
@@ -359,7 +359,7 @@ final class ConversationMonitor {
             seenEntryIDs.removeAll(keepingCapacity: false)
             let transcriptTimelineEntries = transcriptEntries.map { entry in
                 seenEntryIDs.insert(entry.id)
-                let cacheKey = entry.windowSha256.map { "\(entry.contentSha256)|\($0)" }
+                let cacheKey = entry.windowSha256.map { CacheKey(content: entry.contentSha256, window: $0) }
                 let cache = cacheKey.flatMap { cacheMap[$0] }
                 return toTimelineEntry(entry, cached: cache)
             }
@@ -724,10 +724,8 @@ final class ConversationMonitor {
                 seenEntryIDs.insert(entry.id)
 
                 // Try to get cache for this entry
-                let cache = try? orchestrator.getCachedTimeline(
-                    contentSha256: entry.contentSha256,
-                    windowSha256: entry.windowSha256 ?? ""
-                )
+                let key = CacheKey(content: entry.contentSha256, window: entry.windowSha256 ?? "")
+                let cache = try? orchestrator.getCachedTimeline(key: key)
 
                 // Collect cache miss for background generation
                 if cache == nil, let windowSha = entry.windowSha256 {
