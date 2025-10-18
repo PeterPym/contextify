@@ -232,10 +232,11 @@ final class ConversationMonitor {
         cacheMissGenerator = nil
     }
 
-    /// Structured watcher for debounced transcript updates
+    /// Structured watcher for debounced transcript updates with proper coalescing
     private func watchForDebouncedTranscriptUpdates() async {
         let center = NotificationCenter.default
         let name = NSNotification.Name("TranscriptUpdated")
+        var pending = false
 
         for await note in center.notifications(named: name) {
             if Task.isCancelled { break }
@@ -245,10 +246,19 @@ final class ConversationMonitor {
                 continue // ignore other projects
             }
 
-            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { break }
-            if Task.isCancelled { break }
+            pending = true
 
-            await processIncrementalUpdate()
+            // coalesce notifications over a window (prevents N× redundant refresh)
+            let deadline = ContinuousClock.now.advanced(by: .milliseconds(150))
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms poll
+                if Task.isCancelled { return }
+            }
+
+            if pending {
+                pending = false
+                await processIncrementalUpdate()
+            }
         }
     }
 
