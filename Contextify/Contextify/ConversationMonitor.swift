@@ -91,12 +91,12 @@ final class ConversationMonitor {
             return cached
         }
 
-        // Recompute and cache
+        // Recompute and cache (read directly from state.entries for explicit observation tracking)
         let filtered: [TimelineEntry]
         if let id = currentSessionId {
-            filtered = entries.filter { $0.sessionId == id }
+            filtered = state.entries.filter { $0.sessionId == id }
         } else {
-            filtered = entries  // Show all when no session filter
+            filtered = state.entries  // Show all when no session filter
         }
 
         cachedVisibleEntries = filtered
