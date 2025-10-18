@@ -100,10 +100,14 @@ actor TimelineCacheMissGenerator {
             }
 
             // Reset sessions for the specific kinds and providers in this batch
-            // Use dictionary to deduplicate kind+provider pairs
-            var seenPairs: Set<String> = []
+            // Use struct-based set to deduplicate kind+provider pairs (no delimiter collisions)
+            struct KindProviderPair: Hashable {
+                let kind: String
+                let provider: String
+            }
+            var seenPairs: Set<KindProviderPair> = []
             for miss in batch {
-                let pairKey = "\(miss.kind)|\(miss.provider)"
+                let pairKey = KindProviderPair(kind: miss.kind, provider: miss.provider)
                 if !seenPairs.contains(pairKey) {
                     seenPairs.insert(pairKey)
                     let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
