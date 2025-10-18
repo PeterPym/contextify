@@ -155,6 +155,7 @@ make logs
 - **TimelineState**: Observable state container for SwiftUI integration
 - **SQL-backed caching**: Timeline summaries cached by content+window hash
 - **Provider support**: Claude Code and Codex CLI formats
+- **Apple Intelligence requirement:** Timeline summaries require macOS 26.0+. On older macOS versions, basic (non-LLM) summaries are shown.
 - **Documentation**:
   - Cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
   - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
@@ -239,9 +240,23 @@ make logs
 - `WindowTitleWriter.swift` - Window title updates
 
 ## Documentation
+
+### Technical Architecture References
+- **SQL Backend:** `build/notes/technical-reference/sql-backend-architecture.md`
+- **Timeline Cache + LLM:** `build/notes/technical-reference/timeline-cache-llm-architecture.md`
+- **State Management:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+- **Database Usage Guide:** `app/Sources/ContextifyCore/Database/README.md`
+
+### Project Documentation
 - **Apple docs**: `docs/knowledge/apple/readme.md`
 - **Contributing**: `AGENTS.md`
 - **Project guidance**: `CLAUDE.md`
+
+### SwiftUI Integration Tip
+```swift
+// ContentView.swift: ConversationMonitor injected via environment
+@Environment(ConversationMonitor.self) private var monitor
+```
 
 ## Troubleshooting
 

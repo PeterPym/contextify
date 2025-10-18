@@ -122,22 +122,19 @@ final class ConversationMonitor {
   @ObservationIgnored private var cachedForRevision: UInt64 = .max
 
   var visibleEntries: [TimelineEntry] {
-    // Check cache validity
+    // Check cache validity (revision + session ID)
     if let cached = cachedVisibleEntries,
        cachedForSessionId == currentSessionId,
        cachedForRevision == state.revision {
       return cached
     }
 
-    // Recompute filter
-    let filtered: [TimelineEntry]
-    if let id = currentSessionId {
-      filtered = state.entries.filter { $0.sessionId == id }
-    } else {
-      filtered = state.entries  // Show all
-    }
+    // Recompute filter from state.entries
+    let filtered = currentSessionId.map { id in
+      state.entries.filter { $0.sessionId == id }
+    } ?? state.entries  // nil → show all
 
-    // Update cache
+    // Update cache keys: sessionId + state.revision
     cachedVisibleEntries = filtered
     cachedForSessionId = currentSessionId
     cachedForRevision = state.revision
@@ -244,14 +241,17 @@ func processIncrementalUpdate() async {
     return
   }
   updateInFlight = true
-  defer { updateInFlight = false }
+  defer {
+    updateInFlight = false
+    updateDrainItersRemaining = updateDrainMaxItersDefault  // Reset countdown for next call
+  }
 
   // Drain loop (max 8 iterations to prevent starvation)
   updateDrainItersRemaining = updateDrainMaxItersDefault
 
   while updateDirty && updateDrainItersRemaining > 0 {
     updateDirty = false
-    updateDrainItersRemaining -= 1
+    updateDrainItersRemaining -= 1  // Countdown each iteration
 
     // Query new entries since last cursor
     let newEntries = try? orchestrator.getEntriesAfter(
@@ -261,11 +261,16 @@ func processIncrementalUpdate() async {
 
     guard let newEntries = newEntries, !newEntries.isEmpty else { break }
 
-    // Update cursor
-    let last = newEntries.last!
-    lastSeenCursor = (last.timestamp, last.createdAt, last.id)
+    // Update cursor (stable max on composite key)
+    if let latest = newEntries.max(by: { a, b in
+      if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+      if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+      return a.id < b.id
+    }) {
+      lastSeenCursor = (timestamp: latest.timestamp, createdAt: latest.createdAt, id: latest.id)
+    }
 
-    // Deduplicate (track seen IDs)
+    // Deduplicate (track seen database entry IDs - String, not UUID)
     let unseen = newEntries.filter { !seenEntryIDs.contains($0.id) }
     unseen.forEach { seenEntryIDs.insert($0.id) }
 
@@ -382,7 +387,7 @@ func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestra
 
 **Purpose:** Find newly created transcripts without manual refresh.
 
-**Frequency:** 5 minutes (low overhead, discovers new sessions within 5min).
+**Frequency:** 5 minutes (hardcoded). No UI to configure yet; future plan: 1/5/15 min intervals or manual trigger only.
 
 ### File Watcher (Debounced)
 
@@ -393,10 +398,10 @@ func watchForDebouncedTranscriptUpdates() async {
     for await _ in NotificationCenter.default.notifications(
       named: .transcriptFileUpdated
     ) {
-      // Debounce: wait 500ms for more updates
+      // Debounce: wait 150ms for more updates
       debounceTask?.cancel()
       debounceTask = Task { [weak self] in
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms (matches MonitorConfig.fileWatcherDebounce)
         await self?.processIncrementalUpdate()
       }
     }
@@ -404,9 +409,11 @@ func watchForDebouncedTranscriptUpdates() async {
 }
 ```
 
-**Debouncing:** Multiple rapid file writes → single incremental update after 500ms.
+**Debouncing:** Multiple rapid file writes → single incremental update after 150ms.
 
-**Trade-off:** Latency (500ms delay) vs efficiency (fewer SQL queries).
+**macOS < 26.0 Note:** LLM work is skipped with fallback summaries (no errors).
+
+**Trade-off:** Latency (150ms delay) vs efficiency (fewer SQL queries).
 
 ---
 
@@ -437,7 +444,7 @@ func updateCacheForKey(_ key: CacheKey) {
   // Find entry by cache key (O(1) via computed index)
   guard let index = state.indexByCacheKey[key] else { return }
 
-  // Query fresh cache from SQL
+  // Query fresh cache from SQL (single fetch by composite key)
   guard let cached = try? orchestrator.getCachedTimeline(key: key) else { return }
 
   // Update entry in-place
@@ -449,7 +456,7 @@ func updateCacheForKey(_ key: CacheKey) {
 }
 ```
 
-**Efficiency:** O(1) lookup via `indexByCacheKey`, then O(1) SQL query by composite PK.
+**Efficiency:** O(1) lookup via `indexByCacheKey` (computed from entries), then single SQL fetch by composite PK `(content_sha256, window_sha256)`.
 
 ---
 

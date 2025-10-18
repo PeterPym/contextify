@@ -392,6 +392,11 @@ class DatabaseManager {
 - **Sync conflicts**: Last-write-wins with `.conflict` backup file
 - **Encryption password forgotten**: No recovery (data loss), require explicit acknowledgement
 
+**Cloud Sync + WAL Mode:**
+- WAL mode creates `*-wal` and `*-shm` files that some cloud providers sync poorly
+- **Mitigation:** Periodic WAL checkpointing (TRUNCATE) and reduced writer concurrency
+- See `build/notes/technical-reference/sql-backend-architecture.md` for details
+
 **Related Work:**
 - See `build/notes/technical-reference/sql-backend-architecture.md` for current database design
 - SQLCipher documentation: https://www.zetetic.net/sqlcipher/

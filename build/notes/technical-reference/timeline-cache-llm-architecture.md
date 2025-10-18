@@ -3,12 +3,15 @@
 **Status:** Production (macOS 26+ Apple Intelligence)
 **LLM:** FoundationLLM (on-device)
 **Generator:** Timeline​Cache​Miss​Generator (actor-based)
+**Requirement:** macOS 26.0+ for LLM features; older systems show fallback summaries (no LLM)
 
 ---
 
 ## System Overview
 
 Timeline entries display LLM-generated summaries (e.g., "Claude proposes to implement..."). Summaries are cached in SQL by content+window hash. Cache misses trigger background LLM generation with batching, rate limiting, and retry logic.
+
+**Fallback Behavior:** On macOS < 26.0, `FoundationLLM` is unavailable. The system skips LLM calls and displays basic fallback text (e.g., "Claude sent a message"). Cache remains empty; no errors thrown.
 
 **Key Design Principles:**
 - Content-aware caching (same content + context = cache hit)
@@ -92,7 +95,12 @@ struct CacheKey: Hashable, Sendable {
   let content: String   // SHA256 of entry content
   let window: String    // SHA256 of [prev2_id, prev1_id]
 
-  var composite: String { "\(content):\(window)" }
+  var composite: String { "\(content)|\(window)" }  // Pipe delimiter
+}
+
+// Helper in CacheMiss
+extension CacheMiss {
+  var cacheKey: CacheKey { CacheKey(content: contentSha256, window: windowSha256) }
 }
 ```
 
@@ -150,14 +158,16 @@ LIMIT 50
 actor TimelineCacheMissGenerator {
   private var pendingMisses: [CacheKey: CacheMiss] = [:]
   private let maxQueueSize = 5000
-  private let maxBatchSize = 10
-  private let batchDelayNs: UInt64 = 2_000_000_000  // 2s
+  private let maxBatchSize = 10  // Matches code
+  private let batchDelayNs: UInt64 = 2_000_000_000  // ~2s rate limit between batches
 }
 ```
 
 **Deduplication:** Dictionary keyed by CacheKey → multiple identical requests collapse to one.
 
 **Capacity:** 5000 max pending → oldest dropped if exceeded.
+
+**Session Resets:** Targeted per `(kind, provider)` pair before each batch to prevent context contamination.
 
 ### Processing Loop
 
@@ -230,7 +240,7 @@ func processBatch(_ batch: [CacheMiss]) async {
 }
 ```
 
-**Circuit Breaker:** 5 consecutive failures → pause batch for 30s.
+**Circuit Breaker:** Per-batch threshold: stop current batch after repeated failures; next batch proceeds after the normal ~2s delay. Per-session threshold: 15 requests or 3 consecutive errors → session reset.
 
 ---
 
@@ -278,6 +288,61 @@ actor FoundationLLM {
 - User messages → "You asked..."
 - Assistant messages → "Claude proposes..." or "Codex implemented..."
 - Different prompting strategies per message type
+
+### SessionController Concurrency (FIFO + Cancellation-Safe)
+
+**Design:** SessionController enforces FIFO access with ordered queue and cancellation-safe token handoff.
+
+```swift
+actor SessionController {
+  private var waitOrder: [UUID] = []  // FIFO queue
+  private var continuations: [UUID: CheckedContinuation<Void, Never>] = [:]
+  private var currentHolder: UUID?
+
+  // Request token (FIFO)
+  func acquireToken() async -> Token {
+    let id = UUID()
+    waitOrder.append(id)
+
+    if currentHolder != nil {
+      await withCheckedContinuation { continuation in
+        continuations[id] = continuation
+      }
+    }
+
+    currentHolder = id
+    return Token(id: id, release: { [weak self] in
+      await self?.releaseToken(id)
+    })
+  }
+
+  // Release token and resume next waiter
+  private func releaseToken(_ id: UUID) {
+    guard currentHolder == id else { return }
+
+    waitOrder.removeAll { $0 == id }
+    continuations.removeValue(forKey: id)
+
+    // Resume next in queue
+    if let next = waitOrder.first, let cont = continuations[next] {
+      cont.resume()
+    } else {
+      currentHolder = nil
+    }
+  }
+
+  // Cancel waiter (doesn't call release)
+  func cancelWaiter(_ id: UUID) {
+    waitOrder.removeAll { $0 == id }
+    continuations.removeValue(forKey: id)
+  }
+}
+```
+
+**Key Properties:**
+- **FIFO ordering:** `waitOrder` preserves request order
+- **Cancellation-safe:** Cancelled waiters removed without calling `release()`
+- **Token ownership:** Only current holder can `release()`; resumed waiter receives token when `release()` runs
 
 ### Generation API
 
@@ -352,6 +417,50 @@ func withRetry<T>(maxAttempts: Int, operation: () async throws -> T)
 - `.contextOverflow` (content too long)
 - `.guardrailViolation` (safety filters)
 - `.decodingFailure` (invalid JSON response)
+- `.llmUnavailable` (macOS < 26.0 or FoundationModels not available)
+
+### TimelineError Enum
+
+```swift
+enum TimelineError: Swift.Error {
+  case llmTimeout
+  case contextOverflow(tokens: Int, limit: Int)
+  case guardrailViolation(reason: String)
+  case decodingFailure(reason: String)
+  case databaseError(String)
+  case unexpected(String)
+  case cancelled
+  case llmUnavailable(reason: String)
+
+  var isRetryable: Bool {
+    switch self {
+    case .llmTimeout, .databaseError, .unexpected: return true
+    case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled, .llmUnavailable: return false
+    }
+  }
+
+  var userMessage: String {
+    switch self {
+    case .llmTimeout:
+      return "Summary generation timed out. Please try again."
+    case .contextOverflow(let tokens, let limit):
+      return "Message too long (\(tokens) tokens, limit \(limit))."
+    case .guardrailViolation(let reason):
+      return "Content could not be summarized due to safety filters: \(reason)"
+    case .decodingFailure(let reason):
+      return "Summary format was invalid: \(reason)"
+    case .databaseError(let msg):
+      return "A database error occurred: \(msg)"
+    case .unexpected(let msg):
+      return "An unexpected error occurred: \(msg)"
+    case .cancelled:
+      return "Operation was cancelled."
+    case .llmUnavailable(let reason):
+      return reason
+    }
+  }
+}
+```
 
 ### Fallback Behavior
 

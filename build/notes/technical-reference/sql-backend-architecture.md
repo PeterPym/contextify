@@ -64,9 +64,9 @@ transcript_entries
 └── git_context (branch, commit, cwd)
 
 timeline_cache (WITHOUT ROWID)
-├── content_sha256 + window_sha256 (COMPOSITE PK)
+├── content_sha256 + window_sha256 (COMPOSITE PK, NO generator_signature)
 ├── entry_id (FK → transcript_entries, CASCADE)
-├── generator_signature
+├── generator_signature (filter column, NOT in PK)
 ├── disposition
 ├── present_form + past_form
 ├── selected_form
@@ -107,6 +107,18 @@ CREATE INDEX idx_entries_feed_cover ON transcript_entries(
   is_completion,
   session_id
 ) WHERE display_in_timeline = 1;
+
+-- Feed query includes generator_signature filter in JOIN
+SELECT e.*, c.*
+FROM transcript_entries e
+LEFT JOIN timeline_cache c
+  ON c.content_sha256 = e.content_sha256
+ AND c.window_sha256 = e.window_sha256
+ AND c.generator_signature = ?  -- Filter by current generator version
+WHERE e.project_id = ?
+  AND e.display_in_timeline = 1
+ORDER BY e.timestamp ASC, e.created_at ASC, e.id ASC
+LIMIT ?;
 ```
 
 **Cache Lookup:**
@@ -116,7 +128,7 @@ CREATE UNIQUE INDEX idx_cache_entry_window
   ON timeline_cache(entry_id, window_sha256);
 ```
 
-**Performance:** Single query loads 50 entries + joined cache in <5ms (p95 target).
+**Performance:** Single query loads 50 entries + joined cache in <5ms (p95 target, measured on Release build with 50K entries, Apple M3).
 
 ---
 
@@ -202,6 +214,13 @@ struct Entry {
 
 **Purpose:** Cache key includes context window → same content + different context = cache miss
 
+**Window SHA Computation (deterministic):**
+```swift
+let components = [prev2_id, prev1_id].compactMap { $0 }
+let concatenated = components.joined(separator: "|")  // Pipe delimiter
+let windowSha = SHA256(concatenated).hexString
+```
+
 **Backfill Migration:** v2 migration walks entries chronologically, computes window SHAs.
 
 ---
@@ -253,10 +272,12 @@ struct EntryRepositoryImpl: EntryRepository {
 
 ---
 
-## Performance Characteristics (Measured)
+## Performance Characteristics
 
-| Operation | Target (p95) | Measured | Notes |
-|-----------|--------------|----------|-------|
+**Test Environment:** Release build, 50K entries dataset, Apple M3
+
+| Operation | Target (p95) | Measured (p95) | Notes |
+|-----------|--------------|----------------|-------|
 | Feed load (50 entries + cache) | ≤5ms | ~3ms | Single query with covering index |
 | Batch insert (1000 entries) | ≤40ms | ~35ms | Transaction with window SHA computation |
 | Cache lookup (single) | ≤5ms | ~2ms | WITHOUT ROWID optimization |
@@ -295,6 +316,11 @@ struct EntryRepositoryImpl: EntryRepository {
 
 **Reconciliation:**
 - Mark transcripts as `deleted` if files no longer exist
+
+**Cloud Sync Considerations:**
+- WAL mode creates `*-wal` and `*-shm` files that some cloud providers sync poorly
+- **Recommendation for cloud locations:** Run periodic WAL checkpointing (`TRUNCATE`) to minimize sync churn
+- See `TODOS.md` "Configurable Database Location" feature for cloud sync strategies
 
 ---
 
