@@ -221,8 +221,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Convert string-keyed result to CacheKey-keyed result
     var result: [CacheKey: TimelineCache] = [:]
     for key in keys {
-      let stringKey = "\(key.content)|\(key.window)"
-      if let cache = stringMap[stringKey] {
+      if let cache = stringMap[key.composite] {
         result[key] = cache
       }
     }
