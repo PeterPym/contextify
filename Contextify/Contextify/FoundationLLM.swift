@@ -156,18 +156,31 @@ actor FoundationLLM {
             options: .regularExpression
         )
 
-        // Remove triple-quoted strings ("""...""") using line-based approach
+        // Remove triple-quoted strings ("""...""") handling same-line open/close correctly
         var cleanedLines: [String] = []
         var inTripleQuote = false
         for line in result.split(separator: "\n", omittingEmptySubsequences: false) {
             let lineStr = String(line)
-            if lineStr.contains("\"\"\"") {
-                inTripleQuote.toggle()
-                if inTripleQuote { continue }
-            } else if inTripleQuote {
+            let tripleQuoteCount = lineStr.components(separatedBy: "\"\"\"").count - 1
+
+            if tripleQuoteCount == 0 {
+                // No triple-quotes on this line
+                if !inTripleQuote {
+                    cleanedLines.append(lineStr)
+                }
                 continue
             }
-            cleanedLines.append(lineStr)
+
+            if tripleQuoteCount % 2 == 0 {
+                // Even number: contains both open and close on same line (e.g., """inline""")
+                // Drop the entire line
+                continue
+            } else {
+                // Odd number: toggle state
+                inTripleQuote.toggle()
+                // Drop this line (it's part of the triple-quote boundary)
+                continue
+            }
         }
 
         result = cleanedLines.joined(separator: "\n")
@@ -181,14 +194,20 @@ actor FoundationLLM {
         let normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         // Gate for short utterances (affirmative/negative) - allow up to 5 token confirmations
-        let tokens = normalized.split(separator: " ")
+        // Strip punctuation from tokens to handle "yes," "ok." etc.
+        let separators = CharacterSet.alphanumerics.inverted
+        let tokens = normalized
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.trimmingCharacters(in: separators) }
+            .filter { !$0.isEmpty }
+
         if tokens.count <= 5 {
             let affirmatives = ["yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "go", "ahead", "proceed", "do", "it", "please", "sgtm", "roger", "affirmative", "yeah", "yah"]
-            let allAffirmative = tokens.allSatisfy { affirmatives.contains(String($0)) }
+            let allAffirmative = tokens.allSatisfy { affirmatives.contains($0) }
             if allAffirmative { return .affirmative }
 
             let negatives = ["no", "nope", "nah", "not", "now", "hold", "off", "stop", "don't", "cancel", "abort"]
-            let allNegative = tokens.allSatisfy { negatives.contains(String($0)) }
+            let allNegative = tokens.allSatisfy { negatives.contains($0) }
             if allNegative { return .negative }
         }
 
@@ -203,7 +222,7 @@ actor FoundationLLM {
         if normalized.contains("i want") { return .directive }
 
         // Check for imperative verbs at start
-        let firstWord = tokens.first.map(String.init) ?? ""
+        let firstWord = tokens.first ?? ""
         let imperatives: Set<String> = [
             "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
             "write", "explain", "show", "make", "delete", "remove", "check", "refactor",

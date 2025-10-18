@@ -90,6 +90,9 @@ actor TimelineCacheMissGenerator {
             if Task.isCancelled { break }
             isProcessing = true
 
+            // Reset session at batch boundary to prevent context accumulation
+            await FoundationLLM.shared.resetTimelineSummarizerSession()
+
             // Take a batch from dictionary
             let keys = Array(pendingMisses.keys.prefix(maxBatchSize))
             var batch: [CacheMiss] = []
@@ -115,19 +118,21 @@ actor TimelineCacheMissGenerator {
         log.info("Cache miss generation queue empty")
     }
 
-    /// Process a batch of cache misses with retry logic
+    /// Process a batch of cache misses with retry logic and circuit breaker
     private func processBatch(_ batch: [CacheMiss]) async {
         let startTime = Date()
         var successCount = 0
         var skipCount = 0
         var errorCount = 0
         var successfulMisses: [CacheMiss] = []
+        var consecutiveFailures = 0
 
         for miss in batch {
             do {
                 try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
                 successCount += 1
                 successfulMisses.append(miss)
+                consecutiveFailures = 0  // Reset on success
             } catch {
                 let reason: String
                 if let tErr = error as? TimelineError {
@@ -137,6 +142,13 @@ actor TimelineCacheMissGenerator {
                 }
                 log.error("Failed to generate cache after retries: \(reason, privacy: .public)")
                 errorCount += 1
+                consecutiveFailures += 1
+
+                // Circuit breaker: stop batch on sustained failures
+                if consecutiveFailures >= 5 {
+                    log.error("Circuit breaker: stopping batch after \(consecutiveFailures) consecutive failures")
+                    break
+                }
             }
         }
 

@@ -793,6 +793,8 @@ final class ConversationMonitor {
             log.info("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
         }
 
+        if Task.isCancelled { return }
+
         // Verify project exists before discovering
         guard try orchestrator.getProject(id: projectId) != nil else {
             await MainActor.run {
@@ -803,6 +805,8 @@ final class ConversationMonitor {
         await MainActor.run {
             log.info("✅ discoverNewTranscripts: verified project \(projectId) exists")
         }
+
+        if Task.isCancelled { return }
 
         // Find JSONL files on disk for THIS project only
         guard let projectRoot = await HUDViewModel.shared.projectRootURL else { return }
@@ -834,9 +838,13 @@ final class ConversationMonitor {
             log.info("🔍 Discovery: Found \(filesOnDisk.count) .jsonl files in \(expectedDirName)")
         }
 
+        if Task.isCancelled { return }
+
         // Get files already in SQL
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
         let filesInSQL = Set(transcripts.map { $0.filePath })
+
+        if Task.isCancelled { return }
 
         await MainActor.run {
             log.info("📚 Discovery: \(transcripts.count) transcripts already in DB")
