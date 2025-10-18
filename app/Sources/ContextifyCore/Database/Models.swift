@@ -137,6 +137,11 @@ public struct CacheKey: Hashable, Codable, Sendable {
   public var compositeKey: String {
     "\(content)|\(window)"
   }
+
+  /// Shorter alias for compositeKey - use this for new code
+  public var composite: String {
+    "\(content)|\(window)"
+  }
 }
 
 // MARK: - Notifications
