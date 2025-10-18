@@ -99,9 +99,11 @@ actor FoundationLLM {
     static let shared = FoundationLLM()
 
     private let log = Logger(subsystem: "dev.contextify", category: "FoundationLLM")
-    private var requestCount = 0
-    private var failureCount = 0
+    private var requestCount = 0  // Request numbering for logging
     private var lastRequestTime: Date?
+
+    // Telemetry-only metrics (not used for operational decisions)
+    private var metrics = (total: 0, failed: 0)
 
     // Throttle to prevent overwhelming the LLM
     private let minRequestInterval: TimeInterval = 0.15 // 150ms between requests
@@ -481,17 +483,19 @@ actor FoundationLLM {
                     }
 
                     log.debug("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
-                    // Reset failure count on success
-                    failureCount = 0
+                    // Record success
+                    metrics.total += 1
                     return result
                 } catch Error.retryExhausted {
                     // postProcess rejected - don't retry, just propagate up
-                    failureCount += 1
+                    metrics.total += 1
+                    metrics.failed += 1
                     log.error("[\(reqNum)] postProcess rejection - propagating failure without retry")
                     throw Error.retryExhausted
                 } catch {
                     // Other postProcess errors
-                    failureCount += 1
+                    metrics.total += 1
+                    metrics.failed += 1
                     log.error("[\(reqNum)] postProcess unexpected error: \(error)")
                     throw Error.retryExhausted
                 }
@@ -499,7 +503,8 @@ actor FoundationLLM {
                 // Already exhausted from postProcess - just propagate
                 throw Error.retryExhausted
             } catch let guarded as LanguageModelSession.GenerationError {
-                failureCount += 1
+                metrics.total += 1
+                metrics.failed += 1
                 log.error("[\(reqNum)] timeline summarize guardrail triggered: \(String(describing: guarded), privacy: .public)")
 
                 // Map FoundationModels errors to TimelineError
