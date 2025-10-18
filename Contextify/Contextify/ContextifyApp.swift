@@ -96,7 +96,7 @@ struct ContextifyApp: App {
 struct ProjectRootCommands: Commands {
   var body: some Commands {
     CommandGroup(after: .newItem) {
-      Button("Set Project Root…") { pickProjectRoot() }
+      Button("Open project...") { pickProjectRoot() }
     }
   }
 

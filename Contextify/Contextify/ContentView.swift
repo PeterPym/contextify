@@ -74,17 +74,28 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 12) {
             if model.projectRootURL != nil {
-                Label(model.projectDisplayName, systemImage: "folder")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 4) {
+                    Button {
+                        let ok = pickProjectRoot()
+                        uiLog.info("Open project result=\(ok, privacy: .public)")
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open project...")
+
+                    Text(model.projectDisplayName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 Label(model.branchDisplay, systemImage: "arrow.branch")
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(.secondary)
             } else {
-                Button("Set Project Root…") {
+                Button("Open project...") {
                     let ok = pickProjectRoot()
-                    uiLog.info("Set Project Root result=\(ok, privacy: .public)")
+                    uiLog.info("Open project result=\(ok, privacy: .public)")
                 }
                 .buttonStyle(.link)
                 .accessibilityIdentifier("set-project-root")
@@ -163,13 +174,13 @@ private extension ContentView {
             switch result {
             case .success(let root):
                 #if DEBUG
-                uiLog.info("Set Project Root path=\(root.path, privacy: .public)")
+                uiLog.info("Open project path=\(root.path, privacy: .public)")
                 #else
-                uiLog.info("Set Project Root path=\(root.path, privacy: .private)")
+                uiLog.info("Open project path=\(root.path, privacy: .private)")
                 #endif
                 return true
             case .failure(let error):
-                uiLog.error("Failed to set project root: \(String(describing: error), privacy: .public)")
+                uiLog.error("Failed to open project: \(String(describing: error), privacy: .public)")
                 return false
             }
         }
