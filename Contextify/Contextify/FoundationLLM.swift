@@ -703,7 +703,7 @@ actor SessionController {
     // FIFO async semaphore with cancellation support (ordered queue + dictionary)
     private var inFlight = false
     private var waitOrder: [UUID] = []                          // preserves FIFO order
-    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var waiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     // Per-session lifetime tracking and circuit breaker
     private var requestCount = 0
@@ -745,16 +745,16 @@ actor SessionController {
         log.info("Reset LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))… (epoch \(self.epoch))")
     }
 
-    private func acquire() async {
+    private func acquire() async -> Bool {
         if !inFlight {
             inFlight = true                                     // fast path gets the token
-            return
+            return true
         }
 
         // Enqueue waiter in FIFO order
         let id = UUID()
-        try? await withTaskCancellationHandler {
-            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        let acquired = try? await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                 waitOrder.append(id)
                 waiters[id] = cont
             }
@@ -764,7 +764,8 @@ actor SessionController {
                 await self.cancelWaiter(id)
             }
         }
-        // NOTE: do NOT set inFlight here - still held by current owner
+        // Will be resumed by cancelWaiter(false) or release(true)
+        return acquired ?? false
     }
 
     private func cancelWaiter(_ id: UUID) {
@@ -772,7 +773,7 @@ actor SessionController {
             waitOrder.remove(at: idx)
         }
         if let cont = waiters.removeValue(forKey: id) {
-            cont.resume()  // MUST resume cancelled continuation to unblock task
+            cont.resume(returning: false)  // explicitly NOT acquired - caller must check
         }
         // Cancelled waiter is dropped; current holder keeps the token
     }
@@ -782,11 +783,11 @@ actor SessionController {
         while let id = waitOrder.first {
             waitOrder.removeFirst()
             if let cont = waiters.removeValue(forKey: id) {
-                cont.resume()
-                return                                      // token stays inFlight for resumed waiter
+                cont.resume(returning: true)  // hand off token to next waiter
+                return                        // token stays inFlight for resumed waiter
             }
         }
-        inFlight = false                                     // no waiters → idle
+        inFlight = false                      // no waiters → idle
     }
 
     func generate<T: Generable>(
@@ -795,7 +796,8 @@ actor SessionController {
         includeSchema: Bool,
         options: GenerationOptions
     ) async throws -> T {
-        await acquire()
+        let acquired = await acquire()
+        guard acquired else { throw CancellationError() }
         defer { release() }
 
         if forceStateless { reset() }
@@ -822,7 +824,8 @@ actor SessionController {
     }
 
     func raw(_ prompt: String, options: GenerationOptions) async throws -> String {
-        await acquire()
+        let acquired = await acquire()
+        guard acquired else { throw CancellationError() }
         defer { release() }
 
         if forceStateless { reset() }
