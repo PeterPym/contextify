@@ -15,11 +15,12 @@ enum TimelineError: Swift.Error {
     case databaseError(String)
     case unexpected(String)
     case cancelled
+    case llmUnavailable(reason: String)
 
     var isRetryable: Bool {
         switch self {
         case .llmTimeout, .databaseError, .unexpected: return true
-        case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled: return false
+        case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled, .llmUnavailable: return false
         }
     }
 
@@ -29,16 +30,18 @@ enum TimelineError: Swift.Error {
             return "Summary generation timed out. Please try again."
         case .contextOverflow(let tokens, let limit):
             return "Message too long (\(tokens) tokens, limit \(limit))."
-        case .guardrailViolation:
-            return "Content could not be summarized due to safety filters."
-        case .decodingFailure:
-            return "Summary format was invalid."
+        case .guardrailViolation(let reason):
+            return "Content could not be summarized due to safety filters: \(reason)"
+        case .decodingFailure(let reason):
+            return "Summary format was invalid: \(reason)"
         case .databaseError(let msg):
             return "A database error occurred: \(msg)"
         case .unexpected(let msg):
             return "An unexpected error occurred: \(msg)"
         case .cancelled:
             return "Operation was cancelled."
+        case .llmUnavailable(let reason):
+            return reason
         }
     }
 }
