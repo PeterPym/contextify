@@ -65,8 +65,24 @@ actor FoundationLLM {
         var lastUsed: Date
     }
 
+    // Note: Type-erased storage allows actor to exist on all OS versions
+    // ControllerEntry is @available(macOS 26.0+) so we must use Any? for the stored property
+    private var _controllers: Any?
+
     @available(macOS 26.0, *)
-    private var controllers: [String: ControllerEntry] = [:]
+    private var controllers: [String: ControllerEntry] {
+        get {
+            if let dict = _controllers as? [String: ControllerEntry] {
+                return dict
+            }
+            let empty: [String: ControllerEntry] = [:]
+            _controllers = empty
+            return empty
+        }
+        set {
+            _controllers = newValue
+        }
+    }
     #endif
 
     /// Helper to parse token overflow info from error context with targeted regex

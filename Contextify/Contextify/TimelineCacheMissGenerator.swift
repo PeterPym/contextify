@@ -20,7 +20,7 @@ struct CacheMiss: Sendable {
     let provider: String
 
     /// Composite key for deduplication (returns struct for type safety)
-    var cacheKey: CacheKey {
+    nonisolated var cacheKey: CacheKey {
         CacheKey(content: contentSha256, window: windowSha256)
     }
 }
