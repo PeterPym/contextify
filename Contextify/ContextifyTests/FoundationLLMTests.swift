@@ -235,3 +235,25 @@ final class UserIntentTests: XCTestCase {
         XCTAssertFalse(cleaned.contains("func foo"))
     }
 }
+
+#if canImport(FoundationModels)
+@available(macOS 26.0, *)
+final class LLMBenchmarks: XCTestCase {
+
+    func testSessionCreationBenchmark() throws {
+        let iterations = 1_000
+        let instructions = "Summarize text concisely."
+
+        let start = Date()
+        for _ in 0..<iterations {
+            _ = LanguageModelSession(instructions: instructions)
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        let avgMs = (elapsed * 1000.0) / Double(iterations)
+        print(String(format: "Session creation avg: %.3f ms", avgMs))
+
+        // Decision threshold — tune to your tolerance
+        XCTAssertLessThan(avgMs, 2.0, "Session creation too slow to go fully stateless")
+    }
+}
+#endif

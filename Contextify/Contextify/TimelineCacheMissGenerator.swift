@@ -87,6 +87,7 @@ actor TimelineCacheMissGenerator {
     /// Background processing loop
     private func processQueue() async {
         while !pendingMisses.isEmpty {
+            if Task.isCancelled { break }
             isProcessing = true
 
             // Take a batch from dictionary
@@ -128,7 +129,13 @@ actor TimelineCacheMissGenerator {
                 successCount += 1
                 successfulMisses.append(miss)
             } catch {
-                log.error("Failed to generate cache after retries: \(error.localizedDescription, privacy: .public)")
+                let reason: String
+                if let tErr = error as? TimelineError {
+                    reason = tErr.userMessage
+                } else {
+                    reason = error.localizedDescription
+                }
+                log.error("Failed to generate cache after retries: \(reason, privacy: .public)")
                 errorCount += 1
             }
         }

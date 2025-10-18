@@ -4,6 +4,44 @@ import OSLog
 import ContextifyCore
 import AppKit
 
+/// Single-source container for timeline entries and derived cache index
+@MainActor
+final class TimelineState {
+    private(set) var entries: [TimelineEntry] = []
+
+    // Derived map stays in sync because it's computed
+    var indexByCacheKey: [String: Int] {
+        Dictionary(uniqueKeysWithValues: entries.enumerated().compactMap { i, e in
+            guard let content = e.contentSha256, let window = e.windowSha256 else { return nil }
+            return ("\(content)|\(window)", i)
+        })
+    }
+
+    func replace(with entries: [TimelineEntry]) {
+        self.entries = entries
+    }
+
+    func append(_ e: TimelineEntry) {
+        entries.append(e)
+    }
+
+    func update(at index: Int, to newValue: TimelineEntry) {
+        guard entries.indices.contains(index) else { return }
+        entries[index] = newValue
+    }
+
+    func sortChronologically() {
+        entries.sort { a, b in
+            if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+            return a.sourceIdentifier < b.sourceIdentifier
+        }
+    }
+
+    func trim(to max: Int) {
+        if entries.count > max { entries = Array(entries.suffix(max)) }
+    }
+}
+
 @Observable
 @MainActor
 final class ConversationMonitor {
@@ -27,7 +65,8 @@ final class ConversationMonitor {
         "proceed", "change it to", "ensure ", "run ", "fix ", "update ", "refactor ", "implement "
     ]
 
-    private(set) var entries: [TimelineEntry] = []
+    private let state = TimelineState()
+    private(set) var entries: [TimelineEntry] = []  // STORED, observed by @Observable
 
     /// Entries filtered to the active session (UI-visible subset)
     /// When no session is selected, shows all entries (project-wide view)
@@ -58,17 +97,20 @@ final class ConversationMonitor {
     @ObservationIgnored private var notificationObserver: NSObjectProtocol?  // For SQL notifications
     @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
-    @ObservationIgnored private var pendingNotificationTask: Task<Void, Never>?  // For debouncing
-    @ObservationIgnored private var discoveryTask: Task<Void, Never>?  // Background discovery
+    @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
-    @ObservationIgnored private var indexByCacheKey: [String: Int] = [:]  // "content|window" -> row index for in-place updates
 
     private init() {}
 
     @MainActor
     func startMonitoring() {
+        // Cancel residual background work before starting new group
+        backgroundTasks?.cancel()
+        backgroundTasks = nil
+        seenEntryIDs.removeAll(keepingCapacity: false)
+
         guard !isMonitoring else { return }
 
         log.info("⭐️ Timeline integration starting")
@@ -108,17 +150,29 @@ final class ConversationMonitor {
                 // 3. Initialize cache miss generator
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
 
-                // 4. Background discover + hoover of new transcripts
-                // Safe to use detached task now - project is committed to DB
+                // 4. Start background work (discovery + debounced updates) in a single parent task
                 let orchestrator = self.orchestrator!
-                self.log.info("🚀 Spawning background discovery for project: \(projectId)")
-                self.discoveryTask = Task.detached(priority: .userInitiated) { [weak self] in
+                self.log.info("🚀 Spawning background tasks for project: \(projectId)")
+                self.backgroundTasks = Task { [weak self] in
                     guard let self else { return }
-                    do {
-                        try await self.discoverNewTranscripts(projectId: projectId, orchestrator: orchestrator)
-                    } catch {
-                        await MainActor.run {
-                            self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
+                    await withTaskGroup(of: Void.self) { group in
+                        // Task 1: Discovery loop (structured, cancellable)
+                        group.addTask { [weak self] in
+                            guard let self else { return }
+                            do {
+                                try await self.discoverNewTranscripts(projectId: projectId, orchestrator: orchestrator)
+                            } catch is CancellationError {
+                                return
+                            } catch {
+                                await MainActor.run {
+                                    self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
+                                }
+                            }
+                        }
+
+                        // Task 2: Debounced transcript updates
+                        group.addTask { [weak self] in
+                            await self?.watchForDebouncedTranscriptUpdates()
                         }
                     }
                 }
@@ -126,8 +180,8 @@ final class ConversationMonitor {
                 // 5. Load initial feed (fast - single query)
                 await self.loadFeedFromSQL()
 
-                // 6. Subscribe to realtime updates
-                self.setupSQLNotifications()
+                // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
+                // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
                 self.setupCacheUpdateNotifications()
                 self.setupProjectChangeNotifications()
 
@@ -146,10 +200,8 @@ final class ConversationMonitor {
         activeSession = nil
         conversationResolverTask?.cancel()
         conversationResolverTask = nil
-        pendingNotificationTask?.cancel()
-        pendingNotificationTask = nil
-        discoveryTask?.cancel()
-        discoveryTask = nil
+        backgroundTasks?.cancel()   // NEW: cancels the whole background task group
+        backgroundTasks = nil
 
         if let observer = notificationObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -178,6 +230,73 @@ final class ConversationMonitor {
         cacheMissGenerator = nil
     }
 
+    /// Structured watcher for debounced transcript updates
+    private func watchForDebouncedTranscriptUpdates() async {
+        let center = NotificationCenter.default
+        let name = NSNotification.Name("TranscriptUpdated")
+
+        for await note in center.notifications(named: name) {
+            if Task.isCancelled { break }
+
+            let notifProjectId = note.userInfo?["projectId"] as? String
+            if let pid = notifProjectId, pid != currentProjectId {
+                continue // ignore other projects
+            }
+
+            do { try await Task.sleep(nanoseconds: 150_000_000) } catch { break }
+            if Task.isCancelled { break }
+
+            await processIncrementalUpdate()
+        }
+    }
+
+    @available(*, unavailable, message: "Use watchForDebouncedTranscriptUpdates()")
+    private func handleTranscriptUpdate(projectId: String?) async {}
+
+    @MainActor
+    private func pruneSeenIDsIfNeeded() {
+        let cap = config.maxEntries * 2
+        if seenEntryIDs.count > cap {
+            seenEntryIDs = Set(entries.map { $0.sourceIdentifier })
+        }
+    }
+
+    @MainActor
+    private func setEntries(_ new: [TimelineEntry]) {
+        entries = new
+        state.replace(with: new)
+    }
+
+    @MainActor
+    private func appendEntry(_ e: TimelineEntry) {
+        entries.append(e)
+        state.append(e)
+    }
+
+    @MainActor
+    private func updateEntry(at i: Int, with e: TimelineEntry) {
+        guard entries.indices.contains(i) else { return }
+        entries[i] = e
+        state.update(at: i, to: e)
+    }
+
+    @MainActor
+    private func sortEntriesChronologically() {
+        entries.sort { a, b in
+            if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+            return a.sourceIdentifier < b.sourceIdentifier
+        }
+        state.sortChronologically()
+    }
+
+    @MainActor
+    private func trimEntries() {
+        if entries.count > config.maxEntries {
+            entries = Array(entries.suffix(config.maxEntries))
+            state.trim(to: config.maxEntries)
+        }
+    }
+
     @MainActor
     func toggleCollapsed() {
         isCollapsed.toggle()
@@ -188,7 +307,7 @@ final class ConversationMonitor {
         entries.removeAll()
         didEmitSessionStart = false
         lastSeenCursor = nil
-        seenEntryIDs.removeAll()
+        seenEntryIDs.removeAll(keepingCapacity: false)
     }
 
     @MainActor
@@ -243,13 +362,16 @@ final class ConversationMonitor {
             let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
 
             // Map to timeline entries
-            seenEntryIDs.removeAll(keepingCapacity: true)
-            entries = transcriptEntries.map { entry in
+            seenEntryIDs.removeAll(keepingCapacity: false)
+            let transcriptTimelineEntries = transcriptEntries.map { entry in
                 seenEntryIDs.insert(entry.id)
                 let cacheKey = entry.windowSha256.map { "\(entry.contentSha256)|\($0)" }
                 let cache = cacheKey.flatMap { cacheMap[$0] }
                 return toTimelineEntry(entry, cached: cache)
             }
+
+            setEntries(transcriptTimelineEntries)
+            pruneSeenIDsIfNeeded()
 
             // Update cursor from latest entry
             if let latest = transcriptEntries.first {
@@ -409,7 +531,7 @@ final class ConversationMonitor {
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
 
-            self.entries = feed.map { entry, cache in
+            let newEntries = feed.map { entry, cache in
                 seenEntryIDs.insert(entry.id)
 
                 // Collect cache miss for background generation
@@ -429,8 +551,8 @@ final class ConversationMonitor {
                 return toTimelineEntry(entry, cached: cache)
             }
 
-            // Rebuild cache key index for in-place updates
-            rebuildIndexByCacheKey()
+            setEntries(newEntries)
+            pruneSeenIDsIfNeeded()
 
             // Queue cache misses for background generation
             if !misses.isEmpty, let generator = cacheMissGenerator {
@@ -464,17 +586,8 @@ final class ConversationMonitor {
     }
 
     private func setupSQLNotifications() {
-        notificationObserver = NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("TranscriptUpdated"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            // Extract sendable data before crossing isolation boundary
-            let projectId = notification.userInfo?["projectId"] as? String
-            Task { @MainActor [weak self] in
-                await self?.handleTranscriptUpdate(projectId: projectId)
-            }
-        }
+        // NOTE: Disabled - SQL notifications are now handled by watchForDebouncedTranscriptUpdates()
+        // in the backgroundTasks group. Keeping method signature for potential future use.
     }
 
     private func setupCacheUpdateNotifications() {
@@ -522,13 +635,15 @@ final class ConversationMonitor {
                 generatorSignature: sig
             )
 
+            // Compute index map once (avoid O(n·m) recomputation)
+            let indexMap = state.indexByCacheKey
+
             // Build updates for indices we currently show
             var updates: [(Int, TimelineCache)] = []
             for key in keys {
-                // indexByCacheKey uses compositeKey format "content|window"
                 let composite = key.compositeKey
-                if let index = indexByCacheKey[composite],
-                   index < entries.count,
+                if let index = indexMap[composite],
+                   entries.indices.contains(index),
                    let cache = cacheMap[key] {
                     updates.append((index, cache))
                 }
@@ -550,10 +665,10 @@ final class ConversationMonitor {
                     summary = (cache.selectedForm == "present") ? cache.presentForm : cache.pastForm
                 }
 
-                entries[index] = old.copyWith(
+                updateEntry(at: index, with: old.copyWith(
                     summary: summary,
                     action: old.action == .generating ? .none : old.action
-                )
+                ))
             }
 
             log.info("Updated \(updates.count) entries with fresh cache summaries")
@@ -574,42 +689,6 @@ final class ConversationMonitor {
         }
 
         await refreshCachedEntries(keys: keys)
-    }
-
-    private func rebuildIndexByCacheKey() {
-        indexByCacheKey.removeAll(keepingCapacity: true)
-        for (i, entry) in entries.enumerated() {
-            if let content = entry.contentSha256, let window = entry.windowSha256 {
-                indexByCacheKey["\(content)|\(window)"] = i
-            }
-        }
-    }
-
-    @MainActor
-    private func handleTranscriptUpdate(projectId: String?) async {
-        // Filter by project
-        if let notifProjectId = projectId,
-           notifProjectId != currentProjectId {
-            log.debug("Ignoring notification for different project: \(notifProjectId)")
-            return
-        }
-
-        guard currentProjectId != nil, orchestrator != nil else {
-            log.warning("Ignoring notification: no project or orchestrator")
-            return
-        }
-
-        // Debounce: cancel pending task and schedule new one
-        pendingNotificationTask?.cancel()
-        pendingNotificationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            // Wait for debounce interval
-            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
-            guard !Task.isCancelled else { return }
-
-            await self.processIncrementalUpdate()
-        }
     }
 
     @MainActor
@@ -672,8 +751,9 @@ final class ConversationMonitor {
                 }
 
                 let timelineEntry = toTimelineEntry(entry, cached: cache)
-                entries.append(timelineEntry)
+                appendEntry(timelineEntry)
                 addedCount += 1
+                pruneSeenIDsIfNeeded()
             }
 
             // Queue cache misses for background generation
@@ -684,19 +764,10 @@ final class ConversationMonitor {
             }
 
             // Sort to maintain chronological ordering: timestamp ASC, id ASC
-            entries.sort { a, b in
-                if a.timestamp != b.timestamp {
-                    return a.timestamp < b.timestamp
-                }
-                // Note: Can't compare createdAt here as TimelineEntry doesn't have it
-                // Stable sort relies on DB ordering being correct
-                return a.sourceIdentifier < b.sourceIdentifier
-            }
+            sortEntriesChronologically()
 
             // Trim to max size
-            if entries.count > config.maxEntries {
-                entries = Array(entries.suffix(config.maxEntries))
-            }
+            trimEntries()
 
             // Update cursor to latest entry added
             if let latestNew = newEntries.max(by: { a, b in

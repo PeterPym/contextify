@@ -5,7 +5,79 @@ import OSLog
 import FoundationModels
 #endif
 
+/// Typed error model for timeline generation with user-facing messages
+enum TimelineError: Swift.Error {
+    case llmTimeout
+    case contextOverflow(tokens: Int, limit: Int)
+    case guardrailViolation(reason: String)
+    case decodingFailure(reason: String)
+    case databaseError(String)
+    case cancelled
+
+    var isRetryable: Bool {
+        switch self {
+        case .llmTimeout, .databaseError: return true
+        case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled: return false
+        }
+    }
+
+    var userMessage: String {
+        switch self {
+        case .llmTimeout:
+            return "Summary generation timed out. Please try again."
+        case .contextOverflow(let tokens, let limit):
+            return "Message too long (\(tokens) tokens, limit \(limit))."
+        case .guardrailViolation:
+            return "Content could not be summarized due to safety filters."
+        case .decodingFailure:
+            return "Summary format was invalid."
+        case .databaseError:
+            return "A database error occurred."
+        case .cancelled:
+            return "Operation was cancelled."
+        }
+    }
+}
+
 actor FoundationLLM {
+    /// Helper to parse token overflow info from error context
+    private static func parseOverflow(from debug: String) -> (tokens: Int, limit: Int)? {
+        // Example: "Content contains 4360-4369 tokens, which exceeds the maximum allowed context size of 4096."
+        let digits = debug.split(whereSeparator: { !$0.isNumber }).map { Int($0) }.compactMap { $0 }
+        guard digits.count >= 2 else { return nil }
+        let tokens = digits[0]
+        let limit = digits.last!
+        return (tokens, limit)
+    }
+
+    /// Timeout wrapper for LLM respond calls is handled internally by LanguageModelSession
+    /// Additional timeout handling can be added per request as needed
+
+    /// Build consistent instructions for timeline summarization
+    private func buildInstructions(kind: TimelineEntryKind, actionHint: String?) -> String {
+        if kind == .assistant {
+            return "You fill a TimelineSummary for an AI assistant response."
+        } else {
+            if let hint = actionHint, !hint.isEmpty {
+                return "You fill a TimelineSummary for a user message. The user previously saw: \"\(hint)\""
+            } else {
+                return "You fill a TimelineSummary for a user message."
+            }
+        }
+    }
+
+    /// Reset the timeline summarizer session (cached by instructions)
+    func resetTimelineSummarizerSession() async {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            // Find and reset controller for timeline instructions
+            let instructions = "You fill a TimelineSummary for an AI assistant response."
+            if let controller = Self.controllers[instructions] {
+                await controller.reset()
+            }
+        }
+        #endif
+    }
     static let shared = FoundationLLM()
 
     private let log = Logger(subsystem: "dev.contextify", category: "FoundationLLM")
@@ -46,36 +118,59 @@ actor FoundationLLM {
     }
 
     /// Strip quoted content, code blocks, and blockquotes from user message
+    /// Uses line-wise scanning to avoid regex catastrophic backtracking
     func stripQuotedAndCode(_ text: String) -> String {
         var result = text
+        var lines: [String] = []
+        var inCodeBlock = false
 
-        // Remove fenced code blocks (```...```)
-        result = result.replacingOccurrences(
-            of: #"```[\s\S]*?```"#,
-            with: "",
-            options: .regularExpression
-        )
+        // Line-wise scan for code fences and blockquotes (avoids backtracking)
+        for line in result.split(separator: "\n", omittingEmptySubsequences: false) {
+            let lineStr = String(line)
 
-        // Remove inline code (`...`)
-        result = result.replacingOccurrences(
-            of: #"`[^`]+`"#,
-            with: "",
-            options: .regularExpression
-        )
+            // Toggle code block state on fence markers
+            if lineStr.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                inCodeBlock.toggle()
+                continue
+            }
 
-        // Remove triple-quoted strings ("""...""")
-        result = result.replacingOccurrences(
-            of: #""{3}[\s\S]*?"{3}"#,
-            with: "",
-            options: .regularExpression
-        )
+            // Skip lines inside code blocks
+            if inCodeBlock {
+                continue
+            }
 
-        // Remove blockquotes (> ...)
-        // Use NSRegularExpression for multiline matching
-        if let regex = try? NSRegularExpression(pattern: #"^>\s*.*$"#, options: [.anchorsMatchLines]) {
-            let nsRange = NSRange(result.startIndex..., in: result)
-            result = regex.stringByReplacingMatches(in: result, range: nsRange, withTemplate: "")
+            // Skip blockquote lines (starting with >)
+            if lineStr.trimmingCharacters(in: .whitespaces).hasPrefix(">") {
+                continue
+            }
+
+            lines.append(lineStr)
         }
+
+        result = lines.joined(separator: "\n")
+
+        // Remove inline code (`...`) with non-greedy regex
+        result = result.replacingOccurrences(
+            of: #"`[^`]*?`"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove triple-quoted strings ("""...""") using line-based approach
+        var cleanedLines: [String] = []
+        var inTripleQuote = false
+        for line in result.split(separator: "\n", omittingEmptySubsequences: false) {
+            let lineStr = String(line)
+            if lineStr.contains("\"\"\"") {
+                inTripleQuote.toggle()
+                if inTripleQuote { continue }
+            } else if inTripleQuote {
+                continue
+            }
+            cleanedLines.append(lineStr)
+        }
+
+        result = cleanedLines.joined(separator: "\n")
 
         return collapseWhitespace(result)
     }
@@ -85,25 +180,27 @@ actor FoundationLLM {
         let clean = stripQuotedAndCode(text)
         let normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        // Gate for short utterances (affirmative/negative)
+        // Gate for short utterances (affirmative/negative) - allow up to 5 token confirmations
         let tokens = normalized.split(separator: " ")
-        if tokens.count <= 3 {
-            let allAffirmative = tokens.allSatisfy {
-                ["yes", "y", "ok", "okay", "sure", "👍", "yep", "go", "ahead", "proceed", "do", "it", "please", "sgtm", "roger"].contains(String($0))
-            }
+        if tokens.count <= 5 {
+            let affirmatives = ["yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "go", "ahead", "proceed", "do", "it", "please", "sgtm", "roger", "affirmative", "yeah", "yah"]
+            let allAffirmative = tokens.allSatisfy { affirmatives.contains(String($0)) }
             if allAffirmative { return .affirmative }
 
-            let allNegative = tokens.allSatisfy {
-                ["no", "nope", "not", "now", "hold", "off", "stop", "don't", "cancel"].contains(String($0))
-            }
+            let negatives = ["no", "nope", "nah", "not", "now", "hold", "off", "stop", "don't", "cancel", "abort"]
+            let allNegative = tokens.allSatisfy { negatives.contains(String($0)) }
             if allNegative { return .negative }
         }
 
         // Check for directive patterns (request phrases)
-        let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i want", "i need"]
+        let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i need"]
         for pattern in directivePatterns {
             if normalized.contains(pattern) { return .directive }
         }
+
+        // Separate "i want to know" (question) from general "i want" (directive)
+        if normalized.contains("i want to know") { return .question }
+        if normalized.contains("i want") { return .directive }
 
         // Check for imperative verbs at start
         let firstWord = tokens.first.map(String.init) ?? ""
@@ -129,14 +226,61 @@ actor FoundationLLM {
         return .unknown
     }
 
+    /// Public entry point with structured retry logic
     func summarizeTimeline(
         kind: TimelineEntryKind,
         text: String,
         provider: TimelineSourceContext.Provider? = nil,
-        actionHint: String? = nil,
-        retryCount: Int = 0
+        actionHint: String? = nil
     ) async throws -> TimelineSummaryResult {
         let maxRetries = 3
+        var attempt = 0
+        var backoffNs: UInt64 = 500_000_000 // 0.5s
+
+        while true {
+            do {
+                return try await summarizeTimelineOnce(
+                    kind: kind,
+                    text: text,
+                    provider: provider,
+                    actionHint: actionHint,
+                    attempt: attempt
+                )
+            } catch let err as TimelineError {
+                guard err.isRetryable, attempt < maxRetries else {
+                    throw err
+                }
+
+                attempt += 1
+                log.warning("Retryable error on attempt \(attempt): \(err.userMessage)")
+
+                // IMPORTANT: reset session before retry to prevent context accumulation
+                #if canImport(FoundationModels)
+                if #available(macOS 26.0, *) {
+                    let instructions = buildInstructions(kind: kind, actionHint: actionHint)
+                    if let controller = Self.controllers[instructions] {
+                        await controller.reset()
+                        log.info("Reset session before retry \(attempt)")
+                    }
+                }
+                #endif
+
+                // Exponential backoff with jitter
+                let jitter = UInt64(Int.random(in: 0...(200_000_000)))
+                try await Task.sleep(nanoseconds: backoffNs + jitter)
+                backoffNs = min(backoffNs * 2, 4_000_000_000) // cap at 4s
+            }
+        }
+    }
+
+    /// Internal implementation (single attempt, no retry)
+    private func summarizeTimelineOnce(
+        kind: TimelineEntryKind,
+        text: String,
+        provider: TimelineSourceContext.Provider? = nil,
+        actionHint: String? = nil,
+        attempt: Int = 0
+    ) async throws -> TimelineSummaryResult {
         let message = collapseWhitespace(text)
 
         // Throttle requests to prevent overwhelming the LLM
@@ -163,7 +307,7 @@ actor FoundationLLM {
             let availability = SystemLanguageModel.default.availability
             switch availability {
             case .available:
-                if retryCount == 0 {
+                if attempt == 0 {
                     log.debug("[\(reqNum)] timeline: SystemLanguageModel available")
                 }
                 break
@@ -226,7 +370,7 @@ actor FoundationLLM {
             let controller = await getController(for: instructions)
 
             // Use slight temperature on retries to help unstick from bad states
-            let temperature = retryCount > 0 ? 0.1 : 0.0
+            let temperature = attempt > 0 ? 0.1 : 0.0
             let options = GenerationOptions(
                 sampling: .greedy,
                 temperature: temperature,
@@ -260,10 +404,10 @@ actor FoundationLLM {
             }
 
             do {
-                if retryCount == 0 {
-                    log.debug("[\(reqNum)] timeline: requesting LLM summary (retry \(retryCount)/\(maxRetries))")
+                if attempt == 0 {
+                    log.debug("[\(reqNum)] timeline: requesting LLM summary (attempt \(attempt + 1))")
                 } else {
-                    log.warning("[\(reqNum)] timeline: requesting LLM summary (retry \(retryCount)/\(maxRetries))")
+                    log.warning("[\(reqNum)] timeline: requesting LLM summary (retry \(attempt))")
                 }
                 log.debug("[\(reqNum)] input: \(payloadInput, privacy: .public)")
 
@@ -306,8 +450,17 @@ actor FoundationLLM {
                 failureCount += 1
                 log.error("[\(reqNum)] timeline summarize guardrail triggered: \(String(describing: guarded), privacy: .public)")
 
-                // Log the actual error context for debugging
+                // Map FoundationModels errors to TimelineError
                 switch guarded {
+                case .exceededContextWindowSize(let context):
+                    let info = Self.parseOverflow(from: context.debugDescription) ?? (tokens: 4097, limit: 4096)
+                    await controller.reset()
+                    throw TimelineError.contextOverflow(tokens: info.tokens, limit: info.limit)
+
+                case .guardrailViolation(let context):
+                    await controller.reset()
+                    throw TimelineError.guardrailViolation(reason: context.debugDescription)
+
                 case .decodingFailure(let context):
                     log.error("[\(reqNum)] DECODING FAILURE: \(context.debugDescription, privacy: .public)")
                     log.error("[\(reqNum)] We sent this input: \(payloadInput, privacy: .public)")
@@ -320,32 +473,22 @@ actor FoundationLLM {
                     } catch {
                         log.error("[\(reqNum)] Could not fetch raw response: \(error.localizedDescription, privacy: .public)")
                     }
+
+                    await controller.reset()
+                    throw TimelineError.decodingFailure(reason: context.debugDescription)
+
                 default:
                     log.error("[\(reqNum)] Other generation error: \(String(describing: guarded), privacy: .public)")
+                    await controller.reset()
+                    throw TimelineError.decodingFailure(reason: "\(guarded)")
                 }
-
-                // Check if we're hitting too many failures in a row
-                if failureCount >= 10 {
-                    log.error("[\(reqNum)] Too many consecutive failures (\(self.failureCount)), LLM may be overloaded. Backing off longer...")
-                    // Longer backoff when system is struggling
-                    if retryCount < maxRetries {
-                        let backoff = UInt64(pow(2.0, Double(retryCount + 2)) * 500_000_000) // 2s, 4s, 8s
-                        log.warning("[\(reqNum)] Extended retry after \(backoff / 1_000_000)ms backoff...")
-                        try await Task.sleep(nanoseconds: backoff)
-                        return try await summarizeTimeline(kind: kind, text: text, actionHint: actionHint, retryCount: retryCount + 1)
-                    }
-                } else if retryCount < maxRetries {
-                    let backoff = UInt64(pow(2.0, Double(retryCount)) * 500_000_000) // 0.5s, 1s, 2s
-                    log.warning("[\(reqNum)] Retrying after \(backoff / 1_000_000)ms backoff...")
-                    try await Task.sleep(nanoseconds: backoff)
-                    return try await summarizeTimeline(kind: kind, text: text, actionHint: actionHint, retryCount: retryCount + 1)
-                }
-
-                log.error("[\(reqNum)] Retry exhausted after \(maxRetries) attempts, failing (total failures: \(self.failureCount))")
-                throw Error.retryExhausted
+            } catch is CancellationError {
+                throw TimelineError.cancelled
+            } catch let tErr as TimelineError {
+                throw tErr
             } catch {
                 log.error("[\(reqNum)] timeline summarize unexpected error: \(error.localizedDescription, privacy: .public)")
-                throw Error.retryExhausted
+                throw TimelineError.databaseError(error.localizedDescription)
             }
         }
         #endif
@@ -417,11 +560,18 @@ actor FoundationLLM {
         }
 
         // Pattern: "<AssistantName> <verb>s" → "<AssistantName> <verb>ed" (only for safe verbs)
-        let safeVerbs = ["proposes", "implements", "fixes", "adds", "creates", "updates", "modifies"]
-        for verb in safeVerbs {
+        let verbTransforms = [
+            "proposes": "proposed",
+            "implements": "implemented",
+            "fixes": "fixed",
+            "adds": "added",
+            "creates": "created",
+            "updates": "updated",
+            "modifies": "modified"
+        ]
+        for (verb, pastForm) in verbTransforms {
             if result.hasPrefix("\(assistantName) \(verb)") {
-                let replacement = String(verb.dropLast()) + "ed"
-                result = result.replacingOccurrences(of: "\(assistantName) \(verb)", with: "\(assistantName) \(replacement)")
+                result = result.replacingOccurrences(of: "\(assistantName) \(verb)", with: "\(assistantName) \(pastForm)")
                 break
             }
         }
@@ -459,7 +609,7 @@ actor SessionController {
 
     // async semaphore
     private var inFlight = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     init(instructions: String) {
         self.instructions = instructions
@@ -473,17 +623,25 @@ actor SessionController {
         return s
     }
 
+    func reset() {
+        session = nil
+        log.info("Reset LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))…")
+    }
+
     private func acquire() async {
         if !inFlight { inFlight = true; return }
-        await withCheckedContinuation { waiters.append($0) }
+        let id = UUID()
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            waiters[id] = cont
+        }
         inFlight = true
     }
 
     private func release() {
-        inFlight = false
-        if !waiters.isEmpty {
-            let cc = waiters.removeFirst()
-            cc.resume()
+        if let next = waiters.keys.first, let cont = waiters.removeValue(forKey: next) {
+            cont.resume()
+        } else {
+            inFlight = false
         }
     }
 
