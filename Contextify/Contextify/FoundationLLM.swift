@@ -681,8 +681,18 @@ actor SessionController {
     private var session: LanguageModelSession?
 
     // FIFO async semaphore with cancellation support
+    private class Waiter: @unchecked Sendable {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Never>
+        var cancelled = false
+
+        init(id: UUID, continuation: CheckedContinuation<Void, Never>) {
+            self.id = id
+            self.continuation = continuation
+        }
+    }
     private var inFlight = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [Waiter] = []
 
     // Per-session lifetime tracking and circuit breaker
     private var requestCount = 0
@@ -730,17 +740,39 @@ actor SessionController {
             return
         }
 
-        // FIFO queue with basic cancellation handling
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            waiters.append(cont)
+        // FIFO queue with cancellation-safe handling using flag-based tracking
+        let id = UUID()
+
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                let w = Waiter(id: id, continuation: cont)
+                waiters.append(w)
+            }
+            inFlight = true
+        } onCancel: {
+            // Mark waiter as cancelled
+            // Schedule back to actor since onCancel isn't actor-isolated
+            Task {
+                await self.markWaiterCancelled(id: id)
+            }
         }
-        inFlight = true
+    }
+
+    private func markWaiterCancelled(id: UUID) {
+        if let w = waiters.first(where: { $0.id == id }) {
+            w.cancelled = true
+        }
     }
 
     private func release() {
+        // Skip any cancelled waiters at the front of the queue
+        while !waiters.isEmpty && waiters.first!.cancelled {
+            waiters.removeFirst()
+        }
+
         if !waiters.isEmpty {
-            let next = waiters.removeFirst()
-            next.resume()
+            let waiter = waiters.removeFirst()
+            waiter.continuation.resume()
         } else {
             inFlight = false
         }
