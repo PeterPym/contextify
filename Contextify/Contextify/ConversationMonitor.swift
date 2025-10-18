@@ -276,6 +276,27 @@ final class ConversationMonitor {
         }
     }
 
+    /// Load all sessions from database for transcript inventory
+    /// This is called when the transcript inventory window opens to ensure sessions are populated
+    @MainActor
+    func loadAllSessionsFromDatabase() async {
+        guard let projectId = currentProjectId, orchestrator != nil else {
+            log.warning("Cannot load sessions: no project or orchestrator")
+            return
+        }
+
+        do {
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+            let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
+            let sessions = Self.mapTranscriptsToSessions(transcripts: transcripts, latestTimestamps: latestTimestamps)
+
+            allSessions = sessions
+            log.info("Loaded \(sessions.count) sessions from database for transcript inventory")
+        } catch {
+            log.error("Failed to load sessions from database: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: - Session Management (Legacy)
 
 
@@ -777,7 +798,8 @@ final class ConversationMonitor {
 
         // Refresh sessions list for transcript inventory (re-fetch after discovery)
         let updatedTranscripts = try orchestrator.getTranscripts(forProject: projectId)
-        let sessions = Self.mapTranscriptsToSessions(transcripts: updatedTranscripts)
+        let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
+        let sessions = Self.mapTranscriptsToSessions(transcripts: updatedTranscripts, latestTimestamps: latestTimestamps)
         await MainActor.run {
             self.log.info("📝 Mapped \(updatedTranscripts.count) transcripts to sessions")
             self.allSessions = sessions
@@ -786,7 +808,7 @@ final class ConversationMonitor {
         }
     }
 
-    nonisolated private static func mapTranscriptsToSessions(transcripts: [Transcript]) -> [TranscriptSession] {
+    nonisolated private static func mapTranscriptsToSessions(transcripts: [Transcript], latestTimestamps: [String: Int]) -> [TranscriptSession] {
         return transcripts.compactMap { transcript in
             let fileURL = URL(fileURLWithPath: transcript.filePath)
             let provider: TimelineSourceContext.Provider
@@ -796,7 +818,9 @@ final class ConversationMonitor {
             default: provider = .other
             }
 
-            let lastActivity = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
+            // Use latest conversation timestamp if available, otherwise fall back to file modified time
+            let lastActivityTimestamp = latestTimestamps[transcript.id] ?? transcript.updatedAt
+            let lastActivity = Date(timeIntervalSince1970: TimeInterval(lastActivityTimestamp))
 
             return TranscriptSession(
                 provider: provider,
