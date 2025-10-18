@@ -805,8 +805,9 @@ final class ConversationMonitor {
 
                 // Queue cache misses for background generation
                 if !misses.isEmpty, let generator = cacheMissGenerator {
+                    let missesToQueue = misses  // Capture before Task to avoid mutation warning
                     Task {
-                        await generator.queueMisses(misses)
+                        await generator.queueMisses(missesToQueue)
                     }
                 }
 

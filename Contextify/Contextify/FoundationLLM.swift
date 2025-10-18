@@ -366,10 +366,8 @@ actor FoundationLLM {
                 log.warning("Retryable error on attempt \(attempt): \(err.userMessage)")
 
                 // IMPORTANT: reset session before retry to prevent context accumulation
-                if #available(macOS 26.0, *) {
-                    await resetSession(kind: kind, provider: provider)
-                    log.info("Reset session before retry \(attempt)")
-                }
+                await resetSession(kind: kind, provider: provider)
+                log.info("Reset session before retry \(attempt)")
 
                 // Exponential backoff with jitter
                 let jitter = UInt64(Int.random(in: 0...(200_000_000)))
@@ -777,7 +775,7 @@ actor SessionController {
 
         // Enqueue waiter in FIFO order
         let id = UUID()
-        let acquired = try? await withTaskCancellationHandler {
+        let acquired = await withTaskCancellationHandler {
             await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                 waitOrder.append(id)
                 waiters[id] = cont
@@ -789,7 +787,7 @@ actor SessionController {
             }
         }
         // Will be resumed by cancelWaiter(false) or release(true)
-        return acquired ?? false
+        return acquired
     }
 
     private func cancelWaiter(_ id: UUID) {
