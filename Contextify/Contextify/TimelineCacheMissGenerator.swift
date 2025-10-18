@@ -90,15 +90,25 @@ actor TimelineCacheMissGenerator {
             if Task.isCancelled { break }
             isProcessing = true
 
-            // Reset session at batch boundary to prevent context accumulation
-            await FoundationLLM.shared.resetTimelineSummarizerSession()
-
             // Take a batch from dictionary
             let keys = Array(pendingMisses.keys.prefix(maxBatchSize))
             var batch: [CacheMiss] = []
             for key in keys {
                 if let miss = pendingMisses.removeValue(forKey: key) {
                     batch.append(miss)
+                }
+            }
+
+            // Reset sessions for the specific kinds and providers in this batch
+            // Use dictionary to deduplicate kind+provider pairs
+            var seenPairs: Set<String> = []
+            for miss in batch {
+                let pairKey = "\(miss.kind)|\(miss.provider)"
+                if !seenPairs.contains(pairKey) {
+                    seenPairs.insert(pairKey)
+                    let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
+                    let provider = TimelineSourceContext.Provider(rawValue: miss.provider)
+                    await FoundationLLM.shared.resetSession(kind: kind, provider: provider)
                 }
             }
 

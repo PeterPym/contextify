@@ -77,24 +77,11 @@ actor FoundationLLM {
     /// Timeout wrapper for LLM respond calls is handled internally by LanguageModelSession
     /// Additional timeout handling can be added per request as needed
 
-    /// Build consistent instructions for timeline summarization
-    private func buildInstructions(kind: TimelineEntryKind, actionHint: String?) -> String {
-        if kind == .assistant {
-            return "You fill a TimelineSummary for an AI assistant response."
-        } else {
-            if let hint = actionHint, !hint.isEmpty {
-                return "You fill a TimelineSummary for a user message. The user previously saw: \"\(hint)\""
-            } else {
-                return "You fill a TimelineSummary for a user message."
-            }
-        }
-    }
-
-    /// Reset session for a specific entry kind (replaces resetTimelineSummarizerSession)
-    func resetSession(kind: TimelineEntryKind, actionHint: String?) async {
+    /// Reset session for a specific entry kind and provider (replaces resetTimelineSummarizerSession)
+    func resetSession(kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) async {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
-            let key = buildInstructions(kind: kind, actionHint: actionHint)
+            let key = instructionsForTimeline(kind: kind, provider: provider)
             if let controller = controllersStorage[key] as? SessionController {
                 await controller.reset()
                 controllersStorage[key] = nil
@@ -103,10 +90,10 @@ actor FoundationLLM {
         #endif
     }
 
-    /// Legacy method - use resetSession(kind:actionHint:) instead
-    @available(*, deprecated, renamed: "resetSession(kind:actionHint:)")
+    /// Legacy method - use resetSession(kind:provider:) instead
+    @available(*, deprecated, renamed: "resetSession(kind:provider:)")
     func resetTimelineSummarizerSession() async {
-        await resetSession(kind: .assistant, actionHint: nil)
+        await resetSession(kind: .assistant, provider: nil)
     }
 
     static let shared = FoundationLLM()
@@ -311,7 +298,7 @@ actor FoundationLLM {
                 log.warning("Retryable error on attempt \(attempt): \(err.userMessage)")
 
                 // IMPORTANT: reset session before retry to prevent context accumulation
-                await resetSession(kind: kind, actionHint: actionHint)
+                await resetSession(kind: kind, provider: provider)
                 log.info("Reset session before retry \(attempt)")
 
                 // Exponential backoff with jitter
