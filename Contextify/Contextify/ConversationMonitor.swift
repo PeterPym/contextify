@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Observation
 import OSLog
 import ContextifyCore
@@ -6,8 +7,8 @@ import AppKit
 
 /// Single-source container for timeline entries and derived cache index
 @MainActor
-final class TimelineState {
-    private(set) var entries: [TimelineEntry] = []
+final class TimelineState: ObservableObject {
+    @Published private(set) var entries: [TimelineEntry] = []
 
     // Derived map stays in sync because it's computed
     var indexByCacheKey: [CacheKey: Int] {
