@@ -413,6 +413,7 @@ final class ConversationMonitor {
             }
 
             setEntries(transcriptTimelineEntries)
+            sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
             // Update cursor from latest entry
@@ -592,6 +593,7 @@ final class ConversationMonitor {
             }
 
             setEntries(newEntries)
+            sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
             // Queue cache misses for background generation
