@@ -192,6 +192,11 @@ final class ConversationMonitor {
                 // 3. Initialize cache miss generator
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
 
+                // Initialize metadata orchestrator with SQL backend
+                Task {
+                    await TranscriptMetadataOrchestrator.shared.initialize(orchestrator: self.orchestrator)
+                }
+
                 // 4. Start background work (discovery + debounced updates) in a single parent task
                 let orchestrator = self.orchestrator!
                 self.log.info("🚀 Spawning background tasks for project: \(projectId)")
@@ -897,39 +902,48 @@ final class ConversationMonitor {
 
         if Task.isCancelled { return }
 
-        // Get files already in SQL
-        let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-        let filesInSQL = Set(transcripts.map { $0.filePath })
+        // Use new upsert API - handles idempotency via path normalization
+        let discovered = filesOnDisk.map {
+            DiscoveredTranscript(fileURL: $0, provider: "claude.code", sessionId: nil)
+        }
+
+        let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+
+        await MainActor.run {
+            log.info("✅ Upserted \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new)")
+        }
 
         if Task.isCancelled { return }
 
-        await MainActor.run {
-            log.info("📚 Discovery: \(transcripts.count) transcripts already in DB")
-        }
-
-        // Find new files
-        let newFiles = filesOnDisk.filter { !filesInSQL.contains($0.path) }
-
-        if !newFiles.isEmpty {
+        // Hoover new transcripts (skip existing ones to avoid duplicate work)
+        let newTranscripts = resolved.filter(\.wasCreated)
+        if !newTranscripts.isEmpty {
             await MainActor.run {
-                log.info("Discovering \(newFiles.count) new transcripts for project \(projectId)")
+                log.info("Hoovering \(newTranscripts.count) new transcripts")
             }
 
-            // Batch discover with progress
-            let files = newFiles.map { (url: $0, provider: "claude.code", sessionId: nil as String?) }
-
-            try orchestrator.discoverTranscripts(
-                projectId: projectId,
-                transcriptFiles: files,
-                progress: nil
-            )
+            for transcript in newTranscripts {
+                if Task.isCancelled { return }
+                try orchestrator.discoverTranscript(
+                    projectId: projectId,
+                    fileURL: transcript.fileURL,
+                    provider: transcript.provider,
+                    providerSessionId: nil,
+                    startWatching: true,
+                    progress: nil
+                )
+            }
 
             // Run maintenance after bulk ingest
             try orchestrator.performMaintenance()
 
-            log.info("Discovery complete")
+            await MainActor.run {
+                log.info("Discovery complete")
+            }
         } else {
-            log.info("No new transcripts to discover")
+            await MainActor.run {
+                log.info("No new transcripts to hoover")
+            }
         }
 
         // Refresh sessions list for transcript inventory (re-fetch after discovery)

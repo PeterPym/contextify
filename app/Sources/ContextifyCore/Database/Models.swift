@@ -147,7 +147,21 @@ public struct CacheKey: Hashable, Codable, Sendable {
 // MARK: - Notifications
 
 public extension Notification.Name {
+    /// Posted when timeline entry cache is updated
+    /// - Object: CacheKey struct
+    /// - UserInfo: None
     static let timelineCacheUpdated = Notification.Name("TimelineCacheUpdated")
+
+    /// Posted when transcript metadata is updated
+    /// - Object: String (transcript_id)
+    /// - UserInfo: None
+    static let transcriptMetadataUpdated = Notification.Name("TranscriptMetadataUpdated")
+
+    /// Posted when transcript file is updated (for file watcher)
+    /// - Object: String (transcript_id)
+    /// - UserInfo: ["projectId": String]
+    static let transcriptFileUpdated = Notification.Name("TranscriptFileUpdated")
+
     static let projectRootDidChange = Notification.Name("ProjectRootDidChange")
 }
 

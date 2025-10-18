@@ -7,11 +7,11 @@ struct TranscriptInventoryView: View {
   @Environment(ConversationMonitor.self) private var monitor
   let onSelectSession: (TranscriptSession) -> Void
 
-  @State private var selectedSessionURL: URL?
+  @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
   @State private var groupingMode: GroupingMode = .provider
-  @State private var metadata: [URL: TranscriptMetadata] = [:]
-  @State private var loadingMetadata: Set<URL> = []
+  @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
+  @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
 
@@ -53,8 +53,8 @@ struct TranscriptInventoryView: View {
   }
 
   private var selectedSession: TranscriptSession? {
-    guard let url = selectedSessionURL else { return nil }
-    return monitor.allSessions.first(where: { $0.fileURL == url })
+    guard let id = selectedTranscriptId else { return nil }
+    return monitor.allSessions.first(where: { $0.identifier == id })
   }
 
   @ViewBuilder
@@ -111,21 +111,21 @@ struct TranscriptInventoryView: View {
 
       Divider()
 
-      // Session list with URL-based selection
-      List(monitor.allSessions, id: \.fileURL, selection: $selectedSessionURL) { session in
+      // Session list with transcript ID-based selection (FIXED: use filteredSessions)
+      List(filteredSessions, id: \.identifier, selection: $selectedTranscriptId) { session in
         sessionRow(session)
-          .tag(session.fileURL)
+          .tag(session.identifier)
       }
       .listStyle(.sidebar)
       .searchable(text: $searchText, prompt: "Search transcripts")
       .onChange(of: monitor.allSessions) { _, newSessions in
         // Clear selection if selected session no longer exists
-        if let selectedURL = selectedSessionURL,
-           !newSessions.contains(where: { $0.fileURL == selectedURL }) {
-          selectedSessionURL = nil
+        if let selectedId = selectedTranscriptId,
+           !newSessions.contains(where: { $0.identifier == selectedId }) {
+          selectedTranscriptId = nil
         }
 
-        // Load metadata for new sessions
+        // Load metadata for new sessions (centralized, not per-row)
         Task {
           await loadMetadataForSessions(newSessions)
         }
@@ -139,8 +139,8 @@ struct TranscriptInventoryView: View {
 
         // Find session with matching path
         if let session = monitor.allSessions.first(where: { $0.fileURL.path == path }) {
-          // Select the session
-          selectedSessionURL = session.fileURL
+          // Select the session by ID
+          selectedTranscriptId = session.identifier
 
           // TODO: Add scroll-to-item logic when List supports programmatic scrolling
         }
@@ -153,12 +153,12 @@ struct TranscriptInventoryView: View {
     if let session = selectedSession {
       TranscriptDetailView(
         session: session,
-        isActive: session.fileURL == monitor.activeSession?.fileURL,
+        isActive: session.identifier == monitor.activeSession?.identifier,
         onSelect: {
           onSelectSession(session)
         },
-        onMetadataUpdate: { url, newMetadata in
-          metadata[url] = newMetadata
+        onMetadataUpdate: { transcriptId, newMetadata in
+          metadata[transcriptId] = newMetadata
         }
       )
     } else {
@@ -190,11 +190,11 @@ struct TranscriptInventoryView: View {
           .foregroundStyle(providerColor(session.provider))
           .frame(width: 16)
 
-        if let meta = metadata[session.fileURL] {
+        if let meta = metadata[session.identifier] {
           Text(meta.title)
             .font(.callout)
             .lineLimit(1)
-        } else if loadingMetadata.contains(session.fileURL) {
+        } else if loadingMetadata.contains(session.identifier) {
           HStack(spacing: 4) {
             ProgressView()
               .controlSize(.mini)
@@ -212,14 +212,14 @@ struct TranscriptInventoryView: View {
 
         Spacer()
 
-        if session.fileURL == monitor.activeSession?.fileURL {
+        if session.identifier == monitor.activeSession?.identifier {
           Image(systemName: "circle.fill")
             .font(.system(size: 6))
             .foregroundStyle(.green)
         }
       }
 
-      if let meta = metadata[session.fileURL] {
+      if let meta = metadata[session.identifier] {
         // Description (2 lines)
         Text(meta.description)
           .font(.caption)
@@ -245,7 +245,7 @@ struct TranscriptInventoryView: View {
         Spacer()
 
         // Topic chips (max 2)
-        if let meta = metadata[session.fileURL] {
+        if let meta = metadata[session.identifier] {
           HStack(spacing: 4) {
             ForEach(meta.topics.prefix(2), id: \.self) { topic in
               Text(topic)
@@ -269,8 +269,15 @@ struct TranscriptInventoryView: View {
     if searchText.isEmpty {
       return sessions
     }
+    // Search in metadata title/description if available
     return sessions.filter { session in
-      session.identifier.localizedCaseInsensitiveContains(searchText)
+      if let meta = metadata[session.identifier] {
+        return meta.title.localizedCaseInsensitiveContains(searchText)
+          || meta.description.localizedCaseInsensitiveContains(searchText)
+          || meta.topics.contains { $0.localizedCaseInsensitiveContains(searchText) }
+      }
+      // Fall back to identifier and path
+      return session.identifier.localizedCaseInsensitiveContains(searchText)
         || session.fileURL.path.localizedCaseInsensitiveContains(searchText)
     }
   }
@@ -311,64 +318,76 @@ struct TranscriptInventoryView: View {
 
   private func flushHeuristicCache() {
     Task { @MainActor in
-      let store = SidecarMetadataStore()
-      let flushedCount = await store.flushHeuristicMetadata(for: monitor.allSessions)
+      // True SQL-backed flush: delete metadata records for heuristic entries
+      guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+        return
+      }
+
+      var flushedCount = 0
+      for session in monitor.allSessions {
+        // Check if this has heuristic metadata
+        if let meta = metadata[session.identifier],
+           meta.model == "heuristic" ||
+           meta.title == "Developer Chat" ||
+           meta.title == "Brief Session" {
+          // Delete from SQL
+          try? orchestrator.deleteMetadata(forTranscript: session.identifier)
+          metadata.removeValue(forKey: session.identifier)
+          flushedCount += 1
+
+          // Trigger regeneration
+          loadingMetadata.insert(session.identifier)
+          Task { @MainActor in
+            defer { loadingMetadata.remove(session.identifier) }
+            do {
+              let newMeta = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+                for: session,
+                forceRegenerate: true
+              )
+              metadata[session.identifier] = newMeta
+            } catch {
+              // Failed to regenerate, loading indicator removed by defer
+            }
+          }
+        }
+      }
 
       if flushedCount > 0 {
         lastFlushCount = flushedCount
         showingFlushAlert = true
-
-        // Clear in-memory cache and trigger regeneration for flushed items
-        for session in monitor.allSessions {
-          if let meta = metadata[session.fileURL],
-             meta.model == "heuristic" ||
-             meta.title == "Developer Chat" ||
-             meta.title == "Brief Session" {
-            metadata.removeValue(forKey: session.fileURL)
-            loadingMetadata.insert(session.fileURL)
-
-            Task { @MainActor in
-              defer { loadingMetadata.remove(session.fileURL) }
-              do {
-                let newMeta = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
-                  for: session,
-                  forceRegenerate: true
-                )
-                metadata[session.fileURL] = newMeta
-              } catch {
-                // Failed to regenerate, loading indicator removed by defer
-              }
-            }
-          }
-        }
       }
     }
   }
 
   @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
-    for session in sessions {
-      // Skip if already loaded or loading
-      guard metadata[session.fileURL] == nil,
-            !loadingMetadata.contains(session.fileURL) else {
-        continue
-      }
+    // Centralized loading: batch fetch from SQL, then spawn Tasks only for cache misses
+    guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+      return
+    }
 
-      // Check for cached metadata first
-      let store = SidecarMetadataStore()
-      if let cached = await store.load(for: session.fileURL) {
-        metadata[session.fileURL] = cached
-        continue
-      }
+    // Batch fetch metadata from SQL
+    let transcriptIds = sessions.map(\.identifier)
+    let cachedMetadata = (try? orchestrator.getMetadataBatch(transcriptIds: transcriptIds)) ?? [:]
 
-      // Trigger generation
-      loadingMetadata.insert(session.fileURL)
+    // Update state with cached results
+    for (transcriptId, record) in cachedMetadata {
+      metadata[transcriptId] = record.toUIModel()
+    }
+
+    // Find sessions that need generation (not in cache, not already loading)
+    let missingIds = Set(transcriptIds).subtracting(Set(cachedMetadata.keys)).subtracting(loadingMetadata)
+    let missingSessions = sessions.filter { missingIds.contains($0.identifier) }
+
+    // Spawn generation tasks for cache misses
+    for session in missingSessions {
+      loadingMetadata.insert(session.identifier)
 
       Task { @MainActor in
-        defer { loadingMetadata.remove(session.fileURL) }
+        defer { loadingMetadata.remove(session.identifier) }
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
-          metadata[session.fileURL] = generated
+          metadata[session.identifier] = generated
         } catch {
           // Failed to generate, loading indicator removed by defer
         }
@@ -382,7 +401,7 @@ struct TranscriptDetailView: View {
   let session: TranscriptSession
   let isActive: Bool
   let onSelect: () -> Void
-  let onMetadataUpdate: ((URL, TranscriptMetadata) -> Void)?
+  let onMetadataUpdate: ((String, TranscriptMetadata) -> Void)?  // Changed from URL to transcript ID
 
   @State private var metadata: TranscriptMetadata?
   @State private var isRegenerating = false
@@ -609,7 +628,7 @@ struct TranscriptDetailView: View {
       .padding()
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .task(id: session.fileURL) {
+    .task(id: session.identifier) {  // Changed from fileURL to identifier
       // Load metadata on appearance or when session changes
       await loadMetadata()
     }
@@ -617,11 +636,16 @@ struct TranscriptDetailView: View {
 
   @MainActor
   private func loadMetadata() async {
-    let store = SidecarMetadataStore()
-    metadata = await store.load(for: session.fileURL)
+    // Load from SQL backend
+    guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+      return
+    }
 
-    // If no cached metadata, trigger generation
-    if metadata == nil {
+    // Check SQL cache first
+    if let record = try? orchestrator.getMetadata(forTranscript: session.identifier) {
+      metadata = record.toUIModel()
+    } else {
+      // Not in cache, trigger generation
       do {
         metadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
       } catch {
@@ -642,8 +666,8 @@ struct TranscriptDetailView: View {
       )
       metadata = newMetadata
 
-      // Notify parent view to update list
-      onMetadataUpdate?(session.fileURL, newMetadata)
+      // Notify parent view to update list (using transcript ID)
+      onMetadataUpdate?(session.identifier, newMetadata)
     } catch {
       // Failed to regenerate, keep existing metadata
     }

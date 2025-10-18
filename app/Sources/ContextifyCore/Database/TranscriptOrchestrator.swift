@@ -1,8 +1,39 @@
 import Foundation
 import GRDB
 import OSLog
+import CryptoKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "TranscriptOrchestrator")
+
+// MARK: - Public API Types
+
+/// Lightweight input for batch transcript discovery
+public struct DiscoveredTranscript: Sendable {
+  public let fileURL: URL
+  public let provider: String
+  public let sessionId: String?
+
+  public init(fileURL: URL, provider: String, sessionId: String?) {
+    self.fileURL = fileURL
+    self.provider = provider
+    self.sessionId = sessionId
+  }
+}
+
+/// Output from transcript upsert with canonical ID
+public struct ResolvedTranscript: Sendable {
+  public let transcriptId: String
+  public let fileURL: URL
+  public let provider: String
+  public let wasCreated: Bool  // true if new, false if existing
+
+  public init(transcriptId: String, fileURL: URL, provider: String, wasCreated: Bool) {
+    self.transcriptId = transcriptId
+    self.fileURL = fileURL
+    self.provider = provider
+    self.wasCreated = wasCreated
+  }
+}
 
 /// High-level orchestrator for transcript ingestion and monitoring
 /// NOT @MainActor - allows safe concurrent access from background tasks
@@ -172,6 +203,145 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     progressSink.didCompleteProject(name: project.name ?? projectId)
   }
 
+  /// Batch upsert transcripts using path normalization for identity
+  /// - Parameters:
+  ///   - projectId: Project ID to associate transcripts with
+  ///   - discovered: Array of discovered transcripts
+  /// - Returns: Array of resolved transcripts with canonical IDs
+  /// - Note: Uses single transaction for atomicity, UPSERT for idempotency
+  public func upsertTranscripts(
+    projectId: String,
+    discovered: [DiscoveredTranscript]
+  ) throws -> [ResolvedTranscript] {
+    guard let project = try projectRepo.get(id: projectId) else {
+      log.error("❌ FK validation failed: project \(projectId) does not exist")
+      throw RepositoryError.notFound
+    }
+
+    let pool = try dbManager.pool
+    var resolved: [ResolvedTranscript] = []
+
+    // Single transaction for atomicity
+    try pool.write { db in
+      for disc in discovered {
+        let path = disc.fileURL.path
+
+        // Get file metadata
+        var contentLength: Int64 = 0
+        var mtimeNs: Int = 0
+        var contentSHA: String = "pending"
+
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path) {
+          contentLength = (attrs[.size] as? Int64) ?? 0
+          if let modDate = attrs[.modificationDate] as? Date {
+            mtimeNs = Int(modDate.timeIntervalSince1970 * 1_000_000_000)
+          }
+
+          // Compute content SHA256 for freshness tracking
+          if let data = try? Data(contentsOf: disc.fileURL) {
+            let hash = SHA256.hash(data: data)
+            contentSHA = hash.compactMap { String(format: "%02x", $0) }.joined()
+          }
+        }
+
+        // Normalize path and compute hash
+        let (normalizedPath, pathHash) = PathNormalizer.normalizeAndHash(path)
+
+        // UPSERT transcript with ON CONFLICT
+        let wasCreated: Bool
+        let transcriptId: String
+
+        // Check if transcript exists by (provider, path_hash)
+        if let existing = try String.fetchOne(db, sql: """
+          SELECT id FROM transcripts
+          WHERE provider = ? AND path_hash = ?
+        """, arguments: [disc.provider, pathHash]) {
+          // Existing transcript - update metadata
+          transcriptId = existing
+          wasCreated = false
+
+          try db.execute(sql: """
+            UPDATE transcripts
+            SET file_path = ?,
+                normalized_path = ?,
+                provider_session_id = ?,
+                last_modified = ?,
+                file_size = ?,
+                content_length = ?,
+                mtime_ns = ?,
+                content_sha256 = ?,
+                updated_at = ?
+            WHERE id = ?
+          """, arguments: [
+            path,
+            normalizedPath,
+            disc.sessionId,
+            Int(Date().timeIntervalSince1970),
+            contentLength > 0 ? Int(contentLength) : nil,
+            contentLength,
+            mtimeNs,
+            contentSHA,
+            Int(Date().timeIntervalSince1970),
+            transcriptId
+          ])
+
+          log.debug("✅ Updated existing transcript: \(transcriptId) [\(pathHash.prefix(8))...]")
+        } else {
+          // New transcript - insert
+          transcriptId = UUID().uuidString
+          wasCreated = true
+
+          let now = Int(Date().timeIntervalSince1970)
+          try db.execute(sql: """
+            INSERT INTO transcripts (
+              id, project_id, file_path, normalized_path, path_hash,
+              provider, provider_session_id,
+              last_modified, file_size, content_length, mtime_ns, content_sha256,
+              line_count, last_processed_line, parser_version, status,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          """, arguments: [
+            transcriptId, projectId, path, normalizedPath, pathHash,
+            disc.provider, disc.sessionId,
+            now, contentLength > 0 ? Int(contentLength) : nil, contentLength, mtimeNs, contentSHA,
+            0, 0, 1, "active",
+            now, now
+          ])
+
+          log.debug("✅ Created new transcript: \(transcriptId) [\(pathHash.prefix(8))...]")
+        }
+
+        resolved.append(ResolvedTranscript(
+          transcriptId: transcriptId,
+          fileURL: disc.fileURL,
+          provider: disc.provider,
+          wasCreated: wasCreated
+        ))
+      }
+    }
+
+    log.info("Upserted \(resolved.count) transcripts for project \(projectId) (\(resolved.filter(\.wasCreated).count) new)")
+    return resolved
+  }
+
+  /// Resolve transcript ID for a file URL and provider
+  /// - Parameters:
+  ///   - fileURL: File URL to look up
+  ///   - provider: Provider identifier
+  /// - Returns: Canonical transcript ID if found
+  public func resolveTranscriptId(fileURL: URL, provider: String) throws -> String? {
+    let path = fileURL.path
+    let (_, pathHash) = PathNormalizer.normalizeAndHash(path)
+
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      try String.fetchOne(db, sql: """
+        SELECT id FROM transcripts
+        WHERE provider = ? AND path_hash = ?
+      """, arguments: [provider, pathHash])
+    }
+  }
+
   // MARK: - Transcript Queries
 
   public func getTranscripts(forProject projectId: String) throws -> [Transcript] {
@@ -257,8 +427,25 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try metadataRepo.get(transcriptId)
   }
 
+  public func getMetadataBatch(transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord] {
+    var result: [String: TranscriptMetadataRecord] = [:]
+    for transcriptId in transcriptIds {
+      if let metadata = try metadataRepo.get(transcriptId) {
+        result[transcriptId] = metadata
+      }
+    }
+    return result
+  }
+
   public func saveMetadata(_ metadata: TranscriptMetadataRecord) throws {
     try metadataRepo.upsert(metadata)
+  }
+
+  public func deleteMetadata(forTranscript transcriptId: String) throws {
+    let pool = try dbManager.pool
+    try pool.write { db in
+      try db.execute(sql: "DELETE FROM transcript_metadata WHERE transcript_id = ?", arguments: [transcriptId])
+    }
   }
 
   // MARK: - Maintenance

@@ -1,38 +1,18 @@
 import Foundation
 import OSLog
+import ContextifyCore
+import CryptoKit
 
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
 
-/// Simple async semaphore for controlling concurrent access
-actor AsyncSemaphore {
-  private let limit: Int
-  private var permits: Int
-
-  init(_ limit: Int) {
-    self.limit = limit
-    self.permits = limit
-  }
-
-  func acquire() async {
-    while permits == 0 {
-      try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-    }
-    permits -= 1
-  }
-
-  func release() {
-    permits = min(permits + 1, limit)
-  }
-}
-
-/// Orchestrates transcript metadata generation with caching, retries, and circuit breaking
+/// Orchestrates transcript metadata generation with SQL caching, retries, and circuit breaking
 actor TranscriptMetadataOrchestrator {
   static let shared = TranscriptMetadataOrchestrator()
 
   private let log = Logger(subsystem: "dev.contextify.metadata", category: "Orchestrator")
-  private let store = SidecarMetadataStore()
+  private var orchestrator: TranscriptOrchestrator!  // Injected after init
   private let parser = TranscriptParser()
   private let builder = ContextBuilder()
   private let llm: TranscriptMetadataLLM
@@ -42,18 +22,25 @@ actor TranscriptMetadataOrchestrator {
     self.llm = TranscriptMetadataLLM.shared
   }
 
+  /// Initialize with database orchestrator (call once from app startup)
+  func initialize(orchestrator: TranscriptOrchestrator) {
+    self.orchestrator = orchestrator
+    log.debug("TranscriptMetadataOrchestrator initialized with SQL backend")
+  }
+
   private let currentPromptVersion = 2
   private let currentGeneratorVersion = 1
 
-  // Circuit breaker state with sliding window
-  private var requestWindow: [Date] = []
-  private var failureCount = 0
-  private let windowSpan: TimeInterval = 300 // 5 minutes
-  private let circuitBreakerThreshold = 5
+  // Circuit breaker with sliding window (using shared utility)
+  private let circuitBreaker = CircuitBreaker(
+    windowSeconds: 300,      // 5 minutes
+    failureThreshold: 0.6,   // 60% failure rate
+    minimumRequests: 5       // Need at least 5 requests
+  )
 
-  // Concurrency control
+  // Concurrency control (using shared utility)
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
-  private let llmGate = AsyncSemaphore(2)
+  private let llmGate = ConcurrencyGate(permits: 2)
 
   // MARK: - Public API
 
@@ -62,6 +49,11 @@ actor TranscriptMetadataOrchestrator {
     for session: TranscriptSession,
     forceRegenerate: Bool = false
   ) async throws -> TranscriptMetadata {
+    guard let orchestrator = orchestrator else {
+      log.error("TranscriptMetadataOrchestrator not initialized with orchestrator")
+      throw TranscriptMetadataError.notInitialized
+    }
+
     // Cancel existing task if forcing regeneration
     if forceRegenerate, let existingTask = activeTasks[session.fileURL] {
       existingTask.cancel()
@@ -77,9 +69,13 @@ actor TranscriptMetadataOrchestrator {
     // Create new task
     let task = Task<TranscriptMetadata, Error> {
       defer {
-        Task { self.removeTask(for: session.fileURL) }
+        Task { await self.removeTask(for: session.fileURL) }
       }
-      return try await self.generateMetadata(for: session, forceRegenerate: forceRegenerate)
+      return try await self.generateMetadata(
+        for: session,
+        orchestrator: orchestrator,
+        forceRegenerate: forceRegenerate
+      )
     }
 
     activeTasks[session.fileURL] = task
@@ -94,24 +90,34 @@ actor TranscriptMetadataOrchestrator {
 
   private func generateMetadata(
     for session: TranscriptSession,
+    orchestrator: TranscriptOrchestrator,
     forceRegenerate: Bool
   ) async throws -> TranscriptMetadata {
     let startTime = Date()
 
-    // Check cache unless forcing regeneration
-    if !forceRegenerate,
-       let cached = await store.load(for: session.fileURL),
-       await store.isFresh(
-        cached,
-        for: session.fileURL,
-        promptVersion: currentPromptVersion,
-        generatorVersion: currentGeneratorVersion
-       ) {
-      log.info("Using cached metadata for \(session.identifier, privacy: .public)")
-      return cached
+    // Get transcript ID from SQL (using identifier which is the transcript_id from SQL)
+    let transcriptId = session.identifier
+
+    // Check SQL cache unless forcing regeneration
+    if !forceRegenerate {
+      if let cached = try orchestrator.getMetadata(forTranscript: transcriptId) {
+        // Check if metadata is fresh (versions match and file hasn't changed)
+        let isFresh = try await isFresh(
+          metadata: cached,
+          fileURL: session.fileURL,
+          orchestrator: orchestrator
+        )
+
+        if isFresh {
+          log.info("Using cached metadata for \(transcriptId, privacy: .public)")
+          return cached.toUIModel()
+        } else {
+          log.debug("Cached metadata is stale, regenerating")
+        }
+      }
     }
 
-    log.info("Generating metadata for \(session.identifier, privacy: .public)")
+    log.info("Generating metadata for \(transcriptId, privacy: .public)")
 
     // Parse exchanges (background-safe, no MainActor needed)
     let parseStart = Date()
@@ -122,15 +128,16 @@ actor TranscriptMetadataOrchestrator {
     if exchanges.count < 3 {
       log.info("Very short transcript (\(exchanges.count) exchanges), using heuristic")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
-      await store.save(metadata, for: session.fileURL)
+      try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
       return metadata
     }
 
     // Check circuit breaker
-    if shouldUseCircuitBreaker() {
-      log.warning("Circuit breaker active, using heuristic fallback")
+    if await circuitBreaker.shouldOpen() {
+      let stats = await circuitBreaker.stats()
+      log.warning("Circuit breaker active (\(stats.failures)/\(stats.total), \(String(format: "%.1f%%", stats.ratio * 100))), using heuristic fallback")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
-      await store.save(metadata, for: session.fileURL)
+      try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
       return metadata
     }
 
@@ -195,7 +202,7 @@ actor TranscriptMetadataOrchestrator {
         metadata.messageCount = exchanges.count
         metadata.strategy = "singlePass:\(strategy.rawValue)"
 
-        recordSuccess()
+        await circuitBreaker.recordSuccess()
       } else {
         throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
       }
@@ -204,7 +211,7 @@ actor TranscriptMetadataOrchestrator {
       #endif
     } catch {
       log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
-      recordFailure()
+      await circuitBreaker.recordFailure()
 
       // Try bookends fallback if we weren't already using it
       if strategy != .bookends {
@@ -231,7 +238,7 @@ actor TranscriptMetadataOrchestrator {
             metadata.messageCount = exchanges.count
             metadata.strategy = "singlePass:bookends-fallback"
 
-            recordSuccess()
+            await circuitBreaker.recordSuccess()
           } else {
             throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
           }
@@ -240,7 +247,7 @@ actor TranscriptMetadataOrchestrator {
           #endif
         } catch {
           log.error("Bookends fallback also failed, using heuristic")
-          recordFailure()
+          await circuitBreaker.recordFailure()
           metadata = HeuristicMetadata.generate(exchanges: exchanges)
           metadata.strategy = "heuristic-after-failure"
         }
@@ -253,17 +260,12 @@ actor TranscriptMetadataOrchestrator {
 
     let llmTime = Date().timeIntervalSince(llmStart)
 
-    // Finalize metadata
+    // Finalize metadata and save to SQL
     let storageStart = Date()
-    metadata.transcriptSHA256 = try await store.sha256(url: session.fileURL)
-    metadata.promptVersion = currentPromptVersion
-    metadata.generatorVersion = currentGeneratorVersion
-    let totalTime = Date().timeIntervalSince(startTime)
-    metadata.latencyMs = Int(totalTime * 1000)
-
-    // Save to sidecar
-    await store.save(metadata, for: session.fileURL)
+    try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
     let storageTime = Date().timeIntervalSince(storageStart)
+
+    let totalTime = Date().timeIntervalSince(startTime)
 
     // Log metrics
     let metrics = GenerationMetrics(
@@ -278,44 +280,78 @@ actor TranscriptMetadataOrchestrator {
       needsReview: metadata.needsReview
     )
 
-    logMetrics(metrics, for: session.identifier)
+    logMetrics(metrics, for: transcriptId)
 
     return metadata
   }
 
-  // MARK: - Circuit Breaker
+  // MARK: - SQL Persistence
 
-  private func shouldUseCircuitBreaker() -> Bool {
-    let now = Date()
-    // Clean up old entries outside the window
-    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
+  private func saveToSQL(
+    _ metadata: TranscriptMetadata,
+    transcriptId: String,
+    fileURL: URL,
+    orchestrator: TranscriptOrchestrator
+  ) async throws {
+    // Compute transcript SHA256 for freshness tracking
+    let data = try Data(contentsOf: fileURL)
+    let hash = SHA256.hash(data: data)
+    let transcriptSHA256 = hash.compactMap { String(format: "%02x", $0) }.joined()
 
-    let total = max(1, requestWindow.count)
-    let ratio = Double(failureCount) / Double(total)
+    // Convert topics array to JSON string
+    let topicsJSON = (try? String(data: JSONEncoder().encode(metadata.topics), encoding: .utf8)) ?? "[]"
 
-    // Open circuit if failure ratio >= 60% and we have at least 5 requests
-    return ratio >= 0.6 && total >= 5
+    // Create SQL record
+    let now = Int(Date().timeIntervalSince1970)
+    let record = TranscriptMetadataRecord(
+      transcriptId: transcriptId,
+      projectId: "", // Will be filled by repository from transcript FK
+      title: metadata.title,
+      description: metadata.description,
+      topics: topicsJSON,
+      confidence: metadata.confidence,
+      mayContainHallucinations: metadata.mayContainHallucinations ? 1 : 0,
+      needsReview: metadata.needsReview ? 1 : 0,
+      generatedAt: Int(metadata.generatedAt.timeIntervalSince1970),
+      model: metadata.model,
+      promptVersion: currentPromptVersion,
+      generatorVersion: currentGeneratorVersion,
+      transcriptSha256: transcriptSHA256,  // Note: lowercase 'sha' in record
+      messageCount: metadata.messageCount,
+      strategy: metadata.strategy,
+      llmCalls: metadata.llmCalls,
+      latencyMs: metadata.latencyMs,
+      createdAt: now,
+      updatedAt: now
+    )
+
+    try orchestrator.saveMetadata(record)
+
+    // Post notification for cache updates
+    NotificationCenter.default.post(
+      name: .transcriptMetadataUpdated,
+      object: transcriptId
+    )
   }
 
-  private func recordSuccess() {
-    let now = Date()
-    requestWindow.append(now)
-    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
-    // Decay failure count on success, but don't reset completely
-    failureCount = max(0, failureCount - 1)
-  }
-
-  private func recordFailure() {
-    let now = Date()
-    requestWindow.append(now)
-    requestWindow = requestWindow.filter { now.timeIntervalSince($0) <= windowSpan }
-    failureCount += 1
-
-    let total = max(1, requestWindow.count)
-    let ratio = Double(failureCount) / Double(total)
-    if ratio >= 0.6 && total >= 5 {
-      log.warning("Circuit breaker triggered: \(self.failureCount) failures out of \(total) requests (\(String(format: "%.1f%%", ratio * 100)))")
+  private func isFresh(
+    metadata: TranscriptMetadataRecord,
+    fileURL: URL,
+    orchestrator: TranscriptOrchestrator
+  ) async throws -> Bool {
+    // Check if versions match
+    guard metadata.promptVersion == currentPromptVersion,
+          metadata.generatorVersion == currentGeneratorVersion else {
+      return false
     }
+
+    // Compute current file SHA256
+    let data = try Data(contentsOf: fileURL)
+    let hash = SHA256.hash(data: data)
+    let currentSHA = hash.compactMap { String(format: "%02x", $0) }.joined()
+
+    // Compare with cached SHA256 (note: lowercase 'sha' in record)
+    return metadata.transcriptSha256 == currentSHA
   }
 
   // MARK: - Metrics Logging
@@ -332,5 +368,38 @@ actor TranscriptMetadataOrchestrator {
       strategy=\(metrics.strategy.rawValue, privacy: .public), \
       needsReview=\(metrics.needsReview)
       """)
+  }
+}
+
+// MARK: - Error Types
+
+enum TranscriptMetadataError: Error {
+  case notInitialized
+}
+
+// MARK: - Record to UI Model Conversion
+
+extension TranscriptMetadataRecord {
+  nonisolated func toUIModel() -> TranscriptMetadata {
+    // Parse topics from JSON
+    let topicsArray = (try? JSONDecoder().decode([String].self, from: Data(topics.utf8))) ?? []
+
+    return TranscriptMetadata(
+      title: title,
+      description: description,
+      topics: topicsArray,
+      confidence: confidence,
+      mayContainHallucinations: mayContainHallucinations != 0,
+      needsReview: needsReview != 0,
+      generatedAt: Date(timeIntervalSince1970: TimeInterval(generatedAt)),
+      model: model,
+      promptVersion: promptVersion,
+      generatorVersion: generatorVersion,
+      transcriptSHA256: transcriptSha256,  // Note: lowercase 'sha' in record
+      messageCount: messageCount,
+      strategy: strategy,
+      llmCalls: llmCalls,
+      latencyMs: latencyMs
+    )
   }
 }
