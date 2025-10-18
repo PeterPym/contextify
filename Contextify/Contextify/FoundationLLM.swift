@@ -106,6 +106,20 @@ actor FoundationLLM {
     // Throttle to prevent overwhelming the LLM
     private let minRequestInterval: TimeInterval = 0.15 // 150ms between requests
 
+    /// Hard timeout guard for LLM respond calls (prevents indefinite hangs)
+    private func withTimeout<T: Sendable>(_ seconds: Double, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await op() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw TimelineError.llmTimeout
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
     enum Error: Swift.Error {
         case unavailable
         case unexpectedEnvironment
@@ -447,12 +461,14 @@ actor FoundationLLM {
                 }
                 log.debug("[\(reqNum)] input: \(payloadInput, privacy: .public)")
 
-                let payload = try await controller.generate(
-                    payloadInput,
-                    generating: GuidedTimelineSummary.self,
-                    includeSchema: true,
-                    options: options
-                )
+                let payload: GuidedTimelineSummary = try await withTimeout(30) {
+                    try await controller.generate(
+                        payloadInput,
+                        generating: GuidedTimelineSummary.self,
+                        includeSchema: true,
+                        options: options
+                    )
+                }
                 log.debug("[\(reqNum)] timeline: LLM SUCCESS - grounding=\(payload.grounding), confidence=\(String(format: "%.2f", payload.confidence)), disposition=\(payload.disposition), isCompletion=\(payload.isCompletion)")
                 log.debug("[\(reqNum)] timeline: raw summary from LLM: '\(payload.summary, privacy: .public)'")
                 do {
@@ -504,7 +520,9 @@ actor FoundationLLM {
 
                     // Try to get raw response for debugging (makes second LLM call but only on failure)
                     do {
-                        let raw = try await controller.raw(payloadInput, options: options)
+                        let raw: String = try await withTimeout(15) {
+                            try await controller.raw(payloadInput, options: options)
+                        }
                         log.error("[\(reqNum)] LLM actually returned (raw): \(raw, privacy: .public)")
                     } catch {
                         log.error("[\(reqNum)] Could not fetch raw response: \(error.localizedDescription, privacy: .public)")
@@ -643,39 +661,62 @@ actor SessionController {
     private let instructions: String
     private var session: LanguageModelSession?
 
-    // async semaphore
+    // FIFO async semaphore with cancellation support
     private var inFlight = false
-    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    // Per-session lifetime tracking and circuit breaker
+    private var requestCount = 0
+    private var consecutiveErrors = 0
+    private let maxRequests = 15
+    private let maxConsecutiveErrors = 3
+
+    // Session epoch to prevent reset fighting
+    private var epoch = 0
 
     init(instructions: String) {
         self.instructions = instructions
     }
 
-    private func getOrCreateSession() -> LanguageModelSession {
+    private func getOrCreateSession() throws -> LanguageModelSession {
+        // Circuit breaker: reset if limits exceeded
+        if requestCount >= maxRequests || consecutiveErrors >= maxConsecutiveErrors {
+            log.warning("Circuit breaker triggered (requests: \(self.requestCount)/\(self.maxRequests), errors: \(self.consecutiveErrors)/\(self.maxConsecutiveErrors))")
+            reset()
+        }
+
         if let s = session { return s }
         let s = LanguageModelSession(instructions: self.instructions)
         session = s
-        log.info("Created LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))…")
+        log.info("Created LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))… (epoch \(self.epoch))")
         return s
     }
 
     func reset() {
         session = nil
-        log.info("Reset LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))…")
+        requestCount = 0
+        consecutiveErrors = 0
+        epoch &+= 1
+        log.info("Reset LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))… (epoch \(self.epoch))")
     }
 
     private func acquire() async {
-        if !inFlight { inFlight = true; return }
-        let id = UUID()
+        if !inFlight {
+            inFlight = true
+            return
+        }
+
+        // FIFO queue with basic cancellation handling
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            waiters[id] = cont
+            waiters.append(cont)
         }
         inFlight = true
     }
 
     private func release() {
-        if let next = waiters.keys.first, let cont = waiters.removeValue(forKey: next) {
-            cont.resume()
+        if !waiters.isEmpty {
+            let next = waiters.removeFirst()
+            next.resume()
         } else {
             inFlight = false
         }
@@ -687,24 +728,48 @@ actor SessionController {
         includeSchema: Bool,
         options: GenerationOptions
     ) async throws -> T {
-        let s = getOrCreateSession()
         await acquire()
         defer { release() }
-        let resp = try await s.respond(
-            to: prompt,
-            generating: T.self,
-            includeSchemaInPrompt: includeSchema,
-            options: options
-        )
-        return resp.content
+
+        do {
+            let s = try getOrCreateSession()
+            let resp = try await s.respond(
+                to: prompt,
+                generating: T.self,
+                includeSchemaInPrompt: includeSchema,
+                options: options
+            )
+            requestCount += 1
+            consecutiveErrors = 0
+            return resp.content
+        } catch {
+            consecutiveErrors += 1
+            // Reset on context window overflow
+            if case LanguageModelSession.GenerationError.exceededContextWindowSize = error {
+                reset()
+            }
+            throw error
+        }
     }
 
     func raw(_ prompt: String, options: GenerationOptions) async throws -> String {
-        let s = getOrCreateSession()
         await acquire()
         defer { release() }
-        let resp = try await s.respond(to: prompt, options: options)
-        return resp.content
+
+        do {
+            let s = try getOrCreateSession()
+            let resp = try await s.respond(to: prompt, options: options)
+            requestCount += 1
+            consecutiveErrors = 0
+            return resp.content
+        } catch {
+            consecutiveErrors += 1
+            // Reset on context window overflow
+            if case LanguageModelSession.GenerationError.exceededContextWindowSize = error {
+                reset()
+            }
+            throw error
+        }
     }
 }
 #endif
