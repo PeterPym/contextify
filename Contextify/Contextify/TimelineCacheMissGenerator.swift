@@ -118,6 +118,12 @@ actor TimelineCacheMissGenerator {
                 }
             }
 
+            // Log which distinct session types were reset
+            if !seenPairs.isEmpty {
+                let descriptions = seenPairs.map { "\($0.kind)/\($0.provider)" }
+                log.info("Batch reset \(seenPairs.count) distinct session types: \(descriptions.joined(separator: ", "))")
+            }
+
             log.info("Processing batch of \(batch.count) cache misses (\(self.pendingMisses.count) remaining)")
 
             // Process batch off-main
