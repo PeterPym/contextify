@@ -137,6 +137,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
+    @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
 
     private init() {}
@@ -716,101 +717,105 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
-        if updateInFlight { return }
+        if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer { updateInFlight = false }
 
-        guard let projectId = currentProjectId, orchestrator != nil else { return }
+        repeat {
+            updateDirty = false
 
-        // If no cursor, do full reload instead
-        guard let cursor = lastSeenCursor else {
-            log.info("No cursor available, doing full reload")
-            await loadFeedFromSQL()
-            return
-        }
+            guard let projectId = currentProjectId, orchestrator != nil else { return }
 
-        do {
-            let startTime = Date()
-
-            // Get new entries using keyset pagination (prevents duplicates/skips)
-            let newEntries = try orchestrator.getEntriesAfterCursor(
-                forProject: projectId,
-                after: cursor
-            )
-
-            guard !newEntries.isEmpty else {
-                log.debug("No new entries in incremental update")
+            // If no cursor, do full reload instead
+            guard let cursor = lastSeenCursor else {
+                log.info("No cursor available, doing full reload")
+                await loadFeedFromSQL()
                 return
             }
 
-            // Convert to timeline entries with cache lookup + collect misses
-            // TODO: Batch cache lookup for better performance
-            var addedCount = 0
-            var misses: [CacheMiss] = []
+            do {
+                let startTime = Date()
 
-            for entry in newEntries {
-                // Deduplicate using seenEntryIDs
-                guard !seenEntryIDs.contains(entry.id) else {
-                    log.debug("Skipping duplicate entry: \(entry.id)")
-                    continue
+                // Get new entries using keyset pagination (prevents duplicates/skips)
+                let newEntries = try orchestrator.getEntriesAfterCursor(
+                    forProject: projectId,
+                    after: cursor
+                )
+
+                guard !newEntries.isEmpty else {
+                    log.debug("No new entries in incremental update")
+                    continue  // Check if more updates arrived
                 }
 
-                seenEntryIDs.insert(entry.id)
+                // Convert to timeline entries with cache lookup + collect misses
+                // TODO: Batch cache lookup for better performance
+                var addedCount = 0
+                var misses: [CacheMiss] = []
 
-                // Try to get cache for this entry
-                let key = CacheKey(content: entry.contentSha256, window: entry.windowSha256 ?? "")
-                let cache = try? orchestrator.getCachedTimeline(key: key)
+                for entry in newEntries {
+                    // Deduplicate using seenEntryIDs
+                    guard !seenEntryIDs.contains(entry.id) else {
+                        log.debug("Skipping duplicate entry: \(entry.id)")
+                        continue
+                    }
 
-                // Collect cache miss for background generation
-                if cache == nil, let windowSha = entry.windowSha256 {
-                    let miss = CacheMiss(
-                        entryId: entry.id,
-                        contentSha256: entry.contentSha256,
-                        windowSha256: windowSha,
-                        content: entry.content,
-                        context: entry.content,  // TODO: Add surrounding context
-                        kind: entry.kind,
-                        provider: entry.provider
-                    )
-                    misses.append(miss)
+                    seenEntryIDs.insert(entry.id)
+
+                    // Try to get cache for this entry
+                    let key = CacheKey(content: entry.contentSha256, window: entry.windowSha256 ?? "")
+                    let cache = try? orchestrator.getCachedTimeline(key: key)
+
+                    // Collect cache miss for background generation
+                    if cache == nil, let windowSha = entry.windowSha256 {
+                        let miss = CacheMiss(
+                            entryId: entry.id,
+                            contentSha256: entry.contentSha256,
+                            windowSha256: windowSha,
+                            content: entry.content,
+                            context: entry.content,  // TODO: Add surrounding context
+                            kind: entry.kind,
+                            provider: entry.provider
+                        )
+                        misses.append(miss)
+                    }
+
+                    let timelineEntry = toTimelineEntry(entry, cached: cache)
+                    appendEntry(timelineEntry)
+                    addedCount += 1
                 }
 
-                let timelineEntry = toTimelineEntry(entry, cached: cache)
-                appendEntry(timelineEntry)
-                addedCount += 1
+                // Queue cache misses for background generation
+                if !misses.isEmpty, let generator = cacheMissGenerator {
+                    Task {
+                        await generator.queueMisses(misses)
+                    }
+                }
+
+                // Sort to maintain chronological ordering: timestamp ASC, id ASC
+                sortEntriesChronologically()
+
+                // Trim to max size and prune dedupe set (ensures bounded memory)
+                trimEntries()
                 pruneSeenIDsIfNeeded()
-            }
 
-            // Queue cache misses for background generation
-            if !misses.isEmpty, let generator = cacheMissGenerator {
-                Task {
-                    await generator.queueMisses(misses)
+                // Update cursor to latest entry added
+                if let latestNew = newEntries.max(by: { a, b in
+                    if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                    if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                    return a.id < b.id
+                }) {
+                    lastSeenCursor = (timestamp: latestNew.timestamp, createdAt: latestNew.createdAt, id: latestNew.id)
                 }
+
+                lastUpdate = Date()
+
+                let elapsed = Date().timeIntervalSince(startTime)
+                log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
+            } catch {
+                lastError = "Failed to fetch new entries: \(error.localizedDescription)"
+                log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
             }
-
-            // Sort to maintain chronological ordering: timestamp ASC, id ASC
-            sortEntriesChronologically()
-
-            // Trim to max size
-            trimEntries()
-
-            // Update cursor to latest entry added
-            if let latestNew = newEntries.max(by: { a, b in
-                if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
-                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-                return a.id < b.id
-            }) {
-                lastSeenCursor = (timestamp: latestNew.timestamp, createdAt: latestNew.createdAt, id: latestNew.id)
-            }
-
-            lastUpdate = Date()
-
-            let elapsed = Date().timeIntervalSince(startTime)
-            log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
-        } catch {
-            lastError = "Failed to fetch new entries: \(error.localizedDescription)"
-            log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
-        }
+        } while updateDirty
     }
 
     nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
