@@ -141,6 +141,12 @@ actor FoundationLLM {
     /// Uses line-wise scanning to avoid regex catastrophic backtracking
     func stripQuotedAndCode(_ text: String) -> String {
         var result = text
+
+        // Fast path: if no markers present, skip expensive processing
+        if !result.contains("```") && !result.contains("\"\"\"") && !result.contains(">") && !result.contains("`") {
+            return collapseWhitespace(result)
+        }
+
         var lines: [String] = []
         var inCodeBlock = false
 
