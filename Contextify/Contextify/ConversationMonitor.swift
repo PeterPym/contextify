@@ -140,6 +140,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
+    @ObservationIgnored private var updateDrainMaxIters = 8  // Max drain loop iterations to prevent starvation
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
 
     private init() {}
@@ -830,7 +831,16 @@ final class ConversationMonitor {
                 lastError = "Failed to fetch new entries: \(error.localizedDescription)"
                 log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")
             }
-        } while updateDirty
+
+            // Check starvation guard
+            if updateDirty && updateDrainMaxIters > 0 {
+                updateDrainMaxIters -= 1
+            } else {
+                break
+            }
+        } while true
+
+        updateDrainMaxIters = 8  // Reset for next call
     }
 
     nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
