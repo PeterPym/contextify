@@ -120,7 +120,7 @@ actor TimelineCacheMissGenerator {
 
             // Log which distinct session types were reset
             if !seenPairs.isEmpty {
-                let descriptions = seenPairs.map { "\($0.kind)/\($0.provider)" }
+                let descriptions = seenPairs.map { "\($0.kind)/\($0.provider)" }.sorted()
                 log.info("Batch reset \(seenPairs.count) distinct session types: \(descriptions.joined(separator: ", "))")
             }
 
