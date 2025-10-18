@@ -246,6 +246,7 @@ final class LLMBenchmarks: XCTestCase {
             throw XCTSkip("Set RUN_LLM_BENCH=1 to run performance benchmarks")
         }
 
+        #if canImport(FoundationModels)
         let iterations = 1_000
         let instructions = "Summarize text concisely."
 
@@ -259,6 +260,9 @@ final class LLMBenchmarks: XCTestCase {
         // Informational only - no assertion
         print(String(format: "Session creation avg: %.3f ms", avgMs))
         print("Decision: use stateless if < 1-2ms, pooled+reset otherwise")
+        #else
+        throw XCTSkip("FoundationModels not available")
+        #endif
     }
 }
 
