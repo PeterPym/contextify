@@ -1138,10 +1138,12 @@ private extension FoundationLLM {
     func evictIdleControllers(maxIdle: TimeInterval = 300, maxTotal: Int = 16) async {
         let cutoff = Date().addingTimeInterval(-maxIdle)
 
-        // Remove idle controllers
-        controllers = controllers.filter { $0.value.lastUsed > cutoff }
+        // Keep only active entries (rebuild dictionary)
+        controllers = controllers.reduce(into: [:]) { acc, pair in
+            if pair.value.lastUsed > cutoff { acc[pair.key] = pair.value }
+        }
 
-        // Evict oldest if still over capacity
+        // Cap by LRU if still over capacity
         if controllers.count > maxTotal {
             let victims = controllers.sorted { $0.value.lastUsed < $1.value.lastUsed }
                                      .prefix(controllers.count - maxTotal)
