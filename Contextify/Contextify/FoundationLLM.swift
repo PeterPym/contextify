@@ -115,6 +115,11 @@ actor FoundationLLM {
     // Throttle to prevent overwhelming the LLM
     private let minRequestInterval: TimeInterval = 0.15 // 150ms between requests
 
+    // Runtime-configurable forceStateless mode (set via CONTEXTIFY_FORCE_STATELESS_LLM=1)
+    private let forceStatelessMode: Bool = {
+        ProcessInfo.processInfo.environment["CONTEXTIFY_FORCE_STATELESS_LLM"] == "1"
+    }()
+
     /// Hard timeout guard for LLM respond calls (prevents indefinite hangs)
     private func withTimeout<T: Sendable>(_ seconds: Double, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
@@ -690,10 +695,11 @@ actor SessionController {
 
     // Force stateless mode: reset session before every request
     // Enable if benchmarks show session creation is very fast (<2ms)
-    private let forceStateless = false
+    private let forceStateless: Bool
 
-    init(instructions: String) {
+    init(instructions: String, forceStateless: Bool = false) {
         self.instructions = instructions
+        self.forceStateless = forceStateless
     }
 
     private func getOrCreateSession() throws -> LanguageModelSession {
@@ -1054,7 +1060,7 @@ private extension FoundationLLM {
             controllers[instructions] = ControllerEntry(controller: entry.controller, lastUsed: .now)
             return entry.controller
         }
-        let controller = SessionController(instructions: instructions)
+        let controller = SessionController(instructions: instructions, forceStateless: forceStatelessMode)
         controllers[instructions] = ControllerEntry(controller: controller, lastUsed: .now)
         await evictIdleControllers()
         return controller
