@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import CryptoKit
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -12,11 +13,12 @@ enum TimelineError: Swift.Error {
     case guardrailViolation(reason: String)
     case decodingFailure(reason: String)
     case databaseError(String)
+    case unexpected(String)
     case cancelled
 
     var isRetryable: Bool {
         switch self {
-        case .llmTimeout, .databaseError: return true
+        case .llmTimeout, .databaseError, .unexpected: return true
         case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled: return false
         }
     }
@@ -31,23 +33,41 @@ enum TimelineError: Swift.Error {
             return "Content could not be summarized due to safety filters."
         case .decodingFailure:
             return "Summary format was invalid."
-        case .databaseError:
-            return "A database error occurred."
+        case .databaseError(let msg):
+            return "A database error occurred: \(msg)"
+        case .unexpected(let msg):
+            return "An unexpected error occurred: \(msg)"
         case .cancelled:
             return "Operation was cancelled."
         }
     }
 }
 
+// SHA256 hex helper
+extension Digest {
+    var hexString: String {
+        map { String(format: "%02x", $0) }.joined()
+    }
+    func hexPrefix(_ length: Int) -> String {
+        String(hexString.prefix(length))
+    }
+}
+
 actor FoundationLLM {
-    /// Helper to parse token overflow info from error context
-    private static func parseOverflow(from debug: String) -> (tokens: Int, limit: Int)? {
+    /// Helper to parse token overflow info from error context with targeted regex
+    private static func parseOverflow(from s: String) -> (tokens: Int, limit: Int)? {
         // Example: "Content contains 4360-4369 tokens, which exceeds the maximum allowed context size of 4096."
-        let digits = debug.split(whereSeparator: { !$0.isNumber }).map { Int($0) }.compactMap { $0 }
-        guard digits.count >= 2 else { return nil }
-        let tokens = digits[0]
-        let limit = digits.last!
-        return (tokens, limit)
+        let pattern = #"contains\s+(\d+)(?:-\d+)?\s+tokens.*?maximum.*?(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) else {
+            return nil
+        }
+        func extractInt(_ index: Int) -> Int {
+            let range = match.range(at: index)
+            let substring = (s as NSString).substring(with: range)
+            return Int(substring) ?? 0
+        }
+        return (extractInt(1), extractInt(2))
     }
 
     /// Timeout wrapper for LLM respond calls is handled internally by LanguageModelSession
@@ -507,7 +527,7 @@ actor FoundationLLM {
                 throw tErr
             } catch {
                 log.error("[\(reqNum)] timeline summarize unexpected error: \(error.localizedDescription, privacy: .public)")
-                throw TimelineError.databaseError(error.localizedDescription)
+                throw TimelineError.unexpected(error.localizedDescription)
             }
         }
         #endif
