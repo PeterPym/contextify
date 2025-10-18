@@ -826,6 +826,30 @@ actor SessionController {
             throw error
         }
     }
+
+    // MARK: - DEBUG hooks for testing
+
+    #if DEBUG
+    /// Get current waiter count for testing FIFO queue behavior
+    func _debugWaiterCount() async -> Int {
+        waiters.count
+    }
+
+    /// Get current epoch for testing epoch tracking and reset behavior
+    func _debugEpoch() async -> Int {
+        epoch
+    }
+
+    /// Get current request count for testing circuit breaker
+    func _debugRequestCount() async -> Int {
+        requestCount
+    }
+
+    /// Get consecutive error count for testing circuit breaker
+    func _debugConsecutiveErrors() async -> Int {
+        consecutiveErrors
+    }
+    #endif
 }
 #endif
 

@@ -278,84 +278,93 @@ final class ConcurrencyAndLifecycleTests: XCTestCase {
     }
 
     func testSessionControllerFIFO() async throws {
-        // Test that SessionController processes requests in FIFO order
+        // Test that SessionController FIFO queue using DEBUG hooks
+        #if DEBUG
         let controller = SessionController(instructions: "Test", forceStateless: false)
 
-        var results: [Int] = []
-        let lock = NSLock()
+        // Initially no waiters
+        let initialCount = await controller._debugWaiterCount()
+        XCTAssertEqual(initialCount, 0, "Queue should start empty")
 
-        // Launch 5 concurrent tasks
-        await withTaskGroup(of: Void.self) { group in
-            for i in 0..<5 {
-                group.addTask {
-                    // Each task would normally call controller.generate()
-                    // but we can't do that without a real LLM, so we just
-                    // verify the FIFO queue structure exists
-                    lock.lock()
-                    results.append(i)
-                    lock.unlock()
-                }
-            }
-        }
-
-        // FIFO queue ensures ordered processing
-        XCTAssertEqual(results.count, 5)
+        // Note: This test verifies the DEBUG hook works
+        // Full FIFO ordering tests require mocking LLM calls
+        #else
+        throw XCTSkip("DEBUG hooks only available in debug builds")
+        #endif
     }
 
     func testCancellationSafety() async throws {
         // Test that cancelled tasks don't leak in the waiter queue
+        #if DEBUG
         let controller = SessionController(instructions: "Test", forceStateless: false)
 
-        let task = Task {
-            // This would normally call controller.generate()
-            // The cancellation handler marks the waiter as cancelled
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
+        // Verify waiter queue starts empty
+        let initialCount = await controller._debugWaiterCount()
+        XCTAssertEqual(initialCount, 0, "Queue should start empty")
 
-        // Cancel immediately
-        task.cancel()
-
-        // Wait for cancellation to propagate
-        _ = try? await task.value
-
-        // Cancelled waiters are skipped in release()
-        XCTAssertTrue(true, "Cancellation safety implemented")
+        // Note: Full cancellation safety test requires mocking acquire/release
+        // This verifies DEBUG hook access works
+        #else
+        throw XCTSkip("DEBUG hooks only available in debug builds")
+        #endif
     }
 
     func testCircuitBreakerBehavior() async throws {
-        // Test that SessionController circuit breaker triggers after limits
+        // Test that SessionController circuit breaker counters work
+        #if DEBUG
         let controller = SessionController(instructions: "Test", forceStateless: false)
+
+        // Verify counters start at zero
+        let requestCount = await controller._debugRequestCount()
+        let errorCount = await controller._debugConsecutiveErrors()
+        XCTAssertEqual(requestCount, 0, "Request count should start at 0")
+        XCTAssertEqual(errorCount, 0, "Error count should start at 0")
 
         // Circuit breaker limits:
         // - Max 15 requests per session
         // - Max 3 consecutive errors
-
-        // After reaching limits, session is reset automatically
-        // This prevents indefinite context accumulation
-
-        XCTAssertTrue(true, "Circuit breaker limits: 15 requests, 3 consecutive errors")
+        // Full test requires mocking LLM calls to increment counters
+        #else
+        throw XCTSkip("DEBUG hooks only available in debug builds")
+        #endif
     }
 
     func testEpochTracking() async throws {
-        // Test that session epoch prevents reset fighting
+        // Test that session epoch increments on reset
+        #if DEBUG
         let controller = SessionController(instructions: "Test", forceStateless: false)
 
-        // Each reset increments epoch counter
-        await controller.reset()
-        await controller.reset()
+        // Get initial epoch
+        let initialEpoch = await controller._debugEpoch()
 
-        // Epoch tracking ensures cross-session tasks are cancelled
-        XCTAssertTrue(true, "Session epoch tracking implemented")
+        // Reset should increment epoch
+        await controller.reset()
+        let afterFirstReset = await controller._debugEpoch()
+        XCTAssertGreaterThan(afterFirstReset, initialEpoch, "Epoch should increment after reset")
+
+        // Second reset should increment again
+        await controller.reset()
+        let afterSecondReset = await controller._debugEpoch()
+        XCTAssertGreaterThan(afterSecondReset, afterFirstReset, "Epoch should increment on each reset")
+        #else
+        throw XCTSkip("DEBUG hooks only available in debug builds")
+        #endif
     }
 
     func testRuntimeConfigurableForceStateless() async throws {
-        // Test that forceStateless mode can be enabled via environment variable
+        // Test that forceStateless mode can be toggled at runtime
         let envEnabled = ProcessInfo.processInfo.environment["CONTEXTIFY_FORCE_STATELESS_LLM"] == "1"
 
         // When enabled, session is reset before every request
         // Useful if benchmarks show session creation is very fast (<2ms)
 
         XCTAssertFalse(envEnabled, "Force stateless mode is off by default")
+
+        // Test runtime setter exists and is callable
+        FoundationLLM.shared.setForceStateless(true)
+        FoundationLLM.shared.setForceStateless(false)
+
+        // Note: Actual behavior requires LLM calls to verify reset on each request
     }
 }
 #endif
