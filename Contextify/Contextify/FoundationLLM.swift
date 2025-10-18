@@ -103,11 +103,16 @@ actor FoundationLLM {
     /// Set forceStateless mode at runtime (overrides environment variable)
     /// When changed, all existing controllers are cleared to apply new setting
     @available(macOS 26.0, *)
-    func setForceStateless(_ enabled: Bool) {
+    func setForceStateless(_ enabled: Bool) async {
         #if canImport(FoundationModels)
         forceStatelessMode = enabled
-        controllers.removeAll()  // Clear cache to force recreation with new setting
-        log.info("ForceStateless mode \(enabled ? "enabled" : "disabled") - cleared controller cache")
+        // Proactively reset existing sessions to apply new policy immediately
+        let count = controllers.count
+        for (_, entry) in controllers {
+            await entry.controller.reset()
+        }
+        controllers.removeAll()
+        log.info("ForceStateless=\(enabled); reset \(count) sessions and cleared cache")
         #endif
     }
 

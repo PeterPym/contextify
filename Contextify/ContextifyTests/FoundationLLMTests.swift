@@ -361,8 +361,8 @@ final class ConcurrencyAndLifecycleTests: XCTestCase {
         XCTAssertFalse(envEnabled, "Force stateless mode is off by default")
 
         // Test runtime setter exists and is callable
-        FoundationLLM.shared.setForceStateless(true)
-        FoundationLLM.shared.setForceStateless(false)
+        await FoundationLLM.shared.setForceStateless(true)
+        await FoundationLLM.shared.setForceStateless(false)
 
         // Note: Actual behavior requires LLM calls to verify reset on each request
     }
