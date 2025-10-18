@@ -19,9 +19,9 @@ struct CacheMiss: Sendable {
     let kind: String
     let provider: String
 
-    /// Composite key for deduplication
-    var cacheKey: String {
-        "\(contentSha256)|\(windowSha256)"
+    /// Composite key for deduplication (returns struct for type safety)
+    var cacheKey: CacheKey {
+        CacheKey(content: contentSha256, window: windowSha256)
     }
 }
 
@@ -29,7 +29,7 @@ struct CacheMiss: Sendable {
 actor TimelineCacheMissGenerator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
     private let orchestrator: TranscriptOrchestrator
-    private var pendingMisses: [String: CacheMiss] = [:]  // Keyed by cacheKey for de-duplication
+    private var pendingMisses: [CacheKey: CacheMiss] = [:]  // Keyed by CacheKey for de-duplication
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
 
