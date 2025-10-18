@@ -61,8 +61,9 @@ actor FoundationLLM {
         var controller: SessionController
         var lastUsed: Date
     }
-    // Type-erased storage to avoid availability restrictions on stored properties
-    private var controllers: [String: Any] = [:]  // Actually stores ControllerEntry values
+
+    @available(macOS 26.0, *)
+    private var controllers: [String: ControllerEntry] = [:]
     #endif
 
     /// Helper to parse token overflow info from error context with targeted regex
@@ -89,7 +90,7 @@ actor FoundationLLM {
     func resetSession(kind: TimelineEntryKind, provider: TimelineSourceContext.Provider? = nil) async {
         #if canImport(FoundationModels)
         let key = instructionsForTimeline(kind: kind, provider: provider)
-        if let entry = controllers[key] as? ControllerEntry {
+        if let entry = controllers[key] {
             await entry.controller.reset()
             controllers[key] = nil
         }
@@ -1070,9 +1071,9 @@ private extension FoundationLLM {
     // Controllers now moved to actor state (see top of FoundationLLM actor)
 
     func getController(for instructions: String) async -> SessionController {
-        if let entry = controllers[instructions] as? ControllerEntry {
+        if let entry = controllers[instructions] {
             // Update last-used timestamp
-            controllers[instructions] = ControllerEntry(controller: entry.controller, lastUsed: .now)
+            controllers[instructions]?.lastUsed = .now
             return entry.controller
         }
         let controller = SessionController(instructions: instructions, forceStateless: forceStatelessMode)
@@ -1086,24 +1087,16 @@ private extension FoundationLLM {
     func evictIdleControllers(maxIdle: TimeInterval = 300, maxTotal: Int = 16) async {
         let cutoff = Date().addingTimeInterval(-maxIdle)
 
-        // Remove idle controllers (cast to ControllerEntry for filtering)
-        controllers = controllers.filter { (key, value) in
-            guard let entry = value as? ControllerEntry else { return false }
-            return entry.lastUsed > cutoff
-        }
+        // Remove idle controllers
+        controllers = controllers.filter { $0.value.lastUsed > cutoff }
 
         // Evict oldest if still over capacity
         if controllers.count > maxTotal {
-            // Convert to typed entries for sorting
-            let typedEntries: [(key: String, entry: ControllerEntry)] = controllers.compactMap { (key, value) in
-                guard let entry = value as? ControllerEntry else { return nil }
-                return (key: key, entry: entry)
-            }
-
-            let victims = typedEntries.sorted { $0.entry.lastUsed < $1.entry.lastUsed }
-                                      .prefix(controllers.count - maxTotal)
-            for victim in victims {
-                controllers.removeValue(forKey: victim.key)
+            let victims = controllers.sorted { $0.value.lastUsed < $1.value.lastUsed }
+                                     .prefix(controllers.count - maxTotal)
+                                     .map(\.key)
+            for key in victims {
+                controllers.removeValue(forKey: key)
             }
         }
     }
