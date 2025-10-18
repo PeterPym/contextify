@@ -24,5 +24,9 @@ struct TranscriptInventoryWindow: View {
         }
       }
     }
+    .task {
+      // Load sessions from database when window appears
+      await monitor.loadAllSessionsFromDatabase()
+    }
   }
 }
