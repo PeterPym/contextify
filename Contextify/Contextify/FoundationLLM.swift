@@ -54,6 +54,10 @@ extension Digest {
 }
 
 actor FoundationLLM {
+    // Actor-isolated controller cache (prevents data races, only available when FoundationModels exists)
+    // Using AnyObject to avoid availability checking on stored property
+    private var controllersStorage: [String: AnyObject] = [:]
+
     /// Helper to parse token overflow info from error context with targeted regex
     private static func parseOverflow(from s: String) -> (tokens: Int, limit: Int)? {
         // Example: "Content contains 4360-4369 tokens, which exceeds the maximum allowed context size of 4096."
@@ -86,18 +90,25 @@ actor FoundationLLM {
         }
     }
 
-    /// Reset the timeline summarizer session (cached by instructions)
-    func resetTimelineSummarizerSession() async {
+    /// Reset session for a specific entry kind (replaces resetTimelineSummarizerSession)
+    func resetSession(kind: TimelineEntryKind, actionHint: String?) async {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
-            // Find and reset controller for timeline instructions
-            let instructions = "You fill a TimelineSummary for an AI assistant response."
-            if let controller = Self.controllers[instructions] {
+            let key = buildInstructions(kind: kind, actionHint: actionHint)
+            if let controller = controllersStorage[key] as? SessionController {
                 await controller.reset()
+                controllersStorage[key] = nil
             }
         }
         #endif
     }
+
+    /// Legacy method - use resetSession(kind:actionHint:) instead
+    @available(*, deprecated, renamed: "resetSession(kind:actionHint:)")
+    func resetTimelineSummarizerSession() async {
+        await resetSession(kind: .assistant, actionHint: nil)
+    }
+
     static let shared = FoundationLLM()
 
     private let log = Logger(subsystem: "dev.contextify", category: "FoundationLLM")
@@ -300,15 +311,8 @@ actor FoundationLLM {
                 log.warning("Retryable error on attempt \(attempt): \(err.userMessage)")
 
                 // IMPORTANT: reset session before retry to prevent context accumulation
-                #if canImport(FoundationModels)
-                if #available(macOS 26.0, *) {
-                    let instructions = buildInstructions(kind: kind, actionHint: actionHint)
-                    if let controller = Self.controllers[instructions] {
-                        await controller.reset()
-                        log.info("Reset session before retry \(attempt)")
-                    }
-                }
-                #endif
+                await resetSession(kind: kind, actionHint: actionHint)
+                log.info("Reset session before retry \(attempt)")
 
                 // Exponential backoff with jitter
                 let jitter = UInt64(Int.random(in: 0...(200_000_000)))
@@ -968,16 +972,14 @@ private extension FoundationLLM {
 #if canImport(FoundationModels)
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 private extension FoundationLLM {
-    // P2 fix: Actor-isolated cache prevents concurrent access
-    // Each instructions string gets its own SessionController (single-flight guarantee)
-    nonisolated(unsafe) static var controllers: [String: SessionController] = [:]
+    // Controllers now moved to actor state (see top of FoundationLLM actor)
 
     func getController(for instructions: String) async -> SessionController {
-        if let existing = Self.controllers[instructions] {
+        if let existing = controllersStorage[instructions] as? SessionController {
             return existing
         }
         let controller = SessionController(instructions: instructions)
-        Self.controllers[instructions] = controller
+        controllersStorage[instructions] = controller
         return controller
     }
 
