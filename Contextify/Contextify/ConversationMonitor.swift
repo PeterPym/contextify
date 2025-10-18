@@ -70,11 +70,34 @@ final class ConversationMonitor {
     /// Read-only view over state.entries (single source of truth)
     var entries: [TimelineEntry] { state.entries }
 
+    /// Cached filtered entries (invalidated when entries or currentSessionId changes)
+    @ObservationIgnored private var cachedVisibleEntries: [TimelineEntry]?
+    @ObservationIgnored private var cachedForSessionId: String??
+    @ObservationIgnored private var cachedForEntriesCount: Int = 0
+
     /// Entries filtered to the active session (UI-visible subset)
     /// When no session is selected, shows all entries (project-wide view)
+    /// Uses optional caching to avoid recomputing filter on every access
     var visibleEntries: [TimelineEntry] {
-        guard let id = currentSessionId else { return entries }  // Show all when no session filter
-        return entries.filter { $0.sessionId == id }
+        // Check if cache is valid
+        if let cached = cachedVisibleEntries,
+           cachedForSessionId == currentSessionId,
+           cachedForEntriesCount == entries.count {
+            return cached
+        }
+
+        // Recompute and cache
+        let filtered: [TimelineEntry]
+        if let id = currentSessionId {
+            filtered = entries.filter { $0.sessionId == id }
+        } else {
+            filtered = entries  // Show all when no session filter
+        }
+
+        cachedVisibleEntries = filtered
+        cachedForSessionId = currentSessionId
+        cachedForEntriesCount = entries.count
+        return filtered
     }
 
     private(set) var isCollapsed = false
