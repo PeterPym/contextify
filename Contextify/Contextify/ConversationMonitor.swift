@@ -317,13 +317,11 @@ final class ConversationMonitor {
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
         state.replace(with: new)
-        pruneSeenIDsIfNeeded()  // Keep dedupe set bounded after replace
     }
 
     @MainActor
     private func appendEntry(_ e: TimelineEntry) {
         state.append(e)
-        pruneSeenIDsIfNeeded()  // Keep dedupe set bounded after append
     }
 
     @MainActor
@@ -339,7 +337,6 @@ final class ConversationMonitor {
     @MainActor
     private func trimEntries() {
         state.trim(to: config.maxEntries)
-        pruneSeenIDsIfNeeded()  // Keep dedupe set bounded
     }
 
     @MainActor
