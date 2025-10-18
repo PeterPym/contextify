@@ -221,6 +221,9 @@ public protocol EntryRepository {
 
   // v2: Keyset pagination for incremental updates
   func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry]
+
+  // Get latest conversation timestamp for each transcript in a project
+  func latestTimestampsByTranscript(projectId: String) throws -> [String: Int]
 }
 
 public final class EntryRepositoryImpl: EntryRepository {
@@ -334,6 +337,27 @@ public final class EntryRepositoryImpl: EntryRepository {
         .filter(sql: "(timestamp, created_at, id) > (?, ?, ?)", arguments: [after.timestamp, after.createdAt, after.id])
         .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
         .fetchAll(db)
+    }
+  }
+
+  public func latestTimestampsByTranscript(projectId: String) throws -> [String: Int] {
+    try db.read { db in
+      let sql = """
+        SELECT transcript_id, MAX(timestamp) as latest_timestamp
+        FROM transcript_entries
+        WHERE project_id = ?
+        GROUP BY transcript_id
+      """
+
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+      var result: [String: Int] = [:]
+      for row in rows {
+        if let transcriptId: String = row["transcript_id"],
+           let timestamp: Int = row["latest_timestamp"] {
+          result[transcriptId] = timestamp
+        }
+      }
+      return result
     }
   }
 }

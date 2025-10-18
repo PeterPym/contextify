@@ -198,6 +198,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try entryRepo.search(content: content, projectId: projectId)
   }
 
+  public func latestTimestampsByTranscript(projectId: String) throws -> [String: Int] {
+    try entryRepo.latestTimestampsByTranscript(projectId: projectId)
+  }
+
   // v2: Single-query feed with cache join
   public func getRecentFeed(forProject projectId: String, limit: Int = 50, generatorSignature: String) throws -> [(TranscriptEntry, TimelineCache?)] {
     try entryRepo.recentFeed(projectId: projectId, limit: limit, generatorSignature: generatorSignature)
