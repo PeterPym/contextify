@@ -123,12 +123,14 @@ final class ConversationMonitor {
     // MUST be observable for UI - visibleEntries filtering depends on this
     private var currentSessionId: String? {  // Current session identifier for timeline entries
         didSet {
-            cachedVisibleEntries = nil
-            cachedForSessionId = nil
-            cachedForRevision = .max
+            onProjectOrSessionChange()
         }
     }
-    @ObservationIgnored private var currentProjectId: String?  // SQL project ID
+    @ObservationIgnored private var currentProjectId: String? {  // SQL project ID
+        didSet {
+            onProjectOrSessionChange()
+        }
+    }
     @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
     @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -263,6 +265,17 @@ final class ConversationMonitor {
         lastSeenCursor = nil
         currentProjectId = nil
         cacheMissGenerator = nil
+    }
+
+    /// Cancel pending debounce task on project/session changes to avoid late callbacks into torn state
+    @MainActor
+    private func onProjectOrSessionChange() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        // Also invalidate visible entries cache
+        cachedVisibleEntries = nil
+        cachedForSessionId = nil
+        cachedForRevision = .max
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
