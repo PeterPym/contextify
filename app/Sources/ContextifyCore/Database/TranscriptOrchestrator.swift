@@ -72,14 +72,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       parser: parser
     )
 
-    // Initialize watcher with metadata invalidation callback
+    // Initialize watcher (invalidation callback set after initialization)
     self.watcher = TranscriptWatcher(
       hooverEngine: hooverEngine,
-      transcriptRepo: transcriptRepo,
-      metadataInvalidator: { [weak metadataRepo] transcriptId in
-        try? metadataRepo?.delete(transcriptId)
-      }
+      transcriptRepo: transcriptRepo
     )
+
+    // Set metadata invalidation callback with weak self reference
+    watcher.setMetadataInvalidator { [weak self] transcriptId in
+      try? self?.deleteMetadata(forTranscript: transcriptId)
+    }
   }
 
   // MARK: - Project Management

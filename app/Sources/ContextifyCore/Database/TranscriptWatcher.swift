@@ -7,7 +7,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatch
 public final class TranscriptWatcher {
   private let hooverEngine: HooverEngine
   private let transcriptRepo: TranscriptRepository
-  private let metadataInvalidator: ((String) throws -> Void)?
+  private var metadataInvalidator: ((String) throws -> Void)?
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var debounceTimers: [String: Timer] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
@@ -20,6 +20,11 @@ public final class TranscriptWatcher {
     self.hooverEngine = hooverEngine
     self.transcriptRepo = transcriptRepo
     self.metadataInvalidator = metadataInvalidator
+  }
+
+  /// Set metadata invalidation callback (useful when orchestrator needs weak self reference)
+  public func setMetadataInvalidator(_ invalidator: @escaping (String) throws -> Void) {
+    self.metadataInvalidator = invalidator
   }
 
   /// Start watching a transcript file for changes
