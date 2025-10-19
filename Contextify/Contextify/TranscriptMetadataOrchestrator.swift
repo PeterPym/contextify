@@ -15,28 +15,14 @@ actor TranscriptMetadataOrchestrator {
   private let log = Logger(subsystem: "dev.contextify.metadata", category: "Orchestrator")
   private var orchestrator: TranscriptOrchestrator!  // Injected after init
   private let builder = ContextBuilder()
-  private let llm: TranscriptMetadataLLM
   private let postProcessor = MetadataPostProcessor()
 
-  private init() {
-    self.llm = TranscriptMetadataLLM.shared
-  }
+  private init() {}
 
   /// Initialize with database orchestrator (call once from app startup)
   func initialize(orchestrator: TranscriptOrchestrator) async {
     self.orchestrator = orchestrator
-    log.debug("TranscriptMetadataOrchestrator initialized with SQL backend")
-
-    // Calibrate LLM overhead on startup
-    #if canImport(FoundationModels)
-    if #available(macOS 26, *) {
-      do {
-        try await llm.calibrateOverheadIfNeeded()
-      } catch {
-        log.warning("Overhead calibration failed, using default: \(error.localizedDescription)")
-      }
-    }
-    #endif
+    log.debug("TranscriptMetadataOrchestrator initialized with SQL backend (using FoundationLLM)")
   }
 
   private let currentPromptVersion = 2
@@ -51,7 +37,6 @@ actor TranscriptMetadataOrchestrator {
 
   // Concurrency control (using shared utility)
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
-  private let llmGate = ConcurrencyGate(permits: 2)
 
   // Observability stats
   private struct Stats {
@@ -200,26 +185,7 @@ actor TranscriptMetadataOrchestrator {
       return metadata
     }
 
-    // Calculate available token budget using actual LLM tokenizer
-    #if canImport(FoundationModels)
-    let availableTokens: Int
-    if #available(macOS 26, *) {
-      // For adaptive strategy, we need to know the budget first
-      // Use a preliminary count estimate to decide strategy
-      let preliminaryCount = exchanges.count
-      availableTokens = await llm.calculateAvailableContextTokens(
-        sampledCount: min(preliminaryCount, MetadataBudgets.bookendCount * 2),
-        totalCount: preliminaryCount
-      )
-    } else {
-      // Fallback to static budget if LLM not available
-      availableTokens = MetadataBudgets.samplerBudget
-    }
-    #else
-    let availableTokens = MetadataBudgets.samplerBudget
-    #endif
-
-    // Select strategy based on available budget and exchange count
+    // Select strategy based on exchange count
     let strategy: GenerationStrategy
     if exchanges.count <= MetadataBudgets.fullStrategyLimit {
       strategy = .full
@@ -227,67 +193,73 @@ actor TranscriptMetadataOrchestrator {
       strategy = .adaptive
     }
 
-    // Build context with dynamic budget (background-safe, no MainActor needed)
+    // Build context (background-safe, no MainActor needed)
     let samplingStart = Date()
     let context = try builder.build(
       exchanges: exchanges,
       strategy: strategy,
-      budgetTokens: availableTokens
+      budgetTokens: MetadataBudgets.samplerBudget
     )
     let samplingTime = Date().timeIntervalSince(samplingStart)
 
-    // Log context size for debugging
-    log.info("Built context: \(context.text.count) chars, estimated \(context.text.count / 4) tokens, budget was \(availableTokens) tokens")
+    log.info("Built context: \(context.text.count) chars, strategy=\(strategy.rawValue)")
+
+    // Get versioned instructions for session isolation
+    let instructions = TranscriptPrompts.metadataInstructions()
 
     // Call LLM (with fallback to bookends on failure)
     var metadata: TranscriptMetadata
     let llmStart = Date()
 
     do {
-      // Wait for LLM slot
-      await llmGate.acquire()
-      defer { Task { await llmGate.release() } }
-
       #if canImport(FoundationModels)
       if #available(macOS 26, *) {
         stats.llmCalls += 1
-        let guided = try await llm.singlePass(
+
+        // 1. Pre-flight validation with RAW generation (no JSON schema overhead)
+        let fitted = try await TranscriptContextFitting.ensureFitsViaRawPreflight(
           context: context.text,
           sampledCount: context.sampledCount,
           totalCount: exchanges.count,
-          strategy: strategy.rawValue
+          instructions: instructions
+        )
+
+        // 2. Guided generation with fitted context (routed through FoundationLLM)
+        let prompt = """
+        CONTEXT: This excerpt shows \(context.sampledCount) of \(exchanges.count) messages. First 10 and last 10 are always included; the middle is selected for importance.
+
+        \(fitted)
+        """
+
+        let options = GenerationOptions(
+          sampling: .greedy,
+          temperature: 0,
+          maximumResponseTokens: 150
+        )
+
+        let guided: GuidedTranscriptMetadata = try await FoundationLLM.shared.generateGuided(
+          instructions: instructions,
+          prompt: prompt,
+          generating: GuidedTranscriptMetadata.self,
+          includeSchema: true,
+          options: options
         )
 
         // Post-process (background-safe)
-        metadata = postProcessor.apply(to: guided, context: context.text)
+        metadata = postProcessor.apply(to: guided, context: fitted)
         metadata.messageCount = exchanges.count
-        metadata.strategy = "singlePass:\(strategy.rawValue)"
+        metadata.strategy = "foundationLLM:\(strategy.rawValue)"
 
         await circuitBreaker.recordSuccess()
       } else {
-        throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
+        throw LLMError.unavailable
       }
       #else
-      throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
+      throw LLMError.unavailable
       #endif
     } catch {
       stats.failures += 1
-
-      // Log error with specific context
-      if let llmError = error as? TranscriptMetadataLLM.LLMError,
-         case .contextWindowExceeded(let tokens, let limit) = llmError {
-        log.warning("Context window exceeded: \(tokens)/\(limit) tokens with \(strategy.rawValue) strategy")
-
-        // Check if remote fallback is enabled for rare overflow cases
-        if MetadataBudgets.enableRemoteLargeWindowFallback {
-          log.info("Remote large-window fallback enabled but not yet implemented - falling back to heuristic")
-          // TODO: Implement remote service call with 32K+ context window
-          // For now, fall through to existing fallback logic
-        }
-      } else {
-        log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
-      }
-
+      log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
       await circuitBreaker.recordFailure()
 
       // Try bookends fallback if we weren't already using it
@@ -296,45 +268,63 @@ actor TranscriptMetadataOrchestrator {
         let bookendContext = try builder.build(
           exchanges: exchanges,
           strategy: .bookends,
-          budgetTokens: availableTokens
+          budgetTokens: MetadataBudgets.samplerBudget
         )
 
         do {
-          await llmGate.acquire()
-          defer { Task { await llmGate.release() } }
-
           #if canImport(FoundationModels)
           if #available(macOS 26, *) {
             stats.llmCalls += 1
-            let guided = try await llm.singlePass(
+
+            let fittedBookend = try await TranscriptContextFitting.ensureFitsViaRawPreflight(
               context: bookendContext.text,
               sampledCount: bookendContext.sampledCount,
               totalCount: exchanges.count,
-              strategy: "bookends-fallback"
+              instructions: instructions
             )
 
-            metadata = postProcessor.apply(to: guided, context: bookendContext.text)
+            let bookendPrompt = """
+            CONTEXT: This excerpt shows \(bookendContext.sampledCount) of \(exchanges.count) messages. First 10 and last 10 are always included; the middle is selected for importance.
+
+            \(fittedBookend)
+            """
+
+            let options = GenerationOptions(
+              sampling: .greedy,
+              temperature: 0,
+              maximumResponseTokens: 150
+            )
+
+            let guided: GuidedTranscriptMetadata = try await FoundationLLM.shared.generateGuided(
+              instructions: instructions,
+              prompt: bookendPrompt,
+              generating: GuidedTranscriptMetadata.self,
+              includeSchema: true,
+              options: options
+            )
+
+            metadata = postProcessor.apply(to: guided, context: fittedBookend)
             metadata.messageCount = exchanges.count
-            metadata.strategy = "singlePass:bookends-fallback"
+            metadata.strategy = "foundationLLM:bookends-fallback"
 
             await circuitBreaker.recordSuccess()
           } else {
-            throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
+            throw LLMError.unavailable
           }
           #else
-          throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
+          throw LLMError.unavailable
           #endif
         } catch {
           stats.failures += 1
           log.error("Bookends fallback also failed, using heuristic")
           await circuitBreaker.recordFailure()
           metadata = HeuristicMetadata.generate(exchanges: exchanges)
-          metadata.strategy = "heuristic"  // DB constraint requires: full, bookends, or heuristic
+          metadata.strategy = "heuristic"
         }
       } else {
         // Already tried bookends, use heuristic
         metadata = HeuristicMetadata.generate(exchanges: exchanges)
-        metadata.strategy = "heuristic"  // DB constraint requires: full, bookends, or heuristic
+        metadata.strategy = "heuristic"
       }
     }
 
@@ -470,6 +460,10 @@ actor TranscriptMetadataOrchestrator {
 enum TranscriptMetadataError: Error {
   case notInitialized
   case orphanedTranscript(String)  // Transcript FK missing when saving metadata
+}
+
+enum LLMError: Error {
+  case unavailable
 }
 
 // MARK: - Record to UI Model Conversion
