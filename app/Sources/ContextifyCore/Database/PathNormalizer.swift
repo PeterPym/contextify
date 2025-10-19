@@ -3,34 +3,49 @@
 //  ContextifyCore
 //
 //  Path normalization utilities for canonical transcript identification.
-//  Handles symlinks, case-insensitive filesystems, and path standardization.
+//  Handles symlinks, case-insensitive filesystems, Unicode normalization, and path standardization.
 //
 
 import Foundation
 import CryptoKit
 
 /// Path normalization for canonical transcript identification
-/// - Resolves symlinks
+/// - Resolves symlinks (if file exists)
 /// - Standardizes paths (removes .., ., etc.)
-/// - Case-folds on case-insensitive filesystems (macOS default)
+/// - Unicode canonical composition (NFC)
+/// - Case-folds on case-insensitive volumes only
 public enum PathNormalizer {
 
     /// Normalize a file path for canonical comparison
     /// - Parameter path: Raw file path
-    /// - Returns: Normalized path (lowercased on macOS, standardized)
+    /// - Returns: Normalized path (Unicode NFC, conditionally lowercased)
     public static func normalize(_ path: String) -> String {
-        let url = URL(fileURLWithPath: path)
+        guard !path.isEmpty else { return "" }
 
-        // Resolve symlinks and standardize
-        let resolved = (try? url.resolvingSymlinksInPath()) ?? url
-        let standardized = resolved.standardized.path
+        let rawURL = URL(fileURLWithPath: path)
 
-        // Case-fold on case-insensitive FS (macOS default HFS+/APFS)
+        // Only resolve symlinks if file exists (avoid errors on non-existent paths)
+        let resolved: URL
+        if FileManager.default.fileExists(atPath: path) {
+            resolved = (try? rawURL.resolvingSymlinksInPath()) ?? rawURL
+        } else {
+            resolved = rawURL
+        }
+
+        // Standardize and apply Unicode canonical composition (NFC)
+        let standardized = resolved.standardized.path.precomposedStringWithCanonicalMapping
+
         #if os(macOS)
-        return standardized.lowercased()
-        #else
-        return standardized
+        // Check if volume is case-sensitive (some APFS volumes are case-sensitive)
+        let volumeURL = resolved.deletingLastPathComponent()
+        if let resourceValues = try? volumeURL.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]),
+           resourceValues.volumeSupportsCaseSensitiveNames == false {
+            // Case-insensitive volume - lowercase with POSIX locale for consistency
+            return standardized.lowercased(with: Locale(identifier: "en_US_POSIX"))
+        }
         #endif
+
+        return standardized
     }
 
     /// Compute SHA256 hash of normalized path

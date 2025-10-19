@@ -2,13 +2,13 @@
 //  ConcurrencyGate.swift
 //  ContextifyCore
 //
-//  Continuation-based concurrency gate (no spin-wait)
+//  Continuation-based concurrency gate (no spin-wait, cancellation-safe)
 //  Shared by: TimelineCacheMissGenerator, TranscriptMetadataOrchestrator
 //
 
 import Foundation
 
-/// Actor-based concurrency gate using continuations (no spin-wait)
+/// Actor-based concurrency gate using continuations with proper cancellation handling
 /// Limits concurrent access to a shared resource (e.g., LLM API)
 ///
 /// Usage:
@@ -17,12 +17,12 @@ import Foundation
 ///
 /// await gate.acquire()
 /// defer { Task { await gate.release() } }
-/// // ... protected work ...
+/// // ... protected work ..
 /// ```
 public actor ConcurrencyGate {
     private let maxPermits: Int
     private var availablePermits: Int
-    private var waiters: [(UUID, CheckedContinuation<Void, Never>)] = []
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     /// Initialize gate with maximum concurrent permits
     /// - Parameter permits: Maximum number of concurrent acquisitions
@@ -34,24 +34,31 @@ public actor ConcurrencyGate {
 
     /// Acquire a permit (suspends if none available)
     /// Always pair with `release()` in a defer block
+    /// Handles task cancellation gracefully
     public func acquire() async {
         if availablePermits > 0 {
             availablePermits -= 1
             return
         }
 
-        // No permits available - wait in queue
+        // No permits available - wait in queue with cancellation support
         let id = UUID()
-        await withCheckedContinuation { continuation in
-            waiters.append((id, continuation))
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                waiters[id] = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id)
+            }
         }
     }
 
     /// Release a permit (resumes next waiter if any)
     public func release() {
-        if let next = waiters.first {
-            waiters.removeFirst()
-            next.1.resume()
+        if let (id, continuation) = waiters.first {
+            waiters.removeValue(forKey: id)
+            continuation.resume()
         } else {
             availablePermits = min(availablePermits + 1, maxPermits)
         }
@@ -59,8 +66,8 @@ public actor ConcurrencyGate {
 
     /// Cancel a specific waiter (for cancellation support)
     /// - Parameter id: UUID of waiter to cancel
-    public func cancelWaiter(_ id: UUID) {
-        waiters.removeAll { $0.0 == id }
+    private func cancelWaiter(_ id: UUID) {
+        _ = waiters.removeValue(forKey: id)
     }
 
     /// Current number of available permits (for debugging)

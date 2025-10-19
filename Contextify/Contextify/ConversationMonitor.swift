@@ -192,16 +192,15 @@ final class ConversationMonitor {
                 // 3. Initialize cache miss generator
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
 
-                // Initialize metadata orchestrator with SQL backend
-                Task {
-                    await TranscriptMetadataOrchestrator.shared.initialize(orchestrator: self.orchestrator)
-                }
-
                 // 4. Start background work (discovery + debounced updates) in a single parent task
                 let orchestrator = self.orchestrator!
                 self.log.info("🚀 Spawning background tasks for project: \(projectId)")
                 self.backgroundTasks = Task { [weak self] in
                     guard let self else { return }
+
+                    // Initialize metadata orchestrator with SQL backend (await before use)
+                    await TranscriptMetadataOrchestrator.shared.initialize(orchestrator: orchestrator)
+
                     await withTaskGroup(of: Void.self) { group in
                         // Task 1: Discovery loop (structured, cancellable)
                         group.addTask { [weak self] in

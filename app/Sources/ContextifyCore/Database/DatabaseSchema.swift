@@ -104,49 +104,83 @@ enum DatabaseSchema {
       try db.execute(sql: "ANALYZE")
     }
 
-    // v3: Path normalization and freshness tracking for transcript inventory
-    migrator.registerMigration("v3_transcript_identity") { db in
+    // v3: Path normalization and freshness tracking for transcript inventory (schema only)
+    migrator.registerMigration("v3_schema") { db in
       // Add new columns for path normalization and content tracking
-      try db.alter(table: "transcripts") { t in
-        t.add(column: "normalized_path", .text)
-        t.add(column: "path_hash", .text)
-        t.add(column: "content_length", .integer)
-        t.add(column: "mtime_ns", .integer)
-        t.add(column: "content_sha256", .text)
-      }
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN normalized_path TEXT
+      """)
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN path_hash TEXT
+      """)
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN content_length INTEGER
+      """)
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN mtime_ms INTEGER
+      """)
+      try db.execute(sql: """
+        ALTER TABLE transcripts ADD COLUMN content_sha256 TEXT
+      """)
 
-      // Backfill existing transcripts with normalized paths and hashes
-      let existingTranscripts = try Row.fetchAll(db, sql: "SELECT id, file_path FROM transcripts")
-      for row in existingTranscripts {
-        let id: String = row["id"]
-        let filePath: String = row["file_path"]
+      // Create transcript_metadata table
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcript_metadata (
+          transcript_id TEXT PRIMARY KEY NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          topics TEXT NOT NULL CHECK(json_valid(topics)),
+          confidence REAL NOT NULL,
+          may_contain_hallucinations INTEGER NOT NULL DEFAULT 0,
+          needs_review INTEGER NOT NULL DEFAULT 0,
+          generated_at INTEGER NOT NULL,
+          model TEXT NOT NULL,
+          prompt_version INTEGER NOT NULL,
+          generator_version INTEGER NOT NULL,
+          transcript_sha256 TEXT NOT NULL,
+          message_count INTEGER NOT NULL,
+          strategy TEXT NOT NULL,
+          llm_calls INTEGER NOT NULL,
+          latency_ms INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      """)
 
-        // Normalize and hash the path
-        let (normalized, hash) = PathNormalizer.normalizeAndHash(filePath)
+      // Create indexes for transcript_metadata
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_project ON transcript_metadata(project_id)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_generated_at ON transcript_metadata(generated_at DESC)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_needs_review ON transcript_metadata(needs_review, generated_at DESC)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_prompt_gen ON transcript_metadata(prompt_version, generator_version)
+      """)
+    }
 
-        // Get file metadata if file still exists
-        var contentLength: Int64 = 0
-        var mtimeNs: Int = 0
-        var contentSHA: String = "pending"
+    // v3: Identity indexes (applied after backfill completes)
+    migrator.registerMigration("v3_identity_indexes") { db in
+      // Create unique index on (provider, provider_session_id) when present
+      try db.execute(sql: """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_session
+        ON transcripts(provider, provider_session_id)
+        WHERE provider_session_id IS NOT NULL AND provider_session_id <> ''
+      """)
 
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: filePath) {
-          contentLength = (attrs[.size] as? Int64) ?? 0
-          if let modDate = attrs[.modificationDate] as? Date {
-            mtimeNs = Int(modDate.timeIntervalSince1970 * 1_000_000_000)
-          }
-        }
-
-        try db.execute(sql: """
-          UPDATE transcripts
-          SET normalized_path = ?, path_hash = ?, content_length = ?, mtime_ns = ?, content_sha256 = ?
-          WHERE id = ?
-        """, arguments: [normalized, hash, contentLength, mtimeNs, contentSHA, id])
-      }
-
-      // Create unique index on (provider, path_hash) for identity
+      // Create unique index on (provider, path_hash) as fallback
       try db.execute(sql: """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_path_hash
-          ON transcripts(provider, path_hash)
+        ON transcripts(provider, path_hash)
+        WHERE (provider_session_id IS NULL OR provider_session_id = '')
+          AND path_hash IS NOT NULL
       """)
     }
 
