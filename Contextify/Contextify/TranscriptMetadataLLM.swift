@@ -49,21 +49,24 @@ actor TranscriptMetadataLLM {
   @available(macOS 26, *)
   private func acquire() async {
     if !inFlight {
-      inFlight = true
+      inFlight = true  // fast path gets the token
       return
     }
+    // Wait for token in FIFO queue
     await withCheckedContinuation { (cc: CheckedContinuation<Void, Never>) in
       waiters.append(cc)
     }
-    inFlight = true
+    // Will be resumed by release() - token is already set to inFlight
   }
 
   @available(macOS 26, *)
   private func release() {
-    inFlight = false
+    // Give token to the next waiter or mark idle
     if !waiters.isEmpty {
       let cc = waiters.removeFirst()
-      cc.resume()
+      cc.resume()  // hand off token to next waiter (stays inFlight)
+    } else {
+      inFlight = false  // no waiters → idle
     }
   }
 
