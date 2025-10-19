@@ -906,6 +906,307 @@ struct CachedTimelineEntry {
 
 ### Features
 
+#### Cross-CLI Transcript Converter
+**Status:** Prototype
+**Priority:** Medium-High
+**Category:** Interoperability / Developer Workflow
+
+Convert transcripts between Claude Code and Codex CLI formats to enable conversation continuity across tools. Pick up a conversation where the other CLI left off.
+
+**The Problem:**
+- Claude Code and Codex CLI use different JSONL transcript formats
+- Cannot resume a Claude Code conversation in Codex CLI, or vice versa
+- Switching tools means losing conversation context and history
+- Forces developers to commit to one tool for entire project lifecycle
+
+**The Solution:**
+Bidirectional transcript converter that translates between formats while preserving:
+- Message content and timestamps
+- User/assistant roles and threading
+- Session context (git branch, cwd, etc.)
+- Tool call sequences (best-effort mapping)
+
+**Format Differences:**
+
+| Aspect | Claude Code | Codex CLI |
+|--------|-------------|-----------|
+| **Message structure** | `{uuid, type, message: {role, content: string}}` | `{timestamp, type: "response_item", payload: {role, content: [{type, text}]}}` |
+| **Content format** | String or array of `{type, text}` blocks | Always array of `{type, text}` blocks |
+| **Tool calls** | Separate assistant messages with `tool_use` blocks | `function_call` + `function_call_output` pairs with `call_id` |
+| **Session metadata** | Per-message `sessionId`, `cwd`, `gitBranch` | Single `session_meta` record at start |
+| **Threading** | `uuid` + `parentUuid` chains | Temporal ordering only |
+| **IDs** | UUIDs throughout | Generated deterministic IDs for messages |
+
+**Conversion Challenges:**
+
+1. **Tool Call Mapping:**
+   - Claude Code: Multiple assistant messages, each with one tool_use block
+   - Codex: Paired `function_call` / `function_call_output` records
+   - Solution: Aggregate consecutive tool_use messages → function_call pairs
+
+2. **Content Structure:**
+   - Claude Code accepts string or array
+   - Codex requires array of `{type: "input_text", text}` objects
+   - Solution: Normalize to array format for Codex, detect and convert for Claude Code
+
+3. **Session Context:**
+   - Claude Code: Per-message git/cwd fields
+   - Codex: Session-level metadata in first record
+   - Solution: Extract from first Claude Code message → `session_meta` for Codex
+
+4. **Threading/Linking:**
+   - Claude Code: Explicit parent/child UUIDs
+   - Codex: No threading, just temporal order
+   - Solution: Preserve temporal order, drop threading for Codex; regenerate threading for Claude Code
+
+5. **File History Snapshots:**
+   - Claude Code: `file-history-snapshot` records with backup metadata
+   - Codex: No equivalent
+   - Solution: Skip snapshots when converting to Codex (informational only)
+
+**Implementation Plan:**
+
+**Phase 1: Core Converter (Prototype)** (~1-2 days)
+- Python CLI tool: `scripts/convert_transcript.py`
+- Basic structure conversion without tool call mapping
+- User/assistant message conversion with content normalization
+- Session metadata extraction/generation
+- Usage: `./scripts/convert_transcript.py --from claude-code --to codex input.jsonl output.jsonl`
+
+**Phase 2: Tool Call Handling** (~1 day)
+- Map Claude Code tool_use → Codex function_call pairs
+- Map Codex function_call → Claude Code tool_use messages
+- Preserve tool arguments and results
+- Handle tool call aggregation (multiple tools in one turn)
+
+**Phase 3: Validation & Testing** (~1 day)
+- Test suite with real transcript samples
+- Validate converted transcripts load in target CLI
+- Round-trip testing (Claude → Codex → Claude)
+- Edge case handling (malformed records, missing fields)
+
+**Phase 4: UI Integration** (Future)
+- Add converter to Contextify UI
+- "Export for Codex CLI" / "Export for Claude Code" actions
+- Preview conversion before export
+- Direct import into target CLI's transcript directory
+
+**Prototype CLI Tool:**
+
+```python
+#!/usr/bin/env python3
+"""
+Transcript format converter: Claude Code ↔ Codex CLI
+
+Usage:
+  convert_transcript.py --from claude-code --to codex input.jsonl output.jsonl
+  convert_transcript.py --from codex --to claude-code input.jsonl output.jsonl
+"""
+
+import json
+import argparse
+import hashlib
+from datetime import datetime
+from uuid import uuid4
+
+def claude_to_codex(input_path, output_path):
+    """Convert Claude Code JSONL to Codex CLI format"""
+    session_id = str(uuid4())
+    first_message = True
+
+    with open(input_path) as infile, open(output_path, 'w') as outfile:
+        for line in infile:
+            record = json.loads(line)
+
+            # Skip non-message records
+            if record.get('type') not in ['user', 'assistant']:
+                continue
+
+            # Skip meta/sidechain
+            if record.get('isMeta') or record.get('isSidechain'):
+                continue
+
+            # Generate session_meta from first message
+            if first_message:
+                session_meta = {
+                    "timestamp": record['timestamp'],
+                    "type": "session_meta",
+                    "payload": {
+                        "id": session_id,
+                        "timestamp": record['timestamp'],
+                        "cwd": record.get('cwd', '/'),
+                        "originator": "claude_code_converter",
+                        "cli_version": "converted-1.0.0",
+                        "instructions": "Converted from Claude Code transcript",
+                        "source": "conversion",
+                        "git": {
+                            "commit_hash": record.get('gitCommit', ''),
+                            "branch": record.get('gitBranch', 'main'),
+                            "repository_url": ""
+                        }
+                    }
+                }
+                outfile.write(json.dumps(session_meta) + '\n')
+                first_message = False
+
+            # Convert message
+            message = record.get('message', {})
+            content = message.get('content', '')
+
+            # Normalize content to array format
+            if isinstance(content, str):
+                content_array = [{"type": "input_text", "text": content}]
+            else:
+                # Already array, normalize type field
+                content_array = [
+                    {"type": "input_text", "text": block.get('text', '')}
+                    for block in content
+                    if block.get('text')
+                ]
+
+            codex_message = {
+                "timestamp": record['timestamp'],
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": record['type'],
+                    "content": content_array
+                }
+            }
+
+            outfile.write(json.dumps(codex_message) + '\n')
+
+def codex_to_claude(input_path, output_path):
+    """Convert Codex CLI JSONL to Claude Code format"""
+    session_id = None
+    git_context = {}
+
+    with open(input_path) as infile, open(output_path, 'w') as outfile:
+        for line_num, line in enumerate(infile):
+            record = json.loads(line)
+
+            # Extract session metadata
+            if record.get('type') == 'session_meta':
+                session_id = record['payload']['id']
+                git_context = {
+                    'cwd': record['payload'].get('cwd'),
+                    'gitBranch': record['payload'].get('git', {}).get('branch'),
+                    'gitCommit': record['payload'].get('git', {}).get('commit_hash')
+                }
+                continue
+
+            # Convert messages only
+            if record.get('type') != 'response_item':
+                continue
+
+            payload = record.get('payload', {})
+            if payload.get('type') != 'message':
+                continue
+
+            # Extract content from array format
+            content_blocks = payload.get('content', [])
+            content = '\n'.join(
+                block.get('text', '')
+                for block in content_blocks
+                if block.get('text')
+            )
+
+            # Generate UUID
+            message_uuid = str(uuid4())
+
+            claude_message = {
+                "uuid": message_uuid,
+                "type": payload['role'],
+                "timestamp": record['timestamp'],
+                "message": {
+                    "role": payload['role'],
+                    "content": content
+                },
+                "sessionId": session_id or 'converted',
+                "parentUuid": None,  # No threading in Codex
+                **git_context
+            }
+
+            outfile.write(json.dumps(claude_message) + '\n')
+
+def main():
+    parser = argparse.ArgumentParser(description='Convert between Claude Code and Codex CLI transcript formats')
+    parser.add_argument('--from', dest='from_format', required=True, choices=['claude-code', 'codex'])
+    parser.add_argument('--to', dest='to_format', required=True, choices=['claude-code', 'codex'])
+    parser.add_argument('input', help='Input JSONL file')
+    parser.add_argument('output', help='Output JSONL file')
+
+    args = parser.parse_args()
+
+    if args.from_format == 'claude-code' and args.to_format == 'codex':
+        claude_to_codex(args.input, args.output)
+        print(f"✓ Converted Claude Code → Codex CLI: {args.output}")
+    elif args.from_format == 'codex' and args.to_format == 'claude-code':
+        codex_to_claude(args.input, args.output)
+        print(f"✓ Converted Codex CLI → Claude Code: {args.output}")
+    else:
+        print("Error: Same format for input and output")
+        return 1
+
+if __name__ == '__main__':
+    main()
+```
+
+**Usage Examples:**
+
+```bash
+# Claude Code → Codex CLI
+# IMPORTANT: Codex expects sessions in ~/.codex/sessions/YYYY/MM/DD/
+./scripts/convert_transcript.py \
+  --from claude-code \
+  --to codex \
+  ~/.claude/projects/-Users-rob-code-project/session-uuid.jsonl \
+  ~/.codex/sessions/$(date +%Y/%m/%d)/converted-$(date +%Y-%m-%dT%H-%M-%S)-<uuid>.jsonl
+
+# Codex CLI → Claude Code
+./scripts/convert_transcript.py \
+  --from codex \
+  --to claude-code \
+  ~/.codex/sessions/2025/10/19/session-<uuid>.jsonl \
+  ~/.claude/projects/-Users-rob-code-project/imported-session.jsonl
+```
+
+**Validation Strategy:**
+
+1. **Parse Test**: Load converted file in target CLI and verify it doesn't error
+2. **Content Check**: Ensure all user/assistant messages are preserved
+3. **Timestamp Order**: Verify chronological ordering is maintained
+4. **Round Trip**: Convert A→B→A and compare to original (lossy for metadata)
+
+**Known Limitations:**
+
+1. **Tool calls**: Basic conversion only in Phase 1, no aggregation
+2. **Threading**: Lost when converting to Codex, regenerated (not original) for Claude Code
+3. **File snapshots**: Dropped when converting to Codex
+4. **Encrypted reasoning**: Codex's encrypted content is opaque, dropped in conversion
+5. **Event logs**: Codex's `event_msg` records (token counts, etc.) dropped
+
+**Future Enhancements:**
+
+- **Bidirectional tool mapping**: Full tool_use ↔ function_call conversion
+- **Smart threading**: Infer threading for Codex→Claude based on temporal proximity
+- **Metadata preservation**: Store original format metadata in comments
+- **UI wizard**: Guided conversion with preview and validation
+- **Auto-import**: Detect and offer to convert when opening incompatible transcript
+
+**Related Documentation:**
+- Format comparison: `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- Current parsers: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+**Prior Art:**
+Multiple tools exist for converting Claude Code transcripts to readable formats (HTML, Markdown, TUI), but **none for cross-CLI conversion**. This is a novel approach to enable true interoperability.
+
+**Success Criteria:**
+- Can load a Claude Code session in Codex CLI and continue conversation
+- Can load a Codex session in Claude Code and continue conversation
+- Round-trip conversion preserves >95% of essential content
+- Conversion completes in <1s for typical session (~500 messages)
+
 #### Agent Instructions Management View
 **Status:** Backlog
 **Priority:** Medium
