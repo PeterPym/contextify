@@ -123,7 +123,7 @@ actor TranscriptMetadataLLM {
           options: preflightOptions
         )
         // Success! Context fits
-        log.debug("Pre-flight passed with \(currentContext.count) chars, \(currentSampledCount) messages")
+        log.debug("Pre-flight passed with \(currentContext.count, privacy: .public) chars, \(currentSampledCount, privacy: .public) messages")
         return currentContext
       } catch let error as LanguageModelSession.GenerationError {
         guard case .exceededContextWindowSize(let errorContext) = error else {
@@ -140,7 +140,7 @@ actor TranscriptMetadataLLM {
         }
 
         attempt += 1
-        log.warning("Pre-flight exceeded context: \(tokens)/4096 tokens (attempt \(attempt)/\(maxAttempts))")
+        log.warning("Pre-flight exceeded context: \(tokens, privacy: .public)/4096 tokens (attempt \(attempt, privacy: .public)/\(maxAttempts, privacy: .public))")
 
         if attempt >= maxAttempts {
           throw LLMError.contextWindowExceeded(tokens: tokens, limit: 4096)
@@ -149,7 +149,7 @@ actor TranscriptMetadataLLM {
         // Apply adaptive compression after 2 failed attempts
         if attempt >= 2 {
           let compressionLevel = attempt - 1  // Level 1 at attempt 2, level 2 at attempt 3, etc.
-          log.debug("Applying adaptive compression (level \(compressionLevel))")
+          log.debug("Applying adaptive compression (level \(compressionLevel, privacy: .public))")
           currentContext = applyAdaptiveCompression(currentContext, level: compressionLevel)
         } else {
           // First 2 attempts: binary shrink by removing middle lines
@@ -158,7 +158,7 @@ actor TranscriptMetadataLLM {
           currentSampledCount = shrinkResult.estimatedCount
         }
 
-        log.debug("Shrunk context to \(currentContext.count) chars, ~\(currentSampledCount) messages")
+        log.debug("Shrunk context to \(currentContext.count, privacy: .public) chars, ~\(currentSampledCount, privacy: .public) messages")
       }
     }
 
@@ -296,7 +296,7 @@ actor TranscriptMetadataLLM {
     let overhead = 4096 - MetadataBudgets.outputTokens - maxFits
     calibratedOverhead = overhead
 
-    log.info("Calibration complete: overhead=\(overhead) tokens (max content tokens: \(maxFits))")
+    log.info("Calibration complete: overhead=\(overhead, privacy: .public) tokens (max content tokens: \(maxFits, privacy: .public))")
   }
 
   func getOverhead() -> Int {
@@ -343,7 +343,7 @@ actor TranscriptMetadataLLM {
     let overhead = getOverhead()
     let availableForContext = MetadataBudgets.calculateBudget(overhead: overhead)
 
-    log.debug("Token budget: overhead=\(overhead), output=\(MetadataBudgets.outputTokens), safety=\(MetadataBudgets.safetyMargin), available=\(availableForContext)")
+    log.debug("Token budget: overhead=\(overhead, privacy: .public), output=\(MetadataBudgets.outputTokens, privacy: .public), safety=\(MetadataBudgets.safetyMargin, privacy: .public), available=\(availableForContext, privacy: .public))")
 
     return max(0, availableForContext)
   }
@@ -393,7 +393,7 @@ actor TranscriptMetadataLLM {
       maximumResponseTokens: 150
     )
 
-    log.info("[\(correlationId, privacy: .public)] strategy=\(strategy, privacy: .public) msgs=\(sampledCount)/\(totalCount) chars=\(contextWithInfo.count) promptSHA=\(promptSHA, privacy: .public)")
+    log.info("[\(correlationId, privacy: .public)] strategy=\(strategy, privacy: .public) msgs=\(sampledCount, privacy: .public)/\(totalCount, privacy: .public) chars=\(contextWithInfo.count, privacy: .public) promptSHA=\(promptSHA, privacy: .public))")
 
     // strict single-flight: exactly one respond() in flight
     await acquire()
@@ -421,7 +421,7 @@ actor TranscriptMetadataLLM {
           recordTokenUsage(chars: contextWithInfo.count, tokens: tokens)
         }
 
-        log.error("Context window exceeded: \(tokens)/4096 tokens")
+        log.error("Context window exceeded: \(tokens, privacy: .public)/4096 tokens")
         throw LLMError.contextWindowExceeded(tokens: tokens, limit: 4096)
 
       case .guardrailViolation(let context):
@@ -515,13 +515,21 @@ enum Prompts: Sendable {
   /// Static instructions so the session can be reused safely
   nonisolated static func sharedInstructions() -> String {
     """
-    Analyze developer AI session. Output JSON only:
-    • Title ≤60 chars: imperative/noun phrase for main activity
-    • Description ≤200 chars: 2-3 key activities, past tense, chronological
-    • Topics 2-5: feature-work, bug-fix, refactoring, testing, documentation, code-review, performance, security, architecture, deployment, general
-    • Confidence 0.0-1.0: clarity/specificity
-    • mayContainHallucinations: true if any file/module/API not in messages
-    Use ONLY details explicitly present. Do NOT invent names/tools.
+    You are analyzing a developer's AI-assisted coding session.
+
+    OUTPUT RULES
+    - Only include details explicitly present in the messages.
+    - Do NOT invent filenames, APIs, bugs, or tools.
+    - Title: ≤60 chars; imperative or concise noun phrase focused on the most discussed activity.
+    - Description: ≤200 chars; 2–3 key activities in chronological order; past tense; prefer concrete nouns from the text.
+    - Topics: 2–5 from {feature-work, bug-fix, refactoring, testing, documentation, code-review, performance, security, architecture, deployment, general}.
+    - Confidence: 0.0–1.0 based on clarity/specificity.
+    - mayContainHallucinations: true if any referenced filename/module/API is not present verbatim in the messages.
+
+    INPUT FORMAT
+    The input includes a CONTEXT preface with sampled/total counts and the sampled messages.
+
+    Return ONLY the JSON object for the schema.
     """
   }
 }
