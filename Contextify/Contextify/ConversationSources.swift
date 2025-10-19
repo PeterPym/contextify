@@ -7,6 +7,15 @@ struct TranscriptSession: Hashable, Sendable {
     let lastActivity: Date
 }
 
+// MARK: - DEPRECATED: File-based providers (replaced by database-backed discovery)
+
+// The code below is DEAD CODE kept for reference only.
+// Session discovery now uses the database layer:
+// - ConversationMonitor.switchToClaudeCodeSession() discovers files and calls orchestrator.upsertTranscripts()
+// - allSessions is populated via orchestrator.getTranscripts(), not these providers
+// - These providers read transcript files directly, violating bronze-layer architecture
+
+#if false
 protocol ConversationTranscriptProvider: Sendable {
     func sessions(for projectPath: String) -> [TranscriptSession]
     func sessions(for context: ProjectContext) -> [TranscriptSession]
@@ -232,3 +241,5 @@ struct ActiveConversationResolver: Sendable {
         resolveAllSessions(for: context).first
     }
 }
+
+#endif // DEAD CODE

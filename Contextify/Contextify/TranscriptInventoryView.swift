@@ -750,10 +750,18 @@ struct TranscriptDetailView: View {
   }
 
   private func lineCount() -> Int? {
-    guard let content = try? String(contentsOf: session.fileURL, encoding: .utf8) else {
+    // Use database entry count instead of reading the entire file
+    guard let orch = orchestrator else { return nil }
+
+    // Extract transcript ID from session identifier (remove .jsonl extension if present)
+    let transcriptId = session.identifier.replacingOccurrences(of: ".jsonl", with: "")
+
+    do {
+      let entries = try orch.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
+      return entries.count
+    } catch {
       return nil
     }
-    return content.components(separatedBy: .newlines).filter { !$0.isEmpty }.count
   }
 }
 

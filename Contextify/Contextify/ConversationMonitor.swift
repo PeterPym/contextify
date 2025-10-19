@@ -54,10 +54,7 @@ final class ConversationMonitor {
 
     private let log = Logger(subsystem: "dev.contextify", category: "Timeline")
     private let config = MonitorConfig()
-    private let conversationResolver = ActiveConversationResolver(providers: [
-        ClaudeTranscriptProvider(),
-        CodexTranscriptProvider()
-    ])
+    // conversationResolver removed - now using database-backed session discovery
     private let affirmativeLexicon: Set<String> = [
         "yes", "y", "ok", "okay", "sure", "👍", "yep", "yup", "sounds", "good", "go", "ahead",
         "proceed", "do", "it", "please", "sgtm", "roger", "affirmative", "yeah", "yah", "make", "so"
