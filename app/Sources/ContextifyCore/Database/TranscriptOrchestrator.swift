@@ -72,10 +72,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       parser: parser
     )
 
-    // Initialize watcher
+    // Initialize watcher with metadata invalidation callback
     self.watcher = TranscriptWatcher(
       hooverEngine: hooverEngine,
-      transcriptRepo: transcriptRepo
+      transcriptRepo: transcriptRepo,
+      metadataInvalidator: { [weak metadataRepo] transcriptId in
+        try? metadataRepo?.delete(transcriptId)
+      }
     )
   }
 

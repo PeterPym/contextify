@@ -7,13 +7,19 @@ private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatch
 public final class TranscriptWatcher {
   private let hooverEngine: HooverEngine
   private let transcriptRepo: TranscriptRepository
+  private let metadataInvalidator: ((String) throws -> Void)?
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var debounceTimers: [String: Timer] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
 
-  public init(hooverEngine: HooverEngine, transcriptRepo: TranscriptRepository) {
+  public init(
+    hooverEngine: HooverEngine,
+    transcriptRepo: TranscriptRepository,
+    metadataInvalidator: ((String) throws -> Void)? = nil
+  ) {
     self.hooverEngine = hooverEngine
     self.transcriptRepo = transcriptRepo
+    self.metadataInvalidator = metadataInvalidator
   }
 
   /// Start watching a transcript file for changes
@@ -94,6 +100,9 @@ public final class TranscriptWatcher {
         }
 
         log.debug("Processing file change for transcript: \(transcriptId)")
+
+        // Invalidate cached metadata (file changed, so metadata may be stale)
+        try? self.metadataInvalidator?(transcriptId)
 
         // Stream new lines using hoover engine (it will resume from checkpoint)
         _ = try self.hooverEngine.hooverTranscript(
