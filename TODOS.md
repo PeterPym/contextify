@@ -476,9 +476,51 @@ Add a status bar to the main window that shows real-time LLM processing status a
 └─────────────────────────────┘
 ```
 
+**Known LLM Failure Modes:**
+
+**IMPORTANT:** Apple Intelligence availability checking requires a "belt and suspenders" approach:
+
+1. **Belt (Official API):** `SystemLanguageModel.default.availability`
+   - Returns: `.available`, `.unavailable(reason)`
+   - Reasons: `.appleIntelligenceNotEnabled`, `.deviceNotEligible`, `.modelNotReady`
+   - **Limitation:** Can return `.available` even when runtime failures occur
+
+2. **Suspenders (Runtime Test Call):** Actual LLM call to detect system errors
+   - **Why needed:** The official API doesn't detect all failure modes
+   - **Example:** macOS 26 beta bug where system file is missing
+
+**Discovered Error Patterns:**
+
+| Error Type | Symptoms | Detection | User-Facing Message | Workaround |
+|------------|----------|-----------|---------------------|------------|
+| **Guardrail System Error** | ALL LLM calls fail with `guardrailViolation`, missing `/System/Library/AssetsV2/.../metadata.json` | Error contains "metadata.json" + "No such file" | "Apple Intelligence system error detected. Try: Settings → Apple Intelligence → Toggle off/on, then restart Mac." | Toggle AI off/on in System Settings + restart |
+| **Model Not Ready** | Official API returns `.modelNotReady` | `SystemLanguageModel.default.availability` | "Language model is not ready. Please wait a few moments and try again." | Wait a few minutes, model may be downloading |
+| **AI Not Enabled** | Official API returns `.appleIntelligenceNotEnabled` | `SystemLanguageModel.default.availability` | "Apple Intelligence is not enabled. Please enable it in System Settings." | Settings → Apple Intelligence → Enable |
+| **Device Not Eligible** | Official API returns `.deviceNotEligible` | `SystemLanguageModel.default.availability` | "This Mac is not eligible for Apple Intelligence." | Upgrade to supported Mac hardware |
+
+**Reference Implementation:**
+- `Contextify/Contextify/LLMHealthCheck.swift` - Comprehensive health checker with both approaches
+- Uses cached status (30s TTL) to avoid hammering the system
+- Detects specific error patterns in `GenerationError.guardrailViolation`
+
+**Reddit/Community Reports:**
+- Missing metadata.json error: https://www.reddit.com/r/iOSProgramming/comments/1la7o9r/comment/n41eh7d/
+- Common on macOS 26 beta builds
+- Workaround: Toggle Apple Intelligence off/on + restart
+
 **Technical Implementation:**
 
 ```swift
+// Use LLMHealthCheck for comprehensive checking
+let status = await LLMHealthCheck.shared.checkHealth()
+
+switch status {
+case .healthy:
+  // LLM is fully functional
+case .unavailable(let reason):
+  // Show user-facing message: reason.userFacingMessage
+}
+
 // StatusBarViewModel.swift (new)
 @MainActor
 @Observable
