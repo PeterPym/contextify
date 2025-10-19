@@ -242,7 +242,7 @@ public struct TimelineCache: Codable, FetchableRecord, PersistableRecord, Sendab
 
 // MARK: - Transcript Metadata
 
-public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRecord {
+public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var transcriptId: String
   public var projectId: String
   public var title: String

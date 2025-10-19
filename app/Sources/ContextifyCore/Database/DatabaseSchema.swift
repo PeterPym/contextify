@@ -134,6 +134,13 @@ enum DatabaseSchema {
         try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN content_sha256 TEXT")
       }
 
+      // Backfill mtime_ms from legacy mtime_ns if present
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET mtime_ms = mtime_ns / 1000000
+        WHERE mtime_ns IS NOT NULL AND mtime_ms IS NULL
+      """)
+
       // Create transcript_metadata table
       try db.execute(sql: """
         CREATE TABLE IF NOT EXISTS transcript_metadata (

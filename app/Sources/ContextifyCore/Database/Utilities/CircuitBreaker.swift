@@ -146,7 +146,11 @@ public actor CircuitBreaker {
         let total = outcomes.count
         let failures = outcomes.filter { !$0.success }.count
         let ratio = total > 0 ? Double(failures) / Double(total) : 0.0
-        let isOpen = total >= minimumRequests && ratio >= failureThreshold
+        let isOpen: Bool
+        switch state {
+        case .open, .halfOpen: isOpen = true
+        case .closed:          isOpen = false
+        }
 
         return (total, failures, ratio, isOpen, state)
     }

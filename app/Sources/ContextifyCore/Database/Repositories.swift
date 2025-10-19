@@ -367,6 +367,8 @@ public final class EntryRepositoryImpl: EntryRepository {
 public protocol MetadataRepository {
   func upsert(_ metadata: TranscriptMetadataRecord) throws
   func get(_ transcriptId: String) throws -> TranscriptMetadataRecord?
+  func getBatch(_ transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord]
+  func delete(_ transcriptId: String) throws
   func stale(promptVersion: Int, generatorVersion: Int) throws -> [String]
 }
 
@@ -386,6 +388,37 @@ public final class MetadataRepositoryImpl: MetadataRepository {
   public func get(_ transcriptId: String) throws -> TranscriptMetadataRecord? {
     try db.read { db in
       try TranscriptMetadataRecord.fetchOne(db, key: transcriptId)
+    }
+  }
+
+  public func getBatch(_ transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord] {
+    guard !transcriptIds.isEmpty else { return [:] }
+    // SQLite default SQLITE_MAX_VARIABLE_NUMBER is 999. Use 900 for headroom + future SQL additions.
+    let PARAM_LIMIT_SAFE = 900
+    return try db.read { db in
+      var result: [String: TranscriptMetadataRecord] = [:]
+      for start in stride(from: 0, to: transcriptIds.count, by: PARAM_LIMIT_SAFE) {
+        let end = min(start + PARAM_LIMIT_SAFE, transcriptIds.count)
+        let ids = Array(transcriptIds[start..<end])
+        let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+        precondition(ids.count == placeholders.split(separator: ",").count)
+        let rows = try Row.fetchAll(db, sql: """
+          SELECT * FROM transcript_metadata WHERE transcript_id IN (\(placeholders))
+        """, arguments: StatementArguments(ids))
+        for row in rows {
+          if let id: String = row["transcript_id"],
+             let rec = try? TranscriptMetadataRecord(row: row) {
+            result[id] = rec
+          }
+        }
+      }
+      return result
+    }
+  }
+
+  public func delete(_ transcriptId: String) throws {
+    try db.write { db in
+      try db.execute(sql: "DELETE FROM transcript_metadata WHERE transcript_id = ?", arguments: [transcriptId])
     }
   }
 

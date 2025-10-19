@@ -22,7 +22,7 @@ import Foundation
 public actor ConcurrencyGate {
     private let maxPermits: Int
     private var availablePermits: Int
-    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    private var waiters: [(UUID, CheckedContinuation<Void, Never>)] = []
 
     /// Initialize gate with maximum concurrent permits
     /// - Parameter permits: Maximum number of concurrent acquisitions
@@ -41,24 +41,20 @@ public actor ConcurrencyGate {
             return
         }
 
-        // No permits available - wait in queue with cancellation support
+        // No permits available - wait in FIFO queue with cancellation support
         let id = UUID()
         return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                waiters[id] = continuation
-            }
+            await withCheckedContinuation { cont in waiters.append((id, cont)) }
         } onCancel: {
-            Task {
-                await self.cancelWaiter(id)
-            }
+            Task { await self.cancelWaiter(id) }
         }
     }
 
     /// Release a permit (resumes next waiter if any)
     public func release() {
-        if let (id, continuation) = waiters.first {
-            waiters.removeValue(forKey: id)
-            continuation.resume()
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.1.resume()
         } else {
             availablePermits = min(availablePermits + 1, maxPermits)
         }
@@ -67,7 +63,9 @@ public actor ConcurrencyGate {
     /// Cancel a specific waiter (for cancellation support)
     /// - Parameter id: UUID of waiter to cancel
     private func cancelWaiter(_ id: UUID) {
-        _ = waiters.removeValue(forKey: id)
+        if let idx = waiters.firstIndex(where: { $0.0 == id }) {
+            waiters.remove(at: idx)
+        }
     }
 
     /// Current number of available permits (for debugging)

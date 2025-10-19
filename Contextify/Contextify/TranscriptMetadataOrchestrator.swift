@@ -150,7 +150,7 @@ actor TranscriptMetadataOrchestrator {
     }
 
     // Check circuit breaker
-    if await circuitBreaker.shouldOpen() {
+    guard await circuitBreaker.allow() else {
       stats.breakerOpens += 1
       let cbStats = await circuitBreaker.stats()
       log.warning("Circuit breaker active (\(cbStats.failures)/\(cbStats.total), \(String(format: "%.1f%%", cbStats.ratio * 100))), using heuristic fallback")
@@ -315,10 +315,8 @@ actor TranscriptMetadataOrchestrator {
     fileURL: URL,
     orchestrator: TranscriptOrchestrator
   ) async throws {
-    // Compute transcript SHA256 for freshness tracking
-    let data = try Data(contentsOf: fileURL)
-    let hash = SHA256.hash(data: data)
-    let transcriptSHA256 = hash.compactMap { String(format: "%02x", $0) }.joined()
+    // Compute transcript SHA256 for freshness tracking (using streaming to avoid memory blowup)
+    let transcriptSHA256 = try FileFacts.stableSha256(url: fileURL)
 
     // Convert topics array to JSON string
     let topicsJSON = (try? String(data: JSONEncoder().encode(metadata.topics), encoding: .utf8)) ?? "[]"
@@ -355,8 +353,8 @@ actor TranscriptMetadataOrchestrator {
       throw TranscriptMetadataError.orphanedTranscript(transcriptId)
     }
 
-    // Post notification for cache updates (on main actor for cross-actor safety)
-    await MainActor.run {
+    // Post notification for cache updates (outside actor to avoid reentrancy)
+    Task { @MainActor in
       NotificationCenter.default.post(
         name: .transcriptMetadataUpdated,
         object: transcriptId,
@@ -376,10 +374,8 @@ actor TranscriptMetadataOrchestrator {
       return false
     }
 
-    // Compute current file SHA256
-    let data = try Data(contentsOf: fileURL)
-    let hash = SHA256.hash(data: data)
-    let currentSHA = hash.compactMap { String(format: "%02x", $0) }.joined()
+    // Compute current file SHA256 (using streaming to avoid memory blowup)
+    let currentSHA = try FileFacts.stableSha256(url: fileURL)
 
     // Compare with cached SHA256 (note: lowercase 'sha' in record)
     return metadata.transcriptSha256 == currentSHA
