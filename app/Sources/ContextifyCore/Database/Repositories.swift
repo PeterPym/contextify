@@ -379,9 +379,43 @@ public final class MetadataRepositoryImpl: MetadataRepository {
     self.db = db
   }
 
-  public func upsert(_ metadata: TranscriptMetadataRecord) throws {
+  public func upsert(_ r: TranscriptMetadataRecord) throws {
     try db.write { db in
-      try metadata.save(db)
+      try db.execute(sql: """
+        INSERT INTO transcript_metadata (
+          transcript_id, project_id, title, description, topics, confidence,
+          may_contain_hallucinations, needs_review, generated_at, model,
+          prompt_version, generator_version, transcript_sha256, message_count,
+          strategy, llm_calls, latency_ms, created_at, updated_at
+        )
+        VALUES (
+          ?, (SELECT project_id FROM transcripts WHERE id = ?),
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
+        ON CONFLICT(transcript_id) DO UPDATE SET
+          title = excluded.title,
+          description = excluded.description,
+          topics = excluded.topics,
+          confidence = excluded.confidence,
+          may_contain_hallucinations = excluded.may_contain_hallucinations,
+          needs_review = excluded.needs_review,
+          generated_at = excluded.generated_at,
+          model = excluded.model,
+          prompt_version = excluded.prompt_version,
+          generator_version = excluded.generator_version,
+          transcript_sha256 = excluded.transcript_sha256,
+          message_count = excluded.message_count,
+          strategy = excluded.strategy,
+          llm_calls = excluded.llm_calls,
+          latency_ms = excluded.latency_ms,
+          updated_at = excluded.updated_at
+      """, arguments: [
+        r.transcriptId, r.transcriptId,
+        r.title, r.description, r.topics, r.confidence,
+        r.mayContainHallucinations, r.needsReview, r.generatedAt, r.model,
+        r.promptVersion, r.generatorVersion, r.transcriptSha256, r.messageCount,
+        r.strategy, r.llmCalls, r.latencyMs, r.createdAt, r.updatedAt
+      ])
     }
   }
 
