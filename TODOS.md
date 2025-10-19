@@ -12,6 +12,48 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Backlog
 
+### Product Direction Proposals
+
+#### Proposal: Simplify to Timeline + Cloud Backup Focus
+**Status:** Under consideration
+**Priority:** TBD
+**Type:** Strategic direction
+
+**Proposed Changes:**
+Remove terminal integration features and focus exclusively on:
+1. **Timeline display** - Visualizing Claude Code/Codex conversation history
+2. **Cloud backup** - Backing up transcripts to cloud storage
+
+**Code to potentially remove:**
+- Text area for sending commands to terminal
+- "Send to Terminal" functionality
+- "Retrieve from Terminal" functionality
+- Terminal integration/automation code
+
+**Potential benefits:**
+- Simpler, more focused product
+- Reduced maintenance burden
+- Clearer value proposition
+- Less code to maintain
+
+**Considerations:**
+- Are terminal features being used?
+- What use cases would be lost?
+- Is there overlap with other tools?
+- What's the migration path for existing users?
+
+**Next Steps:**
+- Validate assumptions about feature usage
+- Gather user feedback if applicable
+- Decide on direction before implementing
+- Create detailed removal plan if approved
+
+**Files to review (if approved):**
+- Any terminal integration code
+- Send/retrieve command handlers
+- Text area UI components not used for display
+- Related preferences/settings
+
 ### Technical Debt / Optimizations
 
 #### Phase 2: LLM Session Management & Safety Optimizations
