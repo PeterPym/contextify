@@ -1308,7 +1308,7 @@ extension FoundationLLM {
 extension FoundationLLM {
     /// Generate guided JSON output using any @Generable schema
     /// All calls are serialized through SessionController (single-flight per instruction key)
-    public func generateGuided<T: Generable>(
+    public func generateGuided<T: Generable & Sendable>(
         instructions: String,
         prompt: String,
         generating: T.Type,

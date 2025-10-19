@@ -466,6 +466,60 @@ enum LLMError: Error {
   case unavailable
 }
 
+// MARK: - Heuristic Fallback
+
+enum HeuristicMetadata: Sendable {
+  nonisolated static func generate(exchanges: [Exchange]) -> TranscriptMetadata {
+    let title = exchanges.count < 3 ? "Brief Session" : "Developer Chat"
+    let description = generateDescription(exchanges: exchanges)
+    let topics = ["general"]
+
+    return TranscriptMetadata(
+      version: 1,
+      title: title,
+      description: description,
+      topics: topics,
+      confidence: 0.3,
+      mayContainHallucinations: false,
+      needsReview: true,
+      generatedAt: Date(),
+      model: "heuristic",
+      promptVersion: 0,
+      generatorVersion: 1,
+      transcriptSHA256: "",
+      messageCount: exchanges.count,
+      strategy: "heuristic",
+      llmCalls: 0,
+      latencyMs: 0
+    )
+  }
+
+  nonisolated private static func generateDescription(exchanges: [Exchange]) -> String {
+    guard !exchanges.isEmpty else {
+      return "Empty transcript."
+    }
+
+    if exchanges.count < 3 {
+      return "Very short conversation."
+    }
+
+    // Extract first and last user messages
+    let userMessages = exchanges.filter { $0.role == .user }
+    let firstUser = userMessages.first?.text.prefix(50) ?? ""
+    let lastUser = userMessages.last?.text.prefix(50) ?? ""
+
+    if firstUser.isEmpty && lastUser.isEmpty {
+      return "Conversation with \(exchanges.count) messages."
+    }
+
+    if !firstUser.isEmpty && !lastUser.isEmpty {
+      return "Started with: \(firstUser)... Ended with: \(lastUser)..."
+    }
+
+    return "Conversation with \(exchanges.count) messages."
+  }
+}
+
 // MARK: - Record to UI Model Conversion
 
 extension TranscriptMetadataRecord {
