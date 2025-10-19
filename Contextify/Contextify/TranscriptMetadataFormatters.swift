@@ -14,14 +14,14 @@ nonisolated enum MetadataBudgets {
   static let perExchangeCharLimit = 200  // ~80 tokens per exchange with compressed paths/code
 
   // Token estimation (auto-tuned by LLM observations)
-  static var charsPerToken: Double = 2.5  // Default, updated by LLM observations
+  nonisolated(unsafe) static var charsPerToken: Double = 2.5  // Default, updated by LLM observations
 
   // Sampling configuration
   static let bookendCount = 10           // Number of exchanges to take from head/tail
   static let fullStrategyLimit = 25      // Max exchanges before switching to adaptive
 
   // Remote fallback (feature flag)
-  static var enableRemoteLargeWindowFallback = false  // Enable 32K+ context remote service for rare overflow cases
+  nonisolated(unsafe) static var enableRemoteLargeWindowFallback = false  // Enable 32K+ context remote service for rare overflow cases
 
   // Computed sampler budget (unified source of truth)
   static var samplerBudget: Int {

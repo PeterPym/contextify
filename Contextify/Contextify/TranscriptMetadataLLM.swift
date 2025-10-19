@@ -252,7 +252,7 @@ actor TranscriptMetadataLLM {
     calibrating = true
     defer { calibrating = false }
 
-    log.info("Calibrating prompt overhead for v\(promptVersion)...")
+    log.info("Calibrating prompt overhead for v\(self.promptVersion)...")
 
     let session = try await getOrCreateSession()
 
@@ -320,7 +320,7 @@ actor TranscriptMetadataLLM {
       let avgRatio = observedRatios.reduce(0, +) / Double(observedRatios.count)
       let tuned = max(2.0, min(4.0, avgRatio))
       MetadataBudgets.charsPerToken = tuned
-      log.debug("Token estimator stats: avg ratio=\(String(format: "%.2f", avgRatio)) chars/token (\(observedRatios.count) samples), tuned to \(String(format: "%.2f", tuned))")
+      log.debug("Token estimator stats: avg ratio=\(String(format: "%.2f", avgRatio)) chars/token (\(self.observedRatios.count) samples), tuned to \(String(format: "%.2f", tuned))")
     }
   }
 
@@ -432,8 +432,31 @@ actor TranscriptMetadataLLM {
         log.error("Decoding failure: \(context.debugDescription, privacy: .public)")
         throw LLMError.decodingFailure(context.debugDescription)
 
+      case .assetsUnavailable(let context):
+        log.error("Assets unavailable: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure("Assets unavailable: \(context.debugDescription)")
+
+      case .unsupportedGuide(let context):
+        log.error("Unsupported guide: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure("Unsupported guide: \(context.debugDescription)")
+
+      case .unsupportedLanguageOrLocale(let context):
+        log.error("Unsupported language/locale: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure("Unsupported language/locale: \(context.debugDescription)")
+
+      case .rateLimited(let context):
+        log.error("Rate limited: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure("Rate limited: \(context.debugDescription)")
+
+      case .concurrentRequests(let context):
+        log.error("Concurrent requests: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure("Concurrent requests: \(context.debugDescription)")
+
+      case .refusal(_, let reasonCategory):
+        log.error("Refusal: \(String(describing: reasonCategory), privacy: .public)")
+        throw LLMError.guardrailViolation("Refusal: \(reasonCategory)")
+
       @unknown default:
-        // Handle all other cases (refusal, assetsUnavailable, unsupportedGuide, etc.)
         log.error("LLM error: \(String(describing: error), privacy: .public)")
         throw LLMError.decodingFailure(String(describing: error))
       }
