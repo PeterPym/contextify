@@ -9,6 +9,8 @@ struct TranscriptInventoryView: View {
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
+  @State private var debouncedSearch = ""  // Debounced search for filtering
+  @State private var debounceTask: Task<Void, Never>?
   @State private var groupingMode: GroupingMode = .provider
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
@@ -118,6 +120,17 @@ struct TranscriptInventoryView: View {
       }
       .listStyle(.sidebar)
       .searchable(text: $searchText, prompt: "Search transcripts")
+      .onChange(of: searchText) { _, newValue in
+        // Debounce search input (300ms)
+        debounceTask?.cancel()
+        debounceTask = Task {
+          try? await Task.sleep(nanoseconds: 300_000_000)
+          guard !Task.isCancelled else { return }
+          await MainActor.run {
+            debouncedSearch = newValue
+          }
+        }
+      }
       .onChange(of: monitor.allSessions) { _, newSessions in
         // Clear selection if selected session no longer exists
         if let selectedId = selectedTranscriptId,
@@ -266,19 +279,19 @@ struct TranscriptInventoryView: View {
 
   private var filteredSessions: [TranscriptSession] {
     let sessions = monitor.allSessions
-    if searchText.isEmpty {
+    if debouncedSearch.isEmpty {
       return sessions
     }
     // Search in metadata title/description if available
     return sessions.filter { session in
       if let meta = metadata[session.identifier] {
-        return meta.title.localizedCaseInsensitiveContains(searchText)
-          || meta.description.localizedCaseInsensitiveContains(searchText)
-          || meta.topics.contains { $0.localizedCaseInsensitiveContains(searchText) }
+        return meta.title.localizedCaseInsensitiveContains(debouncedSearch)
+          || meta.description.localizedCaseInsensitiveContains(debouncedSearch)
+          || meta.topics.contains { $0.localizedCaseInsensitiveContains(debouncedSearch) }
       }
       // Fall back to identifier and path
-      return session.identifier.localizedCaseInsensitiveContains(searchText)
-        || session.fileURL.path.localizedCaseInsensitiveContains(searchText)
+      return session.identifier.localizedCaseInsensitiveContains(debouncedSearch)
+        || session.fileURL.path.localizedCaseInsensitiveContains(debouncedSearch)
     }
   }
 

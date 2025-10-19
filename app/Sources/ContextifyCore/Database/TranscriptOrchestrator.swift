@@ -209,6 +209,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   ///   - discovered: Array of discovered transcripts
   /// - Returns: Array of resolved transcripts with canonical IDs
   /// - Note: Uses single transaction for atomicity, UPSERT for idempotency
+  ///         Prefers provider_session_id when available, falls back to path_hash
+  ///         Only recomputes SHA256 if file size or mtime changed (streaming)
   public func upsertTranscripts(
     projectId: String,
     discovered: [DiscoveredTranscript]
@@ -226,38 +228,52 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       for disc in discovered {
         let path = disc.fileURL.path
 
-        // Get file metadata
-        var contentLength: Int64 = 0
-        var mtimeNs: Int = 0
-        var contentSHA: String = "pending"
-
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: path) {
-          contentLength = (attrs[.size] as? Int64) ?? 0
-          if let modDate = attrs[.modificationDate] as? Date {
-            mtimeNs = Int(modDate.timeIntervalSince1970 * 1_000_000_000)
-          }
-
-          // Compute content SHA256 for freshness tracking
-          if let data = try? Data(contentsOf: disc.fileURL) {
-            let hash = SHA256.hash(data: data)
-            contentSHA = hash.compactMap { String(format: "%02x", $0) }.joined()
-          }
-        }
-
         // Normalize path and compute hash
         let (normalizedPath, pathHash) = PathNormalizer.normalizeAndHash(path)
 
-        // UPSERT transcript with ON CONFLICT
+        // Prefer provider_session_id when available for identity
+        let useSessionId = disc.sessionId != nil && !disc.sessionId!.isEmpty
+
+        // Check if transcript exists (prefer session ID, fallback to path hash)
+        let existing: Row? = try Row.fetchOne(db, sql: """
+          SELECT id, content_length, mtime_ms, content_sha256 FROM transcripts
+          WHERE provider = ? AND \(useSessionId ? "provider_session_id = ?" : "path_hash = ?")
+        """, arguments: [disc.provider, useSessionId ? disc.sessionId! : pathHash])
+
+        // Get file facts (streaming SHA256)
+        let (len, mtimeMs, sha): (Int64, Int64, String)
+        if FileManager.default.fileExists(atPath: path) {
+          // Only rehash if size or mtime changed
+          if let ex = existing,
+             let exLen = ex["content_length"] as? Int64,
+             let exMtime = ex["mtime_ms"] as? Int64,
+             exLen == (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0 {
+            // File metadata unchanged - reuse cached SHA
+            let newMtime = Int64(((try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000)
+            if exMtime == newMtime {
+              len = exLen
+              mtimeMs = exMtime
+              sha = (ex["content_sha256"] as? String) ?? "pending"
+            } else {
+              // Mtime changed - rehash
+              (len, mtimeMs, sha) = try FileFacts.forPath(path)
+            }
+          } else {
+            // Size changed or new file - compute facts with streaming hash
+            (len, mtimeMs, sha) = try FileFacts.forPath(path)
+          }
+        } else {
+          // File no longer exists - use placeholder
+          (len, mtimeMs, sha) = (0, 0, "missing")
+        }
+
         let wasCreated: Bool
         let transcriptId: String
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
 
-        // Check if transcript exists by (provider, path_hash)
-        if let existing = try String.fetchOne(db, sql: """
-          SELECT id FROM transcripts
-          WHERE provider = ? AND path_hash = ?
-        """, arguments: [disc.provider, pathHash]) {
-          // Existing transcript - update metadata
-          transcriptId = existing
+        if let ex = existing, let id = ex["id"] as? String {
+          // Existing transcript - update
+          transcriptId = id
           wasCreated = false
 
           try db.execute(sql: """
@@ -268,7 +284,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
                 last_modified = ?,
                 file_size = ?,
                 content_length = ?,
-                mtime_ns = ?,
+                mtime_ms = ?,
                 content_sha256 = ?,
                 updated_at = ?
             WHERE id = ?
@@ -276,12 +292,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             path,
             normalizedPath,
             disc.sessionId,
-            Int(Date().timeIntervalSince1970),
-            contentLength > 0 ? Int(contentLength) : nil,
-            contentLength,
-            mtimeNs,
-            contentSHA,
-            Int(Date().timeIntervalSince1970),
+            Int(mtimeMs / 1000),  // last_modified remains in seconds for compatibility
+            len > 0 ? Int(len) : nil,
+            len,
+            mtimeMs,
+            sha,
+            Int(nowMs / 1000),
             transcriptId
           ])
 
@@ -291,21 +307,21 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           transcriptId = UUID().uuidString
           wasCreated = true
 
-          let now = Int(Date().timeIntervalSince1970)
+          let nowSec = Int(nowMs / 1000)
           try db.execute(sql: """
             INSERT INTO transcripts (
               id, project_id, file_path, normalized_path, path_hash,
               provider, provider_session_id,
-              last_modified, file_size, content_length, mtime_ns, content_sha256,
+              last_modified, file_size, content_length, mtime_ms, content_sha256,
               line_count, last_processed_line, parser_version, status,
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             transcriptId, projectId, path, normalizedPath, pathHash,
             disc.provider, disc.sessionId,
-            now, contentLength > 0 ? Int(contentLength) : nil, contentLength, mtimeNs, contentSHA,
+            nowSec, len > 0 ? Int(len) : nil, len, mtimeMs, sha,
             0, 0, 1, "active",
-            now, now
+            nowSec, nowSec
           ])
 
           log.debug("✅ Created new transcript: \(transcriptId) [\(pathHash.prefix(8))...]")
@@ -427,13 +443,38 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try metadataRepo.get(transcriptId)
   }
 
+  /// Get metadata for multiple transcripts (handles SQLite IN clause limits)
+  /// - Parameter transcriptIds: Array of transcript IDs
+  /// - Returns: Dictionary mapping transcript ID to metadata
+  /// - Note: Chunks queries into batches of 800 to stay under SQLite's 999 parameter limit
   public func getMetadataBatch(transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord] {
+    guard !transcriptIds.isEmpty else { return [:] }
+
     var result: [String: TranscriptMetadataRecord] = [:]
-    for transcriptId in transcriptIds {
-      if let metadata = try metadataRepo.get(transcriptId) {
-        result[transcriptId] = metadata
+    let pool = try dbManager.pool
+
+    // Process in chunks of 800 to stay under SQLite's 999 parameter limit
+    let chunkSize = 800
+    for chunk in stride(from: 0, to: transcriptIds.count, by: chunkSize) {
+      let end = min(chunk + chunkSize, transcriptIds.count)
+      let chunkIds = Array(transcriptIds[chunk..<end])
+
+      try pool.read { db in
+        let placeholders = chunkIds.map { _ in "?" }.joined(separator: ",")
+        let rows = try Row.fetchAll(db, sql: """
+          SELECT * FROM transcript_metadata
+          WHERE transcript_id IN (\(placeholders))
+        """, arguments: StatementArguments(chunkIds))
+
+        for row in rows {
+          if let record = try? TranscriptMetadataRecord(row: row),
+             let id = row["transcript_id"] as? String {
+            result[id] = record
+          }
+        }
       }
     }
+
     return result
   }
 

@@ -327,11 +327,13 @@ actor TranscriptMetadataOrchestrator {
 
     try orchestrator.saveMetadata(record)
 
-    // Post notification for cache updates
-    NotificationCenter.default.post(
-      name: .transcriptMetadataUpdated,
-      object: transcriptId
-    )
+    // Post notification for cache updates (on main actor for cross-actor safety)
+    await MainActor.run {
+      NotificationCenter.default.post(
+        name: .transcriptMetadataUpdated,
+        object: transcriptId
+      )
+    }
   }
 
   private func isFresh(
