@@ -105,23 +105,28 @@ enum DatabaseSchema {
     }
 
     // v3: Path normalization and freshness tracking for transcript inventory (schema only)
-    migrator.registerMigration("v3_schema") { db in
-      // Add new columns for path normalization and content tracking
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN normalized_path TEXT
-      """)
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN path_hash TEXT
-      """)
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN content_length INTEGER
-      """)
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN mtime_ms INTEGER
-      """)
-      try db.execute(sql: """
-        ALTER TABLE transcripts ADD COLUMN content_sha256 TEXT
-      """)
+    // Note: Reuses v3_transcript_identity name for compatibility with existing databases
+    migrator.registerMigration("v3_transcript_identity") { db in
+      // Check if columns already exist (safe for re-running)
+      let tableInfo = try Row.fetchAll(db, sql: "PRAGMA table_info(transcripts)")
+      let columnNames = Set(tableInfo.map { $0["name"] as! String })
+
+      // Add columns only if they don't exist
+      if !columnNames.contains("normalized_path") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN normalized_path TEXT")
+      }
+      if !columnNames.contains("path_hash") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN path_hash TEXT")
+      }
+      if !columnNames.contains("content_length") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN content_length INTEGER")
+      }
+      if !columnNames.contains("mtime_ms") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN mtime_ms INTEGER")
+      }
+      if !columnNames.contains("content_sha256") {
+        try db.execute(sql: "ALTER TABLE transcripts ADD COLUMN content_sha256 TEXT")
+      }
 
       // Create transcript_metadata table
       try db.execute(sql: """
