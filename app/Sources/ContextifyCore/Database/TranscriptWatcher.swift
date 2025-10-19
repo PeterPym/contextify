@@ -3,6 +3,11 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatcher")
 
+/// Errors that can occur during transcript watching
+public enum TranscriptWatcherError: Error {
+  case transcriptNotFound
+}
+
 /// Watches transcript files for changes and triggers incremental streaming
 public final class TranscriptWatcher {
   private let hooverEngine: HooverEngine
@@ -38,6 +43,26 @@ public final class TranscriptWatcher {
     if isWatching(transcriptId: transcriptId) {
       log.debug("Already watching transcript: \(transcriptId), skipping")
       return
+    }
+
+    // Perform initial ingestion of existing content before starting watcher
+    do {
+      log.info("Performing initial ingestion for: \(transcriptId)")
+      guard let transcript = try transcriptRepo.get(transcriptId) else {
+        log.error("Transcript not found during initial ingest: \(transcriptId)")
+        throw TranscriptWatcherError.transcriptNotFound
+      }
+
+      // Ingest existing content (HooverEngine resumes from last checkpoint, so safe for existing ingestions)
+      _ = try hooverEngine.hooverTranscript(
+        transcript,
+        fileURL: fileURL,
+        progress: NoOpProgressSink()
+      )
+      log.info("Initial ingestion complete for: \(transcriptId)")
+    } catch {
+      log.error("Initial ingestion failed for \(transcriptId): \(error)")
+      // Continue to set up watcher even if initial ingest fails
     }
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
