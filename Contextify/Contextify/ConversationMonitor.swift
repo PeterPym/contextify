@@ -761,7 +761,7 @@ final class ConversationMonitor {
 
                 guard !newEntries.isEmpty else {
                     log.debug("No new entries in incremental update")
-                    continue  // Check if more updates arrived
+                    break  // No more entries, exit the drain loop
                 }
 
                 // Convert to timeline entries with cache lookup + collect misses
