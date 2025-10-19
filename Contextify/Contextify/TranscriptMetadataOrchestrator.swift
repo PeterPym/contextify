@@ -388,11 +388,11 @@ actor TranscriptMetadataOrchestrator {
   // MARK: - Metrics Logging
 
   private func logStatsIfNeeded() {
-    requestCount += 1
-    if requestCount % 100 == 0 {
-      let total = max(1, stats.hits + stats.misses)
-      let hitRate = Int(Double(stats.hits) * 100 / Double(total))
-      log.info("Metadata stats: hit rate \(hitRate)%, calls=\(stats.llmCalls), failures=\(stats.failures), breaker opens=\(stats.breakerOpens)")
+    self.requestCount += 1
+    if self.requestCount % 100 == 0 {
+      let total = max(1, self.stats.hits + self.stats.misses)
+      let hitRate = Int(Double(self.stats.hits) * 100 / Double(total))
+      log.info("Metadata stats: hit rate \(hitRate)%, calls=\(self.stats.llmCalls), failures=\(self.stats.failures), breaker opens=\(self.stats.breakerOpens)")
     }
   }
 
