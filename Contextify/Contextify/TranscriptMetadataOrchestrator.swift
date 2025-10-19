@@ -43,6 +43,17 @@ actor TranscriptMetadataOrchestrator {
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
   private let llmGate = ConcurrencyGate(permits: 2)
 
+  // Observability stats
+  private struct Stats {
+    var hits = 0
+    var misses = 0
+    var llmCalls = 0
+    var failures = 0
+    var breakerOpens = 0
+  }
+  private var stats = Stats()
+  private var requestCount = 0
+
   // MARK: - Public API
 
   /// Ensures metadata exists for a session, generating if needed
@@ -110,11 +121,16 @@ actor TranscriptMetadataOrchestrator {
         )
 
         if isFresh {
+          stats.hits += 1
+          logStatsIfNeeded()
           log.info("Using cached metadata for \(transcriptId, privacy: .public)")
           return cached.toUIModel()
         } else {
+          stats.misses += 1
           log.debug("Cached metadata is stale, regenerating")
         }
+      } else {
+        stats.misses += 1
       }
     }
 
@@ -135,8 +151,9 @@ actor TranscriptMetadataOrchestrator {
 
     // Check circuit breaker
     if await circuitBreaker.shouldOpen() {
-      let stats = await circuitBreaker.stats()
-      log.warning("Circuit breaker active (\(stats.failures)/\(stats.total), \(String(format: "%.1f%%", stats.ratio * 100))), using heuristic fallback")
+      stats.breakerOpens += 1
+      let cbStats = await circuitBreaker.stats()
+      log.warning("Circuit breaker active (\(cbStats.failures)/\(cbStats.total), \(String(format: "%.1f%%", cbStats.ratio * 100))), using heuristic fallback")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
       try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
       return metadata
@@ -192,6 +209,7 @@ actor TranscriptMetadataOrchestrator {
 
       #if canImport(FoundationModels)
       if #available(macOS 26, *) {
+        stats.llmCalls += 1
         let guided = try await llm.singlePass(
           context: context.text,
           sampledCount: context.sampledCount,
@@ -211,6 +229,7 @@ actor TranscriptMetadataOrchestrator {
       throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
       #endif
     } catch {
+      stats.failures += 1
       log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
       await circuitBreaker.recordFailure()
 
@@ -229,6 +248,7 @@ actor TranscriptMetadataOrchestrator {
 
           #if canImport(FoundationModels)
           if #available(macOS 26, *) {
+            stats.llmCalls += 1
             let guided = try await llm.singlePass(
               context: bookendContext.text,
               sampledCount: bookendContext.sampledCount,
@@ -247,6 +267,7 @@ actor TranscriptMetadataOrchestrator {
           throw TranscriptMetadataLLM.LLMError.unexpectedEnvironment
           #endif
         } catch {
+          stats.failures += 1
           log.error("Bookends fallback also failed, using heuristic")
           await circuitBreaker.recordFailure()
           metadata = HeuristicMetadata.generate(exchanges: exchanges)
@@ -365,6 +386,15 @@ actor TranscriptMetadataOrchestrator {
   }
 
   // MARK: - Metrics Logging
+
+  private func logStatsIfNeeded() {
+    requestCount += 1
+    if requestCount % 100 == 0 {
+      let total = max(1, stats.hits + stats.misses)
+      let hitRate = Int(Double(stats.hits) * 100 / Double(total))
+      log.info("Metadata stats: hit rate \(hitRate)%, calls=\(stats.llmCalls), failures=\(stats.failures), breaker opens=\(stats.breakerOpens)")
+    }
+  }
 
   private func logMetrics(_ metrics: GenerationMetrics, for identifier: String) {
     log.info("""
