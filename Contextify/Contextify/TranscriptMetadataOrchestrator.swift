@@ -14,7 +14,6 @@ actor TranscriptMetadataOrchestrator {
 
   private let log = Logger(subsystem: "dev.contextify.metadata", category: "Orchestrator")
   private var orchestrator: TranscriptOrchestrator!  // Injected after init
-  private let parser = TranscriptParser()
   private let builder = ContextBuilder()
   private let llm: TranscriptMetadataLLM
   private let postProcessor = MetadataPostProcessor()
@@ -111,6 +110,34 @@ actor TranscriptMetadataOrchestrator {
     activeTasks.removeValue(forKey: url)
   }
 
+  /// Convert TranscriptEntry[] to Exchange[] (same logic as SQLBackedMetadataOrchestrator)
+  private func convertEntriesToExchanges(_ entries: [TranscriptEntry]) -> [Exchange] {
+    var exchanges: [Exchange] = []
+
+    for entry in entries {
+      let role: Exchange.Role
+      switch entry.kind {
+      case "user":
+        role = .user
+      case "assistant":
+        role = .assistant
+      default:
+        continue
+      }
+
+      guard !entry.content.isEmpty else { continue }
+
+      let timestamp = Date(timeIntervalSince1970: TimeInterval(entry.timestamp))
+      exchanges.append(Exchange(
+        role: role,
+        text: entry.content,
+        timestamp: timestamp
+      ))
+    }
+
+    return exchanges
+  }
+
   private func generateMetadata(
     for session: TranscriptSession,
     orchestrator: TranscriptOrchestrator,
@@ -147,14 +174,17 @@ actor TranscriptMetadataOrchestrator {
 
     log.info("Generating metadata for \(transcriptId, privacy: .public)")
 
-    // Parse exchanges (background-safe, no MainActor needed)
+    // Read entries from database (not JSONL file)
     let parseStart = Date()
-    let exchanges = try parser.parseExchanges(url: session.fileURL)
+    let entries = try orchestrator.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
+    let exchanges = convertEntriesToExchanges(entries)
     let parseTime = Date().timeIntervalSince(parseStart)
+
+    log.info("📊 Loaded \(exchanges.count, privacy: .public) exchanges from database (from \(entries.count, privacy: .public) entries)")
 
     // Handle very short transcripts with heuristic
     if exchanges.count < 3 {
-      log.info("Very short transcript (\(exchanges.count) exchanges), using heuristic")
+      log.warning("⚠️ Very short transcript (\(exchanges.count, privacy: .public) exchanges < 3), using heuristic fallback")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
       try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
       return metadata

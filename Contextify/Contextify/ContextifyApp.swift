@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ContextifyCore
+import OSLog
 
 struct TranscriptInventoryCommands: Commands {
   @Environment(\.openWindow) private var openWindow
@@ -22,6 +23,9 @@ struct ContextifyApp: App {
   private let timeline = ConversationMonitor.shared
 
   init() {
+    let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
+    startupLog.fault("🚀🚀🚀 CONTEXTIFY LAUNCHED - NEW BUILD WITH DIAGNOSTIC LOGGING 🚀🚀🚀")
+
     // Check for existing instance
     if isAnotherInstanceRunning() {
       // In development, kill the old instance and proceed
