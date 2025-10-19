@@ -500,7 +500,59 @@ final class DatabaseTests: XCTestCase {
     }
 
     XCTAssertTrue(indexes.contains("uq_tr_provider_session"))
-    XCTAssertTrue(indexes.contains("idx_tr_path_hash"))
+    XCTAssertTrue(indexes.contains("uq_tr_provider_path_hash"))
+    XCTAssertTrue(indexes.contains("idx_tr_mtime_ms"))
+  }
+
+  func testMigrationBackfillMtimeMs() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+
+    // Manually insert legacy data with mtime_ns
+    try pool.write { db in
+      // Create v2 schema (before mtime_ms)
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          root_path TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      """)
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcripts (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          mtime_ns INTEGER
+        )
+      """)
+
+      // Insert test data
+      try db.execute(sql: "INSERT INTO projects VALUES ('p1', 'Test', '/test', 1000)")
+      try db.execute(sql: "INSERT INTO transcripts VALUES ('t1', 'p1', 'claude.code', 1234567890000000000)")
+    }
+
+    // Run v3 migration
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    // Verify backfill worked
+    let result = try pool.read { db in
+      try Row.fetchOne(db, sql: "SELECT mtime_ns, mtime_ms FROM transcripts WHERE id = 't1'")
+    }
+
+    XCTAssertNotNil(result)
+    let mtimeNs: Int64? = result?["mtime_ns"]
+    let mtimeMs: Int64? = result?["mtime_ms"]
+
+    XCTAssertNotNil(mtimeNs)
+    XCTAssertNotNil(mtimeMs)
+    XCTAssertEqual(mtimeMs, mtimeNs! / 1000000)
   }
 
   // MARK: - Identity Resolution Tests

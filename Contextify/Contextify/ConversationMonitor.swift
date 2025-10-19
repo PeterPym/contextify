@@ -914,23 +914,16 @@ final class ConversationMonitor {
 
         if Task.isCancelled { return }
 
-        // Hoover new transcripts (skip existing ones to avoid duplicate work)
+        // Start watchers for new transcripts only (no duplicate writes)
         let newTranscripts = resolved.filter(\.wasCreated)
         if !newTranscripts.isEmpty {
             await MainActor.run {
-                log.info("Hoovering \(newTranscripts.count) new transcripts")
+                log.info("Starting watchers for \(newTranscripts.count) new transcripts")
             }
 
-            for transcript in newTranscripts {
+            for tr in newTranscripts {
                 if Task.isCancelled { return }
-                try orchestrator.discoverTranscript(
-                    projectId: projectId,
-                    fileURL: transcript.fileURL,
-                    provider: transcript.provider,
-                    providerSessionId: nil,
-                    startWatching: true,
-                    progress: nil
-                )
+                try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
             }
 
             // Run maintenance after bulk ingest
@@ -941,7 +934,7 @@ final class ConversationMonitor {
             }
         } else {
             await MainActor.run {
-                log.info("No new transcripts to hoover")
+                log.info("No new transcripts found")
             }
         }
 

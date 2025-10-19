@@ -558,6 +558,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  // MARK: - File Watching
+
+  /// Start watching a transcript file for changes
+  /// - Parameters:
+  ///   - transcriptId: The transcript ID to watch
+  ///   - fileURL: The file URL to watch
+  public func startWatchingTranscript(transcriptId: String, fileURL: URL) throws {
+    try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+  }
+
   // MARK: - Cleanup
 
   public func stopAllWatchers() {
