@@ -147,6 +147,11 @@ struct TranscriptInventoryView: View {
         // Load metadata on initial appearance
         await loadMetadataForSessions(monitor.allSessions)
       }
+      .onDisappear {
+        // Cancel pending debounce task to prevent leaks
+        debounceTask?.cancel()
+        debounceTask = nil
+      }
       .onReceive(NotificationCenter.default.publisher(for: .revealTranscript)) { notification in
         guard let path = notification.userInfo?["path"] as? String else { return }
 
