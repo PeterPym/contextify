@@ -6,19 +6,31 @@ import Foundation
 nonisolated enum MetadataBudgets {
   // LLM token budgets
   static let totalTokens = 4096
-  static let outputTokens = 300
-  static let promptOverhead = 250
+  static let outputTokens = 150          // Small JSON: title ≤60, description ≤200, topics
+  static let promptOverhead = 900        // Instructions + safety sanitizers + formatting
+  static let safetyMargin = 300          // ~7% of 4096, covers Apple safety wrapper variability
 
   // Per-exchange limits
-  static let perExchangeCharLimit = 300  // ~75 tokens per exchange
+  static let perExchangeCharLimit = 200  // ~80 tokens per exchange with compressed paths/code
+
+  // Token estimation (auto-tuned by LLM observations)
+  static var charsPerToken: Double = 2.5  // Default, updated by LLM observations
 
   // Sampling configuration
   static let bookendCount = 10           // Number of exchanges to take from head/tail
   static let fullStrategyLimit = 25      // Max exchanges before switching to adaptive
 
-  // Computed sampler budget with safety margin
+  // Computed sampler budget (unified source of truth)
   static var samplerBudget: Int {
-    totalTokens - outputTokens - promptOverhead - 200 // 200 token safety margin
+    calculateBudget(overhead: nil)
+  }
+
+  /// Single unified budget calculation
+  /// - Parameter overhead: Calibrated overhead if available, otherwise uses static overhead
+  /// - Returns: Available tokens for context
+  static func calculateBudget(overhead: Int?) -> Int {
+    let effectiveOverhead = overhead ?? promptOverhead
+    return totalTokens - outputTokens - effectiveOverhead - safetyMargin
   }
 }
 

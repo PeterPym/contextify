@@ -162,12 +162,20 @@ nonisolated enum AdaptiveSampler {
 
   // MARK: - Token Estimation
 
+  /// Estimates token count for AdaptiveSampler budget calculations
+  /// NOTE: This is ONLY used for TranscriptMetadata generation (session titles/descriptions),
+  /// NOT for timeline summaries (which process one message at a time).
   private static func estimateTokens(for exchanges: [Exchange]) -> Int {
+    let charsPerToken = MetadataBudgets.charsPerToken  // Auto-tuned by LLM observations
+
     exchanges.reduce(0) { acc, exchange in
       let limitedText = Sanitizers.collapse(exchange.text, hardLimit: MetadataBudgets.perExchangeCharLimit)
       let charCount = limitedText.count
-      // ~4 chars per token + timestamp/role overhead (~20 tokens)
-      return acc + (charCount / 4) + 25
+      // Use auto-tuned ratio (default 2.5) + timestamp/role overhead (~25 tokens)
+      // This accounts for: code symbols, file paths, technical terms, punctuation
+      // which tokenize less efficiently than prose (~4 chars/token)
+      // Timeline summaries use different logic (single-message processing in FoundationLLM.summarizeTimeline)
+      return acc + Int(Double(charCount) / charsPerToken) + 25
     }
   }
 }
@@ -178,9 +186,18 @@ nonisolated enum AdaptiveSampler {
 nonisolated enum Sanitizers {
   /// Collapses whitespace and truncates to hard limit
   static func collapse(_ text: String, hardLimit: Int) -> String {
-    let range = NSRange(location: 0, length: (text as NSString).length)
-    var sanitized = Formatters.collapseWhitespace.stringByReplacingMatches(
-      in: text,
+    var sanitized = text
+
+    // Replace code blocks with compact placeholders
+    sanitized = elideCodeBlocks(sanitized)
+
+    // Elide middle of long file paths
+    sanitized = elideFilePaths(sanitized)
+
+    // Collapse whitespace
+    let range = NSRange(location: 0, length: (sanitized as NSString).length)
+    sanitized = Formatters.collapseWhitespace.stringByReplacingMatches(
+      in: sanitized,
       options: [],
       range: range,
       withTemplate: " "
@@ -191,6 +208,64 @@ nonisolated enum Sanitizers {
     }
 
     return sanitized
+  }
+
+  /// Replaces code blocks with compact placeholders like [code block, 34 lines]
+  private static func elideCodeBlocks(_ text: String) -> String {
+    var result = text
+
+    // Replace markdown code blocks (```...```)
+    let codeBlockPattern = #"```[\s\S]*?```"#
+    if let regex = try? NSRegularExpression(pattern: codeBlockPattern, options: []) {
+      let matches = regex.matches(
+        in: result,
+        options: [],
+        range: NSRange(result.startIndex..., in: result)
+      )
+
+      // Process matches in reverse to maintain valid ranges
+      for match in matches.reversed() {
+        if let range = Range(match.range, in: result) {
+          let block = result[range]
+          let lineCount = block.split(separator: "\n").count
+          result.replaceSubrange(range, with: "[code block, \(lineCount) lines]")
+        }
+      }
+    }
+
+    return result
+  }
+
+  /// Elides middle of long file paths: /Users/rob/very/long/path/file.swift → /Users/.../file.swift
+  private static func elideFilePaths(_ text: String) -> String {
+    var result = text
+
+    // Match file paths (simplified pattern)
+    let pathPattern = #"/[\w\-./]{40,}"#
+    if let regex = try? NSRegularExpression(pattern: pathPattern, options: []) {
+      let matches = regex.matches(
+        in: result,
+        options: [],
+        range: NSRange(result.startIndex..., in: result)
+      )
+
+      // Process matches in reverse to maintain valid ranges
+      for match in matches.reversed() {
+        if let range = Range(match.range, in: result) {
+          let path = String(result[range])
+          let components = path.split(separator: "/")
+
+          if components.count > 4 {
+            let first = components.prefix(2).joined(separator: "/")
+            let last = components.suffix(1).joined(separator: "/")
+            let elided = "/\(first)/…/\(last)"
+            result.replaceSubrange(range, with: elided)
+          }
+        }
+      }
+    }
+
+    return result
   }
 
   /// Sanitizes text to prevent prompt injection

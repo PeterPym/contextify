@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import CryptoKit
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -18,6 +19,8 @@ actor TranscriptMetadataLLM {
     case unavailable
     case unexpectedEnvironment
     case decodingFailure(String)
+    case contextWindowExceeded(tokens: Int, limit: Int)
+    case guardrailViolation(String)
   }
 
   // MARK: - Session & single-flight
@@ -26,6 +29,15 @@ actor TranscriptMetadataLLM {
   private var initializing = false
   private var inFlight = false
   private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  // Overhead calibration cache
+  private var calibratedOverhead: Int?
+  private var calibrating = false
+  private let promptVersion = 2  // Increment when instructions change
+
+  // Token estimation auto-tuning
+  private var observedRatios: [Double] = []  // Rolling window of chars/token ratios
+  private let maxObservations = 20
 
   #if canImport(FoundationModels)
   @available(macOS 26, *)
@@ -73,34 +85,265 @@ actor TranscriptMetadataLLM {
   }
   #endif
 
-  // MARK: - Token Budget Calculation
+  // MARK: - Pre-flight Context Validation
+
+  #if canImport(FoundationModels)
+  @available(macOS 26, *)
+  private func ensureContextFits(
+    context: String,
+    sampledCount: Int,
+    totalCount: Int,
+    session: LanguageModelSession,
+    maxAttempts: Int = 5
+  ) async throws -> String {
+    var currentContext = context
+    var currentSampledCount = sampledCount
+    var attempt = 0
+
+    while attempt < maxAttempts {
+      let contextWithInfo = """
+      CONTEXT: This excerpt shows \(currentSampledCount) of \(totalCount) messages. First 10 and last 10 are always included; the middle is selected for importance.
+
+      \(currentContext)
+      """
+
+      // Pre-flight with minimal output tokens
+      let preflightOptions = GenerationOptions(
+        sampling: .greedy,
+        temperature: 0,
+        maximumResponseTokens: 1
+      )
+
+      do {
+        // Cheap pre-flight check
+        _ = try await session.respond(
+          to: contextWithInfo,
+          generating: GuidedTranscriptMetadata.self,
+          includeSchemaInPrompt: false,
+          options: preflightOptions
+        )
+        // Success! Context fits
+        log.debug("Pre-flight passed with \(currentContext.count) chars, \(currentSampledCount) messages")
+        return currentContext
+      } catch let error as LanguageModelSession.GenerationError {
+        guard case .exceededContextWindowSize(let errorContext) = error else {
+          throw error // Other errors should propagate
+        }
+
+        // Extract token count from error
+        let desc = errorContext.debugDescription
+        let tokens = Self.parseTokenCount(from: desc) ?? 0
+
+        // Record token usage for auto-tuning
+        if tokens > 0 {
+          recordTokenUsage(chars: currentContext.count, tokens: tokens)
+        }
+
+        attempt += 1
+        log.warning("Pre-flight exceeded context: \(tokens)/4096 tokens (attempt \(attempt)/\(maxAttempts))")
+
+        if attempt >= maxAttempts {
+          throw LLMError.contextWindowExceeded(tokens: tokens, limit: 4096)
+        }
+
+        // Apply adaptive compression after 2 failed attempts
+        if attempt >= 2 {
+          let compressionLevel = attempt - 1  // Level 1 at attempt 2, level 2 at attempt 3, etc.
+          log.debug("Applying adaptive compression (level \(compressionLevel))")
+          currentContext = applyAdaptiveCompression(currentContext, level: compressionLevel)
+        } else {
+          // First 2 attempts: binary shrink by removing middle lines
+          let shrinkResult = shrinkContextByHalf(currentContext)
+          currentContext = shrinkResult.context
+          currentSampledCount = shrinkResult.estimatedCount
+        }
+
+        log.debug("Shrunk context to \(currentContext.count) chars, ~\(currentSampledCount) messages")
+      }
+    }
+
+    throw LLMError.contextWindowExceeded(tokens: 0, limit: 4096)
+  }
+
+  private func shrinkContextByHalf(_ context: String) -> (context: String, estimatedCount: Int) {
+    let lines = context.split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.count > 20 else {
+      return (context, lines.count)
+    }
+
+    // Keep first 10 and last 10 lines, remove middle
+    let head = lines.prefix(10)
+    let tail = lines.suffix(10)
+    let shrunk = (head + tail).joined(separator: "\n")
+
+    return (shrunk, 20)
+  }
+
+  /// Adaptive compressor: aggressive compression techniques after basic shrinking fails
+  private func applyAdaptiveCompression(_ context: String, level: Int) -> String {
+    var compressed = context
+
+    // Level 1: Strip timestamps ("+5m23s" → "")
+    if level >= 1 {
+      compressed = stripTimestamps(compressed)
+    }
+
+    // Level 2: Collapse repeated adjacent lines
+    if level >= 2 {
+      compressed = collapseRepeatedLines(compressed)
+    }
+
+    // Level 3: Drop assistant lines in middle, keep user lines
+    if level >= 3 {
+      compressed = preferUserLines(compressed)
+    }
+
+    return compressed
+  }
+
+  private func stripTimestamps(_ context: String) -> String {
+    // Remove time deltas like "+5m23s: " or "+2h: "
+    let pattern = #"\+[\dhms]+:\s"#
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+      return context
+    }
+    let range = NSRange(context.startIndex..., in: context)
+    return regex.stringByReplacingMatches(in: context, options: [], range: range, withTemplate: "")
+  }
+
+  private func collapseRepeatedLines(_ context: String) -> String {
+    let lines = context.split(separator: "\n", omittingEmptySubsequences: false)
+    var result: [String] = []
+    var lastLine: String?
+
+    for line in lines {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed != lastLine {
+        result.append(String(line))
+        lastLine = trimmed
+      }
+      // Skip repeated lines
+    }
+
+    return result.joined(separator: "\n")
+  }
+
+  private func preferUserLines(_ context: String) -> String {
+    let lines = context.split(separator: "\n", omittingEmptySubsequences: false)
+    guard lines.count > 20 else { return context }
+
+    // Keep first 10, last 10, and user lines from middle
+    let head = lines.prefix(10)
+    let tail = lines.suffix(10)
+    let middle = lines.dropFirst(10).dropLast(10)
+
+    let userMiddle = middle.filter { $0.starts(with: "U ") || $0.starts(with: "U+") }
+
+    return (head + userMiddle + tail).joined(separator: "\n")
+  }
+  #endif
+
+  // MARK: - Token Budget Calculation & Calibration
+
+  #if canImport(FoundationModels)
+  @available(macOS 26, *)
+  func calibrateOverheadIfNeeded() async throws {
+    guard calibratedOverhead == nil, !calibrating else { return }
+    calibrating = true
+    defer { calibrating = false }
+
+    log.info("Calibrating prompt overhead for v\(promptVersion)...")
+
+    let session = try await getOrCreateSession()
+
+    // Binary search to find max filler tokens before exceeding context
+    var low = 0
+    var high = 4096 - MetadataBudgets.outputTokens // Max possible
+    var maxFits = 0
+
+    while low <= high {
+      let mid = (low + high) / 2
+      let filler = String(repeating: "x ", count: mid)  // ~2 chars per token
+
+      let options = GenerationOptions(
+        sampling: .greedy,
+        temperature: 0,
+        maximumResponseTokens: 1
+      )
+
+      do {
+        _ = try await session.respond(
+          to: filler,
+          generating: GuidedTranscriptMetadata.self,
+          includeSchemaInPrompt: false,
+          options: options
+        )
+        // Fits! Try more
+        maxFits = mid
+        low = mid + 1
+      } catch let error as LanguageModelSession.GenerationError {
+        if case .exceededContextWindowSize = error {
+          // Too much, try less
+          high = mid - 1
+        } else {
+          // Other error (e.g., decoding failure with dummy data), ignore
+          break
+        }
+      }
+    }
+
+    // Overhead = total - output - what fit
+    let overhead = 4096 - MetadataBudgets.outputTokens - maxFits
+    calibratedOverhead = overhead
+
+    log.info("Calibration complete: overhead=\(overhead) tokens (max content tokens: \(maxFits))")
+  }
+
+  func getOverhead() -> Int {
+    return calibratedOverhead ?? MetadataBudgets.promptOverhead
+  }
+
+  /// Records observed token usage for auto-tuning the estimator
+  func recordTokenUsage(chars: Int, tokens: Int) {
+    guard tokens > 0, chars > 0 else { return }
+
+    let ratio = Double(chars) / Double(tokens)
+    observedRatios.append(ratio)
+
+    // Keep only last N observations
+    if observedRatios.count > maxObservations {
+      observedRatios.removeFirst()
+    }
+
+    // Update global estimator every 5 observations
+    if observedRatios.count % 5 == 0 {
+      let avgRatio = observedRatios.reduce(0, +) / Double(observedRatios.count)
+      let tuned = max(2.0, min(4.0, avgRatio))
+      MetadataBudgets.charsPerToken = tuned
+      log.debug("Token estimator stats: avg ratio=\(String(format: "%.2f", avgRatio)) chars/token (\(observedRatios.count) samples), tuned to \(String(format: "%.2f", tuned))")
+    }
+  }
+
+  /// Gets the auto-tuned chars/token ratio, defaults to 2.5
+  func getTunedCharsPerToken() -> Double {
+    guard observedRatios.count >= 3 else {
+      return 2.5  // Default until we have enough data
+    }
+
+    let avgRatio = observedRatios.reduce(0, +) / Double(observedRatios.count)
+    // Clamp to reasonable range [2.0, 4.0]
+    return max(2.0, min(4.0, avgRatio))
+  }
+  #endif
 
 #if canImport(FoundationModels)
   @available(macOS 26, *)
   func calculateAvailableContextTokens(sampledCount: Int, totalCount: Int) async -> Int {
-    // Estimate instruction tokens
-    // FoundationModels may not expose token counting, so use character-based estimation
-    // Typical ratio is ~4 chars per token for English text
-    let instructions = Prompts.sharedInstructions()
-    let instructionTokens = instructions.count / 4
+    // Use unified budget calculation with calibrated overhead
+    let overhead = getOverhead()
+    let availableForContext = MetadataBudgets.calculateBudget(overhead: overhead)
 
-    // Estimate schema tokens added by includeSchemaInPrompt: true
-    // The @Generable schema gets converted to JSON schema and added to the prompt
-    // Conservative estimate based on the GuidedTranscriptMetadata schema size
-    let schemaTokens = 250
-
-    // Budget calculation
-    let totalTokens = 4096
-    let maxOutputTokens = 300
-    // Safety margin for token estimation variance
-    // - Time deltas (+5m, +2h) are much more efficient than ISO8601 timestamps
-    // - Code symbols and punctuation still tokenize less efficiently
-    // - Conservative margin to avoid hitting context limit
-    let safetyMargin = 100
-
-    let availableForContext = totalTokens - maxOutputTokens - instructionTokens - schemaTokens - safetyMargin
-
-    log.info("Token budget: instructions=\(instructionTokens), schema=\(schemaTokens), output=\(maxOutputTokens), safety=\(safetyMargin), available=\(availableForContext)")
+    log.debug("Token budget: overhead=\(overhead), output=\(MetadataBudgets.outputTokens), safety=\(MetadataBudgets.safetyMargin), available=\(availableForContext)")
 
     return max(0, availableForContext)
   }
@@ -112,8 +355,10 @@ actor TranscriptMetadataLLM {
   func singlePass(
     context: String,
     sampledCount: Int,
-    totalCount: Int
+    totalCount: Int,
+    strategy: String = "unknown"
   ) async throws -> GuidedTranscriptMetadata {
+    let correlationId = UUID().uuidString.prefix(8)
     let availability = SystemLanguageModel.default.availability
     guard case .available = availability else {
       log.warning("SystemLanguageModel unavailable")
@@ -122,20 +367,33 @@ actor TranscriptMetadataLLM {
 
     let session = try await getOrCreateSession()
 
+    // Pre-flight check and shrink if needed
+    let fittedContext = try await ensureContextFits(
+      context: context,
+      sampledCount: sampledCount,
+      totalCount: totalCount,
+      session: session
+    )
+
     // sampled/total move into input (not instructions)
     let contextWithInfo = """
     CONTEXT: This excerpt shows \(sampledCount) of \(totalCount) messages. First 10 and last 10 are always included; the middle is selected for importance.
 
-    \(context)
+    \(fittedContext)
     """
+
+    // Compute prompt SHA256 for observability
+    let promptData = Data(contextWithInfo.utf8)
+    let promptHash = SHA256.hash(data: promptData)
+    let promptSHA = promptHash.compactMap { String(format: "%02x", $0) }.joined().prefix(16)
 
     let options = GenerationOptions(
       sampling: .greedy,
       temperature: 0,
-      maximumResponseTokens: 300
+      maximumResponseTokens: 150
     )
 
-    log.info("Requesting transcript metadata from LLM (sampled: \(sampledCount)/\(totalCount))")
+    log.info("[\(correlationId, privacy: .public)] strategy=\(strategy, privacy: .public) msgs=\(sampledCount)/\(totalCount) chars=\(contextWithInfo.count) promptSHA=\(promptSHA, privacy: .public)")
 
     // strict single-flight: exactly one respond() in flight
     await acquire()
@@ -145,17 +403,40 @@ actor TranscriptMetadataLLM {
       let response = try await session.respond(
         to: contextWithInfo,
         generating: GuidedTranscriptMetadata.self,
-        includeSchemaInPrompt: true,
+        includeSchemaInPrompt: false,
         options: options
       )
       log.info("LLM returned metadata - title: '\(response.content.title, privacy: .public)'")
       return response.content
     } catch let error as LanguageModelSession.GenerationError {
-      log.error("LLM generation error: \(String(describing: error), privacy: .public)")
-      if case .decodingFailure(let ctx) = error {
-        log.error("Decoding failure details: \(ctx.debugDescription, privacy: .public)")
+      // Map FoundationModels errors to specific LLMError types
+      switch error {
+      case .exceededContextWindowSize(let context):
+        // Parse token counts from error message
+        let desc = context.debugDescription
+        let tokens = Self.parseTokenCount(from: desc) ?? 0
+
+        // Record for auto-tuning (even on failure, gives us data)
+        if tokens > 0 {
+          recordTokenUsage(chars: contextWithInfo.count, tokens: tokens)
+        }
+
+        log.error("Context window exceeded: \(tokens)/4096 tokens")
+        throw LLMError.contextWindowExceeded(tokens: tokens, limit: 4096)
+
+      case .guardrailViolation(let context):
+        log.error("Guardrail violation: \(context.debugDescription, privacy: .public)")
+        throw LLMError.guardrailViolation(context.debugDescription)
+
+      case .decodingFailure(let context):
+        log.error("Decoding failure: \(context.debugDescription, privacy: .public)")
+        throw LLMError.decodingFailure(context.debugDescription)
+
+      @unknown default:
+        // Handle all other cases (refusal, assetsUnavailable, unsupportedGuide, etc.)
+        log.error("LLM error: \(String(describing: error), privacy: .public)")
+        throw LLMError.decodingFailure(String(describing: error))
       }
-      throw LLMError.decodingFailure(String(describing: error))
     }
   }
   #else
@@ -169,6 +450,19 @@ actor TranscriptMetadataLLM {
     throw LLMError.unexpectedEnvironment
   }
   #endif
+
+  // MARK: - Helper Functions
+
+  /// Parses token count from error message like "Content contains 5495 tokens, which exceeds..."
+  private static func parseTokenCount(from description: String) -> Int? {
+    let pattern = #"Content contains (\d+) tokens"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: description, range: NSRange(description.startIndex..., in: description)),
+          let range = Range(match.range(at: 1), in: description) else {
+      return nil
+    }
+    return Int(description[range])
+  }
 }
 
 // MARK: - Guided Schema

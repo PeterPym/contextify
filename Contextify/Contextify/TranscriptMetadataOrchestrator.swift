@@ -24,9 +24,20 @@ actor TranscriptMetadataOrchestrator {
   }
 
   /// Initialize with database orchestrator (call once from app startup)
-  func initialize(orchestrator: TranscriptOrchestrator) {
+  func initialize(orchestrator: TranscriptOrchestrator) async {
     self.orchestrator = orchestrator
     log.debug("TranscriptMetadataOrchestrator initialized with SQL backend")
+
+    // Calibrate LLM overhead on startup
+    #if canImport(FoundationModels)
+    if #available(macOS 26, *) {
+      do {
+        try await llm.calibrateOverheadIfNeeded()
+      } catch {
+        log.warning("Overhead calibration failed, using default: \(error.localizedDescription)")
+      }
+    }
+    #endif
   }
 
   private let currentPromptVersion = 2
@@ -213,7 +224,8 @@ actor TranscriptMetadataOrchestrator {
         let guided = try await llm.singlePass(
           context: context.text,
           sampledCount: context.sampledCount,
-          totalCount: exchanges.count
+          totalCount: exchanges.count,
+          strategy: strategy.rawValue
         )
 
         // Post-process (background-safe)
@@ -230,12 +242,20 @@ actor TranscriptMetadataOrchestrator {
       #endif
     } catch {
       stats.failures += 1
-      log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
+
+      // Log error with specific context
+      if let llmError = error as? TranscriptMetadataLLM.LLMError,
+         case .contextWindowExceeded(let tokens, let limit) = llmError {
+        log.warning("Context window exceeded: \(tokens)/\(limit) tokens with \(strategy.rawValue) strategy")
+      } else {
+        log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
+      }
+
       await circuitBreaker.recordFailure()
 
       // Try bookends fallback if we weren't already using it
       if strategy != .bookends {
-        log.info("Retrying with bookends strategy...")
+        log.info("Retrying with bookends strategy (first 10 + last 10 exchanges)...")
         let bookendContext = try builder.build(
           exchanges: exchanges,
           strategy: .bookends,
@@ -252,7 +272,8 @@ actor TranscriptMetadataOrchestrator {
             let guided = try await llm.singlePass(
               context: bookendContext.text,
               sampledCount: bookendContext.sampledCount,
-              totalCount: exchanges.count
+              totalCount: exchanges.count,
+              strategy: "bookends-fallback"
             )
 
             metadata = postProcessor.apply(to: guided, context: bookendContext.text)
@@ -271,12 +292,12 @@ actor TranscriptMetadataOrchestrator {
           log.error("Bookends fallback also failed, using heuristic")
           await circuitBreaker.recordFailure()
           metadata = HeuristicMetadata.generate(exchanges: exchanges)
-          metadata.strategy = "heuristic-after-failure"
+          metadata.strategy = "heuristic"  // DB constraint requires: full, bookends, or heuristic
         }
       } else {
         // Already tried bookends, use heuristic
         metadata = HeuristicMetadata.generate(exchanges: exchanges)
-        metadata.strategy = "heuristic-after-failure"
+        metadata.strategy = "heuristic"  // DB constraint requires: full, bookends, or heuristic
       }
     }
 
