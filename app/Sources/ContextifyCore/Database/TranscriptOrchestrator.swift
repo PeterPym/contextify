@@ -290,7 +290,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
         let wasCreated: Bool
         let transcriptId: String
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let nowMs = TimeUnits.nowMs()
+        let nowSec = TimeUnits.secondsFromMs(nowMs)
 
         if let ex = existing, let id = ex["id"] as? String {
           // Existing transcript - update
@@ -312,13 +313,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           """, arguments: [
             path,
             normalizedPath,
-            disc.sessionId,
-            Int(mtimeMs / 1000),  // last_modified remains in seconds for compatibility
+            sid ?? "",
+            TimeUnits.secondsFromMs(mtimeMs),  // last_modified in seconds for compatibility
             len > 0 ? Int(len) : nil,
             len,
             mtimeMs,
             sha,
-            Int(nowMs / 1000),
+            nowSec,
             transcriptId
           ])
 
@@ -328,7 +329,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           transcriptId = UUID().uuidString
           wasCreated = true
 
-          let nowSec = Int(nowMs / 1000)
           try db.execute(sql: """
             INSERT INTO transcripts (
               id, project_id, file_path, normalized_path, path_hash,
@@ -339,8 +339,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             transcriptId, projectId, path, normalizedPath, pathHash,
-            disc.provider, disc.sessionId,
-            nowSec, len > 0 ? Int(len) : nil, len, mtimeMs, sha,
+            disc.provider, sid ?? "",
+            TimeUnits.secondsFromMs(mtimeMs), len > 0 ? Int(len) : nil, len, mtimeMs, sha,
             0, 0, 1, "active",
             nowSec, nowSec
           ])
