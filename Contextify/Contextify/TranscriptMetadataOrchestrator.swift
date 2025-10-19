@@ -247,6 +247,13 @@ actor TranscriptMetadataOrchestrator {
       if let llmError = error as? TranscriptMetadataLLM.LLMError,
          case .contextWindowExceeded(let tokens, let limit) = llmError {
         log.warning("Context window exceeded: \(tokens)/\(limit) tokens with \(strategy.rawValue) strategy")
+
+        // Check if remote fallback is enabled for rare overflow cases
+        if MetadataBudgets.enableRemoteLargeWindowFallback {
+          log.info("Remote large-window fallback enabled but not yet implemented - falling back to heuristic")
+          // TODO: Implement remote service call with 32K+ context window
+          // For now, fall through to existing fallback logic
+        }
       } else {
         log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
       }

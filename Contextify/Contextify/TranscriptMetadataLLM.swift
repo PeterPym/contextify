@@ -492,21 +492,13 @@ enum Prompts: Sendable {
   /// Static instructions so the session can be reused safely
   nonisolated static func sharedInstructions() -> String {
     """
-    You are analyzing a developer's AI-assisted coding session.
-
-    OUTPUT RULES
-    - Only include details explicitly present in the messages.
-    - Do NOT invent filenames, APIs, bugs, or tools.
-    - Title: ≤60 chars; imperative or concise noun phrase focused on the most discussed activity.
-    - Description: ≤200 chars; 2–3 key activities in chronological order; past tense; prefer concrete nouns from the text.
-    - Topics: 2–5 from {feature-work, bug-fix, refactoring, testing, documentation, code-review, performance, security, architecture, deployment, general}.
-    - Confidence: 0.0–1.0 based on clarity/specificity.
-    - mayContainHallucinations: true if any referenced filename/module/API is not present verbatim in the messages.
-
-    INPUT FORMAT
-    The input includes a CONTEXT preface with sampled/total counts and the sampled messages.
-
-    Return ONLY the JSON object for the schema.
+    Analyze developer AI session. Output JSON only:
+    • Title ≤60 chars: imperative/noun phrase for main activity
+    • Description ≤200 chars: 2-3 key activities, past tense, chronological
+    • Topics 2-5: feature-work, bug-fix, refactoring, testing, documentation, code-review, performance, security, architecture, deployment, general
+    • Confidence 0.0-1.0: clarity/specificity
+    • mayContainHallucinations: true if any file/module/API not in messages
+    Use ONLY details explicitly present. Do NOT invent names/tools.
     """
   }
 }

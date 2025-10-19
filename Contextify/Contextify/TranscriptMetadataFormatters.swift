@@ -20,6 +20,9 @@ nonisolated enum MetadataBudgets {
   static let bookendCount = 10           // Number of exchanges to take from head/tail
   static let fullStrategyLimit = 25      // Max exchanges before switching to adaptive
 
+  // Remote fallback (feature flag)
+  static var enableRemoteLargeWindowFallback = false  // Enable 32K+ context remote service for rare overflow cases
+
   // Computed sampler budget (unified source of truth)
   static var samplerBudget: Int {
     calculateBudget(overhead: nil)

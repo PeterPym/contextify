@@ -61,6 +61,7 @@ enum GenerationStrategy: String, Sendable {
   case full
   case adaptive
   case bookends
+  case signalFirst  // Two-pass: extract signals locally, then LLM on snippets only
 }
 
 // MARK: - Generation Metrics
