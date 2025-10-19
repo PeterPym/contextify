@@ -1,5 +1,6 @@
 import SwiftUI
 import ContextifyCore
+import OSLog
 
 /// Displays all discovered transcripts for the current project, including worktrees.
 /// Uses HSplitView for macOS-native sidebar + detail layout.
@@ -17,6 +18,8 @@ struct TranscriptInventoryView: View {
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
+
+  private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
   enum GroupingMode: String, CaseIterable, Identifiable {
     case provider = "Provider"
@@ -416,7 +419,9 @@ struct TranscriptInventoryView: View {
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
           metadata[id] = generated
+          log.info("✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
         } catch {
+          log.error("❌ Failed to generate metadata for \(id, privacy: .public): \(String(describing: error), privacy: .public)")
           // Failed to generate, loading indicator removed by defer
         }
       }
