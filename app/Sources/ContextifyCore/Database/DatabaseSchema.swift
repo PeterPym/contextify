@@ -185,6 +185,13 @@ enum DatabaseSchema {
         CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)
       """)
 
+      // Create entry indexes for cursor-based pagination (critical for performance)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_cursor
+        ON transcript_entries(project_id, timestamp, created_at, id)
+        WHERE display_in_timeline = 1
+      """)
+
       // Create identity indexes immediately (don't require backfill)
       try db.execute(sql: """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_session
