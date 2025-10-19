@@ -7,7 +7,7 @@ nonisolated enum MetadataBudgets {
   // LLM token budgets
   static let totalTokens = 4096
   static let outputTokens = 150          // Small JSON: title ≤60, description ≤200, topics
-  static let promptOverhead = 900        // Instructions + safety sanitizers + formatting
+  static let promptOverhead = 1200       // Instructions + schema (300) + safety sanitizers + formatting
   static let safetyMargin = 300          // ~7% of 4096, covers Apple safety wrapper variability
 
   // Per-exchange limits

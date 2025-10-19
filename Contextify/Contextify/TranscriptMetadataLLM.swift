@@ -119,7 +119,7 @@ actor TranscriptMetadataLLM {
         _ = try await session.respond(
           to: contextWithInfo,
           generating: GuidedTranscriptMetadata.self,
-          includeSchemaInPrompt: false,
+          includeSchemaInPrompt: true,
           options: preflightOptions
         )
         // Success! Context fits
@@ -275,7 +275,7 @@ actor TranscriptMetadataLLM {
         _ = try await session.respond(
           to: filler,
           generating: GuidedTranscriptMetadata.self,
-          includeSchemaInPrompt: false,
+          includeSchemaInPrompt: true,
           options: options
         )
         // Fits! Try more
@@ -403,7 +403,7 @@ actor TranscriptMetadataLLM {
       let response = try await session.respond(
         to: contextWithInfo,
         generating: GuidedTranscriptMetadata.self,
-        includeSchemaInPrompt: false,
+        includeSchemaInPrompt: true,
         options: options
       )
       log.info("LLM returned metadata - title: '\(response.content.title, privacy: .public)'")
