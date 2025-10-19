@@ -474,6 +474,54 @@ let fallback = generateFallbackSummary(content: content, kind: kind)
 
 ---
 
+## LLM Health Checking
+
+### Problem: SystemLanguageModel.availability is Insufficient
+
+`SystemLanguageModel.default.availability` returns `.available` even when LLM is broken by runtime errors.
+
+**What it detects:**
+- `.appleIntelligenceNotEnabled`, `.deviceNotEligible`, `.modelNotReady`
+
+**What it misses:**
+- System file errors (missing metadata.json)
+- Runtime guardrail system failures
+
+### Solution: "Belt and Suspenders" Approach
+
+```swift
+// 1. Check official API (.available?)
+// 2. Perform actual test LLM call
+// 3. Inspect error patterns for system failures
+```
+
+**Implementation:** `LLMHealthCheck.swift` (actor, 30s cache)
+
+### Known Error Pattern: Missing metadata.json
+
+**Symptom:** macOS 26 system bug (observed in 26.0.1 production) causes ALL LLM calls to fail with `guardrailViolation`.
+
+**Detection:**
+```swift
+catch let error as LanguageModelSession.GenerationError {
+  if case .guardrailViolation(let context) = error {
+    if String(describing: context).contains("metadata.json") {
+      // System error, not content issue
+    }
+  }
+}
+```
+
+**Reference:** https://www.reddit.com/r/iOSProgramming/comments/1la7o9r/comment/n41eh7d/
+
+### Integration
+
+App launch performs health check; notifies user if LLM unavailable. Circuit breaker still protects against transient failures during operation.
+
+**Future:** Status bar indicator (see TODOS.md:404-603)
+
+---
+
 ## Performance Characteristics
 
 | Metric | Target | Measured |
@@ -565,3 +613,4 @@ NotificationCenter.default.addObserver(
 - **State Management:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
 - **Database Schema:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 - **LLM Implementation:** `Contextify/Contextify/FoundationLLM.swift`
+- **LLM Health Check:** `Contextify/Contextify/LLMHealthCheck.swift`

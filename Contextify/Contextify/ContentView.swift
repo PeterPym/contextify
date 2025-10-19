@@ -49,7 +49,8 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
-            presentToast(payload)
+            let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval
+            presentToast(payload, duration: duration)
         }
         .alert("Project Root", isPresented: Binding(
             get: { model.alertMessage != nil },
@@ -149,11 +150,22 @@ struct ContentView: View {
     private var toast: some View {
         Group {
             if showToast {
-                Text(toastText)
-                    .padding(10)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                HStack(spacing: 8) {
+                    Text(toastText)
+                        .fixedSize(horizontal: false, vertical: true)  // Allow multiline
+                    Button(action: {
+                        withAnimation { showToast = false }
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.top, 8)
+                .padding(.horizontal, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
     }
@@ -211,11 +223,15 @@ private extension ContentView {
         }
     }
 
-    func presentToast(_ message: String) {
+    func presentToast(_ message: String, duration: TimeInterval? = nil) {
         toastText = message
         withAnimation { showToast = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation { showToast = false }
+        let autoDismissDuration = duration ?? 2  // Default 2 seconds
+        if autoDismissDuration > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + autoDismissDuration) {
+                withAnimation { showToast = false }
+            }
         }
+        // If duration is 0, toast persists until manually dismissed
     }
 }
