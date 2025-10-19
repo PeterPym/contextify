@@ -110,8 +110,8 @@ enum DatabaseSchema {
       try db.execute(sql: "ANALYZE")
     }
 
-    // v3: Path normalization and freshness tracking for transcript inventory (schema only)
-    // Note: Reuses v3_transcript_identity name for compatibility with existing databases
+    // v3: Path normalization and freshness tracking for transcript inventory (pure DDL)
+    // Backfill happens during discovery/upsert, not in migration
     migrator.registerMigration("v3_transcript_identity") { db in
       // Check if columns already exist (safe for re-running)
       let tableInfo = try Row.fetchAll(db, sql: "PRAGMA table_info(transcripts)")
@@ -161,6 +161,9 @@ enum DatabaseSchema {
 
       // Create indexes for transcript_metadata
       try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tm_transcript_id ON transcript_metadata(transcript_id)
+      """)
+      try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_tm_project ON transcript_metadata(project_id)
       """)
       try db.execute(sql: """
@@ -172,26 +175,21 @@ enum DatabaseSchema {
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)
       """)
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_tm_prompt_gen ON transcript_metadata(prompt_version, generator_version)
-      """)
-    }
 
-    // v3: Identity indexes (applied after backfill completes)
-    migrator.registerMigration("v3_identity_indexes") { db in
-      // Create unique index on (provider, provider_session_id) when present
+      // Create identity indexes immediately (don't require backfill)
       try db.execute(sql: """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_session
         ON transcripts(provider, provider_session_id)
         WHERE provider_session_id IS NOT NULL AND provider_session_id <> ''
       """)
-
-      // Create unique index on (provider, path_hash) as fallback
       try db.execute(sql: """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_tr_provider_path_hash
         ON transcripts(provider, path_hash)
         WHERE (provider_session_id IS NULL OR provider_session_id = '')
           AND path_hash IS NOT NULL
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
       """)
     }
 

@@ -54,9 +54,6 @@ public final class DatabaseManager: @unchecked Sendable {
 
     log.info("Database opened and validated successfully")
 
-    // Start background backfill for transcript identity fields
-    runTranscriptBackfillIfNeeded()
-
     return pool
   }
 
@@ -152,79 +149,4 @@ public final class DatabaseManager: @unchecked Sendable {
     }
   }
 
-  // MARK: - Backfill
-
-  /// Backfill transcript identity fields (runs asynchronously after DB opens)
-  /// - Parameter batchSize: Number of rows to process per batch (default 500)
-  public func runTranscriptBackfillIfNeeded(batchSize: Int = 500) {
-    Task.detached(priority: .utility) { [weak self] in
-      guard let self = self else { return }
-
-      do {
-        let pool = try self.pool
-
-        // Process batches until no rows remain
-        var totalProcessed = 0
-        while true {
-          let batchCount = try await pool.write { db -> Int in
-            // Fetch rows missing identity fields
-            let rows = try Row.fetchAll(db, sql: """
-              SELECT id, file_path FROM transcripts
-              WHERE normalized_path IS NULL OR path_hash IS NULL
-                 OR content_length IS NULL OR mtime_ms IS NULL OR content_sha256 IS NULL
-              LIMIT ?
-            """, arguments: [batchSize])
-
-            if rows.isEmpty { return 0 }
-
-            for row in rows {
-              let id: String = row["id"]
-              let path: String = row["file_path"]
-
-              // Normalize path
-              let (normalized, hash) = PathNormalizer.normalizeAndHash(path)
-
-              // Get file facts (streaming hash)
-              let (len, mtimeMs, sha): (Int64, Int64, String)
-              if FileManager.default.fileExists(atPath: path) {
-                (len, mtimeMs, sha) = try FileFacts.forPath(path)
-              } else {
-                // File no longer exists - use placeholder values
-                (len, mtimeMs, sha) = (0, 0, "missing")
-              }
-
-              // Update row
-              try db.execute(sql: """
-                UPDATE transcripts
-                SET normalized_path = ?, path_hash = ?, content_length = ?, mtime_ms = ?, content_sha256 = ?
-                WHERE id = ?
-              """, arguments: [normalized, hash, len, mtimeMs, sha, id])
-            }
-
-            return rows.count
-          }
-
-          if batchCount == 0 { break }
-
-          totalProcessed += batchCount
-          log.info("Backfill progress: \(totalProcessed) transcripts")
-
-          // Yield to other tasks
-          try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-        }
-
-        if totalProcessed > 0 {
-          log.info("Backfill complete: \(totalProcessed) transcripts")
-
-          // Apply identity indexes now that backfill is complete
-          let migrator = DatabaseSchema.createMigrator()
-          try migrator.migrate(pool, upTo: "v3_identity_indexes")
-
-          log.info("Identity indexes created")
-        }
-      } catch {
-        log.error("Backfill failed: \(error.localizedDescription)")
-      }
-    }
-  }
 }
