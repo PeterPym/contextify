@@ -533,11 +533,15 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   // MARK: - File Watching
 
-  /// Start watching a transcript file for changes
+  /// Start watching a transcript file for changes (idempotent)
   /// - Parameters:
   ///   - transcriptId: The transcript ID to watch
   ///   - fileURL: The file URL to watch
+  /// - Note: Idempotent - skips if already watching
   public func startWatchingTranscript(transcriptId: String, fileURL: URL) throws {
+    guard !watcher.isWatching(transcriptId: transcriptId) else {
+      return
+    }
     try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
   }
 

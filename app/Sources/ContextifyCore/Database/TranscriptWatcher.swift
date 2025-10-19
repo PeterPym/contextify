@@ -27,10 +27,18 @@ public final class TranscriptWatcher {
     self.metadataInvalidator = invalidator
   }
 
-  /// Start watching a transcript file for changes
+  /// Check if a transcript is being watched
+  public func isWatching(transcriptId: String) -> Bool {
+    return watchers[transcriptId] != nil
+  }
+
+  /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL) throws {
-    // Stop existing watcher if any
-    stopWatching(transcriptId: transcriptId)
+    // Idempotence: skip if already watching
+    if isWatching(transcriptId: transcriptId) {
+      log.debug("Already watching transcript: \(transcriptId), skipping")
+      return
+    }
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
