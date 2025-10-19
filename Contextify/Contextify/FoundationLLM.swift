@@ -1300,4 +1300,40 @@ extension FoundationLLM {
     }
     #endif
 }
+
+// MARK: - Generic LLM Helpers (unified client for all use cases)
+
+#if canImport(FoundationModels)
+@available(macOS 26.0, *)
+extension FoundationLLM {
+    /// Generate guided JSON output using any @Generable schema
+    /// All calls are serialized through SessionController (single-flight per instruction key)
+    public func generateGuided<T: Generable>(
+        instructions: String,
+        prompt: String,
+        generating: T.Type,
+        includeSchema: Bool = true,
+        options: GenerationOptions
+    ) async throws -> T {
+        let controller = await getController(for: instructions)
+        return try await controller.generate(
+            prompt,
+            generating: T.self,
+            includeSchema: includeSchema,
+            options: options
+        )
+    }
+
+    /// Raw (non-JSON) generation with custom instructions
+    /// Useful for pre-flight token validation without schema overhead
+    public func rawWithInstructions(
+        instructions: String,
+        prompt: String,
+        options: GenerationOptions
+    ) async throws -> String {
+        let controller = await getController(for: instructions)
+        return try await controller.raw(prompt, options: options)
+    }
+}
+#endif
 #endif
