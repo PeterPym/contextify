@@ -9,11 +9,11 @@ import Foundation
 
 enum TranscriptPrompts {
     /// Increment this when changing instruction wording to get a fresh SessionController
-    nonisolated(unsafe) static let metadataPromptVersion = 2
+    static let metadataPromptVersion = 2
 
     /// System instructions for transcript metadata generation
     /// The bracketed header becomes part of the controller key for session isolation
-    nonisolated static func metadataInstructions() -> String {
+    static func metadataInstructions() -> String {
         """
         [llm:metadata:v\(metadataPromptVersion)|schema:GuidedTranscriptMetadata]
         You are analyzing a developer's AI-assisted coding session.

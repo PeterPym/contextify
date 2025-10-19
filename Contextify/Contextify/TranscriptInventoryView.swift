@@ -753,8 +753,8 @@ struct TranscriptDetailView: View {
     // Use database entry count instead of reading the entire file
     guard let orch = orchestrator else { return nil }
 
-    // Extract transcript ID from session identifier (remove .jsonl extension if present)
-    let transcriptId = session.identifier.replacingOccurrences(of: ".jsonl", with: "")
+    // Use session identifier directly (it's already the database transcript ID)
+    let transcriptId = session.identifier
 
     do {
       let entries = try orch.getEntries(forTranscript: transcriptId, afterTimestamp: nil)

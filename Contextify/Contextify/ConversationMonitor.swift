@@ -111,7 +111,6 @@ final class ConversationMonitor {
 
     @ObservationIgnored private var didEmitSessionStart = false
     @ObservationIgnored private(set) var activeSession: TranscriptSession?
-    @ObservationIgnored private var conversationResolverTask: Task<Void, Never>?
     // MUST be observable for UI - inventory and session switching depend on this
     private(set) var allSessions: [TranscriptSession] = []
     @ObservationIgnored private var lastUserDirectiveId: UUID?
@@ -241,8 +240,6 @@ final class ConversationMonitor {
     func stopMonitoring() {
         isMonitoring = false
         activeSession = nil
-        conversationResolverTask?.cancel()
-        conversationResolverTask = nil
         backgroundTasks?.cancel()   // NEW: cancels the whole background task group
         backgroundTasks = nil
         debounceTask?.cancel()

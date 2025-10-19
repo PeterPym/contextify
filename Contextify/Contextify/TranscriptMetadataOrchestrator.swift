@@ -161,8 +161,11 @@ actor TranscriptMetadataOrchestrator {
 
     // Read entries from database (not JSONL file)
     let parseStart = Date()
+    log.info("🔍 Calling getEntries(forTranscript: '\(transcriptId, privacy: .public)', afterTimestamp: nil)")
     let entries = try orchestrator.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
+    log.info("🔍 getEntries returned \(entries.count) entries for transcript '\(transcriptId, privacy: .public)'")
     let exchanges = convertEntriesToExchanges(entries)
+    log.info("🔍 convertEntriesToExchanges produced \(exchanges.count) exchanges from \(entries.count) entries")
     let parseTime = Date().timeIntervalSince(parseStart)
 
     log.info("📊 Loaded \(exchanges.count, privacy: .public) exchanges from database (from \(entries.count, privacy: .public) entries)")
@@ -248,7 +251,7 @@ actor TranscriptMetadataOrchestrator {
         // Post-process (background-safe)
         metadata = postProcessor.apply(to: guided, context: fitted)
         metadata.messageCount = exchanges.count
-        metadata.strategy = "foundationLLM:\(strategy.rawValue)"
+        metadata.strategy = strategy.rawValue
 
         await circuitBreaker.recordSuccess()
       } else {
@@ -305,7 +308,7 @@ actor TranscriptMetadataOrchestrator {
 
             metadata = postProcessor.apply(to: guided, context: fittedBookend)
             metadata.messageCount = exchanges.count
-            metadata.strategy = "foundationLLM:bookends-fallback"
+            metadata.strategy = "bookends"
 
             await circuitBreaker.recordSuccess()
           } else {

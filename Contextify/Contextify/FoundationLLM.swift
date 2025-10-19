@@ -1300,6 +1300,7 @@ extension FoundationLLM {
     }
     #endif
 }
+#endif
 
 // MARK: - Generic LLM Helpers (unified client for all use cases)
 
@@ -1335,5 +1336,4 @@ extension FoundationLLM {
         return try await controller.raw(prompt, options: options)
     }
 }
-#endif
 #endif
