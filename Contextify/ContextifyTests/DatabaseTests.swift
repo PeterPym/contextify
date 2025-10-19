@@ -553,6 +553,25 @@ final class DatabaseTests: XCTestCase {
     XCTAssertNotNil(mtimeNs)
     XCTAssertNotNil(mtimeMs)
     XCTAssertEqual(mtimeMs, mtimeNs! / 1000000)
+
+    // Test mismatch guard: mtime_ms already set, should NOT overwrite
+    try pool.write { db in
+      try db.execute(sql: "INSERT INTO transcripts VALUES ('t2', 'p1', 'claude.code', 2000000000000000000)")
+      try db.execute(sql: "UPDATE transcripts SET mtime_ms = 9999 WHERE id = 't2'")
+    }
+
+    // Re-run migration (idempotent)
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    // Verify mtime_ms was NOT overwritten (backfill only touches NULL values)
+    let result2 = try pool.read { db in
+      try Row.fetchOne(db, sql: "SELECT mtime_ns, mtime_ms FROM transcripts WHERE id = 't2'")
+    }
+
+    let mtimeMs2: Int64? = result2?["mtime_ms"]
+    XCTAssertEqual(mtimeMs2, 9999, "Migration should not overwrite existing mtime_ms values")
   }
 
   // MARK: - Identity Resolution Tests
