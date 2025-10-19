@@ -60,13 +60,14 @@ final class SQLBackedMetadataOrchestrator: Sendable {
         // 4. Generate metadata via LLM
         #if canImport(FoundationModels)
         if #available(macOS 26, *) {
-            log.info("Generating metadata for \(filePath)")
+            log.info("Generating metadata for \(filePath, privacy: .public)")
             let started = Date()
             do {
                 let llmResult = try await TranscriptMetadataLLM.shared.singlePass(
                     context: builtContext.text,
                     sampledCount: builtContext.sampledCount,
-                    totalCount: exchangeCount
+                    totalCount: exchangeCount,
+                    strategy: "adaptive"
                 )
 
                 // 5. Save to database

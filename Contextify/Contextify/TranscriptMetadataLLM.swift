@@ -400,18 +400,23 @@ actor TranscriptMetadataLLM {
 
     log.info("[\(correlationId, privacy: .public)] strategy=\(strategy, privacy: .public) msgs=\(sampledCount, privacy: .public)/\(totalCount, privacy: .public) chars=\(contextWithInfo.count, privacy: .public) promptSHA=\(promptSHA, privacy: .public))")
 
+    // DEBUG: Log first 500 chars of prompt
+    let preview = String(contextWithInfo.prefix(500))
+    log.debug("PROMPT PREVIEW: \(preview, privacy: .public)...")
+
     // strict single-flight: exactly one respond() in flight
     await acquire()
     defer { release() }
 
     do {
+      log.info("🟢 Calling session.respond with \(contextWithInfo.count, privacy: .public) chars")
       let response = try await session.respond(
         to: contextWithInfo,
         generating: GuidedTranscriptMetadata.self,
         includeSchemaInPrompt: true,
         options: options
       )
-      log.info("LLM returned metadata - title: '\(response.content.title, privacy: .public)'")
+      log.info("✅ LLM SUCCESS - title: '\(response.content.title, privacy: .public)'")
       return response.content
     } catch let error as LanguageModelSession.GenerationError {
       // Map FoundationModels errors to specific LLMError types
@@ -434,7 +439,9 @@ actor TranscriptMetadataLLM {
         throw LLMError.guardrailViolation(context.debugDescription)
 
       case .decodingFailure(let context):
-        log.error("Decoding failure: \(context.debugDescription, privacy: .public)")
+        log.error("❌ DECODING FAILURE")
+        log.error("   Context: \(String(describing: context), privacy: .public)")
+        log.error("   Debug: \(context.debugDescription, privacy: .public)")
         throw LLMError.decodingFailure(context.debugDescription)
 
       case .assetsUnavailable(let context):
