@@ -472,36 +472,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Get metadata for multiple transcripts (handles SQLite IN clause limits)
   /// - Parameter transcriptIds: Array of transcript IDs
   /// - Returns: Dictionary mapping transcript ID to metadata
-  /// - Note: Chunks queries into batches of 800 to stay under SQLite's 999 parameter limit
+  /// - Note: Delegates to repository which chunks queries to stay under SQLite's 999 parameter limit
   public func getMetadataBatch(transcriptIds: [String]) throws -> [String: TranscriptMetadataRecord] {
-    guard !transcriptIds.isEmpty else { return [:] }
-
-    var result: [String: TranscriptMetadataRecord] = [:]
-    let pool = try dbManager.pool
-
-    // Process in chunks of 800 to stay under SQLite's 999 parameter limit
-    let chunkSize = 800
-    for chunk in stride(from: 0, to: transcriptIds.count, by: chunkSize) {
-      let end = min(chunk + chunkSize, transcriptIds.count)
-      let chunkIds = Array(transcriptIds[chunk..<end])
-
-      try pool.read { db in
-        let placeholders = chunkIds.map { _ in "?" }.joined(separator: ",")
-        let rows = try Row.fetchAll(db, sql: """
-          SELECT * FROM transcript_metadata
-          WHERE transcript_id IN (\(placeholders))
-        """, arguments: StatementArguments(chunkIds))
-
-        for row in rows {
-          if let record = try? TranscriptMetadataRecord(row: row),
-             let id = row["transcript_id"] as? String {
-            result[id] = record
-          }
-        }
-      }
-    }
-
-    return result
+    try metadataRepo.getBatch(transcriptIds)
   }
 
   public func saveMetadata(_ metadata: TranscriptMetadataRecord) throws {
