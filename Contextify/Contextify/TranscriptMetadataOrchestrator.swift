@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 import ContextifyCore
 import CryptoKit
+import GRDB
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -325,13 +326,20 @@ actor TranscriptMetadataOrchestrator {
       updatedAt: now
     )
 
-    try orchestrator.saveMetadata(record)
+    // Save with FK constraint error handling
+    do {
+      try orchestrator.saveMetadata(record)
+    } catch let err as DatabaseError where err.resultCode == .SQLITE_CONSTRAINT_FOREIGNKEY {
+      log.error("Orphaned metadata for \(transcriptId, privacy: .public) - transcript FK missing")
+      throw TranscriptMetadataError.orphanedTranscript(transcriptId)
+    }
 
     // Post notification for cache updates (on main actor for cross-actor safety)
     await MainActor.run {
       NotificationCenter.default.post(
         name: .transcriptMetadataUpdated,
-        object: transcriptId
+        object: transcriptId,
+        userInfo: ["transcriptId": transcriptId]
       )
     }
   }
@@ -377,6 +385,7 @@ actor TranscriptMetadataOrchestrator {
 
 enum TranscriptMetadataError: Error {
   case notInitialized
+  case orphanedTranscript(String)  // Transcript FK missing when saving metadata
 }
 
 // MARK: - Record to UI Model Conversion
