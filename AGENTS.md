@@ -102,7 +102,16 @@ Common commands:
 - Capture last 5 min: `make logs` → `/tmp/contextify-recent.log`
 - Stream live: `make logs-live` → `/tmp/contextify-live.log`
 - Build + capture: `make debug` → `build/logs/runtime/contextify-YYYYMMDD-HHMMSS.log`
-- Clean database: `make clean-db`
+
+**Database management:**
+- ⚠️  **IMPORTANT:** ALWAYS use `scripts/db_manager.sh` for database operations
+- ⚠️  **NEVER** delete database files manually with `rm` while app is running
+- Clean database (creates backup): `make clean-db` or `./scripts/db_manager.sh clean`
+- Create backup: `make db-backup` or `./scripts/db_manager.sh backup`
+- Restore latest: `make db-restore` or `./scripts/db_manager.sh restore latest`
+- List backups: `make db-list` or `./scripts/db_manager.sh list`
+- Backups stored in: `build/db-backups/`
+- **Agent rule:** ALWAYS ask user for approval before cleaning database
 
 **For detailed debugging workflows:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
 
