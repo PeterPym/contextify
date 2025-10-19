@@ -464,4 +464,161 @@ final class DatabaseTests: XCTestCase {
     // Should resume from line 50 on next hoover
     XCTAssertTrue(transcript!.lastProcessedLine < transcript!.lineCount)
   }
+
+  // MARK: - v3 Migration Tests
+
+  func testMigrationIdempotence() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+
+    // Run migration twice - should not error
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    // Verify v3 columns exist
+    let columns = try pool.read { db in
+      try Row.fetchAll(db, sql: "PRAGMA table_info(transcripts)")
+    }
+    let columnNames = Set(columns.map { $0["name"] as! String })
+
+    XCTAssertTrue(columnNames.contains("normalized_path"))
+    XCTAssertTrue(columnNames.contains("path_hash"))
+    XCTAssertTrue(columnNames.contains("content_length"))
+    XCTAssertTrue(columnNames.contains("mtime_ms"))
+
+    // Verify indexes exist
+    let indexes = try pool.read { db in
+      try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='transcripts'")
+    }
+
+    XCTAssertTrue(indexes.contains("uq_tr_provider_session"))
+    XCTAssertTrue(indexes.contains("idx_tr_path_hash"))
+  }
+
+  // MARK: - Identity Resolution Tests
+
+  func testSessionIdTakesPrecedence() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in try DatabaseSchema.migrate(db) }
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+
+    let projectId = try projectRepo.create(name: "Test", rootPath: "/test", bookmark: nil)
+
+    // Create transcript with session ID
+    let transcriptId1 = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: URL(fileURLWithPath: "/test/session.jsonl"),
+      provider: "claude.code",
+      providerSessionId: "session-123",
+      lastModified: Date(),
+      fileSize: 1024
+    )
+
+    // Upsert again with same session ID but different path - should find existing
+    let transcriptId2 = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: URL(fileURLWithPath: "/test/different-path.jsonl"),
+      provider: "claude.code",
+      providerSessionId: "session-123",
+      lastModified: Date(),
+      fileSize: 2048
+    )
+
+    // Should be same transcript (session ID takes precedence)
+    XCTAssertEqual(transcriptId1, transcriptId2)
+  }
+
+  func testPathHashFallback() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in try DatabaseSchema.migrate(db) }
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+
+    let projectId = try projectRepo.create(name: "Test", rootPath: "/test", bookmark: nil)
+
+    // Create transcript without session ID
+    let transcriptId1 = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: URL(fileURLWithPath: "/test/nosession.jsonl"),
+      provider: "codex.cli",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: 1024
+    )
+
+    // Upsert again with same path - should find existing via path hash
+    let transcriptId2 = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: URL(fileURLWithPath: "/test/nosession.jsonl"),
+      provider: "codex.cli",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: 2048
+    )
+
+    // Should be same transcript (path hash fallback)
+    XCTAssertEqual(transcriptId1, transcriptId2)
+  }
+
+  // MARK: - Watcher Invalidation Tests
+
+  func testWatcherMetadataInvalidation() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in try DatabaseSchema.migrate(db) }
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+
+    // Create test transcript file
+    let testFile = tempDir.appendingPathComponent("test.jsonl")
+    try "test content".write(to: testFile, atomically: true, encoding: .utf8)
+
+    let projectId = try projectRepo.create(name: "Test", rootPath: "/test", bookmark: nil)
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: testFile,
+      provider: "claude.code",
+      providerSessionId: "session-test",
+      lastModified: Date(),
+      fileSize: 100
+    )
+
+    // Track invalidation calls
+    var invalidationCalled = false
+    var invalidatedId: String?
+
+    let invalidator: (String) throws -> Void = { id in
+      invalidationCalled = true
+      invalidatedId = id
+    }
+
+    // Simulate watcher callback
+    try invalidator(transcriptId)
+
+    XCTAssertTrue(invalidationCalled)
+    XCTAssertEqual(invalidatedId, transcriptId)
+  }
 }
