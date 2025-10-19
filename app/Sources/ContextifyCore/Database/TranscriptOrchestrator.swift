@@ -203,6 +203,25 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     progressSink.didCompleteProject(name: project.name ?? projectId)
   }
 
+  // MARK: - Private Helpers
+
+  /// Determines if file needs rehashing based on cached metadata
+  private func shouldRehash(existing: Row?, path: String) throws -> Bool {
+    guard let ex = existing,
+          let cachedLen: Int64 = ex["content_length"],
+          let cachedMtime: Int64 = ex["mtime_ms"] else {
+      return true
+    }
+
+    let attrs = try FileManager.default.attributesOfItem(atPath: path)
+    let len = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+    let mtime = Int64(((attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000)
+
+    return (cachedLen != len) || (cachedMtime != mtime)
+  }
+
+  // MARK: - Batch Upsert
+
   /// Batch upsert transcripts using path normalization for identity
   /// - Parameters:
   ///   - projectId: Project ID to associate transcripts with
@@ -231,36 +250,38 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Normalize path and compute hash
         let (normalizedPath, pathHash) = PathNormalizer.normalizeAndHash(path)
 
-        // Prefer provider_session_id when available for identity
-        let useSessionId = disc.sessionId != nil && !disc.sessionId!.isEmpty
+        // Prefer provider_session_id when available for identity (trim whitespace)
+        let sid = disc.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let useSessionId = (sid?.isEmpty == false)
 
         // Check if transcript exists (prefer session ID, fallback to path hash)
-        let existing: Row? = try Row.fetchOne(db, sql: """
-          SELECT id, content_length, mtime_ms, content_sha256 FROM transcripts
-          WHERE provider = ? AND \(useSessionId ? "provider_session_id = ?" : "path_hash = ?")
-        """, arguments: [disc.provider, useSessionId ? disc.sessionId! : pathHash])
+        // Use separate queries to avoid SQL injection from dynamic WHERE clause
+        let existing: Row?
+        if let sid = sid, useSessionId {
+          existing = try Row.fetchOne(db, sql: """
+            SELECT id, content_length, mtime_ms, content_sha256
+            FROM transcripts
+            WHERE provider = ? AND provider_session_id = ?
+          """, arguments: [disc.provider, sid])
+        } else {
+          existing = try Row.fetchOne(db, sql: """
+            SELECT id, content_length, mtime_ms, content_sha256
+            FROM transcripts
+            WHERE provider = ? AND path_hash = ?
+          """, arguments: [disc.provider, pathHash])
+        }
 
         // Get file facts (streaming SHA256)
         let (len, mtimeMs, sha): (Int64, Int64, String)
         if FileManager.default.fileExists(atPath: path) {
           // Only rehash if size or mtime changed
-          if let ex = existing,
-             let exLen = ex["content_length"] as? Int64,
-             let exMtime = ex["mtime_ms"] as? Int64,
-             exLen == (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.int64Value ?? 0 {
-            // File metadata unchanged - reuse cached SHA
-            let newMtime = Int64(((try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0) * 1000)
-            if exMtime == newMtime {
-              len = exLen
-              mtimeMs = exMtime
-              sha = (ex["content_sha256"] as? String) ?? "pending"
-            } else {
-              // Mtime changed - rehash
-              (len, mtimeMs, sha) = try FileFacts.forPath(path)
-            }
-          } else {
-            // Size changed or new file - compute facts with streaming hash
+          if try shouldRehash(existing: existing, path: path) {
             (len, mtimeMs, sha) = try FileFacts.forPath(path)
+          } else {
+            // File metadata unchanged - reuse cached SHA
+            len = (existing?["content_length"] as? Int64) ?? 0
+            mtimeMs = (existing?["mtime_ms"] as? Int64) ?? 0
+            sha = (existing?["content_sha256"] as? String) ?? "pending"
           }
         } else {
           // File no longer exists - use placeholder
