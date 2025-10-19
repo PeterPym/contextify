@@ -132,7 +132,7 @@ final class ConversationMonitor {
         }
     }
     @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
-    @ObservationIgnored private var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated)
+    @ObservationIgnored var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated, accessible to inventory view)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     @ObservationIgnored private var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation

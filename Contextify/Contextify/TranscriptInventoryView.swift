@@ -14,6 +14,7 @@ struct TranscriptInventoryView: View {
   @State private var groupingMode: GroupingMode = .provider
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
+  @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
 
@@ -151,6 +152,10 @@ struct TranscriptInventoryView: View {
         // Cancel pending debounce task to prevent leaks
         debounceTask?.cancel()
         debounceTask = nil
+
+        // Cancel all metadata generation tasks
+        metadataTasks.values.forEach { $0.cancel() }
+        metadataTasks.removeAll()
       }
       .onReceive(NotificationCenter.default.publisher(for: .revealTranscript)) { notification in
         guard let path = notification.userInfo?["path"] as? String else { return }
@@ -177,7 +182,8 @@ struct TranscriptInventoryView: View {
         },
         onMetadataUpdate: { transcriptId, newMetadata in
           metadata[transcriptId] = newMetadata
-        }
+        },
+        orchestrator: monitor.orchestrator
       )
     } else {
       emptyDetailView
@@ -337,7 +343,7 @@ struct TranscriptInventoryView: View {
   private func flushHeuristicCache() {
     Task { @MainActor in
       // True SQL-backed flush: delete metadata records for heuristic entries
-      guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+      guard let orchestrator = monitor.orchestrator else {
         return
       }
 
@@ -380,7 +386,7 @@ struct TranscriptInventoryView: View {
   @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
     // Centralized loading: batch fetch from SQL, then spawn Tasks only for cache misses
-    guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+    guard let orchestrator = monitor.orchestrator else {
       return
     }
 
@@ -399,17 +405,22 @@ struct TranscriptInventoryView: View {
 
     // Spawn generation tasks for cache misses
     for session in missingSessions {
-      loadingMetadata.insert(session.identifier)
+      let id = session.identifier
+      loadingMetadata.insert(id)
 
-      Task { @MainActor in
-        defer { loadingMetadata.remove(session.identifier) }
+      let task = Task { @MainActor in
+        defer {
+          loadingMetadata.remove(id)
+          metadataTasks[id] = nil
+        }
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
-          metadata[session.identifier] = generated
+          metadata[id] = generated
         } catch {
           // Failed to generate, loading indicator removed by defer
         }
       }
+      metadataTasks[id] = task
     }
   }
 }
@@ -420,6 +431,7 @@ struct TranscriptDetailView: View {
   let isActive: Bool
   let onSelect: () -> Void
   let onMetadataUpdate: ((String, TranscriptMetadata) -> Void)?  // Changed from URL to transcript ID
+  let orchestrator: TranscriptOrchestrator?
 
   @State private var metadata: TranscriptMetadata?
   @State private var isRegenerating = false
@@ -655,7 +667,7 @@ struct TranscriptDetailView: View {
   @MainActor
   private func loadMetadata() async {
     // Load from SQL backend
-    guard let orchestrator = try? TranscriptOrchestrator(dbManager: .shared) else {
+    guard let orchestrator = orchestrator else {
       return
     }
 
