@@ -359,11 +359,16 @@ actor TranscriptMetadataLLM {
     strategy: String = "unknown"
   ) async throws -> GuidedTranscriptMetadata {
     let correlationId = UUID().uuidString.prefix(8)
+
+    log.info("🔵 singlePass called: strategy=\(strategy, privacy: .public) msgs=\(sampledCount, privacy: .public)/\(totalCount, privacy: .public)")
+
     let availability = SystemLanguageModel.default.availability
     guard case .available = availability else {
-      log.warning("SystemLanguageModel unavailable")
+      log.error("❌ SystemLanguageModel NOT AVAILABLE: \(String(describing: availability), privacy: .public)")
       throw LLMError.unavailable
     }
+
+    log.info("✅ SystemLanguageModel IS available")
 
     let session = try await getOrCreateSession()
 
