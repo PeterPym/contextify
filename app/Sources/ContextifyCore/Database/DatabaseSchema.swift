@@ -3,6 +3,12 @@ import GRDB
 
 /// SQLite schema for Contextify transcript storage
 /// Based on sql-implementation-plan-05.md and sql-integration-plan-v2.md
+///
+/// Time Unit Convention:
+/// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
+/// - High-precision timestamps (mtime_ms, latency_ms, etc): Unix milliseconds (Int64)
+/// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
+/// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
   static let version = 3
 
