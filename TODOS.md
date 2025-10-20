@@ -12,6 +12,21 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Backlog
 
+### Available Feature Branches
+
+#### Transcript Format Converter
+**Branch:** `feature/transcript-converter`
+**Status:** Complete, ready to merge if needed
+
+Bidirectional converter script for Claude Code ↔ Codex CLI transcript formats. Includes auto-correction of Codex output filenames, metadata generation (session_meta, event_msg), UUID validation, and comprehensive documentation.
+
+Files added:
+- `scripts/convert_transcript.py` - Main converter
+- `scripts/CODEX_REQUIREMENTS_FINAL.md` - Requirements checklist
+- `scripts/CODEX_SESSION_FORMAT.md` - Format reference
+- `scripts/TRANSCRIPT_CONVERTER_README.md` - Usage guide
+- Additional documentation files
+
 ### Far Future / Low Priority
 
 #### Database Encryption
