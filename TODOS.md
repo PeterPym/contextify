@@ -12,6 +12,41 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Backlog
 
+### Far Future / Low Priority
+
+#### Database Encryption
+**Status:** Attempted, failed to complete
+**Priority:** Low (consider only if user requests)
+**Branch:** `feature/encryption-production-hardening` (pushed to origin)
+
+**Summary:**
+Attempted to implement SQLCipher encryption for the transcript database. Infrastructure was built (EncryptionManager, KeychainManager, DatabaseMigration, Settings UI) but the core encryption operation consistently fails with "database disk image is malformed" errors when using `sqlcipher_export()`.
+
+**What was tried (all failed):**
+- Multiple export directions (source→encrypted, encrypted→source)
+- Different journal modes (WAL, DELETE)
+- PRAGMA rekey approach (wrong API for initial encryption)
+- DatabaseQueue vs DatabasePool
+- Export from backup instead of original
+- Read-only verification
+- 10+ different implementation approaches
+
+**Current state:**
+- SQLCipher 4.6.1 (latest) + GRDB 7.8.0 (recent)
+- All dependencies integrated
+- UI and infrastructure code complete
+- Core encryption operation produces corrupted databases
+- Root cause unknown after extensive debugging
+
+**If revisiting:**
+1. Create minimal reproduction case outside main app
+2. Test with tiny database to isolate the issue
+3. Consider filing bug report with SQLCipher/GRDB
+4. Or find someone who's successfully used SQLCipher + GRDB on macOS
+5. Original goal was likely cloud backup - consider implementing that WITHOUT encryption first
+
+**Note:** This feature consumed significant development time with no working result. Recommend low priority unless there's specific user demand for encryption.
+
 ### Product Direction Proposals
 
 #### Proposal: Simplify to Timeline + Cloud Backup Focus
