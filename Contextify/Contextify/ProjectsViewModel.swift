@@ -91,7 +91,7 @@ final class ProjectsViewModel {
   /// Reveals a project in Finder
   func revealInFinder(_ project: DiscoveredProject) {
     logger.debug("Revealing project in Finder: \(project.name)")
-    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: project.path.path)
+    NSWorkspace.shared.activateFileViewerSelecting([project.path])
   }
 
   /// Refreshes the projects list
