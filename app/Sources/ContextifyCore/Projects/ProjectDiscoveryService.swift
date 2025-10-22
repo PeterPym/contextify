@@ -319,20 +319,24 @@ public actor ProjectDiscoveryService {
   }
 
   /// Gets metadata for a single project from database
+  /// - Parameter projectId: Either projects.id (UUID) or projects.root_path (absolute path)
   private func getProjectMetadata(projectId: String) async throws -> ProjectMetadata {
     try await db.read { db in
+      // Join through projects table to support both UUID and path lookups
       let sql = """
         SELECT
-          COUNT(DISTINCT t.id) as transcript_count,
-          COUNT(e.id) as entry_count,
-          MAX(e.timestamp) as last_activity
-        FROM transcripts t
-        LEFT JOIN transcript_entries e ON t.id = e.transcript_id
-        WHERE t.project_id = ?
+          COUNT(DISTINCT t.id) AS transcript_count,
+          COUNT(e.id) AS entry_count,
+          MAX(e.timestamp) AS last_activity
+        FROM projects p
+        LEFT JOIN transcripts t ON t.project_id = p.id
+        LEFT JOIN transcript_entries e ON e.transcript_id = t.id
+        WHERE p.id = ? OR p.root_path = ?
+        GROUP BY p.id
         """
 
-      guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectId]) else {
-        self.logger.warning("No metadata row found for project: \(projectId, privacy: .public)")
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectId, projectId]) else {
+        self.logger.notice("No metadata row found for project: \(projectId, privacy: .public)")
         return ProjectMetadata(
           projectId: projectId,
           transcriptCount: 0,
@@ -343,7 +347,7 @@ public actor ProjectDiscoveryService {
 
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
-      self.logger.info("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
+      self.logger.notice("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
       let timestamp: Int? = row["last_activity"]
       let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
 

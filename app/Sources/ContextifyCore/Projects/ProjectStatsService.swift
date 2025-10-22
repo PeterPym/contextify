@@ -59,37 +59,58 @@ public actor ProjectStatsService {
   // MARK: - Public API
 
   /// Gets comprehensive statistics for a project
-  /// - Parameter projectId: The project path
+  /// - Parameter projectId: Either projects.id (UUID) or projects.root_path (absolute path)
   /// - Returns: Detailed statistics
   public func getStatistics(for projectId: String) async throws -> ProjectStatistics {
     logger.debug("Computing statistics for project: \(projectId)")
 
     return try await db.read { db in
+      // Resolve to canonical project UUID (supports both UUID and path lookups)
+      let pid = try String.fetchOne(db, sql: """
+        SELECT id FROM projects WHERE id = ? OR root_path = ? LIMIT 1
+        """, arguments: [projectId, projectId])
+
+      guard let pid = pid else {
+        let projectName = URL(fileURLWithPath: projectId).lastPathComponent
+        self.logger.notice("No project found for: \(projectId, privacy: .public)")
+        return ProjectStatistics(
+          projectId: projectId,
+          projectName: projectName,
+          transcriptCount: 0,
+          entryCount: 0,
+          searchableEntryCount: 0,
+          lastActivity: nil,
+          firstActivity: nil,
+          providers: [],
+          topicBreakdown: [:]
+        )
+      }
+
       // Basic counts
       let transcriptCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcripts WHERE project_id = ?
-        """, arguments: [projectId]) ?? 0
+        """, arguments: [pid]) ?? 0
 
       let entryCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries WHERE project_id = ?
-        """, arguments: [projectId]) ?? 0
+        """, arguments: [pid]) ?? 0
 
       let searchableCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
         WHERE project_id = ? AND embedding IS NOT NULL
-        """, arguments: [projectId]) ?? 0
+        """, arguments: [pid]) ?? 0
 
       // Activity timestamps
       let lastTimestamp = try Int.fetchOne(db, sql: """
         SELECT MAX(timestamp) FROM transcript_entries WHERE project_id = ?
-        """, arguments: [projectId])
+        """, arguments: [pid])
       let lastActivity: Date? = Self.normalizeTimestamp(lastTimestamp).map {
         Date(timeIntervalSince1970: $0)
       }
 
       let firstTimestamp = try Int.fetchOne(db, sql: """
         SELECT MIN(timestamp) FROM transcript_entries WHERE project_id = ?
-        """, arguments: [projectId])
+        """, arguments: [pid])
       let firstActivity: Date? = Self.normalizeTimestamp(firstTimestamp).map {
         Date(timeIntervalSince1970: $0)
       }
@@ -97,7 +118,7 @@ public actor ProjectStatsService {
       // Providers
       let providerRows = try Row.fetchAll(db, sql: """
         SELECT DISTINCT provider FROM transcripts WHERE project_id = ?
-        """, arguments: [projectId])
+        """, arguments: [pid])
 
       let providers = Set(providerRows.compactMap { $0["provider"] as String? })
 
@@ -107,7 +128,7 @@ public actor ProjectStatsService {
         FROM transcript_entries
         WHERE project_id = ?
         GROUP BY kind
-        """, arguments: [projectId])
+        """, arguments: [pid])
 
       var topicBreakdown: [String: Int] = [:]
       for row in topicRows {
@@ -118,6 +139,8 @@ public actor ProjectStatsService {
 
       // Project name (from path)
       let projectName = URL(fileURLWithPath: projectId).lastPathComponent
+
+      self.logger.notice("Stats for \(projectName, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
 
       return ProjectStatistics(
         projectId: projectId,
@@ -161,13 +184,21 @@ public actor ProjectStatsService {
 
   /// Gets activity timeline for a project (entries per day)
   /// - Parameters:
-  ///   - projectId: The project path
+  ///   - projectId: Either projects.id (UUID) or projects.root_path (absolute path)
   ///   - days: Number of days to include (default 30)
   /// - Returns: Dictionary of date -> entry count
   public func getActivityTimeline(for projectId: String, days: Int = 30) async throws -> [Date: Int] {
     logger.debug("Computing activity timeline for project: \(projectId)")
 
     return try await db.read { db in
+      // Resolve to canonical project UUID (supports both UUID and path lookups)
+      guard let pid = try String.fetchOne(db, sql: """
+        SELECT id FROM projects WHERE id = ? OR root_path = ? LIMIT 1
+        """, arguments: [projectId, projectId]) else {
+        self.logger.notice("No project found for timeline: \(projectId, privacy: .public)")
+        return [:]
+      }
+
       let startTimestamp = Int(Date().addingTimeInterval(-Double(days) * 86400).timeIntervalSince1970)
 
       let rows = try Row.fetchAll(db, sql: """
@@ -178,7 +209,7 @@ public actor ProjectStatsService {
         WHERE project_id = ? AND timestamp >= ?
         GROUP BY day
         ORDER BY day
-        """, arguments: [projectId, startTimestamp])
+        """, arguments: [pid, startTimestamp])
 
       var timeline: [Date: Int] = [:]
 
