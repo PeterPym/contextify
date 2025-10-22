@@ -1,5 +1,6 @@
 import SwiftUI
 import ContextifyCore
+import UniformTypeIdentifiers
 
 /// Semantic search interface for conversation history
 struct SemanticSearchView: View {
@@ -11,6 +12,12 @@ struct SemanticSearchView: View {
   @State private var searchDuration: TimeInterval = 0
   @State private var searchAllProjects = false
   @State private var useHybridSearch = true
+
+  // Synthesis state
+  @State private var synthesis: SynthesisResult?
+  @State private var isSynthesizing = false
+  @State private var synthesisError: String?
+  @State private var showSources = false
 
   private let embeddingService = EmbeddingService()
   private nonisolated var repository: EmbeddingRepository {
@@ -33,6 +40,7 @@ struct SemanticSearchView: View {
       db: try! DatabaseManager.shared.pool
     )
   }
+  private let synthesisService = SynthesisService()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -129,10 +137,32 @@ struct SemanticSearchView: View {
 
             Spacer()
 
+            // Synthesize button
+            Button(action: performSynthesis) {
+              HStack(spacing: 4) {
+                if isSynthesizing {
+                  ProgressView()
+                    .scaleEffect(0.6)
+                    .frame(width: 12, height: 12)
+                  Text("Analyzing Results...")
+                } else {
+                  Image(systemName: "sparkles")
+                    .imageScale(.small)
+                  Text("Summarize These Results")
+                }
+              }
+            }
+            .disabled(isSynthesizing)
+            .buttonStyle(.borderedProminent)
+            .tint(.purple)
+            .font(.caption)
+
             Button("Clear") {
               searchQuery = ""
               results = []
               error = nil
+              synthesis = nil
+              synthesisError = nil
             }
             .font(.caption)
             .buttonStyle(.plain)
@@ -149,14 +179,43 @@ struct SemanticSearchView: View {
 
       Divider()
 
-      // Results list
-      if results.isEmpty && !isSearching {
+      // Main content area: show either synthesis OR results
+      if let synthesis = synthesis {
+        // Show synthesis (replaces results view)
+        VStack(spacing: 0) {
+          SynthesisDisplayView(
+            synthesis: synthesis,
+            showSources: $showSources,
+            onCopy: { copySynthesisToClipboard(synthesis) },
+            onSave: { saveSynthesisToFile(synthesis) },
+            onDismiss: { self.synthesis = nil }
+          )
+          .padding()
+        }
+      } else if let synthesisError = synthesisError {
+        // Show synthesis error
+        VStack {
+          Spacer()
+          HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+              .imageScale(.large)
+            Text("Synthesis error: \(synthesisError)")
+              .font(.body)
+              .foregroundStyle(.red)
+          }
+          .padding()
+          Spacer()
+        }
+      } else if results.isEmpty && !isSearching {
+        // Show empty state
         ContentUnavailableView {
           Label("No Results", systemImage: "magnifyingglass")
         } description: {
           Text("Enter a search query to find relevant conversation entries")
         }
       } else {
+        // Show search results
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 12) {
             ForEach(results) { result in
@@ -177,6 +236,8 @@ struct SemanticSearchView: View {
       isSearching = true
       error = nil
       results = []
+      synthesis = nil
+      synthesisError = nil
 
       let startTime = Date()
 
@@ -214,6 +275,75 @@ struct SemanticSearchView: View {
 
       isSearching = false
     }
+  }
+
+  private func performSynthesis() {
+    guard !results.isEmpty else { return }
+
+    Task { @MainActor in
+      isSynthesizing = true
+      synthesisError = nil
+
+      do {
+        let result = try await synthesisService.synthesize(
+          query: searchQuery,
+          results: results,
+          maxResults: 10
+        )
+        synthesis = result
+      } catch {
+        synthesisError = error.localizedDescription
+      }
+
+      isSynthesizing = false
+    }
+  }
+
+  private func copySynthesisToClipboard(_ synthesis: SynthesisResult) {
+    let markdown = formatSynthesisAsMarkdown(synthesis)
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.setString(markdown, forType: .string)
+  }
+
+  private func saveSynthesisToFile(_ synthesis: SynthesisResult) {
+    let markdown = formatSynthesisAsMarkdown(synthesis)
+
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.plainText]
+    panel.nameFieldStringValue = "synthesis-\(synthesis.query.prefix(30)).md"
+    panel.message = "Save synthesis to file"
+
+    panel.begin { response in
+      guard response == .OK, let url = panel.url else { return }
+
+      do {
+        try markdown.write(to: url, atomically: true, encoding: .utf8)
+      } catch {
+        self.synthesisError = "Failed to save file: \(error.localizedDescription)"
+      }
+    }
+  }
+
+  private func formatSynthesisAsMarkdown(_ synthesis: SynthesisResult) -> String {
+    var markdown = "# Search Query: \(synthesis.query)\n\n"
+    markdown += "Generated: \(synthesis.generatedAt.formatted())\n\n"
+    markdown += "## Synthesis\n\n"
+    markdown += synthesis.summary
+    markdown += "\n\n## Sources\n\n"
+
+    for (index, source) in synthesis.sources.enumerated() {
+      markdown += "### [\(index + 1)] \(source.role.capitalized) - \(source.timestamp.formatted())\n\n"
+
+      if let parentContent = source.parentContent {
+        markdown += "**User:** \(parentContent)\n\n"
+      }
+
+      markdown += "**Assistant:** \(source.content)\n\n"
+      markdown += "---\n\n"
+    }
+
+    return markdown
   }
 }
 
@@ -431,6 +561,205 @@ struct SearchResultRow: View {
     } else {
       return .gray
     }
+  }
+}
+
+// MARK: - Synthesis Display
+
+struct SynthesisDisplayView: View {
+  let synthesis: SynthesisResult
+  @Binding var showSources: Bool
+  let onCopy: () -> Void
+  let onSave: () -> Void
+  let onDismiss: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      // Header
+      HStack {
+        // Back button
+        Button(action: onDismiss) {
+          HStack(spacing: 4) {
+            Image(systemName: "chevron.left")
+              .imageScale(.small)
+            Text("Back to Results")
+          }
+        }
+        .buttonStyle(.bordered)
+        .font(.caption)
+
+        Spacer()
+
+        Image(systemName: "sparkles")
+          .foregroundStyle(.purple)
+          .imageScale(.medium)
+
+        Text("AI Synthesis")
+          .font(.headline)
+          .foregroundStyle(.purple)
+
+        Spacer()
+
+        // Export buttons
+        HStack(spacing: 8) {
+          Button(action: onCopy) {
+            HStack(spacing: 4) {
+              Image(systemName: "doc.on.doc")
+                .imageScale(.small)
+              Text("Copy")
+            }
+          }
+          .buttonStyle(.bordered)
+          .font(.caption)
+
+          Button(action: onSave) {
+            HStack(spacing: 4) {
+              Image(systemName: "square.and.arrow.down")
+                .imageScale(.small)
+              Text("Save")
+            }
+          }
+          .buttonStyle(.bordered)
+          .font(.caption)
+        }
+      }
+
+      // Meta info
+      HStack(spacing: 8) {
+        Label("\(synthesis.sources.count) sources", systemImage: "doc.text")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Text("•")
+          .foregroundStyle(.secondary)
+
+        Text("Generated \(synthesis.generatedAt, style: .relative)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Divider()
+
+      // Synthesis content (full-height, scrollable)
+      ScrollView {
+        Text(.init(synthesis.summary))  // Parse markdown
+          .font(.body)
+          .textSelection(.enabled)
+          .padding(.vertical, 4)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+
+      Divider()
+
+      // Sources toggle
+      Button(action: { showSources.toggle() }) {
+        HStack {
+          Image(systemName: showSources ? "chevron.down" : "chevron.right")
+            .foregroundStyle(.secondary)
+            .imageScale(.small)
+
+          Text("View Sources (\(synthesis.sources.count))")
+            .font(.caption.bold())
+
+          Spacer()
+        }
+      }
+      .buttonStyle(.plain)
+
+      // Expandable sources
+      if showSources {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(synthesis.sources.enumerated()), id: \.element.id) { index, source in
+              SourceReferenceRow(source: source, index: index + 1)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+struct SourceReferenceRow: View {
+  let source: SearchResult
+  let index: Int
+  @State private var isExpanded = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      // Header
+      Button(action: { isExpanded.toggle() }) {
+        HStack {
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .foregroundStyle(.secondary)
+            .imageScale(.small)
+
+          Text("[\(index)]")
+            .font(.caption.monospaced().bold())
+            .foregroundStyle(.purple)
+
+          Text(source.role.capitalized)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Text("•")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+
+          Text(source.timestamp, style: .relative)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+
+          Spacer()
+
+          // Similarity badge
+          Text("\(String(format: "%.0f", source.similarity * 100))%")
+            .font(.caption2.bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.green.opacity(0.7))
+            .cornerRadius(3)
+        }
+      }
+      .buttonStyle(.plain)
+
+      // Expanded content
+      if isExpanded {
+        VStack(alignment: .leading, spacing: 8) {
+          if let parentContent = source.parentContent {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("User:")
+                .font(.caption.bold())
+                .foregroundStyle(.blue)
+
+              Text(parentContent)
+                .font(.caption)
+                .padding(8)
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(4)
+            }
+          }
+
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Assistant:")
+              .font(.caption.bold())
+              .foregroundStyle(.green)
+
+            Text(source.content)
+              .font(.caption)
+              .lineLimit(5)
+              .padding(8)
+              .background(Color.green.opacity(0.05))
+              .cornerRadius(4)
+          }
+        }
+        .padding(.leading, 20)
+      }
+    }
+    .padding(8)
+    .background(Color.secondary.opacity(0.05))
+    .cornerRadius(6)
   }
 }
 
