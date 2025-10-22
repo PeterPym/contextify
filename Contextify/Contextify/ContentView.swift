@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var showEmbeddingTest = false
     @State private var showDatabaseTest = false
     @State private var showBatchEmbedding = false
+    @State private var showSemanticSearch = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -126,6 +127,12 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Batch Embedding Generation")
+
+            Button(action: { showSemanticSearch.toggle() }) {
+                Image(systemName: "magnifyingglass.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Semantic Search")
         }
         .sheet(isPresented: $showEmbeddingTest) {
             EmbeddingTestView()
@@ -135,6 +142,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showBatchEmbedding) {
             BatchEmbeddingView()
+        }
+        .sheet(isPresented: $showSemanticSearch) {
+            SemanticSearchView()
         }
     }
 
