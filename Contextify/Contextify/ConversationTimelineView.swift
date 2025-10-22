@@ -58,13 +58,17 @@ struct ConversationTimelineView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
+                Button {
+                    openWindow(id: "transcript-inventory")
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("Show All Transcripts (\(monitor.allSessions.count))")
                 Menu {
-                    Button {
-                        openWindow(id: "transcript-inventory")
-                    } label: {
-                        Label("Show All Transcripts (\(monitor.allSessions.count))", systemImage: "doc.text.magnifyingglass")
-                    }
-                    Divider()
                     Button("Refresh Now") {
                         TimelineIntegration.shared.requestManualRefresh(trigger: .manualHotkey)
                     }
