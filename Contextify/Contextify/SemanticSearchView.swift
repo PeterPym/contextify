@@ -273,46 +273,7 @@ struct SearchResultRow: View {
         } else {
         // Expanded view with full content and parent
         VStack(alignment: .leading, spacing: 12) {
-          // Parent message (if exists) - this is the USER's question
-          if let parentContent = result.parentContent, let _ = result.parentRole {
-            VStack(alignment: .leading, spacing: 6) {
-              HStack {
-                Image(systemName: "person.fill")
-                  .foregroundStyle(.blue)
-                  .imageScale(.small)
-                Text("User:")
-                  .font(.caption.bold())
-                  .foregroundStyle(.secondary)
-              }
-
-              Text(parentContent)
-                .font(.body)
-                .padding()
-                .background(Color.blue.opacity(0.05))
-                .cornerRadius(6)
-                .textSelection(.enabled)
-            }
-          }
-
-          // Full assistant response - this is the MATCHED result
-          VStack(alignment: .leading, spacing: 6) {
-            if result.parentId != nil {
-              HStack {
-                Image(systemName: "cpu")
-                  .foregroundStyle(.green)
-                  .imageScale(.small)
-                Text("Assistant:")
-                  .font(.caption.bold())
-                  .foregroundStyle(.secondary)
-              }
-            }
-
-            Text(result.content)
-              .font(.body)
-              .textSelection(.enabled)
-          }
-
-          // Score breakdown (if hybrid search)
+          // Score breakdown (if hybrid search) - SHOW FIRST
           if let breakdown = result.scoreBreakdown {
             VStack(alignment: .leading, spacing: 8) {
               HStack {
@@ -408,6 +369,45 @@ struct SearchResultRow: View {
               .background(Color.purple.opacity(0.05))
               .cornerRadius(6)
             }
+          }
+
+          // Parent message (if exists) - this is the USER's question
+          if let parentContent = result.parentContent, let _ = result.parentRole {
+            VStack(alignment: .leading, spacing: 6) {
+              HStack {
+                Image(systemName: "person.fill")
+                  .foregroundStyle(.blue)
+                  .imageScale(.small)
+                Text("User:")
+                  .font(.caption.bold())
+                  .foregroundStyle(.secondary)
+              }
+
+              Text(parentContent)
+                .font(.body)
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(6)
+                .textSelection(.enabled)
+            }
+          }
+
+          // Full assistant response - this is the MATCHED result
+          VStack(alignment: .leading, spacing: 6) {
+            if result.parentId != nil {
+              HStack {
+                Image(systemName: "cpu")
+                  .foregroundStyle(.green)
+                  .imageScale(.small)
+                Text("Assistant:")
+                  .font(.caption.bold())
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            Text(result.content)
+              .font(.body)
+              .textSelection(.enabled)
           }
         }
         .padding()
