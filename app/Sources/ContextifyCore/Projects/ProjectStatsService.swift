@@ -177,13 +177,17 @@ public actor ProjectStatsService {
 
       var timeline: [Date: Int] = [:]
 
-      let formatter = ISO8601DateFormatter()
-      formatter.formatOptions = [.withFullDate]
+      // Use DateFormatter for "yyyy-MM-dd" format from SQL DATE()
+      let formatter = DateFormatter()
+      formatter.calendar = Calendar(identifier: .iso8601)
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.timeZone = TimeZone(secondsFromGMT: 0)
+      formatter.dateFormat = "yyyy-MM-dd"
 
       for row in rows {
         guard let dayString: String = row["day"],
               let count: Int = row["count"],
-              let date = formatter.date(from: dayString + "T00:00:00Z") else {
+              let date = formatter.date(from: dayString) else {
           continue
         }
 
