@@ -248,16 +248,23 @@ public actor ProjectDiscoveryService {
       options: [.skipsHiddenFiles]
     ).filter { $0.pathExtension == "jsonl" }
 
-    for file in transcriptFiles {
-      let transcriptId = file.deletingPathExtension().lastPathComponent
-      try await orchestrator.upsertTranscript(
-        id: transcriptId,
-        projectId: projectPath.path,
-        filePath: file.path,
+    // Create project if it doesn't exist
+    let projectId = try orchestrator.getOrCreateProject(
+      name: deriveProjectName(from: projectPath),
+      rootPath: projectPath.path
+    )
+
+    // Prepare discovered transcripts
+    let discovered = transcriptFiles.map { file in
+      DiscoveredTranscript(
+        fileURL: file,
         provider: "claude.code",
-        sessionId: transcriptId
+        sessionId: file.deletingPathExtension().lastPathComponent
       )
     }
+
+    // Batch upsert
+    _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
   }
 
   /// Ingests Codex transcripts for a project
@@ -268,15 +275,22 @@ public actor ProjectDiscoveryService {
       options: [.skipsHiddenFiles]
     ).filter { $0.pathExtension == "jsonl" }
 
-    for file in transcriptFiles {
-      let transcriptId = file.deletingPathExtension().lastPathComponent
-      try await orchestrator.upsertTranscript(
-        id: transcriptId,
-        projectId: projectPath.path,
-        filePath: file.path,
+    // Create project if it doesn't exist
+    let projectId = try orchestrator.getOrCreateProject(
+      name: deriveProjectName(from: projectPath),
+      rootPath: projectPath.path
+    )
+
+    // Prepare discovered transcripts
+    let discovered = transcriptFiles.map { file in
+      DiscoveredTranscript(
+        fileURL: file,
         provider: "codex",
-        sessionId: transcriptId
+        sessionId: file.deletingPathExtension().lastPathComponent
       )
     }
+
+    // Batch upsert
+    _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
   }
 }
