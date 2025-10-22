@@ -77,7 +77,7 @@ final class ProjectsViewModel {
     logger.info("Setting current project: \(project.name)")
 
     // Update HUD model
-    hudModel.updateProjectRoot(url: project.path)
+    _ = hudModel.setProjectRoot(url: project.path)
 
     // Refresh projects to update isCurrent flag
     Task {

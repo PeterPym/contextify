@@ -217,6 +217,6 @@ struct ProjectsWindow: View {
     hudModel: hudModel
   )
 
-  return ProjectsWindow()
+  ProjectsWindow()
     .environment(viewModel)
 }
