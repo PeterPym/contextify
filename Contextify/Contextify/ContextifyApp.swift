@@ -3,7 +3,7 @@ import AppKit
 import ContextifyCore
 import OSLog
 
-struct TranscriptInventoryCommands: Commands {
+struct WindowCommands: Commands {
   @Environment(\.openWindow) private var openWindow
 
   var body: some Commands {
@@ -12,6 +12,11 @@ struct TranscriptInventoryCommands: Commands {
         openWindow(id: "transcript-inventory")
       }
       .keyboardShortcut("i", modifiers: [.command, .control])
+
+      Button("Projects") {
+        openWindow(id: "projects")
+      }
+      .keyboardShortcut("p", modifiers: [.command, .shift])
     }
   }
 }
@@ -21,6 +26,7 @@ struct ContextifyApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
+  @State private var projectsViewModel: ProjectsViewModel?
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
@@ -44,6 +50,25 @@ struct ContextifyApp: App {
       NSApplication.shared.terminate(nil)
       #endif
     }
+
+    // Initialize projects view model
+    Task { @MainActor in
+      do {
+        let discoveryService = ProjectDiscoveryService(
+          db: try DatabaseManager.shared.pool,
+          orchestrator: TranscriptOrchestrator.shared
+        )
+        self.projectsViewModel = ProjectsViewModel(
+          discoveryService: discoveryService,
+          hudModel: HUDViewModel.shared
+        )
+
+        // Auto-discover projects at startup
+        await self.projectsViewModel?.discoverProjects()
+      } catch {
+        startupLog.error("Failed to initialize projects: \(error.localizedDescription)")
+      }
+    }
   }
 
   var body: some Scene {
@@ -57,7 +82,7 @@ struct ContextifyApp: App {
     .commands {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
-      TranscriptInventoryCommands()
+      WindowCommands()
     }
 
     Window("Transcript Inventory", id: "transcript-inventory") {
@@ -66,6 +91,20 @@ struct ContextifyApp: App {
         .environment(ConversationMonitor.shared)
     }
     .defaultSize(width: 1000, height: 700)
+
+    Window("Projects", id: "projects") {
+      if let viewModel = projectsViewModel {
+        ProjectsWindow()
+          .environment(viewModel)
+      } else {
+        VStack {
+          ProgressView()
+          Text("Initializing projects...")
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .defaultSize(width: 800, height: 600)
   }
 
   private func isAnotherInstanceRunning() -> Bool {
