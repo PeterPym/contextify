@@ -58,6 +58,11 @@ struct EmbeddingTestView: View {
       do {
         let vector = try await embeddingService.generateEmbedding(for: testText)
 
+        // Test serialization round-trip
+        let serialized = serializeEmbedding(vector)
+        let deserialized = deserializeEmbedding(serialized)
+        let roundTripMatch = vector == deserialized
+
         let stats = """
           ✅ Success!
           Dimension: \(vector.count)
@@ -67,6 +72,10 @@ struct EmbeddingTestView: View {
           Min: \(String(format: "%.4f", vector.min() ?? 0))
           Max: \(String(format: "%.4f", vector.max() ?? 0))
           Avg: \(String(format: "%.4f", vector.reduce(0, +) / Float(vector.count)))
+
+          Serialization test:
+          Byte size: \(serialized.count) bytes
+          Round-trip: \(roundTripMatch ? "✅ PASS" : "❌ FAIL")
           """
         result = stats
       } catch {

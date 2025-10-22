@@ -143,13 +143,13 @@ public actor EmbeddingService {
 /// Serializes a float array to binary Data for database storage.
 /// - Parameter vector: Embedding vector (typically 512 floats)
 /// - Returns: Binary representation (4 bytes per float)
-func serializeEmbedding(_ vector: [Float]) -> Data {
+public func serializeEmbedding(_ vector: [Float]) -> Data {
   vector.withUnsafeBufferPointer { Data(buffer: $0) }
 }
 
 /// Deserializes binary Data back to a float array.
 /// - Parameter data: Binary embedding data
 /// - Returns: Reconstructed embedding vector
-func deserializeEmbedding(_ data: Data) -> [Float] {
+public func deserializeEmbedding(_ data: Data) -> [Float] {
   data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
 }
