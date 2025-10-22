@@ -145,6 +145,41 @@ Critical correctness bugs (index drift, memory leaks, retry paradoxes, error han
 
 ### Bugs
 
+#### Bash Command Handling in Timeline
+**Status:** Open
+**Priority:** Medium (UX polish)
+
+Timeline entries for bash commands are not handled well when displayed in the conversation log. The raw bash input/output creates cluttered, hard-to-read entries that don't provide clear intent.
+
+**Current Behavior:**
+When a user runs a bash command (e.g., `git status`, `git push`), the timeline shows raw command text without context or summarization.
+
+**Example from screenshot:**
+```
+<bash-input>git status</bash-input>
+<bash-stdout>On branch main
+Your branch is ahead of 'origin/main' by 4 commits...
+```
+
+**Desired Behavior:**
+Timeline should show a human-friendly summary of bash commands with clear intent:
+- "You ran a bash command to check git status"
+- "You ran a bash command to push commits to origin"
+- "You ran a bash command to list directory contents"
+
+**Implementation Considerations:**
+- Add special handling in transcript parsing for `<bash-input>` tags
+- Use LLM to generate intent summaries for bash commands
+- Consider common command patterns (git, npm, build tools) for faster categorization
+- Show expandable detail view with full command + output
+- May need to add `bash_command` disposition type to timeline cache
+
+**Files to Check:**
+- `TranscriptParsers.swift` - Parsing of bash command blocks
+- `TimelineCacheMissGenerator.swift` - LLM summarization logic
+- `ConversationMonitor.swift` - Entry filtering and display logic
+- `TimelineEntryRow.swift` - UI rendering of bash entries
+
 #### Horizontal Rule Alignment (UI Polish)
 **Status:** Open
 **Priority:** Low (visual nit)
