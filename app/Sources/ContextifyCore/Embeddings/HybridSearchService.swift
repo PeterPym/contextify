@@ -76,14 +76,17 @@ public actor HybridSearchService {
     // Fetch full entry details for top results
     let results = try await fetchSearchResults(entryIds: topEntries.map { $0.entryId })
 
-    // Attach normalized scores
-    let finalResults = results.map { result in
-      let fusedScore = topEntries.first { $0.entryId == result.id }?.score ?? 0.0
+    // Create a map for efficient lookup
+    let resultMap = Dictionary(uniqueKeysWithValues: results.map { ($0.id, $0) })
+
+    // Build final results in sorted order (preserving topEntries ranking)
+    let finalResults = topEntries.compactMap { entry -> SearchResult? in
+      guard let result = resultMap[entry.entryId] else { return nil }
 
       // Normalize to 0-1 range (like cosine similarity)
       let normalizedScore: Float
       if scoreRange > 0 {
-        normalizedScore = Float((fusedScore - minScore) / scoreRange)
+        normalizedScore = Float((entry.score - minScore) / scoreRange)
       } else {
         normalizedScore = 1.0  // All scores are the same
       }
