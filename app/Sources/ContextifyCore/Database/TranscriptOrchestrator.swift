@@ -261,19 +261,20 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
         // Check if transcript exists (prefer session ID, fallback to path hash)
         // Use separate queries to avoid SQL injection from dynamic WHERE clause
+        // IMPORTANT: Must include project_id to match UNIQUE constraint
         let existing: Row?
         if let sid = sid, useSessionId {
           existing = try Row.fetchOne(db, sql: """
             SELECT id, content_length, mtime_ms, content_sha256
             FROM transcripts
-            WHERE provider = ? AND provider_session_id = ?
-          """, arguments: [disc.provider, sid])
+            WHERE project_id = ? AND provider = ? AND provider_session_id = ?
+          """, arguments: [projectId, disc.provider, sid])
         } else {
           existing = try Row.fetchOne(db, sql: """
             SELECT id, content_length, mtime_ms, content_sha256
             FROM transcripts
-            WHERE provider = ? AND path_hash = ?
-          """, arguments: [disc.provider, pathHash])
+            WHERE project_id = ? AND provider = ? AND path_hash = ?
+          """, arguments: [projectId, disc.provider, pathHash])
         }
 
         // Get file facts (streaming SHA256)
