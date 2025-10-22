@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var toastText = ""
     @State private var showEmbeddingTest = false
     @State private var showDatabaseTest = false
+    @State private var showBatchEmbedding = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -119,12 +120,21 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Test Embedding Database")
+
+            Button(action: { showBatchEmbedding.toggle() }) {
+                Image(systemName: "gearshape.2")
+            }
+            .buttonStyle(.borderless)
+            .help("Batch Embedding Generation")
         }
         .sheet(isPresented: $showEmbeddingTest) {
             EmbeddingTestView()
         }
         .sheet(isPresented: $showDatabaseTest) {
             EmbeddingDatabaseTestView()
+        }
+        .sheet(isPresented: $showBatchEmbedding) {
+            BatchEmbeddingView()
         }
     }
 

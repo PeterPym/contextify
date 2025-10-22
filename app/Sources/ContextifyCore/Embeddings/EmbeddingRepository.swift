@@ -5,7 +5,7 @@ import OSLog
 private let logger = Logger(subsystem: "dev.contextify", category: "EmbeddingRepository")
 
 /// Repository for managing embedding storage in the database
-public protocol EmbeddingRepository {
+public protocol EmbeddingRepository: Sendable {
   /// Saves an embedding vector for a transcript entry
   func saveEmbedding(entryId: String, vector: [Float], version: Int) async throws
 
