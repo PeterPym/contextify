@@ -4,6 +4,33 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Active Development
 
+### P0 - Global Projects Discovery & Management
+**Status:** Design Complete - Ready for Implementation
+**Priority:** P0 (blocks multi-project RAG usage)
+**Effort:** 2-3 weeks
+**Feature Spec:** `/tmp/projects-discovery-feature-spec.md`
+
+**Problem:** Currently only discovers transcripts for current project root. Users with multiple projects must manually switch to make transcripts searchable.
+
+**Solution:** Auto-discover all Claude Code + Codex projects at startup, ingest all transcripts, provide Projects Window (Window > Projects) for browsing/switching.
+
+**Implementation Phases:**
+1. **Phase 1: Backend** - ProjectDiscoveryService, path mapping, auto-ingestion
+2. **Phase 2: UI** - ProjectsWindow, list view, Set as Current, Reveal in Finder
+3. **Phase 3: Integration** - Auto-discovery at startup, menu items, background refresh
+4. **Phase 4: Polish** - Error handling, performance, accessibility
+
+**Future Enhancements (Post-MVP):**
+- Project favorites (pin to top)
+- Project groups/tags for organization
+- Exclude/hide projects from discovery
+- Multi-project search weights/boosting
+- Project statistics dashboard
+- Cross-project pattern detection
+- Manual project addition (Codex-only support)
+
+**READ FULL SPEC:** `/tmp/projects-discovery-feature-spec.md` (comprehensive design doc)
+
 ### P0 - In Progress
 - Line number tracking for narrative composition
 
