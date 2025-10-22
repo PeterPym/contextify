@@ -5,6 +5,7 @@ import ContextifyCore
 struct ProjectsWindow: View {
   @Environment(ProjectsViewModel.self) private var viewModel
   @State private var showingExcluded = false
+  @State private var selectedProject: DiscoveredProject?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -34,6 +35,9 @@ struct ProjectsWindow: View {
     .sheet(isPresented: $showingExcluded) {
       ExcludedProjectsView()
         .environment(viewModel)
+    }
+    .sheet(item: $selectedProject) { project in
+      ProjectStatsView(project: project)
     }
   }
 
@@ -114,6 +118,9 @@ struct ProjectsWindow: View {
             },
             onExclude: {
               viewModel.excludeProject(project)
+            },
+            onShowStats: {
+              selectedProject = project
             }
           )
         }

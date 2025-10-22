@@ -7,6 +7,7 @@ struct ProjectRowView: View {
   let onSetAsCurrent: () -> Void
   let onRevealInFinder: () -> Void
   let onExclude: () -> Void
+  let onShowStats: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -97,6 +98,8 @@ struct ProjectRowView: View {
         Spacer()
 
         Menu {
+          Button("View Statistics", action: onShowStats)
+          Divider()
           Button("Hide from List", action: onExclude)
         } label: {
           Image(systemName: "ellipsis.circle")
@@ -126,7 +129,8 @@ struct ProjectRowView: View {
     ),
     onSetAsCurrent: {},
     onRevealInFinder: {},
-    onExclude: {}
+    onExclude: {},
+    onShowStats: {}
   )
   .padding()
 }
