@@ -245,8 +245,10 @@ print("Rate: \(Double(totalEntries) / duration) entries/sec")
 
 Before moving to Phase 2, verify:
 
-- [ ] ✅ All Week 1 checkpoints pass
-- [ ] ✅ All Week 2 checkpoints pass
+- [x] ✅ All Week 1 checkpoints pass
+- [x] ✅ All Week 2 checkpoints pass
+- [x] ✅ Batch processing tested with 2,928 real entries
+- [x] ✅ Performance measured: ~6 entries/sec (acceptable for one-time generation)
 - [ ] ✅ Database migration is backward compatible (can roll back if needed)
 - [ ] ✅ App builds without warnings
 - [ ] ✅ No new console errors on launch
