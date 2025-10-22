@@ -145,6 +145,32 @@ Critical correctness bugs (index drift, memory leaks, retry paradoxes, error han
 
 ### Bugs
 
+#### Database Naming Inconsistency
+**Status:** Open
+**Priority:** Medium (naming clarity)
+
+The database filename is currently `transcripts.db` but should be `contextify.db` for better clarity and consistency with the application name.
+
+**Current State:**
+- Actual database file: `~/Library/Application Support/Contextify/transcripts.db`
+- Documentation refers to it as both `contextify.db` and `transcripts.db`
+- Causes confusion when debugging or accessing database directly
+
+**Tasks:**
+1. Find all documentation references to `contextify.db` that should be `transcripts.db`
+2. Decide on official name: `contextify.db` (preferred) or keep `transcripts.db`
+3. If renaming to `contextify.db`:
+   - Update DatabaseManager to use new filename
+   - Add migration logic to rename existing database files
+   - Update all documentation
+   - Test migration path for existing users
+
+**Files to check:**
+- `DatabaseManager.swift` - Database file path
+- All documentation in `build/notes/`
+- README files mentioning database location
+- Test scripts that reference the database
+
 #### Bash Command Handling in Timeline
 **Status:** Open
 **Priority:** Medium (UX polish)
