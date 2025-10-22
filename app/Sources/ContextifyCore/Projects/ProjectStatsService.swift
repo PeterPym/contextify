@@ -2,8 +2,6 @@ import Foundation
 import GRDB
 import OSLog
 
-private let logger = Logger(subsystem: "dev.contextify", category: "ProjectStats")
-
 /// Detailed statistics about a project
 public struct ProjectStatistics: Sendable {
   public let projectId: String
@@ -42,6 +40,7 @@ public struct ProjectStatistics: Sendable {
 /// Service for computing detailed project statistics
 public actor ProjectStatsService {
   private let db: DatabasePool
+  private let logger = Logger(subsystem: "dev.contextify", category: "ProjectStats")
 
   public init(db: DatabasePool) {
     self.db = db

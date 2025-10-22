@@ -2,14 +2,13 @@ import Foundation
 import GRDB
 import OSLog
 
-private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
-
 /// Service for discovering and managing Claude Code and Codex projects
 public actor ProjectDiscoveryService {
   private let db: DatabasePool
   private let orchestrator: TranscriptOrchestrator
   private let exclusionManager: ProjectExclusionManager
   private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
+  private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
 
   public init(
     db: DatabasePool,
@@ -333,7 +332,7 @@ public actor ProjectDiscoveryService {
         """
 
       guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectId]) else {
-        logger.warning("No metadata row found for project: \(projectId, privacy: .public)")
+        self.logger.warning("No metadata row found for project: \(projectId, privacy: .public)")
         return ProjectMetadata(
           projectId: projectId,
           transcriptCount: 0,
@@ -344,7 +343,7 @@ public actor ProjectDiscoveryService {
 
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
-      logger.info("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
+      self.logger.info("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
       let timestamp: Int? = row["last_activity"]
       let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
 
