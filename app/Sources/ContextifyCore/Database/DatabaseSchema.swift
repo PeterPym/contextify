@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 3
+  static let version = 4
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -206,6 +206,30 @@ enum DatabaseSchema {
       """)
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
+      """)
+    }
+
+    // v4: RAG embeddings storage
+    migrator.registerMigration("v4_embeddings") { db in
+      // Check if columns already exist (safe for re-running)
+      let tableInfo = try Row.fetchAll(db, sql: "PRAGMA table_info(transcript_entries)")
+      let columnNames = Set(tableInfo.map { $0["name"] as! String })
+
+      // Add embedding columns only if they don't exist
+      if !columnNames.contains("embedding") {
+        try db.execute(sql: "ALTER TABLE transcript_entries ADD COLUMN embedding BLOB")
+      }
+      if !columnNames.contains("embedding_version") {
+        try db.execute(sql: "ALTER TABLE transcript_entries ADD COLUMN embedding_version INTEGER DEFAULT 1")
+      }
+      if !columnNames.contains("embedding_generated_at") {
+        try db.execute(sql: "ALTER TABLE transcript_entries ADD COLUMN embedding_generated_at INTEGER")
+      }
+
+      // Create index for efficient queries on embedding presence
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_embedding_version
+        ON transcript_entries(embedding_version)
       """)
     }
 
