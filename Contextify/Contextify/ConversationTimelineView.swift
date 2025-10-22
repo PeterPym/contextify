@@ -62,6 +62,7 @@ struct ConversationTimelineView: View {
                     openWindow(id: "transcript-inventory")
                 } label: {
                     Image(systemName: "doc.text.magnifyingglass")
+                        .symbolRenderingMode(.monochrome)
                         .foregroundStyle(.secondary)
                         .padding(6)
                         .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
