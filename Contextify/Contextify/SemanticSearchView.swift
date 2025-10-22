@@ -10,6 +10,7 @@ struct SemanticSearchView: View {
   @State private var error: String?
   @State private var searchDuration: TimeInterval = 0
   @State private var searchAllProjects = false
+  @State private var useHybridSearch = true
 
   private let embeddingService = EmbeddingService()
   private nonisolated var repository: EmbeddingRepository {
@@ -19,6 +20,16 @@ struct SemanticSearchView: View {
     SearchService(
       embeddingService: embeddingService,
       repository: repository,
+      db: try! DatabaseManager.shared.pool
+    )
+  }
+  private nonisolated var bm25Service: BM25Service {
+    BM25Service(db: try! DatabaseManager.shared.pool)
+  }
+  private nonisolated var hybridSearchService: HybridSearchService {
+    HybridSearchService(
+      semanticSearch: searchService,
+      bm25Search: bm25Service,
       db: try! DatabaseManager.shared.pool
     )
   }
@@ -50,30 +61,52 @@ struct SemanticSearchView: View {
           .buttonStyle(.borderedProminent)
         }
 
-        // Project filter toggle
-        VStack(alignment: .leading, spacing: 4) {
-          Toggle(isOn: $searchAllProjects) {
-            Text("Search across projects")
-              .font(.caption)
+        // Search options
+        HStack(spacing: 20) {
+          // Project filter toggle
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $searchAllProjects) {
+              Text("Search across projects")
+                .font(.caption)
+            }
+            .toggleStyle(.checkbox)
+
+            // Status label showing current search scope
+            HStack(spacing: 4) {
+              Image(systemName: searchAllProjects ? "folder.badge.questionmark" : "folder")
+                .foregroundStyle(searchAllProjects ? .orange : .blue)
+                .imageScale(.small)
+
+              if searchAllProjects {
+                Text("Searching all projects")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              } else if let projectRoot = hudModel.projectRootURL {
+                Text("Searching current project: \(projectRoot.lastPathComponent)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("Searching current project")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
           }
-          .toggleStyle(.checkbox)
 
-          // Status label showing current search scope
-          HStack(spacing: 4) {
-            Image(systemName: searchAllProjects ? "folder.badge.questionmark" : "folder")
-              .foregroundStyle(searchAllProjects ? .orange : .blue)
-              .imageScale(.small)
+          // Hybrid search toggle
+          VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $useHybridSearch) {
+              Text("Use hybrid search")
+                .font(.caption)
+            }
+            .toggleStyle(.checkbox)
 
-            if searchAllProjects {
-              Text("Searching all projects")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            } else if let projectRoot = hudModel.projectRootURL {
-              Text("Searching current project: \(projectRoot.lastPathComponent)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            } else {
-              Text("Searching current project")
+            HStack(spacing: 4) {
+              Image(systemName: useHybridSearch ? "arrow.triangle.merge" : "sparkle")
+                .foregroundStyle(useHybridSearch ? .purple : .blue)
+                .imageScale(.small)
+
+              Text(useHybridSearch ? "Semantic + keyword (RRF)" : "Semantic only")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
@@ -151,11 +184,26 @@ struct SemanticSearchView: View {
       let projectId: String? = searchAllProjects ? nil : hudModel.projectRootURL?.path
 
       do {
-        let searchResults = try await searchService.search(
-          query: searchQuery,
-          topK: 20,
-          projectId: projectId
-        )
+        let searchResults: [SearchResult]
+
+        if useHybridSearch {
+          // Use hybrid search (semantic + keyword with RRF)
+          searchResults = try await hybridSearchService.search(
+            query: searchQuery,
+            topK: 20,
+            projectId: projectId,
+            minLength: 100,
+            semanticWeight: 0.5  // Equal weight for semantic and keyword
+          )
+        } else {
+          // Use semantic-only search
+          searchResults = try await searchService.search(
+            query: searchQuery,
+            topK: 20,
+            projectId: projectId,
+            minLength: 100
+          )
+        }
 
         results = searchResults
         searchDuration = Date().timeIntervalSince(startTime)
