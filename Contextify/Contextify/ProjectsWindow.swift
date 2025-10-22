@@ -4,6 +4,7 @@ import ContextifyCore
 /// Dedicated window for browsing and managing discovered projects
 struct ProjectsWindow: View {
   @Environment(ProjectsViewModel.self) private var viewModel
+  @State private var showingExcluded = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -29,6 +30,10 @@ struct ProjectsWindow: View {
     .task {
       // Auto-discover on window open
       await viewModel.discoverProjects()
+    }
+    .sheet(isPresented: $showingExcluded) {
+      ExcludedProjectsView()
+        .environment(viewModel)
     }
   }
 
@@ -78,11 +83,18 @@ struct ProjectsWindow: View {
         }
       }
 
-      Button("Refresh Projects") {
-        viewModel.refresh()
+      HStack(spacing: 8) {
+        Button("Show Excluded") {
+          showingExcluded = true
+        }
+        .buttonStyle(.bordered)
+
+        Button("Refresh Projects") {
+          viewModel.refresh()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(viewModel.isDiscovering)
       }
-      .buttonStyle(.borderedProminent)
-      .disabled(viewModel.isDiscovering)
     }
   }
 

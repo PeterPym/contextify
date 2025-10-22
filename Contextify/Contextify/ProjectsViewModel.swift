@@ -9,7 +9,7 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectsView
 @MainActor
 @Observable
 final class ProjectsViewModel {
-  private let discoveryService: ProjectDiscoveryService
+  let discoveryService: ProjectDiscoveryService  // Public for ExcludedProjectsView
   private let hudModel: HUDViewModel
 
   // State
