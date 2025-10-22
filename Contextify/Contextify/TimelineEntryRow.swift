@@ -83,6 +83,7 @@ struct TimelineEntryRow: View {
             if entry.action == .generating {
                 Image(systemName: "hourglass")
                     .font(.caption2)
+                    .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
                     .help("Summary not yet generated")
             }
