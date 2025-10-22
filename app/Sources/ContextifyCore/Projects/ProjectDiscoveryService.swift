@@ -284,10 +284,29 @@ public actor ProjectDiscoveryService {
       includingPropertiesForKeys: [.isDirectoryKey],
       options: [.skipsHiddenFiles]
     ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
-    else { return nil }
+    else {
+      logger.debug("Could not list Claude projects directory")
+      return nil
+    }
+
+    logger.debug("Searching for Claude dir matching: \(projectPath.path)")
+    logger.debug("Scanning \(dirs.count) Claude directories")
 
     // Find the directory whose reverse mapping matches our project path
-    return dirs.first { reversePathMapping(dirURL: $0)?.path == projectPath.path }
+    for dir in dirs {
+      if let mapped = reversePathMapping(dirURL: dir) {
+        logger.debug("  \(dir.lastPathComponent) → \(mapped.path)")
+        if mapped.path == projectPath.path {
+          logger.debug("✅ Found match: \(dir.lastPathComponent)")
+          return dir
+        }
+      } else {
+        logger.debug("  \(dir.lastPathComponent) → (failed to map)")
+      }
+    }
+
+    logger.warning("❌ No Claude directory found for: \(projectPath.path)")
+    return nil
   }
 
   // MARK: - Database Queries
