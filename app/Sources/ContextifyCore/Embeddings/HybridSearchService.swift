@@ -56,6 +56,12 @@ public actor HybridSearchService {
 
     logger.debug("Semantic results: \(semantic.count), BM25 results: \(bm25.count)")
 
+    // Build rank maps for breakdown
+    let semanticRanks = Dictionary(uniqueKeysWithValues: semantic.enumerated().map { ($0.element.id, $0.offset) })
+    let semanticScores = Dictionary(uniqueKeysWithValues: semantic.map { ($0.id, Double($0.similarity)) })
+    let bm25Ranks = Dictionary(uniqueKeysWithValues: bm25.enumerated().map { ($0.element.entryId, $0.offset) })
+    let bm25Scores = Dictionary(uniqueKeysWithValues: bm25.map { ($0.entryId, $0.score) })
+
     // Merge using Reciprocal Rank Fusion
     let fusedScores = computeRRF(
       semanticResults: semantic,
@@ -91,6 +97,16 @@ public actor HybridSearchService {
         normalizedScore = 1.0  // All scores are the same
       }
 
+      // Build score breakdown for display
+      let breakdown = ScoreBreakdown(
+        semanticRank: semanticRanks[entry.entryId],
+        semanticScore: semanticScores[entry.entryId],
+        bm25Rank: bm25Ranks[entry.entryId],
+        bm25Score: bm25Scores[entry.entryId],
+        rrfScore: entry.score,
+        semanticWeight: semanticWeight
+      )
+
       return SearchResult(
         id: result.id,
         content: result.content,
@@ -100,7 +116,8 @@ public actor HybridSearchService {
         projectId: result.projectId,
         parentId: result.parentId,
         parentContent: result.parentContent,
-        parentRole: result.parentRole
+        parentRole: result.parentRole,
+        scoreBreakdown: breakdown
       )
     }
 

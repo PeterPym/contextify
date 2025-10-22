@@ -311,6 +311,104 @@ struct SearchResultRow: View {
               .font(.body)
               .textSelection(.enabled)
           }
+
+          // Score breakdown (if hybrid search)
+          if let breakdown = result.scoreBreakdown {
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Image(systemName: "function")
+                  .foregroundStyle(.purple)
+                  .imageScale(.small)
+                Text("Score Calculation:")
+                  .font(.caption.bold())
+                  .foregroundStyle(.secondary)
+              }
+
+              VStack(alignment: .leading, spacing: 4) {
+                if let semRank = breakdown.semanticRank, let semScore = breakdown.semanticScore {
+                  HStack(spacing: 4) {
+                    Text("Semantic:")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.secondary)
+                    Text("rank #\(semRank + 1)")
+                      .font(.caption2.monospaced())
+                    Text("(similarity: \(String(format: "%.2f", semScore)))")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.tertiary)
+                    Text("→")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                    if let weight = breakdown.semanticWeight {
+                      Text("\(String(format: "%.4f", weight / (60.0 + Double(semRank))))")
+                        .font(.caption2.monospaced().bold())
+                        .foregroundStyle(.blue)
+                    }
+                  }
+                }
+
+                if let bm25Rank = breakdown.bm25Rank, let bm25Score = breakdown.bm25Score {
+                  HStack(spacing: 4) {
+                    Text("BM25:")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.secondary)
+                    Text("rank #\(bm25Rank + 1)")
+                      .font(.caption2.monospaced())
+                    Text("(score: \(String(format: "%.2f", bm25Score)))")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.tertiary)
+                    Text("→")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                    if let weight = breakdown.semanticWeight {
+                      Text("\(String(format: "%.4f", (1.0 - weight) / (60.0 + Double(bm25Rank))))")
+                        .font(.caption2.monospaced().bold())
+                        .foregroundStyle(.orange)
+                    }
+                  }
+                } else {
+                  HStack(spacing: 4) {
+                    Text("BM25:")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.secondary)
+                    Text("not in top results")
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.tertiary)
+                    Text("→")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                    Text("0.0000")
+                      .font(.caption2.monospaced().bold())
+                      .foregroundStyle(.gray)
+                  }
+                }
+
+                Divider()
+
+                if let rrfScore = breakdown.rrfScore {
+                  HStack(spacing: 4) {
+                    Text("RRF Total:")
+                      .font(.caption2.monospaced().bold())
+                      .foregroundStyle(.secondary)
+                    Text("\(String(format: "%.4f", rrfScore))")
+                      .font(.caption2.monospaced().bold())
+                      .foregroundStyle(.purple)
+                    Text("→ normalized to \(String(format: "%.0f", result.similarity * 100))%")
+                      .font(.caption2)
+                      .foregroundStyle(.tertiary)
+                  }
+                }
+
+                if let weight = breakdown.semanticWeight {
+                  Text("(semantic weight: \(String(format: "%.0f", weight * 100))%, keyword weight: \(String(format: "%.0f", (1.0 - weight) * 100))%)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              .padding(8)
+              .background(Color.purple.opacity(0.05))
+              .cornerRadius(6)
+            }
+          }
         }
         .padding()
       }

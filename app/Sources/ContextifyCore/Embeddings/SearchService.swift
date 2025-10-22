@@ -5,6 +5,32 @@ import OSLog
 
 private let logger = Logger(subsystem: "dev.contextify", category: "SearchService")
 
+/// Score breakdown for hybrid search results
+public struct ScoreBreakdown: Sendable {
+  public let semanticRank: Int?
+  public let semanticScore: Double?
+  public let bm25Rank: Int?
+  public let bm25Score: Double?
+  public let rrfScore: Double?
+  public let semanticWeight: Double?
+
+  public init(
+    semanticRank: Int? = nil,
+    semanticScore: Double? = nil,
+    bm25Rank: Int? = nil,
+    bm25Score: Double? = nil,
+    rrfScore: Double? = nil,
+    semanticWeight: Double? = nil
+  ) {
+    self.semanticRank = semanticRank
+    self.semanticScore = semanticScore
+    self.bm25Rank = bm25Rank
+    self.bm25Score = bm25Score
+    self.rrfScore = rrfScore
+    self.semanticWeight = semanticWeight
+  }
+}
+
 /// Result from semantic search
 public struct SearchResult: Sendable, Identifiable {
   public let id: String  // entry ID
@@ -16,6 +42,7 @@ public struct SearchResult: Sendable, Identifiable {
   public let parentId: String?
   public let parentContent: String?
   public let parentRole: String?
+  public let scoreBreakdown: ScoreBreakdown?
 
   public init(
     id: String,
@@ -26,7 +53,8 @@ public struct SearchResult: Sendable, Identifiable {
     projectId: String,
     parentId: String? = nil,
     parentContent: String? = nil,
-    parentRole: String? = nil
+    parentRole: String? = nil,
+    scoreBreakdown: ScoreBreakdown? = nil
   ) {
     self.id = id
     self.content = content
@@ -37,6 +65,7 @@ public struct SearchResult: Sendable, Identifiable {
     self.parentId = parentId
     self.parentContent = parentContent
     self.parentRole = parentRole
+    self.scoreBreakdown = scoreBreakdown
   }
 }
 
