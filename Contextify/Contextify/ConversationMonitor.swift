@@ -72,34 +72,10 @@ final class ConversationMonitor {
     /// Read-only view over state.entries (single source of truth)
     var entries: [TimelineEntry] { state.entries }
 
-    /// Cached filtered entries (invalidated when entries or currentSessionId changes)
-    @ObservationIgnored private var cachedVisibleEntries: [TimelineEntry]?
-    @ObservationIgnored private var cachedForSessionId: String??
-    @ObservationIgnored private var cachedForRevision: UInt64 = .max
-
-    /// Entries filtered to the active session (UI-visible subset)
-    /// When no session is selected, shows all entries (project-wide view)
-    /// Uses optional caching to avoid recomputing filter on every access
+    /// All entries are visible - sessions appear as one continuous stream
+    /// No filtering by session - timeline shows chronological view across all sessions
     var visibleEntries: [TimelineEntry] {
-        // Check if cache is valid
-        if let cached = cachedVisibleEntries,
-           cachedForSessionId == currentSessionId,
-           cachedForRevision == state.revision {
-            return cached
-        }
-
-        // Recompute and cache (read directly from state.entries for explicit observation tracking)
-        let filtered: [TimelineEntry]
-        if let id = currentSessionId {
-            filtered = state.entries.filter { $0.sessionId == id }
-        } else {
-            filtered = state.entries  // Show all when no session filter
-        }
-
-        cachedVisibleEntries = filtered
-        cachedForSessionId = currentSessionId
-        cachedForRevision = state.revision
-        return filtered
+        state.entries
     }
 
     private(set) var isCollapsed = false
@@ -116,8 +92,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
-    // MUST be observable for UI - visibleEntries filtering depends on this
-    private var currentSessionId: String? {  // Current session identifier for timeline entries
+    // Tracks the currently selected session for inventory UI (not used for timeline filtering)
+    private var currentSessionId: String? {
         didSet {
             onProjectOrSessionChange()
         }
@@ -267,15 +243,11 @@ final class ConversationMonitor {
         cacheMissGenerator = nil
     }
 
-    /// Cancel pending debounce task on project/session changes to avoid late callbacks into torn state
+    /// Cancel pending debounce task on project changes to avoid late callbacks into torn state
     @MainActor
     private func onProjectOrSessionChange() {
         debounceTask?.cancel()
         debounceTask = nil
-        // Also invalidate visible entries cache
-        cachedVisibleEntries = nil
-        cachedForSessionId = nil
-        cachedForRevision = .max
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
