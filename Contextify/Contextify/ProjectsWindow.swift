@@ -28,10 +28,6 @@ struct ProjectsWindow: View {
       }
     }
     .frame(width: 800, height: 600)
-    .task {
-      // Auto-discover on window open
-      await viewModel.discoverProjects()
-    }
     .sheet(isPresented: $showingExcluded) {
       ExcludedProjectsView()
         .environment(viewModel)
