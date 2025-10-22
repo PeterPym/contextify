@@ -6,6 +6,7 @@ struct ProjectRowView: View {
   let project: DiscoveredProject
   let onSetAsCurrent: () -> Void
   let onRevealInFinder: () -> Void
+  let onExclude: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -94,6 +95,15 @@ struct ProjectRowView: View {
         .buttonStyle(.bordered)
 
         Spacer()
+
+        Menu {
+          Button("Hide from List", action: onExclude)
+        } label: {
+          Image(systemName: "ellipsis.circle")
+            .imageScale(.large)
+        }
+        .menuStyle(.borderlessButton)
+        .help("More actions")
       }
     }
     .padding()
@@ -115,7 +125,8 @@ struct ProjectRowView: View {
       isCurrent: true
     ),
     onSetAsCurrent: {},
-    onRevealInFinder: {}
+    onRevealInFinder: {},
+    onExclude: {}
   )
   .padding()
 }

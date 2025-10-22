@@ -99,6 +99,9 @@ struct ProjectsWindow: View {
             },
             onRevealInFinder: {
               viewModel.revealInFinder(project)
+            },
+            onExclude: {
+              viewModel.excludeProject(project)
             }
           )
         }

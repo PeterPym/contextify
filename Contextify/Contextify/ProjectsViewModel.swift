@@ -100,4 +100,24 @@ final class ProjectsViewModel {
       await discoverProjects()
     }
   }
+
+  /// Excludes a project from the list
+  func excludeProject(_ project: DiscoveredProject) {
+    logger.info("Excluding project: \(project.name)")
+
+    Task {
+      await discoveryService.excludeProject(project.path.path)
+
+      // Refresh list to remove excluded project
+      let currentPath = hudModel.projectRootURL?.path
+      if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
+        projects = refreshed
+      }
+    }
+  }
+
+  /// Gets all excluded projects
+  func getExcludedProjects() async -> Set<String> {
+    await discoveryService.getExcludedProjects()
+  }
 }
