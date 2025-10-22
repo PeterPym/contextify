@@ -47,6 +47,16 @@ public actor ProjectStatsService {
     self.db = db
   }
 
+  // MARK: - Private Helpers
+
+  /// Normalizes timestamp from database (handles both seconds and milliseconds)
+  /// Timestamps > 10^12 are treated as milliseconds
+  private func normalizeTimestamp(_ raw: Int?) -> TimeInterval? {
+    guard let v = raw else { return nil }
+    // Treat values > 10^12 as milliseconds (e.g., 2025-epoch in ms ≈ 1.7e12)
+    return TimeInterval(v > 1_000_000_000_000 ? v / 1000 : v)
+  }
+
   // MARK: - Public API
 
   /// Gets comprehensive statistics for a project
@@ -74,19 +84,21 @@ public actor ProjectStatsService {
       let lastActivity: Date? = try {
         guard let timestamp = try Int.fetchOne(db, sql: """
           SELECT MAX(timestamp) FROM transcript_entries WHERE project_id = ?
-          """, arguments: [projectId]) else {
+          """, arguments: [projectId]),
+              let normalized = normalizeTimestamp(timestamp) else {
           return nil
         }
-        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+        return Date(timeIntervalSince1970: normalized)
       }()
 
       let firstActivity: Date? = try {
         guard let timestamp = try Int.fetchOne(db, sql: """
           SELECT MIN(timestamp) FROM transcript_entries WHERE project_id = ?
-          """, arguments: [projectId]) else {
+          """, arguments: [projectId]),
+              let normalized = normalizeTimestamp(timestamp) else {
           return nil
         }
-        return Date(timeIntervalSince1970: TimeInterval(timestamp))
+        return Date(timeIntervalSince1970: normalized)
       }()
 
       // Providers

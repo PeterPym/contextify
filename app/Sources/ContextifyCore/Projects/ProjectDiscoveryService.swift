@@ -292,6 +292,14 @@ public actor ProjectDiscoveryService {
 
   // MARK: - Database Queries
 
+  /// Normalizes timestamp from database (handles both seconds and milliseconds)
+  /// Timestamps > 10^12 are treated as milliseconds
+  private func normalizeTimestamp(_ raw: Int?) -> TimeInterval? {
+    guard let v = raw else { return nil }
+    // Treat values > 10^12 as milliseconds (e.g., 2025-epoch in ms ≈ 1.7e12)
+    return TimeInterval(v > 1_000_000_000_000 ? v / 1000 : v)
+  }
+
   /// Gets metadata for a single project from database
   private func getProjectMetadata(projectId: String) async throws -> ProjectMetadata {
     try db.read { db in
@@ -317,7 +325,7 @@ public actor ProjectDiscoveryService {
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
       let timestamp: Int? = row["last_activity"]
-      let lastActivity = timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+      let lastActivity = normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
 
       return ProjectMetadata(
         projectId: projectId,
