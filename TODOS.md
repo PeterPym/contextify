@@ -4,8 +4,252 @@ This document tracks feature ideas, enhancements, and known issues for future de
 
 ## Active Development
 
+### P0 - RAG Embedding Generation Improvements
+**Status:** Backlog (Post-Production Fixes)
+**Priority:** P0 (blocks production RAG usage)
+**Effort:** 1-2 weeks
+**Dependencies:** Phase 4 RAG implementation complete
+
+**Problem:** Current embedding generation is manual and requires user intervention via test modal window. Users must manually trigger batch generation, choose minimum length, and wait for completion. This creates friction for initial setup and ongoing maintenance as new transcripts arrive.
+
+**Solution:** Automatic rolling embedding generation integrated with transcript ingestion, intelligent defaults, and Settings-based configuration.
+
+**Implementation Tasks:**
+
+#### 1. Automatic Rolling Embedding Generation
+**Scope:** Generate embeddings automatically as new transcript entries are ingested
+
+**Design:**
+- Hook into `HooverEngine` transcript ingestion pipeline
+- After each transcript batch is written to DB, trigger embedding generation for new entries
+- Background actor-based processing to avoid blocking UI
+- Configurable: Enable/disable automatic generation in Settings
+- Rate limiting: Don't overwhelm device (max 50 entries/minute)
+- Respect minimum content length filter (skip short entries)
+
+**Technical Approach:**
+```swift
+// In HooverEngine or TranscriptOrchestrator
+func ingestComplete(newEntryIds: [String]) async {
+  guard Preferences.shared.autoGenerateEmbeddings else { return }
+
+  // Filter for entries meeting minimum length requirement
+  let eligible = await filterEligibleEntries(newEntryIds)
+
+  // Queue for background embedding generation
+  await EmbeddingOrchestrator.shared.queueForGeneration(eligible)
+}
+```
+
+**Benefits:**
+- Zero manual intervention for ongoing usage
+- Embeddings stay up-to-date with transcript ingestion
+- Search always includes recent conversations
+- Better user experience (just works™)
+
+#### 2. Intelligent Default Minimum Content Length
+**Scope:** Set sensible default for minimum content length, allow user override
+
+**Current State:**
+- Batch UI defaults to 100 characters
+- Users must manually adjust slider (50-500 range)
+- No guidance on optimal values
+
+**Proposed Defaults:**
+- **Default: 200 characters** (based on semantic search effectiveness)
+- Rationale:
+  - <100 chars: Often acknowledgements, "OK", "Sure", etc. (low signal)
+  - 100-200 chars: Marginal utility, still often simple responses
+  - 200+ chars: Substantive content (code, explanations, questions)
+  - 500+ chars: Diminishing returns (already high quality)
+- Display recommendation in Settings UI: "Recommended: 200-300 chars"
+- Store user preference per-project (some projects are more verbose)
+
+**UI Design:**
+```
+┌─────────────────────────────────────────┐
+│ Embedding Settings                      │
+├─────────────────────────────────────────┤
+│                                         │
+│ Minimum Content Length: 200 chars      │
+│ ├─────●─────────────┤  [Reset]          │
+│ 50    200    500                        │
+│                                         │
+│ ℹ️ Recommended: 200-300 chars           │
+│   Shorter entries often lack semantic   │
+│   value for search.                     │
+│                                         │
+│ Coverage: 1,234 / 2,567 entries (48%)  │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+#### 3. Initial Hoovering Integration
+**Scope:** Generate embeddings automatically during first-time app setup
+
+**User Journey:**
+1. User launches Contextify for first time
+2. App discovers existing Claude Code/Codex projects
+3. HooverEngine ingests all transcripts → DB
+4. **NEW:** Automatically queue all eligible entries for embedding generation
+5. Show progress: "Setting up semantic search... (1,234 / 2,567 entries)"
+6. User can use app immediately; embeddings generate in background
+7. Search becomes progressively more complete as embeddings finish
+
+**Implementation:**
+```swift
+// In ProjectDiscoveryService or initialization logic
+func initialSetup() async {
+  // Phase 1: Discover projects
+  let projects = await discoverAllProjects()
+
+  // Phase 2: Ingest transcripts
+  for project in projects {
+    await hoover.ingestProject(project)
+  }
+
+  // Phase 3: Generate embeddings (NEW)
+  if Preferences.shared.autoGenerateEmbeddings {
+    await EmbeddingOrchestrator.shared.generateForAllProjects(
+      minLength: Preferences.shared.minEmbeddingLength
+    )
+  }
+}
+```
+
+**Progress UI:**
+- Non-blocking banner at bottom of window
+- "Generating embeddings for search... 1,234 / 2,567 (48%)"
+- Estimated time remaining
+- Dismissible (continues in background)
+- Preference: "Don't ask again" to skip initial generation
+
+#### 4. Move Batch Embedding UI to Settings
+**Scope:** Relocate batch embedding test modal to Settings window as permanent feature
+
+**Current State:**
+- `BatchEmbeddingView` accessible via test button in ContentView (temporary)
+- Feels like debug tool, not production feature
+- Awkward discovery (hidden test buttons)
+
+**Proposed Location:**
+- Settings window → **"Search" tab** (or "Embeddings" tab)
+- Sections:
+  1. **Automatic Generation** (Enable/disable, minimum length)
+  2. **Manual Generation** (Trigger batch for all projects or current project)
+  3. **Status** (Coverage stats, last generated timestamp)
+  4. **Advanced** (Clear all embeddings, rebuild from scratch)
+
+**Settings UI Design:**
+```
+┌─────────────────────────────────────────────────────┐
+│ Search Settings                                     │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ ┌─ Automatic Embedding Generation ─────────────┐  │
+│ │ ☑ Generate embeddings automatically          │  │
+│ │   New transcript entries will be embedded    │  │
+│ │   in the background as they arrive.          │  │
+│ │                                               │  │
+│ │ Minimum Content Length: 200 characters       │  │
+│ │ ├─────●─────────────┤  [Reset to Default]    │  │
+│ │ 50    200    500                              │  │
+│ │                                               │  │
+│ │ ℹ️ Only entries with ≥200 chars will be       │  │
+│ │    embedded for semantic search.             │  │
+│ └───────────────────────────────────────────────┘  │
+│                                                     │
+│ ┌─ Coverage ────────────────────────────────────┐  │
+│ │ All Projects: 3,456 / 7,890 entries (44%)    │  │
+│ │ Current Project: 1,234 / 2,567 entries (48%) │  │
+│ │                                               │  │
+│ │ Last generated: 2 hours ago                  │  │
+│ └───────────────────────────────────────────────┘  │
+│                                                     │
+│ ┌─ Manual Generation ───────────────────────────┐  │
+│ │ [Generate for All Projects]                   │  │
+│ │ [Generate for Current Project Only]           │  │
+│ │                                               │  │
+│ │ [Clear All Embeddings]  [Rebuild from Scratch]│  │
+│ └───────────────────────────────────────────────┘  │
+│                                                     │
+│ ┌─ Advanced ────────────────────────────────────┐  │
+│ │ Embedding Model: NLContextualEmbedding (512)  │  │
+│ │ Version: 1                                    │  │
+│ │ Storage: ~14.2 MB                             │  │
+│ └───────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────┘
+```
+
+**Migration:**
+- Remove test buttons from `ContentView.swift` (lines ~106-127)
+- Move `BatchEmbeddingView` to Settings/SearchSettingsView
+- Add new `SearchSettingsView` component
+- Update `SettingsView` to include Search tab
+- Update menu: Settings → Search (or Cmd+,)
+
+**Files to Modify:**
+- Remove from: `ContentView.swift` (test buttons)
+- Add: `SearchSettingsView.swift` (new file)
+- Update: `SettingsView.swift` (add Search tab)
+- Update: `ContextifyApp.swift` (Settings scene already exists)
+
+**Implementation Phases:**
+
+**Phase 1: Settings UI Migration** (~1-2 days)
+- Create `SearchSettingsView` with basic UI
+- Move batch generation controls from test modal
+- Add to Settings window as new tab
+- Remove test buttons from main window
+
+**Phase 2: Intelligent Defaults** (~1 day)
+- Change default minimum length to 200 chars
+- Add recommendation text to UI
+- Add coverage calculation and display
+- Add "Reset to Default" button
+
+**Phase 3: Rolling Generation** (~2-3 days)
+- Hook into HooverEngine completion
+- Implement background queueing
+- Add rate limiting (50 entries/min)
+- Add enable/disable preference
+- Add progress indicator
+
+**Phase 4: Initial Setup Integration** (~2-3 days)
+- Detect first-time app launch
+- Trigger automatic generation after hoovering
+- Add progress banner to main window
+- Add "Skip" option with preference persistence
+
+**Total Effort:** ~1-2 weeks
+
+**User Benefits:**
+- ✅ Zero manual setup for semantic search
+- ✅ Embeddings stay current automatically
+- ✅ Sensible defaults (200 char minimum)
+- ✅ Professional Settings integration
+- ✅ Clear visibility into coverage status
+- ✅ Power users can still customize
+
+**Related Files:**
+- `BatchEmbeddingView.swift` - To be moved/refactored
+- `EmbeddingOrchestrator.swift` - Add rolling generation support
+- `HooverEngine.swift` / `TranscriptOrchestrator.swift` - Add post-ingest hooks
+- `SettingsView.swift` - Add Search tab
+- `SearchSettingsView.swift` - New file
+- `HUDPreferences.swift` or new `SearchPreferences.swift` - Store settings
+
+**Edge Cases:**
+- User disables automatic generation: Manual controls still work
+- Device under heavy load: Rate limit/pause embedding generation
+- Very large corpus (100K+ entries): Show estimated time, allow cancellation
+- Multiple projects ingesting simultaneously: Queue globally, process serially
+- First launch with no transcripts: Skip embedding setup entirely
+
+---
+
 ### P0 - Global Projects Discovery & Management
-**Status:** Design Complete - Ready for Implementation
+**Status:** Complete - Merged to Main
 **Priority:** P0 (blocks multi-project RAG usage)
 **Effort:** 2-3 weeks
 **Feature Spec:** `build/notes/archive/projects-discovery-feature-spec.md`
