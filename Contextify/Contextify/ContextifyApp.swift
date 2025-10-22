@@ -71,6 +71,10 @@ struct ContextifyApp: App {
       WindowCommands()
     }
 
+    Settings {
+      SettingsView()
+    }
+
     Window("Transcript Inventory", id: "transcript-inventory") {
       TranscriptInventoryWindow()
         .environment(HUDViewModel.shared)
