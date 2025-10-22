@@ -124,7 +124,7 @@ public actor ProjectDiscoveryService {
         ingestionErrors.removeValue(forKey: projectPath.path)
 
       } catch {
-        logger.error("Failed to ingest project \(projectName): \(error.localizedDescription)")
+        logger.error("Failed to ingest project \(projectName, privacy: .public): \(error.localizedDescription, privacy: .public)")
         // Store error for this project
         ingestionErrors[projectPath.path] = error.localizedDescription
         // Continue with other projects instead of failing
@@ -289,23 +289,23 @@ public actor ProjectDiscoveryService {
       return nil
     }
 
-    logger.debug("Searching for Claude dir matching: \(projectPath.path)")
-    logger.debug("Scanning \(dirs.count) Claude directories")
+    logger.info("Searching for Claude dir matching: \(projectPath.path, privacy: .public)")
+    logger.info("Scanning \(dirs.count) Claude directories")
 
     // Find the directory whose reverse mapping matches our project path
     for dir in dirs {
       if let mapped = reversePathMapping(dirURL: dir) {
-        logger.debug("  \(dir.lastPathComponent) → \(mapped.path)")
+        logger.info("  \(dir.lastPathComponent, privacy: .public) → \(mapped.path, privacy: .public)")
         if mapped.path == projectPath.path {
-          logger.debug("✅ Found match: \(dir.lastPathComponent)")
+          logger.info("✅ Found match: \(dir.lastPathComponent, privacy: .public)")
           return dir
         }
       } else {
-        logger.debug("  \(dir.lastPathComponent) → (failed to map)")
+        logger.info("  \(dir.lastPathComponent, privacy: .public) → (failed to map)")
       }
     }
 
-    logger.warning("❌ No Claude directory found for: \(projectPath.path)")
+    logger.warning("❌ No Claude directory found for: \(projectPath.path, privacy: .public)")
     return nil
   }
 
