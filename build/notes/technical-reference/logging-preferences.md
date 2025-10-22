@@ -147,4 +147,6 @@ Before merging code, verify:
 
 ---
 
-**See also:** `CLAUDE.md` for quick reference version of these guidelines.
+**See also:**
+- `CLAUDE.md` for quick reference version of these guidelines
+- `feature-flags.md` for developer mode and debug tool visibility

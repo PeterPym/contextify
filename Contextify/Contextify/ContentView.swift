@@ -15,6 +15,7 @@ private let uiLog = Logger(subsystem: "dev.contextify", category: "UI")
 struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
+    @Environment(DeveloperMode.self) private var devMode
     @State private var showToast = false
     @State private var toastText = ""
     @State private var showEmbeddingTest = false
@@ -109,18 +110,20 @@ struct ContentView: View {
             }
             Spacer()
 
-            // Temporary test buttons for RAG Phase 1
-            Button(action: { showEmbeddingTest.toggle() }) {
-                Image(systemName: "testtube.2")
-            }
-            .buttonStyle(.borderless)
-            .help("Test Embedding Service")
+            // Developer-only test buttons (hidden by default)
+            if devMode.isEnabled {
+              Button(action: { showEmbeddingTest.toggle() }) {
+                  Image(systemName: "testtube.2")
+              }
+              .buttonStyle(.borderless)
+              .help("Test Embedding Service")
 
-            Button(action: { showDatabaseTest.toggle() }) {
-                Image(systemName: "cylinder")
+              Button(action: { showDatabaseTest.toggle() }) {
+                  Image(systemName: "cylinder")
+              }
+              .buttonStyle(.borderless)
+              .help("Test Embedding Database")
             }
-            .buttonStyle(.borderless)
-            .help("Test Embedding Database")
 
             Button(action: { showBatchEmbedding.toggle() }) {
                 Image(systemName: "gearshape.2")

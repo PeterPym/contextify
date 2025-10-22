@@ -58,6 +58,7 @@ struct ContextifyApp: App {
       ContentView()
         .environment(model)
         .environment(timeline)
+        .environment(DeveloperMode.shared)
         .background(WindowAccessor())
         .task {
           // Initialize projects system and auto-discover at app launch
