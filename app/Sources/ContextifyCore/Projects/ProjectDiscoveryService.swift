@@ -8,10 +8,16 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDisco
 public actor ProjectDiscoveryService {
   private let db: DatabasePool
   private let orchestrator: TranscriptOrchestrator
+  private let exclusionManager: ProjectExclusionManager
 
-  public init(db: DatabasePool, orchestrator: TranscriptOrchestrator) {
+  public init(
+    db: DatabasePool,
+    orchestrator: TranscriptOrchestrator,
+    exclusionManager: ProjectExclusionManager = ProjectExclusionManager()
+  ) {
     self.db = db
     self.orchestrator = orchestrator
+    self.exclusionManager = exclusionManager
   }
 
   // MARK: - Public API
@@ -26,20 +32,28 @@ public actor ProjectDiscoveryService {
     let claudeProjects = try await discoverClaudeCodeProjects()
     logger.debug("Found \(claudeProjects.count) Claude Code project paths")
 
+    // 2. Filter out excluded projects
+    let excluded = await exclusionManager.getExcludedProjects()
+    let filteredProjects = claudeProjects.filter { !excluded.contains($0.path) }
+
+    if claudeProjects.count > filteredProjects.count {
+      logger.debug("Filtered out \(claudeProjects.count - filteredProjects.count) excluded projects")
+    }
+
     var discovered: [DiscoveredProject] = []
 
-    // 2. For each Claude project, check if it also has Codex transcripts
-    for projectPath in claudeProjects {
+    // 3. For each Claude project, check if it also has Codex transcripts
+    for projectPath in filteredProjects {
       var providers: Set<DiscoveredProject.Provider> = [.claudeCode]
 
       if hasCodexTranscripts(at: projectPath) {
         providers.insert(.codex)
       }
 
-      // 3. Get metadata from database (if already ingested)
+      // 4. Get metadata from database (if already ingested)
       let metadata = try await getProjectMetadata(projectId: projectPath.path)
 
-      // 4. Determine display name
+      // 5. Determine display name
       let name = deriveProjectName(from: projectPath)
 
       discovered.append(DiscoveredProject(
@@ -54,7 +68,7 @@ public actor ProjectDiscoveryService {
       ))
     }
 
-    // 5. Sort by last activity (most recent first)
+    // 6. Sort by last activity (most recent first)
     let sorted = discovered.sorted {
       ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
     }
@@ -236,6 +250,25 @@ public actor ProjectDiscoveryService {
         lastActivity: lastActivity
       )
     }
+  }
+
+  // MARK: - Exclusion Management
+
+  /// Excludes a project from future discovery
+  public func excludeProject(_ projectPath: String) async {
+    await exclusionManager.excludeProject(projectPath)
+    logger.info("Excluded project: \(projectPath)")
+  }
+
+  /// Includes a previously excluded project
+  public func includeProject(_ projectPath: String) async {
+    await exclusionManager.includeProject(projectPath)
+    logger.info("Included project: \(projectPath)")
+  }
+
+  /// Gets all excluded project paths
+  public func getExcludedProjects() async -> Set<String> {
+    await exclusionManager.getExcludedProjects()
   }
 
   // MARK: - Ingestion Methods
