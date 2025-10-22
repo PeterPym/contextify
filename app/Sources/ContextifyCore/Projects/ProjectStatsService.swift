@@ -102,18 +102,18 @@ public actor ProjectStatsService {
 
       let providers = Set(providerRows.compactMap { $0["provider"] as String? })
 
-      // Topic breakdown (simplified: use role as proxy)
+      // Topic breakdown (simplified: use kind as proxy)
       let topicRows = try Row.fetchAll(db, sql: """
-        SELECT role, COUNT(*) as count
+        SELECT kind, COUNT(*) as count
         FROM transcript_entries
         WHERE project_id = ?
-        GROUP BY role
+        GROUP BY kind
         """, arguments: [projectId])
 
       var topicBreakdown: [String: Int] = [:]
       for row in topicRows {
-        if let role: String = row["role"], let count: Int = row["count"] {
-          topicBreakdown[role.capitalized] = count
+        if let kind: String = row["kind"], let count: Int = row["count"] {
+          topicBreakdown[kind.capitalized] = count
         }
       }
 

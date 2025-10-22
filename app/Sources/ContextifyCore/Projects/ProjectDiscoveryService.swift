@@ -333,6 +333,7 @@ public actor ProjectDiscoveryService {
         """
 
       guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectId]) else {
+        logger.warning("No metadata row found for project: \(projectId, privacy: .public)")
         return ProjectMetadata(
           projectId: projectId,
           transcriptCount: 0,
@@ -343,6 +344,7 @@ public actor ProjectDiscoveryService {
 
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
+      logger.info("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
       let timestamp: Int? = row["last_activity"]
       let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
 
@@ -389,6 +391,7 @@ public actor ProjectDiscoveryService {
       name: deriveProjectName(from: projectPath),
       rootPath: projectPath.path
     )
+    logger.info("Ingesting Claude transcripts for project_id: \(projectId, privacy: .public) (path: \(projectPath.path, privacy: .public))")
 
     // Prepare discovered transcripts
     let discovered = transcriptFiles.map { file in
