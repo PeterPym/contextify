@@ -1,5 +1,7 @@
 ---
-description: Launch the Contextify app
+description: Launch the Contextify app (project)
 ---
 
-Launch the most recently built Contextify.app from `.derived/Build/Products/Debug/`
+```bash
+open .derived/Build/Products/Debug/Contextify.app
+```

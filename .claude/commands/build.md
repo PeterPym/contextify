@@ -1,5 +1,7 @@
 ---
-description: Build and run Contextify
+description: Build and run Contextify (project)
 ---
 
-Build and run the Contextify app using `bash scripts/xc.sh build`
+```bash
+bash scripts/xc.sh build
+```
