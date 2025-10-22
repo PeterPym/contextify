@@ -27,6 +27,7 @@ struct ContextifyApp: App {
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
   @State private var projectsViewModel: ProjectsViewModel?
+  @State private var backgroundRefreshTimer: Timer?
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
@@ -50,9 +51,6 @@ struct ContextifyApp: App {
       NSApplication.shared.terminate(nil)
       #endif
     }
-
-    // Initialize projects view model (deferred to avoid .shared pattern)
-    // Will be initialized in app lifecycle
   }
 
   var body: some Scene {
@@ -61,6 +59,10 @@ struct ContextifyApp: App {
         .environment(model)
         .environment(timeline)
         .background(WindowAccessor())
+        .task {
+          // Initialize projects system and auto-discover at app launch
+          await initializeProjectsSystem()
+        }
     }
     .defaultSize(width: 940, height: 360)
     .commands {
@@ -137,6 +139,60 @@ struct ContextifyApp: App {
         $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
       }) {
         existing.activate()
+      }
+    }
+  }
+
+  @MainActor
+  private func initializeProjectsSystem() async {
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    log.info("🔍 Initializing projects system at app launch")
+
+    do {
+      // Initialize projects view model
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      let discoveryService = ProjectDiscoveryService(
+        db: try DatabaseManager.shared.pool,
+        orchestrator: orchestrator
+      )
+      let vm = ProjectsViewModel(
+        discoveryService: discoveryService,
+        hudModel: HUDViewModel.shared
+      )
+      self.projectsViewModel = vm
+
+      // Auto-discover all projects at launch
+      log.info("🔍 Starting auto-discovery at app launch")
+      await vm.discoverProjects()
+      log.info("✅ Auto-discovery complete")
+
+      // Post notification for coordination
+      NotificationCenter.default.post(
+        name: .projectsDiscoveryComplete,
+        object: vm.projects
+      )
+
+      // Start background refresh timer (every 10 minutes)
+      startBackgroundRefresh(viewModel: vm)
+
+    } catch {
+      log.error("❌ Failed to initialize projects system: \(error.localizedDescription)")
+    }
+  }
+
+  @MainActor
+  private func startBackgroundRefresh(viewModel: ProjectsViewModel) {
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    log.info("⏰ Starting background refresh timer (10 minutes)")
+
+    // Cancel any existing timer
+    backgroundRefreshTimer?.invalidate()
+
+    // Create new timer
+    backgroundRefreshTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { _ in
+      Task { @MainActor in
+        log.debug("⏰ Background refresh triggered")
+        await viewModel.discoverProjects()
       }
     }
   }

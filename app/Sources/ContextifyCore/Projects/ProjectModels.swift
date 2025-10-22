@@ -10,6 +10,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
   public let entryCount: Int           // Total entries from database
   public let lastActivity: Date?       // Most recent transcript timestamp
   public let isCurrent: Bool           // Is this the active project?
+  public let ingestionError: String?   // Error message if ingestion failed
 
   public init(
     id: String,
@@ -19,7 +20,8 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
     transcriptCount: Int,
     entryCount: Int,
     lastActivity: Date?,
-    isCurrent: Bool
+    isCurrent: Bool,
+    ingestionError: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -29,6 +31,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
     self.entryCount = entryCount
     self.lastActivity = lastActivity
     self.isCurrent = isCurrent
+    self.ingestionError = ingestionError
   }
 
   public enum Provider: String, Sendable, Hashable, CaseIterable {

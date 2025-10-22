@@ -11,7 +11,7 @@ struct ProjectRowView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      // Header: icon + name + current badge
+      // Header: icon + name + current badge + error indicator
       HStack(spacing: 8) {
         Image(systemName: project.isCurrent ? "folder.fill" : "folder")
           .foregroundStyle(project.isCurrent ? .blue : .secondary)
@@ -28,6 +28,13 @@ struct ProjectRowView: View {
             .padding(.vertical, 2)
             .background(Color.blue)
             .cornerRadius(3)
+        }
+
+        if project.ingestionError != nil {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+            .imageScale(.small)
+            .help("Ingestion error: \(project.ingestionError ?? "")")
         }
 
         Spacer()

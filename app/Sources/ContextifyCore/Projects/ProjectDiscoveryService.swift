@@ -9,6 +9,7 @@ public actor ProjectDiscoveryService {
   private let db: DatabasePool
   private let orchestrator: TranscriptOrchestrator
   private let exclusionManager: ProjectExclusionManager
+  private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
 
   public init(
     db: DatabasePool,
@@ -64,7 +65,8 @@ public actor ProjectDiscoveryService {
         transcriptCount: metadata.transcriptCount,
         entryCount: metadata.entryCount,
         lastActivity: metadata.lastActivity,
-        isCurrent: projectPath.path == currentProjectPath
+        isCurrent: projectPath.path == currentProjectPath,
+        ingestionError: ingestionErrors[projectPath.path]
       ))
     }
 
@@ -86,6 +88,9 @@ public actor ProjectDiscoveryService {
     progressHandler: (@Sendable (DiscoveryProgress) -> Void)? = nil
   ) async throws {
     logger.info("Starting ingestion for \(projects.count) projects")
+
+    // Clear previous errors
+    ingestionErrors.removeAll()
 
     let total = projects.count
 
@@ -119,8 +124,13 @@ public actor ProjectDiscoveryService {
 
         logger.debug("Ingested project: \(projectName)")
 
+        // Clear any previous error for this project
+        ingestionErrors.removeValue(forKey: projectPath.path)
+
       } catch {
         logger.error("Failed to ingest project \(projectName): \(error.localizedDescription)")
+        // Store error for this project
+        ingestionErrors[projectPath.path] = error.localizedDescription
         // Continue with other projects instead of failing
       }
     }
@@ -133,7 +143,12 @@ public actor ProjectDiscoveryService {
       message: "Ingestion complete"
     ))
 
-    logger.info("Ingestion complete for all projects")
+    let errorCount = ingestionErrors.count
+    if errorCount > 0 {
+      logger.warning("Ingestion complete with \(errorCount) errors")
+    } else {
+      logger.info("Ingestion complete for all projects")
+    }
   }
 
   // MARK: - Private Discovery Methods
