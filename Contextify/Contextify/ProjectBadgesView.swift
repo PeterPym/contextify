@@ -9,13 +9,21 @@ struct ProjectBadgesView: View {
   var body: some View {
     HStack(spacing: 4) {
       ForEach(Array(providers.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { provider in
-        Text(provider.icon)
-          .font(.caption2)
+        Image(provider.iconImage)
+          .renderingMode(.template)
+          .foregroundStyle(providerColor(provider))
           .help(provider.displayName)
       }
     }
     .task {
       await detectProviders()
+    }
+  }
+
+  private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {
+    switch provider {
+    case .claudeCode: return .orange
+    case .codex: return .white
     }
   }
 

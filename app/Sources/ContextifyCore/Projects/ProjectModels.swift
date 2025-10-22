@@ -51,6 +51,14 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
       case .codex: return "🟡"
       }
     }
+
+    /// Image asset name for provider logomark (matches TimelineModels.Provider.iconImage)
+    public var iconImage: String {
+      switch self {
+      case .claudeCode: return "claude-code-icon"
+      case .codex: return "codex-icon"
+      }
+    }
   }
 }
 
