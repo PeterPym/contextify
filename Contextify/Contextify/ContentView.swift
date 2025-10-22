@@ -74,7 +74,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            if model.projectRootURL != nil {
+            if let projectPath = model.projectRootURL?.path {
                 HStack(spacing: 4) {
                     Button {
                         let ok = pickProjectRoot()
@@ -88,6 +88,8 @@ struct ContentView: View {
                     Text(model.projectDisplayName)
                         .lineLimit(1)
                         .truncationMode(.middle)
+
+                    ProjectBadgesView(projectPath: projectPath)
                 }
                 Label(model.branchDisplay, systemImage: "arrow.branch")
                     .lineLimit(1)
