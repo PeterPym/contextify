@@ -10,10 +10,14 @@ default_action="build"
 
 config="$default_config"
 action="$default_action"
+dev_mode=0
 
 parse_arg() {
   local value="$1"
   case "$value" in
+    --dev|--developer-mode)
+      dev_mode=1
+      ;;
     Debug|Release)
       config="$value"
       ;;
@@ -21,22 +25,17 @@ parse_arg() {
       action="$value"
       ;;
     *)
-      echo "usage: $0 [Debug|Release] [build|test|clean]" >&2
+      echo "usage: $0 [--dev] [Debug|Release] [build|test|clean]" >&2
+      echo "  --dev: Enable developer mode (shows test buttons)" >&2
       exit 2
       ;;
   esac
 }
 
-if [[ $# -ge 1 ]]; then
-  parse_arg "$1"
-fi
-if [[ $# -ge 2 ]]; then
-  parse_arg "$2"
-fi
-if [[ $# -gt 2 ]]; then
-  echo "usage: $0 [Debug|Release] [build|test|clean]" >&2
-  exit 2
-fi
+# Parse all arguments (supports --dev flag + config + action)
+for arg in "$@"; do
+  parse_arg "$arg"
+done
 
 have_xcpretty=0
 if command -v xcpretty >/dev/null 2>&1; then
@@ -74,12 +73,21 @@ case "$action" in
     app_path="$dd/Build/Products/$config/Contextify.app"
     echo "Built: $app_path"
     if [[ "$action" == "build" && -z "${CTX_NO_RUN:-}" ]]; then
+      # Set developer mode if --dev flag was provided
+      if [[ $dev_mode -eq 1 ]]; then
+        echo "Enabling developer mode..."
+        defaults write dev.contextify.Contextify DeveloperModeEnabled -bool true
+      else
+        # Ensure developer mode is disabled by default
+        defaults write dev.contextify.Contextify DeveloperModeEnabled -bool false
+      fi
       echo "Launching $app_path"
       open "$app_path"
     fi
     ;;
   *)
-    echo "usage: $0 [Debug|Release] [build|test|clean]" >&2
+    echo "usage: $0 [--dev] [Debug|Release] [build|test|clean]" >&2
+    echo "  --dev: Enable developer mode (shows test buttons)" >&2
     exit 2
     ;;
 esac

@@ -39,6 +39,20 @@ Enables developer-only test UIs and debug tools.
 
 #### Enabling Developer Mode
 
+**Option 1: Using Build Script (Recommended)**
+
+```bash
+# Build and launch with developer mode enabled
+bash scripts/xc.sh --dev build
+
+# Works with any build configuration
+bash scripts/xc.sh --dev Release build
+```
+
+The `--dev` flag automatically enables developer mode before launching the app. When omitted, developer mode is disabled by default.
+
+**Option 2: Manual UserDefaults**
+
 ```bash
 # Enable developer mode
 defaults write dev.contextify.Contextify DeveloperModeEnabled -bool true
@@ -50,7 +64,7 @@ defaults write dev.contextify.Contextify DeveloperModeEnabled -bool false
 defaults read dev.contextify.Contextify DeveloperModeEnabled
 ```
 
-**Note:** Restart Contextify after changing this setting.
+**Note:** When using manual defaults, restart Contextify after changing this setting.
 
 #### What It Enables
 

@@ -194,6 +194,41 @@ func initialSetup() async {
 - Update: `SettingsView.swift` (add Search tab)
 - Update: `ContextifyApp.swift` (Settings scene already exists)
 
+#### 5. Convert Search Modal to Native macOS Window UI
+**Scope:** Update search modal to use standard macOS window chrome with native red close button
+
+**Current State:**
+- `SemanticSearchView` uses custom `.sheet()` or custom window styling
+- Lacks standard macOS window controls (red/yellow/green traffic lights)
+- Feels inconsistent with native macOS applications
+
+**Proposed Change:**
+- Use proper `WindowGroup` or native `NSPanel` for search modal
+- Include standard window chrome:
+  - Red close button (top left)
+  - Yellow minimize button
+  - Green zoom/fullscreen button
+- Standard title bar with "Semantic Search" title
+- Native shadow and rounded corners
+- Consistent with macOS Human Interface Guidelines
+
+**Implementation:**
+```swift
+// In ContextifyApp.swift
+Window("Semantic Search", id: "semantic-search") {
+  SemanticSearchView()
+    .environment(/* ... */)
+}
+.defaultSize(width: 800, height: 600)
+.windowStyle(.automatic)  // Standard macOS window chrome
+```
+
+**Benefits:**
+- Native macOS feel and behavior
+- User-familiar window controls
+- Better integration with macOS window management (Mission Control, Spaces, etc.)
+- Improved accessibility (standard window controls)
+
 **Implementation Phases:**
 
 **Phase 1: Settings UI Migration** (~1-2 days)
