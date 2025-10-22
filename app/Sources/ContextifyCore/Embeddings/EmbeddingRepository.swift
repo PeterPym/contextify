@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import OSLog
+import Accelerate
 
 private let logger = Logger(subsystem: "dev.contextify", category: "EmbeddingRepository")
 
@@ -31,7 +32,13 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
   }
 
   public func saveEmbedding(entryId: String, vector: [Float], version: Int) async throws {
-    let data = serializeEmbedding(vector)
+    // Normalize vector to unit length for faster cosine similarity (becomes simple dot product)
+    var normSquared: Float = 0
+    vDSP_svesq(vector, 1, &normSquared, vDSP_Length(vector.count))
+    let norm = sqrt(max(1e-12, normSquared))  // Avoid division by zero
+
+    let normalizedVector = vector.map { $0 / norm }
+    let data = serializeEmbedding(normalizedVector)
     let now = Int(Date().timeIntervalSince1970)
 
     try await db.write { db in
@@ -45,7 +52,7 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
       )
     }
 
-    logger.debug("Saved embedding for entry \(entryId, privacy: .public) (version \(version))")
+    logger.debug("Saved normalized embedding for entry \(entryId, privacy: .public) (version \(version), norm: \(String(format: "%.3f", norm)))")
   }
 
   public func getEmbedding(entryId: String) async throws -> [Float]? {

@@ -115,7 +115,10 @@ public actor SearchService {
     scoredResults.reserveCapacity(entries.count)
 
     for entry in entries {
-      let similarity = cosineSimilarity(queryEmbedding, entry.embedding)
+      guard let similarity = cosineSimilarity(queryEmbedding, entry.embedding) else {
+        logger.warning("Skipping entry \(entry.id, privacy: .public) due to dimension mismatch")
+        continue
+      }
       scoredResults.append((entry: entry, similarity: similarity))
     }
 
@@ -245,26 +248,23 @@ public actor SearchService {
 
 /// Computes cosine similarity using Apple's Accelerate framework for SIMD optimization
 /// - Parameters:
-///   - a: First vector
-///   - b: Second vector
-/// - Returns: Similarity score in range [-1, 1] where 1 = identical, 0 = orthogonal, -1 = opposite
-func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-  precondition(a.count == b.count, "Vectors must have same dimension")
-
-  var dotProduct: Float = 0
-  var normA: Float = 0
-  var normB: Float = 0
-
-  // Use Accelerate for vectorized operations (10-20x faster than naive loop)
-  vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
-  vDSP_svesq(a, 1, &normA, vDSP_Length(a.count))
-  vDSP_svesq(b, 1, &normB, vDSP_Length(b.count))
-
-  let denominator = sqrt(normA) * sqrt(normB)
-
-  guard denominator > 0 else {
-    return 0  // Handle zero vectors
+///   - a: First vector (unit-normalized)
+///   - b: Second vector (unit-normalized)
+/// - Returns: Similarity score in range [-1, 1] where 1 = identical, 0 = orthogonal, -1 = opposite,
+///           or nil if vectors have mismatched dimensions (corrupted data)
+/// - Note: Assumes vectors are unit-normalized (norm ~1.0), so cosine similarity = dot product
+func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float? {
+  // Graceful handling of dimension mismatch (e.g., from DB corruption or version mismatch)
+  guard a.count == b.count, a.count > 0 else {
+    logger.error("Dimension mismatch in cosine similarity: \(a.count) vs \(b.count)")
+    return nil
   }
 
-  return dotProduct / denominator
+  var dotProduct: Float = 0
+
+  // Since vectors are unit-normalized, cosine similarity = dot product
+  // This is ~2x faster than computing norms every time
+  vDSP_dotpr(a, 1, b, 1, &dotProduct, vDSP_Length(a.count))
+
+  return dotProduct
 }
