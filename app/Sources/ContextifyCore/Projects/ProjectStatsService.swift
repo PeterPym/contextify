@@ -72,7 +72,7 @@ public actor ProjectStatsService {
 
       // Activity timestamps
       let lastActivity: Date? = try {
-        guard let timestamp = Int.fetchOne(db, sql: """
+        guard let timestamp = try Int.fetchOne(db, sql: """
           SELECT MAX(timestamp) FROM transcript_entries WHERE project_id = ?
           """, arguments: [projectId]) else {
           return nil
@@ -81,7 +81,7 @@ public actor ProjectStatsService {
       }()
 
       let firstActivity: Date? = try {
-        guard let timestamp = Int.fetchOne(db, sql: """
+        guard let timestamp = try Int.fetchOne(db, sql: """
           SELECT MIN(timestamp) FROM transcript_entries WHERE project_id = ?
           """, arguments: [projectId]) else {
           return nil
@@ -133,24 +133,24 @@ public actor ProjectStatsService {
   public func getAllStatistics() async throws -> [ProjectStatistics] {
     logger.debug("Computing statistics for all projects")
 
-    return try await db.read { db in
-      // Get all distinct project IDs
-      let projectIds = try String.fetchAll(db, sql: """
+    // Get all distinct project IDs
+    let projectIds = try await db.read { db in
+      try String.fetchAll(db, sql: """
         SELECT DISTINCT project_id FROM transcripts
         """)
+    }
 
-      var stats: [ProjectStatistics] = []
+    var stats: [ProjectStatistics] = []
 
-      for projectId in projectIds {
-        // Reuse single-project logic
-        if let projectStats = try? await getStatistics(for: projectId) {
-          stats.append(projectStats)
-        }
+    for projectId in projectIds {
+      // Reuse single-project logic
+      if let projectStats = try? await getStatistics(for: projectId) {
+        stats.append(projectStats)
       }
+    }
 
-      return stats.sorted {
-        ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
-      }
+    return stats.sorted {
+      ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
     }
   }
 
