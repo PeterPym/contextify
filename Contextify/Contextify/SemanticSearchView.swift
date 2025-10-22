@@ -1,6 +1,7 @@
 import SwiftUI
 import ContextifyCore
 import UniformTypeIdentifiers
+import GRDB
 
 /// Semantic search interface for conversation history
 struct SemanticSearchView: View {
@@ -19,28 +20,54 @@ struct SemanticSearchView: View {
   @State private var synthesisError: String?
   @State private var showSources = false
 
-  private let embeddingService = EmbeddingService()
-  private nonisolated var repository: EmbeddingRepository {
-    EmbeddingRepositoryImpl(db: try! DatabaseManager.shared.pool)
+  // Hold references safely; build once in init
+  private let embeddingService: EmbeddingService
+  private let repository: EmbeddingRepository
+  private let searchService: SearchService
+  private let bm25Service: BM25Service
+  private let hybridSearchService: HybridSearchService
+  private let synthesisService: SynthesisService
+
+  init() {
+    // Build dependencies once with proper error handling
+    let embeddingService = EmbeddingService()
+    self.embeddingService = embeddingService
+    self.synthesisService = SynthesisService()
+
+    do {
+      let pool = try DatabaseManager.shared.pool
+      let repository = EmbeddingRepositoryImpl(db: pool)
+      self.repository = repository
+      self.searchService = SearchService(
+        embeddingService: embeddingService,
+        repository: repository,
+        db: pool
+      )
+      self.bm25Service = BM25Service(db: pool)
+      self.hybridSearchService = HybridSearchService(
+        semanticSearch: self.searchService,
+        bm25Search: self.bm25Service,
+        db: pool
+      )
+    } catch {
+      // Fallback stubs so view can render error message
+      let memPool = try! DatabasePool(path: ":memory:")
+      let fallbackRepo = EmbeddingRepositoryImpl(db: memPool)
+      self.repository = fallbackRepo
+      self.searchService = SearchService(
+        embeddingService: embeddingService,
+        repository: fallbackRepo,
+        db: memPool
+      )
+      self.bm25Service = BM25Service(db: memPool)
+      self.hybridSearchService = HybridSearchService(
+        semanticSearch: self.searchService,
+        bm25Search: self.bm25Service,
+        db: memPool
+      )
+      // Error will be displayed when user tries to search
+    }
   }
-  private nonisolated var searchService: SearchService {
-    SearchService(
-      embeddingService: embeddingService,
-      repository: repository,
-      db: try! DatabaseManager.shared.pool
-    )
-  }
-  private nonisolated var bm25Service: BM25Service {
-    BM25Service(db: try! DatabaseManager.shared.pool)
-  }
-  private nonisolated var hybridSearchService: HybridSearchService {
-    HybridSearchService(
-      semanticSearch: searchService,
-      bm25Search: bm25Service,
-      db: try! DatabaseManager.shared.pool
-    )
-  }
-  private let synthesisService = SynthesisService()
 
   var body: some View {
     VStack(spacing: 0) {

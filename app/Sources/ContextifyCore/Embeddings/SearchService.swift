@@ -97,7 +97,11 @@ public actor SearchService {
 
     // 2. Fetch all entries with embeddings
     logger.debug("Fetching entries with embeddings (project: \(projectId ?? "all", privacy: .public), minLength: \(minLength))")
-    let entries = try await fetchEntriesWithEmbeddings(projectId: projectId, minLength: minLength)
+    let entries = try await fetchEntriesWithEmbeddings(
+      version: EmbeddingService.currentEmbeddingVersion,
+      projectId: projectId,
+      minLength: minLength
+    )
 
     guard !entries.isEmpty else {
       logger.warning("No entries with embeddings found")
@@ -157,16 +161,17 @@ public actor SearchService {
     let parentId: String?
   }
 
-  private func fetchEntriesWithEmbeddings(projectId: String?, minLength: Int = 100) async throws -> [EntryWithEmbedding] {
+  private func fetchEntriesWithEmbeddings(version: Int, projectId: String?, minLength: Int = 100) async throws -> [EntryWithEmbedding] {
     try await db.read { db in
       var sql = """
         SELECT id, content, embedding, kind, timestamp, project_id, parent_id
         FROM transcript_entries
         WHERE embedding IS NOT NULL
+        AND embedding_version = ?
         AND length(content) >= ?
         """
 
-      var arguments: [DatabaseValueConvertible] = [minLength]
+      var arguments: [DatabaseValueConvertible] = [version, minLength]
 
       if let projectId = projectId {
         sql += " AND project_id = ?"

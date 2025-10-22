@@ -1,5 +1,6 @@
 import SwiftUI
 import ContextifyCore
+import GRDB
 
 /// Test view for verifying end-to-end embedding database operations
 struct EmbeddingDatabaseTestView: View {
@@ -8,10 +9,24 @@ struct EmbeddingDatabaseTestView: View {
   @State private var error: String? = nil
   @State private var stats: (total: Int, embedded: Int, pending: Int)?
 
-  private let embeddingService = EmbeddingService()
+  // Hold references safely; build once in init
+  private let embeddingService: EmbeddingService
+  private let repository: EmbeddingRepository
 
-  private nonisolated var repository: EmbeddingRepository {
-    EmbeddingRepositoryImpl(db: try! DatabaseManager.shared.pool)
+  init() {
+    // Build dependencies once with proper error handling
+    let embeddingService = EmbeddingService()
+    self.embeddingService = embeddingService
+
+    do {
+      let pool = try DatabaseManager.shared.pool
+      self.repository = EmbeddingRepositoryImpl(db: pool)
+    } catch {
+      // Fallback stub so view can render error message in .task
+      let memPool = try! DatabasePool(path: ":memory:")
+      self.repository = EmbeddingRepositoryImpl(db: memPool)
+      // Error will be displayed when loadStats() runs in .task
+    }
   }
 
   var body: some View {
@@ -73,7 +88,11 @@ struct EmbeddingDatabaseTestView: View {
 
   private func loadStats() async {
     do {
-      stats = try await repository.countEmbeddings(projectId: nil, minLength: 100)
+      stats = try await repository.countEmbeddings(
+        version: EmbeddingService.currentEmbeddingVersion,
+        projectId: nil,
+        minLength: 100
+      )
     } catch {
       self.error = "Stats error: \(error.localizedDescription)"
     }

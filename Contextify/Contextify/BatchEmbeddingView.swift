@@ -12,19 +12,40 @@ struct BatchEmbeddingView: View {
   @State private var lengthDistribution: [String: Int]?
   @State private var minLength: Double = 100
 
-  private let embeddingService = EmbeddingService()
-  private nonisolated var repository: EmbeddingRepository {
-    EmbeddingRepositoryImpl(db: try! DatabaseManager.shared.pool)
-  }
-  private nonisolated var orchestrator: EmbeddingOrchestrator {
-    EmbeddingOrchestrator(
-      embeddingService: embeddingService,
-      repository: repository,
-      db: try! DatabaseManager.shared.pool
-    )
-  }
+  // Hold references safely; build once in init
+  private let embeddingService: EmbeddingService
+  private let repository: EmbeddingRepository
+  private let orchestrator: EmbeddingOrchestrator
 
   @Environment(\.dismiss) private var dismiss
+
+  init() {
+    // Build dependencies once with proper error handling
+    let embeddingService = EmbeddingService()
+    self.embeddingService = embeddingService
+
+    do {
+      let pool = try DatabaseManager.shared.pool
+      let repository = EmbeddingRepositoryImpl(db: pool)
+      self.repository = repository
+      self.orchestrator = EmbeddingOrchestrator(
+        embeddingService: embeddingService,
+        repository: repository,
+        db: pool
+      )
+    } catch {
+      // Fallback stubs so view can render error message in .task
+      let memPool = try! DatabasePool(path: ":memory:")
+      let fallbackRepo = EmbeddingRepositoryImpl(db: memPool)
+      self.repository = fallbackRepo
+      self.orchestrator = EmbeddingOrchestrator(
+        embeddingService: embeddingService,
+        repository: fallbackRepo,
+        db: memPool
+      )
+      // Error will be displayed when loadStats() runs in .task
+    }
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -305,7 +326,11 @@ struct BatchEmbeddingView: View {
 
   private func loadStats() async {
     do {
-      dbStats = try await repository.countEmbeddings(projectId: nil, minLength: Int(minLength))
+      dbStats = try await repository.countEmbeddings(
+        version: EmbeddingService.currentEmbeddingVersion,
+        projectId: nil,
+        minLength: Int(minLength)
+      )
       lengthDistribution = try await loadLengthDistribution()
     } catch {
       self.error = "Failed to load stats: \(error.localizedDescription)"

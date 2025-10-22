@@ -20,6 +20,9 @@ public actor EmbeddingService {
   /// Dimension of embedding vectors (512 for NLContextualEmbedding English model)
   public static let embeddingDimension = 512
 
+  /// Current embedding version (increment when model changes)
+  public static let currentEmbeddingVersion = 1
+
   public init() {
     logger.debug("EmbeddingService initialized")
   }

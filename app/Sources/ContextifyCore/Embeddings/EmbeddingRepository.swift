@@ -16,10 +16,10 @@ public protocol EmbeddingRepository: Sendable {
   func getEntriesWithoutEmbeddings(version: Int, projectId: String?, minLength: Int) async throws -> [String]
 
   /// Gets all entries with embeddings (for similarity search)
-  func getAllEntriesWithEmbeddings(projectId: String?, minLength: Int) async throws -> [(entryId: String, embedding: [Float])]
+  func getAllEntriesWithEmbeddings(version: Int, projectId: String?, minLength: Int) async throws -> [(entryId: String, embedding: [Float])]
 
   /// Counts entries by embedding status
-  func countEmbeddings(projectId: String?, minLength: Int) async throws -> (total: Int, embedded: Int, pending: Int)
+  func countEmbeddings(version: Int, projectId: String?, minLength: Int) async throws -> (total: Int, embedded: Int, pending: Int)
 }
 
 /// GRDB implementation of EmbeddingRepository
@@ -83,22 +83,23 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
     }
   }
 
-  public func getAllEntriesWithEmbeddings(projectId: String? = nil, minLength: Int = 100) async throws -> [(entryId: String, embedding: [Float])] {
+  public func getAllEntriesWithEmbeddings(version: Int, projectId: String? = nil, minLength: Int = 100) async throws -> [(entryId: String, embedding: [Float])] {
     try await db.read { db in
       var sql = """
         SELECT id, embedding FROM transcript_entries
         WHERE embedding IS NOT NULL
+        AND embedding_version = ?
         AND length(content) >= ?
         """
 
-      var arguments: [DatabaseValueConvertible] = [minLength]
+      var arguments: [DatabaseValueConvertible] = [version, minLength]
 
       if let projectId = projectId {
         sql += " AND project_id = ?"
         arguments.append(projectId)
       }
 
-      sql += " ORDER BY timestamp ASC"
+      sql += " ORDER BY timestamp ASC LIMIT 5000"
 
       let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
 
@@ -114,7 +115,7 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
     }
   }
 
-  public func countEmbeddings(projectId: String? = nil, minLength: Int = 100) async throws -> (total: Int, embedded: Int, pending: Int) {
+  public func countEmbeddings(version: Int, projectId: String? = nil, minLength: Int = 100) async throws -> (total: Int, embedded: Int, pending: Int) {
     try await db.read { db in
       var baseSql = "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= ?"
       var arguments: [DatabaseValueConvertible] = [minLength]
@@ -126,8 +127,8 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
 
       let total = try Int.fetchOne(db, sql: baseSql, arguments: StatementArguments(arguments)) ?? 0
 
-      let embeddedSql = baseSql + " AND embedding IS NOT NULL"
-      let embedded = try Int.fetchOne(db, sql: embeddedSql, arguments: StatementArguments(arguments)) ?? 0
+      let embeddedSql = baseSql + " AND embedding IS NOT NULL AND embedding_version = ?"
+      let embedded = try Int.fetchOne(db, sql: embeddedSql, arguments: StatementArguments(arguments + [version])) ?? 0
 
       let pending = total - embedded
 
