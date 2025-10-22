@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Observation
 import ContextifyCore
 import OSLog
 
