@@ -30,13 +30,18 @@ final class ProjectsViewModel {
 
   /// Discovers and ingests all projects
   func discoverProjects() async {
-    guard !isDiscovering else { return }
+    guard !isDiscovering else {
+      print("⚠️ ALREADY DISCOVERING - SKIPPING")
+      return
+    }
 
+    print("✅ DISCOVER PROJECTS CALLED")
     isDiscovering = true
     errorMessage = nil
 
     do {
       // Phase 1: Discovery
+      print("📍 Phase 1: Starting discovery")
       logger.info("Starting project discovery")
       let currentPath = hudModel.projectRootURL?.path
       let discovered = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
