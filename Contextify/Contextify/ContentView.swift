@@ -18,6 +18,7 @@ struct ContentView: View {
     @State private var showToast = false
     @State private var toastText = ""
     @State private var showEmbeddingTest = false
+    @State private var showDatabaseTest = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -106,15 +107,24 @@ struct ContentView: View {
             }
             Spacer()
 
-            // Temporary test button for RAG Phase 1
+            // Temporary test buttons for RAG Phase 1
             Button(action: { showEmbeddingTest.toggle() }) {
                 Image(systemName: "testtube.2")
             }
             .buttonStyle(.borderless)
             .help("Test Embedding Service")
+
+            Button(action: { showDatabaseTest.toggle() }) {
+                Image(systemName: "cylinder")
+            }
+            .buttonStyle(.borderless)
+            .help("Test Embedding Database")
         }
         .sheet(isPresented: $showEmbeddingTest) {
             EmbeddingTestView()
+        }
+        .sheet(isPresented: $showDatabaseTest) {
+            EmbeddingDatabaseTestView()
         }
     }
 
