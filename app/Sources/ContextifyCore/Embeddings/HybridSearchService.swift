@@ -68,16 +68,30 @@ public actor HybridSearchService {
       .sorted { $0.score > $1.score }
       .prefix(topK)
 
+    // Normalize scores to 0-1 range for display
+    let maxScore = topEntries.first?.score ?? 1.0
+    let minScore = topEntries.last?.score ?? 0.0
+    let scoreRange = maxScore - minScore
+
     // Fetch full entry details for top results
     let results = try await fetchSearchResults(entryIds: topEntries.map { $0.entryId })
 
-    // Attach fused scores
+    // Attach normalized scores
     let finalResults = results.map { result in
       let fusedScore = topEntries.first { $0.entryId == result.id }?.score ?? 0.0
+
+      // Normalize to 0-1 range (like cosine similarity)
+      let normalizedScore: Float
+      if scoreRange > 0 {
+        normalizedScore = Float((fusedScore - minScore) / scoreRange)
+      } else {
+        normalizedScore = 1.0  // All scores are the same
+      }
+
       return SearchResult(
         id: result.id,
         content: result.content,
-        similarity: Float(fusedScore),  // Use fused score as similarity
+        similarity: normalizedScore,
         role: result.role,
         timestamp: result.timestamp,
         projectId: result.projectId,
