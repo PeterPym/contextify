@@ -8,7 +8,7 @@ This document tracks feature ideas, enhancements, and known issues for future de
 **Status:** Design Complete - Ready for Implementation
 **Priority:** P0 (blocks multi-project RAG usage)
 **Effort:** 2-3 weeks
-**Feature Spec:** `/tmp/projects-discovery-feature-spec.md`
+**Feature Spec:** `build/notes/archive/projects-discovery-feature-spec.md`
 
 **Problem:** Currently only discovers transcripts for current project root. Users with multiple projects must manually switch to make transcripts searchable.
 
@@ -29,7 +29,7 @@ This document tracks feature ideas, enhancements, and known issues for future de
 - Cross-project pattern detection
 - Manual project addition (Codex-only support)
 
-**READ FULL SPEC:** `/tmp/projects-discovery-feature-spec.md` (comprehensive design doc)
+**READ FULL SPEC:** `build/notes/archive/projects-discovery-feature-spec.md` (comprehensive design doc)
 
 ### P0 - In Progress
 - Line number tracking for narrative composition
