@@ -51,7 +51,7 @@ public actor ProjectStatsService {
 
   /// Normalizes timestamp from database (handles both seconds and milliseconds)
   /// Timestamps > 10^12 are treated as milliseconds
-  private func normalizeTimestamp(_ raw: Int?) -> TimeInterval? {
+  private static func normalizeTimestamp(_ raw: Int?) -> TimeInterval? {
     guard let v = raw else { return nil }
     // Treat values > 10^12 as milliseconds (e.g., 2025-epoch in ms ≈ 1.7e12)
     return TimeInterval(v > 1_000_000_000_000 ? v / 1000 : v)
@@ -65,7 +65,7 @@ public actor ProjectStatsService {
   public func getStatistics(for projectId: String) async throws -> ProjectStatistics {
     logger.debug("Computing statistics for project: \(projectId)")
 
-    return try db.read { db in
+    return try await db.read { db in
       // Basic counts
       let transcriptCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcripts WHERE project_id = ?
@@ -81,25 +81,19 @@ public actor ProjectStatsService {
         """, arguments: [projectId]) ?? 0
 
       // Activity timestamps
-      let lastActivity: Date? = try {
-        guard let timestamp = try Int.fetchOne(db, sql: """
-          SELECT MAX(timestamp) FROM transcript_entries WHERE project_id = ?
-          """, arguments: [projectId]),
-              let normalized = normalizeTimestamp(timestamp) else {
-          return nil
-        }
-        return Date(timeIntervalSince1970: normalized)
-      }()
+      let lastTimestamp = try Int.fetchOne(db, sql: """
+        SELECT MAX(timestamp) FROM transcript_entries WHERE project_id = ?
+        """, arguments: [projectId])
+      let lastActivity: Date? = Self.normalizeTimestamp(lastTimestamp).map {
+        Date(timeIntervalSince1970: $0)
+      }
 
-      let firstActivity: Date? = try {
-        guard let timestamp = try Int.fetchOne(db, sql: """
-          SELECT MIN(timestamp) FROM transcript_entries WHERE project_id = ?
-          """, arguments: [projectId]),
-              let normalized = normalizeTimestamp(timestamp) else {
-          return nil
-        }
-        return Date(timeIntervalSince1970: normalized)
-      }()
+      let firstTimestamp = try Int.fetchOne(db, sql: """
+        SELECT MIN(timestamp) FROM transcript_entries WHERE project_id = ?
+        """, arguments: [projectId])
+      let firstActivity: Date? = Self.normalizeTimestamp(firstTimestamp).map {
+        Date(timeIntervalSince1970: $0)
+      }
 
       // Providers
       let providerRows = try Row.fetchAll(db, sql: """
@@ -146,7 +140,7 @@ public actor ProjectStatsService {
     logger.debug("Computing statistics for all projects")
 
     // Get all distinct project IDs
-    let projectIds = try db.read { db in
+    let projectIds = try await db.read { db in
       try String.fetchAll(db, sql: """
         SELECT DISTINCT project_id FROM transcripts
         """)
@@ -174,7 +168,7 @@ public actor ProjectStatsService {
   public func getActivityTimeline(for projectId: String, days: Int = 30) async throws -> [Date: Int] {
     logger.debug("Computing activity timeline for project: \(projectId)")
 
-    return try db.read { db in
+    return try await db.read { db in
       let startTimestamp = Int(Date().addingTimeInterval(-Double(days) * 86400).timeIntervalSince1970)
 
       let rows = try Row.fetchAll(db, sql: """
