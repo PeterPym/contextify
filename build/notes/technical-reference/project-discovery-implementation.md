@@ -71,6 +71,10 @@ Computes detailed statistics via SQL queries:
 
 **Single project stats:**
 ```sql
+-- First resolve the project UUID (supports path or UUID input)
+SELECT id FROM projects WHERE id = ? OR root_path = ? LIMIT 1
+
+-- Then query stats using the resolved UUID
 SELECT
   COUNT(DISTINCT t.id) as transcript_count,
   COUNT(e.id) as entry_count,
@@ -79,7 +83,7 @@ SELECT
   MIN(e.timestamp) as first_activity
 FROM transcripts t
 LEFT JOIN transcript_entries e ON t.id = e.transcript_id
-WHERE t.project_id = ?
+WHERE t.project_id = <resolved_uuid>
 ```
 
 **Activity timeline (per day):**
@@ -243,15 +247,22 @@ SELECT DISTINCT project_id FROM transcripts;
 
 **Get project metadata:**
 ```sql
+-- IMPORTANT: Join through projects table to support both UUID and path lookups
 SELECT
-  COUNT(DISTINCT t.id) as transcript_count,
-  COUNT(e.id) as entry_count,
-  MAX(e.timestamp) as last_activity
-FROM transcripts t
-LEFT JOIN transcript_entries e ON t.id = e.transcript_id
-WHERE t.project_id = ?
-GROUP BY t.project_id;
+  COUNT(DISTINCT t.id) AS transcript_count,
+  COUNT(e.id) AS entry_count,
+  MAX(e.timestamp) AS last_activity
+FROM projects p
+LEFT JOIN transcripts t ON t.project_id = p.id
+LEFT JOIN transcript_entries e ON e.transcript_id = t.id
+WHERE p.id = ? OR p.root_path = ?
+GROUP BY p.id;
 ```
+
+**Why the join through projects?**
+The caller may pass either a UUID (`projects.id`) or a filesystem path (`projects.root_path`).
+Querying transcripts directly with a path value would fail, as `transcripts.project_id` stores the UUID.
+By joining through `projects`, we correctly match paths to their UUIDs.
 
 **Existing indexes used:**
 - `idx_transcripts_project` on `transcripts(project_id)`
@@ -272,29 +283,62 @@ Claude Code encodes project paths as directory names:
 /opt/projects/website        → -opt-projects-website
 ```
 
-**Reverse mapping:**
+**Reverse mapping (JSONL-based approach):**
 ```swift
-func reversePathMapping(dirName: String) -> URL? {
-  // Replace dashes with slashes
-  let path = dirName.replacingOccurrences(of: "-", with: "/")
+func reversePathMapping(dirURL: URL) -> URL? {
+  // 1. Read first 128KB of JSONL file in directory
+  let jsonlFiles = try? FileManager.default.contentsOfDirectory(
+    at: dirURL,
+    includingPropertiesForKeys: nil
+  ).filter { $0.pathExtension == "jsonl" }
 
-  // Validate absolute path
-  guard path.hasPrefix("/") else { return nil }
-
-  // Validate path exists on disk
-  let url = URL(fileURLWithPath: path)
-  guard FileManager.default.fileExists(atPath: url.path) else {
-    return nil
+  guard let jsonl = jsonlFiles?.first,
+        let data = try? Data(contentsOf: jsonl, options: .mappedIfSafe),
+        let text = String(data: data.prefix(131_072), encoding: .utf8) else {
+    return fallbackHeuristic(dirURL) // See below
   }
 
-  return url
+  // 2. Extract absolute paths from common fields
+  let patterns = [
+    #""(?:cwd|workspaceRoot|root|projectRoot)"\s*:\s*"(/[^"]+)""#,
+    #""path"\s*:\s*"(/[^"]+)""#,
+    #""file"\s*:\s*"(/[^"]+)""#
+  ]
+
+  for pattern in patterns {
+    if let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: text),
+       let extractedPath = extractMatchedPath(match, text),
+       pathExists(extractedPath) {
+      return URL(fileURLWithPath: extractedPath)
+    }
+  }
+
+  // 3. Fallback to heuristic only if JSONL inspection fails
+  return fallbackHeuristic(dirURL)
+}
+
+func fallbackHeuristic(_ dirURL: URL) -> URL? {
+  // Replace dashes with slashes
+  let path = dirURL.lastPathComponent.replacingOccurrences(of: "-", with: "/")
+  guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else {
+    return nil
+  }
+  return URL(fileURLWithPath: path)
 }
 ```
 
+**Why JSONL-based?**
+The heuristic approach (replacing `-` with `/`) is **lossy** for paths with hyphens:
+- `/Users/rob/code-projects/foo` → `-Users-rob-code-projects-foo`
+- Reversing: `/Users/rob/code/projects/foo` (WRONG!)
+
+By inspecting JSONL content, we extract the **actual path** from transcript metadata.
+
 **Edge cases handled:**
-- Invalid directory names (no leading /) → skipped
-- Non-existent paths → skipped
-- Special characters in paths → preserved
+- No JSONL files → fallback to heuristic
+- Invalid directory names → skipped
+- Non-existent paths → try parent directories (up to 3 levels)
+- JSONL too large → only read first 128KB
 
 ---
 
@@ -397,9 +441,11 @@ do {
 
 **Performed:**
 ✅ Build succeeds
-🔲 App launches with Projects window
-🔲 Discovery finds projects
-🔲 Ingestion populates database
+✅ App launches with Projects window
+✅ Discovery finds projects (10 projects discovered)
+✅ Ingestion populates database (verified with logs)
+✅ Metadata queries show correct counts (38 transcripts, 2501 entries for contextify)
+✅ Path-to-UUID resolution working correctly
 🔲 Set as Current updates HUD
 🔲 Exclusion hides projects
 🔲 Statistics dashboard displays correctly
@@ -446,6 +492,29 @@ do {
 
 5. **No persistence of view model:** Re-discovers on every window open
    - **Improvement:** Cache discovered projects with invalidation
+
+## Fixed Issues
+
+### Path-to-UUID Mismatch (2025-10-22)
+**Problem:** Metadata queries returned zero counts despite data existing in database.
+
+**Root Cause:** Queries filtered `transcripts.project_id` using filesystem paths, but `project_id` stores UUIDs from `projects.id`.
+
+**Fix:**
+- `ProjectDiscoveryService.getProjectMetadata()`: Join through `projects` table with `WHERE p.id = ? OR p.root_path = ?`
+- `ProjectStatsService.getStatistics()`: Resolve project UUID before running queries
+- Updated logging to use `.notice` level for production visibility
+
+**Commit:** `2af4817` (fix(projects): resolve path-to-UUID mismatch in metadata queries)
+
+### Path Reverse-Mapping with Hyphens (2025-10-22)
+**Problem:** Heuristic approach (replacing `-` with `/`) failed for paths containing hyphens.
+
+**Example:** `/Users/rob/code-projects/foo` would incorrectly reverse to `/Users/rob/code/projects/foo`
+
+**Fix:** JSONL content inspection extracts actual paths from transcript metadata fields (`cwd`, `workspaceRoot`, `path`). Heuristic used only as fallback.
+
+**Commit:** `f681bc5` (fix(projects): use JSONL inspection for robust path reverse-mapping)
 
 ---
 
