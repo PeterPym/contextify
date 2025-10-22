@@ -255,27 +255,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Normalize path and compute hash
         let (normalizedPath, pathHash) = PathNormalizer.normalizeAndHash(path)
 
-        // Prefer provider_session_id when available for identity (trim whitespace)
+        // Clean up session ID (trim whitespace)
         let sid = disc.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let useSessionId = (sid?.isEmpty == false)
 
-        // Check if transcript exists (prefer session ID, fallback to path hash)
-        // Use separate queries to avoid SQL injection from dynamic WHERE clause
-        // IMPORTANT: Must include project_id to match UNIQUE constraint
-        let existing: Row?
-        if let sid = sid, useSessionId {
-          existing = try Row.fetchOne(db, sql: """
-            SELECT id, content_length, mtime_ms, content_sha256
-            FROM transcripts
-            WHERE project_id = ? AND provider = ? AND provider_session_id = ?
-          """, arguments: [projectId, disc.provider, sid])
-        } else {
-          existing = try Row.fetchOne(db, sql: """
-            SELECT id, content_length, mtime_ms, content_sha256
-            FROM transcripts
-            WHERE project_id = ? AND provider = ? AND path_hash = ?
-          """, arguments: [projectId, disc.provider, pathHash])
-        }
+        // Check if transcript exists using the ACTUAL unique constraint: (project_id, file_path)
+        // The table has: t.uniqueKey(["project_id", "file_path"])
+        let existing = try Row.fetchOne(db, sql: """
+          SELECT id, content_length, mtime_ms, content_sha256
+          FROM transcripts
+          WHERE project_id = ? AND file_path = ?
+        """, arguments: [projectId, path])
 
         // Get file facts (streaming SHA256)
         let (len, mtimeMs, sha): (Int64, Int64, String)
