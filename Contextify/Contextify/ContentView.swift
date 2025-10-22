@@ -17,6 +17,7 @@ struct ContentView: View {
     @Environment(ConversationMonitor.self) private var timeline
     @State private var showToast = false
     @State private var toastText = ""
+    @State private var showEmbeddingTest = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -104,6 +105,16 @@ struct ContentView: View {
                 .accessibilityIdentifier("set-project-root")
             }
             Spacer()
+
+            // Temporary test button for RAG Phase 1
+            Button(action: { showEmbeddingTest.toggle() }) {
+                Image(systemName: "testtube.2")
+            }
+            .buttonStyle(.borderless)
+            .help("Test Embedding Service")
+        }
+        .sheet(isPresented: $showEmbeddingTest) {
+            EmbeddingTestView()
         }
     }
 
