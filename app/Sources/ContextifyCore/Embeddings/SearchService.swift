@@ -105,7 +105,7 @@ public actor SearchService {
   private func fetchEntriesWithEmbeddings(projectId: String?) async throws -> [EntryWithEmbedding] {
     try await db.read { db in
       var sql = """
-        SELECT id, content, embedding, role, timestamp, project_id
+        SELECT id, content, embedding, kind, timestamp, project_id
         FROM transcript_entries
         WHERE embedding IS NOT NULL
         """
@@ -123,7 +123,7 @@ public actor SearchService {
         guard let id: String = row["id"],
               let content: String = row["content"],
               let embeddingData: Data = row["embedding"],
-              let role: String = row["role"],
+              let kind: String = row["kind"],
               let timestampInt: Int = row["timestamp"],
               let projectId: String = row["project_id"] else {
           return nil
@@ -136,7 +136,7 @@ public actor SearchService {
           id: id,
           content: content,
           embedding: embedding,
-          role: role,
+          role: kind,
           timestamp: timestamp,
           projectId: projectId
         )
