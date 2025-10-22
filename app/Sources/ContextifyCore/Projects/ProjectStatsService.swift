@@ -55,7 +55,7 @@ public actor ProjectStatsService {
   public func getStatistics(for projectId: String) async throws -> ProjectStatistics {
     logger.debug("Computing statistics for project: \(projectId)")
 
-    return try await db.read { db in
+    return try db.read { db in
       // Basic counts
       let transcriptCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcripts WHERE project_id = ?
@@ -134,7 +134,7 @@ public actor ProjectStatsService {
     logger.debug("Computing statistics for all projects")
 
     // Get all distinct project IDs
-    let projectIds = try await db.read { db in
+    let projectIds = try db.read { db in
       try String.fetchAll(db, sql: """
         SELECT DISTINCT project_id FROM transcripts
         """)
@@ -162,7 +162,7 @@ public actor ProjectStatsService {
   public func getActivityTimeline(for projectId: String, days: Int = 30) async throws -> [Date: Int] {
     logger.debug("Computing activity timeline for project: \(projectId)")
 
-    return try await db.read { db in
+    return try db.read { db in
       let startTimestamp = Int(Date().addingTimeInterval(-Double(days) * 86400).timeIntervalSince1970)
 
       let rows = try Row.fetchAll(db, sql: """

@@ -294,7 +294,7 @@ public actor ProjectDiscoveryService {
 
   /// Gets metadata for a single project from database
   private func getProjectMetadata(projectId: String) async throws -> ProjectMetadata {
-    try await db.read { db in
+    try db.read { db in
       let sql = """
         SELECT
           COUNT(DISTINCT t.id) as transcript_count,
