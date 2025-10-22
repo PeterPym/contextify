@@ -51,24 +51,8 @@ struct ContextifyApp: App {
       #endif
     }
 
-    // Initialize projects view model
-    Task { @MainActor in
-      do {
-        let discoveryService = ProjectDiscoveryService(
-          db: try DatabaseManager.shared.pool,
-          orchestrator: TranscriptOrchestrator.shared
-        )
-        self.projectsViewModel = ProjectsViewModel(
-          discoveryService: discoveryService,
-          hudModel: HUDViewModel.shared
-        )
-
-        // Auto-discover projects at startup
-        await self.projectsViewModel?.discoverProjects()
-      } catch {
-        startupLog.error("Failed to initialize projects: \(error.localizedDescription)")
-      }
-    }
+    // Initialize projects view model (deferred to avoid .shared pattern)
+    // Will be initialized in app lifecycle
   }
 
   var body: some Scene {
@@ -97,10 +81,32 @@ struct ContextifyApp: App {
         ProjectsWindow()
           .environment(viewModel)
       } else {
-        VStack {
+        VStack(spacing: 12) {
           ProgressView()
           Text("Initializing projects...")
             .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+          // Initialize on first window open
+          do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let discoveryService = ProjectDiscoveryService(
+              db: try DatabaseManager.shared.pool,
+              orchestrator: orchestrator
+            )
+            let vm = ProjectsViewModel(
+              discoveryService: discoveryService,
+              hudModel: HUDViewModel.shared
+            )
+            self.projectsViewModel = vm
+
+            // Auto-discover
+            await vm.discoverProjects()
+          } catch {
+            let log = Logger(subsystem: "dev.contextify", category: "Projects")
+            log.error("Failed to initialize projects: \(error.localizedDescription)")
+          }
         }
       }
     }

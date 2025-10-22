@@ -207,16 +207,10 @@ struct ProjectsWindow: View {
 }
 
 #Preview {
-  let discoveryService = try! ProjectDiscoveryService(
-    db: DatabaseManager.shared.pool,
-    orchestrator: TranscriptOrchestrator.shared
-  )
-  let hudModel = HUDViewModel()
-  let viewModel = ProjectsViewModel(
-    discoveryService: discoveryService,
-    hudModel: hudModel
-  )
-
-  ProjectsWindow()
-    .environment(viewModel)
+  VStack {
+    Text("Projects Window Preview")
+    Text("(Requires database initialization)")
+      .foregroundStyle(.secondary)
+  }
+  .frame(width: 800, height: 600)
 }
