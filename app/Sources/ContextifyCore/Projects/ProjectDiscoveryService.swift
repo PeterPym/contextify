@@ -108,11 +108,7 @@ public actor ProjectDiscoveryService {
 
       do {
         // Check if project has Claude Code transcripts
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-          .appendingPathComponent(".claude/projects")
-          .appendingPathComponent(claudeProjectDirectoryName(from: projectPath))
-
-        if FileManager.default.fileExists(atPath: claudeDir.path) {
+        if let claudeDir = claudeDir(for: projectPath) {
           try await ingestClaudeCodeTranscripts(for: projectPath, claudeDir: claudeDir)
         }
 
@@ -165,36 +161,90 @@ public actor ProjectDiscoveryService {
 
     let subdirs = try FileManager.default.contentsOfDirectory(
       at: claudeProjectsDir,
-      includingPropertiesForKeys: nil,
+      includingPropertiesForKeys: [.isDirectoryKey],
       options: [.skipsHiddenFiles]
-    )
+    ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
-    // Convert directory names back to paths
+    // Convert directory URLs to project paths via JSONL inspection
     return subdirs.compactMap { dir in
-      reversePathMapping(dirName: dir.lastPathComponent)
+      reversePathMapping(dirURL: dir)
     }
   }
 
   /// Reverses Claude Code directory name back to original project path
-  /// Example: "-Users-rob-code-projects-foo" → "/Users/rob/code/projects/foo"
-  private func reversePathMapping(dirName: String) -> URL? {
-    // Replace dashes with slashes
-    let path = dirName.replacingOccurrences(of: "-", with: "/")
+  /// Uses JSONL content inspection for robust path detection, with heuristic fallback
+  private func reversePathMapping(dirURL: URL) -> URL? {
+    let fm = FileManager.default
 
-    // Validate it's an absolute path (starts with /)
-    guard path.hasPrefix("/") else {
-      logger.debug("Skipping invalid directory name (not absolute path): \(dirName)")
+    // Try to find a JSONL file in this directory
+    guard let jsonlFiles = try? fm.contentsOfDirectory(
+      at: dirURL,
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    ).filter({ $0.pathExtension == "jsonl" }),
+          let jsonl = jsonlFiles.first else {
+      logger.debug("No JSONL files in \(dirURL.lastPathComponent)")
       return nil
     }
 
-    let url = URL(fileURLWithPath: path)
+    // Read first ~128KB of JSONL to find project path clues
+    if let data = try? Data(contentsOf: jsonl, options: .mappedIfSafe),
+       let text = String(data: data.prefix(131_072), encoding: .utf8) {
 
-    // Validate the path exists on disk
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      logger.debug("Skipping non-existent project path: \(path)")
+      // Look for common fields containing absolute paths
+      let patterns = [
+        #""(?:cwd|workspaceRoot|root|projectRoot)"\s*:\s*"(/[^"]+)""#,
+        #""path"\s*:\s*"(/[^"]+)""#,
+        #""file"\s*:\s*"(/[^"]+)""#
+      ]
+
+      for pattern in patterns {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
+        let range = NSRange(text.startIndex..., in: text)
+
+        if let match = regex.firstMatch(in: text, options: [], range: range),
+           match.numberOfRanges >= 2 {
+          let pathRange = match.range(at: 1)
+          if let swiftRange = Range(pathRange, in: text) {
+            let extractedPath = String(text[swiftRange])
+
+            // Validate it's a directory that exists
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: extractedPath, isDirectory: &isDir), isDir.boolValue {
+              logger.debug("Found project path via JSONL inspection: \(extractedPath)")
+              return URL(fileURLWithPath: extractedPath)
+            }
+
+            // Try parent directories (in case we found a file path)
+            var parent = URL(fileURLWithPath: extractedPath).deletingLastPathComponent()
+            for _ in 0..<3 {
+              if fm.fileExists(atPath: parent.path, isDirectory: &isDir), isDir.boolValue {
+                logger.debug("Found project path via parent traversal: \(parent.path)")
+                return parent
+              }
+              parent = parent.deletingLastPathComponent()
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: heuristic based on directory name
+    // Only use if it produces a valid existing path
+    let dirName = dirURL.lastPathComponent
+    let guessedPath = dirName.replacingOccurrences(of: "-", with: "/")
+    guard guessedPath.hasPrefix("/") else {
+      logger.debug("Fallback failed: not absolute path (\(dirName))")
       return nil
     }
 
+    let url = URL(fileURLWithPath: guessedPath)
+    guard fm.fileExists(atPath: url.path) else {
+      logger.debug("Fallback failed: path doesn't exist (\(guessedPath))")
+      return nil
+    }
+
+    logger.debug("Using fallback heuristic for: \(dirName) → \(guessedPath)")
     return url
   }
 
@@ -223,10 +273,21 @@ public actor ProjectDiscoveryService {
     return path.lastPathComponent
   }
 
-  /// Converts project path to Claude Code directory name
-  /// Example: "/Users/rob/code/projects/foo" → "-Users-rob-code-projects-foo"
-  private func claudeProjectDirectoryName(from path: URL) -> String {
-    return path.path.replacingOccurrences(of: "/", with: "-")
+  /// Finds the Claude Code directory for a known project path
+  /// Avoids lossy encoding by scanning and reverse-mapping all Claude dirs
+  private func claudeDir(for projectPath: URL) -> URL? {
+    let root = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/projects")
+
+    guard let dirs = try? FileManager.default.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
+    else { return nil }
+
+    // Find the directory whose reverse mapping matches our project path
+    return dirs.first { reversePathMapping(dirURL: $0)?.path == projectPath.path }
   }
 
   // MARK: - Database Queries
