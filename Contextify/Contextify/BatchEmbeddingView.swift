@@ -1,5 +1,6 @@
 import SwiftUI
 import ContextifyCore
+import GRDB
 
 /// UI for batch embedding generation with progress tracking
 struct BatchEmbeddingView: View {
@@ -8,6 +9,8 @@ struct BatchEmbeddingView: View {
   @State private var stats: GenerationStats?
   @State private var error: String?
   @State private var dbStats: (total: Int, embedded: Int, pending: Int)?
+  @State private var lengthDistribution: [String: Int]?
+  @State private var minLength: Double = 100
 
   private let embeddingService = EmbeddingService()
   private nonisolated var repository: EmbeddingRepository {
@@ -21,19 +24,110 @@ struct BatchEmbeddingView: View {
     )
   }
 
+  @Environment(\.dismiss) private var dismiss
+
   var body: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      Text("Batch Embedding Generation")
-        .font(.headline)
+    VStack(alignment: .leading, spacing: 0) {
+      // Header with close button
+      HStack {
+        Text("Batch Embedding Generation")
+          .font(.headline)
+        Spacer()
+        Button(action: { dismiss() }) {
+          Image(systemName: "xmark.circle.fill")
+            .foregroundStyle(.secondary)
+            .imageScale(.large)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+      }
+      .padding()
+
+      Divider()
+
+      // Scrollable content
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+
+      // Content Length Distribution
+      if let lengthDistribution = lengthDistribution {
+        VStack(alignment: .leading, spacing: 12) {
+          Text("Content Length Distribution")
+            .font(.subheadline.bold())
+
+          Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 6) {
+            GridRow {
+              Text("Range").font(.caption.bold())
+              Text("Count").font(.caption.bold())
+              Text("% of Total").font(.caption.bold())
+            }
+            .foregroundStyle(.secondary)
+
+            ForEach(["<50", "50-99", "100-199", "200-499", "500+"], id: \.self) { key in
+              let count = lengthDistribution[key] ?? 0
+              let total = lengthDistribution.values.reduce(0, +)
+              let percentage = total > 0 ? Double(count) / Double(total) * 100 : 0
+              let isFiltered = (key == "<50" || key == "50-99") && minLength >= 100
+
+              GridRow {
+                Text(key + " chars")
+                  .font(.caption.monospaced())
+                  .foregroundStyle(isFiltered ? .secondary : .primary)
+                  .strikethrough(isFiltered)
+                Text("\(count)")
+                  .font(.caption.monospaced())
+                  .foregroundStyle(isFiltered ? .secondary : .primary)
+                Text(String(format: "%.1f%%", percentage))
+                  .font(.caption.monospaced())
+                  .foregroundStyle(isFiltered ? .secondary : .primary)
+              }
+            }
+          }
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(8)
+      }
+
+      // Minimum Length Filter
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Text("Minimum Content Length")
+            .font(.subheadline.bold())
+          Spacer()
+          Text("\(Int(minLength)) characters")
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+        }
+
+        Slider(value: $minLength, in: 50...500, step: 50) {
+          Text("Min Length")
+        }
+        .disabled(isRunning)
+        .onChange(of: minLength) { _, _ in
+          Task { await loadStats() }
+        }
+
+        HStack(spacing: 4) {
+          Text("⚠️")
+            .font(.caption)
+          Text("Only entries with ≥\(Int(minLength)) chars will be embedded")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .padding()
+      .background(Color.blue.opacity(0.1))
+      .cornerRadius(8)
 
       // Database stats
       if let dbStats = dbStats {
         VStack(alignment: .leading, spacing: 8) {
-          Text("Database Status")
+          Text("Embedding Status")
             .font(.subheadline.bold())
 
           HStack(spacing: 16) {
-            statBox("Total Entries", value: "\(dbStats.total)")
+            statBox("Eligible", value: "\(dbStats.total)")
             statBox("Embedded", value: "\(dbStats.embedded)", color: .green)
             statBox("Pending", value: "\(dbStats.pending)", color: .orange)
           }
@@ -142,9 +236,13 @@ struct BatchEmbeddingView: View {
           .cornerRadius(8)
       }
 
-      Spacer()
+        }
+        .padding()
+      }
 
-      // Action buttons
+      Divider()
+
+      // Action buttons (fixed at bottom)
       HStack {
         Button(action: startBatchGeneration) {
           if isRunning {
@@ -154,20 +252,26 @@ struct BatchEmbeddingView: View {
               Text("Generating...")
             }
           } else {
-            Text("Generate Embeddings for All Entries")
+            Text("Generate Embeddings (≥\(Int(minLength)) chars)")
           }
         }
         .disabled(isRunning || (dbStats?.pending ?? 0) == 0)
         .buttonStyle(.borderedProminent)
+
+        Button("Clear All Embeddings") {
+          Task { await clearAllEmbeddings() }
+        }
+        .disabled(isRunning || (dbStats?.embedded ?? 0) == 0)
+        .buttonStyle(.bordered)
 
         Button("Refresh Stats") {
           Task { await loadStats() }
         }
         .disabled(isRunning)
       }
+      .padding()
     }
-    .padding()
-    .frame(width: 600, height: 500)
+    .frame(width: 600, height: 650)
     .task {
       await loadStats()
     }
@@ -201,9 +305,31 @@ struct BatchEmbeddingView: View {
 
   private func loadStats() async {
     do {
-      dbStats = try await repository.countEmbeddings(projectId: nil)
+      dbStats = try await repository.countEmbeddings(projectId: nil, minLength: Int(minLength))
+      lengthDistribution = try await loadLengthDistribution()
     } catch {
       self.error = "Failed to load stats: \(error.localizedDescription)"
+    }
+  }
+
+  private func loadLengthDistribution() async throws -> [String: Int] {
+    let db = try DatabaseManager.shared.pool
+    return try await db.read { db in
+      var distribution: [String: Int] = [:]
+
+      // Count entries in each range
+      distribution["<50"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) < 50") ?? 0
+      distribution["50-99"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 50 AND length(content) < 100") ?? 0
+      distribution["100-199"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 100 AND length(content) < 200") ?? 0
+      distribution["200-499"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 200 AND length(content) < 500") ?? 0
+      distribution["500+"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 500") ?? 0
+
+      return distribution
     }
   }
 
@@ -218,7 +344,8 @@ struct BatchEmbeddingView: View {
         let generatedStats = try await orchestrator.generateEmbeddingsForAllEntries(
           version: 1,
           projectId: nil,
-          batchSize: 10
+          batchSize: 10,
+          minLength: Int(minLength)
         ) { currentProgress in
           Task { @MainActor in
             self.progress = currentProgress
@@ -233,6 +360,29 @@ struct BatchEmbeddingView: View {
       }
 
       isRunning = false
+    }
+  }
+
+  private func clearAllEmbeddings() async {
+    do {
+      let db = try DatabaseManager.shared.pool
+      try await db.write { db in
+        try db.execute(
+          sql: """
+            UPDATE transcript_entries
+            SET embedding = NULL,
+                embedding_version = NULL,
+                embedding_generated_at = NULL
+            WHERE embedding IS NOT NULL
+          """
+        )
+      }
+      await loadStats()
+      self.stats = nil
+      self.progress = nil
+      self.error = nil
+    } catch {
+      self.error = "Failed to clear embeddings: \(error.localizedDescription)"
     }
   }
 }

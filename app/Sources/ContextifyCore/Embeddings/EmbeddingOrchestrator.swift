@@ -34,18 +34,20 @@ public actor EmbeddingOrchestrator {
   ///   - version: Embedding version (default 1)
   ///   - projectId: Optional project filter
   ///   - batchSize: Number of entries to process in each batch (default 10)
+  ///   - minLength: Minimum content length to embed (default 100)
   ///   - progress: Callback for progress updates
   /// - Returns: Statistics about the embedding run
   public func generateEmbeddingsForAllEntries(
     version: Int = 1,
     projectId: String? = nil,
     batchSize: Int = 10,
+    minLength: Int = 100,
     progress: (@Sendable (Progress) -> Void)? = nil
   ) async throws -> GenerationStats {
     let startTime = Date()
 
     // Get all entries that need embeddings
-    let pendingIds = try await repository.getEntriesWithoutEmbeddings(version: version, projectId: projectId)
+    let pendingIds = try await repository.getEntriesWithoutEmbeddings(version: version, projectId: projectId, minLength: minLength)
     let total = pendingIds.count
 
     guard total > 0 else {

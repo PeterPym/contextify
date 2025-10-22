@@ -3,11 +3,13 @@ import ContextifyCore
 
 /// Semantic search interface for conversation history
 struct SemanticSearchView: View {
+  @Environment(HUDViewModel.self) private var hudModel
   @State private var searchQuery = ""
   @State private var results: [SearchResult] = []
   @State private var isSearching = false
   @State private var error: String?
   @State private var searchDuration: TimeInterval = 0
+  @State private var searchAllProjects = false
 
   private let embeddingService = EmbeddingService()
   private nonisolated var repository: EmbeddingRepository {
@@ -46,6 +48,36 @@ struct SemanticSearchView: View {
           }
           .disabled(isSearching || searchQuery.isEmpty)
           .buttonStyle(.borderedProminent)
+        }
+
+        // Project filter toggle
+        VStack(alignment: .leading, spacing: 4) {
+          Toggle(isOn: $searchAllProjects) {
+            Text("Search across projects")
+              .font(.caption)
+          }
+          .toggleStyle(.checkbox)
+
+          // Status label showing current search scope
+          HStack(spacing: 4) {
+            Image(systemName: searchAllProjects ? "folder.badge.questionmark" : "folder")
+              .foregroundStyle(searchAllProjects ? .orange : .blue)
+              .imageScale(.small)
+
+            if searchAllProjects {
+              Text("Searching all projects")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else if let projectRoot = hudModel.projectRootURL {
+              Text("Searching current project: \(projectRoot.lastPathComponent)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else {
+              Text("Searching current project")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
         }
 
         if !results.isEmpty {
@@ -115,11 +147,14 @@ struct SemanticSearchView: View {
 
       let startTime = Date()
 
+      // Determine project ID based on checkbox state
+      let projectId: String? = searchAllProjects ? nil : hudModel.projectRootURL?.path
+
       do {
         let searchResults = try await searchService.search(
           query: searchQuery,
           topK: 20,
-          projectId: nil
+          projectId: projectId
         )
 
         results = searchResults
@@ -136,52 +171,110 @@ struct SemanticSearchView: View {
 
 struct SearchResultRow: View {
   let result: SearchResult
+  @State private var isExpanded = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        // Similarity score
-        Text("\(String(format: "%.0f", result.similarity * 100))%")
-          .font(.caption.bold())
-          .foregroundStyle(.white)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(similarityColor)
-          .cornerRadius(4)
+    Button(action: { isExpanded.toggle() }) {
+      VStack(alignment: .leading, spacing: 0) {
+        // Header
+        HStack {
+          // Expand/collapse chevron
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .foregroundStyle(.secondary)
+            .imageScale(.small)
 
-        // Role badge
-        Text(result.role)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .textCase(.uppercase)
+          // Similarity score
+          Text("\(String(format: "%.0f", result.similarity * 100))%")
+            .font(.caption.bold())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(similarityColor)
+            .cornerRadius(4)
 
-        // Timestamp
-        Text(result.timestamp, style: .relative)
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+          // Role badge
+          Text(result.role)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
 
-        Spacer()
+          // Timestamp
+          Text(result.timestamp, style: .relative)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+
+          Spacer()
+
+          // Parent indicator
+          if result.parentId != nil {
+            Image(systemName: "bubble.left.fill")
+              .foregroundStyle(.blue.opacity(0.6))
+              .imageScale(.small)
+          }
+        }
+        .padding()
+
+        // Content preview (collapsed)
+        if !isExpanded {
+          Text(result.content)
+            .font(.body)
+            .lineLimit(2)
+            .padding(.horizontal)
+            .padding(.bottom)
+
+        } else {
+        // Expanded view with full content and parent
+        VStack(alignment: .leading, spacing: 12) {
+          // Parent message (if exists) - this is the USER's question
+          if let parentContent = result.parentContent, let _ = result.parentRole {
+            VStack(alignment: .leading, spacing: 6) {
+              HStack {
+                Image(systemName: "person.fill")
+                  .foregroundStyle(.blue)
+                  .imageScale(.small)
+                Text("User:")
+                  .font(.caption.bold())
+                  .foregroundStyle(.secondary)
+              }
+
+              Text(parentContent)
+                .font(.body)
+                .padding()
+                .background(Color.blue.opacity(0.05))
+                .cornerRadius(6)
+                .textSelection(.enabled)
+            }
+          }
+
+          // Full assistant response - this is the MATCHED result
+          VStack(alignment: .leading, spacing: 6) {
+            if result.parentId != nil {
+              HStack {
+                Image(systemName: "cpu")
+                  .foregroundStyle(.green)
+                  .imageScale(.small)
+                Text("Assistant:")
+                  .font(.caption.bold())
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            Text(result.content)
+              .font(.body)
+              .textSelection(.enabled)
+          }
+        }
+        .padding()
       }
-
-      // Content preview
-      Text(result.content)
-        .font(.body)
-        .lineLimit(4)
-        .textSelection(.enabled)
-
-      if result.content.count > 200 {
-        Text("...")
-          .font(.caption)
-          .foregroundStyle(.secondary)
       }
+      .background(Color.secondary.opacity(0.05))
+      .cornerRadius(8)
+      .overlay(
+        RoundedRectangle(cornerRadius: 8)
+          .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+      )
     }
-    .padding()
-    .background(Color.secondary.opacity(0.05))
-    .cornerRadius(8)
-    .overlay(
-      RoundedRectangle(cornerRadius: 8)
-        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-    )
+    .buttonStyle(.plain)
   }
 
   private var similarityColor: Color {

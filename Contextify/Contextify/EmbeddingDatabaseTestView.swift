@@ -73,7 +73,7 @@ struct EmbeddingDatabaseTestView: View {
 
   private func loadStats() async {
     do {
-      stats = try await repository.countEmbeddings(projectId: nil)
+      stats = try await repository.countEmbeddings(projectId: nil, minLength: 100)
     } catch {
       self.error = "Stats error: \(error.localizedDescription)"
     }
@@ -90,7 +90,7 @@ struct EmbeddingDatabaseTestView: View {
 
         // Step 1: Get an entry without embedding
         log += "1️⃣ Finding entry without embedding...\n"
-        let pendingIds = try await repository.getEntriesWithoutEmbeddings(version: 1, projectId: nil)
+        let pendingIds = try await repository.getEntriesWithoutEmbeddings(version: 1, projectId: nil, minLength: 100)
 
         guard let testEntryId = pendingIds.first else {
           log += "❌ No entries without embeddings found\n"
@@ -131,7 +131,7 @@ struct EmbeddingDatabaseTestView: View {
 
         // Step 6: Verify it no longer appears in pending
         log += "6️⃣ Checking pending list...\n"
-        let newPending = try await repository.getEntriesWithoutEmbeddings(version: 1, projectId: nil)
+        let newPending = try await repository.getEntriesWithoutEmbeddings(version: 1, projectId: nil, minLength: 100)
         let nowPending = newPending.contains(testEntryId)
         log += nowPending ? "❌ FAIL: Still in pending list\n\n" : "✅ PASS: Removed from pending\n\n"
 
