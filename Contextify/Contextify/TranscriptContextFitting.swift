@@ -40,6 +40,9 @@ struct TranscriptContextFitting {
         var currentCount = sampledCount
         var attempt = 0
 
+        // Generate unique session ID for this pre-flight run to prevent cross-contamination
+        let sessionId = UUID().uuidString.prefix(8)
+
         while attempt < maxAttempts {
             // Build probe prompt (matches actual call structure)
             let probe = """
@@ -59,8 +62,9 @@ struct TranscriptContextFitting {
             do {
                 log.debug("Pre-flight attempt \(attempt + 1)/\(maxAttempts): \(currentContext.count) chars, ~\(currentCount) messages")
                 // Use generateGuided() instead of rawWithInstructions() to include schema overhead
-                // CRITICAL: Use separate instructions to avoid polluting the actual session with pre-flight context
-                let preflightInstructions = "[PRE-FLIGHT]\n" + instructions
+                // CRITICAL: Use unique session ID per pre-flight run to prevent contamination
+                // Each retry and each transcript gets its own isolated session
+                let preflightInstructions = "[PRE-FLIGHT:\(sessionId)]\n" + instructions
                 let _: GuidedTranscriptMetadata = try await llm.generateGuided(
                     instructions: preflightInstructions,
                     prompt: probe,
