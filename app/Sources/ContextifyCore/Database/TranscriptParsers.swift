@@ -326,17 +326,20 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
       throw ParserError.invalidJSON
     }
 
-    guard let uuid = json["uuid"] as? String else {
-      throw ParserError.missingRequiredField("uuid")
-    }
-
     guard let type = json["type"] as? String else {
       throw ParserError.missingRequiredField("type")
     }
 
-    guard let timestampStr = json["timestamp"] as? String,
-          let timestamp = parseISO8601(timestampStr) else {
-      throw ParserError.missingRequiredField("timestamp")
+    // UUID is required for user/assistant messages, but metadata records use messageId
+    let uuid = json["uuid"] as? String ?? json["messageId"] as? String ?? ""
+
+    // Timestamp is optional for some metadata records (e.g., file-history-snapshot uses snapshot.timestamp)
+    let timestamp: Date
+    if let timestampStr = json["timestamp"] as? String,
+       let parsedTimestamp = parseISO8601(timestampStr) {
+      timestamp = parsedTimestamp
+    } else {
+      timestamp = Date()  // Fallback for metadata records without top-level timestamp
     }
 
     let now = Int(Date().timeIntervalSince1970)
