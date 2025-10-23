@@ -294,6 +294,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     }
 
     return try db.read { db in
+      // Get most recent entries (DESC) then reverse to chronological order
       let sql = """
         SELECT e.*, c.*
         FROM transcript_entries e
@@ -303,7 +304,7 @@ public final class EntryRepositoryImpl: EntryRepository {
          AND c.generator_signature = ?
         WHERE e.project_id = ?
           AND e.display_in_timeline = 1
-        ORDER BY e.timestamp ASC, e.created_at ASC, e.id ASC
+        ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
         LIMIT ?
       """
 
@@ -312,7 +313,7 @@ public final class EntryRepositoryImpl: EntryRepository {
         "c": RangeRowAdapter(TranscriptEntry.databaseColumnCount..<(TranscriptEntry.databaseColumnCount + TimelineCache.databaseColumnCount))
       ])
 
-      return try Row
+      let rows = try Row
         .fetchAll(db, sql: sql, arguments: [generatorSignature, projectId, limit], adapter: adapter)
         .map { row in
           let entry = try TranscriptEntry(row: row.scopes["e"]!)
@@ -327,6 +328,9 @@ public final class EntryRepositoryImpl: EntryRepository {
 
           return (entry, cache)
         }
+
+      // Reverse to get chronological order (oldest to newest)
+      return rows.reversed()
     }
   }
 
