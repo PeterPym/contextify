@@ -48,10 +48,10 @@ enum TimelineError: Swift.Error {
 
 // SHA256 hex helper
 extension Digest {
-    var hexString: String {
+    nonisolated var hexString: String {
         map { String(format: "%02x", $0) }.joined()
     }
-    func hexPrefix(_ length: Int) -> String {
+    nonisolated func hexPrefix(_ length: Int) -> String {
         String(hexString.prefix(length))
     }
 }
@@ -744,6 +744,10 @@ actor SessionController {
     // Enable if benchmarks show session creation is very fast (<2ms)
     private let forceStateless: Bool
 
+    // Schema installation tracking (one-time per session)
+    private var schemaInstalledTypes: Set<String> = []
+    private var historyMessageCount = 0
+
     init(instructions: String, forceStateless: Bool = false) {
         self.instructions = instructions
         self.forceStateless = forceStateless
@@ -767,6 +771,8 @@ actor SessionController {
         session = nil
         requestCount = 0
         consecutiveErrors = 0
+        schemaInstalledTypes = []
+        historyMessageCount = 0
         epoch &+= 1
         log.info("Reset LanguageModelSession for instructions key (\(self.instructions.prefix(24), privacy: .public))… (epoch \(self.epoch))")
     }
@@ -820,7 +826,8 @@ actor SessionController {
         _ prompt: String,
         generating: T.Type,
         includeSchema: Bool,
-        options: GenerationOptions
+        options: GenerationOptions,
+        recordHistory: Bool = true
     ) async throws -> T {
         let acquired = await acquire()
         guard acquired else { throw CancellationError() }
@@ -828,21 +835,44 @@ actor SessionController {
 
         if forceStateless { reset() }
 
+        let typeName = String(describing: T.self)
+        let schemaAlreadyInstalled = schemaInstalledTypes.contains(typeName)
+
+        // Diagnostic logging
+        let maxResp = options.maximumResponseTokens ?? 0
+        log.info("[LLM] hist=\(self.historyMessageCount) schema=\(schemaAlreadyInstalled ? "✓" : "new") promptChars=\(prompt.count) maxResp=\(maxResp) ephemeral=\(!recordHistory)")
+
         do {
             let s = try getOrCreateSession()
+
+            // Track schema installation (one-time per type per session)
+            if includeSchema && !schemaAlreadyInstalled {
+                schemaInstalledTypes.insert(typeName)
+                log.debug("Installed schema for \(typeName)")
+            }
+
             let resp = try await s.respond(
                 to: prompt,
                 generating: T.self,
                 includeSchemaInPrompt: includeSchema,
                 options: options
             )
-            requestCount += 1
+
+            // Only increment history count if recording
+            if recordHistory {
+                requestCount += 1
+                historyMessageCount += 1
+            } else {
+                log.debug("Ephemeral call - history not recorded")
+            }
+
             consecutiveErrors = 0
             return resp.content
         } catch {
             consecutiveErrors += 1
             // Reset on context window overflow
             if case LanguageModelSession.GenerationError.exceededContextWindowSize = error {
+                log.error("Context window overflow - resetting session (hist=\(self.historyMessageCount))")
                 reset()
             }
             throw error
@@ -1150,16 +1180,36 @@ private extension FoundationLLM {
 private extension FoundationLLM {
     // Controllers now moved to actor state (see top of FoundationLLM actor)
 
-    func getController(for instructions: String) async -> SessionController {
-        if let entry = controllers[instructions] {
+    func getController(for instructions: String, sessionId: String? = nil) async -> SessionController {
+        let key = sessionId ?? instructions
+        if let entry = controllers[key] {
             // Update last-used timestamp
-            controllers[instructions]?.lastUsed = .now
+            controllers[key]?.lastUsed = .now
             return entry.controller
         }
         let controller = SessionController(instructions: instructions, forceStateless: forceStatelessMode)
-        controllers[instructions] = ControllerEntry(controller: controller, lastUsed: .now)
+        controllers[key] = ControllerEntry(controller: controller, lastUsed: .now)
         await evictIdleControllers()
         return controller
+    }
+
+    // Make sessionKey() public and nonisolated (no actor state access)
+    nonisolated public func sessionKey(
+        model: String,
+        instructions: String,
+        schemaSig: String,
+        transcriptId: String
+    ) -> String {
+        let instrHash = SHA256.hash(data: Data(instructions.utf8)).hexString.prefix(16)
+        return "\(model)|\(instrHash)|\(schemaSig)|\(transcriptId)"
+    }
+
+    /// Reset session for specific session ID
+    public func resetSessionById(_ sessionId: String) async {
+        if let entry = controllers[sessionId] {
+            await entry.controller.reset()
+            log.info("Reset session: \(sessionId.prefix(32))")
+        }
     }
 
     /// Evict idle controllers to prevent unbounded growth
@@ -1322,19 +1372,31 @@ extension FoundationLLM {
 extension FoundationLLM {
     /// Generate guided JSON output using any @Generable schema
     /// All calls are serialized through SessionController (single-flight per instruction key)
+    ///
+    /// - Parameters:
+    ///   - instructions: System instructions for the LLM
+    ///   - prompt: User prompt
+    ///   - generating: Type conforming to @Generable
+    ///   - includeSchema: Whether to include JSON schema (default: true)
+    ///   - options: Generation options (temperature, max tokens, etc.)
+    ///   - sessionId: Optional session identifier for per-transcript isolation
+    ///   - recordHistory: Whether to record this call in session history (default: true, use false for ephemeral pre-flight)
     public func generateGuided<T: Generable & Sendable>(
         instructions: String,
         prompt: String,
         generating: T.Type,
         includeSchema: Bool = true,
-        options: GenerationOptions
+        options: GenerationOptions,
+        sessionId: String? = nil,
+        recordHistory: Bool = true
     ) async throws -> T {
-        let controller = await getController(for: instructions)
+        let controller = await getController(for: instructions, sessionId: sessionId)
         return try await controller.generate(
             prompt,
             generating: T.self,
             includeSchema: includeSchema,
-            options: options
+            options: options,
+            recordHistory: recordHistory
         )
     }
 

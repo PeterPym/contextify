@@ -210,6 +210,19 @@ actor TranscriptMetadataOrchestrator {
     // Get versioned instructions for session isolation
     let instructions = TranscriptPrompts.metadataInstructions()
 
+    // Generate per-transcript session key for isolation
+    #if canImport(FoundationModels)
+    var sessionId: String = ""
+    if #available(macOS 26, *) {
+      sessionId = FoundationLLM.shared.sessionKey(
+        model: "FoundationLLM",
+        instructions: instructions,
+        schemaSig: "GuidedTranscriptMetadata-v\(TranscriptPrompts.metadataPromptVersion)",
+        transcriptId: transcriptId
+      )
+    }
+    #endif
+
     // Call LLM (with fallback to bookends on failure)
     var metadata: TranscriptMetadata
     let llmStart = Date()
@@ -219,13 +232,19 @@ actor TranscriptMetadataOrchestrator {
       if #available(macOS 26, *) {
         stats.llmCalls += 1
 
-        // 1. Pre-flight validation with RAW generation (no JSON schema overhead)
+        // 1. Pre-flight validation (ephemeral, same session)
         let fitted = try await TranscriptContextFitting.ensureFitsViaRawPreflight(
           context: context.text,
           sampledCount: context.sampledCount,
           totalCount: exchanges.count,
-          instructions: instructions
+          instructions: instructions,
+          sessionId: sessionId
         )
+
+        // 2. Reset session to ensure clean slate (belt-and-suspenders)
+        if #available(macOS 26, *) {
+          await FoundationLLM.shared.resetSessionById(sessionId)
+        }
 
         // 2. Guided generation with fitted context (routed through FoundationLLM)
         let prompt = """
@@ -245,7 +264,8 @@ actor TranscriptMetadataOrchestrator {
           prompt: prompt,
           generating: GuidedTranscriptMetadata.self,
           includeSchema: true,
-          options: options
+          options: options,
+          sessionId: sessionId
         )
 
         // Post-process (background-safe)
@@ -268,6 +288,14 @@ actor TranscriptMetadataOrchestrator {
       // Try bookends fallback if we weren't already using it
       if strategy != .bookends {
         log.info("Retrying with bookends strategy (first 10 + last 10 exchanges)...")
+
+        // Reset session before retry to prevent history accumulation
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) {
+          await FoundationLLM.shared.resetSessionById(sessionId)
+        }
+        #endif
+
         let bookendContext = try builder.build(
           exchanges: exchanges,
           strategy: .bookends,
@@ -283,8 +311,14 @@ actor TranscriptMetadataOrchestrator {
               context: bookendContext.text,
               sampledCount: bookendContext.sampledCount,
               totalCount: exchanges.count,
-              instructions: instructions
+              instructions: instructions,
+              sessionId: sessionId
             )
+
+            // Reset again after pre-flight
+            if #available(macOS 26, *) {
+              await FoundationLLM.shared.resetSessionById(sessionId)
+            }
 
             let bookendPrompt = """
             CONTEXT: This excerpt shows \(bookendContext.sampledCount) of \(exchanges.count) messages. First 10 and last 10 are always included; the middle is selected for importance.
@@ -303,7 +337,8 @@ actor TranscriptMetadataOrchestrator {
               prompt: bookendPrompt,
               generating: GuidedTranscriptMetadata.self,
               includeSchema: true,
-              options: options
+              options: options,
+              sessionId: sessionId
             )
 
             metadata = postProcessor.apply(to: guided, context: fittedBookend)

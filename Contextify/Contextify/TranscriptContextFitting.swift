@@ -28,6 +28,7 @@ struct TranscriptContextFitting {
         sampledCount: Int,
         totalCount: Int,
         instructions: String,
+        sessionId: String,
         maxAttempts: Int = 5,
         llm: FoundationLLM = .shared
     ) async throws -> String {
@@ -39,9 +40,6 @@ struct TranscriptContextFitting {
         var currentContext = context
         var currentCount = sampledCount
         var attempt = 0
-
-        // Generate unique session ID for this pre-flight run to prevent cross-contamination
-        let sessionId = UUID().uuidString.prefix(8)
 
         while attempt < maxAttempts {
             // Build probe prompt (matches actual call structure)
@@ -60,17 +58,17 @@ struct TranscriptContextFitting {
             )
 
             do {
-                log.debug("Pre-flight attempt \(attempt + 1)/\(maxAttempts): \(currentContext.count) chars, ~\(currentCount) messages")
-                // Use generateGuided() instead of rawWithInstructions() to include schema overhead
-                // CRITICAL: Use unique session ID per pre-flight run to prevent contamination
-                // Each retry and each transcript gets its own isolated session
-                let preflightInstructions = "[PRE-FLIGHT:\(sessionId)]\n" + instructions
+                log.debug("Pre-flight attempt \(attempt + 1)/\(maxAttempts): \(currentContext.count) chars, ~\(currentCount) messages, sid=\(sessionId.prefix(16))")
+                // Use generateGuided() with SAME sessionId but recordHistory=false (ephemeral)
+                // This tests the exact same session environment without polluting history
                 let _: GuidedTranscriptMetadata = try await llm.generateGuided(
-                    instructions: preflightInstructions,
+                    instructions: instructions,
                     prompt: probe,
                     generating: GuidedTranscriptMetadata.self,
                     includeSchema: true,  // CRITICAL: must match actual call to account for schema overhead
-                    options: options
+                    options: options,
+                    sessionId: sessionId,  // Same session as actual call
+                    recordHistory: false   // Ephemeral - don't record in history
                 )
                 // Success! Context fits
                 log.info("Pre-flight passed: \(currentContext.count) chars, \(currentCount) messages")
