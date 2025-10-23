@@ -230,12 +230,50 @@ Configure Xcode console with `TYPE Info` filter to hide debug logs in production
 - Session data belongs under `<project>/docs/sessions/` and may be versioned; do not store sensitive user data there.
 - Log minimally with timestamps; exclude local paths or tokens.
 
+## Transcript Analysis Workflow (For Agents)
+
+When working with Claude Code transcript files, **ALWAYS classify first** before analyzing structure:
+
+### Classification Script
+```bash
+./scripts/classify_transcript.sh <transcript-id-or-file-path>
+```
+
+Returns JSON with `classification`: `"conversational"` | `"metadata-only"` | `"empty"`
+
+### Agent Workflow
+
+**Step 1: Classify**
+```bash
+./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+```
+
+**Step 2: Read Relevant Documentation**
+
+| Classification | Read These Sections | Parser Fields |
+|---------------|---------------------|---------------|
+| **conversational** | `claude-code-transcript-format.md` §1-2 (User/Assistant Messages) | `uuid`, `timestamp`, `type`, `message` |
+| **metadata-only** | `claude-code-transcript-format.md` §3-5 (File-History, Summary, System) | `messageId`, `snapshot`, `trackedFileBackups` |
+| **empty** | (no further analysis) | (none) |
+
+**Step 3: Reference Implementation**
+- Parser: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- Database: `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
+
+**Key Document:** `build/notes/technical-reference/claude-code-transcript-format.md` contains:
+- Complete field specifications for all record types
+- Transcript Classification Guide (§ at end)
+- Field Reference by Classification table
+- Content block types and structures
+
+**DO NOT** guess at transcript structure - classify first, then read the appropriate section.
+
 ## Project File Locations
 
 - Main project: `Contextify/Contextify.xcodeproj`
 - Source: `Contextify/Contextify/*.swift`, `app/Sources/ContextifyCore/*.swift`
 - Tests: `Contextify/ContextifyTests/*.swift`, `Contextify/ContextifyUITests/*.swift`
-- Scripts: `scripts/xc.sh`, `scripts/install-shell-bindings.sh`
+- Scripts: `scripts/xc.sh`, `scripts/classify_transcript.sh`, `scripts/db_manager.sh`
 - Hooks: `.githooks/pre-commit`
 
 ## Useful References (Apple)

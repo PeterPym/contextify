@@ -619,3 +619,72 @@ Most Used Commands:
 - 6 distinct record types
 - 5 content block types
 - Generated: 2025-10-23
+
+---
+
+## Transcript Classification Guide
+
+**Purpose:** Quickly determine transcript type and which sections of this document to reference.
+
+### Classification Types
+
+**1. Conversational Transcripts** (most common)
+- **Has:** User (`type: "user"`) and/or Assistant (`type: "assistant"`) messages
+- **May also have:** file-history-snapshot, summary, system records
+- **Database:** `entryCount > 0` (displayable conversation entries)
+- **Relevant sections:** §1 (User Messages), §2 (Assistant Messages), §3-5 (Metadata)
+
+**2. Metadata-Only Transcripts** (file tracking sessions)
+- **Has:** ONLY file-history-snapshot, summary, or system records
+- **No conversation:** No user/assistant messages (or only sidechain/meta)
+- **Database:** `entryCount = 0`, `snapshot_count > 0` OR `system_event_count > 0`
+- **Relevant sections:** §3 (File-History-Snapshot), §4 (Summary), §5 (System)
+
+**3. Empty Transcripts**
+- **Has:** No records or incomplete session
+- **Database:** `entryCount = 0`, `snapshot_count = 0`
+- **Status:** Not yet ingested or session never started
+
+### Quick Classification Script
+
+Use `scripts/classify_transcript.sh` to identify transcript type:
+
+```bash
+# By transcript ID (UUID)
+./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+
+# By file path
+./scripts/classify_transcript.sh ~/.claude/projects/-Users-rob-code/.../session.jsonl
+```
+
+**Output:**
+```json
+{
+  "file": "/path/to/transcript.jsonl",
+  "type": "claude-code",
+  "classification": "metadata-only",
+  "has_conversation": false,
+  "has_metadata": true,
+  "record_types": ["file-history-snapshot"],
+  "line_count": 8
+}
+```
+
+### Field Reference by Classification
+
+| Classification | Required Fields | Record Types | Database Tables |
+|---------------|-----------------|--------------|-----------------|
+| **Conversational** | uuid, timestamp, type, message | user, assistant, (+ metadata) | transcript_entries, (+ v7 tables) |
+| **Metadata-Only** | messageId/uuid, type, snapshot/summary | file-history-snapshot, summary, system | file_snapshots, tracked_files, system_events |
+| **Empty** | (none) | (none) | transcripts only |
+
+### Agent Workflow
+
+When analyzing a transcript:
+
+1. **Classify first:** `./scripts/classify_transcript.sh <id>`
+2. **Read relevant sections:**
+   - `conversational` → Read §1-2, optionally §3-5
+   - `metadata-only` → Read §3-5 only
+   - `empty` → No further analysis needed
+3. **Reference parser:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` for implementation details
