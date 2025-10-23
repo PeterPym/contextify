@@ -1995,3 +1995,237 @@ git log --oneline
 - ✅ Provider-specific icons in timeline (2025-10-10)
 - ✅ Timeline entry persistence across session switches (2025-10-10)
 - ✅ Reveal-in-inventory action for system messages (2025-10-10)
+
+---
+
+## Transcript Metadata Storage & Analytics
+
+**Status:** Proposed (2025-10-23)
+**Priority:** P1 (enables session analytics and file tracking)
+**Effort:** 2-3 weeks
+**Related Docs:**
+- `build/notes/technical-reference/claude-code-transcript-format.md`
+- `build/notes/implementation-plans/transcript-metadata-storage.md`
+
+### Problem Statement
+
+Currently, Contextify only stores conversational messages from Claude Code transcripts, discarding valuable metadata:
+
+1. **File-history-snapshot records (907 across 43 transcripts):**
+   - Which files were modified during session
+   - File versions and backup metadata
+   - Average ~25 files tracked per snapshot
+
+2. **Summary records (48):** Claude Code's internal session summaries
+
+3. **System events (55):** Slash commands, API errors, compact mode boundaries
+
+4. **Usage metadata (all assistant messages):** Token usage, cache stats, cost tracking
+
+**Result:** "Empty" transcripts showing only metadata are hidden from inventory as useless, when they contain valuable file tracking and usage data.
+
+### Proposed Solution
+
+Store all Claude Code metadata types in normalized database tables:
+
+1. **file_snapshots + tracked_files**: File modification tracking
+2. **transcript_summaries**: Claude Code summaries for fallback titles
+3. **system_events**: Command usage and error tracking
+4. **assistant_usage**: Token/cost analytics
+
+**Data Architecture:** Follow v6 principles - separate canonical (transcript_entries) from derived/metadata (new tables).
+
+### Implementation Phases
+
+#### Phase 1: Schema Migration (v7) - 1-2 days
+**Tasks:**
+- Create 5 new tables: file_snapshots, tracked_files, transcript_summaries, system_events, assistant_usage
+- Add appropriate indexes for common queries
+- Migration is backward compatible (no changes to existing tables)
+
+**Deliverables:**
+- `DatabaseSchema.swift` v7 migration
+- Model structs for each table
+- Repository methods for CRUD operations
+
+#### Phase 2: Parser Implementation - 3-4 days
+**Tasks:**
+- Create `TranscriptMetadataParser` protocol
+- Implement parsers for each metadata type
+- Update `HooverEngine` to extract and store metadata
+- Add batch commit logic for metadata records
+
+**Deliverables:**
+- `TranscriptMetadataParsers.swift`
+- Updated `HooverEngine.swift` with metadata extraction
+- Updated `TranscriptOrchestrator.swift` with metadata queries
+- Unit tests for each parser
+
+#### Phase 3: Backfill Tool - 1 day
+**Tasks:**
+- Create `scripts/backfill_metadata.py`
+- Reingest existing transcripts to populate metadata
+- Progress tracking and error handling
+
+**Deliverables:**
+- Backfill script with progress reporting
+- Documentation for running backfill
+- Make backfill optional/skippable
+
+#### Phase 4: UI Features (Incremental) - 2-3 weeks
+
+**4a. Session Details View (3-4 days)**
+- Show files touched, token usage, cost estimate in inventory detail panel
+- Display file count: "Files Modified: 12"
+- Token summary: "Input: 125K tokens, Output: 8K tokens"
+- Cost estimate: "Estimated Cost: $0.42"
+
+**4b. File Timeline View (2-3 days)**
+- Show file modification history across all sessions
+- Timeline view: "ContentView.swift modified in 5 sessions"
+- Link to sessions where file was changed
+- Version history display
+
+**4c. Command Analytics (1-2 days)**
+- Show slash command usage statistics
+- Top commands bar chart: "/build: 156 times, /run: 89 times"
+- Command usage trends
+
+**4d. Cost Dashboard (3-4 days)**
+- Daily/weekly token usage graphs
+- Cost projections and trends
+- Per-project breakdown
+- Cache effectiveness metrics (hit rate %)
+
+### Database Schema
+
+**file_snapshots:**
+```sql
+id, transcript_id, message_id, snapshot_timestamp, is_snapshot_update, created_at
+```
+Row estimate: ~2,100 (21 per transcript × 100 transcripts)
+
+**tracked_files:**
+```sql
+id, snapshot_id, file_path, backup_filename, version, backup_time
+```
+Row estimate: ~52,500 (25 files × 21 snapshots × 100 transcripts)
+
+**transcript_summaries:**
+```sql
+id, transcript_id, summary, leaf_uuid, cwd, created_at
+```
+Row estimate: ~100 (1 per transcript)
+
+**system_events:**
+```sql
+id, transcript_id, timestamp, subtype, level, content, error, 
+retry_attempt, max_retries, retry_in_ms, parent_uuid, created_at
+```
+Row estimate: ~100-200 (1-2 per transcript)
+
+**assistant_usage:**
+```sql
+entry_id, request_id, model, input_tokens, output_tokens,
+cache_creation_tokens, cache_read_tokens, service_tier,
+ephemeral_5m_tokens, ephemeral_1h_tokens
+```
+Row estimate: ~25,500 (all assistant messages)
+
+### Key Queries Enabled
+
+1. **Session Details:**
+```sql
+SELECT COUNT(DISTINCT tf.file_path) as files_modified,
+       SUM(au.input_tokens + au.output_tokens) as total_tokens
+FROM transcripts t
+LEFT JOIN file_snapshots fs ON fs.transcript_id = t.id
+LEFT JOIN tracked_files tf ON tf.snapshot_id = fs.id
+LEFT JOIN transcript_entries e ON e.transcript_id = t.id
+LEFT JOIN assistant_usage au ON au.entry_id = e.id
+WHERE t.id = ?;
+```
+
+2. **File Timeline:**
+```sql
+SELECT t.provider_session_id, tm.title, tf.version, tf.backup_time
+FROM tracked_files tf
+JOIN file_snapshots fs ON fs.id = tf.snapshot_id
+JOIN transcripts t ON t.id = fs.transcript_id
+LEFT JOIN transcript_metadata tm ON tm.transcript_id = t.id
+WHERE tf.file_path = ?
+ORDER BY tf.backup_time DESC;
+```
+
+3. **Cost Calculation:**
+```sql
+SELECT SUM(input_tokens) * 0.000003 + 
+       SUM(output_tokens) * 0.000015 as estimated_cost_usd
+FROM assistant_usage au
+JOIN transcript_entries e ON e.id = au.entry_id
+WHERE e.transcript_id = ?;
+```
+
+### Testing Strategy
+
+**Unit Tests:**
+- Parse each metadata type correctly
+- Handle missing/malformed fields gracefully
+- Usage metadata extraction from assistant messages
+
+**Integration Tests:**
+- Ingest transcript with file snapshots → verify DB
+- Ingest transcript with summaries/events → verify DB
+- Query performance: session details <10ms, file timeline <50ms
+
+**Manual Tests:**
+- Reingest existing transcript with metadata
+- Verify session details view accuracy
+- Check file timeline correctness
+
+### Risks & Mitigations
+
+**Risk 1: Performance impact**
+- Parsing 5 record types may slow ingestion
+- **Mitigation:** Benchmark, optimize batch commits, make metadata optional
+
+**Risk 2: Storage growth**
+- ~52K tracked_file rows + ~25K usage rows
+- **Mitigation:** Indexes, retention policies
+- **Estimate:** ~5-10 MB per 100 transcripts (acceptable)
+
+**Risk 3: Backfill time**
+- 43 transcripts × 1 min = 43+ minutes
+- **Mitigation:** Background task, pauseable, or lazy backfill on view
+
+### Success Metrics
+
+1. **Data Completeness:**
+   - 100% of file snapshots/summaries/usage stored
+   - Zero foreign key violations
+
+2. **Query Performance:**
+   - Session details <10ms (p95)
+   - File timeline <50ms (p95)
+   - Daily usage aggregate <100ms (p95)
+
+3. **User Value:**
+   - Files modified count visible for all sessions
+   - Token usage/cost visible in details
+   - File timeline helps identify change history
+
+### Future Enhancements (Phase 5+)
+
+1. **File diff viewer:** Show actual diffs between versions
+2. **Cost predictions:** "This project costs ~$X/week"
+3. **Cache optimization suggestions:** "Cache hit rate dropped 20%"
+4. **Command recommendations:** "You use /build often, add a hook?"
+5. **Export capabilities:** Session reports (PDF/HTML), CSV export
+
+### References
+
+- **Complete spec:** `build/notes/technical-reference/claude-code-transcript-format.md`
+- **Implementation plan:** `build/notes/implementation-plans/transcript-metadata-storage.md`
+- **Current parser:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- **Analysis:** 43 transcripts, 18,589 records, 5 record types documented
+
