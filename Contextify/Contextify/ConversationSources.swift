@@ -5,6 +5,7 @@ struct TranscriptSession: Hashable, Sendable {
     let identifier: String
     let fileURL: URL
     let lastActivity: Date
+    let entryCount: Int  // Number of conversation entries (excludes metadata-only records)
 }
 
 // MARK: - DEPRECATED: File-based providers (replaced by database-backed discovery)

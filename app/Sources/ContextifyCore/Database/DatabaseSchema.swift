@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 6
+  static let version = 7
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -368,6 +368,94 @@ enum DatabaseSchema {
         ON transcript_entries(project_id, timestamp DESC)
         WHERE display_in_timeline = 1
       """)
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // MARK: v7 Migration: Add Metadata Tables
+    migrator.registerMigration("v7_add_metadata_tables") { db in
+      // Create file_snapshots table
+      try db.create(table: "file_snapshots") { t in
+        t.column("id", .text).primaryKey()
+        t.column("transcript_id", .text).notNull()
+          .references("transcripts", onDelete: .cascade, onUpdate: .cascade)
+        t.column("message_id", .text).notNull()
+        t.column("snapshot_timestamp", .integer).notNull()
+        t.column("is_snapshot_update", .integer).notNull()
+        t.column("created_at", .integer).notNull()
+      }
+
+      try db.create(index: "idx_snapshots_transcript", on: "file_snapshots", columns: ["transcript_id"])
+      try db.create(index: "idx_snapshots_message", on: "file_snapshots", columns: ["message_id"])
+      try db.create(index: "idx_snapshots_timestamp", on: "file_snapshots", columns: ["snapshot_timestamp"])
+
+      // Create tracked_files table
+      try db.create(table: "tracked_files") { t in
+        t.column("id", .text).primaryKey()
+        t.column("snapshot_id", .text).notNull()
+          .references("file_snapshots", onDelete: .cascade, onUpdate: .cascade)
+        t.column("file_path", .text).notNull()
+        t.column("backup_filename", .text)
+        t.column("version", .integer).notNull()
+        t.column("backup_time", .integer).notNull()
+      }
+
+      try db.create(index: "idx_tracked_snapshot", on: "tracked_files", columns: ["snapshot_id"])
+      try db.create(index: "idx_tracked_path", on: "tracked_files", columns: ["file_path"])
+
+      // Create transcript_summaries table
+      try db.create(table: "transcript_summaries") { t in
+        t.column("id", .text).primaryKey()
+        t.column("transcript_id", .text).notNull()
+          .references("transcripts", onDelete: .cascade, onUpdate: .cascade)
+        t.column("summary", .text).notNull()
+        t.column("leaf_uuid", .text)
+        t.column("cwd", .text)
+        t.column("created_at", .integer).notNull()
+      }
+
+      try db.create(index: "idx_summaries_transcript", on: "transcript_summaries", columns: ["transcript_id"])
+
+      // Create system_events table
+      try db.create(table: "system_events") { t in
+        t.column("id", .text).primaryKey()
+        t.column("transcript_id", .text).notNull()
+          .references("transcripts", onDelete: .cascade, onUpdate: .cascade)
+        t.column("timestamp", .integer).notNull()
+        t.column("subtype", .text).notNull()
+        t.column("level", .text).notNull()
+        t.column("content", .text)
+        t.column("error", .text)
+        t.column("retry_attempt", .integer)
+        t.column("max_retries", .integer)
+        t.column("retry_in_ms", .integer)
+        t.column("parent_uuid", .text)
+        t.column("logical_parent_uuid", .text)
+        t.column("compact_metadata", .text)
+        t.column("created_at", .integer).notNull()
+      }
+
+      try db.create(index: "idx_events_transcript", on: "system_events", columns: ["transcript_id"])
+      try db.create(index: "idx_events_subtype", on: "system_events", columns: ["subtype"])
+      try db.create(index: "idx_events_timestamp", on: "system_events", columns: ["timestamp"])
+
+      // Create assistant_usage table
+      try db.create(table: "assistant_usage") { t in
+        t.column("entry_id", .text).primaryKey()
+          .references("transcript_entries", onDelete: .cascade, onUpdate: .cascade)
+        t.column("request_id", .text)
+        t.column("model", .text).notNull()
+        t.column("input_tokens", .integer).notNull()
+        t.column("output_tokens", .integer).notNull()
+        t.column("cache_creation_tokens", .integer).notNull()
+        t.column("cache_read_tokens", .integer).notNull()
+        t.column("service_tier", .text)
+        t.column("ephemeral_5m_tokens", .integer)
+        t.column("ephemeral_1h_tokens", .integer)
+      }
+
+      try db.create(index: "idx_usage_model", on: "assistant_usage", columns: ["model"])
 
       // Run ANALYZE to update statistics
       try db.execute(sql: "ANALYZE")

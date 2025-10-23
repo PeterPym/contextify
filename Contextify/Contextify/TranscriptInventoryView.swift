@@ -13,6 +13,7 @@ struct TranscriptInventoryView: View {
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
   @State private var groupingMode: GroupingMode = .provider
+  @State private var showMetadataOnly = false  // Filter toggle for metadata-only transcripts
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
@@ -105,6 +106,11 @@ struct TranscriptInventoryView: View {
         }
         .pickerStyle(.segmented)
         .frame(maxWidth: 200)
+
+        Toggle("Metadata-Only", isOn: $showMetadataOnly)
+          .help("Show transcripts with only metadata (no conversation)")
+          .toggleStyle(.switch)
+          .controlSize(.mini)
 
         Spacer()
 
@@ -278,6 +284,18 @@ struct TranscriptInventoryView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
 
+        // Metadata-only indicator (when toggle is on and no conversation entries)
+        if showMetadataOnly && session.entryCount == 0 {
+          Text("•")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Label("Metadata Only", systemImage: "doc.badge.ellipsis")
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .labelStyle(.titleOnly)
+        }
+
         Spacer()
 
         // Topic chips (max 2)
@@ -301,10 +319,18 @@ struct TranscriptInventoryView: View {
   // MARK: - Helpers
 
   private var filteredSessions: [TranscriptSession] {
-    let sessions = monitor.allSessions
+    var sessions = monitor.allSessions
+
+    // Filter out metadata-only transcripts by default (unless toggle is on)
+    if !showMetadataOnly {
+      sessions = sessions.filter { $0.entryCount > 0 }
+    }
+
+    // Apply search filter
     if debouncedSearch.isEmpty {
       return sessions
     }
+
     // Search in metadata title/description if available
     return sessions.filter { session in
       if let meta = metadata[session.identifier] {
@@ -499,6 +525,11 @@ struct TranscriptDetailView: View {
   @State private var metadata: TranscriptMetadata?
   @State private var isRegenerating = false
 
+  // v7 Metadata
+  @State private var fileSnapshots: [FileSnapshot] = []
+  @State private var systemEvents: [SystemEvent] = []
+  @State private var usageStats: UsageAggregate?
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
@@ -682,6 +713,147 @@ struct TranscriptDetailView: View {
           Divider()
         }
 
+        // File Activity (v7 metadata)
+        if !fileSnapshots.isEmpty {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("File Activity")
+              .font(.headline)
+
+            metadataRow(label: "Snapshots", value: "\(fileSnapshots.count)")
+
+            if let firstSnapshot = fileSnapshots.first {
+              metadataRow(label: "Last Snapshot", value: formattedTimestamp(firstSnapshot.snapshotTimestamp))
+            }
+
+            // Show most recent snapshot details
+            if let snapshot = fileSnapshots.first {
+              // Get tracked files for this snapshot
+              if let orchestrator = orchestrator,
+                 let trackedFiles = try? orchestrator.getTrackedFiles(snapshotId: snapshot.id),
+                 !trackedFiles.isEmpty {
+                metadataRow(label: "Tracked Files", value: "\(trackedFiles.count)")
+
+                // Show file list (limited to 5)
+                VStack(alignment: .leading, spacing: 4) {
+                  ForEach(trackedFiles.prefix(5), id: \.id) { file in
+                    HStack {
+                      Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                      Text(file.filePath)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                      Spacer()
+                      Text("v\(file.version)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+
+                  if trackedFiles.count > 5 {
+                    Text("+ \(trackedFiles.count - 5) more files")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+              }
+            }
+          }
+
+          Divider()
+        }
+
+        // Usage Statistics (v7 metadata)
+        if let stats = usageStats, stats.messageCount > 0 {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Usage Statistics")
+              .font(.headline)
+
+            metadataRow(label: "Messages", value: "\(stats.messageCount)")
+            metadataRow(label: "Input Tokens", value: formatNumber(stats.totalInputTokens))
+            metadataRow(label: "Output Tokens", value: formatNumber(stats.totalOutputTokens))
+
+            if stats.totalCacheCreation > 0 {
+              metadataRow(label: "Cache Creation", value: formatNumber(stats.totalCacheCreation))
+            }
+
+            if stats.totalCacheRead > 0 {
+              metadataRow(label: "Cache Read", value: formatNumber(stats.totalCacheRead))
+            }
+
+            let totalTokens = stats.totalInputTokens + stats.totalOutputTokens +
+                              stats.totalCacheCreation + stats.totalCacheRead
+            metadataRow(label: "Total Tokens", value: formatNumber(totalTokens))
+          }
+
+          Divider()
+        }
+
+        // System Events (v7 metadata)
+        if !systemEvents.isEmpty {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("System Events")
+              .font(.headline)
+
+            metadataRow(label: "Total Events", value: "\(systemEvents.count)")
+
+            // Count errors
+            let errorCount = systemEvents.filter { $0.level == "error" }.count
+            if errorCount > 0 {
+              metadataRow(label: "Errors", value: "\(errorCount)")
+            }
+
+            // Show recent events (limited to 5)
+            VStack(alignment: .leading, spacing: 6) {
+              ForEach(systemEvents.prefix(5), id: \.id) { event in
+                HStack(alignment: .top, spacing: 8) {
+                  // Level indicator
+                  Image(systemName: eventIcon(event.level))
+                    .font(.caption)
+                    .foregroundStyle(eventColor(event.level))
+                    .frame(width: 12)
+
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(event.subtype)
+                      .font(.caption)
+                      .fontWeight(.medium)
+
+                    if let content = event.content {
+                      Text(content)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    }
+
+                    if let error = event.error {
+                      Text("Error: \(error)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.red)
+                        .lineLimit(1)
+                    }
+
+                    Text(formattedTimestamp(event.timestamp))
+                      .font(.system(size: 9))
+                      .foregroundStyle(.tertiary)
+                  }
+
+                  Spacer()
+                }
+                .padding(.vertical, 4)
+              }
+
+              if systemEvents.count > 5 {
+                Text("+ \(systemEvents.count - 5) more events")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+
+          Divider()
+        }
+
         // Actions
         VStack(spacing: 8) {
           if !isActive {
@@ -724,6 +896,7 @@ struct TranscriptDetailView: View {
     .task(id: session.identifier) {  // Changed from fileURL to identifier
       // Load metadata on appearance or when session changes
       await loadMetadata()
+      await loadV7Metadata()
     }
   }
 
@@ -763,6 +936,24 @@ struct TranscriptDetailView: View {
       onMetadataUpdate?(session.identifier, newMetadata)
     } catch {
       // Failed to regenerate, keep existing metadata
+    }
+  }
+
+  @MainActor
+  private func loadV7Metadata() async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Load file snapshots
+      fileSnapshots = try orchestrator.getFileSnapshots(transcriptId: session.identifier)
+
+      // Load system events (limit to recent 50)
+      systemEvents = try orchestrator.getSystemEvents(transcriptId: session.identifier, limit: 50)
+
+      // Load usage statistics
+      usageStats = try orchestrator.getTranscriptUsageStats(transcriptId: session.identifier)
+    } catch {
+      // Failed to load v7 metadata, keep empty arrays
     }
   }
 
@@ -819,6 +1010,40 @@ struct TranscriptDetailView: View {
       return entries.count
     } catch {
       return nil
+    }
+  }
+
+  // v7 Metadata Helpers
+
+  private func formattedTimestamp(_ timestamp: Int) -> String {
+    let date = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    let formatter = DateFormatter()
+    formatter.dateStyle = .short
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
+  }
+
+  private func formatNumber(_ number: Int) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+  }
+
+  private func eventIcon(_ level: String) -> String {
+    switch level.lowercased() {
+    case "error": return "exclamationmark.circle.fill"
+    case "warning": return "exclamationmark.triangle.fill"
+    case "info": return "info.circle.fill"
+    default: return "circle.fill"
+    }
+  }
+
+  private func eventColor(_ level: String) -> Color {
+    switch level.lowercased() {
+    case "error": return .red
+    case "warning": return .orange
+    case "info": return .blue
+    default: return .secondary
     }
   }
 }

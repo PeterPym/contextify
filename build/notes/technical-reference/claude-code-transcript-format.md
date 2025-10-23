@@ -619,3 +619,172 @@ Most Used Commands:
 - 6 distinct record types
 - 5 content block types
 - Generated: 2025-10-23
+
+---
+
+## Transcript Classification Guide
+
+**Purpose:** Multi-dimensional classification system for understanding transcript structure and content.
+
+### Multi-Dimensional Classification Model
+
+Transcripts should be classified across **four orthogonal axes**:
+
+#### Axis 1: Primary Classification
+
+**1. Conversational** (40 in sample DB - most common)
+- **Has:** Non-sidechain user and/or assistant messages
+- **Database:** `entryCount > 0`
+- **Parser behavior:** Creates `transcript_entries` with `display_in_timeline = 1`
+- **Relevant sections:** §1 (User), §2 (Assistant), optionally §3-5
+
+**2. Sidechain-Only** (warmup/initialization sessions)
+- **Has:** ONLY messages with `isSidechain: true`
+- **Purpose:** Project context loading, warmup before actual conversation
+- **Database:** `entryCount = 0` (skipped by parser)
+- **File content:** 2-10 lines typically
+- **Relevant sections:** §1 (User Messages - Special Cases)
+
+**3. Metadata-Only** (file tracking without conversation)
+- **Has:** ONLY file-history-snapshot, summary, or system records
+- **No conversation:** No user/assistant OR only sidechain/meta
+- **Database:** `entryCount = 0`, v7 metadata tables populated
+- **File content:** Can be 10-400+ lines
+- **Relevant sections:** §3 (File-History), §4 (Summary), §5 (System)
+
+**4. Empty/Unprocessed**
+- **Has:** No records OR incomplete ingestion
+- **Database:** `entryCount = 0`, no v7 metadata
+- **Status:** Not yet ingested or session never started
+
+#### Axis 2: Metadata Richness
+
+**Snapshot-Rich:**
+- Has `file-history-snapshot` records with `trackedFileBackups`
+- Database: Entries in `file_snapshots` + `tracked_files` tables
+- Value: Track file modifications, versions, backup times
+- Average: ~25 files per snapshot across 813/907 non-empty snapshots
+
+**Summary-Enhanced:**
+- Has `type: "summary"` records
+- Database: Entries in `transcript_summaries` table
+- Purpose: Claude Code's internal session summaries
+- 48 records across sample (0.3% of all records)
+
+**Event-Tracked:**
+- Has `type: "system"` records
+- Database: Entries in `system_events` table
+- Types: slash_command, api_error, compact_mode_boundary
+- 55 records across sample (0.3% of all records)
+
+**Usage-Rich:**
+- Has assistant messages with detailed `usage` metadata
+- Database: Entries in `assistant_usage` table
+- Metrics: input/output tokens, cache creation/read, cost data
+- Present in every assistant message (11,188 records)
+
+#### Axis 3: Content Characteristics
+
+**Tool-Heavy:**
+- High ratio of `tool_use` / `tool_result` content blocks
+- Dominant tools: Bash, Edit, Read, Write, Grep
+- Indicates automation-focused session
+
+**Thinking-Heavy:**
+- Messages with `thinking` content blocks
+- Parser: `hasTextContent = false` if ONLY thinking
+- Display: `display_in_timeline = 0` (hidden from timeline)
+
+**Image-Containing:**
+- Messages with `type: "image"` content blocks
+- Structure: `{ type: "image", source: { type: "base64", media_type, data } }`
+- Use case: Screenshot analysis, visual debugging
+
+**Text-Only:**
+- String content or only `type: "text"` blocks
+- Simplest structure, no special handling
+
+#### Axis 4: Database State
+
+**Active:** `status = 'active'`
+- Fully ingested, file accessible
+- `last_processed_line` matches file line count
+
+**Unavailable:** `status = 'unavailable'`
+- File moved/deleted since discovery
+- Metadata retained, file inaccessible
+
+**Error:** `status = 'error'`
+- Parser errors, corrupted JSON
+- Ingestion stopped at `last_processed_line`
+
+**Unprocessed:** Not in database
+- Discovered but not yet ingested
+- Or failed discovery phase
+
+### Real-World Distribution (Sample Database: 67 transcripts)
+
+| Primary | Count | Metadata | Content | State |
+|---------|-------|----------|---------|-------|
+| conversational-only | 39 | No v7 metadata yet | Mixed | active |
+| conversational+metadata | 1 | Has snapshots | Tool+text | active |
+| metadata-only | 1 | 8 snapshots | N/A | active |
+| sidechain-only | ~5 | No metadata | Warmup | active |
+| summary-only | ~5 | Summaries | N/A | active |
+| empty/unprocessed | 26 | None | None | varies |
+
+**Important Notes:**
+- "Empty" transcripts often contain sidechain or summary records (misnamed)
+- 813 of 907 snapshots contain tracked files (not empty backups)
+- Many "conversational" transcripts also have rich metadata
+- Sidechain sessions are 2-10 lines of initialization messages
+
+### Classification Scripts
+
+**Simple Classification:** `scripts/classify_transcript.sh`
+- Fast single-dimension classification
+- Returns: conversational | metadata-only | empty
+
+```bash
+./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+```
+
+**Multi-Dimensional Classification:** `scripts/classify_transcript_detailed.sh`
+- Comprehensive analysis across all four axes
+- Returns: primary classification + dimensions breakdown
+
+```bash
+./scripts/classify_transcript_detailed.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+```
+
+**Example Output (detailed):**
+```json
+{
+  "primary_classification": "sidechain-only",
+  "dimensions": {
+    "conversation": {"has_user": false, "has_assistant": false, "db_entry_count": 0},
+    "metadata": {"has_snapshots": false, "has_summaries": false, "has_events": false},
+    "content_flags": {"has_sidechain": true, "has_meta": false, "has_tool_use": false},
+    "state": "active"
+  }
+}
+```
+
+### Field Reference by Classification
+
+| Classification | Required Fields | Record Types | Database Tables |
+|---------------|-----------------|--------------|-----------------|
+| **Conversational** | uuid, timestamp, type, message | user, assistant, (+ metadata) | transcript_entries, (+ v7 tables) |
+| **Metadata-Only** | messageId/uuid, type, snapshot/summary | file-history-snapshot, summary, system | file_snapshots, tracked_files, system_events |
+| **Empty** | (none) | (none) | transcripts only |
+
+### Agent Workflow
+
+When analyzing a transcript:
+
+1. **Classify first:** `./scripts/classify_transcript.sh <id>`
+2. **Read relevant sections:**
+   - `conversational` → Read §1-2, optionally §3-5
+   - `metadata-only` → Read §3-5 only
+   - `empty` → No further analysis needed
+3. **Reference parser:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` for implementation details

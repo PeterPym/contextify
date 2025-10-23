@@ -424,7 +424,20 @@ final class ConversationMonitor {
         do {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
             let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
-            let sessions = Self.mapTranscriptsToSessions(transcripts: transcripts, latestTimestamps: latestTimestamps)
+
+            // Fetch entry counts for all transcripts
+            var entryCounts: [String: Int] = [:]
+            for transcript in transcripts {
+                if let count = try? orchestrator.getEntryCount(transcriptId: transcript.id) {
+                    entryCounts[transcript.id] = count
+                }
+            }
+
+            let sessions = Self.mapTranscriptsToSessions(
+                transcripts: transcripts,
+                latestTimestamps: latestTimestamps,
+                entryCounts: entryCounts
+            )
 
             allSessions = sessions
             log.info("Loaded \(sessions.count) sessions from database for transcript inventory")
@@ -930,7 +943,20 @@ final class ConversationMonitor {
         // Refresh sessions list for transcript inventory (re-fetch after discovery)
         let updatedTranscripts = try orchestrator.getTranscripts(forProject: projectId)
         let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
-        let sessions = Self.mapTranscriptsToSessions(transcripts: updatedTranscripts, latestTimestamps: latestTimestamps)
+
+        // Fetch entry counts for all transcripts
+        var entryCounts: [String: Int] = [:]
+        for transcript in updatedTranscripts {
+            if let count = try? orchestrator.getEntryCount(transcriptId: transcript.id) {
+                entryCounts[transcript.id] = count
+            }
+        }
+
+        let sessions = Self.mapTranscriptsToSessions(
+            transcripts: updatedTranscripts,
+            latestTimestamps: latestTimestamps,
+            entryCounts: entryCounts
+        )
         await MainActor.run {
             self.log.info("📝 Mapped \(updatedTranscripts.count) transcripts to sessions")
             self.allSessions = sessions
@@ -939,7 +965,11 @@ final class ConversationMonitor {
         }
     }
 
-    nonisolated private static func mapTranscriptsToSessions(transcripts: [Transcript], latestTimestamps: [String: Int]) -> [TranscriptSession] {
+    nonisolated private static func mapTranscriptsToSessions(
+        transcripts: [Transcript],
+        latestTimestamps: [String: Int],
+        entryCounts: [String: Int]
+    ) -> [TranscriptSession] {
         return transcripts.compactMap { transcript in
             let fileURL = URL(fileURLWithPath: transcript.filePath)
             let provider: TimelineSourceContext.Provider
@@ -953,11 +983,15 @@ final class ConversationMonitor {
             let lastActivityTimestamp = latestTimestamps[transcript.id] ?? transcript.updatedAt
             let lastActivity = Date(timeIntervalSince1970: TimeInterval(lastActivityTimestamp))
 
+            // Get entry count (defaults to 0 if not found)
+            let entryCount = entryCounts[transcript.id] ?? 0
+
             return TranscriptSession(
                 provider: provider,
                 identifier: transcript.id,
                 fileURL: fileURL,
-                lastActivity: lastActivity
+                lastActivity: lastActivity,
+                entryCount: entryCount
             )
         }.sorted { $0.lastActivity > $1.lastActivity }
     }
