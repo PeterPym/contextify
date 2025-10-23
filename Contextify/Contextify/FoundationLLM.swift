@@ -1339,7 +1339,21 @@ extension FoundationLLM {
     }
 
     /// Raw (non-JSON) generation with custom instructions
-    /// Useful for pre-flight token validation without schema overhead
+    ///
+    /// **Use Cases:**
+    /// - Plain text generation where structured JSON is not needed (e.g., SynthesisService)
+    /// - Debugging decoding failures to inspect raw LLM output
+    ///
+    /// **IMPORTANT:** Do NOT use this for pre-flight validation when the actual call uses
+    /// `generateGuided()` with `includeSchema: true`. The schema adds ~150-200 tokens of overhead
+    /// that raw generation doesn't account for, causing the actual call to exceed context limits
+    /// even when pre-flight passes.
+    ///
+    /// **Recommended Pattern:**
+    /// - If your actual call uses `generateGuided()` → use `generateGuided()` for pre-flight too
+    /// - If you need plain text output → use `rawWithInstructions()`
+    ///
+    /// See TranscriptContextFitting.swift for correct pre-flight implementation.
     public func rawWithInstructions(
         instructions: String,
         prompt: String,

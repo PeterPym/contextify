@@ -3,7 +3,7 @@
 //  Contextify
 //
 //  Utilities for fitting transcript context within LLM token limits
-//  Uses RAW pre-flight (no JSON schema) + adaptive compression
+//  Uses guided pre-flight (includes JSON schema overhead) + adaptive compression
 //
 
 import Foundation
@@ -17,9 +17,12 @@ import FoundationModels
 struct TranscriptContextFitting {
     private static let log = Logger(subsystem: "dev.contextify.metadata", category: "ContextFitting")
 
-    /// Ensure context fits via RAW pre-flight probes (no guided JSON overhead)
+    /// Ensure context fits via guided pre-flight probes (includes JSON schema overhead)
     /// Uses binary shrink and adaptive compression on overflow
     /// All LLM calls go through FoundationLLM (serialized by SessionController)
+    ///
+    /// IMPORTANT: Pre-flight uses the SAME generation method (guided with schema) as the actual call
+    /// to accurately account for JSON schema token overhead (~150-200 tokens).
     static func ensureFitsViaRawPreflight(
         context: String,
         sampledCount: Int,
@@ -38,14 +41,14 @@ struct TranscriptContextFitting {
         var attempt = 0
 
         while attempt < maxAttempts {
-            // Build probe prompt (matches guided prompt structure but with raw output)
+            // Build probe prompt (matches actual call structure)
             let probe = """
             CONTEXT: This excerpt shows \(currentCount) of \(totalCount) messages. First 10 and last 10 are always included; the middle is selected for importance.
 
             \(currentContext)
             """
 
-            // Use raw generation with minimal tokens to test fit
+            // Use guided generation with schema to test fit (matches actual call)
             let options = GenerationOptions(
                 sampling: .greedy,
                 temperature: 0,
@@ -54,9 +57,12 @@ struct TranscriptContextFitting {
 
             do {
                 log.debug("Pre-flight attempt \(attempt + 1)/\(maxAttempts): \(currentContext.count) chars, ~\(currentCount) messages")
-                _ = try await llm.rawWithInstructions(
+                // Use generateGuided() instead of rawWithInstructions() to include schema overhead
+                let _: GuidedTranscriptMetadata = try await llm.generateGuided(
                     instructions: instructions,
                     prompt: probe,
+                    generating: GuidedTranscriptMetadata.self,
+                    includeSchema: true,  // CRITICAL: must match actual call to account for schema overhead
                     options: options
                 )
                 // Success! Context fits
