@@ -13,7 +13,6 @@ struct TranscriptInventoryView: View {
   @State private var searchText = ""
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
-  @State private var groupingMode: GroupingMode = .provider
   @State private var showMetadataOnly = false  // Filter toggle: when true, includes metadata-only transcripts
   @State private var showingMetadataHelp = false  // Info popover visibility
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
@@ -23,14 +22,6 @@ struct TranscriptInventoryView: View {
   @State private var lastFlushCount = 0
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
-
-  enum GroupingMode: String, CaseIterable, Identifiable {
-    case provider = "Provider"
-    case date = "Date"
-    case flat = "All"
-
-    var id: String { rawValue }
-  }
 
   var body: some View {
     Group {
@@ -101,16 +92,8 @@ struct TranscriptInventoryView: View {
         Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
       }
 
-      // Toolbar with grouping
+      // Toolbar
       HStack {
-        Picker("Group by", selection: $groupingMode) {
-          ForEach(GroupingMode.allCases) { mode in
-            Text(mode.rawValue).tag(mode)
-          }
-        }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 200)
-
         Toggle("Include transcripts without conversations", isOn: $showMetadataOnly)
           .toggleStyle(.switch)
           .controlSize(.mini)
