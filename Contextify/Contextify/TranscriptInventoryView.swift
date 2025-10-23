@@ -7,6 +7,7 @@ import OSLog
 struct TranscriptInventoryView: View {
   @Environment(ConversationMonitor.self) private var monitor
   @Environment(DeveloperMode.self) private var devMode
+  @Environment(HUDViewModel.self) private var hudViewModel
   let onSelectSession: (TranscriptSession) -> Void
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
@@ -61,28 +62,40 @@ struct TranscriptInventoryView: View {
   private var sessionListView: some View {
     VStack(spacing: 0) {
       // Header
-      HStack {
-        Text("Transcript Inventory")
-          .font(.headline)
-        Spacer()
-
-        if devMode.isEnabled {
-          Button {
-            flushHeuristicCache()
-          } label: {
-            Label("Flush Heuristic Cache", systemImage: "trash")
-              .labelStyle(.iconOnly)
+      VStack(alignment: .leading, spacing: 4) {
+        HStack {
+          VStack(alignment: .leading, spacing: 2) {
+            if let projectName = hudViewModel.projectRootURL?.lastPathComponent {
+              Text("Transcript Inventory for \(projectName)")
+                .font(.headline)
+            } else {
+              Text("Transcript Inventory")
+                .font(.headline)
+            }
+            Text("\(filteredSessions.count) transcripts")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
-          .buttonStyle(.borderless)
-          .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+          Spacer()
 
-          Button {
-            refreshSessions()
-          } label: {
-            Label("Refresh", systemImage: "arrow.clockwise")
-              .labelStyle(.iconOnly)
+          if devMode.isEnabled {
+            Button {
+              flushHeuristicCache()
+            } label: {
+              Label("Flush Heuristic Cache", systemImage: "trash")
+                .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+
+            Button {
+              refreshSessions()
+            } label: {
+              Label("Refresh", systemImage: "arrow.clockwise")
+                .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
           }
-          .buttonStyle(.borderless)
         }
       }
       .padding()
@@ -120,10 +133,6 @@ struct TranscriptInventoryView: View {
         }
 
         Spacer()
-
-        Text("\(filteredSessions.count) transcripts")
-          .font(.caption)
-          .foregroundStyle(.secondary)
       }
       .padding(.horizontal)
       .padding(.bottom, 8)
