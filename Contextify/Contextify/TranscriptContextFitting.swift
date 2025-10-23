@@ -49,10 +49,11 @@ struct TranscriptContextFitting {
             """
 
             // Use guided generation with schema to test fit (matches actual call)
+            // IMPORTANT: Must match actual call's maximumResponseTokens (150) to accurately test fit
             let options = GenerationOptions(
                 sampling: .greedy,
                 temperature: 0,
-                maximumResponseTokens: 1
+                maximumResponseTokens: 150  // Match actual call's response budget
             )
 
             do {
