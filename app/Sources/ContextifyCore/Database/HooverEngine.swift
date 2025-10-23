@@ -31,6 +31,7 @@ public struct EntryInsert {
   public let gitBranch: String?
   public let gitCommit: String?
   public let cwd: String?
+  public let hasTextContent: Bool  // true if contains "text" blocks, false if only "thinking"
 
   public init(
     id: String,
@@ -45,7 +46,8 @@ public struct EntryInsert {
     parentId: String?,
     gitBranch: String?,
     gitCommit: String?,
-    cwd: String?
+    cwd: String?,
+    hasTextContent: Bool = true
   ) {
     self.id = id
     self.transcriptId = transcriptId
@@ -60,6 +62,7 @@ public struct EntryInsert {
     self.gitBranch = gitBranch
     self.gitCommit = gitCommit
     self.cwd = cwd
+    self.hasTextContent = hasTextContent
   }
 
   /// Convert to TranscriptEntry model
@@ -77,7 +80,7 @@ public struct EntryInsert {
       contentSha256: contentSha256,
       summary: nil,
       disposition: nil,
-      displayInTimeline: 1,
+      displayInTimeline: hasTextContent ? 1 : 0,  // Hide thinking-only entries from timeline
       isCompletion: 0,
       isDirective: 0,
       parentId: parentId,
