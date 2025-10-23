@@ -130,9 +130,16 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     if let str = content as? String {
       return str
     } else if let arr = content as? [[String: Any]] {
-      // Content blocks (array of {type, text})
+      // Content blocks (array of {type, text/thinking})
       return arr.compactMap { block in
-        block["text"] as? String
+        // Extract from both "text" field (user/assistant messages)
+        // and "thinking" field (Claude Code thinking blocks)
+        if let text = block["text"] as? String {
+          return text
+        } else if let thinking = block["thinking"] as? String {
+          return thinking
+        }
+        return nil
       }.joined(separator: "\n")
     } else {
       return ""
