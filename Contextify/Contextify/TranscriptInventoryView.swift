@@ -2,20 +2,38 @@ import SwiftUI
 import ContextifyCore
 import OSLog
 
+/// Scope filter for transcript inventory
+enum InventoryScope: String, CaseIterable, Identifiable {
+  case conversations = "conversations"
+  case metadata = "metadata"
+  case all = "all"
+
+  var id: String { rawValue }
+
+  var label: String {
+    switch self {
+    case .conversations: return "Conversations"
+    case .metadata: return "Metadata"
+    case .all: return "All"
+    }
+  }
+}
+
 /// Displays all discovered transcripts for the current project, including worktrees.
 /// Uses HSplitView for macOS-native sidebar + detail layout.
 struct TranscriptInventoryView: View {
   @Environment(ConversationMonitor.self) private var monitor
   @Environment(DeveloperMode.self) private var devMode
   @Environment(HUDViewModel.self) private var hudViewModel
+
+  @Binding var selectedScope: InventoryScope
+  @Binding var scopeCounts: (conversations: Int, metadata: Int, all: Int)
   let onSelectSession: (TranscriptSession) -> Void
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
-  @State private var showOnlyMetadata = false  // Filter toggle: when true, shows only metadata-only transcripts
-  @State private var showingMetadataHelp = false  // Info popover visibility
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
@@ -50,6 +68,12 @@ struct TranscriptInventoryView: View {
             .frame(minWidth: 500)
         }
       }
+    }
+    .task {
+      updateCounts()
+    }
+    .onChange(of: monitor.allSessions) { _, _ in
+      updateCounts()
     }
   }
 
@@ -104,38 +128,6 @@ struct TranscriptInventoryView: View {
       } message: {
         Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
       }
-
-      // Toolbar
-      HStack {
-        Toggle("Show only metadata transcripts", isOn: $showOnlyMetadata)
-          .toggleStyle(.switch)
-          .controlSize(.mini)
-
-        Button {
-          showingMetadataHelp = true
-        } label: {
-          Image(systemName: "info.circle")
-            .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .help("Learn about metadata-only transcripts")
-        .popover(isPresented: $showingMetadataHelp) {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Metadata-Only Transcripts")
-              .font(.headline)
-            Text("Claude Code writes some transcript files containing only file history snapshots, system records, and other metadata without actual conversation turns.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-          .padding()
-          .frame(width: 280)
-        }
-
-        Spacer()
-      }
-      .padding(.horizontal)
-      .padding(.bottom, 8)
 
       Divider()
 
@@ -300,8 +292,8 @@ struct TranscriptInventoryView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
 
-        // Metadata-only indicator (when toggle is on and no conversation entries)
-        if showOnlyMetadata && session.entryCount == 0 {
+        // Metadata-only indicator (always show for transcripts with no entries)
+        if session.entryCount == 0 {
           Text("•")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -334,12 +326,31 @@ struct TranscriptInventoryView: View {
 
   // MARK: - Helpers
 
+  private func updateCounts() {
+    let all = monitor.allSessions
+    let newCounts = (
+      conversations: all.filter { $0.entryCount > 0 }.count,
+      metadata: all.filter { $0.entryCount == 0 }.count,
+      all: all.count
+    )
+    if scopeCounts.conversations != newCounts.conversations ||
+       scopeCounts.metadata != newCounts.metadata ||
+       scopeCounts.all != newCounts.all {
+      scopeCounts = newCounts
+    }
+  }
+
   private var filteredSessions: [TranscriptSession] {
     var sessions = monitor.allSessions
 
-    // When toggle is on, show only metadata-only transcripts (entryCount == 0)
-    if showOnlyMetadata {
+    // Apply scope filter FIRST
+    switch selectedScope {
+    case .conversations:
+      sessions = sessions.filter { $0.entryCount > 0 }
+    case .metadata:
       sessions = sessions.filter { $0.entryCount == 0 }
+    case .all:
+      break // No filter
     }
 
     // Apply search filter
@@ -1068,10 +1079,15 @@ struct TranscriptDetailView: View {
 
 #if DEBUG
 struct TranscriptInventoryView_Previews: PreviewProvider {
+  @State static var scope: InventoryScope = .conversations
+  @State static var counts: (conversations: Int, metadata: Int, all: Int) = (10, 5, 15)
+
   static var previews: some View {
-    TranscriptInventoryView { _ in
-      // Session selection handler
-    }
+    TranscriptInventoryView(
+      selectedScope: .constant(.conversations),
+      scopeCounts: .constant((conversations: 10, metadata: 5, all: 15)),
+      onSelectSession: { _ in }
+    )
     .environment(ConversationMonitor.shared)
   }
 }
