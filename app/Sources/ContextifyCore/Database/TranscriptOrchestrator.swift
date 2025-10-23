@@ -258,13 +258,26 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Clean up session ID (trim whitespace)
         let sid = disc.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Check if transcript exists using the ACTUAL unique constraint: (project_id, file_path)
-        // The table has: t.uniqueKey(["project_id", "file_path"])
-        let existing = try Row.fetchOne(db, sql: """
-          SELECT id, content_length, mtime_ms, content_sha256
-          FROM transcripts
-          WHERE project_id = ? AND file_path = ?
-        """, arguments: [projectId, path])
+        // Check if transcript exists using canonical identity:
+        // - If provider_session_id present: (provider, provider_session_id)
+        // - Otherwise: (provider, path_hash)
+        // This matches the unique constraints in DatabaseSchema v3
+        let existing: Row?
+        if let sid = sid, !sid.isEmpty {
+          // Lookup by provider + session ID
+          existing = try Row.fetchOne(db, sql: """
+            SELECT id, content_length, mtime_ms, content_sha256
+            FROM transcripts
+            WHERE provider = ? AND provider_session_id = ?
+          """, arguments: [disc.provider, sid])
+        } else {
+          // Lookup by provider + path_hash
+          existing = try Row.fetchOne(db, sql: """
+            SELECT id, content_length, mtime_ms, content_sha256
+            FROM transcripts
+            WHERE provider = ? AND path_hash = ?
+          """, arguments: [disc.provider, pathHash])
+        }
 
         // Get file facts (streaming SHA256)
         let (len, mtimeMs, sha): (Int64, Int64, String)
@@ -297,6 +310,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             UPDATE transcripts
             SET file_path = ?,
                 normalized_path = ?,
+                path_hash = ?,
                 provider_session_id = ?,
                 last_modified = ?,
                 file_size = ?,
@@ -308,6 +322,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           """, arguments: [
             path,
             normalizedPath,
+            pathHash,
             sid ?? "",
             TimeUnits.secondsFromMs(mtimeMs),  // last_modified in seconds for compatibility
             len > 0 ? Int(len) : nil,

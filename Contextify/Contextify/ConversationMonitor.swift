@@ -880,15 +880,35 @@ final class ConversationMonitor {
 
         if Task.isCancelled { return }
 
-        // Start watchers for new transcripts only (no duplicate writes)
-        let newTranscripts = resolved.filter(\.wasCreated)
-        if !newTranscripts.isEmpty {
-            await MainActor.run {
-                log.info("Starting watchers for \(newTranscripts.count) new transcripts")
+        // Start watchers for ALL transcripts (not just newly created)
+        // This ensures orphaned transcripts (existing in DB but never hoovered) get processed
+        // TranscriptWatcher.watch() is idempotent and will skip if already watching
+        if !resolved.isEmpty {
+            // Identify orphaned transcripts for diagnostic logging
+            // Fetch all transcripts for this project and build a lookup dictionary
+            let allTranscripts = try orchestrator.getTranscripts(forProject: projectId)
+            let transcriptLookup = Dictionary(uniqueKeysWithValues: allTranscripts.map { ($0.id, $0) })
+
+            let orphaned = resolved.filter { tr in
+                !tr.wasCreated &&
+                (transcriptLookup[tr.transcriptId]?.lastProcessedLine ?? -1) == 0
             }
 
-            for tr in newTranscripts {
+            if !orphaned.isEmpty {
+                await MainActor.run {
+                    log.warning("⚠️ Found \(orphaned.count) orphaned transcripts (existing but never hoovered)")
+                }
+            }
+
+            await MainActor.run {
+                log.info("🔄 Starting/verifying watchers for \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new, \(orphaned.count) orphaned)")
+            }
+
+            // Start watchers for ALL transcripts
+            for tr in resolved {
                 if Task.isCancelled { return }
+                // watch() is idempotent: checks isWatching() and skips if already active
+                // It also performs initial hoovering, ensuring orphaned transcripts get processed
                 try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
             }
 
@@ -896,11 +916,11 @@ final class ConversationMonitor {
             try orchestrator.performMaintenance()
 
             await MainActor.run {
-                log.info("Discovery complete")
+                log.info("✅ Discovery complete - all transcripts watching")
             }
         } else {
             await MainActor.run {
-                log.info("No new transcripts found")
+                log.info("No transcripts found for this project")
             }
         }
 

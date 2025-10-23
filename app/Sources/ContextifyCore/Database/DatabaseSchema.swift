@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 4
+  static let version = 5
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -231,6 +231,80 @@ enum DatabaseSchema {
         CREATE INDEX IF NOT EXISTS idx_entries_embedding_version
         ON transcript_entries(embedding_version)
       """)
+    }
+
+    // v5: Backfill path_hash for transcript identity and deduplicate
+    migrator.registerMigration("v5_path_hash_backfill_dedup") { db in
+      // Step 1: Backfill path_hash for rows where it's NULL
+      let transcriptsToBackfill = try Row.fetchAll(db, sql: """
+        SELECT id, file_path
+        FROM transcripts
+        WHERE path_hash IS NULL OR path_hash = ''
+      """)
+
+      for row in transcriptsToBackfill {
+        let transcriptId: String = row["id"]
+        let filePath: String = row["file_path"]
+
+        // Compute normalized path and hash
+        let (normalizedPath, pathHash) = PathNormalizer.normalizeAndHash(filePath)
+
+        // Update the transcript
+        try db.execute(sql: """
+          UPDATE transcripts
+          SET normalized_path = ?, path_hash = ?
+          WHERE id = ?
+        """, arguments: [normalizedPath, pathHash, transcriptId])
+      }
+
+      // Step 2: Deduplicate transcripts with same (provider, path_hash)
+      // Find groups of duplicate transcripts
+      let duplicateGroups = try Row.fetchAll(db, sql: """
+        SELECT provider, path_hash, COUNT(*) as count
+        FROM transcripts
+        WHERE path_hash IS NOT NULL AND path_hash <> ''
+          AND (provider_session_id IS NULL OR provider_session_id = '')
+        GROUP BY provider, path_hash
+        HAVING count > 1
+      """)
+
+      for group in duplicateGroups {
+        let provider: String = group["provider"]
+        let pathHash: String = group["path_hash"]
+
+        // Get all transcripts in this duplicate group, ordered by created_at (oldest first)
+        let duplicates = try Row.fetchAll(db, sql: """
+          SELECT id, created_at
+          FROM transcripts
+          WHERE provider = ? AND path_hash = ?
+            AND (provider_session_id IS NULL OR provider_session_id = '')
+          ORDER BY created_at ASC
+        """, arguments: [provider, pathHash])
+
+        guard duplicates.count > 1 else { continue }
+
+        // Keep the oldest transcript (first in list)
+        let keeperId: String = duplicates[0]["id"]
+        let duplicateIds = duplicates.dropFirst().map { $0["id"] as! String }
+
+        // Reassign entries from duplicates to the keeper
+        for dupId in duplicateIds {
+          try db.execute(sql: """
+            UPDATE transcript_entries
+            SET transcript_id = ?
+            WHERE transcript_id = ?
+          """, arguments: [keeperId, dupId])
+
+          // Delete the duplicate transcript
+          try db.execute(sql: """
+            DELETE FROM transcripts
+            WHERE id = ?
+          """, arguments: [dupId])
+        }
+      }
+
+      // Run ANALYZE to update statistics after bulk operations
+      try db.execute(sql: "ANALYZE")
     }
 
     return migrator
