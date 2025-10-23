@@ -78,15 +78,14 @@ public struct EntryInsert {
       timestamp: Int(timestamp.timeIntervalSince1970),
       content: content,
       contentSha256: contentSha256,
-      summary: nil,
-      disposition: nil,
       displayInTimeline: hasTextContent ? 1 : 0,  // Hide thinking-only entries from timeline
-      isCompletion: 0,
-      isDirective: 0,
       parentId: parentId,
       gitBranch: gitBranch,
       gitCommit: gitCommit,
       cwd: cwd,
+      prev1Id: nil,
+      prev2Id: nil,
+      windowSha256: nil,
       createdAt: now,
       updatedAt: now
     )

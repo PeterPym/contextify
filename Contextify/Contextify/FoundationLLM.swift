@@ -188,6 +188,8 @@ actor FoundationLLM {
         let pastForm: String
         let disposition: Disposition
         let verbLemma: String?
+        let isDirective: Bool
+        let isCompletion: Bool
     }
 
     enum UserIntent: String {
@@ -639,7 +641,9 @@ actor FoundationLLM {
             presentForm: present,
             pastForm: past,
             disposition: disp,
-            verbLemma: nil  // TODO: LLM should provide this in Phase 2
+            verbLemma: nil,  // TODO: LLM should provide this in Phase 2
+            isDirective: result.isDirective,
+            isCompletion: result.isCompletion
         )
     }
 
@@ -1274,7 +1278,16 @@ private extension FoundationLLM {
             ? (payload.isCompletion && hasCompletionToken(summary))
             : false
 
-        return TimelineSummaryResult(summary: summary, isCompletion: completion, isDirective: false, disposition: payload.disposition)
+        // Set isDirective based on classified intent for user messages
+        let directiveFlag: Bool
+        if kind == .user {
+            let intent = classifyUserIntent(message)
+            directiveFlag = intent == .directive || intent == .affirmative || intent == .negative
+        } else {
+            directiveFlag = false
+        }
+
+        return TimelineSummaryResult(summary: summary, isCompletion: completion, isDirective: directiveFlag, disposition: payload.disposition)
     }
 }
 #endif

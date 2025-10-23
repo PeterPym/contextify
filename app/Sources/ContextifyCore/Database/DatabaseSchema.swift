@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 5
+  static let version = 6
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -307,6 +307,72 @@ enum DatabaseSchema {
       try db.execute(sql: "ANALYZE")
     }
 
+    // v6: Remove denormalized fields (summary, disposition, is_completion, is_directive)
+    migrator.registerMigration("v6_remove_denormalized_fields") { db in
+      // SQLite doesn't support DROP COLUMN, so we need to recreate the table
+
+      // 1. Create new table without denormalized fields
+      try db.create(table: "transcript_entries_new") { t in
+        t.column("id", .text).primaryKey()
+        t.column("transcript_id", .text).notNull().references("transcripts", onDelete: .cascade)
+        t.column("project_id", .text).notNull().references("projects", onDelete: .cascade)
+        t.column("session_id", .text)
+        t.column("provider", .text).notNull().check(sql: "provider IN ('claude.code','codex.cli','other')")
+        t.column("kind", .text).notNull().check(sql: "kind IN ('user','assistant','system')")
+        t.column("timestamp", .integer).notNull()
+        t.column("content", .text).notNull()
+        t.column("content_sha256", .text).notNull()
+        t.column("display_in_timeline", .integer).notNull().defaults(to: 1)
+        t.column("parent_id", .text).references("transcript_entries", onDelete: .setNull)
+        t.column("git_branch", .text)
+        t.column("git_commit", .text)
+        t.column("cwd", .text)
+        t.column("created_at", .integer).notNull()
+        t.column("updated_at", .integer).notNull()
+        t.column("prev1_id", .text)
+        t.column("prev2_id", .text)
+        t.column("window_sha256", .text)
+        t.column("embedding", .blob)
+        t.column("embedding_version", .integer).defaults(to: 1)
+        t.column("embedding_generated_at", .integer)
+      }
+
+      // 2. Copy data from old table (excluding removed columns)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries_new
+        SELECT id, transcript_id, project_id, session_id, provider, kind,
+               timestamp, content, content_sha256, display_in_timeline,
+               parent_id, git_branch, git_commit, cwd, created_at, updated_at,
+               prev1_id, prev2_id, window_sha256, embedding, embedding_version,
+               embedding_generated_at
+        FROM transcript_entries
+      """)
+
+      // 3. Drop old table
+      try db.drop(table: "transcript_entries")
+
+      // 4. Rename new table
+      try db.rename(table: "transcript_entries_new", to: "transcript_entries")
+
+      // 5. Recreate all indexes
+      try db.create(index: "idx_entries_transcript_time", on: "transcript_entries",
+                    columns: ["transcript_id", "timestamp"], ifNotExists: true)
+      try db.create(index: "idx_entries_content_sha", on: "transcript_entries",
+                    columns: ["content_sha256"], ifNotExists: true)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_project_time
+        ON transcript_entries(project_id, timestamp DESC)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_project_feed
+        ON transcript_entries(project_id, timestamp DESC)
+        WHERE display_in_timeline = 1
+      """)
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
     return migrator
   }
 
@@ -363,11 +429,7 @@ enum DatabaseSchema {
       t.column("timestamp", .integer).notNull()
       t.column("content", .text).notNull()
       t.column("content_sha256", .text).notNull()
-      t.column("summary", .text)
-      t.column("disposition", .text)
       t.column("display_in_timeline", .integer).notNull().defaults(to: 1)
-      t.column("is_completion", .integer).notNull().defaults(to: 0)
-      t.column("is_directive", .integer).notNull().defaults(to: 0)
       t.column("parent_id", .text).references("transcript_entries", onDelete: .setNull)
       t.column("git_branch", .text)
       t.column("git_commit", .text)
@@ -386,12 +448,6 @@ enum DatabaseSchema {
       CREATE INDEX IF NOT EXISTS idx_entries_project_feed
       ON transcript_entries(project_id, timestamp DESC)
       WHERE display_in_timeline = 1
-    """)
-    // Completion index with DESC for ORDER BY performance
-    try db.execute(sql: """
-      CREATE INDEX IF NOT EXISTS idx_entries_completion
-      ON transcript_entries(project_id, is_completion, timestamp DESC)
-      WHERE is_completion = 1
     """)
 
     // Timeline cache table (WITHOUT ROWID for composite PK optimization)

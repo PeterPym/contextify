@@ -510,8 +510,11 @@ final class ConversationMonitor {
                 line: nil
             ),
             sourceIdentifier: entry.id,
-            isCompletion: entry.isCompletion == 1,
-            isDirective: entry.isDirective == 1,
+            isCompletion: cached?.disposition == "completion",
+            isDirective: {
+                guard let disp = cached?.disposition else { return false }
+                return ["directive", "affirmative", "negative"].contains(disp)
+            }(),
             requestId: nil,
             action: action,
             sessionId: entry.sessionId,
