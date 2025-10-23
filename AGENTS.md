@@ -234,12 +234,19 @@ Configure Xcode console with `TYPE Info` filter to hide debug logs in production
 
 When working with Claude Code transcript files, **ALWAYS classify first** before analyzing structure:
 
-### Classification Script
+### Classification Scripts
+
+**Simple (fast):**
 ```bash
 ./scripts/classify_transcript.sh <transcript-id-or-file-path>
 ```
+Returns: `"conversational"` | `"metadata-only"` | `"empty"`
 
-Returns JSON with `classification`: `"conversational"` | `"metadata-only"` | `"empty"`
+**Detailed (multi-dimensional):**
+```bash
+./scripts/classify_transcript_detailed.sh <transcript-id-or-file-path>
+```
+Returns: Primary classification + 4 dimensional axes (conversation, metadata, content_flags, state)
 
 ### Agent Workflow
 

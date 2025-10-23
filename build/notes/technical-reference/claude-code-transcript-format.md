@@ -624,49 +624,149 @@ Most Used Commands:
 
 ## Transcript Classification Guide
 
-**Purpose:** Quickly determine transcript type and which sections of this document to reference.
+**Purpose:** Multi-dimensional classification system for understanding transcript structure and content.
 
-### Classification Types
+### Multi-Dimensional Classification Model
 
-**1. Conversational Transcripts** (most common)
-- **Has:** User (`type: "user"`) and/or Assistant (`type: "assistant"`) messages
-- **May also have:** file-history-snapshot, summary, system records
-- **Database:** `entryCount > 0` (displayable conversation entries)
-- **Relevant sections:** §1 (User Messages), §2 (Assistant Messages), §3-5 (Metadata)
+Transcripts should be classified across **four orthogonal axes**:
 
-**2. Metadata-Only Transcripts** (file tracking sessions)
+#### Axis 1: Primary Classification
+
+**1. Conversational** (40 in sample DB - most common)
+- **Has:** Non-sidechain user and/or assistant messages
+- **Database:** `entryCount > 0`
+- **Parser behavior:** Creates `transcript_entries` with `display_in_timeline = 1`
+- **Relevant sections:** §1 (User), §2 (Assistant), optionally §3-5
+
+**2. Sidechain-Only** (warmup/initialization sessions)
+- **Has:** ONLY messages with `isSidechain: true`
+- **Purpose:** Project context loading, warmup before actual conversation
+- **Database:** `entryCount = 0` (skipped by parser)
+- **File content:** 2-10 lines typically
+- **Relevant sections:** §1 (User Messages - Special Cases)
+
+**3. Metadata-Only** (file tracking without conversation)
 - **Has:** ONLY file-history-snapshot, summary, or system records
-- **No conversation:** No user/assistant messages (or only sidechain/meta)
-- **Database:** `entryCount = 0`, `snapshot_count > 0` OR `system_event_count > 0`
-- **Relevant sections:** §3 (File-History-Snapshot), §4 (Summary), §5 (System)
+- **No conversation:** No user/assistant OR only sidechain/meta
+- **Database:** `entryCount = 0`, v7 metadata tables populated
+- **File content:** Can be 10-400+ lines
+- **Relevant sections:** §3 (File-History), §4 (Summary), §5 (System)
 
-**3. Empty Transcripts**
-- **Has:** No records or incomplete session
-- **Database:** `entryCount = 0`, `snapshot_count = 0`
+**4. Empty/Unprocessed**
+- **Has:** No records OR incomplete ingestion
+- **Database:** `entryCount = 0`, no v7 metadata
 - **Status:** Not yet ingested or session never started
 
-### Quick Classification Script
+#### Axis 2: Metadata Richness
 
-Use `scripts/classify_transcript.sh` to identify transcript type:
+**Snapshot-Rich:**
+- Has `file-history-snapshot` records with `trackedFileBackups`
+- Database: Entries in `file_snapshots` + `tracked_files` tables
+- Value: Track file modifications, versions, backup times
+- Average: ~25 files per snapshot across 813/907 non-empty snapshots
+
+**Summary-Enhanced:**
+- Has `type: "summary"` records
+- Database: Entries in `transcript_summaries` table
+- Purpose: Claude Code's internal session summaries
+- 48 records across sample (0.3% of all records)
+
+**Event-Tracked:**
+- Has `type: "system"` records
+- Database: Entries in `system_events` table
+- Types: slash_command, api_error, compact_mode_boundary
+- 55 records across sample (0.3% of all records)
+
+**Usage-Rich:**
+- Has assistant messages with detailed `usage` metadata
+- Database: Entries in `assistant_usage` table
+- Metrics: input/output tokens, cache creation/read, cost data
+- Present in every assistant message (11,188 records)
+
+#### Axis 3: Content Characteristics
+
+**Tool-Heavy:**
+- High ratio of `tool_use` / `tool_result` content blocks
+- Dominant tools: Bash, Edit, Read, Write, Grep
+- Indicates automation-focused session
+
+**Thinking-Heavy:**
+- Messages with `thinking` content blocks
+- Parser: `hasTextContent = false` if ONLY thinking
+- Display: `display_in_timeline = 0` (hidden from timeline)
+
+**Image-Containing:**
+- Messages with `type: "image"` content blocks
+- Structure: `{ type: "image", source: { type: "base64", media_type, data } }`
+- Use case: Screenshot analysis, visual debugging
+
+**Text-Only:**
+- String content or only `type: "text"` blocks
+- Simplest structure, no special handling
+
+#### Axis 4: Database State
+
+**Active:** `status = 'active'`
+- Fully ingested, file accessible
+- `last_processed_line` matches file line count
+
+**Unavailable:** `status = 'unavailable'`
+- File moved/deleted since discovery
+- Metadata retained, file inaccessible
+
+**Error:** `status = 'error'`
+- Parser errors, corrupted JSON
+- Ingestion stopped at `last_processed_line`
+
+**Unprocessed:** Not in database
+- Discovered but not yet ingested
+- Or failed discovery phase
+
+### Real-World Distribution (Sample Database: 67 transcripts)
+
+| Primary | Count | Metadata | Content | State |
+|---------|-------|----------|---------|-------|
+| conversational-only | 39 | No v7 metadata yet | Mixed | active |
+| conversational+metadata | 1 | Has snapshots | Tool+text | active |
+| metadata-only | 1 | 8 snapshots | N/A | active |
+| sidechain-only | ~5 | No metadata | Warmup | active |
+| summary-only | ~5 | Summaries | N/A | active |
+| empty/unprocessed | 26 | None | None | varies |
+
+**Important Notes:**
+- "Empty" transcripts often contain sidechain or summary records (misnamed)
+- 813 of 907 snapshots contain tracked files (not empty backups)
+- Many "conversational" transcripts also have rich metadata
+- Sidechain sessions are 2-10 lines of initialization messages
+
+### Classification Scripts
+
+**Simple Classification:** `scripts/classify_transcript.sh`
+- Fast single-dimension classification
+- Returns: conversational | metadata-only | empty
 
 ```bash
-# By transcript ID (UUID)
 ./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
-
-# By file path
-./scripts/classify_transcript.sh ~/.claude/projects/-Users-rob-code/.../session.jsonl
 ```
 
-**Output:**
+**Multi-Dimensional Classification:** `scripts/classify_transcript_detailed.sh`
+- Comprehensive analysis across all four axes
+- Returns: primary classification + dimensions breakdown
+
+```bash
+./scripts/classify_transcript_detailed.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+```
+
+**Example Output (detailed):**
 ```json
 {
-  "file": "/path/to/transcript.jsonl",
-  "type": "claude-code",
-  "classification": "metadata-only",
-  "has_conversation": false,
-  "has_metadata": true,
-  "record_types": ["file-history-snapshot"],
-  "line_count": 8
+  "primary_classification": "sidechain-only",
+  "dimensions": {
+    "conversation": {"has_user": false, "has_assistant": false, "db_entry_count": 0},
+    "metadata": {"has_snapshots": false, "has_summaries": false, "has_events": false},
+    "content_flags": {"has_sidechain": true, "has_meta": false, "has_tool_use": false},
+    "state": "active"
+  }
 }
 ```
 
