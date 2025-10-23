@@ -22,17 +22,6 @@ struct TranscriptInventoryWindow: View {
     )
     .toolbar {
       ToolbarItem(placement: .automatic) {
-        Picker("Type", selection: $selectedScope) {
-          Text("Conversations\(countSuffix(.conversations))").tag(InventoryScope.conversations)
-          Text("Metadata\(countSuffix(.metadata))").tag(InventoryScope.metadata)
-          Text("All\(countSuffix(.all))").tag(InventoryScope.all)
-        }
-        .pickerStyle(.segmented)
-        .controlSize(.small)
-        .accessibilityLabel("Transcript type filter")
-      }
-
-      ToolbarItem(placement: .automatic) {
         Button {
           Task { @MainActor in
             await monitor.refresh()
@@ -52,15 +41,5 @@ struct TranscriptInventoryWindow: View {
       // Load sessions from database when window appears
       await monitor.loadAllSessionsFromDatabase()
     }
-  }
-
-  private func countSuffix(_ scope: InventoryScope) -> String {
-    let count: Int
-    switch scope {
-    case .conversations: count = scopeCounts.conversations
-    case .metadata: count = scopeCounts.metadata
-    case .all: count = scopeCounts.all
-    }
-    return count > 0 ? " (\(count))" : ""
   }
 }

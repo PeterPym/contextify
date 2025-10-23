@@ -129,6 +129,27 @@ struct TranscriptInventoryView: View {
         Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
       }
 
+      // Scope filter
+      HStack {
+        Text("Type")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Picker("Type", selection: $selectedScope) {
+          Text("Conversations\(countSuffix(.conversations))").tag(InventoryScope.conversations)
+          Text("Metadata\(countSuffix(.metadata))").tag(InventoryScope.metadata)
+          Text("All\(countSuffix(.all))").tag(InventoryScope.all)
+        }
+        .pickerStyle(.segmented)
+        .controlSize(.small)
+        .labelsHidden()
+        .accessibilityLabel("Transcript type filter")
+
+        Spacer()
+      }
+      .padding(.horizontal)
+      .padding(.bottom, 8)
+
       Divider()
 
       // Session list with transcript ID-based selection (FIXED: use filteredSessions)
@@ -399,6 +420,16 @@ struct TranscriptInventoryView: View {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .short
     return formatter.localizedString(for: date, relativeTo: Date())
+  }
+
+  private func countSuffix(_ scope: InventoryScope) -> String {
+    let count: Int
+    switch scope {
+    case .conversations: count = scopeCounts.conversations
+    case .metadata: count = scopeCounts.metadata
+    case .all: count = scopeCounts.all
+    }
+    return count > 0 ? " (\(count))" : ""
   }
 
   private func refreshSessions() {
