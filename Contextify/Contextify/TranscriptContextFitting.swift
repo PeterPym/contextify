@@ -59,8 +59,10 @@ struct TranscriptContextFitting {
             do {
                 log.debug("Pre-flight attempt \(attempt + 1)/\(maxAttempts): \(currentContext.count) chars, ~\(currentCount) messages")
                 // Use generateGuided() instead of rawWithInstructions() to include schema overhead
+                // CRITICAL: Use separate instructions to avoid polluting the actual session with pre-flight context
+                let preflightInstructions = "[PRE-FLIGHT]\n" + instructions
                 let _: GuidedTranscriptMetadata = try await llm.generateGuided(
-                    instructions: instructions,
+                    instructions: preflightInstructions,
                     prompt: probe,
                     generating: GuidedTranscriptMetadata.self,
                     includeSchema: true,  // CRITICAL: must match actual call to account for schema overhead
