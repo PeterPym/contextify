@@ -80,6 +80,7 @@ struct ContextifyApp: App {
       TranscriptInventoryWindow()
         .environment(HUDViewModel.shared)
         .environment(ConversationMonitor.shared)
+        .environment(DeveloperMode.shared)
     }
     .defaultSize(width: 1000, height: 700)
 
