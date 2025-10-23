@@ -130,6 +130,59 @@ let isDirective: Bool = {
 - Recreate indexes (removed `idx_entries_is_completion`)
 - Column count: 23 → 19
 
+### Future: Metadata Storage (v7 Proposed)
+
+**Status:** Proposed (see `TODOS.md` and `implementation-plans/transcript-metadata-storage.md`)
+
+Claude Code transcripts contain valuable metadata beyond conversation messages:
+
+**Currently Ignored:**
+1. **file-history-snapshot** (907 records): File modification tracking
+2. **summary** (48 records): Claude Code's session summaries
+3. **system** (55 records): Slash commands, API errors, compact mode
+4. **usage metadata** (all assistant messages): Token/cost analytics
+
+**Proposed v7 Schema:**
+```
+file_snapshots (NEW)
+├── id, transcript_id, message_id, snapshot_timestamp
+├── is_snapshot_update, created_at
+└── Purpose: Track when snapshots occurred
+
+tracked_files (NEW)
+├── id, snapshot_id, file_path, backup_filename
+├── version, backup_time
+└── Purpose: Which files were modified (avg ~25 files/session)
+
+transcript_summaries (NEW)
+├── id, transcript_id, summary, leaf_uuid, cwd
+└── Purpose: Fallback titles, cross-session linking
+
+system_events (NEW)
+├── id, transcript_id, timestamp, subtype, level
+├── content, error, retry_attempt, max_retries
+└── Purpose: Command usage, error tracking, debugging
+
+assistant_usage (NEW)
+├── entry_id, request_id, model, input_tokens
+├── output_tokens, cache_creation_tokens, cache_read_tokens
+└── Purpose: Token/cost analytics, cache effectiveness
+```
+
+**Enabled Features:**
+- Session details: "Files Modified: 12, Tokens: 125K, Cost: $0.42"
+- File timeline: Show file modification history across sessions
+- Command analytics: Slash command usage statistics
+- Cost dashboard: Daily/weekly token usage, projections
+
+**Migration Strategy:**
+- Backward compatible (no changes to existing tables)
+- Parser updates to extract metadata during ingestion
+- Optional backfill for existing transcripts
+- Incremental UI rollout
+
+See comprehensive spec in `build/notes/technical-reference/claude-code-transcript-format.md`.
+
 ### Critical Indexes
 
 **Feed Query Optimization (v2+, updated v6):**
