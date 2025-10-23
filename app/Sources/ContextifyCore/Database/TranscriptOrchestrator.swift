@@ -35,6 +35,25 @@ public struct ResolvedTranscript: Sendable {
   }
 }
 
+/// Classification for metadata-only transcripts
+public enum MetadataTranscriptType: Sendable {
+  case emptySnapshots(lineCount: Int)
+  case fileTracking(fileCount: Int, topFiles: [String])
+  case sidechainConversation
+  case mixed
+}
+
+/// Tracked file information from snapshots
+public struct TrackedFileInfo: Sendable {
+  public let path: String
+  public let version: Int
+
+  public init(path: String, version: Int) {
+    self.path = path
+    self.version = version
+  }
+}
+
 /// High-level orchestrator for transcript ingestion and monitoring
 /// NOT @MainActor - allows safe concurrent access from background tasks
 /// Sendable: GRDB pool handles thread-safety, repositories are stateless
@@ -638,6 +657,114 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       return
     }
     try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+  }
+
+  // MARK: - Metadata Transcript Classification
+
+  /// Classify a metadata-only transcript by analyzing its content
+  public func classifyMetadataTranscript(_ transcriptId: String) async throws -> MetadataTranscriptType {
+    // Get transcript info from DB
+    guard let transcript = try transcriptRepo.get(transcriptId) else {
+      throw RepositoryError.notFound
+    }
+
+    // Quick check: if file is very small, likely empty snapshots
+    if let fileSize = transcript.fileSize, fileSize < 5000 {
+      return .emptySnapshots(lineCount: transcript.lineCount)
+    }
+
+    // Parse the JSONL file to examine content
+    let fileURL = URL(fileURLWithPath: transcript.filePath)
+    guard FileManager.default.fileExists(atPath: transcript.filePath) else {
+      throw RepositoryError.notFound
+    }
+
+    let fileData = try Data(contentsOf: fileURL)
+    let lines = String(decoding: fileData, as: UTF8.self).split(separator: "\n")
+
+    var hasSidechainMessages = false
+    var trackedFiles: [String: Int] = [:]  // path -> max version
+
+    for line in lines {
+      guard let jsonData = line.data(using: String.Encoding.utf8),
+            let record = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+            let type = record["type"] as? String else {
+        continue
+      }
+
+      // Check for sidechain messages
+      if (type == "user" || type == "assistant"),
+         let isSidechain = record["isSidechain"] as? Bool,
+         isSidechain {
+        hasSidechainMessages = true
+      }
+
+      // Check for file snapshots
+      if type == "file-history-snapshot",
+         let snapshot = record["snapshot"] as? [String: Any],
+         let backups = snapshot["trackedFileBackups"] as? [String: Any] {
+        // Parse tracked files
+        for (path, value) in backups {
+          if let fileInfo = value as? [String: Any],
+             let version = fileInfo["version"] as? Int {
+            trackedFiles[path] = max(trackedFiles[path] ?? 0, version)
+          }
+        }
+      }
+    }
+
+    // Classify based on what we found
+    if hasSidechainMessages {
+      return .sidechainConversation
+    } else if !trackedFiles.isEmpty {
+      // Sort by version (most active first) and get top files
+      let sortedFiles = trackedFiles.sorted { $0.value > $1.value }
+      let topFiles = Array(sortedFiles.prefix(3)).map { $0.key }
+      return .fileTracking(fileCount: trackedFiles.count, topFiles: topFiles)
+    } else {
+      return .emptySnapshots(lineCount: transcript.lineCount)
+    }
+  }
+
+  /// Get tracked file information for a metadata transcript
+  public func getTopTrackedFiles(_ transcriptId: String, limit: Int) async throws -> [TrackedFileInfo] {
+    guard let transcript = try transcriptRepo.get(transcriptId) else {
+      throw RepositoryError.notFound
+    }
+
+    let fileURL = URL(fileURLWithPath: transcript.filePath)
+    guard FileManager.default.fileExists(atPath: transcript.filePath) else {
+      throw RepositoryError.notFound
+    }
+
+    let fileData = try Data(contentsOf: fileURL)
+    let lines = String(decoding: fileData, as: UTF8.self).split(separator: "\n")
+
+    var trackedFiles: [String: Int] = [:]
+
+    for line in lines {
+      guard let jsonData = line.data(using: String.Encoding.utf8),
+            let record = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+            let type = record["type"] as? String,
+            type == "file-history-snapshot",
+            let snapshot = record["snapshot"] as? [String: Any],
+            let backups = snapshot["trackedFileBackups"] as? [String: Any] else {
+        continue
+      }
+
+      for (path, value) in backups {
+        if let fileInfo = value as? [String: Any],
+           let version = fileInfo["version"] as? Int {
+          trackedFiles[path] = max(trackedFiles[path] ?? 0, version)
+        }
+      }
+    }
+
+    // Sort by version and return top N
+    return trackedFiles
+      .sorted { $0.value > $1.value }
+      .prefix(limit)
+      .map { TrackedFileInfo(path: $0.key, version: $0.value) }
   }
 
   // MARK: - Cleanup

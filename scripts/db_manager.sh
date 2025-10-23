@@ -312,6 +312,45 @@ reingest_transcript() {
     print_info "Relaunch app to start re-ingestion"
 }
 
+# Clear metadata cache (force regeneration)
+clear_metadata() {
+    if [ ! -f "$DB_PATH" ]; then
+        print_error "Database not found at: $DB_PATH"
+        return 1
+    fi
+
+    # Create backup first
+    print_info "Creating backup before clearing metadata..."
+    backup_database > /dev/null
+    if [ $? -ne 0 ]; then
+        print_error "Backup failed, aborting"
+        return 1
+    fi
+
+    # Quit app
+    quit_app
+
+    # Get current count
+    local count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcript_metadata;" 2>/dev/null || echo "0")
+
+    if [ "$count" = "0" ]; then
+        print_info "No metadata to clear"
+        return 0
+    fi
+
+    print_info "Found $count cached metadata records"
+
+    # Delete all metadata
+    sqlite3 "$DB_PATH" "DELETE FROM transcript_metadata;" 2>/dev/null
+
+    # Verify deletion
+    local remaining=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcript_metadata;" 2>/dev/null || echo "?")
+    local deleted=$((count - remaining))
+
+    print_success "Cleared $deleted metadata records"
+    print_info "Metadata will be regenerated when transcripts are viewed"
+}
+
 # Show usage
 show_usage() {
     cat <<EOF
@@ -325,6 +364,7 @@ Commands:
   clean                   Delete database (creates backup first, requires confirmation)
   restore <name>          Restore a backup (use 'latest' for most recent)
   reingest <transcript>   Force re-ingestion of a specific transcript
+  clear-metadata          Clear cached transcript metadata (force regeneration of titles/descriptions)
   list                    List all available backups
 
 Examples:
@@ -333,12 +373,14 @@ Examples:
   ./scripts/db_manager.sh restore latest
   ./scripts/db_manager.sh restore transcripts.db-20250119-010203
   ./scripts/db_manager.sh reingest 6D02C1B5-6F6D-40E0-B550-DC69DFB8BCCF
+  ./scripts/db_manager.sh clear-metadata
   ./scripts/db_manager.sh list
 
 Notes:
   - The app will be automatically closed before any database operations
   - All cleanup operations create an automatic backup first
   - Re-ingestion resets transcript checkpoint and deletes existing entries
+  - clear-metadata removes cached transcript titles/descriptions (from transcript_metadata table)
   - Backups are stored in: build/db-backups/
   - Database location: ~/Library/Application Support/Contextify/
 
@@ -365,6 +407,9 @@ main() {
             ;;
         reingest)
             reingest_transcript "$@"
+            ;;
+        clear-metadata)
+            clear_metadata
             ;;
         list)
             list_backups
