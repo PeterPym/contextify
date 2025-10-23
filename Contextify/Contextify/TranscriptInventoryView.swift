@@ -14,7 +14,7 @@ struct TranscriptInventoryView: View {
   @State private var searchText = ""
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
-  @State private var showMetadataOnly = false  // Filter toggle: when true, includes metadata-only transcripts
+  @State private var showOnlyMetadata = false  // Filter toggle: when true, shows only metadata-only transcripts
   @State private var showingMetadataHelp = false  // Info popover visibility
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
@@ -107,7 +107,7 @@ struct TranscriptInventoryView: View {
 
       // Toolbar
       HStack {
-        Toggle("Include transcripts without conversations", isOn: $showMetadataOnly)
+        Toggle("Show only metadata transcripts", isOn: $showOnlyMetadata)
           .toggleStyle(.switch)
           .controlSize(.mini)
 
@@ -301,7 +301,7 @@ struct TranscriptInventoryView: View {
           .foregroundStyle(.secondary)
 
         // Metadata-only indicator (when toggle is on and no conversation entries)
-        if showMetadataOnly && session.entryCount == 0 {
+        if showOnlyMetadata && session.entryCount == 0 {
           Text("•")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -337,9 +337,9 @@ struct TranscriptInventoryView: View {
   private var filteredSessions: [TranscriptSession] {
     var sessions = monitor.allSessions
 
-    // Filter out metadata-only transcripts by default (unless toggle is on)
-    if !showMetadataOnly {
-      sessions = sessions.filter { $0.entryCount > 0 }
+    // When toggle is on, show only metadata-only transcripts (entryCount == 0)
+    if showOnlyMetadata {
+      sessions = sessions.filter { $0.entryCount == 0 }
     }
 
     // Apply search filter
