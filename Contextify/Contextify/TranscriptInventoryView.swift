@@ -6,6 +6,7 @@ import OSLog
 /// Uses HSplitView for macOS-native sidebar + detail layout.
 struct TranscriptInventoryView: View {
   @Environment(ConversationMonitor.self) private var monitor
+  @Environment(DeveloperMode.self) private var devMode
   let onSelectSession: (TranscriptSession) -> Void
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
@@ -13,7 +14,8 @@ struct TranscriptInventoryView: View {
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
   @State private var groupingMode: GroupingMode = .provider
-  @State private var showMetadataOnly = false  // Filter toggle for metadata-only transcripts
+  @State private var showMetadataOnly = false  // Filter toggle: when true, includes metadata-only transcripts
+  @State private var showingMetadataHelp = false  // Info popover visibility
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
@@ -73,22 +75,24 @@ struct TranscriptInventoryView: View {
           .font(.headline)
         Spacer()
 
-        Button {
-          flushHeuristicCache()
-        } label: {
-          Label("Flush Heuristic Cache", systemImage: "trash")
-            .labelStyle(.iconOnly)
-        }
-        .buttonStyle(.borderless)
-        .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+        if devMode.isEnabled {
+          Button {
+            flushHeuristicCache()
+          } label: {
+            Label("Flush Heuristic Cache", systemImage: "trash")
+              .labelStyle(.iconOnly)
+          }
+          .buttonStyle(.borderless)
+          .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
 
-        Button {
-          refreshSessions()
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-            .labelStyle(.iconOnly)
+          Button {
+            refreshSessions()
+          } label: {
+            Label("Refresh", systemImage: "arrow.clockwise")
+              .labelStyle(.iconOnly)
+          }
+          .buttonStyle(.borderless)
         }
-        .buttonStyle(.borderless)
       }
       .padding()
       .alert("Cache Flushed", isPresented: $showingFlushAlert) {
@@ -107,10 +111,30 @@ struct TranscriptInventoryView: View {
         .pickerStyle(.segmented)
         .frame(maxWidth: 200)
 
-        Toggle("Metadata-Only", isOn: $showMetadataOnly)
-          .help("Show transcripts with only metadata (no conversation)")
+        Toggle("Include transcripts without conversations", isOn: $showMetadataOnly)
           .toggleStyle(.switch)
           .controlSize(.mini)
+
+        Button {
+          showingMetadataHelp = true
+        } label: {
+          Image(systemName: "info.circle")
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Learn about metadata-only transcripts")
+        .popover(isPresented: $showingMetadataHelp) {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Metadata-Only Transcripts")
+              .font(.headline)
+            Text("Claude Code writes some transcript files containing only file history snapshots, system records, and other metadata without actual conversation turns.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          .padding()
+          .frame(width: 280)
+        }
 
         Spacer()
 
