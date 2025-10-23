@@ -707,6 +707,303 @@ public final class ParseErrorRepositoryImpl: ParseErrorRepository {
   }
 }
 
+// MARK: - File Snapshot Repository (v7 metadata)
+
+public protocol FileSnapshotRepository {
+  func insert(_ snapshot: FileSnapshot) throws
+  func byTranscript(_ transcriptId: String) throws -> [FileSnapshot]
+  func get(_ id: String) throws -> FileSnapshot?
+  func byMessageId(_ messageId: String) throws -> FileSnapshot?
+}
+
+public final class FileSnapshotRepositoryImpl: FileSnapshotRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ snapshot: FileSnapshot) throws {
+    try db.write { db in
+      try snapshot.insert(db)
+    }
+  }
+
+  public func byTranscript(_ transcriptId: String) throws -> [FileSnapshot] {
+    try db.read { db in
+      try FileSnapshot
+        .filter(Column("transcript_id") == transcriptId)
+        .order(Column("snapshot_timestamp").asc)
+        .fetchAll(db)
+    }
+  }
+
+  public func get(_ id: String) throws -> FileSnapshot? {
+    try db.read { db in
+      try FileSnapshot.fetchOne(db, key: id)
+    }
+  }
+
+  public func byMessageId(_ messageId: String) throws -> FileSnapshot? {
+    try db.read { db in
+      try FileSnapshot
+        .filter(Column("message_id") == messageId)
+        .fetchOne(db)
+    }
+  }
+}
+
+// MARK: - Tracked File Repository (v7 metadata)
+
+public protocol TrackedFileRepository {
+  func insert(_ file: TrackedFile) throws
+  func insertBatch(_ files: [TrackedFile]) throws
+  func bySnapshot(_ snapshotId: String) throws -> [TrackedFile]
+  func byFilePath(_ projectId: String, path: String, limit: Int) throws -> [TrackedFile]
+}
+
+public final class TrackedFileRepositoryImpl: TrackedFileRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ file: TrackedFile) throws {
+    try db.write { db in
+      try file.insert(db)
+    }
+  }
+
+  public func insertBatch(_ files: [TrackedFile]) throws {
+    try db.write { db in
+      for file in files {
+        try file.insert(db)
+      }
+    }
+  }
+
+  public func bySnapshot(_ snapshotId: String) throws -> [TrackedFile] {
+    try db.read { db in
+      try TrackedFile
+        .filter(Column("snapshot_id") == snapshotId)
+        .order(Column("file_path").asc)
+        .fetchAll(db)
+    }
+  }
+
+  public func byFilePath(_ projectId: String, path: String, limit: Int) throws -> [TrackedFile] {
+    try db.read { db in
+      // Join with file_snapshots to filter by project
+      let sql = """
+        SELECT tf.*
+        FROM tracked_files tf
+        JOIN file_snapshots fs ON tf.snapshot_id = fs.id
+        JOIN transcripts t ON fs.transcript_id = t.id
+        WHERE t.project_id = ? AND tf.file_path = ?
+        ORDER BY tf.backup_time DESC
+        LIMIT ?
+      """
+      return try TrackedFile.fetchAll(db, sql: sql, arguments: [projectId, path, limit])
+    }
+  }
+}
+
+// MARK: - Transcript Summary Repository (v7 metadata)
+
+public protocol TranscriptSummaryRepository {
+  func insert(_ summary: TranscriptSummary) throws
+  func get(_ transcriptId: String) throws -> TranscriptSummary?
+  func update(_ summary: TranscriptSummary) throws
+}
+
+public final class TranscriptSummaryRepositoryImpl: TranscriptSummaryRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ summary: TranscriptSummary) throws {
+    try db.write { db in
+      try summary.insert(db)
+    }
+  }
+
+  public func get(_ transcriptId: String) throws -> TranscriptSummary? {
+    try db.read { db in
+      try TranscriptSummary
+        .filter(Column("transcript_id") == transcriptId)
+        .fetchOne(db)
+    }
+  }
+
+  public func update(_ summary: TranscriptSummary) throws {
+    try db.write { db in
+      try summary.update(db)
+    }
+  }
+}
+
+// MARK: - System Event Repository (v7 metadata)
+
+public protocol SystemEventRepository {
+  func insert(_ event: SystemEvent) throws
+  func byTranscript(_ transcriptId: String, limit: Int) throws -> [SystemEvent]
+  func bySubtype(_ transcriptId: String, subtype: String, limit: Int) throws -> [SystemEvent]
+  func errorEvents(_ transcriptId: String, limit: Int) throws -> [SystemEvent]
+}
+
+public final class SystemEventRepositoryImpl: SystemEventRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ event: SystemEvent) throws {
+    try db.write { db in
+      try event.insert(db)
+    }
+  }
+
+  public func byTranscript(_ transcriptId: String, limit: Int) throws -> [SystemEvent] {
+    try db.read { db in
+      try SystemEvent
+        .filter(Column("transcript_id") == transcriptId)
+        .order(Column("timestamp").desc)
+        .limit(limit)
+        .fetchAll(db)
+    }
+  }
+
+  public func bySubtype(_ transcriptId: String, subtype: String, limit: Int) throws -> [SystemEvent] {
+    try db.read { db in
+      try SystemEvent
+        .filter(Column("transcript_id") == transcriptId && Column("subtype") == subtype)
+        .order(Column("timestamp").desc)
+        .limit(limit)
+        .fetchAll(db)
+    }
+  }
+
+  public func errorEvents(_ transcriptId: String, limit: Int) throws -> [SystemEvent] {
+    try db.read { db in
+      try SystemEvent
+        .filter(Column("transcript_id") == transcriptId && Column("error") != nil)
+        .order(Column("timestamp").desc)
+        .limit(limit)
+        .fetchAll(db)
+    }
+  }
+}
+
+// MARK: - Assistant Usage Repository (v7 metadata)
+
+public protocol AssistantUsageRepository {
+  func insert(_ usage: AssistantUsage) throws
+  func get(_ entryId: String) throws -> AssistantUsage?
+  func aggregateByTranscript(_ transcriptId: String) throws -> UsageAggregate
+  func aggregateByProject(_ projectId: String, startDate: Date?, endDate: Date?) throws -> UsageAggregate
+}
+
+public struct UsageAggregate {
+  public let totalInputTokens: Int
+  public let totalOutputTokens: Int
+  public let totalCacheCreation: Int
+  public let totalCacheRead: Int
+  public let messageCount: Int
+
+  public init(totalInputTokens: Int, totalOutputTokens: Int, totalCacheCreation: Int, totalCacheRead: Int, messageCount: Int) {
+    self.totalInputTokens = totalInputTokens
+    self.totalOutputTokens = totalOutputTokens
+    self.totalCacheCreation = totalCacheCreation
+    self.totalCacheRead = totalCacheRead
+    self.messageCount = messageCount
+  }
+}
+
+public final class AssistantUsageRepositoryImpl: AssistantUsageRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ usage: AssistantUsage) throws {
+    try db.write { db in
+      try usage.insert(db)
+    }
+  }
+
+  public func get(_ entryId: String) throws -> AssistantUsage? {
+    try db.read { db in
+      try AssistantUsage.fetchOne(db, key: entryId)
+    }
+  }
+
+  public func aggregateByTranscript(_ transcriptId: String) throws -> UsageAggregate {
+    try db.read { db in
+      let sql = """
+        SELECT
+          COALESCE(SUM(input_tokens), 0) as total_input,
+          COALESCE(SUM(output_tokens), 0) as total_output,
+          COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+          COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+          COUNT(*) as message_count
+        FROM assistant_usage au
+        JOIN transcript_entries te ON au.entry_id = te.id
+        WHERE te.transcript_id = ?
+      """
+      let row = try Row.fetchOne(db, sql: sql, arguments: [transcriptId])!
+      return UsageAggregate(
+        totalInputTokens: row["total_input"],
+        totalOutputTokens: row["total_output"],
+        totalCacheCreation: row["total_cache_creation"],
+        totalCacheRead: row["total_cache_read"],
+        messageCount: row["message_count"]
+      )
+    }
+  }
+
+  public func aggregateByProject(_ projectId: String, startDate: Date?, endDate: Date?) throws -> UsageAggregate {
+    try db.read { db in
+      var sql = """
+        SELECT
+          COALESCE(SUM(input_tokens), 0) as total_input,
+          COALESCE(SUM(output_tokens), 0) as total_output,
+          COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+          COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+          COUNT(*) as message_count
+        FROM assistant_usage au
+        JOIN transcript_entries te ON au.entry_id = te.id
+        WHERE te.project_id = ?
+      """
+
+      var args: [DatabaseValueConvertible] = [projectId]
+
+      if let start = startDate {
+        sql += " AND te.timestamp >= ?"
+        args.append(Int(start.timeIntervalSince1970))
+      }
+
+      if let end = endDate {
+        sql += " AND te.timestamp <= ?"
+        args.append(Int(end.timeIntervalSince1970))
+      }
+
+      let row = try Row.fetchOne(db, sql: sql, arguments: StatementArguments(args))!
+      return UsageAggregate(
+        totalInputTokens: row["total_input"],
+        totalOutputTokens: row["total_output"],
+        totalCacheCreation: row["total_cache_creation"],
+        totalCacheRead: row["total_cache_read"],
+        messageCount: row["message_count"]
+      )
+    }
+  }
+}
+
 // MARK: - Errors
 
 public enum RepositoryError: Error {

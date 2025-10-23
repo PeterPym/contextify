@@ -387,3 +387,246 @@ public struct ParseError: Codable, FetchableRecord, PersistableRecord {
     case createdAt = "created_at"
   }
 }
+
+// MARK: - File Snapshot (v7 metadata)
+
+/// File-history-snapshot metadata from Claude Code transcripts
+public struct FileSnapshot: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var transcriptId: String
+  public var messageId: String
+  public var snapshotTimestamp: Int
+  public var isSnapshotUpdate: Int
+  public var createdAt: Int
+
+  public init(
+    id: String,
+    transcriptId: String,
+    messageId: String,
+    snapshotTimestamp: Int,
+    isSnapshotUpdate: Int,
+    createdAt: Int
+  ) {
+    self.id = id
+    self.transcriptId = transcriptId
+    self.messageId = messageId
+    self.snapshotTimestamp = snapshotTimestamp
+    self.isSnapshotUpdate = isSnapshotUpdate
+    self.createdAt = createdAt
+  }
+
+  public static let databaseTableName = "file_snapshots"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case transcriptId = "transcript_id"
+    case messageId = "message_id"
+    case snapshotTimestamp = "snapshot_timestamp"
+    case isSnapshotUpdate = "is_snapshot_update"
+    case createdAt = "created_at"
+  }
+}
+
+// MARK: - Tracked File (v7 metadata)
+
+/// Individual file tracking entry from file-history-snapshot
+public struct TrackedFile: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var snapshotId: String
+  public var filePath: String
+  public var backupFilename: String?
+  public var version: Int
+  public var backupTime: Int
+
+  public init(
+    id: String,
+    snapshotId: String,
+    filePath: String,
+    backupFilename: String?,
+    version: Int,
+    backupTime: Int
+  ) {
+    self.id = id
+    self.snapshotId = snapshotId
+    self.filePath = filePath
+    self.backupFilename = backupFilename
+    self.version = version
+    self.backupTime = backupTime
+  }
+
+  public static let databaseTableName = "tracked_files"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case snapshotId = "snapshot_id"
+    case filePath = "file_path"
+    case backupFilename = "backup_filename"
+    case version
+    case backupTime = "backup_time"
+  }
+}
+
+// MARK: - Transcript Summary (v7 metadata)
+
+/// Claude Code's internal session summaries
+public struct TranscriptSummary: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var transcriptId: String
+  public var summary: String
+  public var leafUuid: String?
+  public var cwd: String?
+  public var createdAt: Int
+
+  public init(
+    id: String,
+    transcriptId: String,
+    summary: String,
+    leafUuid: String?,
+    cwd: String?,
+    createdAt: Int
+  ) {
+    self.id = id
+    self.transcriptId = transcriptId
+    self.summary = summary
+    self.leafUuid = leafUuid
+    self.cwd = cwd
+    self.createdAt = createdAt
+  }
+
+  public static let databaseTableName = "transcript_summaries"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case transcriptId = "transcript_id"
+    case summary
+    case leafUuid = "leaf_uuid"
+    case cwd
+    case createdAt = "created_at"
+  }
+}
+
+// MARK: - System Event (v7 metadata)
+
+/// System messages: commands, errors, compact boundaries
+public struct SystemEvent: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var transcriptId: String
+  public var timestamp: Int
+  public var subtype: String
+  public var level: String
+  public var content: String?
+  public var error: String?
+  public var retryAttempt: Int?
+  public var maxRetries: Int?
+  public var retryInMs: Int?
+  public var parentUuid: String?
+  public var logicalParentUuid: String?
+  public var compactMetadata: String?
+  public var createdAt: Int
+
+  public init(
+    id: String,
+    transcriptId: String,
+    timestamp: Int,
+    subtype: String,
+    level: String,
+    content: String?,
+    error: String?,
+    retryAttempt: Int?,
+    maxRetries: Int?,
+    retryInMs: Int?,
+    parentUuid: String?,
+    logicalParentUuid: String?,
+    compactMetadata: String?,
+    createdAt: Int
+  ) {
+    self.id = id
+    self.transcriptId = transcriptId
+    self.timestamp = timestamp
+    self.subtype = subtype
+    self.level = level
+    self.content = content
+    self.error = error
+    self.retryAttempt = retryAttempt
+    self.maxRetries = maxRetries
+    self.retryInMs = retryInMs
+    self.parentUuid = parentUuid
+    self.logicalParentUuid = logicalParentUuid
+    self.compactMetadata = compactMetadata
+    self.createdAt = createdAt
+  }
+
+  public static let databaseTableName = "system_events"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case transcriptId = "transcript_id"
+    case timestamp
+    case subtype
+    case level
+    case content
+    case error
+    case retryAttempt = "retry_attempt"
+    case maxRetries = "max_retries"
+    case retryInMs = "retry_in_ms"
+    case parentUuid = "parent_uuid"
+    case logicalParentUuid = "logical_parent_uuid"
+    case compactMetadata = "compact_metadata"
+    case createdAt = "created_at"
+  }
+}
+
+// MARK: - Assistant Usage (v7 metadata)
+
+/// Token usage and billing metadata from assistant messages
+public struct AssistantUsage: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var entryId: String
+  public var requestId: String?
+  public var model: String
+  public var inputTokens: Int
+  public var outputTokens: Int
+  public var cacheCreationTokens: Int
+  public var cacheReadTokens: Int
+  public var serviceTier: String?
+  public var ephemeral5mTokens: Int?
+  public var ephemeral1hTokens: Int?
+
+  public init(
+    entryId: String,
+    requestId: String?,
+    model: String,
+    inputTokens: Int,
+    outputTokens: Int,
+    cacheCreationTokens: Int,
+    cacheReadTokens: Int,
+    serviceTier: String?,
+    ephemeral5mTokens: Int?,
+    ephemeral1hTokens: Int?
+  ) {
+    self.entryId = entryId
+    self.requestId = requestId
+    self.model = model
+    self.inputTokens = inputTokens
+    self.outputTokens = outputTokens
+    self.cacheCreationTokens = cacheCreationTokens
+    self.cacheReadTokens = cacheReadTokens
+    self.serviceTier = serviceTier
+    self.ephemeral5mTokens = ephemeral5mTokens
+    self.ephemeral1hTokens = ephemeral1hTokens
+  }
+
+  public static let databaseTableName = "assistant_usage"
+
+  enum CodingKeys: String, CodingKey {
+    case entryId = "entry_id"
+    case requestId = "request_id"
+    case model
+    case inputTokens = "input_tokens"
+    case outputTokens = "output_tokens"
+    case cacheCreationTokens = "cache_creation_tokens"
+    case cacheReadTokens = "cache_read_tokens"
+    case serviceTier = "service_tier"
+    case ephemeral5mTokens = "ephemeral_5m_tokens"
+    case ephemeral1hTokens = "ephemeral_1h_tokens"
+  }
+}

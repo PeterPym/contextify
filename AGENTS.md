@@ -115,6 +115,7 @@ Common commands:
 - Create backup: `make db-backup` or `./scripts/db_manager.sh backup`
 - Restore latest: `make db-restore` or `./scripts/db_manager.sh restore latest`
 - List backups: `make db-list` or `./scripts/db_manager.sh list`
+- Re-ingest transcript: `./scripts/db_manager.sh reingest <transcript-id>` (resets checkpoint and re-parses JSONL file)
 - Backups stored in: `build/db-backups/`
 - **Agent rule:** ALWAYS ask user for approval before cleaning database
 

@@ -92,6 +92,45 @@ public struct EntryInsert {
   }
 }
 
+// MARK: - Metadata Batch (v7)
+
+/// Container for accumulated metadata during ingestion
+private struct MetadataBatch {
+  var fileSnapshots: [FileSnapshot] = []
+  var trackedFiles: [TrackedFile] = []
+  var transcriptSummaries: [TranscriptSummary] = []
+  var systemEvents: [SystemEvent] = []
+  var assistantUsages: [AssistantUsage] = []
+
+  mutating func add(_ result: MetadataParseResult) {
+    if let snapshot = result.fileSnapshot {
+      fileSnapshots.append(snapshot)
+    }
+    trackedFiles.append(contentsOf: result.trackedFiles)
+    if let summary = result.transcriptSummary {
+      transcriptSummaries.append(summary)
+    }
+    if let event = result.systemEvent {
+      systemEvents.append(event)
+    }
+    if let usage = result.assistantUsage {
+      assistantUsages.append(usage)
+    }
+  }
+
+  mutating func clear() {
+    fileSnapshots.removeAll()
+    trackedFiles.removeAll()
+    transcriptSummaries.removeAll()
+    systemEvents.removeAll()
+    assistantUsages.removeAll()
+  }
+
+  var isEmpty: Bool {
+    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty
+  }
+}
+
 // MARK: - Hoover Engine
 
 /// Streaming transcript parser and ingestion engine
@@ -101,19 +140,38 @@ public final class HooverEngine {
   private let entryRepo: EntryRepository
   private let errorRepo: ParseErrorRepository
   private let parser: TranscriptLineParser
+  // v7 metadata repositories
+  private let fileSnapshotRepo: FileSnapshotRepository
+  private let trackedFileRepo: TrackedFileRepository
+  private let transcriptSummaryRepo: TranscriptSummaryRepository
+  private let systemEventRepo: SystemEventRepository
+  private let assistantUsageRepo: AssistantUsageRepository
+  private let metadataParser: TranscriptMetadataParser
 
   public init(
     db: DatabasePool,
     transcriptRepo: TranscriptRepository,
     entryRepo: EntryRepository,
     errorRepo: ParseErrorRepository,
-    parser: TranscriptLineParser
+    parser: TranscriptLineParser,
+    fileSnapshotRepo: FileSnapshotRepository,
+    trackedFileRepo: TrackedFileRepository,
+    transcriptSummaryRepo: TranscriptSummaryRepository,
+    systemEventRepo: SystemEventRepository,
+    assistantUsageRepo: AssistantUsageRepository,
+    metadataParser: TranscriptMetadataParser
   ) {
     self.db = db
     self.transcriptRepo = transcriptRepo
     self.entryRepo = entryRepo
     self.errorRepo = errorRepo
     self.parser = parser
+    self.fileSnapshotRepo = fileSnapshotRepo
+    self.trackedFileRepo = trackedFileRepo
+    self.transcriptSummaryRepo = transcriptSummaryRepo
+    self.systemEventRepo = systemEventRepo
+    self.assistantUsageRepo = assistantUsageRepo
+    self.metadataParser = metadataParser
   }
 
   /// Hoover a transcript with streaming parser
@@ -133,6 +191,7 @@ public final class HooverEngine {
     var buffer = Data()
     var lineNo = transcript.lastProcessedLine
     var batch: [EntryInsert] = []
+    var metadataBatch = MetadataBatch()  // v7: accumulate metadata
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
 
@@ -210,6 +269,7 @@ public final class HooverEngine {
           continue
         }
 
+        var entryId: String? = nil
         do {
           let entry = try parser.parse(
             line: lineString,
@@ -220,6 +280,7 @@ public final class HooverEngine {
             sessionId: transcript.providerSessionId
           )
           batch.append(entry)
+          entryId = entry.id
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
@@ -228,17 +289,31 @@ public final class HooverEngine {
           errors.append((lineNo, truncated, error.localizedDescription))
         }
 
+        // v7: Extract metadata regardless of whether entry was added to batch
+        if let metadataResult = try? metadataParser.parseMetadata(
+          line: lineString,
+          lineNumber: lineNo,
+          transcriptId: transcript.id,
+          projectId: transcript.projectId,
+          provider: transcript.provider,
+          entryId: entryId
+        ) {
+          metadataBatch.add(metadataResult)
+        }
+
         // Checkpoint every N lines
         if batch.count >= MonitorConfig.batchLines {
           try commitBatch(
             transcriptId: transcript.id,
             entries: batch,
+            metadata: metadataBatch,
             errors: errors,
             lastProcessedLine: lineNo,
             lineCount: lineNo,
             previousEntries: &previousEntries
           )
           batch.removeAll()
+          metadataBatch.clear()
           errors.removeAll()
           progress.didAdvance(linesProcessed: lineNo, totalLines: nil)
         }
@@ -251,6 +326,7 @@ public final class HooverEngine {
         lineNo += 1
         transcriptHasher.update(lineData: buffer)
 
+        var entryId: String? = nil
         do {
           let entry = try parser.parse(
             line: lineString,
@@ -261,12 +337,25 @@ public final class HooverEngine {
             sessionId: transcript.providerSessionId
           )
           batch.append(entry)
+          entryId = entry.id
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
         } catch {
           let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
           errors.append((lineNo, truncated, error.localizedDescription))
+        }
+
+        // v7: Extract metadata from final line
+        if let metadataResult = try? metadataParser.parseMetadata(
+          line: lineString,
+          lineNumber: lineNo,
+          transcriptId: transcript.id,
+          projectId: transcript.projectId,
+          provider: transcript.provider,
+          entryId: entryId
+        ) {
+          metadataBatch.add(metadataResult)
         }
       } else {
         errors.append((lineNo + 1, "<invalid UTF-8>", "Final line is not valid UTF-8"))
@@ -275,10 +364,11 @@ public final class HooverEngine {
     }
 
     // Final batch
-    if !batch.isEmpty || !errors.isEmpty {
+    if !batch.isEmpty || !errors.isEmpty || !metadataBatch.isEmpty {
       try commitBatch(
         transcriptId: transcript.id,
         entries: batch,
+        metadata: metadataBatch,
         errors: errors,
         lastProcessedLine: lineNo,
         lineCount: lineNo,
@@ -302,6 +392,7 @@ public final class HooverEngine {
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
+    metadata: MetadataBatch,
     errors: [(lineNumber: Int, rawLine: String, error: String)],
     lastProcessedLine: Int,
     lineCount: Int,
@@ -352,6 +443,23 @@ public final class HooverEngine {
         if previousEntries.count > 2 {
           previousEntries.removeFirst()
         }
+      }
+
+      // v7: Insert metadata
+      for snapshot in metadata.fileSnapshots {
+        try snapshot.insert(db, onConflict: .ignore)
+      }
+      for file in metadata.trackedFiles {
+        try file.insert(db, onConflict: .ignore)
+      }
+      for summary in metadata.transcriptSummaries {
+        try summary.insert(db, onConflict: .ignore)
+      }
+      for event in metadata.systemEvents {
+        try event.insert(db, onConflict: .ignore)
+      }
+      for usage in metadata.assistantUsages {
+        try usage.insert(db, onConflict: .ignore)
       }
 
       // Insert errors (bulk insert)

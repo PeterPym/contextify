@@ -62,14 +62,28 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     self.metadataRepo = MetadataRepositoryImpl(db: pool)
     self.cacheRepo = CacheRepositoryImpl(db: pool)
 
+    // v7: Initialize metadata repositories
+    let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
+    let trackedFileRepo = TrackedFileRepositoryImpl(db: pool)
+    let transcriptSummaryRepo = TranscriptSummaryRepositoryImpl(db: pool)
+    let systemEventRepo = SystemEventRepositoryImpl(db: pool)
+    let assistantUsageRepo = AssistantUsageRepositoryImpl(db: pool)
+
     // Initialize hoover engine with multi-provider parser
     let parser = MultiProviderParser()
+    let metadataParser = MultiProviderMetadataParser()
     self.hooverEngine = HooverEngine(
       db: pool,
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
-      parser: parser
+      parser: parser,
+      fileSnapshotRepo: fileSnapshotRepo,
+      trackedFileRepo: trackedFileRepo,
+      transcriptSummaryRepo: transcriptSummaryRepo,
+      systemEventRepo: systemEventRepo,
+      assistantUsageRepo: assistantUsageRepo,
+      metadataParser: metadataParser
     )
 
     // Initialize watcher (invalidation callback set after initialization)
@@ -395,6 +409,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try transcriptRepo.byProject(projectId)
   }
 
+  /// Get count of displayable entries for a transcript (excludes metadata-only records)
+  public func getEntryCount(transcriptId: String) throws -> Int {
+    try dbManager.pool.read { db in
+      try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries
+        WHERE transcript_id = ? AND display_in_timeline = 1
+      """, arguments: [transcriptId]) ?? 0
+    }
+  }
+
   public func getEntries(forTranscript transcriptId: String, afterTimestamp: Int? = nil) throws -> [TranscriptEntry] {
     try entryRepo.byTranscript(transcriptId, afterTimestamp: afterTimestamp)
   }
@@ -534,6 +558,72 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     if markedDeleted > 0 {
       log.info("Reconciled project \(projectId): marked \(markedDeleted) transcripts as deleted")
     }
+  }
+
+  // MARK: - Metadata Queries (v7)
+
+  /// Get file snapshots for a transcript
+  public func getFileSnapshots(transcriptId: String) throws -> [FileSnapshot] {
+    let repo = FileSnapshotRepositoryImpl(db: try dbManager.pool)
+    return try repo.byTranscript(transcriptId)
+  }
+
+  /// Get tracked files for a snapshot
+  public func getTrackedFiles(snapshotId: String) throws -> [TrackedFile] {
+    let repo = TrackedFileRepositoryImpl(db: try dbManager.pool)
+    return try repo.bySnapshot(snapshotId)
+  }
+
+  /// Get file modification history across transcripts
+  public func getFileHistory(projectId: String, filePath: String, limit: Int = 50) throws -> [TrackedFile] {
+    let repo = TrackedFileRepositoryImpl(db: try dbManager.pool)
+    return try repo.byFilePath(projectId, path: filePath, limit: limit)
+  }
+
+  /// Get transcript summary (Claude Code's internal title)
+  public func getTranscriptSummary(transcriptId: String) throws -> TranscriptSummary? {
+    let repo = TranscriptSummaryRepositoryImpl(db: try dbManager.pool)
+    return try repo.get(transcriptId)
+  }
+
+  /// Get system events for a transcript
+  public func getSystemEvents(transcriptId: String, limit: Int = 100) throws -> [SystemEvent] {
+    let repo = SystemEventRepositoryImpl(db: try dbManager.pool)
+    return try repo.byTranscript(transcriptId, limit: limit)
+  }
+
+  /// Get system events by subtype (e.g., "slash_command", "api_error")
+  public func getSystemEventsByType(transcriptId: String, subtype: String, limit: Int = 100) throws -> [SystemEvent] {
+    let repo = SystemEventRepositoryImpl(db: try dbManager.pool)
+    return try repo.bySubtype(transcriptId, subtype: subtype, limit: limit)
+  }
+
+  /// Get error events for a transcript
+  public func getErrorEvents(transcriptId: String, limit: Int = 100) throws -> [SystemEvent] {
+    let repo = SystemEventRepositoryImpl(db: try dbManager.pool)
+    return try repo.errorEvents(transcriptId, limit: limit)
+  }
+
+  /// Get usage data for a specific entry
+  public func getAssistantUsage(entryId: String) throws -> AssistantUsage? {
+    let repo = AssistantUsageRepositoryImpl(db: try dbManager.pool)
+    return try repo.get(entryId)
+  }
+
+  /// Get aggregated usage statistics for a transcript
+  public func getTranscriptUsageStats(transcriptId: String) throws -> UsageAggregate {
+    let repo = AssistantUsageRepositoryImpl(db: try dbManager.pool)
+    return try repo.aggregateByTranscript(transcriptId)
+  }
+
+  /// Get aggregated usage statistics for a project (with optional date range)
+  public func getProjectUsageStats(
+    projectId: String,
+    startDate: Date? = nil,
+    endDate: Date? = nil
+  ) throws -> UsageAggregate {
+    let repo = AssistantUsageRepositoryImpl(db: try dbManager.pool)
+    return try repo.aggregateByProject(projectId, startDate: startDate, endDate: endDate)
   }
 
   // MARK: - File Watching
