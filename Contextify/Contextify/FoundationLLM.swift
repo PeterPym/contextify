@@ -843,12 +843,25 @@ actor SessionController {
         log.info("[LLM] hist=\(self.historyMessageCount) schema=\(schemaAlreadyInstalled ? "✓" : "new") promptChars=\(prompt.count) maxResp=\(maxResp) ephemeral=\(!recordHistory)")
 
         do {
-            let s = try getOrCreateSession()
+            let s: LanguageModelSession
+            let isEphemeral = !recordHistory
+
+            if isEphemeral {
+                // Ephemeral: create throwaway session (won't pollute main session)
+                s = LanguageModelSession(instructions: instructions)
+                log.debug("Created ephemeral session for pre-flight")
+            } else {
+                // Normal: use persistent session
+                s = try getOrCreateSession()
+            }
 
             // Track schema installation (one-time per type per session)
-            if includeSchema && !schemaAlreadyInstalled {
-                schemaInstalledTypes.insert(typeName)
-                log.debug("Installed schema for \(typeName)")
+            // For ephemeral calls, schema is always "new" since it's a fresh session
+            if includeSchema && (!schemaAlreadyInstalled || isEphemeral) {
+                if !isEphemeral {
+                    schemaInstalledTypes.insert(typeName)
+                }
+                log.debug("Installed schema for \(typeName) (ephemeral=\(isEphemeral))")
             }
 
             let resp = try await s.respond(
@@ -863,7 +876,7 @@ actor SessionController {
                 requestCount += 1
                 historyMessageCount += 1
             } else {
-                log.debug("Ephemeral call - history not recorded")
+                log.debug("Ephemeral call completed - session discarded")
             }
 
             consecutiveErrors = 0
