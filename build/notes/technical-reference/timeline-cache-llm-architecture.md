@@ -149,6 +149,41 @@ LIMIT 50
 
 ---
 
+## Schema Architecture: Denormalization Removal
+
+**Prior to v6 (removed):**
+- `transcript_entries.summary` (TEXT) - Always NULL
+- `transcript_entries.disposition` (TEXT) - Always NULL
+- `transcript_entries.is_completion` (INTEGER) - Denormalized flag
+- `transcript_entries.is_directive` (INTEGER) - Denormalized flag
+
+**Post-v6 (current):**
+- ALL classification and summary data lives in `timeline_cache` table
+- UI flags (`isCompletion`, `isDirective`) derived at runtime from `timeline_cache.disposition`
+- `transcript_entries` contains only canonical source data from transcript files
+
+**Derivation Logic (ConversationMonitor.swift:513-517):**
+```swift
+let cached = try? orchestrator.getCachedTimeline(
+  contentSha256: entry.contentSha256,
+  windowSha256: entry.windowSha256 ?? ""
+)
+
+let isCompletion = cached?.disposition == "completion"
+let isDirective: Bool = {
+  guard let disp = cached?.disposition else { return false }
+  return ["directive", "affirmative", "negative"].contains(disp)
+}()
+```
+
+**Rationale:**
+- Single source of truth (disposition in `timeline_cache`)
+- Immutable canonical data (transcript entries never change)
+- LLM classifications can be regenerated without touching source data
+- No update anomalies (flags always consistent with disposition)
+
+---
+
 ## TimelineCacheMissGenerator (Actor)
 
 ### Queue Management
@@ -220,16 +255,20 @@ func processBatch(_ batch: [CacheMiss]) async {
       )
     }
 
-    // 2. Save to SQL cache
+    // 2. Save to SQL cache ONLY (not to transcript_entries)
     let cache = TimelineCache(
       contentSha256: miss.contentSha256,
       windowSha256: miss.windowSha256,
       entryId: miss.entryId,
+      disposition: result.disposition,  // Source of truth for isDirective/isCompletion
       presentForm: result.present,
       pastForm: result.past,
+      selectedForm: result.selectedForm,
+      verbLemma: result.verbLemma,
       ...
     )
     try orchestrator.saveCachedTimeline(cache)
+    // Note: No longer writes to transcript_entries (post-v6 schema)
 
     // 3. Post notification
     NotificationCenter.default.post(

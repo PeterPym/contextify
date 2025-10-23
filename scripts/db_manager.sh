@@ -257,6 +257,61 @@ restore_database() {
     fi
 }
 
+# Force re-ingestion of specific transcript
+reingest_transcript() {
+    local transcript_id="$1"
+
+    if [ -z "$transcript_id" ]; then
+        print_error "Please provide a transcript ID"
+        echo "Usage: ./scripts/db_manager.sh reingest <transcript-id>"
+        return 1
+    fi
+
+    if [ ! -f "$DB_PATH" ]; then
+        print_error "Database not found at: $DB_PATH"
+        return 1
+    fi
+
+    # Create backup first
+    print_info "Creating backup before re-ingestion..."
+    backup_database > /dev/null
+    if [ $? -ne 0 ]; then
+        print_error "Backup failed, aborting re-ingestion"
+        return 1
+    fi
+
+    # Quit app
+    quit_app
+
+    # Check if transcript exists
+    local exists=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcripts WHERE id = '$transcript_id';" 2>/dev/null)
+    if [ "$exists" = "0" ]; then
+        print_error "Transcript not found: $transcript_id"
+        return 1
+    fi
+
+    # Get transcript info
+    local file_path=$(sqlite3 "$DB_PATH" "SELECT file_path FROM transcripts WHERE id = '$transcript_id';" 2>/dev/null)
+    local entry_count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM transcript_entries WHERE transcript_id = '$transcript_id';" 2>/dev/null)
+
+    print_info "Transcript: $transcript_id"
+    print_info "File: $file_path"
+    print_info "Current entries: $entry_count"
+
+    # Reset checkpoint and delete entries
+    print_info "Resetting transcript checkpoint..."
+    sqlite3 "$DB_PATH" "
+        UPDATE transcripts
+        SET last_processed_line = 0, line_count = 0, status = 'active'
+        WHERE id = '$transcript_id';
+
+        DELETE FROM transcript_entries WHERE transcript_id = '$transcript_id';
+    " 2>/dev/null
+
+    print_success "Transcript reset for re-ingestion"
+    print_info "Relaunch app to start re-ingestion"
+}
+
 # Show usage
 show_usage() {
     cat <<EOF
@@ -266,26 +321,29 @@ Usage:
   ./scripts/db_manager.sh <command> [options]
 
 Commands:
-  backup              Create a backup of the current database
-  clean               Delete database (creates backup first, requires confirmation)
-  restore <name>      Restore a backup (use 'latest' for most recent)
-  list                List all available backups
+  backup                  Create a backup of the current database
+  clean                   Delete database (creates backup first, requires confirmation)
+  restore <name>          Restore a backup (use 'latest' for most recent)
+  reingest <transcript>   Force re-ingestion of a specific transcript
+  list                    List all available backups
 
 Examples:
   ./scripts/db_manager.sh backup
   ./scripts/db_manager.sh clean
   ./scripts/db_manager.sh restore latest
   ./scripts/db_manager.sh restore transcripts.db-20250119-010203
+  ./scripts/db_manager.sh reingest 6D02C1B5-6F6D-40E0-B550-DC69DFB8BCCF
   ./scripts/db_manager.sh list
 
 Notes:
   - The app will be automatically closed before any database operations
   - All cleanup operations create an automatic backup first
+  - Re-ingestion resets transcript checkpoint and deletes existing entries
   - Backups are stored in: build/db-backups/
   - Database location: ~/Library/Application Support/Contextify/
 
-⚠️  IMPORTANT: Always use this script to clean the database. Never delete
-    the database files manually while the app is running.
+⚠️  IMPORTANT: Always use this script for database operations. Never delete
+    database files manually while the app is running.
 
 EOF
 }
@@ -304,6 +362,9 @@ main() {
             ;;
         restore)
             restore_database "$@"
+            ;;
+        reingest)
+            reingest_transcript "$@"
             ;;
         list)
             list_backups

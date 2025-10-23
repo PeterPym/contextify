@@ -585,6 +585,277 @@ The `flipTenseToPast()` method can convert entries to past tense without re-call
 
 ### Performance
 
+#### Viewport-Aware LLM Priority Queue
+**Status:** Backlog
+**Priority:** High (UX responsiveness)
+**Category:** Performance / Intelligence
+
+Implement intelligent LLM summarization queue that prioritizes entries visible to the user or likely to be viewed next, rather than processing entries in chronological order.
+
+**The Problem:**
+Current implementation processes timeline entries in order of arrival, regardless of what the user is actually viewing. This creates poor UX when:
+- User is scrolling through older entries while new ones arrive at bottom
+- User is viewing transcript inventory with many unprocessed items
+- LLM is busy summarizing off-screen entries while visible ones remain blank
+
+**The Solution:**
+Viewport-aware priority queue that dynamically reorders LLM work based on:
+1. What's currently visible in the UI
+2. Where the user is likely to scroll next
+3. Which window has user focus (main timeline vs inventory)
+
+**Priority Rules (in order):**
+
+**P0 - Currently Visible Entries**
+- Highest priority: Entries currently in viewport
+- Check both main timeline and transcript inventory views
+- Immediately process any visible entries needing summaries
+- Re-prioritize on scroll events
+
+**P1 - New Arrivals (if user at bottom)**
+- If user is scrolled to bottom of timeline (within 100px)
+- AND new entries are arriving in real-time
+- THEN prioritize summarizing those new entries
+- Rationale: User is watching conversation happen live
+
+**P2 - Active Window Context**
+- If transcript inventory window is focused and visible
+- AND inventory has unprocessed/unsummarized transcripts
+- THEN prioritize generating metadata for those transcripts
+- Show count: "3 transcripts need summaries"
+- Process visible inventory items before off-screen timeline entries
+
+**P3 - Predicted Scroll Direction**
+- When all visible items are processed
+- Predict next scroll direction based on user behavior:
+  - **At bottom**: Prioritize entries above viewport (upward scroll likely)
+  - **At top**: Prioritize entries below viewport (downward scroll likely)
+  - **Middle**: Prioritize entries in both directions, closer first
+- Use proximity-based scoring: closer = higher priority
+
+**P4 - Background Fill**
+- When no user interaction for 2+ seconds
+- Process remaining entries in chronological order
+- Low-priority background work to fill cache
+
+**Implementation Architecture:**
+
+```swift
+// Priority Queue Entry
+struct PrioritizedEntry {
+  let entryId: String
+  let priority: Priority
+  let distance: Int  // px from viewport center, negative = above
+  let timestamp: Date
+
+  enum Priority: Int {
+    case visible = 0       // Currently in viewport
+    case newArrival = 1    // New entry, user at bottom
+    case activeWindow = 2  // In focused window (inventory)
+    case predicted = 3     // Likely to scroll here
+    case background = 4    // Everything else
+  }
+}
+
+// Viewport Tracker
+@MainActor
+@Observable
+final class ViewportTracker {
+  // Timeline viewport
+  var timelineViewportRange: Range<Int>?  // Entry indices
+  var timelineScrollPosition: ScrollPosition  // top/middle/bottom
+  var timelineVisibleEntryIds: Set<String>
+
+  // Inventory viewport
+  var inventoryViewportRange: Range<Int>?
+  var inventoryVisibleTranscriptIds: Set<String>
+
+  // Focus tracking
+  var activeWindow: WindowType  // .timeline or .inventory
+
+  // Scroll prediction
+  var lastScrollDirection: ScrollDirection?  // .up or .down
+  var scrollVelocity: Double  // px/s
+
+  func updateViewport(visibleRange: Range<Int>, scrollOffset: CGFloat) {
+    // Track what's visible
+    // Detect scroll direction
+    // Update predictions
+  }
+}
+
+// Priority Queue Manager
+actor LLMPriorityQueue {
+  private var queue: [PrioritizedEntry] = []
+  private var viewportTracker: ViewportTracker
+
+  func enqueue(_ entryId: String) async {
+    let priority = await calculatePriority(entryId)
+    let entry = PrioritizedEntry(entryId: entryId, priority: priority, ...)
+    queue.append(entry)
+    queue.sort { $0.priority.rawValue < $1.priority.rawValue }
+  }
+
+  func dequeue() async -> String? {
+    // Return highest priority entry
+    return queue.first?.entryId
+  }
+
+  func reprioritize() async {
+    // Re-calculate priorities based on new viewport state
+    for i in queue.indices {
+      queue[i].priority = await calculatePriority(queue[i].entryId)
+    }
+    queue.sort { $0.priority.rawValue < $1.priority.rawValue }
+  }
+
+  private func calculatePriority(_ entryId: String) async -> Priority {
+    // Check if visible in current viewport
+    if viewportTracker.timelineVisibleEntryIds.contains(entryId) {
+      return .visible
+    }
+
+    // Check if new arrival and user at bottom
+    if viewportTracker.timelineScrollPosition == .bottom && isRecentEntry(entryId) {
+      return .newArrival
+    }
+
+    // Check if in active window (inventory)
+    if viewportTracker.activeWindow == .inventory && isInInventoryViewport(entryId) {
+      return .activeWindow
+    }
+
+    // Predict scroll direction and prioritize accordingly
+    let distance = calculateDistanceFromViewport(entryId)
+    if abs(distance) < 500 {  // Within 500px of viewport
+      return .predicted
+    }
+
+    return .background
+  }
+}
+
+// Integration with TimelineCacheMissGenerator
+actor TimelineCacheMissGenerator {
+  private var priorityQueue: LLMPriorityQueue
+
+  func processMisses() async {
+    while let entryId = await priorityQueue.dequeue() {
+      // Generate summary for highest priority entry
+      await generateSummary(for: entryId)
+    }
+  }
+
+  func onViewportChange() async {
+    // Reprioritize queue when viewport changes
+    await priorityQueue.reprioritize()
+  }
+}
+```
+
+**UI Integration:**
+
+**ConversationTimelineView.swift:**
+```swift
+ScrollViewReader { proxy in
+  List(entries) { entry in
+    TimelineEntryRow(entry)
+      .onAppear {
+        viewportTracker.markVisible(entry.id)
+        Task {
+          await generator.onViewportChange()
+        }
+      }
+      .onDisappear {
+        viewportTracker.markInvisible(entry.id)
+      }
+  }
+  .onScrollGeometryChange(for: CGRect.self) { geometry in
+    // Track viewport bounds
+    viewportTracker.updateViewport(
+      visibleRange: calculateVisibleRange(geometry),
+      scrollOffset: geometry.contentOffset.y
+    )
+
+    Task {
+      await generator.onViewportChange()
+    }
+  }
+}
+```
+
+**TranscriptInventoryView.swift:**
+```swift
+.onAppear {
+  viewportTracker.activeWindow = .inventory
+  Task {
+    await generator.onViewportChange()
+  }
+}
+.onChange(of: selectedTranscriptId) {
+  // User selected transcript, prioritize its metadata
+  Task {
+    await generator.prioritizeTranscript(selectedTranscriptId)
+  }
+}
+```
+
+**Edge Cases:**
+
+1. **Rapid Scrolling**: Debounce viewport updates (100ms) to avoid thrashing
+2. **Multiple Windows**: Track focus separately, active window gets priority
+3. **Very Long Timeline**: Limit viewport tracking to ±1000 entries from current position
+4. **Slow LLM**: If queue depth > 50, show warning "Many summaries pending..."
+5. **User Idle**: After 2s of no interaction, fall back to chronological processing
+
+**Performance Benefits:**
+
+- **Before**: User scrolls to old entry, waits 10s for summary while LLM processes off-screen entries
+- **After**: Visible entry summarized within 1-2s, off-screen entries wait
+- **Perceived Performance**: 5-10x improvement in responsiveness
+- **User Experience**: Timeline feels instant regardless of queue depth
+
+**Monitoring:**
+
+Add metrics to track effectiveness:
+- Average time-to-summary for visible entries
+- Queue reprioritization frequency
+- Hit rate for predicted scroll direction
+- User satisfaction proxy: scroll speed (slower = reading, faster = scanning)
+
+**Phase 1: Basic Viewport Tracking** (~2 days)
+- Implement ViewportTracker
+- Track visible entries in timeline
+- Basic priority queue (visible vs background)
+
+**Phase 2: Scroll Prediction** (~2 days)
+- Detect scroll direction and velocity
+- Prioritize entries near viewport
+- Handle rapid scrolling
+
+**Phase 3: Multi-Window Awareness** (~2 days)
+- Track inventory window focus
+- Prioritize transcript metadata generation
+- Cross-window priority coordination
+
+**Phase 4: Polish & Optimization** (~1 day)
+- Debouncing and performance tuning
+- Metrics and monitoring
+- User testing and refinement
+
+**Total Effort:** ~1-1.5 weeks
+
+**User Benefits:**
+- ✅ Instant summaries for what you're actually looking at
+- ✅ No waiting for off-screen entries to finish processing
+- ✅ Smarter LLM resource usage
+- ✅ Transcript inventory feels responsive
+- ✅ Better UX during active conversation monitoring
+
+**Related Work:**
+- See `build/notes/technical-reference/timeline-cache-llm-architecture.md` for current LLM integration
+- See `build/notes/technical-reference/conversation-monitor-state-architecture.md` for state management
+
 #### Timeline Summary Caching
 **Status:** Completed (2025-10-10)
 **Priority:** High

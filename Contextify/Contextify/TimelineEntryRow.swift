@@ -80,6 +80,13 @@ struct TimelineEntryRow: View {
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
+            if entry.action == .generating {
+                Image(systemName: "hourglass")
+                    .font(.caption2)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.tertiary)
+                    .help("Summary not yet generated")
+            }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")
                     .font(.caption)

@@ -84,10 +84,13 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       throw ParserError.skipEntry
     }
 
-    // Extract content
+    // Extract content and determine if it should be displayed
     let content: String
+    let hasTextContent: Bool
     if let message = json["message"] as? [String: Any] {
-      content = extractContent(message["content"])
+      let (extractedContent, hasText) = extractContentWithType(message["content"])
+      content = extractedContent
+      hasTextContent = hasText
       // Skip entries with empty content (tool_use blocks, etc.)
       guard !content.isEmpty else {
         throw ParserError.skipEntry
@@ -122,20 +125,32 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       parentId: parentUuid,
       gitBranch: gitBranch,
       gitCommit: gitCommit,
-      cwd: cwd
+      cwd: cwd,
+      hasTextContent: hasTextContent
     )
   }
 
-  private func extractContent(_ content: Any?) -> String {
+  /// Extract content from message and track if it contains displayable text
+  /// Returns: (content: String, hasTextContent: Bool)
+  /// - hasTextContent: true if content contains "text" blocks (displayable)
+  ///                   false if only "thinking" blocks (hidden from timeline)
+  private func extractContentWithType(_ content: Any?) -> (String, Bool) {
     if let str = content as? String {
-      return str
+      return (str, true)  // String content is displayable
     } else if let arr = content as? [[String: Any]] {
-      // Content blocks (array of {type, text})
-      return arr.compactMap { block in
-        block["text"] as? String
-      }.joined(separator: "\n")
+      var hasText = false
+      let parts = arr.compactMap { block -> String? in
+        if let text = block["text"] as? String {
+          hasText = true
+          return text
+        } else if let thinking = block["thinking"] as? String {
+          return thinking
+        }
+        return nil
+      }
+      return (parts.joined(separator: "\n"), hasText)
     } else {
-      return ""
+      return ("", false)
     }
   }
 

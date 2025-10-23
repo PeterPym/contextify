@@ -72,34 +72,10 @@ final class ConversationMonitor {
     /// Read-only view over state.entries (single source of truth)
     var entries: [TimelineEntry] { state.entries }
 
-    /// Cached filtered entries (invalidated when entries or currentSessionId changes)
-    @ObservationIgnored private var cachedVisibleEntries: [TimelineEntry]?
-    @ObservationIgnored private var cachedForSessionId: String??
-    @ObservationIgnored private var cachedForRevision: UInt64 = .max
-
-    /// Entries filtered to the active session (UI-visible subset)
-    /// When no session is selected, shows all entries (project-wide view)
-    /// Uses optional caching to avoid recomputing filter on every access
+    /// All entries are visible - sessions appear as one continuous stream
+    /// No filtering by session - timeline shows chronological view across all sessions
     var visibleEntries: [TimelineEntry] {
-        // Check if cache is valid
-        if let cached = cachedVisibleEntries,
-           cachedForSessionId == currentSessionId,
-           cachedForRevision == state.revision {
-            return cached
-        }
-
-        // Recompute and cache (read directly from state.entries for explicit observation tracking)
-        let filtered: [TimelineEntry]
-        if let id = currentSessionId {
-            filtered = state.entries.filter { $0.sessionId == id }
-        } else {
-            filtered = state.entries  // Show all when no session filter
-        }
-
-        cachedVisibleEntries = filtered
-        cachedForSessionId = currentSessionId
-        cachedForRevision = state.revision
-        return filtered
+        state.entries
     }
 
     private(set) var isCollapsed = false
@@ -116,8 +92,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastUserDirectiveId: UUID?
     @ObservationIgnored private var lastUserDirectiveTimestamp: Date?
     @ObservationIgnored private var sessionEpoch = UUID()  // Track session to cancel cross-session tasks
-    // MUST be observable for UI - visibleEntries filtering depends on this
-    private var currentSessionId: String? {  // Current session identifier for timeline entries
+    // Tracks the currently selected session for inventory UI (not used for timeline filtering)
+    private var currentSessionId: String? {
         didSet {
             onProjectOrSessionChange()
         }
@@ -267,15 +243,11 @@ final class ConversationMonitor {
         cacheMissGenerator = nil
     }
 
-    /// Cancel pending debounce task on project/session changes to avoid late callbacks into torn state
+    /// Cancel pending debounce task on project changes to avoid late callbacks into torn state
     @MainActor
     private func onProjectOrSessionChange() {
         debounceTask?.cancel()
         debounceTask = nil
-        // Also invalidate visible entries cache
-        cachedVisibleEntries = nil
-        cachedForSessionId = nil
-        cachedForRevision = .max
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
@@ -538,8 +510,11 @@ final class ConversationMonitor {
                 line: nil
             ),
             sourceIdentifier: entry.id,
-            isCompletion: entry.isCompletion == 1,
-            isDirective: entry.isDirective == 1,
+            isCompletion: cached?.disposition == "completion",
+            isDirective: {
+                guard let disp = cached?.disposition else { return false }
+                return ["directive", "affirmative", "negative"].contains(disp)
+            }(),
             requestId: nil,
             action: action,
             sessionId: entry.sessionId,
@@ -908,15 +883,35 @@ final class ConversationMonitor {
 
         if Task.isCancelled { return }
 
-        // Start watchers for new transcripts only (no duplicate writes)
-        let newTranscripts = resolved.filter(\.wasCreated)
-        if !newTranscripts.isEmpty {
-            await MainActor.run {
-                log.info("Starting watchers for \(newTranscripts.count) new transcripts")
+        // Start watchers for ALL transcripts (not just newly created)
+        // This ensures orphaned transcripts (existing in DB but never hoovered) get processed
+        // TranscriptWatcher.watch() is idempotent and will skip if already watching
+        if !resolved.isEmpty {
+            // Identify orphaned transcripts for diagnostic logging
+            // Fetch all transcripts for this project and build a lookup dictionary
+            let allTranscripts = try orchestrator.getTranscripts(forProject: projectId)
+            let transcriptLookup = Dictionary(uniqueKeysWithValues: allTranscripts.map { ($0.id, $0) })
+
+            let orphaned = resolved.filter { tr in
+                !tr.wasCreated &&
+                (transcriptLookup[tr.transcriptId]?.lastProcessedLine ?? -1) == 0
             }
 
-            for tr in newTranscripts {
+            if !orphaned.isEmpty {
+                await MainActor.run {
+                    log.warning("⚠️ Found \(orphaned.count) orphaned transcripts (existing but never hoovered)")
+                }
+            }
+
+            await MainActor.run {
+                log.info("🔄 Starting/verifying watchers for \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new, \(orphaned.count) orphaned)")
+            }
+
+            // Start watchers for ALL transcripts
+            for tr in resolved {
                 if Task.isCancelled { return }
+                // watch() is idempotent: checks isWatching() and skips if already active
+                // It also performs initial hoovering, ensuring orphaned transcripts get processed
                 try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
             }
 
@@ -924,11 +919,11 @@ final class ConversationMonitor {
             try orchestrator.performMaintenance()
 
             await MainActor.run {
-                log.info("Discovery complete")
+                log.info("✅ Discovery complete - all transcripts watching")
             }
         } else {
             await MainActor.run {
-                log.info("No new transcripts found")
+                log.info("No transcripts found for this project")
             }
         }
 

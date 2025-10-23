@@ -1,8 +1,8 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v2 complete)
+**Status:** Post-Implementation (v6 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 2
+**Schema Version:** 6 (v6: removed denormalized fields from transcript_entries)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
 ---
@@ -13,14 +13,15 @@ Contextify uses a SQLite database to store transcript data with streaming ingest
 
 **Key Design Principles:**
 - WAL mode for concurrent reads during writes
-- Denormalized project_id in entries for fast queries
+- Denormalized project_id in entries for fast queries (only denormalized field)
 - Window tracking (prev1/prev2) for LLM context caching
 - Streaming parser with O(batch_size) memory usage
 - Error isolation (bad lines don't block ingestion)
+- **Separation of concerns:** Canonical data (transcript_entries) vs. derived data (timeline_cache)
 
 ---
 
-## Schema Design (v2)
+## Schema Design (v6)
 
 ### Tables
 
@@ -40,38 +41,40 @@ transcripts
 ├── provider_session_id
 ├── ingestion_state
 │   ├── last_processed_line
-│   ├── last_processed_entry_id (v2: resume checkpoint)
+│   ├── last_processed_entry_id (v2+: resume checkpoint)
 │   ├── parser_version
 │   └── status (active | unavailable | error)
 └── timestamps
 
-transcript_entries
+transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
 ├── id (PK)
 ├── transcript_id (FK → transcripts, CASCADE)
-├── project_id (FK → projects, CASCADE, DENORMALIZED)
+├── project_id (FK → projects, CASCADE, DENORMALIZED for query performance)
 ├── session_id
 ├── kind (user | assistant | system)
 ├── timestamp
 ├── content + content_sha256
-├── window_tracking (v2)
+├── window_tracking (v2+)
 │   ├── prev1_id
 │   ├── prev2_id
-│   └── window_sha256
-├── display_flags
-│   ├── display_in_timeline
-│   ├── is_completion
-│   └── is_directive
-└── git_context (branch, commit, cwd)
+│   └── window_sha256 (for cache key computation)
+├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── git_context (branch, commit, cwd)
+└── embedding (BLOB, optional for RAG features)
+    └── v6 REMOVED: summary, disposition, is_completion, is_directive
+                   (all moved to timeline_cache - see "Schema Evolution" below)
 
-timeline_cache (WITHOUT ROWID)
+timeline_cache (WITHOUT ROWID - DERIVED/COMPUTED DATA)
 ├── content_sha256 + window_sha256 (COMPOSITE PK, NO generator_signature)
 ├── entry_id (FK → transcript_entries, CASCADE)
 ├── generator_signature (filter column, NOT in PK)
-├── disposition
-├── present_form + past_form
+├── disposition (SOURCE OF TRUTH for isDirective/isCompletion flags)
+│   └── Values: directive, affirmative, negative, completion, analysis,
+│                proposal, question, unknown
+├── present_form + past_form (LLM-generated summaries)
 ├── selected_form
 ├── verb_lemma
-└── user_edits
+└── user_edits (user_edited, user_text, edited_at)
 
 transcript_metadata
 ├── transcript_id (PK, FK → transcripts, CASCADE)
@@ -91,11 +94,48 @@ parse_errors
 └── created_at
 ```
 
+### Schema Evolution
+
+**v6 Migration (2025-10-23): Denormalization Removal**
+
+Removed denormalized fields from `transcript_entries` that violated data architecture principles:
+- `summary` (TEXT) - Always NULL, never populated
+- `disposition` (TEXT) - Always NULL, never populated
+- `is_completion` (INTEGER) - Derived flag, now computed from disposition at runtime
+- `is_directive` (INTEGER) - Derived flag, now computed from disposition at runtime
+
+**Rationale:**
+- `transcript_entries` should contain only canonical data from transcript files
+- LLM-generated classifications belong in `timeline_cache` (single source of truth)
+- Avoids update anomalies (flags inconsistent with disposition)
+- Allows regenerating classifications without touching source data
+
+**UI Flag Derivation (post-v6):**
+```swift
+// ConversationMonitor.swift:513-517
+let cached = try? orchestrator.getCachedTimeline(
+  contentSha256: entry.contentSha256,
+  windowSha256: entry.windowSha256 ?? ""
+)
+let isCompletion = cached?.disposition == "completion"
+let isDirective: Bool = {
+  guard let disp = cached?.disposition else { return false }
+  return ["directive", "affirmative", "negative"].contains(disp)
+}()
+```
+
+**Migration Strategy:**
+- Table recreation (SQLite doesn't support DROP COLUMN)
+- Copy data excluding removed columns
+- Recreate indexes (removed `idx_entries_is_completion`)
+- Column count: 23 → 19
+
 ### Critical Indexes
 
-**Feed Query Optimization (v2):**
+**Feed Query Optimization (v2+, updated v6):**
 ```sql
 -- Covering index for fast feed loading with cache join
+-- v6: removed is_completion (now derived from timeline_cache.disposition)
 CREATE INDEX idx_entries_feed_cover ON transcript_entries(
   project_id,
   timestamp,      -- Primary sort
@@ -104,7 +144,6 @@ CREATE INDEX idx_entries_feed_cover ON transcript_entries(
   content_sha256,
   window_sha256,
   kind,
-  is_completion,
   session_id
 ) WHERE display_in_timeline = 1;
 

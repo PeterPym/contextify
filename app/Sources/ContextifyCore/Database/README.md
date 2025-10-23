@@ -195,6 +195,65 @@ try orchestrator.performMaintenance()
 // - VACUUM if bloat > 25%
 ```
 
+## Data Architecture Principles
+
+### Separation of Concerns
+
+Contextify maintains a strict separation between canonical source data and derived/computed data:
+
+**`transcript_entries` - Canonical Source Data:**
+- Raw conversation content parsed from transcript files (JSONL)
+- Immutable metadata: `timestamp`, `provider`, `kind`, `session_id`
+- Git context: `git_branch`, `git_commit`, `cwd`
+- Window state: `prev1_id`, `prev2_id`, `window_sha256` (for cache key computation)
+- **Does NOT store:** Summaries, classifications, or LLM-generated metadata
+
+**`timeline_cache` - Derived/Computed Data:**
+- LLM-generated summaries: `present_form`, `past_form`, `selected_form`
+- Message classification: `disposition` (e.g., `directive`, `completion`, `analysis`, `proposal`, `question`, `unknown`)
+- Display metadata: `verb_lemma`, `generator_signature`
+- User edits: `user_edited`, `user_text`, `edited_at`
+- Performance tracking: `request_id`, `duration`
+
+**`transcript_metadata` - Transcript-Level Summaries:**
+- Transcript titles, descriptions, and topics
+- Generated from entire conversation context
+- Cached by `transcript_sha256` for invalidation on content changes
+
+### UI Flag Derivation
+
+Timeline display flags are computed at runtime from `timeline_cache.disposition`:
+
+```swift
+// In ConversationMonitor.swift:513-517
+let cached = try? orchestrator.getCachedTimeline(
+  contentSha256: entry.contentSha256,
+  windowSha256: entry.windowSha256 ?? ""
+)
+
+let isCompletion = cached?.disposition == "completion"
+let isDirective: Bool = {
+  guard let disp = cached?.disposition else { return false }
+  return ["directive", "affirmative", "negative"].contains(disp)
+}()
+```
+
+**Rationale:**
+- Single source of truth (no update anomalies)
+- Immutable canonical data (transcript entries never change after ingestion)
+- LLM classifications can be regenerated without touching source data
+- Disposition mapping can evolve independently of schema
+
+### Historical Note
+
+Prior to schema v6, `transcript_entries` included denormalized fields:
+- `summary` (TEXT) - Always NULL, never populated
+- `disposition` (TEXT) - Always NULL, never populated
+- `is_completion` (INTEGER) - Removed in v6 migration
+- `is_directive` (INTEGER) - Removed in v6 migration
+
+These fields violated normalization principles and were removed. All classification and summary data now lives exclusively in `timeline_cache`.
+
 ## Database Location
 
 - **Production:** `~/Library/Application Support/Contextify/transcripts.db`

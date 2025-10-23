@@ -118,6 +118,231 @@ Provide feedback in this structure:
 
 ---
 
+## Expected Architecture (After Fix)
+
+### Complete SQL-Backed Flow
+
+Once the gap is fixed, TranscriptInventory should mirror the ConversationMonitor pattern:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│    TranscriptInventory (SQL-Backed) - EXPECTED BEHAVIOR     │
+├─────────────────────────────────────────────────────────────┤
+│  1. TranscriptInventoryWindow.task { }                       │
+│     ↓                                                        │
+│  2. PHASE 1: Ensure discoveries are persisted               │
+│     - .onChange(of: monitor.allSessions) triggers           │
+│     - NEW: persistDiscoveredSessions(sessions)              │
+│       For each session:                                      │
+│         orchestrator.discoverTranscript(                     │
+│           projectId, fileURL, provider, sessionId,           │
+│           startWatching: false  // Inventory doesn't watch   │
+│         ) → WRITES TO DB ✅                                  │
+│     ↓                                                        │
+│  3. PHASE 2: Load metadata from SQL backend                 │
+│     - loadMetadataForSessions(sessions)                      │
+│     - For each session:                                      │
+│       a. orchestrator.getTranscriptMetadata(transcriptId)    │
+│          → SQL: SELECT * FROM transcript_metadata            │
+│       b. IF cache HIT: use cached metadata ✅                │
+│       c. IF cache MISS:                                      │
+│          - TranscriptMetadataOrchestrator.generateMetadata() │
+│          - LLM generation (or heuristic fallback)            │
+│          - orchestrator.saveTranscriptMetadata()             │
+│            → SQL: INSERT INTO transcript_metadata ✅         │
+│     ↓                                                        │
+│  4. Display metadata in UI (titles, descriptions, topics)   │
+│     ↓                                                        │
+│  5. APP RESTART → metadata survives (read from SQL) ✅       │
+│     - No duplicate LLM work                                  │
+│     - Circuit breaker state persisted                        │
+│     - Consistent with ConversationMonitor data               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Added SQL Operations
+
+**New Operation 1: Persist Discovered Transcripts**
+```swift
+// TranscriptInventoryView.swift
+private func persistDiscoveredSessions(_ sessions: [TranscriptSession]) async {
+  guard let projectId = monitor.currentProjectId,
+        let orchestrator = monitor.orchestrator else { return }
+
+  for session in sessions {
+    try? orchestrator.discoverTranscript(
+      projectId: projectId,
+      fileURL: session.fileURL,
+      provider: session.provider.rawValue,
+      providerSessionId: session.providerSessionId ?? "",
+      startWatching: false  // Inventory doesn't need real-time file watching
+    )
+  }
+}
+```
+
+**New Operation 2: Load Metadata from SQL**
+```swift
+// TranscriptInventoryView.swift (modified)
+private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
+  guard let orchestrator = monitor.orchestrator else { return }
+
+  for session in sessions {
+    let transcriptId = session.identifier
+
+    // Check if already loading
+    guard !loadingMetadata.contains(transcriptId) else { continue }
+
+    // Try SQL cache first ✅
+    if let cachedMetadata = try? orchestrator.getTranscriptMetadata(transcriptId: transcriptId) {
+      await MainActor.run {
+        metadata[transcriptId] = cachedMetadata
+      }
+      continue
+    }
+
+    // Cache miss - generate and save to SQL
+    await MainActor.run {
+      loadingMetadata.insert(transcriptId)
+    }
+
+    let task = Task {
+      defer {
+        Task { @MainActor in
+          loadingMetadata.remove(transcriptId)
+        }
+      }
+
+      // Generate metadata (LLM or heuristic)
+      let generatedMetadata = await TranscriptMetadataOrchestrator.shared.metadata(
+        for: transcriptId,
+        fileURL: session.fileURL
+      )
+
+      // Save to SQL (not in-memory) ✅
+      try? orchestrator.saveTranscriptMetadata(
+        transcriptId: transcriptId,
+        metadata: generatedMetadata
+      )
+
+      // Update UI
+      await MainActor.run {
+        metadata[transcriptId] = generatedMetadata
+      }
+    }
+
+    await MainActor.run {
+      metadataTasks[transcriptId] = task
+    }
+  }
+}
+```
+
+**New Operation 3: SQL Schema (Already Exists)**
+```sql
+-- From DatabaseSchema.swift migration v4
+CREATE TABLE IF NOT EXISTS transcript_metadata (
+  transcript_id TEXT PRIMARY KEY,
+  title TEXT,
+  description TEXT,
+  topics TEXT,  -- JSON array
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_transcript_metadata_transcript_id ON transcript_metadata(transcript_id);
+```
+
+### Updated .onChange Handler
+
+**Before (Broken)**:
+```swift
+.onChange(of: monitor.allSessions) { _, newSessions in
+  // Clear selection if selected session no longer exists
+  if let selectedId = selectedTranscriptId,
+     !newSessions.contains(where: { $0.identifier == selectedId }) {
+    selectedTranscriptId = nil
+  }
+
+  // Load metadata for new sessions (centralized, not per-row)
+  Task {
+    await loadMetadataForSessions(newSessions)  // ❌ NO DB WRITE
+  }
+}
+```
+
+**After (Fixed)**:
+```swift
+.onChange(of: monitor.allSessions) { _, newSessions in
+  // Clear selection if selected session no longer exists
+  if let selectedId = selectedTranscriptId,
+     !newSessions.contains(where: { $0.identifier == selectedId }) {
+    selectedTranscriptId = nil
+  }
+
+  // PHASE 1: Persist discovered sessions to database ✅
+  Task {
+    await persistDiscoveredSessions(newSessions)
+  }
+
+  // PHASE 2: Load metadata from SQL (not in-memory) ✅
+  Task {
+    await loadMetadataForSessions(newSessions)
+  }
+}
+```
+
+### Before/After Comparison
+
+| Aspect | Before (Broken) | After (Fixed) |
+|--------|-----------------|---------------|
+| **Discovery Persistence** | ❌ Not saved to DB | ✅ orchestrator.discoverTranscript() |
+| **Metadata Cache** | ❌ In-memory (SidecarMetadataStore) | ✅ SQL (transcript_metadata table) |
+| **Survives Restart** | ❌ No (regenerates all) | ✅ Yes (reads from SQL) |
+| **LLM Quota** | ❌ Wasted (duplicate work) | ✅ Efficient (cache reuse) |
+| **Circuit Breaker State** | ❌ Lost on restart | ✅ Persisted in SQL |
+| **Consistency** | ❌ Out of sync with ConversationMonitor | ✅ Same SQL backend |
+| **Performance (Restart)** | ❌ Slow (1-3s LLM per session) | ✅ Fast (~1ms SQL read) |
+
+### Migration Checklist
+
+To achieve the expected architecture, the following changes are required:
+
+**Phase 1: Add Discovery Persistence**
+- [ ] Add `persistDiscoveredSessions()` method to TranscriptInventoryView
+- [ ] Update `.onChange(of: monitor.allSessions)` to call persist before load
+- [ ] Test: Verify transcripts appear in `transcripts` table after discovery
+
+**Phase 2: Migrate Metadata to SQL**
+- [ ] Update `loadMetadataForSessions()` to call `orchestrator.getTranscriptMetadata()`
+- [ ] Update metadata generation to call `orchestrator.saveTranscriptMetadata()`
+- [ ] Remove `SidecarMetadataStore` (or mark deprecated)
+- [ ] Test: Verify metadata survives app restart
+
+**Phase 3: Update TranscriptMetadataOrchestrator**
+- [ ] Modify to use SQL backend instead of in-memory store
+- [ ] Persist circuit breaker state to database (or preferences)
+- [ ] Test: Verify circuit breaker survives restart
+
+**Phase 4: Verify Consistency**
+- [ ] Compare `monitor.allSessions` (from SQL) with filesystem scan
+- [ ] Ensure no orphaned entries in UI
+- [ ] Test: Switch project, verify inventory updates correctly
+
+### Expected Benefits
+
+After implementing the fix:
+
+1. **No Metadata Loss**: Transcript titles/descriptions persist across app restarts
+2. **Reduced LLM Quota Usage**: Metadata generated once, reused forever (unless content changes)
+3. **Consistent Data**: Inventory and Timeline use same SQL backend
+4. **Faster Startup**: No LLM regeneration on launch (instant SQL reads)
+5. **Circuit Breaker Resilience**: Learns from failures, avoids repeated LLM errors
+6. **Simplified Code**: Remove temporary in-memory cache, use established SQL patterns
+
+---
+
 ## Root Cause Analysis
 
 ### 1. SidecarMetadataStore is a Stub

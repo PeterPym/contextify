@@ -93,10 +93,14 @@ assets/ icons/
 **Primary build script:** `bash scripts/xc.sh build` (auto-detects Xcode-beta if installed)
 
 Common commands:
-- Build: `make build` or `bash scripts/xc.sh build`
+- Build and run: `make build` or `bash scripts/xc.sh build`
+- Build and run with developer mode: `bash scripts/xc.sh --dev build` (enables test buttons)
+- Build only (no launch): `CTX_NO_RUN=1 bash scripts/xc.sh build` (for CI/verification)
 - Test: `make test` or `bash scripts/xc.sh test`
 - Clean: `make clean` (removes DerivedData)
 - Full setup with hooks: `make setup`
+
+**Note:** Build commands launch the app by default. Use `CTX_NO_RUN=1` to skip launching.
 
 **Log capture for debugging:**
 - Capture last 5 min: `make logs` → `/tmp/contextify-recent.log`
@@ -106,6 +110,7 @@ Common commands:
 **Database management:**
 - ⚠️  **IMPORTANT:** ALWAYS use `scripts/db_manager.sh` for database operations
 - ⚠️  **NEVER** delete database files manually with `rm` while app is running
+- Database location: `~/Library/Application Support/Contextify/transcripts.db`
 - Clean database (creates backup): `make clean-db` or `./scripts/db_manager.sh clean`
 - Create backup: `make db-backup` or `./scripts/db_manager.sh backup`
 - Restore latest: `make db-restore` or `./scripts/db_manager.sh restore latest`

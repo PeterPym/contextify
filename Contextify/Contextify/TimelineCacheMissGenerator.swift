@@ -267,7 +267,9 @@ actor TimelineCacheMissGenerator {
             presentForm: result.presentForm,
             pastForm: result.pastForm,
             selectedForm: result.disposition == .completion ? "past" : "present",
-            disposition: result.disposition.rawValue
+            disposition: result.disposition.rawValue,
+            isDirective: result.isDirective,
+            isCompletion: result.isCompletion
         )
     }
 
@@ -329,4 +331,6 @@ struct GeneratedSummary: Sendable {
     let pastForm: String
     let selectedForm: String
     let disposition: String
+    let isDirective: Bool
+    let isCompletion: Bool
 }

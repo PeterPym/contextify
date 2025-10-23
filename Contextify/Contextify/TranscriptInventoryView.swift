@@ -142,12 +142,21 @@ struct TranscriptInventoryView: View {
           selectedTranscriptId = nil
         }
 
-        // Load metadata for new sessions (centralized, not per-row)
+        // PHASE 1: Ensure discovered sessions are persisted to database
+        // This prevents FK constraint errors when generating metadata
+        Task {
+          await persistDiscoveredSessions(newSessions)
+        }
+
+        // PHASE 2: Load metadata for new sessions (centralized, not per-row)
         Task {
           await loadMetadataForSessions(newSessions)
         }
       }
       .task {
+        // Ensure sessions are persisted before loading metadata
+        await persistDiscoveredSessions(monitor.allSessions)
+
         // Load metadata on initial appearance
         await loadMetadataForSessions(monitor.allSessions)
       }
@@ -383,6 +392,55 @@ struct TranscriptInventoryView: View {
         lastFlushCount = flushedCount
         showingFlushAlert = true
       }
+    }
+  }
+
+  /// Persist discovered transcript sessions to database (safety layer)
+  /// This ensures transcript records exist before metadata generation attempts,
+  /// preventing FK constraint errors during metadata save operations.
+  @MainActor
+  private func persistDiscoveredSessions(_ sessions: [TranscriptSession]) async {
+    guard let orchestrator = monitor.orchestrator else {
+      log.warning("Cannot persist sessions: orchestrator not available")
+      return
+    }
+
+    guard !sessions.isEmpty else { return }
+
+    // Get project root from HUDViewModel (same pattern as ConversationMonitor)
+    guard let projectRoot = HUDViewModel.shared.projectRootURL else {
+      log.warning("Cannot persist sessions: no project root set")
+      return
+    }
+
+    log.debug("Ensuring \(sessions.count) discovered sessions are persisted to database")
+
+    // Get or create project in database
+    do {
+      let projectId = try orchestrator.getOrCreateProject(
+        name: projectRoot.lastPathComponent,
+        rootPath: projectRoot.path
+      )
+
+      // Convert TranscriptSessions to DiscoveredTranscripts
+      let discovered = sessions.map { session in
+        DiscoveredTranscript(
+          fileURL: session.fileURL,
+          provider: session.provider.rawValue,
+          sessionId: nil  // TranscriptSession doesn't have providerSessionId
+        )
+      }
+
+      // Upsert to database (idempotent - safe to call multiple times)
+      let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+      let newCount = resolved.filter { $0.wasCreated }.count
+      if newCount > 0 {
+        log.info("✅ Persisted \(resolved.count) transcripts (\(newCount) new)")
+      } else {
+        log.debug("All \(resolved.count) transcripts already in database")
+      }
+    } catch {
+      log.error("Failed to persist transcripts: \(error.localizedDescription)")
     }
   }
 
