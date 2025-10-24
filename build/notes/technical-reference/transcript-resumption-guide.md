@@ -71,12 +71,14 @@ claude -c
 ```
 
 ### Session ID Location
-- Session ID is the filename without `.jsonl` extension
-- Example: `a7b199c5-8f5b-48eb-b5fa-b65b072961a3.jsonl`
+- **MUST be UUID format** (e.g., `a7b199c5-8f5b-48eb-b5fa-b65b072961a3`)
+- Session ID = filename without `.jsonl` extension
+- Example file: `a7b199c5-8f5b-48eb-b5fa-b65b072961a3.jsonl`
 - Session ID: `a7b199c5-8f5b-48eb-b5fa-b65b072961a3`
 
 ### Session Storage
-- Location: `~/.claude/projects/-<project-path>/<session-id>.jsonl`
+- Location: `~/.claude/projects/-<project-path>/<uuid>.jsonl`
+- Filename: **Must be valid UUID.jsonl** (no arbitrary names)
 - Format: JSONL (one JSON object per line)
 
 ## Converter Output Instructions
@@ -143,8 +145,12 @@ When testing converter output:
 - **Fix:** Copy file to correct location or use picker (`codex resume`)
 
 ### Claude Code: Session Not Found
-- **Cause:** File not in correct project directory
-- **Fix:** Ensure file is in `~/.claude/projects/-<project-path>/`
+- **Cause:** File not in correct project directory OR filename not UUID format
+- **Fix:**
+  - Ensure file is in `~/.claude/projects/-<project-path>/`
+  - **CRITICAL:** Filename must be `<uuid>.jsonl`, not arbitrary names
+  - Example: `1ef3512c-eb02-4693-9517-33ecf2732175.jsonl` ✅
+  - Wrong: `converted-session.jsonl` ❌
 
 ### Both: Empty/Corrupted Session
 - **Cause:** Converter created file with no messages
