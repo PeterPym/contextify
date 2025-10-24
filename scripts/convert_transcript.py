@@ -117,6 +117,12 @@ class TranscriptConverter:
                     self.stats['skipped'] += 1
                     continue
 
+                # Validate required fields
+                if 'timestamp' not in record:
+                    self.log(f"Line {line_num}: Missing required field 'timestamp'")
+                    self.stats['errors'] += 1
+                    continue
+
                 # Generate session_meta from first message
                 if first_message:
                     cwd = record.get('cwd', '/')
@@ -257,6 +263,12 @@ class TranscriptConverter:
                 if payload.get('type') != 'message':
                     self.log(f"Line {line_num}: Skipping non-message response_item")
                     self.stats['skipped'] += 1
+                    continue
+
+                # Validate required fields
+                if 'timestamp' not in record:
+                    self.log(f"Line {line_num}: Missing required field 'timestamp'")
+                    self.stats['errors'] += 1
                     continue
 
                 # Extract content from array format
