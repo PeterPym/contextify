@@ -38,7 +38,13 @@ class TranscriptGenerator:
             scenario: Conversation type - "basic", "realistic", "continuity-test"
         """
 
-        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        # Monotonic millisecond timestamps (user -> snapshot -> assistant -> ...)
+        base = datetime.now(timezone.utc).replace(microsecond=0)
+        def next_ts():
+            nonlocal base
+            base = base + timedelta(milliseconds=1)
+            return base.isoformat().replace('+00:00', 'Z')
+
         creation_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S PST')
 
         messages = []
@@ -48,42 +54,57 @@ class TranscriptGenerator:
             # Original simple test conversation
             # Exchange 1: User asks about converter
             user_uuid = str(uuid.uuid4())
+            user_ts = next_ts()
             messages.append({
-                "type": "user",
-                "uuid": user_uuid,
-                "timestamp": timestamp,
                 "parentUuid": parent_uuid,
-                "sessionId": self.session_id,
-                "version": "2.0.22",
+                "isSidechain": False,
                 "userType": "external",
                 "cwd": self.project_dir,
+                "sessionId": self.session_id,
+                "version": "2.0.26",
                 "gitBranch": self.git_branch,
-                "isSidechain": False,
-                "isMeta": False,
+                "type": "user",
                 "message": {
                     "role": "user",
                     "content": f"This is a test conversation created at {creation_time} to verify the transcript converter."
+                },
+                "uuid": user_uuid,
+                "timestamp": user_ts,
+                "thinkingMetadata": {
+                    "level": "none",
+                    "disabled": True,
+                    "triggers": []
                 }
             })
 
-            assistant_uuid = str(uuid.uuid4())
+            # File history snapshot
+            snap_ts = next_ts()
             messages.append({
-                "type": "assistant",
-                "uuid": assistant_uuid,
-                "timestamp": timestamp,
+                "type": "file-history-snapshot",
+                "messageId": user_uuid,
+                "snapshot": {
+                    "messageId": user_uuid,
+                    "trackedFileBackups": {},
+                    "timestamp": snap_ts
+                },
+                "isSnapshotUpdate": False
+            })
+
+            assistant_uuid = str(uuid.uuid4())
+            asst_ts = next_ts()
+            messages.append({
                 "parentUuid": user_uuid,
-                "sessionId": self.session_id,
-                "version": "2.0.22",
+                "isSidechain": False,
                 "userType": "external",
                 "cwd": self.project_dir,
+                "sessionId": self.session_id,
+                "version": "2.0.26",
                 "gitBranch": self.git_branch,
-                "isSidechain": False,
-                "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
                 "message": {
+                    "model": "claude-sonnet-4-5-20250929",
                     "id": f"msg_{str(uuid.uuid4()).replace('-', '')}",
                     "type": "message",
                     "role": "assistant",
-                    "model": "claude-sonnet-4-5-20250929",
                     "content": [
                         {
                             "type": "text",
@@ -94,58 +115,77 @@ class TranscriptGenerator:
                     "stop_sequence": None,
                     "usage": {
                         "input_tokens": 150,
-                        "output_tokens": 25,
                         "cache_creation_input_tokens": 0,
                         "cache_read_input_tokens": 0,
                         "cache_creation": {
                             "ephemeral_5m_input_tokens": 0,
                             "ephemeral_1h_input_tokens": 0
                         },
+                        "output_tokens": 25,
                         "service_tier": "standard"
                     }
-                }
+                },
+                "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
+                "type": "assistant",
+                "uuid": assistant_uuid,
+                "timestamp": asst_ts
             })
             parent_uuid = assistant_uuid
 
             # Exchange 2: Verification details
             if num_exchanges >= 2:
                 user_uuid = str(uuid.uuid4())
+            user_ts = next_ts()
             messages.append({
-                "type": "user",
-                "uuid": user_uuid,
-                "timestamp": timestamp,
                 "parentUuid": parent_uuid,
-                "sessionId": self.session_id,
-                "version": "2.0.22",
+                "isSidechain": False,
                 "userType": "external",
                 "cwd": self.project_dir,
+                "sessionId": self.session_id,
+                "version": "2.0.26",
                 "gitBranch": self.git_branch,
-                "isSidechain": False,
-                "isMeta": False,
+                "type": "user",
                 "message": {
                     "role": "user",
                     "content": f"Perfect! Test session ID: {self.session_id}"
+                },
+                "uuid": user_uuid,
+                "timestamp": user_ts,
+                "thinkingMetadata": {
+                    "level": "none",
+                    "disabled": True,
+                    "triggers": []
                 }
             })
 
-            assistant_uuid = str(uuid.uuid4())
+            # File history snapshot
+            snap_ts = next_ts()
             messages.append({
-                "type": "assistant",
-                "uuid": assistant_uuid,
-                "timestamp": timestamp,
+                "type": "file-history-snapshot",
+                "messageId": user_uuid,
+                "snapshot": {
+                    "messageId": user_uuid,
+                    "trackedFileBackups": {},
+                    "timestamp": snap_ts
+                },
+                "isSnapshotUpdate": False
+            })
+
+            assistant_uuid = str(uuid.uuid4())
+            asst_ts = next_ts()
+            messages.append({
                 "parentUuid": user_uuid,
-                "sessionId": self.session_id,
-                "version": "2.0.22",
+                "isSidechain": False,
                 "userType": "external",
                 "cwd": self.project_dir,
+                "sessionId": self.session_id,
+                "version": "2.0.26",
                 "gitBranch": self.git_branch,
-                "isSidechain": False,
-                "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
                 "message": {
+                    "model": "claude-sonnet-4-5-20250929",
                     "id": f"msg_{str(uuid.uuid4()).replace('-', '')}",
                     "type": "message",
                     "role": "assistant",
-                    "model": "claude-sonnet-4-5-20250929",
                     "content": [
                         {
                             "type": "text",
@@ -156,16 +196,20 @@ class TranscriptGenerator:
                     "stop_sequence": None,
                     "usage": {
                         "input_tokens": 175,
-                        "output_tokens": 45,
                         "cache_creation_input_tokens": 0,
                         "cache_read_input_tokens": 0,
                         "cache_creation": {
                             "ephemeral_5m_input_tokens": 0,
                             "ephemeral_1h_input_tokens": 0
                         },
+                        "output_tokens": 45,
                         "service_tier": "standard"
                     }
-                }
+                },
+                "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
+                "type": "assistant",
+                "uuid": assistant_uuid,
+                "timestamp": asst_ts
             })
 
         elif scenario == "realistic":
@@ -196,43 +240,58 @@ class TranscriptGenerator:
             for i, exchange in enumerate(exchanges[:num_exchanges] if num_exchanges < len(exchanges) else exchanges):
                 # User message
                 user_uuid = str(uuid.uuid4())
+                user_ts = next_ts()
                 messages.append({
-                    "type": "user",
-                    "uuid": user_uuid,
-                    "timestamp": timestamp,
                     "parentUuid": parent_uuid,
-                    "sessionId": self.session_id,
-                    "version": "2.0.22",
+                    "isSidechain": False,
                     "userType": "external",
                     "cwd": self.project_dir,
+                    "sessionId": self.session_id,
+                    "version": "2.0.26",
                     "gitBranch": self.git_branch,
-                    "isSidechain": False,
-                    "isMeta": False,
+                    "type": "user",
                     "message": {
                         "role": "user",
                         "content": exchange["user"]
+                    },
+                    "uuid": user_uuid,
+                    "timestamp": user_ts,
+                    "thinkingMetadata": {
+                        "level": "none",
+                        "disabled": True,
+                        "triggers": []
                     }
+                })
+
+                # File history snapshot (marks conversation boundary)
+                snap_ts = next_ts()
+                messages.append({
+                    "type": "file-history-snapshot",
+                    "messageId": user_uuid,
+                    "snapshot": {
+                        "messageId": user_uuid,
+                        "trackedFileBackups": {},
+                        "timestamp": snap_ts
+                    },
+                    "isSnapshotUpdate": False
                 })
 
                 # Assistant message
                 assistant_uuid = str(uuid.uuid4())
+                asst_ts = next_ts()
                 messages.append({
-                    "type": "assistant",
-                    "uuid": assistant_uuid,
-                    "timestamp": timestamp,
                     "parentUuid": user_uuid,
-                    "sessionId": self.session_id,
-                    "version": "2.0.22",
+                    "isSidechain": False,
                     "userType": "external",
                     "cwd": self.project_dir,
+                    "sessionId": self.session_id,
+                    "version": "2.0.26",
                     "gitBranch": self.git_branch,
-                    "isSidechain": False,
-                    "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
                     "message": {
+                        "model": "claude-sonnet-4-5-20250929",
                         "id": f"msg_{str(uuid.uuid4()).replace('-', '')}",
                         "type": "message",
                         "role": "assistant",
-                        "model": "claude-sonnet-4-5-20250929",
                         "content": [
                             {
                                 "type": "text",
@@ -243,16 +302,20 @@ class TranscriptGenerator:
                         "stop_sequence": None,
                         "usage": {
                             "input_tokens": 200 + (i * 50),
-                            "output_tokens": 80 + (i * 20),
                             "cache_creation_input_tokens": 0,
                             "cache_read_input_tokens": 150 if i > 0 else 0,
                             "cache_creation": {
                                 "ephemeral_5m_input_tokens": 0,
                                 "ephemeral_1h_input_tokens": 0
                             },
+                            "output_tokens": 80 + (i * 20),
                             "service_tier": "standard"
                         }
-                    }
+                    },
+                    "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
+                    "type": "assistant",
+                    "uuid": assistant_uuid,
+                    "timestamp": asst_ts
                 })
                 parent_uuid = assistant_uuid
 
@@ -284,43 +347,58 @@ class TranscriptGenerator:
             for i, exchange in enumerate(exchanges[:num_exchanges] if num_exchanges < len(exchanges) else exchanges):
                 # User message
                 user_uuid = str(uuid.uuid4())
+                user_ts = next_ts()
                 messages.append({
-                    "type": "user",
-                    "uuid": user_uuid,
-                    "timestamp": timestamp,
                     "parentUuid": parent_uuid,
-                    "sessionId": self.session_id,
-                    "version": "2.0.22",
+                    "isSidechain": False,
                     "userType": "external",
                     "cwd": self.project_dir,
+                    "sessionId": self.session_id,
+                    "version": "2.0.26",
                     "gitBranch": self.git_branch,
-                    "isSidechain": False,
-                    "isMeta": False,
+                    "type": "user",
                     "message": {
                         "role": "user",
                         "content": exchange["user"]
+                    },
+                    "uuid": user_uuid,
+                    "timestamp": user_ts,
+                    "thinkingMetadata": {
+                        "level": "none",
+                        "disabled": True,
+                        "triggers": []
                     }
+                })
+
+                # File history snapshot (marks conversation boundary)
+                snap_ts = next_ts()
+                messages.append({
+                    "type": "file-history-snapshot",
+                    "messageId": user_uuid,
+                    "snapshot": {
+                        "messageId": user_uuid,
+                        "trackedFileBackups": {},
+                        "timestamp": snap_ts
+                    },
+                    "isSnapshotUpdate": False
                 })
 
                 # Assistant message
                 assistant_uuid = str(uuid.uuid4())
+                asst_ts = next_ts()
                 messages.append({
-                    "type": "assistant",
-                    "uuid": assistant_uuid,
-                    "timestamp": timestamp,
                     "parentUuid": user_uuid,
-                    "sessionId": self.session_id,
-                    "version": "2.0.22",
+                    "isSidechain": False,
                     "userType": "external",
                     "cwd": self.project_dir,
+                    "sessionId": self.session_id,
+                    "version": "2.0.26",
                     "gitBranch": self.git_branch,
-                    "isSidechain": False,
-                    "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
                     "message": {
+                        "model": "claude-sonnet-4-5-20250929",
                         "id": f"msg_{str(uuid.uuid4()).replace('-', '')}",
                         "type": "message",
                         "role": "assistant",
-                        "model": "claude-sonnet-4-5-20250929",
                         "content": [
                             {
                                 "type": "text",
@@ -331,24 +409,28 @@ class TranscriptGenerator:
                         "stop_sequence": None,
                         "usage": {
                             "input_tokens": 180 + (i * 40),
-                            "output_tokens": 70 + (i * 15),
                             "cache_creation_input_tokens": 0,
                             "cache_read_input_tokens": 200 if i > 0 else 0,
                             "cache_creation": {
                                 "ephemeral_5m_input_tokens": 0,
                                 "ephemeral_1h_input_tokens": 0
                             },
+                            "output_tokens": 70 + (i * 15),
                             "service_tier": "standard"
                         }
-                    }
+                    },
+                    "requestId": f"req_{str(uuid.uuid4()).replace('-', '')}",
+                    "type": "assistant",
+                    "uuid": assistant_uuid,
+                    "timestamp": asst_ts
                 })
                 parent_uuid = assistant_uuid
 
-        # Write to file
+        # Write to file (use compact JSON format to match Claude Code output)
         os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
         with open(output_path, 'w') as f:
             for msg in messages:
-                f.write(json.dumps(msg) + '\n')
+                f.write(json.dumps(msg, separators=(',', ':')) + '\n')
 
         return {
             'session_id': self.session_id,
@@ -360,7 +442,8 @@ class TranscriptGenerator:
     def generate_codex(self, output_path, num_exchanges=2):
         """Generate a valid Codex CLI transcript."""
 
-        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        # Use millisecond precision with .000Z format to match CLI output
+        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
         creation_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S PST')
 
         records = []

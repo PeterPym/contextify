@@ -60,17 +60,93 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
   - **Semantics:** Periodic capture of file backup states. When present, `trackedFileBackups` enumerates versioned backups per file.
 
 - `user` (metadata and commands)
-  - **Fields (top level):**  
-    - `parentUuid` (nullable), `isSidechain` (bool), `userType` (e.g., `"external"`), `cwd` (string),  
-      `sessionId` (uuid), `version` (semver), `gitBranch` (string), `type: "user"`, `uuid` (uuid), `timestamp`
-    - `message` (object) with `{ role: "user", content: "<…>" }`
-    - Optional `isMeta: true` (to mark guidance/caveat messages)
+  - **Fields (top level - FIELD ORDER CRITICAL):**
+    - `parentUuid` (nullable)
+    - `isSidechain` (bool)
+    - `userType` (e.g., `"external"`)
+    - `cwd` (string)
+    - `sessionId` (uuid)
+    - `version` (semver, e.g., `"2.0.26"`)
+    - `gitBranch` (string)
+    - `type: "user"`
+    - `message` (object) with `{ role: "user", content: "<string>" }` - **CONTENT MUST BE STRING, NOT ARRAY**
+    - `uuid` (uuid)
+    - `timestamp` (ISO string)
+    - `thinkingMetadata` (object: `{ level: "none", disabled: true, triggers: [] }`)
+  - **CRITICAL:** Field order in JSON output matters for Claude Code parsing. User messages must have content as a plain string.
   - **Semantics:** Captures terminal/user-originated messages and metadata (including **cwd**, **git branch**, **tool version**, **session**).
 
-- Assistant messages (tool’s model output)
-  - Appears as a message object (role `"assistant"`) with model/version/usage details, sometimes accompanied by **thinking metadata** (e.g., `thinkingMetadata: { disabled: true }`).
+- Assistant messages (tool's model output)
+  - **Fields (top level - FIELD ORDER CRITICAL):**
+    - `parentUuid` (uuid) — references parent user message
+    - `isSidechain` (bool)
+    - `userType` (e.g., `"external"`)
+    - `cwd` (string)
+    - `sessionId` (uuid)
+    - `version` (semver, e.g., `"2.0.26"`)
+    - `gitBranch` (string)
+    - `message` (object) — **NESTED FIELD ORDER CRITICAL:**
+      - `model` (string, e.g., `"claude-sonnet-4-5-20250929"`)
+      - `id` (string, e.g., `"msg_..."`)
+      - `type: "message"`
+      - `role: "assistant"`
+      - `content` (array of `{ type: "text", text: "..." }`)
+      - `stop_reason` (nullable)
+      - `stop_sequence` (nullable)
+      - `usage` (object with token counts)
+    - `requestId` (string, e.g., `"req_..."`)
+    - `type: "assistant"`
+    - `uuid` (uuid)
+    - `timestamp` (ISO string)
+  - **CRITICAL:** Field order matters. Assistant message.content is an array, user message.content is a string.
 
 > **Linking:** Messages use `uuid` and **parentUuid** to form chains. Snapshots use **messageId**. `sessionId` ties entries to a session.
+
+### **CRITICAL REQUIREMENT: Monotonic Timestamps**
+
+**Claude Code requires strictly increasing timestamps across all records in a session file.** Records with identical timestamps will cause the parser to display only the first message, breaking conversation resumption.
+
+**Rule:** Every record in a JSONL file must have a unique timestamp that is **greater than** all previous records.
+
+**Implementation:**
+- User message → increment timestamp by 1ms → `2025-10-24T21:42:47.001000Z`
+- File-history-snapshot (both top-level and nested `snapshot.timestamp`) → increment by 1ms → `2025-10-24T21:42:47.002000Z`
+- Assistant message → increment by 1ms → `2025-10-24T21:42:47.003000Z`
+- Next user message → increment by 1ms → `2025-10-24T21:42:47.004000Z`
+- Continue pattern...
+
+**Example monotonic timestamp generator (Python):**
+```python
+from datetime import datetime, timezone, timedelta
+
+base = datetime.now(timezone.utc).replace(microsecond=0)
+def next_ts():
+    nonlocal base
+    base = base + timedelta(milliseconds=1)
+    return base.isoformat().replace('+00:00', 'Z')
+
+# Use next_ts() for every timestamp in the file
+user_timestamp = next_ts()        # .001000Z
+snapshot_timestamp = next_ts()    # .002000Z
+assistant_timestamp = next_ts()   # .003000Z
+```
+
+**Validation commands:**
+```bash
+# Check for duplicate timestamps (should return empty)
+jq -r 'if .timestamp then .timestamp else .snapshot.timestamp end' file.jsonl | uniq -d
+
+# Verify timestamps are strictly increasing
+jq -r '[.type, (.timestamp // .snapshot.timestamp)] | @tsv' file.jsonl
+```
+
+**Impact:** Without monotonic timestamps, Claude Code will:
+- Display only the first user message
+- Hide all assistant responses
+- Prevent conversation scrollback
+- Make the session appear truncated when resumed
+
+This requirement was discovered empirically (2025-10-24) when programmatically generated transcripts with identical timestamps failed to resume properly, despite having correct structure, field order, and data types.
 
 ---
 
