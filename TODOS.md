@@ -1552,27 +1552,15 @@ Claude optimizes the query
 - Insert Text/Divider view when date changes
 
 ##### 2. Reduce Assistant Entry Density
-**Status:** Active Development
-**Priority:** High
-**Branch:** feature/timeline-completion-improvements
+**Status:** Partially Complete (disposition filtering implemented)
+**Priority:** Low (current filtering works well)
 
-The conversation log shows too many assistant entries for a single directive/response cycle (e.g., 14 entries before a completion marker). This creates excessive noise and makes it hard to follow the conversation flow.
+Basic disposition-based filtering is implemented in `ConversationMonitor.swift:630`. Currently suppresses `ack` and `wip` dispositions.
 
-**Root cause:**
-Claude Code generates many small text blocks as the assistant works, each becoming a timeline entry. This includes acknowledgements, progress updates, and intermediate thoughts.
-
-**Proposed solutions:**
-1. **Disposition-based filtering** (recommended): Use the LLM's `disposition` field to filter entries:
-   - Always show: `completion`, `proposal`, `question`, `refusal`
-   - Sometimes show: `analysis` (if >100 chars or first in sequence)
-   - Suppress: `ack`, `wip` (work-in-progress)
-
-2. **Time-based throttling**: Suppress assistant entries within N seconds of the previous one (unless completion)
-
-3. **Content-based suppression**: Skip very short assistant messages (<50 chars) unless they're completions
-
-**Implementation approach:**
-Add filtering logic in `addAssistantTextEntry()` based on `disposition` from `GuidedTimelineSummary`.
+**Future enhancements (low priority):**
+- User-configurable verbosity levels (see Timeline Verbosity Settings below)
+- Time-based throttling for rapid assistant responses
+- Adaptive filtering based on completion confidence scores
 
 ##### 2. Avoid Sequential Completed Entries
 **Status:** Completed (2025-10-10)
@@ -1732,11 +1720,20 @@ Wrap the script in UI:
 - Automatic backup before migration
 
 #### SQL Backend for Comprehensive Transcript Analysis
-**Status:** Backlog
+**Status:** Completed (2025-10-24)
 **Priority:** High (Foundation for AI-driven project insights)
 **Category:** Infrastructure / Intelligence
 
-Store all transcript entries (user messages, assistant responses, tool calls, metadata) in a local SQLite database to enable deep project analysis and intelligent assistance features.
+~~Store all transcript entries (user messages, assistant responses, tool calls, metadata) in a local SQLite database to enable deep project analysis and intelligent assistance features.~~
+
+**Implementation Complete:**
+- Database schema with GRDB (DatabaseManager, DatabaseSchema)
+- TranscriptOrchestrator with full CRUD operations
+- HooverEngine for streaming ingestion with checkpointing
+- Timeline cache integration with content-based invalidation
+- Repositories for type-safe queries (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository)
+- Real-time file watching with TranscriptWatcher
+- Documentation: `build/notes/technical-reference/sql-backend-architecture.md`
 
 **Grand Theory:**
 By analyzing the full project history stored in a relational database, Contextify can:
