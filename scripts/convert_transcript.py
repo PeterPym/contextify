@@ -54,7 +54,10 @@ class TranscriptConverter:
             print(f"[DEBUG] {message}", file=sys.stderr)
 
     def claude_to_codex(self, input_path, output_path):
-        """Convert Claude Code JSONL to Codex CLI format"""
+        """Convert Claude Code JSONL to Codex CLI format
+
+        Returns: (stats dict, actual_output_path)
+        """
         session_id = str(uuid4())
         self.session_id = session_id
         first_message = True
@@ -93,6 +96,9 @@ class TranscriptConverter:
         self.log(f"Converting Claude Code → Codex CLI")
         self.log(f"Input: {input_path}")
         self.log(f"Output: {output_path}")
+
+        # Store the actual output path for caller
+        self.actual_output_path = output_path
 
         with open(input_path) as infile, open(output_path, 'w') as outfile:
             for line_num, line in enumerate(infile, 1):
@@ -442,7 +448,7 @@ def main():
         if args.from_format == 'claude-code' and args.to_format == 'codex':
             stats = converter.claude_to_codex(args.input, args.output)
             # Use the actual output path (may have been auto-corrected)
-            actual_output = args.output
+            actual_output = converter.actual_output_path
             print(f"✓ Converted Claude Code → Codex CLI: {actual_output}")
         else:  # codex to claude-code
             stats = converter.codex_to_claude(args.input, args.output)
@@ -482,7 +488,7 @@ def main():
             else:
                 print(f"   cd <project-directory> && codex resume")
 
-            print(f"\n📍 Transcript location: {args.output}")
+            print(f"\n📍 Transcript location: {actual_output}")
             if converter.session_id:
                 print(f"🆔 Session ID: {converter.session_id}")
             if converter.project_dir:
