@@ -218,11 +218,33 @@ class TranscriptConverter:
         self.log(f"Input: {input_path}")
         self.log(f"Output: {output_path}")
 
-        # Extract session ID from output path for resume instructions
+        # Claude Code requires UUID.jsonl filenames
+        # Extract or validate session ID from output path
         import os
+        import re
         basename = os.path.basename(output_path)
-        if basename.endswith('.jsonl'):
-            self.session_id = basename[:-6]  # Remove .jsonl extension
+
+        # Check if filename is already a valid UUID
+        uuid_pattern = r'^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$'
+        uuid_match = re.match(uuid_pattern, basename, re.IGNORECASE)
+
+        if uuid_match:
+            # Valid UUID filename - use it
+            self.session_id = uuid_match.group(1).lower()
+            self.log(f"Using UUID from filename: {self.session_id}")
+        else:
+            # Not a UUID filename - need to generate one and update path
+            # Try to extract session_id from input Codex file first
+            self.log(f"Warning: Output filename '{basename}' is not UUID format")
+            self.log(f"Claude Code requires <uuid>.jsonl filenames")
+
+            # We'll read the session_id from the Codex file's session_meta
+            # and use that as the filename UUID (will be set during parsing)
+            # For now, use the provided path but warn the user
+            if basename.endswith('.jsonl'):
+                self.session_id = basename[:-6]  # Remove .jsonl extension
+            else:
+                self.session_id = basename
 
         with open(input_path) as infile, open(output_path, 'w') as outfile:
             for line_num, line in enumerate(infile, 1):
@@ -250,6 +272,27 @@ class TranscriptConverter:
                         'gitCommit': git_info.get('commit_hash')
                     }
                     self.log(f"Line {line_num}: Extracted session_meta (session_id={session_id})")
+
+                    # If output filename is not UUID format, auto-correct it using session_id from Codex
+                    if not uuid_match and session_id:
+                        # Use the Codex session_id as the Claude Code filename
+                        dir_path = os.path.dirname(output_path)
+                        corrected_filename = f"{session_id}.jsonl"
+                        corrected_path = os.path.join(dir_path, corrected_filename)
+
+                        if corrected_path != output_path:
+                            self.log(f"Auto-correcting output filename to UUID format:")
+                            self.log(f"  User provided: {basename}")
+                            self.log(f"  Using instead: {corrected_filename}")
+
+                            # Close current output file and reopen with correct name
+                            outfile.close()
+                            if os.path.exists(output_path):
+                                os.remove(output_path)  # Remove incorrectly named file
+                            outfile = open(corrected_path, 'w')
+                            output_path = corrected_path
+                            self.session_id = session_id
+
                     self.stats['skipped'] += 1
                     continue
 
@@ -343,10 +386,18 @@ def main():
         # Convert
         if args.from_format == 'claude-code' and args.to_format == 'codex':
             stats = converter.claude_to_codex(args.input, args.output)
-            print(f"✓ Converted Claude Code → Codex CLI: {args.output}")
+            # Use the actual output path (may have been auto-corrected)
+            actual_output = args.output
+            print(f"✓ Converted Claude Code → Codex CLI: {actual_output}")
         else:  # codex to claude-code
             stats = converter.codex_to_claude(args.input, args.output)
-            print(f"✓ Converted Codex CLI → Claude Code: {args.output}")
+            # For Claude Code, show the actual UUID filename used
+            actual_output = args.output
+            # Check if converter auto-corrected the filename
+            if converter.session_id and not args.output.endswith(f"{converter.session_id}.jsonl"):
+                dir_path = os.path.dirname(args.output) or '.'
+                actual_output = os.path.join(dir_path, f"{converter.session_id}.jsonl")
+            print(f"✓ Converted Codex CLI → Claude Code: {actual_output}")
 
         # Print stats
         print(f"\nStatistics:")
@@ -366,19 +417,15 @@ def main():
 
         if args.to_format == 'codex':
             # Converted to Codex format
-            print(f"\n1. Navigate to the project directory:")
-            if converter.project_dir:
-                print(f"   cd {converter.project_dir}")
-            else:
-                print(f"   cd <project-directory>")
-
-            print(f"\n2. Resume the conversation with Codex CLI:")
-            if converter.session_id:
-                print(f"   codex resume {converter.session_id}")
+            print(f"\nResume the conversation with Codex CLI:")
+            if converter.project_dir and converter.session_id:
+                print(f"   cd {converter.project_dir} && codex resume {converter.session_id}")
                 print(f"   # OR use the picker:")
-                print(f"   codex resume")
+                print(f"   cd {converter.project_dir} && codex resume")
+            elif converter.session_id:
+                print(f"   cd <project-directory> && codex resume {converter.session_id}")
             else:
-                print(f"   codex resume")
+                print(f"   cd <project-directory> && codex resume")
 
             print(f"\n📍 Transcript location: {args.output}")
             if converter.session_id:
@@ -397,19 +444,15 @@ def main():
 
         else:  # Converted to Claude Code format
             # Converted to Claude Code format
-            print(f"\n1. Navigate to the project directory:")
-            if converter.project_dir:
-                print(f"   cd {converter.project_dir}")
+            print(f"\nResume the conversation with Claude Code:")
+            if converter.project_dir and converter.session_id:
+                print(f"   cd {converter.project_dir} && claude --resume {converter.session_id}")
+            elif converter.session_id:
+                print(f"   cd <project-directory> && claude --resume {converter.session_id}")
             else:
-                print(f"   cd <project-directory>")
+                print(f"   cd <project-directory> && claude --resume <session-id>")
 
-            print(f"\n2. Resume the conversation with Claude Code:")
-            if converter.session_id:
-                print(f"   claude-code /resume {converter.session_id}")
-            else:
-                print(f"   claude-code /resume <session-id>")
-
-            print(f"\n📍 Transcript location: {args.output}")
+            print(f"\n📍 Transcript location: {actual_output}")
             if converter.session_id:
                 print(f"🆔 Session ID: {converter.session_id}")
             if converter.project_dir:
