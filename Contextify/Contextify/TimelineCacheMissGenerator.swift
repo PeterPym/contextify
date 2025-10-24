@@ -155,6 +155,9 @@ actor TimelineCacheMissGenerator {
                 successCount += 1
                 successfulMisses.append(miss)
                 consecutiveFailures = 0  // Reset on success
+
+                // Post immediate UI update for this entry (don't wait for batch to complete)
+                await postCacheUpdateNotification(for: [miss])
             } catch {
                 let reason: String
                 if let tErr = error as? TimelineError {
@@ -177,10 +180,8 @@ actor TimelineCacheMissGenerator {
         let elapsed = Date().timeIntervalSince(startTime)
         log.info("Batch complete: \(successCount) generated, \(skipCount) skipped, \(errorCount) errors in \(Int(elapsed * 1000))ms")
 
-        // Post notification with specific keys that were successfully updated
-        if !successfulMisses.isEmpty {
-            await postCacheUpdateNotification(for: successfulMisses)
-        }
+        // UI updates are now posted immediately after each entry (line 160)
+        // No batch-end notification needed
     }
 
     /// Process a single cache miss with exponential backoff retry
