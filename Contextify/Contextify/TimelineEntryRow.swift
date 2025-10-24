@@ -91,13 +91,13 @@ struct TimelineEntryRow: View {
                 Image(systemName: "arrow.forward.circle.fill")
                     .font(.caption)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.contextifyBlue)
                     .accessibilityLabel("User directive")
             } else if entry.isCompletion {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.caption)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(Color.contextifyGreen)
                     .accessibilityLabel("Task completed")
 
                 if let duration = calculateDuration() {
@@ -189,15 +189,23 @@ struct TimelineEntryRow: View {
     }
 }
 
+// MARK: - Color Scheme
+private extension Color {
+    /// Contextify app color scheme
+    static let contextifyBlue = Color(red: 0.290, green: 0.482, blue: 0.655) // #4A7BA7 - User/directive actions
+    static let contextifyGreen = Color(red: 0.318, green: 0.659, blue: 0.420) // #51A86B - Completion/success states
+    static let contextifyTaupe = Color(red: 0.608, green: 0.545, blue: 0.494) // #9B8B7E - Assistant messages
+}
+
 private extension TimelineEntryKind {
     var accentColor: Color {
         switch self {
         case .user:
             // Rich blue - professional, distinct
-            return Color(red: 0.290, green: 0.482, blue: 0.655) // #4A7BA7
+            return Color.contextifyBlue
         case .assistant:
             // Warm gray/taupe - universal compatibility with any provider branding
-            return Color(red: 0.608, green: 0.545, blue: 0.494) // #9B8B7E
+            return Color.contextifyTaupe
         case .system:
             return .gray
         }
