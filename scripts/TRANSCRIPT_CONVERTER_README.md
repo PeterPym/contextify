@@ -148,6 +148,8 @@ Round-trip conversion successfully preserves all essential conversation data.
 
 ## Related Documentation
 
-- Feature spec: `todos.md` (Cross-CLI Transcript Converter)
-- Format comparison: `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
-- Current parsers: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- **CLI Resumption Guide:** `build/notes/technical-reference/transcript-resumption-guide.md` - How to resume sessions in each CLI
+- **Format Specifications:** `build/notes/technical-reference/claude-code-transcript-format.md` - Detailed format docs
+- **Format Comparison:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md` - Claude vs Codex
+- **Current Parsers:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - Database ingestion
+- **Feature Spec:** `todos.md` (Cross-CLI Transcript Converter) - Original specification
