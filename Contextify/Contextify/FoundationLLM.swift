@@ -1076,6 +1076,7 @@ private extension FoundationLLM {
             Rules:
             - Output ONE sentence starting with "\(assistantName)", ≤140 chars.
             - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
+            - No emojis.
             - Tense:
               * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
               * Present continuous ONLY for clear in-progress execution (e.g., “is running the test suite”).
@@ -1112,6 +1113,7 @@ private extension FoundationLLM {
             - If ACTION_HINT is present, it provides context but should NOT appear in the summary text
             - Use past-tense verb in the prefix ("requested", "asked", "made")
             - Focus on user's intent, not implementation details
+            - No emojis
 
             Fields:
             - summary: one sentence following the rules above
@@ -1132,6 +1134,7 @@ private extension FoundationLLM {
             You fill a TimelineSummary for a neutral system event.
             - summary: one concise sentence under 140 characters.
             - isCompletion: false.
+            - No emojis.
             """
         }
     }
