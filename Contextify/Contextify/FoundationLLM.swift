@@ -355,7 +355,7 @@ actor FoundationLLM {
         let imperatives: Set<String> = [
             "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
             "write", "explain", "show", "make", "delete", "remove", "check", "refactor",
-            "optimize", "implement", "modify", "debug", "install", "configure"
+            "optimize", "implement", "modify", "debug", "install", "configure", "look"
         ]
         if imperatives.contains(firstWord) { return .directive }
 
@@ -1217,7 +1217,7 @@ private extension FoundationLLM {
             "create", "make", "build", "run", "test", "deploy",
             "implement", "refactor", "change", "modify", "remove", "delete",
             "we should", "we need to", "we could", "let's", "i want",
-            "i need", "help me", "figure out"
+            "i need", "help me", "figure out", "look"
         ]
     }
 
