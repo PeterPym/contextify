@@ -77,24 +77,25 @@ Let users convert transcripts from Contextify UI without command line.
 - **File:** New `TranscriptExportView.swift` or inline
 - **Time:** 0.5 day
 
-**2.3 Call converter from Swift**
-- Option A: Call Python script via `Process`
+**2.3 Implement converter in Swift**
+- Rewrite converter logic in Swift (~300-400 lines based on Python reference)
+- Create shared `TranscriptConverter.swift` module
+- Benefits: No Python dependency, faster, native error handling, type safety
+- Structure:
   ```swift
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-  process.arguments = [
-    "scripts/convert_transcript.py",
-    "--from", "claude-code",
-    "--to", "codex",
-    inputPath, outputPath
-  ]
-  try process.run()
-  process.waitUntilExit()
+  enum TranscriptFormat { case claudeCode, codexCLI }
+
+  struct TranscriptConverter {
+      static func convert(
+          from: TranscriptFormat,
+          to: TranscriptFormat,
+          inputPath: URL,
+          outputPath: URL
+      ) throws -> ConversionResult
+  }
   ```
-- Option B: Rewrite converter in Swift (~300 lines, faster, no dependency)
-- **Recommendation:** Start with Option A (faster), migrate to Option B later
-- **File:** New `TranscriptConverter.swift` wrapper
-- **Time:** 1 day (Option A) or 2 days (Option B)
+- **File:** New `app/Sources/ContextifyCore/TranscriptConverter.swift`
+- **Time:** 2 days (includes testing against Python reference implementation)
 
 **2.4 Show progress/status**
 - Display toast notification: "Converting transcript..."
@@ -112,7 +113,33 @@ Let users convert transcripts from Contextify UI without command line.
 - **File:** New alert dialog
 - **Time:** 0.5 day
 
-**Time estimate:** 3-4 days
+**2.6 Create CLI tool target**
+- Add "Command Line Tool" target to Xcode: `contextify-cli`
+- Share `TranscriptConverter.swift` between GUI and CLI targets
+- CLI `main.swift` with argument parsing (Swift Argument Parser)
+- Basic commands:
+  ```bash
+  contextify convert --from claude-code --to codex <input> [output]
+  contextify convert --auto <input>  # Auto-detect format
+  contextify --version
+  ```
+- **File:** New `ContextifyCLI/main.swift`
+- **Time:** 1 day
+
+**2.7 CLI installer (GUI app menu item)**
+- "Install CLI Tool" menu item in app
+- Copies binary to `~/Library/Application Support/Contextify/bin/contextify`
+- Makes executable (chmod 755)
+- Shows setup assistant:
+  - Detects shell (zsh/bash/fish)
+  - "Copy Command" button for PATH export
+  - "Add to PATH Automatically" button (appends to ~/.zshrc or ~/.bashrc)
+  - Verification: "Run `contextify --version` to test"
+- **Works for both App Store and direct download** (no sudo, no /usr/local/bin)
+- **File:** New `CLIInstaller.swift`
+- **Time:** 0.5 day
+
+**Time estimate:** 4-5 days (increased from 3-4 due to Swift converter + CLI)
 **Priority:** HIGH (core UX for launch)
 **Blocker:** Phase 1 complete
 
@@ -290,12 +317,12 @@ Polish for Show HN announcement.
 | Phase | Days | Priority | Blocking |
 |-------|------|----------|----------|
 | **Phase 1: Merge to Main** | 1 | HIGH | None |
-| **Phase 2: UI Integration** | 3-4 | HIGH | Phase 1 |
+| **Phase 2: UI + CLI** | 4-5 | HIGH | Phase 1 |
 | **Phase 3: Tool Calls** | 2-3 | MEDIUM | Phase 2 |
 | **Phase 4: Testing** | 2-3 | MEDIUM | Phase 2 |
 | **Phase 5: Launch Prep** | 1-2 | LOW | Phase 2 |
-| **Total (MVP)** | **7-10 days** | | |
-| **Total (Full)** | **9-13 days** | | |
+| **Total (MVP)** | **5-6 days** | | Phase 1-2 only |
+| **Total (Full)** | **10-14 days** | | All phases |
 
 **MVP = Phase 1 + Phase 2** → Users can convert from UI, basic messages only
 **Full = All 5 phases** → Includes tool calls, tests, polish
@@ -306,10 +333,12 @@ Polish for Show HN announcement.
 
 ### Week 1: MVP (Phase 1-2)
 **Day 1:** Merge converter to main, update README
-**Day 2-4:** Build UI integration (menu actions, file picker, Swift wrapper)
-**Day 5:** Test end-to-end, fix bugs
+**Day 2-3:** Implement Swift converter (reference Python implementation)
+**Day 4:** Build UI integration (menu actions, file picker)
+**Day 5:** Create CLI tool target + installer
+**Day 6:** Test end-to-end (GUI + CLI), fix bugs
 
-**Deliverable:** Working UI conversion for basic messages
+**Deliverable:** Working UI and CLI conversion for basic messages
 
 ### Week 2: Quality (Phase 3-4)
 **Day 6-8:** Add tool call preservation
