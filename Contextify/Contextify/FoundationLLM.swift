@@ -281,7 +281,46 @@ actor FoundationLLM {
     /// Authoritatively classify user intent using deterministic rules
     func classifyUserIntent(_ text: String) -> UserIntent {
         let clean = stripQuotedAndCode(text)
-        let normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        var normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Normalize punctuation variations to handle informal writing
+        // Map various apostrophe types to standard apostrophe
+        let apostropheVariants = ["'", "'", "'", "`"]  // curly quotes, backtick
+        for variant in apostropheVariants {
+            normalized = normalized.replacingOccurrences(of: variant, with: "'")
+        }
+
+        // Handle common contractions missing apostrophes
+        // Pattern: word boundary + "lets" + space/punctuation → "let's"
+        normalized = normalized.replacingOccurrences(of: " lets ", with: " let's ")
+        normalized = normalized.replacingOccurrences(of: " dont ", with: " don't ")
+        normalized = normalized.replacingOccurrences(of: " cant ", with: " can't ")
+        normalized = normalized.replacingOccurrences(of: " wont ", with: " won't ")
+        normalized = normalized.replacingOccurrences(of: " shouldnt ", with: " shouldn't ")
+        normalized = normalized.replacingOccurrences(of: " wouldnt ", with: " wouldn't ")
+        normalized = normalized.replacingOccurrences(of: " couldnt ", with: " couldn't ")
+
+        // Handle start of string cases
+        if normalized.hasPrefix("lets ") {
+            normalized = "let's " + normalized.dropFirst(5)
+        }
+        if normalized.hasPrefix("dont ") {
+            normalized = "don't " + normalized.dropFirst(5)
+        }
+
+        // Fix common typos that might affect intent detection
+        let typoFixes = [
+            ("develioper", "developer"),
+            ("devleoper", "developer"),
+            ("teh ", "the "),
+            (" taht ", " that "),
+            (" wiht ", " with "),
+            (" brnach", " branch"),
+            (" barnch", " branch")
+        ]
+        for (typo, correct) in typoFixes {
+            normalized = normalized.replacingOccurrences(of: typo, with: correct)
+        }
 
         // Gate for short utterances (affirmative/negative) - allow up to 5 token confirmations
         // Strip punctuation from tokens to handle "yes," "ok." etc.
