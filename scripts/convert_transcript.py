@@ -58,6 +58,7 @@ class TranscriptConverter:
         session_id = str(uuid4())
         self.session_id = session_id
         first_message = True
+        pending_assistant_response = None  # Buffer for assistant messages
 
         # ALWAYS ensure output path is correct for Codex
         # Check if filename has proper format: rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl
@@ -179,20 +180,28 @@ class TranscriptConverter:
                     self.stats['skipped'] += 1
                     continue
 
-                codex_message = {
-                    "timestamp": record['timestamp'],
-                    "type": "response_item",
-                    "payload": {
-                        "type": "message",
-                        "role": record_type,
-                        "content": content_array
-                    }
-                }
+                # CODEX CONVERSATION STRUCTURE:
+                # For each user→assistant turn, Codex requires:
+                # 1. response_item (user)
+                # 2. event_msg (user_message)
+                # 3. turn_context (marks turn boundary)
+                # 4. event_msg (agent_message) ← CRITICAL: What displays to user
+                # 5. response_item (assistant)
 
-                outfile.write(json.dumps(codex_message, separators=(',', ':')) + '\n')
-
-                # REQUIRED: Add event_msg for user messages (needed for picker to show session)
                 if record_type == "user":
+                    # Write user response_item
+                    codex_message = {
+                        "timestamp": record['timestamp'],
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": content_array
+                        }
+                    }
+                    outfile.write(json.dumps(codex_message, separators=(',', ':')) + '\n')
+
+                    # Write user_message event
                     event_msg = {
                         "timestamp": record['timestamp'],
                         "type": "event_msg",
@@ -204,8 +213,54 @@ class TranscriptConverter:
                     }
                     outfile.write(json.dumps(event_msg, separators=(',', ':')) + '\n')
 
-                self.stats['converted'] += 1
-                self.log(f"Line {line_num}: Converted {record_type} message")
+                    # Write turn_context (marks conversation turn boundary)
+                    turn_context = {
+                        "timestamp": record['timestamp'],
+                        "type": "turn_context",
+                        "payload": {
+                            "cwd": record.get('cwd', '/'),
+                            "approval_policy": "on-request",
+                            "sandbox_policy": {
+                                "mode": "workspace-write",
+                                "network_access": False,
+                                "exclude_tmpdir_env_var": False,
+                                "exclude_slash_tmp": False
+                            },
+                            "model": "gpt-5-codex",
+                            "summary": "auto"
+                        }
+                    }
+                    outfile.write(json.dumps(turn_context, separators=(',', ':')) + '\n')
+
+                    self.stats['converted'] += 1
+                    self.log(f"Line {line_num}: Converted user message + turn_context")
+
+                elif record_type == "assistant":
+                    # Write agent_message event (CRITICAL: This is what displays!)
+                    agent_message_event = {
+                        "timestamp": record['timestamp'],
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "agent_message",
+                            "message": text_for_event
+                        }
+                    }
+                    outfile.write(json.dumps(agent_message_event, separators=(',', ':')) + '\n')
+
+                    # Write assistant response_item (canonical data)
+                    codex_message = {
+                        "timestamp": record['timestamp'],
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": content_array
+                        }
+                    }
+                    outfile.write(json.dumps(codex_message, separators=(',', ':')) + '\n')
+
+                    self.stats['converted'] += 1
+                    self.log(f"Line {line_num}: Converted assistant message (agent_message + response_item)")
 
         return self.stats
 

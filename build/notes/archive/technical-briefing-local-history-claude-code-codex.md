@@ -94,12 +94,28 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
     - `payload` → typed message: `{ type: "message", role: "user"|"assistant", content: [ { type: "input_text", text }, … ] }`
   - **Semantics:** Canonical **conversational turns** with **structured content array**.
 
+- `turn_context`
+  - **Fields:**
+    - `timestamp` (ISO)
+    - `type: "turn_context"`
+    - `payload` (object) with:
+      - `cwd` (string) — current working directory
+      - `approval_policy` (e.g., `"on-request"`)
+      - `sandbox_policy` (object: `{ mode, network_access, exclude_tmpdir_env_var, exclude_slash_tmp }`)
+      - `model` (string, e.g., `"gpt-5-codex"`)
+      - `summary` (string, e.g., `"auto"`)
+  - **Semantics:** **Marks conversation turn boundary**. Appears after `user_message` event and before agent reasoning/response. Required for proper conversation structure.
+
 - `event_msg`
   - **Varies by `payload.type`**, e.g.:
     - `token_count` — usage/limits snapshot
     - `agent_reasoning` — high-level reason string (not the encrypted content)
-    - `agent_message` — assistant UI message summary
-  - **Semantics:** Telemetry/UX stream separate from core messages.
+    - `user_message` — echoes user input (appears after user `response_item`)
+    - `agent_message` — **CRITICAL FOR DISPLAY:** Contains assistant response text shown in CLI
+  - **Fields for `agent_message`:**
+    - `payload.type: "agent_message"`
+    - `payload.message` (string) — The actual assistant response text displayed to user
+  - **Semantics:** Telemetry/UX stream separate from core messages. **Note:** `agent_message` events are what Codex CLI displays to the user when resuming sessions, NOT the `response_item` with role=assistant.
 
 - `function_call` / `function_call_output`
   - **Fields:**  
@@ -171,6 +187,35 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
   "call_id": "call_FWrFIvteK8J6c76kHBPtbRrw",
   "output": "{\"output\":\"…\",\"metadata\":{\"exit_code\":0,\"duration_seconds\":0.0}}"
 }
+```
+
+---
+
+## Required Conversation Structure (Codex)
+
+**CRITICAL:** For Codex CLI to properly display conversation history when resuming, the following record sequence is required for each user→assistant exchange:
+
+```
+1. response_item (type: "message", role: "user")
+2. event_msg (type: "user_message") — echoes user input
+3. turn_context — marks conversation turn boundary
+4. event_msg (type: "agent_message", message: "<assistant response>") — DISPLAYS to user
+5. response_item (type: "message", role: "assistant") — canonical data
+```
+
+**Why this matters:**
+- The `agent_message` event (step 4) is what Codex CLI actually **displays** to the user
+- The `response_item` with role=assistant (step 5) contains canonical message data but does NOT display on its own
+- Missing `turn_context` or `agent_message` will cause assistant responses to be invisible when resuming
+
+**Example minimal conversation:**
+```json
+{"type":"session_meta","payload":{"id":"uuid",...}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Hello"}}
+{"type":"turn_context","payload":{"cwd":"/path","model":"gpt-5-codex",...}}
+{"type":"event_msg","payload":{"type":"agent_message","message":"Hi there!"}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hi there!"}]}}
 ```
 
 ---
