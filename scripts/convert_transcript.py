@@ -275,6 +275,14 @@ class TranscriptConverter:
         session_id = None
         git_context = {}
 
+        # Monotonic timestamp generator (like in generator script)
+        from datetime import datetime, timezone, timedelta
+        base_ts = datetime.now(timezone.utc).replace(microsecond=0)
+        def next_ts():
+            nonlocal base_ts
+            base_ts = base_ts + timedelta(milliseconds=1)
+            return base_ts.isoformat().replace('+00:00', 'Z')
+
         self.log(f"Converting Codex CLI → Claude Code")
         self.log(f"Input: {input_path}")
         self.log(f"Output: {output_path}")
@@ -329,7 +337,7 @@ class TranscriptConverter:
                     self.project_dir = cwd  # Store for resume instructions
                     git_context = {
                         'cwd': cwd,
-                        'gitBranch': git_info.get('branch'),
+                        'gitBranch': git_info.get('branch') or 'main',  # Ensure non-null
                         'gitCommit': git_info.get('commit_hash')
                     }
                     self.log(f"Line {line_num}: Extracted session_meta (session_id={session_id})")
@@ -396,22 +404,88 @@ class TranscriptConverter:
 
                 role = payload.get('role', 'assistant')
 
-                claude_message = {
-                    "uuid": message_uuid,
-                    "type": role,
-                    "timestamp": record.get('timestamp'),
-                    "message": {
-                        "role": role,
-                        "content": content
-                    },
-                    "sessionId": session_id or 'converted',
-                    "parentUuid": None,  # No threading in Codex
-                    **{k: v for k, v in git_context.items() if v is not None}
-                }
+                # Build message with proper field order and monotonic timestamp
+                user_ts = next_ts() if role == 'user' else None
 
-                outfile.write(json.dumps(claude_message) + '\n')
+                if role == 'user':
+                    claude_message = {
+                        "parentUuid": None,
+                        "isSidechain": False,
+                        "userType": "external",
+                        "cwd": git_context.get('cwd', '/'),
+                        "sessionId": session_id or 'converted',
+                        "version": "2.0.26",
+                        "gitBranch": git_context.get('gitBranch', 'main'),
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": content
+                        },
+                        "uuid": message_uuid,
+                        "timestamp": user_ts,
+                        "thinkingMetadata": {
+                            "level": "none",
+                            "disabled": True,
+                            "triggers": []
+                        }
+                    }
+                else:  # assistant
+                    # Assistant messages need different content format (array)
+                    asst_ts = next_ts()
+                    claude_message = {
+                        "parentUuid": None,
+                        "isSidechain": False,
+                        "userType": "external",
+                        "cwd": git_context.get('cwd', '/'),
+                        "sessionId": session_id or 'converted',
+                        "version": "2.0.26",
+                        "gitBranch": git_context.get('gitBranch', 'main'),
+                        "message": {
+                            "model": "claude-sonnet-4-5-20250929",
+                            "id": f"msg_{str(uuid4()).replace('-', '')}",
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": content}],
+                            "stop_reason": None,
+                            "stop_sequence": None,
+                            "usage": {
+                                "input_tokens": 100,
+                                "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0,
+                                "cache_creation": {
+                                    "ephemeral_5m_input_tokens": 0,
+                                    "ephemeral_1h_input_tokens": 0
+                                },
+                                "output_tokens": 50,
+                                "service_tier": "standard"
+                            }
+                        },
+                        "requestId": f"req_{str(uuid4()).replace('-', '')}",
+                        "type": "assistant",
+                        "uuid": message_uuid,
+                        "timestamp": asst_ts
+                    }
+
+                outfile.write(json.dumps(claude_message, separators=(',', ':')) + '\n')
                 self.stats['converted'] += 1
                 self.log(f"Line {line_num}: Converted {role} message")
+
+                # Add file-history-snapshot after user messages (required by Claude Code)
+                if role == 'user':
+                    snapshot_ts = next_ts()
+
+                    snapshot_record = {
+                        "type": "file-history-snapshot",
+                        "messageId": message_uuid,
+                        "snapshot": {
+                            "messageId": message_uuid,
+                            "trackedFileBackups": {},
+                            "timestamp": snapshot_ts
+                        },
+                        "isSnapshotUpdate": False
+                    }
+                    outfile.write(json.dumps(snapshot_record, separators=(',', ':')) + '\n')
+                    self.log(f"Line {line_num}: Added file-history-snapshot for user message")
 
         return self.stats
 
