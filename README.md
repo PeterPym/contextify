@@ -131,6 +131,73 @@ make logs
 
 **Detailed guide:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
 
+## Cross-CLI Transcript Conversion
+
+Contextify includes a bidirectional transcript converter that lets you **resume conversations across different AI coding assistants**. Convert transcripts between Claude Code and Codex CLI formats to continue where you left off.
+
+### Quick Start
+
+```bash
+# Make executable (if not already)
+chmod +x scripts/convert_transcript.py
+
+# Convert Claude Code session to Codex CLI
+./scripts/convert_transcript.py \
+  --from claude-code \
+  --to codex \
+  ~/.claude/projects/-Users-you-code-project/session-uuid.jsonl \
+  ~/.codex/sessions/2025/10/24/rollout-2025-10-24T14-00-00-<uuid>.jsonl
+
+# The converter shows you exactly how to resume:
+# → cd ~/code/project && codex resume <uuid>
+
+# Convert Codex CLI session to Claude Code
+./scripts/convert_transcript.py \
+  --from codex \
+  --to claude-code \
+  ~/.codex/sessions/2025/10/24/rollout-*.jsonl \
+  ~/.claude/projects/-Users-you-code-project/imported-session.jsonl
+
+# → cd ~/code/project && claude-code /resume imported-session
+```
+
+### What Gets Converted
+
+**Preserves:**
+- ✅ All user and assistant messages
+- ✅ Timestamps and chronological order
+- ✅ Session context (git branch, working directory)
+- ✅ Content fidelity (text messages)
+
+**Phase 1 Limitations:**
+- ⚠️ Tool calls skipped (future: Phase 2)
+- ⚠️ Threading simplified
+- ⚠️ File snapshots dropped
+
+### Features
+
+- **Auto-generates proper filenames** for target CLI
+- **Extracts session metadata** (project directory, git branch)
+- **Shows resume instructions** with exact commands
+- **Round-trip compatible** (Claude → Codex → Claude preserves messages)
+
+### Testing Results
+
+Real-world test with 723-line Claude Code transcript:
+- **Claude Code → Codex:** 95 messages converted, 628 skipped (tool calls/metadata), 0 errors
+- **Codex → Claude Code (round-trip):** 95 messages preserved, 0 errors
+
+### Documentation
+
+- **Usage guide:** `scripts/TRANSCRIPT_CONVERTER_README.md`
+- **Format comparison:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- **Parsers:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+**Roadmap:**
+- Phase 2: UI integration (one-click export from app)
+- Phase 3: Tool call preservation
+- Phase 4: Support for more AI assistants (Cursor, Aider)
+
 ## Architecture Notes
 
 ### Data Layer
