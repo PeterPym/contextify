@@ -25,7 +25,7 @@ public struct TimelineGeneratorSignature: Sendable {
         model: "gpt-4o",
         modelVersion: "2025-09",
         prompt: "timeline",
-        promptVersion: "4"  // Bumped: intent classification now handles informal punctuation/typos
+        promptVersion: "5"  // Bumped: disposition override for detected directives
     )
 
     public init(model: String, modelVersion: String, prompt: String, promptVersion: String) {

@@ -569,10 +569,12 @@ actor FoundationLLM {
                 do {
                     var result = try postProcess(kind: kind, payload: payload, message: clamped, provider: provider)
 
-                    // Detect directive
+                    // Detect directive and fix disposition if LLM missed it
                     if kind == .user, isDirective(message) {
-                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true, disposition: result.disposition)
-                        log.debug("[\(reqNum)] timeline: user directive detected")
+                        // Override disposition to "directive" if LLM returned "unknown" or other non-directive value
+                        let correctedDisposition = (result.disposition == "unknown" || !["directive", "affirmative", "negative"].contains(result.disposition)) ? "directive" : result.disposition
+                        result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true, disposition: correctedDisposition)
+                        log.debug("[\(reqNum)] timeline: user directive detected, disposition=\(correctedDisposition)")
                     }
 
                     log.debug("[\(reqNum)] timeline: FINAL summary after postProcess: '\(result.summary, privacy: .public)'")
