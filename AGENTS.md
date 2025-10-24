@@ -140,6 +140,11 @@ Common commands:
 - File/dir names: kebab‑case for non‑code folders (e.g., `docs/sessions/active/`).
 - Keep modules small; separate UI (Views), state (ViewModels), and services.
 
+## UI/UX Design Guidelines
+
+**Design specs:** `build/notes/design-reference/` (color scheme, typography, patterns)
+**Color scheme:** `build/notes/design-reference/color-scheme.md` | Implementation: `TimelineEntryRow.swift:192-206`
+
 ## Logging Guidelines
 
 **Framework:** Use `OSLog` with `Logger(subsystem: "dev.contextify", category: "CategoryName")`
