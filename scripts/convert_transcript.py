@@ -274,6 +274,7 @@ class TranscriptConverter:
         """Convert Codex CLI JSONL to Claude Code format"""
         session_id = None
         git_context = {}
+        previous_uuid = None  # Track previous message UUID for parentUuid linking
 
         # Monotonic timestamp generator (like in generator script)
         from datetime import datetime, timezone, timedelta
@@ -409,7 +410,7 @@ class TranscriptConverter:
 
                 if role == 'user':
                     claude_message = {
-                        "parentUuid": None,
+                        "parentUuid": previous_uuid,  # Link to previous assistant message (or null for first)
                         "isSidechain": False,
                         "userType": "external",
                         "cwd": git_context.get('cwd', '/'),
@@ -433,7 +434,7 @@ class TranscriptConverter:
                     # Assistant messages need different content format (array)
                     asst_ts = next_ts()
                     claude_message = {
-                        "parentUuid": None,
+                        "parentUuid": previous_uuid,  # Link to previous user message
                         "isSidechain": False,
                         "userType": "external",
                         "cwd": git_context.get('cwd', '/'),
@@ -486,6 +487,9 @@ class TranscriptConverter:
                     }
                     outfile.write(json.dumps(snapshot_record, separators=(',', ':')) + '\n')
                     self.log(f"Line {line_num}: Added file-history-snapshot for user message")
+
+                # Update previous_uuid for conversation threading
+                previous_uuid = message_uuid
 
         return self.stats
 
