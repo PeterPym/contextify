@@ -60,8 +60,8 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
   - **Semantics:** Periodic capture of file backup states. When present, `trackedFileBackups` enumerates versioned backups per file.
 
 - `user` (metadata and commands)
-  - **Fields (top level - FIELD ORDER CRITICAL):**
-    - `parentUuid` (nullable)
+  - **Fields (top level):**
+    - `parentUuid` (nullable string) — **REQUIRED FOR THREADING:** Links to previous assistant message UUID, or `null` for first message
     - `isSidechain` (bool)
     - `userType` (e.g., `"external"`)
     - `cwd` (string)
@@ -71,21 +71,20 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
     - `type: "user"`
     - `message` (object) with `{ role: "user", content: "<string>" }` - **CONTENT MUST BE STRING, NOT ARRAY**
     - `uuid` (uuid)
-    - `timestamp` (ISO string)
+    - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING** (see Monotonic Timestamps section)
     - `thinkingMetadata` (object: `{ level: "none", disabled: true, triggers: [] }`)
-  - **CRITICAL:** Field order in JSON output matters for Claude Code parsing. User messages must have content as a plain string.
   - **Semantics:** Captures terminal/user-originated messages and metadata (including **cwd**, **git branch**, **tool version**, **session**).
 
 - Assistant messages (tool's model output)
-  - **Fields (top level - FIELD ORDER CRITICAL):**
-    - `parentUuid` (uuid) — references parent user message
+  - **Fields (top level):**
+    - `parentUuid` (uuid) — **REQUIRED FOR THREADING:** Links to previous user message UUID
     - `isSidechain` (bool)
     - `userType` (e.g., `"external"`)
     - `cwd` (string)
     - `sessionId` (uuid)
     - `version` (semver, e.g., `"2.0.26"`)
     - `gitBranch` (string)
-    - `message` (object) — **NESTED FIELD ORDER CRITICAL:**
+    - `message` (object):
       - `model` (string, e.g., `"claude-sonnet-4-5-20250929"`)
       - `id` (string, e.g., `"msg_..."`)
       - `type: "message"`
@@ -97,25 +96,18 @@ Focus: **file layout, record shapes, linking/IDs, and semantics**. Excludes prod
     - `requestId` (string, e.g., `"req_..."`)
     - `type: "assistant"`
     - `uuid` (uuid)
-    - `timestamp` (ISO string)
-  - **CRITICAL:** Field order matters. Assistant message.content is an array, user message.content is a string.
+    - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING** (see Monotonic Timestamps section)
+  - **Note:** Assistant `message.content` is an array, user `message.content` is a string.
 
-> **Linking:** Messages use `uuid` and **parentUuid** to form chains. Snapshots use **messageId**. `sessionId` ties entries to a session.
+> **Linking:** Messages use `uuid` and **parentUuid** to form a conversation chain (singly-linked list). First message has `parentUuid=null`, each subsequent message links to its predecessor. Snapshots use **messageId**. `sessionId` ties entries to a session.
 
 ### **CRITICAL REQUIREMENT: Monotonic Timestamps**
 
-**Claude Code requires strictly increasing timestamps across all records in a session file.** Records with identical timestamps will cause the parser to display only the first message, breaking conversation resumption.
+**Verified:** Claude Code requires strictly increasing timestamps across all records. Records with identical timestamps cause only the first message to display.
 
-**Rule:** Every record in a JSONL file must have a unique timestamp that is **greater than** all previous records.
+**Rule:** Every record must have `timestamp` > all previous records.
 
-**Implementation:**
-- User message → increment timestamp by 1ms → `2025-10-24T21:42:47.001000Z`
-- File-history-snapshot (both top-level and nested `snapshot.timestamp`) → increment by 1ms → `2025-10-24T21:42:47.002000Z`
-- Assistant message → increment by 1ms → `2025-10-24T21:42:47.003000Z`
-- Next user message → increment by 1ms → `2025-10-24T21:42:47.004000Z`
-- Continue pattern...
-
-**Example monotonic timestamp generator (Python):**
+**Implementation (1ms increments):**
 ```python
 from datetime import datetime, timezone, timedelta
 
@@ -124,51 +116,47 @@ def next_ts():
     nonlocal base
     base = base + timedelta(milliseconds=1)
     return base.isoformat().replace('+00:00', 'Z')
-
-# Use next_ts() for every timestamp in the file
-user_timestamp = next_ts()        # .001000Z
-snapshot_timestamp = next_ts()    # .002000Z
-assistant_timestamp = next_ts()   # .003000Z
 ```
 
-**Validation commands:**
+**Validation:**
 ```bash
-# Check for duplicate timestamps (should return empty)
+# Check for duplicates (should be empty)
 jq -r 'if .timestamp then .timestamp else .snapshot.timestamp end' file.jsonl | uniq -d
-
-# Verify timestamps are strictly increasing
-jq -r '[.type, (.timestamp // .snapshot.timestamp)] | @tsv' file.jsonl
 ```
 
-**Impact:** Without monotonic timestamps, Claude Code will:
-- Display only the first user message
-- Hide all assistant responses
-- Prevent conversation scrollback
-- Make the session appear truncated when resumed
+**Impact without monotonic timestamps:**
+- Only first user message displays
+- All assistant responses hidden
+- Session appears truncated when resumed
 
-This requirement was discovered empirically (2025-10-24) when programmatically generated transcripts with identical timestamps failed to resume properly, despite having correct structure, field order, and data types.
+**Note:** Codex also requires monotonically increasing timestamps for proper session resumption.
 
 ---
 
 ### Codex/AI CLI (from the provided sample)
 
 - `session_meta`
-  - **Fields:**  
-    - `timestamp` (ISO)  
-    - `type: "session_meta"`  
+  - **Fields:**
+    - `timestamp` (ISO) — **MUST BE STRICTLY INCREASING**
+    - `type: "session_meta"`
     - `payload` (object) with:
-      - `id` (uuid), `timestamp` (ISO), `cwd` (string)
-      - `originator` (e.g., `"codex_cli_rs"`), `cli_version` (string)
-      - `instructions` (string; may be large, multiline)
-      - `source` (e.g., `"cli"`)
-      - `git` (object: `{ commit_hash, branch, repository_url }`)
+      - `id` (uuid) — **REQUIRED:** session identifier, used in resume picker
+      - `timestamp` (ISO)
+      - `cwd` (string)
+      - `originator` (e.g., `"codex_cli_rs"` or `"claude_code_converter"`)
+      - `cli_version` (string)
+      - `instructions` (nullable string; may be large, multiline)
+      - `source` (string) — **REQUIRED:** Must be `"cli"` or `"vscode"` to appear in session picker
+      - `git` (optional object: `{ commit_hash, branch, repository_url }`)
   - **Semantics:** Declares **session-level context** at the start (env, git, instruction preamble).
 
 - `response_item`
-  - **Fields:**  
-    - `timestamp`, `type: "response_item"`, `payload`
-    - `payload` → typed message: `{ type: "message", role: "user"|"assistant", content: [ { type: "input_text", text }, … ] }`
+  - **Fields:**
+    - `timestamp` (ISO) — **MUST BE STRICTLY INCREASING**
+    - `type: "response_item"`
+    - `payload` → typed message: `{ type: "message", role: "user"|"assistant", content: [ { type: "input_text"|"output_text", text }, … ] }`
   - **Semantics:** Canonical **conversational turns** with **structured content array**.
+  - **Note:** Content uses `input_text` for user, `output_text` for assistant (vs Claude Code's `text` type).
 
 - `turn_context`
   - **Fields:**
@@ -211,15 +199,18 @@ This requirement was discovered empirically (2025-10-24) when programmatically g
 
 | Aspect | Claude Code | Codex/AI CLI |
 |---|---|---|
-| **Message linking** | `uuid` + `parentUuid` (threading), `sessionId` | `call_id` for tools; conversation grouping implied by file; `session_meta.payload.id` is the session anchor |
+| **Message linking** | `uuid` + `parentUuid` (threading, **REQUIRED**), `sessionId` | `call_id` for tools; conversation grouping implied by file; `session_meta.payload.id` is the session anchor |
 | **CWD / Repo** | `cwd` per message; `gitBranch` at message-level | `session_meta.payload.cwd`; `payload.git.{commit_hash,branch,repository_url}` |
 | **Record taxonomy** | `file-history-snapshot`, `user`, assistant messages; strong **file backup** focus | `session_meta`, `response_item`, `event_msg`, `function_call`, `function_call_output`, `reasoning`; strong **tooling/agent** focus |
-| **Content envelope** | `message: { role, content }` (string content) | `payload.message: { role, content: [ {type, text}|… ] }` (typed segments) |
+| **Content envelope** | `message: { role, content }` (string for user, array for assistant) | `payload.message: { role, content: [ {type, text}|… ] }` (typed segments) |
 | **Snapshots** | Yes — `trackedFileBackups` per path with versions/timestamps | No equivalent (tool outputs/logs instead) |
 | **Internal thoughts** | Not present; may include `thinkingMetadata` flags | Present as `type: "reasoning"` with `encrypted_content` |
 | **Tool I/O** | Not explicit in the sample (outside of assistant messages) | First-class: `function_call` / `function_call_output` with arguments, stdout, exit codes |
 | **Session preamble** | Implicit via early `user` meta and snapshots | Explicit `session_meta` with all environment/git/instructions |
-| **Timestamps** | ISO strings on each record; also inside `snapshot` | ISO strings on each record; also within `session_meta.payload` |
+| **Timestamps** | ISO strings (**MUST BE MONOTONIC**) on each record; also inside `snapshot` | ISO strings (**MUST BE MONOTONIC**) on each record; also within `session_meta.payload` |
+| **Display logic** | Messages display directly | `event_msg` with `type: "agent_message"` controls display; `response_item` stores canonical data |
+
+**Note on requirements:** Fields marked **REQUIRED** or **MUST** are empirically verified through round-trip conversion testing (2025-10-24). Some requirements (e.g., exact field order) were initially suspected but not confirmed—monotonic timestamps and `parentUuid` threading proved to be the critical factors.
 
 ---
 
@@ -264,6 +255,48 @@ This requirement was discovered empirically (2025-10-24) when programmatically g
   "output": "{\"output\":\"…\",\"metadata\":{\"exit_code\":0,\"duration_seconds\":0.0}}"
 }
 ```
+
+---
+
+## Bidirectional Conversion Requirements
+
+### Claude Code → Codex (Verified Working)
+
+**Required transformations:**
+1. **Content format:** `message.content` (string) → `content: [{ type: "input_text"|"output_text", text }]` (array)
+2. **Record expansion:** Each user→assistant exchange requires 5 Codex records:
+   - `response_item` (user)
+   - `event_msg` (type: "user_message")
+   - `turn_context`
+   - `event_msg` (type: "agent_message") — **what displays to user**
+   - `response_item` (assistant)
+3. **Session header:** Generate `session_meta` with `id`, `cwd`, `source: "cli"`, `originator`, `cli_version`
+4. **Timestamps:** Maintain monotonic ordering (can reuse Claude Code timestamps or generate fresh)
+
+### Codex → Claude Code (Verified Working)
+
+**Required transformations:**
+1. **Content format:** `content: [{ type: "input_text", text }]` → `message.content` (string for user, array for assistant)
+2. **Threading:** Track previous message UUID and set `parentUuid` for each message (null for first)
+3. **Snapshots:** Generate `file-history-snapshot` after each user message
+4. **Record consolidation:** Convert 5-record Codex exchanges to 3-record Claude Code exchanges:
+   - `response_item` (user) + `event_msg` (user_message) → `type: "user"` message
+   - `file-history-snapshot` (generated)
+   - `event_msg` (agent_message) + `response_item` (assistant) → `type: "assistant"` message
+5. **Timestamps:** Generate fresh monotonic timestamps (cannot reuse Codex timestamps as multiple records share same timestamp)
+
+**Critical fields for Claude Code:**
+- `parentUuid`: Must form valid chain (user→asst→user→asst...)
+- `uuid`: Unique per message, used as link target for next message's `parentUuid`
+- `sessionId`: Must match filename (e.g., `8a066329-...jsonl` contains `"sessionId": "8a066329-..."`)
+- `thinkingMetadata`: Required on user messages
+- Field types: User content = string, assistant content = array
+
+**Skip these Codex records during conversion:**
+- `session_meta` (extract session context, don't convert)
+- `event_msg` with non-message types (token_count, reasoning, etc.)
+- `turn_context` (used for extraction only)
+- `function_call` / `function_call_output` (no Claude Code equivalent in basic conversion)
 
 ---
 
