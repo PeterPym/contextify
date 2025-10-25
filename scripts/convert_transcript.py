@@ -515,7 +515,7 @@ class TranscriptConverter:
         return self.stats
 
     def codex_to_claude(self, input_path, output_path):
-        """Convert Codex CLI JSONL to Claude Code format"""
+        """Convert Codex CLI JSONL to Claude Code format (Two-pass with tool conversion)"""
         session_id = None
         git_context = {}
         previous_uuid = None  # Track previous message UUID for parentUuid linking
@@ -528,9 +528,82 @@ class TranscriptConverter:
             base_ts = base_ts + timedelta(milliseconds=1)
             return base_ts.isoformat().replace('+00:00', 'Z')
 
-        self.log(f"Converting Codex CLI → Claude Code")
+        self.log(f"Converting Codex CLI → Claude Code (two-pass with tool conversion)")
         self.log(f"Input: {input_path}")
         self.log(f"Output: {output_path}")
+
+        # ========================================================================
+        # PASS 1: Load all records and build function_call lookup maps
+        # ========================================================================
+        records = []
+        function_calls = {}  # call_id -> (function_call_payload, timestamp, line_num)
+        function_outputs = {}  # call_id -> (function_output_payload, timestamp, line_num)
+
+        with open(input_path) as infile:
+            for line_num, line in enumerate(infile, 1):
+                self.stats['total_lines'] += 1
+                try:
+                    record = json.loads(line)
+                    records.append((line_num, record))
+
+                    # Index function_call and function_call_output for pairing
+                    if record.get('type') == 'response_item':
+                        payload = record.get('payload', {})
+                        payload_type = payload.get('type')
+
+                        if payload_type == 'function_call':
+                            call_id = payload.get('call_id')
+                            if call_id:
+                                function_calls[call_id] = (payload, record.get('timestamp'), line_num)
+
+                        elif payload_type == 'function_call_output':
+                            call_id = payload.get('call_id')
+                            if call_id:
+                                function_outputs[call_id] = (payload, record.get('timestamp'), line_num)
+
+                except json.JSONDecodeError as e:
+                    self.log(f"Line {line_num}: JSON parse error: {e}")
+                    self.stats['errors'] += 1
+
+        self.log(f"Pass 1: Loaded {len(records)} records")
+        self.log(f"Found {len(function_calls)} function_call, {len(function_outputs)} function_call_output")
+
+        # ========================================================================
+        # PASS 2: Convert with tool calls integrated into messages
+        # ========================================================================
+        # Build assistant message index for function_call attribution
+        # In Codex: function_call appears AFTER the assistant message it belongs to
+        # We need to find the last assistant message before each function_call
+        assistant_messages = []  # List of (record_index, line_num) for assistant messages
+        for i, (line_num, record) in enumerate(records):
+            if record.get('type') == 'response_item':
+                payload = record.get('payload', {})
+                if payload.get('type') == 'message' and payload.get('role') == 'assistant':
+                    assistant_messages.append((i, line_num))
+
+        self.log(f"Found {len(assistant_messages)} assistant messages for tool call attribution")
+
+        # Map function_calls to the assistant message they belong to
+        function_call_to_assistant = {}  # call_id -> record_index of assistant message
+        for call_id, (func_payload, _, func_line_num) in function_calls.items():
+            # Find the last assistant message before this function_call
+            # Search backwards through records to find which assistant message made this call
+            func_record_idx = None
+            for i, (line_num, record) in enumerate(records):
+                if line_num == func_line_num:
+                    func_record_idx = i
+                    break
+
+            if func_record_idx is not None:
+                # Find last assistant message before this function_call
+                for asst_idx, _ in reversed(assistant_messages):
+                    if asst_idx < func_record_idx:
+                        function_call_to_assistant[call_id] = asst_idx
+                        self.log(f"Mapped function_call {call_id} to assistant at index {asst_idx}")
+                        break
+
+        # Track which function_calls we've already converted to avoid duplicates
+        converted_calls = set()  # call_ids that have been integrated into messages
 
         # Claude Code requires UUID.jsonl filenames
         # Extract or validate session ID from output path
@@ -548,29 +621,17 @@ class TranscriptConverter:
             self.log(f"Using UUID from filename: {self.session_id}")
         else:
             # Not a UUID filename - need to generate one and update path
-            # Try to extract session_id from input Codex file first
             self.log(f"Warning: Output filename '{basename}' is not UUID format")
             self.log(f"Claude Code requires <uuid>.jsonl filenames")
 
-            # We'll read the session_id from the Codex file's session_meta
-            # and use that as the filename UUID (will be set during parsing)
-            # For now, use the provided path but warn the user
+            # We'll use the session_id from Codex file's session_meta
             if basename.endswith('.jsonl'):
                 self.session_id = basename[:-6]  # Remove .jsonl extension
             else:
                 self.session_id = basename
 
-        with open(input_path) as infile, open(output_path, 'w') as outfile:
-            for line_num, line in enumerate(infile, 1):
-                self.stats['total_lines'] += 1
-
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as e:
-                    self.log(f"Line {line_num}: JSON parse error: {e}")
-                    self.stats['errors'] += 1
-                    continue
-
+        with open(output_path, 'w') as outfile:
+            for i, (line_num, record) in enumerate(records):
                 record_type = record.get('type')
 
                 # Extract session metadata
@@ -617,7 +678,15 @@ class TranscriptConverter:
                     continue
 
                 payload = record.get('payload', {})
-                if payload.get('type') != 'message':
+                payload_type = payload.get('type')
+
+                # Skip function_call and function_call_output (they're integrated into messages)
+                if payload_type in ('function_call', 'function_call_output'):
+                    self.log(f"Line {line_num}: Skipping standalone {payload_type} (integrated into messages)")
+                    self.stats['skipped'] += 1
+                    continue
+
+                if payload_type != 'message':
                     self.log(f"Line {line_num}: Skipping non-message response_item")
                     self.stats['skipped'] += 1
                     continue
@@ -653,6 +722,49 @@ class TranscriptConverter:
                 user_ts = next_ts() if role == 'user' else None
 
                 if role == 'user':
+                    # Build user message content array with tool_result blocks
+                    user_content_array = []
+
+                    # Look backward to find function_call_output records that belong to this user message
+                    # (These are tool results from the previous assistant's tool_use)
+                    for j in range(max(0, i - 20), i):  # Look back up to 20 records
+                        _, past_record = records[j]
+                        if past_record.get('type') == 'response_item':
+                            past_payload = past_record.get('payload', {})
+                            if past_payload.get('type') == 'function_call_output':
+                                call_id = past_payload.get('call_id')
+                                if call_id and call_id not in converted_calls:
+                                    # This output hasn't been converted yet - it might belong to this user message
+                                    # Convert to tool_result and add to content
+                                    tool_use_id = self.call_id_to_tool_use_id(call_id)
+
+                                    output_text = past_payload.get('output', '')
+                                    exit_code = past_payload.get('exit_code', 0)
+                                    is_error = (exit_code != 0)
+
+                                    tool_result = {
+                                        "type": "tool_result",
+                                        "tool_use_id": tool_use_id,
+                                        "content": output_text,
+                                        "is_error": is_error
+                                    }
+                                    user_content_array.append(tool_result)
+                                    # Mark as converted so we don't process it again
+                                    converted_calls.add(call_id)
+                                    self.log(f"Line {line_num}: Added tool_result for {call_id}")
+
+                    # Add text content to user message
+                    if content:
+                        user_content_array.append({"type": "text", "text": content})
+
+                    # Build user message with content array if we have tool_results, otherwise simple string
+                    if len(user_content_array) > 1 or (user_content_array and user_content_array[0].get('type') == 'tool_result'):
+                        # Has tool_results - use array format
+                        message_content = user_content_array
+                    else:
+                        # Plain text only - use string format
+                        message_content = content
+
                     claude_message = {
                         "parentUuid": previous_uuid,  # Link to previous assistant message (or null for first)
                         "isSidechain": False,
@@ -664,7 +776,7 @@ class TranscriptConverter:
                         "type": "user",
                         "message": {
                             "role": "user",
-                            "content": content
+                            "content": message_content
                         },
                         "uuid": message_uuid,
                         "timestamp": user_ts,
@@ -677,6 +789,32 @@ class TranscriptConverter:
                 else:  # assistant
                     # Assistant messages need different content format (array)
                     asst_ts = next_ts()
+
+                    # Build content array with text + tool_use blocks
+                    content_array = [{"type": "text", "text": content}]
+
+                    # Find function_calls that belong to this assistant message
+                    # (They appear after this message in Codex format)
+                    for call_id, asst_idx in function_call_to_assistant.items():
+                        if asst_idx == i and call_id not in converted_calls:
+                            # This function_call belongs to this assistant message
+                            func_payload, func_ts, func_line = function_calls[call_id]
+                            func_output_payload = None
+                            if call_id in function_outputs:
+                                func_output_payload, _, _ = function_outputs[call_id]
+
+                            tool_use, tool_result = self.shell_to_bash(
+                                func_payload,
+                                func_output_payload,
+                                func_ts
+                            )
+
+                            if tool_use:
+                                content_array.append(tool_use)
+                                # Don't mark as converted yet - user message will handle tool_result
+                                self.stats['tool_calls_direct'] += 1
+                                self.log(f"Line {line_num}: Converted shell to Bash tool_use (call_id={call_id})")
+
                     claude_message = {
                         "parentUuid": previous_uuid,  # Link to previous user message
                         "isSidechain": False,
@@ -690,7 +828,7 @@ class TranscriptConverter:
                             "id": f"msg_{str(uuid4()).replace('-', '')}",
                             "type": "message",
                             "role": "assistant",
-                            "content": [{"type": "text", "text": content}],
+                            "content": content_array,
                             "stop_reason": None,
                             "stop_sequence": None,
                             "usage": {
