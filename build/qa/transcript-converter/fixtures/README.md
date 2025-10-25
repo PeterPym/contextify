@@ -123,9 +123,19 @@ Before committing fixtures, validate each one:
 - [x] **02-generated-codex.jsonl**: Resume in Codex shows all 2 exchanges ✓
 - [x] **03-converted-to-codex.jsonl**: Resume in Codex shows all 3 exchanges (converted from Claude Code) ✓
 
-## Known Issues
+## Validation Status
 
-**Codex → Claude Code conversion:** Currently under investigation. Converted transcripts have correct structure but Claude Code parser rejects them with "No messages returned".
+**All conversion paths verified working (2025-10-24):**
+
+✅ **Claude Code → Codex** - Working
+✅ **Codex → Claude Code** - Working (fixed parentUuid threading)
+✅ **Round-trip (CC → Codex → CC → Codex)** - Working
+
+**Critical fixes implemented:**
+1. Monotonic timestamps (both directions)
+2. parentUuid conversation threading (Codex → Claude)
+3. Complete Codex record structure (5 records per exchange)
+4. file-history-snapshot generation (Codex → Claude)
 
 ## File Structure Validation
 
