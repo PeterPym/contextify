@@ -154,6 +154,34 @@ grep -c '"name":"Bash"' /tmp/roundtrip.jsonl
 # Should match: 7 = 7
 ```
 
+### UI Testing (Resume in CLI)
+
+**Phase 2a - Tier 1 (Bash ↔ shell):**
+
+```bash
+# Test CC → Codex conversion in Codex CLI
+cd /Users/rob/code/projects/contextify
+codex resume acf30516-851c-4751-b3d9-ffb93c0d344f
+# Note: Tool calls are in file but won't display in UI (expected Codex behavior)
+# File: ~/.codex/sessions/2025/10/24/rollout-2025-10-24T22-38-16-acf30516-851c-4751-b3d9-ffb93c0d344f.jsonl
+
+# Test Codex → CC round-trip in Claude Code
+cd /Users/rob/code/projects/contextify
+claude --resume acf30516-851c-4751-b3d9-ffb93c0d344f
+# Tool calls WILL display with ⏺ symbol (7 Bash calls)
+# File: ~/.claude/projects/-Users-rob-code-projects-contextify/acf30516-851c-4751-b3d9-ffb93c0d344f.jsonl
+```
+
+**Phase 2b - Tier 2 (Edit/Read/Write text summaries):**
+
+```bash
+# Test CC → Codex with Tier 2 tools converted to text summaries
+cd /Users/rob/code/projects/contextify
+codex resume 131d1c7a-1ec8-4bb8-90e5-2ac349649abf
+# Look for text like: "I read `/tmp/file.md` using the Read tool."
+# File: ~/.codex/sessions/2025/10/24/rollout-2025-10-24T23-15-38-131d1c7a-1ec8-4bb8-90e5-2ac349649abf.jsonl
+```
+
 ---
 
 ## Validation Checks
