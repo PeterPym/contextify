@@ -442,86 +442,160 @@ class TranscriptGenerator:
     def generate_codex(self, output_path, num_exchanges=2):
         """Generate a valid Codex CLI transcript."""
 
-        # Use millisecond precision with .000Z format to match CLI output
-        timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
+        # Monotonic millisecond timestamps (session_meta -> messages -> ...)
+        base = datetime.now(timezone.utc).replace(microsecond=0)
+        def next_ts():
+            nonlocal base
+            base = base + timedelta(milliseconds=1)
+            return base.isoformat().replace('+00:00', 'Z')
+
         creation_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S PST')
 
         records = []
 
         # Session metadata (must be first)
+        ts = next_ts()
         records.append({
-            "timestamp": timestamp,
+            "timestamp": ts,
             "type": "session_meta",
             "payload": {
-                "projectPath": self.project_dir,
-                "gitInfo": {
-                    "branch": self.git_branch,
-                    "commit_hash": self.git_commit
-                }
+                "id": self.session_id,
+                "timestamp": ts,
+                "cwd": self.project_dir,
+                "originator": "test_generator",
+                "cli_version": "test-1.0.0",
+                "instructions": None,
+                "source": "cli"  # REQUIRED: Must be "cli" or "vscode" to appear in picker
             }
         })
 
         # Exchange 1: User message
+        # Codex requires: response_item + event_msg + turn_context
+        user_text = f"This is a test conversation created at {creation_time} to verify the transcript converter."
+        ts = next_ts()
+
         records.append({
-            "timestamp": timestamp,
+            "timestamp": ts,
             "type": "response_item",
             "payload": {
                 "type": "message",
                 "role": "user",
-                "content": [
-                    {
-                        "type": "input_text",
-                        "text": f"This is a test conversation created at {creation_time} to verify the transcript converter."
-                    }
-                ]
+                "content": [{"type": "input_text", "text": user_text}]
+            }
+        })
+
+        records.append({
+            "timestamp": ts,
+            "type": "event_msg",
+            "payload": {
+                "type": "user_message",
+                "message": user_text,
+                "kind": "plain"
+            }
+        })
+
+        records.append({
+            "timestamp": ts,
+            "type": "turn_context",
+            "payload": {
+                "cwd": self.project_dir,
+                "approval_policy": "on-request",
+                "sandbox_policy": {
+                    "mode": "workspace-write",
+                    "network_access": False,
+                    "exclude_tmpdir_env_var": False,
+                    "exclude_slash_tmp": False
+                },
+                "model": "gpt-5-codex",
+                "summary": "auto"
             }
         })
 
         # Exchange 1: Assistant response
+        # Codex requires: event_msg (agent_message) + response_item
+        asst_text = "I understand. This test conversation will be used to validate the transcript converter works correctly."
+        ts = next_ts()
+
         records.append({
-            "timestamp": timestamp,
+            "timestamp": ts,
+            "type": "event_msg",
+            "payload": {
+                "type": "agent_message",
+                "message": asst_text
+            }
+        })
+
+        records.append({
+            "timestamp": ts,
             "type": "response_item",
             "payload": {
                 "type": "message",
                 "role": "assistant",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "text": "I understand. This test conversation will be used to validate the transcript converter works correctly."
-                    }
-                ]
+                "content": [{"type": "output_text", "text": asst_text}]
             }
         })
 
         # Exchange 2: More verification
         if num_exchanges >= 2:
+            user_text = f"Perfect! Test session ID: {self.session_id}"
+            ts = next_ts()
+
             records.append({
-                "timestamp": timestamp,
+                "timestamp": ts,
                 "type": "response_item",
                 "payload": {
                     "type": "message",
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": f"Perfect! Test session ID: {self.session_id}"
-                        }
-                    ]
+                    "content": [{"type": "input_text", "text": user_text}]
                 }
             })
 
             records.append({
-                "timestamp": timestamp,
+                "timestamp": ts,
+                "type": "event_msg",
+                "payload": {
+                    "type": "user_message",
+                    "message": user_text,
+                    "kind": "plain"
+                }
+            })
+
+            records.append({
+                "timestamp": ts,
+                "type": "turn_context",
+                "payload": {
+                    "cwd": self.project_dir,
+                    "approval_policy": "on-request",
+                    "sandbox_policy": {
+                        "mode": "workspace-write",
+                        "network_access": False,
+                        "exclude_tmpdir_env_var": False,
+                        "exclude_slash_tmp": False
+                    },
+                    "model": "gpt-5-codex",
+                    "summary": "auto"
+                }
+            })
+
+            asst_text = f"Acknowledged! This test will validate:\n1. Codex CLI can resume this session\n2. Converter transforms to Claude Code format\n3. Claude Code can resume the converted session\n\nCreation time: {creation_time}"
+            ts = next_ts()
+
+            records.append({
+                "timestamp": ts,
+                "type": "event_msg",
+                "payload": {
+                    "type": "agent_message",
+                    "message": asst_text
+                }
+            })
+
+            records.append({
+                "timestamp": ts,
                 "type": "response_item",
                 "payload": {
                     "type": "message",
                     "role": "assistant",
-                    "content": [
-                        {
-                            "type": "output_text",
-                            "text": f"Acknowledged! This test will validate:\n1. Codex CLI can resume this session\n2. Converter transforms to Claude Code format\n3. Claude Code can resume the converted session\n\nCreation time: {creation_time}"
-                        }
-                    ]
+                    "content": [{"type": "output_text", "text": asst_text}]
                 }
             })
 
