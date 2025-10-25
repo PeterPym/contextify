@@ -156,6 +156,9 @@ struct TranscriptInventoryView: View {
       List(filteredSessions, id: \.identifier, selection: $selectedTranscriptId) { session in
         sessionRow(session)
           .tag(session.identifier)
+          .contextMenu {
+            exportContextMenu(for: session)
+          }
       }
       .listStyle(.sidebar)
       .searchable(text: $searchText, prompt: "Search transcripts")
@@ -343,6 +346,237 @@ struct TranscriptInventoryView: View {
       }
     }
     .padding(.vertical, 4)
+  }
+
+  // MARK: - Context Menu
+
+  @ViewBuilder
+  private func exportContextMenu(for session: TranscriptSession) -> some View {
+    // Show export option based on current provider
+    switch session.provider {
+    case .claudeCode:
+      Button {
+        exportToCodex(session)
+      } label: {
+        Label("Export to Codex CLI", systemImage: "arrow.right.doc.on.clipboard")
+      }
+
+    case .codexCLI:
+      Button {
+        exportToClaudeCode(session)
+      } label: {
+        Label("Export to Claude Code", systemImage: "arrow.right.doc.on.clipboard")
+      }
+
+    case .other:
+      // No conversion supported for unknown formats
+      EmptyView()
+    }
+
+    Divider()
+
+    Button {
+      NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
+    } label: {
+      Label("Reveal in Finder", systemImage: "folder")
+    }
+
+    Button {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(session.fileURL.path, forType: .string)
+    } label: {
+      Label("Copy Path", systemImage: "doc.on.doc")
+    }
+  }
+
+  private func exportToCodex(_ session: TranscriptSession) {
+    Task {
+      await performExport(session: session, to: .codexCLI)
+    }
+  }
+
+  private func exportToClaudeCode(_ session: TranscriptSession) {
+    Task {
+      await performExport(session: session, to: .claudeCode)
+    }
+  }
+
+  @MainActor
+  private func performExport(session: TranscriptSession, to targetFormat: TranscriptFormat) async {
+    // Show save panel
+    let savePanel = NSSavePanel()
+    savePanel.canCreateDirectories = true
+    savePanel.showsTagField = false
+    savePanel.level = .modalPanel
+
+    // Auto-generate filename based on target format
+    let suggestedFilename: String
+    let suggestedDirectory: URL?
+
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser
+
+    switch targetFormat {
+    case .codexCLI:
+      // Codex format: rollout-YYYY-MM-DDTHH-MM-SS-<uuid>.jsonl
+      let formatter = DateFormatter()
+      formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
+      let timestamp = formatter.string(from: Date())
+      let sessionId = session.identifier
+      suggestedFilename = "rollout-\(timestamp)-\(sessionId).jsonl"
+
+      // Suggest ~/.codex/sessions/YYYY/MM/DD/
+      let calendar = Calendar.current
+      let now = Date()
+      let year = calendar.component(.year, from: now)
+      let month = calendar.component(.month, from: now)
+      let day = calendar.component(.day, from: now)
+
+      suggestedDirectory = homeDir
+        .appendingPathComponent(".codex")
+        .appendingPathComponent("sessions")
+        .appendingPathComponent(String(year))
+        .appendingPathComponent(String(format: "%02d", month))
+        .appendingPathComponent(String(format: "%02d", day))
+
+      // Create directory if it doesn't exist
+      try? FileManager.default.createDirectory(at: suggestedDirectory!, withIntermediateDirectories: true)
+
+    case .claudeCode:
+      // Claude Code format: <uuid>.jsonl
+      suggestedFilename = "\(session.identifier).jsonl"
+
+      // Suggest ~/.claude/projects/<project-path>/
+      if let projectRoot = hudViewModel.projectRootURL {
+        let projectPathEncoded = projectRoot.path.replacingOccurrences(of: "/", with: "-")
+        suggestedDirectory = homeDir
+          .appendingPathComponent(".claude")
+          .appendingPathComponent("projects")
+          .appendingPathComponent(projectPathEncoded)
+
+        // Create directory if it doesn't exist
+        try? FileManager.default.createDirectory(at: suggestedDirectory!, withIntermediateDirectories: true)
+      } else {
+        suggestedDirectory = nil
+      }
+    }
+
+    savePanel.nameFieldStringValue = suggestedFilename
+    if let dir = suggestedDirectory {
+      savePanel.directoryURL = dir
+    }
+
+    let response = await savePanel.beginSheetModal(for: NSApp.keyWindow!)
+
+    guard response == .OK, let outputURL = savePanel.url else {
+      return
+    }
+
+    // Perform conversion
+    let sourceFormat: TranscriptFormat = (session.provider == .claudeCode) ? .claudeCode : .codexCLI
+
+    do {
+      showToast("Converting transcript...")
+
+      let converter = TranscriptConverter(verbose: false)
+      let result = try await converter.convert(
+        from: sourceFormat,
+        to: targetFormat,
+        inputPath: session.fileURL,
+        outputPath: outputURL
+      )
+
+      // Show success with resume instructions
+      await showResumeInstructions(result: result, targetFormat: targetFormat)
+
+      showToast("Exported to \(result.actualOutputPath.lastPathComponent)")
+
+    } catch {
+      log.error("Conversion failed: \(error.localizedDescription)")
+      showToast("Export failed: \(error.localizedDescription)")
+    }
+  }
+
+  @MainActor
+  private func showResumeInstructions(result: ConversionResult, targetFormat: TranscriptFormat) async {
+    let alert = NSAlert()
+    alert.messageText = "Transcript Exported"
+    alert.alertStyle = .informational
+
+    let instructions: String
+    switch targetFormat {
+    case .codexCLI:
+      if let projectDir = result.projectDir, let sessionId = result.sessionId {
+        instructions = """
+        To resume in Codex CLI, run:
+
+        cd \(projectDir) && codex resume \(sessionId)
+
+        Or use the picker:
+        cd \(projectDir) && codex resume
+
+        📍 Transcript: \(result.actualOutputPath.path)
+        """
+      } else {
+        instructions = """
+        📍 Transcript: \(result.actualOutputPath.path)
+
+        Use `codex resume` to continue the conversation.
+        """
+      }
+
+    case .claudeCode:
+      if let projectDir = result.projectDir, let sessionId = result.sessionId {
+        instructions = """
+        To resume in Claude Code, run:
+
+        cd \(projectDir) && claude --resume \(sessionId)
+
+        📍 Transcript: \(result.actualOutputPath.path)
+        """
+      } else {
+        instructions = """
+        📍 Transcript: \(result.actualOutputPath.path)
+
+        Use `claude --resume` to continue the conversation.
+        """
+      }
+    }
+
+    alert.informativeText = instructions
+
+    alert.addButton(withTitle: "Copy Command")
+    alert.addButton(withTitle: "OK")
+
+    let response = await alert.beginSheetModal(for: NSApp.keyWindow!)
+
+    if response == .alertFirstButtonReturn {
+      // Copy command to clipboard
+      if let projectDir = result.projectDir, let sessionId = result.sessionId {
+        let command: String
+        switch targetFormat {
+        case .codexCLI:
+          command = "cd \(projectDir) && codex resume \(sessionId)"
+        case .claudeCode:
+          command = "cd \(projectDir) && claude --resume \(sessionId)"
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+      }
+    }
+  }
+
+  // MARK: - Toast Helper
+
+  private func showToast(_ message: String, duration: TimeInterval = 2.0) {
+    NotificationCenter.default.post(
+      name: .contextifyShowToast,
+      object: nil,
+      userInfo: [
+        ToastPayloadKey.message: message,
+        ToastPayloadKey.duration: duration
+      ]
+    )
   }
 
   // MARK: - Helpers
