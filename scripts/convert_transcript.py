@@ -726,15 +726,31 @@ class TranscriptConverter:
                     user_content_array = []
 
                     # Look backward to find function_call_output records that belong to this user message
-                    # (These are tool results from the previous assistant's tool_use)
-                    for j in range(max(0, i - 20), i):  # Look back up to 20 records
+                    # Pattern in Codex:
+                    #   assistant → user → function_call → function_call_output → assistant → user
+                    # So function_call_outputs appear BEFORE this user message
+                    # They should go into the NEXT user message after they appear
+
+                    # Find the previous user message
+                    prev_user_idx = None
+                    for j in range(i - 1, -1, -1):
+                        _, past_record = records[j]
+                        if past_record.get('type') == 'response_item':
+                            past_payload = past_record.get('payload', {})
+                            if past_payload.get('type') == 'message' and past_payload.get('role') == 'user':
+                                prev_user_idx = j
+                                break
+
+                    # Collect function_call_outputs between previous user message and this one
+                    search_start = prev_user_idx + 1 if prev_user_idx is not None else 0
+                    for j in range(search_start, i):
                         _, past_record = records[j]
                         if past_record.get('type') == 'response_item':
                             past_payload = past_record.get('payload', {})
                             if past_payload.get('type') == 'function_call_output':
                                 call_id = past_payload.get('call_id')
                                 if call_id and call_id not in converted_calls:
-                                    # This output hasn't been converted yet - it might belong to this user message
+                                    # This output belongs to this user message
                                     # Convert to tool_result and add to content
                                     tool_use_id = self.call_id_to_tool_use_id(call_id)
 
