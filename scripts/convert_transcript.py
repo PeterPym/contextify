@@ -31,6 +31,7 @@ import sys
 import os
 from datetime import datetime
 from uuid import uuid4
+import hashlib
 
 
 class TranscriptConverter:
@@ -42,11 +43,192 @@ class TranscriptConverter:
             'total_lines': 0,
             'converted': 0,
             'skipped': 0,
-            'errors': 0
+            'errors': 0,
+            'tool_calls_direct': 0,      # Tier 1: Bash ↔ shell
+            'tool_calls_summarized': 0,  # Tier 2: Edit, Read, etc.
+            'tool_calls_skipped': 0      # Tier 3: TodoWrite, etc.
         }
         self.project_dir = None  # Extracted from transcript
         self.session_id = None   # For resume instructions
         self.suggested_codex_path = None  # Proper Codex session path
+
+    # ============================================================================
+    # Tool Conversion Helpers (Tier 1: Bash ↔ shell)
+    # ============================================================================
+
+    @staticmethod
+    def tool_use_id_to_call_id(tool_id):
+        """Convert Claude Code tool_use ID to Codex call_id
+
+        Examples:
+          toolu_abc123 → call_abc123
+          toolu_01ABC  → call_01ABC
+        """
+        if tool_id.startswith("toolu_"):
+            return "call_" + tool_id[6:]
+        return "call_" + tool_id
+
+    @staticmethod
+    def call_id_to_tool_use_id(call_id):
+        """Convert Codex call_id to Claude Code tool_use ID
+
+        Examples:
+          call_abc123 → toolu_abc123
+          call_01ABC  → toolu_01ABC
+        """
+        if call_id.startswith("call_"):
+            return "toolu_" + call_id[5:]
+        return "toolu_" + call_id
+
+    def bash_to_shell(self, tool_use_block, tool_result_block, timestamp, workdir=None):
+        """Convert Claude Code Bash tool to Codex shell function
+
+        Args:
+            tool_use_block: Claude Code tool_use content block
+            tool_result_block: Claude Code tool_result content block (may be None)
+            timestamp: ISO timestamp for function_call
+            workdir: Working directory (default: self.project_dir or '/')
+
+        Returns:
+            (function_call_record, function_call_output_record) or (function_call_record, None)
+        """
+        tool_id = tool_use_block.get('id')
+        tool_input = tool_use_block.get('input', {})
+        command = tool_input.get('command', '')
+
+        if not command:
+            self.log(f"Warning: Bash tool has no command, skipping")
+            return None, None
+
+        # Use provided workdir or fallback
+        work_dir = workdir or self.project_dir or '/'
+
+        # Build Codex shell arguments
+        shell_args = {
+            "command": ["bash", "-c", command],
+            "workdir": work_dir
+        }
+
+        # Generate call_id from tool_use ID
+        call_id = self.tool_use_id_to_call_id(tool_id)
+
+        # Build function_call record
+        function_call = {
+            "timestamp": timestamp,
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "shell",
+                "arguments": json.dumps(shell_args, separators=(',', ':')),
+                "call_id": call_id
+            }
+        }
+
+        # Build function_call_output if we have a result
+        function_output = None
+        if tool_result_block:
+            content = tool_result_block.get('content', '')
+            is_error = tool_result_block.get('is_error', False)
+            exit_code = 1 if is_error else 0
+
+            output_data = {
+                "output": content,
+                "metadata": {
+                    "exit_code": exit_code,
+                    "duration_seconds": 0.0  # Placeholder (not available in Claude Code)
+                }
+            }
+
+            # Increment timestamp by 1ms for output
+            from datetime import datetime as dt, timedelta, timezone
+            ts_obj = dt.fromisoformat(timestamp.replace('Z', '+00:00'))
+            output_ts = (ts_obj + timedelta(milliseconds=1)).isoformat().replace('+00:00', 'Z')
+
+            function_output = {
+                "timestamp": output_ts,
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": json.dumps(output_data, separators=(',', ':'))
+                }
+            }
+
+        return function_call, function_output
+
+    def shell_to_bash(self, function_call_payload, function_output_payload, timestamp):
+        """Convert Codex shell function to Claude Code Bash tool
+
+        Args:
+            function_call_payload: Codex function_call payload
+            function_output_payload: Codex function_call_output payload (may be None)
+            timestamp: ISO timestamp for tool_use
+
+        Returns:
+            (tool_use_block, tool_result_block) or (tool_use_block, None)
+        """
+        call_id = function_call_payload.get('call_id')
+        arguments_str = function_call_payload.get('arguments', '{}')
+
+        try:
+            arguments = json.loads(arguments_str)
+        except json.JSONDecodeError:
+            self.log(f"Warning: Invalid JSON in shell arguments: {arguments_str}")
+            return None, None
+
+        # Extract command from ["bash", "-c", "actual_command"] format
+        command_array = arguments.get('command', [])
+        if not isinstance(command_array, list) or len(command_array) < 3:
+            # Fallback: join entire array
+            command = ' '.join(command_array) if isinstance(command_array, list) else str(command_array)
+        else:
+            # Unwrap bash -c wrapper
+            if command_array[0] == 'bash' and command_array[1] in ['-c', '-lc']:
+                command = command_array[2]
+            else:
+                command = ' '.join(command_array)
+
+        # Generate tool_use_id from call_id
+        tool_use_id = self.call_id_to_tool_use_id(call_id)
+
+        # Build tool_use block
+        tool_use = {
+            "type": "tool_use",
+            "id": tool_use_id,
+            "name": "Bash",
+            "input": {
+                "command": command,
+                "description": "Execute shell command"  # Generic description
+            }
+        }
+
+        # Build tool_result block if we have output
+        tool_result = None
+        if function_output_payload:
+            output_str = function_output_payload.get('output', '{}')
+            try:
+                output_data = json.loads(output_str)
+                content = output_data.get('output', '')
+                exit_code = output_data.get('metadata', {}).get('exit_code', 0)
+                is_error = (exit_code != 0)
+
+                tool_result = {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": content,
+                    "is_error": is_error
+                }
+            except json.JSONDecodeError:
+                self.log(f"Warning: Invalid JSON in shell output: {output_str}")
+                # Create minimal tool_result
+                tool_result = {
+                    "type": "tool_result",
+                    "tool_use_id": tool_use_id,
+                    "content": output_str,
+                    "is_error": False
+                }
+
+        return tool_use, tool_result
 
     def log(self, message):
         """Print verbose logging"""
