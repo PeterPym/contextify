@@ -1,9 +1,9 @@
 # Tool Conversion Test Fixtures
 
-**Purpose:** Real-world transcripts for testing Bash ↔ shell tool call conversion
+**Purpose:** Real-world transcripts for testing tool call conversion
 
 **Added:** 2025-10-24
-**Related:** Phase 2a tool call conversion implementation
+**Related:** Phase 2a (Tier 1: Bash↔shell) and Phase 2b (Tier 2: lossy text summaries)
 
 ---
 

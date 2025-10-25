@@ -230,6 +230,64 @@ class TranscriptConverter:
 
         return tool_use, tool_result
 
+    def tool_to_text_summary(self, tool_use_block, tool_result_block):
+        """Convert Tier 2 tools (Edit/Read/Write/Grep/Glob) to text summaries
+
+        These tools don't have Codex equivalents, so we create readable text
+        descriptions of what the tool did.
+
+        Returns: text summary string
+        """
+        tool_name = tool_use_block.get('name')
+        tool_input = tool_use_block.get('input', {})
+
+        if tool_name == 'Edit':
+            file_path = tool_input.get('file_path', 'unknown file')
+            return f"I edited `{file_path}` using the Edit tool."
+
+        elif tool_name == 'Read':
+            file_path = tool_input.get('file_path', 'unknown file')
+            offset = tool_input.get('offset')
+            limit = tool_input.get('limit')
+            if offset or limit:
+                range_desc = f" (lines {offset or 'start'} to {offset + limit if offset and limit else 'end'})"
+            else:
+                range_desc = ""
+            return f"I read `{file_path}`{range_desc} using the Read tool."
+
+        elif tool_name == 'Write':
+            file_path = tool_input.get('file_path', 'unknown file')
+            content_len = len(tool_input.get('content', ''))
+            return f"I created/wrote `{file_path}` ({content_len} characters) using the Write tool."
+
+        elif tool_name == 'Grep':
+            pattern = tool_input.get('pattern', 'pattern')
+            path = tool_input.get('path', '.')
+            output_mode = tool_input.get('output_mode', 'files_with_matches')
+
+            # Try to get match count from result
+            result_content = tool_result_block.get('content', '') if tool_result_block else ''
+            if output_mode == 'count':
+                return f"I searched for `{pattern}` in `{path}` (count mode) using the Grep tool."
+            elif output_mode == 'files_with_matches':
+                match_count = result_content.count('\n') if result_content else 0
+                return f"I searched for `{pattern}` in `{path}` and found {match_count} matching files using the Grep tool."
+            else:
+                return f"I searched for `{pattern}` in `{path}` using the Grep tool."
+
+        elif tool_name == 'Glob':
+            pattern = tool_input.get('pattern', 'pattern')
+            path = tool_input.get('path', '.')
+
+            # Try to get match count from result
+            result_content = tool_result_block.get('content', '') if tool_result_block else ''
+            match_count = result_content.count('\n') if result_content else 0
+            return f"I found {match_count} files matching `{pattern}` in `{path}` using the Glob tool."
+
+        else:
+            # Fallback for unknown Tier 2 tools
+            return f"I used the {tool_name} tool."
+
     def log(self, message):
         """Print verbose logging"""
         if self.verbose:
@@ -399,32 +457,10 @@ class TranscriptConverter:
                 # ASSISTANT MESSAGE: Write text message + tool_use as function_call
                 # ============================================================
                 if record_type == "assistant":
-                    # Write agent_message event (what displays in UI)
-                    if text_for_event:
-                        agent_message_event = {
-                            "timestamp": record['timestamp'],
-                            "type": "event_msg",
-                            "payload": {
-                                "type": "agent_message",
-                                "message": text_for_event
-                            }
-                        }
-                        outfile.write(json.dumps(agent_message_event, separators=(',', ':')) + '\n')
+                    # Collect Tier 2 tool summaries to append to message
+                    tier2_summaries = []
 
-                    # Write assistant response_item (canonical data)
-                    if content_array:
-                        codex_message = {
-                            "timestamp": record['timestamp'],
-                            "type": "response_item",
-                            "payload": {
-                                "type": "message",
-                                "role": "assistant",
-                                "content": content_array
-                            }
-                        }
-                        outfile.write(json.dumps(codex_message, separators=(',', ':')) + '\n')
-
-                    # Process tool_use blocks -> function_call
+                    # Process tool_use blocks -> function_call or summary
                     for tool_use in tool_uses:
                         tool_name = tool_use.get('name')
                         tool_id = tool_use.get('id')
@@ -451,12 +487,56 @@ class TranscriptConverter:
                                 if func_output:
                                     outfile.write(json.dumps(func_output, separators=(',', ':')) + '\n')
                                     self.log(f"Line {line_num}: Wrote function_call_output")
+                        elif tool_name in ('Edit', 'Read', 'Write', 'Grep', 'Glob'):
+                            # Tier 2: Lossy conversion to text summary
+                            summary = self.tool_to_text_summary(tool_use, tool_result)
+                            tier2_summaries.append(summary)
+
+                            self.stats['tool_calls_summarized'] += 1
+                            self.log(f"Line {line_num}: Converted {tool_name} tool to text summary (lossy)")
+
                         else:
-                            # Tier 2/3: TODO in future phases
-                            self.log(f"Line {line_num}: Skipping tool {tool_name} (not implemented)")
+                            # Tier 3: Skip entirely (TodoWrite, WebSearch, etc.)
+                            self.log(f"Line {line_num}: Skipping tool {tool_name} (Tier 3 - no conversion)")
                             self.stats['tool_calls_skipped'] += 1
 
-                    if text_for_event or tool_uses:
+                    # Append Tier 2 summaries to text message
+                    final_text = text_for_event
+                    if tier2_summaries:
+                        if final_text:
+                            final_text += "\n\n" + "\n".join(tier2_summaries)
+                        else:
+                            final_text = "\n".join(tier2_summaries)
+
+                    # Write agent_message event (what displays in UI)
+                    if final_text:
+                        agent_message_event = {
+                            "timestamp": record['timestamp'],
+                            "type": "event_msg",
+                            "payload": {
+                                "type": "agent_message",
+                                "message": final_text
+                            }
+                        }
+                        outfile.write(json.dumps(agent_message_event, separators=(',', ':')) + '\n')
+
+                    # Write assistant response_item (canonical data)
+                    if final_text or content_array:
+                        # Update content array with final text
+                        final_content_array = [{"type": content_type, "text": final_text}] if final_text else []
+
+                        codex_message = {
+                            "timestamp": record['timestamp'],
+                            "type": "response_item",
+                            "payload": {
+                                "type": "message",
+                                "role": "assistant",
+                                "content": final_content_array
+                            }
+                        }
+                        outfile.write(json.dumps(codex_message, separators=(',', ':')) + '\n')
+
+                    if final_text or tool_uses:
                         self.stats['converted'] += 1
 
                 # ============================================================
