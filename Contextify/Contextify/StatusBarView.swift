@@ -31,11 +31,11 @@ struct StatusBarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
-        .task {
-            viewModel.start()  // NO AWAIT (start() is sync)
+        .onAppear {
+            viewModel.start()
         }
         .onDisappear {
-            viewModel.stop()  // Explicit cleanup
+            viewModel.stop()
         }
         .contentTransition(.opacity)  // Smooth state transitions
     }

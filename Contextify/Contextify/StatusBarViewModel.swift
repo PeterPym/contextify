@@ -46,15 +46,22 @@ final class StatusBarViewModel {
     /// Start observing queue and check AI health
     /// Idempotent: safe to call multiple times
     func start() {
+        log.info("StatusBar starting...")
+
         // Idempotence guard
-        guard !isStarted else { return }
+        guard !isStarted else {
+            log.debug("StatusBar already started (idempotence guard)")
+            return
+        }
         isStarted = true
 
         guard let provider = queueProvider else {
+            log.warning("StatusBar: No queue provider available")
             monitoringActive = false
             return
         }
 
+        log.info("StatusBar: Queue provider available, starting observation")
         monitoringActive = true
 
         // Start event stream observation
