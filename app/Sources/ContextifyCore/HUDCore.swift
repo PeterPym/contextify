@@ -618,6 +618,29 @@ public final class HUDViewModel {
     return dir
   }
 
+  // MARK: - Project Switching (Multi-Project Mode)
+
+  /// Switch to a different project
+  /// - Parameter projectPath: Absolute path to the new project root
+  public func switchToProject(_ projectPath: String) {
+    // Update project root URL
+    let url = URL(fileURLWithPath: projectPath)
+    self.projectRootURL = url.resolvingSymlinksInPath()
+
+    // Post notification (ConversationMonitor listens to this)
+    NotificationCenter.default.post(
+      name: NSNotification.Name("ProjectRootChanged"),
+      object: projectPath
+    )
+
+    // Refresh git info
+    updateGitInfo()
+    updateHeadWatcher()
+
+    // Persist the new project root
+    HUDPreferences.setPersistedRoot(projectPath)
+  }
+
   public func updateGitInfo(env: [String: String]? = nil) {
     if updating {
       pendingUpdate = true

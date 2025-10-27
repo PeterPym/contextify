@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
     @Environment(DeveloperMode.self) private var devMode
+    @State private var projectSwitcher = ProjectSwitcherState.shared
     @State private var showToast = false
     @State private var toastText = ""
     @State private var showEmbeddingTest = false
@@ -25,6 +26,12 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Project switcher (top navigation)
+            if ConsentManager.shared.isMultiProjectModeEnabled && projectSwitcher.allProjects.count > 1 {
+                ProjectSwitcherView()
+                    .environment(projectSwitcher)
+            }
+
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 16) {
                     header

@@ -251,6 +251,7 @@ final class ConversationMonitor {
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
+    /// Multi-project mode: branch on projectId (not filter)
     private func watchForDebouncedTranscriptUpdates() async {
         let center = NotificationCenter.default
         let name = NSNotification.Name("TranscriptUpdated")
@@ -261,15 +262,20 @@ final class ConversationMonitor {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                guard pid == nil || pid == self.currentProjectId else { return }
 
-                // Cancel existing debounce task and start new one
-                self.debounceTask?.cancel()
-                self.debounceTask = Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
-                    guard let self, !Task.isCancelled else { return }
-                    await self.processIncrementalUpdate()
+                // Branch 1: Current project - refresh timeline
+                if pid == self.currentProjectId || pid == nil {
+                    // Cancel existing debounce task and start new one
+                    self.debounceTask?.cancel()
+                    self.debounceTask = Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
+                        guard let self, !Task.isCancelled else { return }
+                        await self.processIncrementalUpdate()
+                    }
                 }
+
+                // Branch 2: Other project - unread count is DB-derived (no action needed here)
+                // ProjectSwitcherState will query unread counts on refresh
             }
         }
     }
