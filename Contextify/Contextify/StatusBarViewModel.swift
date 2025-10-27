@@ -73,8 +73,13 @@ final class StatusBarViewModel {
                 self.applyQueueStats(stats)
             }
 
-            // Stream finished
+            // Stream finished (provider ended or cancelled) - clear stale state
             self.monitoringActive = false
+            self.queueDepth = 0
+            self.isProcessing = false
+            self.estimatedSecondsRemaining = 0
+            self.recentErrorCount = 0
+            self.topErrorReason = nil
         }
 
         // Check Apple Intelligence periodically (every 30s to respect cache)
@@ -101,6 +106,11 @@ final class StatusBarViewModel {
         aiHealthCheckTask = nil
         isStarted = false
         monitoringActive = false
+
+        // Clear transient values to avoid stale visuals if view hides
+        queueDepth = 0
+        isProcessing = false
+        estimatedSecondsRemaining = 0
     }
 
     // MARK: - State Application
@@ -108,11 +118,11 @@ final class StatusBarViewModel {
     /// Apply queue stats (change detection to avoid unnecessary updates)
     private func applyQueueStats(_ stats: QueueStats) {
         // Only update if changed (reduces SwiftUI invalidation)
-        if queueDepth != stats.pending ||
-           isProcessing != stats.isProcessing ||
-           estimatedSecondsRemaining != stats.estimatedSecondsRemaining ||
-           recentErrorCount != stats.recentErrorCount ||
-           topErrorReason != stats.topErrorReason {
+        if queueDepth != stats.pending
+            || isProcessing != stats.isProcessing
+            || estimatedSecondsRemaining != stats.estimatedSecondsRemaining
+            || recentErrorCount != stats.recentErrorCount
+            || topErrorReason != stats.topErrorReason {
 
             queueDepth = stats.pending
             isProcessing = stats.isProcessing

@@ -36,7 +36,7 @@ struct MockQueueProvider: QueueStatsProvider {
 struct EmptyQueueProvider: QueueStatsProvider {
     func observeQueue() -> AsyncStream<QueueStats> {
         AsyncStream { continuation in
-            // Never yields - simulates no monitoring
+            continuation.finish()  // empty stream; VM will clear state on finish
         }
     }
 }

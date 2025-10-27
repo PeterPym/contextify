@@ -23,9 +23,11 @@ struct StatusBarView: View {
 
             // Queue status
             queueStatusView
+
+            Spacer()  // Push content to left
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)  // Reduced from 6 to 4
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
         .onAppear {
             updateViewModel()

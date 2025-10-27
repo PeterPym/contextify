@@ -47,6 +47,9 @@ actor TimelineCacheMissGenerator {
     private var recentBatchLatencies: [TimeInterval] = []
     private let maxLatencyHistory = 10
 
+    // In-flight tracking for accurate ETA
+    private var inFlightCount: Int = 0
+
     // Error tracking (5-minute sliding window)
     private var recentErrors: [(timestamp: Date, reason: String)] = []
     private let errorWindowSeconds: TimeInterval = 300  // 5 minutes
@@ -115,6 +118,7 @@ actor TimelineCacheMissGenerator {
                     batch.append(miss)
                 }
             }
+            inFlightCount = batch.count
 
             // Reset sessions for the specific kinds and providers in this batch
             // Use struct-based set to deduplicate kind+provider pairs (no delimiter collisions)
@@ -148,6 +152,7 @@ actor TimelineCacheMissGenerator {
             await processBatch(batch)
             let latency = Date().timeIntervalSince(startTime)
             trackBatchLatency(latency)
+            inFlightCount = 0
 
             // Rate limit: wait between batches
             if !pendingMisses.isEmpty {
@@ -354,7 +359,7 @@ actor TimelineCacheMissGenerator {
     nonisolated func observeQueue() -> AsyncStream<QueueStats> {
         let observerId = UUID()
 
-        return AsyncStream { continuation in
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             // Register observer (need to access actor-isolated state)
             Task { [weak self] in
                 guard let self else { return }
@@ -402,13 +407,12 @@ actor TimelineCacheMissGenerator {
         let avgBatchLatency = recentBatchLatencies.isEmpty ? 2.0 :
                               recentBatchLatencies.reduce(0, +) / Double(recentBatchLatencies.count)
 
-        // Refined ETA: partial batch + full batches
-        let itemsInCurrentBatch = isProcessing ? min(pendingMisses.count, maxBatchSize) : 0
-        let fullBatchesRemaining = max(0, (pendingMisses.count - itemsInCurrentBatch) / maxBatchSize)
-
-        // Assume avg 200ms per item for partial batch
+        // Accurate ETA using in-flight count
         let avgSecondsPerItem = avgBatchLatency / Double(maxBatchSize)
-        let partialBatchETA = Double(itemsInCurrentBatch) * avgSecondsPerItem
+        let fullBatchesRemaining = max(0, pendingMisses.count / maxBatchSize)
+
+        // ETA for items currently being processed
+        let partialBatchETA = Double(inFlightCount) * avgSecondsPerItem
         let fullBatchETA = Double(fullBatchesRemaining) * avgBatchLatency
 
         let estimatedSeconds = Int(ceil(partialBatchETA + fullBatchETA))
@@ -444,11 +448,16 @@ actor TimelineCacheMissGenerator {
 
     /// Record error for recent error count display
     private func trackError(reason: String) {
-        recentErrors.append((timestamp: Date(), reason: reason))
+        let now = Date()
+        recentErrors.append((timestamp: now, reason: reason))
 
-        // Keep only last 20 errors
-        if recentErrors.count > 20 {
-            recentErrors.removeFirst()
+        // Prune errors outside the time window
+        let cutoff = now.addingTimeInterval(-errorWindowSeconds)
+        recentErrors.removeAll { $0.timestamp < cutoff }
+
+        // Hard cap to prevent unbounded growth
+        if recentErrors.count > 50 {
+            recentErrors.removeFirst(recentErrors.count - 50)
         }
     }
 }
