@@ -2,26 +2,195 @@
 
 This document lists all files related to implementing the Project Switcher Navigation Bar feature, including existing files that need modification and new files to be created.
 
+**Updated**: 2025-10-27 - Post Ultrathink + Colleague Review
+**Readiness**: 4.0/5 (ready to start Phase 0)
+**Status Bar Integration**: StatusBarView, StatusBarViewModel, and QueueStatsProvider patterns exist as reference implementations
+**Migration Strategy**: Simplified for pre-production hard cutover (no complex rollback)
+
+**Key Architecture Changes from Ultrathink**:
+- FSEvents-first discovery (not polling)
+- ProjectActivityMonitor is an **actor** (single watcher owner)
+- DB-derived unread counts (no mutable counters)
+- project_visits table with `last_viewed_at`, `last_selected_at`, `pinned`
+- Privacy/consent dialog for global scanning
+- Comprehensive accessibility contract
+
 ## Related Files
 
 ### New Files (To Be Created)
 
-#### `app/Sources/ContextifyCore/ProjectActivityMonitor.swift`
-**Purpose:** Global coordinator that discovers all projects (scans ALL directories in `~/.claude/projects/` and `~/.codex/sessions/`), creates/upserts projects in database, discovers transcripts for all projects, and maintains persistent watchers across project switches. Replaces single-project-scoped discovery in ConversationMonitor.
+#### `app/Sources/ContextifyCore/ProjectActivityMonitor.swift` ⭐ ACTOR
+**Purpose:** **Actor** that owns all watcher lifecycle. Single source of truth for which projects are being watched. Uses FSEvents for discovery with fallback polling.
 
-#### `app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`
-**Purpose:** Repository interface and implementation for `project_visits` table operations: updateLastViewed(), incrementUnreadCount(), resetUnreadCount(), getUnreadCounts(). Tracks when users last viewed each project and calculates unread entry counts.
+**Key Properties**:
+- **Actor isolation**: All watcher start/stop/replace serialized through actor
+- **Idempotent**: Calling `ensureWatcher(projectId)` twice returns same handle
+- **Dictionary-based**: `Dictionary<ProjectID, WatchHandle>` ensures exactly one watcher per project
+- **Event stream**: Emits `AsyncStream<ProjectEvent>` for UI consumption
+
+**API Surface**:
+```swift
+public actor ProjectActivityMonitor {
+  public init(orchestrator: TranscriptOrchestrator, discovery: ProjectDiscovery)
+  public func startGlobalMonitoring() async throws
+  public func stopAll()
+  public func ensureWatcher(projectId: String) async throws -> WatchHandle
+  public func stopWatcher(projectId: String) async
+  public nonisolated func observeProjectEvents() -> AsyncStream<ProjectEvent>
+}
+```
+
+#### `app/Sources/ContextifyCore/FSEventsMonitor.swift` 🆕
+**Purpose:** Wrapper for FSEvents API to monitor transcript roots (`~/.claude/projects/`, `~/.codex/sessions/`). Provides AsyncStream of file system changes with fallback to polling when FSEvents unavailable.
+
+**Responsibilities**:
+- Register FSEvents on transcript roots
+- Emit change notifications via AsyncStream
+- Fall back to 30s polling when FSEvents errors
+- Set telemetry flag `fsevents_unavailable` on fallback
+
+#### `app/Sources/ContextifyCore/ProjectIdentity.swift` 🆕
+**Purpose:** Reverse path-mangling algorithm and project identity hashing. Converts Claude Code/Codex CLI directory names back to absolute project paths.
+
+**Key Functions**:
+```swift
+func reverseManglePath(provider: String, directory: URL) throws -> String
+func computeProjectID(provider: String, path: String) -> String  // SHA256 hash
+func canonicalizePath(_ path: String) throws -> String  // Resolve symlinks
+```
+
+**Collision Handling**: Same project across multiple roots → prefer newest `entries.created_at`
+
+#### `app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift` 🆕
+**Purpose:** Repository interface and implementation for `project_visits` table. **DB-derived unread counts** (no mutable counters).
+
+**Schema**:
+```sql
+CREATE TABLE project_visits (
+  project_id TEXT NOT NULL PRIMARY KEY,
+  last_viewed_at TEXT,      -- ISO8601Z UTC (NULL = never viewed)
+  last_selected_at TEXT,    -- ISO8601Z UTC
+  pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_entries_project_created_at ON entries(project_id, created_at);
+CREATE INDEX idx_project_visits_last_viewed_at ON project_visits(project_id, last_viewed_at);
+```
+
+**Operations**:
+- `markViewed(projectId, timestamp)`: Set `last_viewed_at` (UTC ISO8601Z)
+- `markSelected(projectId)`: Set `last_selected_at = now()`
+- `togglePin(projectId)`: Toggle `pinned` flag
+- `getUnreadCounts()`: Execute batch query with LEFT JOIN (index-only plan)
+
+**Unread Query**:
+```sql
+SELECT COUNT(*) FROM entries e
+LEFT JOIN project_visits v ON v.project_id = e.project_id
+WHERE e.project_id = ?
+  AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at);
+```
+
+**Key Properties**:
+- Crash-safe (purely DB-derived from immutable timestamps)
+- Clock-skew resistant (uses UTC, never `now()`)
+- NULL semantics: `last_viewed_at = NULL` → all entries unread
 
 #### `Contextify/Contextify/ProjectSwitcherState.swift`
 **Purpose:** @Observable @MainActor view model that queries all projects with transcripts, subscribes to TranscriptUpdated notifications, maintains unread counts per project, and provides switchToProject() API. Single source of truth for project switcher UI state.
 
+**Architecture Pattern:** Follow StatusBarViewModel pattern (see `StatusBarViewModel.swift` lines 1-132):
+- Event-driven with AsyncStream for real-time updates (not polling)
+- Proper lifecycle management with start()/stop() methods
+- Idempotent start() with guard
+- Task cancellation on stop()
+- @Observable for SwiftUI integration
+
 #### `Contextify/Contextify/ProjectSwitcherView.swift`
 **Purpose:** SwiftUI component rendering horizontal navigation bar with project tabs. Shows project names, active state styling, and unread badges. Handles tap gestures to trigger project switching. Includes ProjectTabView subcomponent for individual tabs.
+
+**Architecture Pattern:** Follow StatusBarView pattern (see `StatusBarView.swift` lines 1-250):
+- Use `.task { viewModel.start() }` for lifecycle (no await - method is sync)
+- Use `.onDisappear { viewModel.stop() }` for cleanup
+- Use `.contentTransition(.opacity)` for smooth state changes
+- Use Contextify color scheme (see `build/notes/design-reference/color-scheme.md`)
+- Comprehensive accessibility labels with 44pt hit targets
+
+#### `app/Sources/ContextifyCore/Clock.swift` 🆕
+**Purpose:** Protocol for deterministic time in tests. Injectable into repositories for timestamp generation.
+
+```swift
+public protocol Clock: Sendable {
+  func now() -> Date
+}
+
+public struct SystemClock: Clock {
+  public func now() -> Date { Date() }
+}
+
+public struct FixedClock: Clock {
+  let fixedDate: Date
+  public func now() -> Date { fixedDate }
+}
+```
+
+#### `app/Sources/ContextifyCore/ConsentManager.swift` 🆕
+**Purpose:** Manages user consent for multi-project mode. First-run dialog and preference persistence.
+
+**Preference Key**: `dev.contextify.multiProjectMode.enabled` (default: `false`)
+
+**Dialog Copy**:
+```
+Enable Multi-Project Monitoring?
+
+Contextify can monitor all projects with
+Claude Code or Codex CLI transcripts.
+
+This requires scanning:
+• ~/.claude/projects/
+• ~/.codex/sessions/
+
+Project paths are stored locally only.
+No data is shared externally.
+
+[Disable]  [Enable Multi-Project Mode]
+```
 
 ### Existing Files (To Be Modified)
 
 #### `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
-**Purpose:** Add `project_visits` table schema with columns: project_id (FK to projects.id), last_viewed_at (INTEGER timestamp), unread_count (INTEGER DEFAULT 0). Add migration (v8 or next available version) to create table and indexes.
+**Purpose:** Add `project_visits` table schema. Determine next migration version (v8?).
+
+**Migration v8 (Hard Cutover)**:
+```swift
+migrator.registerMigration("v8-project-visits") { db in
+  // Create table + indices
+  try db.execute(sql: """
+    CREATE TABLE project_visits (
+      project_id TEXT NOT NULL PRIMARY KEY,
+      last_viewed_at TEXT,
+      last_selected_at TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_entries_project_created_at ON entries(project_id, created_at);
+    CREATE INDEX idx_project_visits_last_viewed_at ON project_visits(project_id, last_viewed_at);
+  """)
+
+  // Optional: backfill current project only (others default to NULL = all unread)
+  if let currentProjectId = getCurrentProjectId() {
+    try db.execute(sql: """
+      INSERT INTO project_visits (project_id, last_viewed_at)
+      SELECT ?, MIN(created_at) FROM entries WHERE project_id = ?
+    """, arguments: [currentProjectId, currentProjectId])
+  }
+}
+```
+
+**Rollback Plan**: Delete `~/Library/Application Support/Contextify/transcripts.db`, restart (fresh DB)
+
+**Verification**: Run `EXPLAIN QUERY PLAN` to confirm index-only scan for unread query.
 
 #### `app/Sources/ContextifyCore/Database/Repositories.swift`
 **Purpose:** Add ProjectVisitsRepository protocol and ProjectVisitsRepositoryImpl implementation. Integrate with existing repository pattern used by TranscriptOrchestrator.
@@ -30,13 +199,77 @@ This document lists all files related to implementing the Project Switcher Navig
 **Purpose:** Add methods to expose project visits repository: getUnreadCounts(), updateProjectVisit(), incrementProjectUnread(). Wire up ProjectVisitsRepository in init(). May need to adjust project creation/discovery to automatically initialize project_visits records.
 
 #### `Contextify/Contextify/ConversationMonitor.swift`
-**Purpose:** Modify watchForDebouncedTranscriptUpdates() (line 254-275) to branch on projectId: if matches currentProjectId, refresh timeline (existing behavior); if different projectId, call ProjectSwitcherState to increment unread count. Remove guard that filters out non-current project notifications (line 264).
+**Purpose:** Modify watchForDebouncedTranscriptUpdates() to **branch on projectId** (not filter). Process all project updates; unread counts handled by DB-derived queries (not incremental counters).
+
+**Change**:
+```swift
+// BEFORE: guard pid == self.currentProjectId else { return }
+
+// AFTER:
+if pid == self.currentProjectId {
+  // Refresh timeline (existing behavior)
+  self.debounceTask?.cancel()
+  self.debounceTask = Task {
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    await self.processIncrementalUpdate()
+  }
+}
+// No else branch needed - unread is DB-derived, updated on next query
+```
+
+**Note**: No direct `incrementUnreadCount()` calls. Unread is purely DB-derived from `entries.created_at > last_viewed_at`.
 
 #### `app/Sources/ContextifyCore/HUDCore.swift` (HUDViewModel)
 **Purpose:** Add switchToProject(projectPath: String) method that updates projectRootURL, posts ProjectRootChanged notification, and refreshes git info. This will be called by ProjectSwitcherState when user taps a project tab.
 
 #### `Contextify/Contextify/ContentView.swift`
 **Purpose:** Add ProjectSwitcherView above existing header in main VStack. Initialize ProjectSwitcherState in app startup and inject into SwiftUI environment. Conditionally show switcher only when allProjects.count > 1.
+
+**Current State:** StatusBarView is already integrated at line 51 (bottom footer). Project switcher will be added to top navigation area, above existing header.
+
+**Integration Pattern:**
+```swift
+VStack(spacing: 0) {
+  // NEW: Project switcher (top)
+  if projectSwitcherState.allProjects.count > 1 {
+    ProjectSwitcherView()
+  }
+
+  // EXISTING: Main content (lines 28-48)
+  HStack(spacing: 0) { /* ... */ }
+
+  // EXISTING: Status bar (line 51) - already implemented
+  StatusBarView()
+}
+```
+
+### Reference Files (Existing Patterns from Status Bar Implementation)
+
+#### `Contextify/Contextify/StatusBarView.swift` ✅ IMPLEMENTED
+**Purpose:** Reference implementation for SwiftUI component with lifecycle management. Shows pattern for event-driven UI with AsyncStream observation.
+
+**Key Patterns to Follow:**
+- `.task(id: identity)` for automatic reconnection when dependencies change (lines 38-42)
+- Proper lifecycle: `viewModel.start()` on appear, `viewModel.stop()` on disappear
+- Multiple provider aggregation (lines 62-73)
+- Contextify color scheme usage (lines 95-100)
+
+#### `Contextify/Contextify/StatusBarViewModel.swift` ✅ IMPLEMENTED
+**Purpose:** Reference implementation for @Observable view model with event-driven updates. Shows pattern for AsyncStream consumption, lifecycle management, and state change detection.
+
+**Key Patterns to Follow:**
+- Idempotent `start()` with isStarted guard
+- `Task { @MainActor [weak self] in ... }` for proper actor isolation
+- Change detection before state updates (avoid unnecessary SwiftUI invalidation)
+- Proper cleanup in `stop()`
+
+#### `Contextify/Contextify/QueueStatsProvider.swift` ✅ IMPLEMENTED
+**Purpose:** Reference implementation for protocol-based provider pattern. Shows how to create testable interfaces for event streams.
+
+**Key Patterns to Follow:**
+- Protocol with single AsyncStream method
+- Mock providers for testing (MockQueueProvider, EmptyQueueProvider)
+- Sendable conformance for actor safety
 
 ### Supporting Files (Reference Only)
 
@@ -48,6 +281,85 @@ This document lists all files related to implementing the Project Switcher Navig
 
 #### `Contextify/Contextify/ConversationSources.swift` (DEPRECATED)
 **Purpose:** Legacy file-based discovery providers (ClaudeTranscriptProvider, CodexTranscriptProvider). NOW DEAD CODE kept for reference only. New discovery logic will be in ProjectActivityMonitor using database-backed approach, but path parsing logic may be useful reference.
+
+#### `build/notes/feature-specs/status-bar/spec-final.md` ✅ REFERENCE
+**Purpose:** Complete specification for status bar implementation. Use as template for project switcher spec formatting and component breakdown.
+
+**Relevant Sections:**
+- Component specifications with Implementation code blocks
+- Testing strategy (unit, integration, UI tests)
+- Performance characteristics
+- Edge cases and error handling
+- Accessibility guidelines
+
+#### `build/notes/technical-reference/llm-processing-architecture.md` ✅ REFERENCE
+**Purpose:** High-level architecture document for aggregating multiple event sources. Shows pattern for monitoring multiple independent systems (timeline + metadata queues).
+
+**Applicable Pattern:** Project switcher will aggregate updates from multiple projects (similar to status bar aggregating multiple LLM queues).
+
+---
+
+## Architecture Alignment
+
+The project switcher follows established Contextify patterns from the recent status bar implementation, with critical enhancements from Ultrathink analysis:
+
+**Shared Patterns**:
+1. **Event-Driven Architecture**: AsyncStream for real-time updates (FSEvents + notifications, not polling)
+2. **Observable ViewModels**: @MainActor @Observable with proper lifecycle (start/stop)
+3. **Protocol Abstraction**: Provider protocols for testability (`QueueStatsProvider`, `ProjectDiscovery`)
+4. **Actor Isolation**: Single owner per domain (StatusBar uses actors, ProjectActivityMonitor is an actor)
+5. **Lifecycle Management**: Idempotent start(), explicit stop(), task cancellation
+6. **SwiftUI Integration**: `.task/.onDisappear` for view lifecycle
+7. **Color Scheme**: Contextify colors from `build/notes/design-reference/color-scheme.md`
+
+**Differences**:
+- **Status bar**: Aggregates LLM queue stats (bottom footer, read-only monitoring)
+- **Project switcher**: Aggregates project states (top navigation, interactive switching)
+- **Concurrency**: Status bar uses actors for LLM queues; project switcher uses **ProjectActivityMonitor actor** for watchers
+- **Storage**: Status bar uses in-memory state; project switcher uses **SQL** (`project_visits` table)
+
+**New Patterns from Ultrathink**:
+- **DB-derived state**: Unread counts computed from immutable timestamps (not mutable counters)
+- **FSEvents-first**: Primary discovery mechanism with fallback polling
+- **Privacy/consent**: User opt-in for global scanning
+- **Accessibility contract**: Keyboard shortcuts (Cmd+1…9), VoiceOver labels, 44pt hit targets
+
+## Must-Fix Before Build (Gap List)
+
+Per Ultrathink analysis + colleague review, these gaps **must be resolved** before starting implementation:
+
+1. **Reverse path-mangle spec** (`ProjectIdentity.swift`): Complete algorithm with test fixtures for both Claude Code and Codex CLI formats + collision policy *(Phase 0)*
+2. **Watcher provider API** (`ProjectWatcherProvider` protocol): Define lifecycle, error surface, backoff strategy *(Phase 0-1)*
+3. **Migration v8**: Hard cutover with optional current project backfill; simple rollback (delete DB) *(Phase 0)*
+4. **Transaction boundaries**: GRDB write blocks for concurrent unread updates *(Phase 2)*
+5. **Cancellation pattern**: Timeline refresh cancellation on rapid switching *(Phase 5)*
+6. **Performance budget**: Document max CPU % during idle (≤2%), max FS ops/sec (<10) *(Phase 4)*
+7. **Startup selection policy**: Last selected vs. most active in last N hours; tie-breaking logic *(Phase 0)*
+8. **Error handling surface**: Toast vs. HUD vs. silent logs for watcher failures *(Phase 0)*
+9. **FSEvents probe**: Verify non-sandboxed environment; test FSEvents on transcript roots *(Phase 1)*
+10. **Index verification**: Run `EXPLAIN QUERY PLAN` on unread query; confirm index-only scan *(Phase 2)*
+
+## Validation Requirements
+
+### Unit Tests
+- `testUnreadForNeverVisited_isAllEntries`: NULL `last_viewed_at` → count = all entries
+- `testUnreadIndexPlan_isIndexOnly`: Verify `idx_entries_project_created_at` used
+- `testMarkViewed_updatesTimestamp`: Update `last_viewed_at`, verify unread = 0
+- `testClockSkew`: Entry after `last_viewed_at` → unread = 1
+- `testReverseMangle_claudeCode`: Reverse-mangle Claude Code directory names
+- `testReverseMangle_collision`: Same project across multiple roots → same `project_id`
+
+### Actor/Concurrency Tests
+- `testIdempotentWatcherStart`: Double-start → same handle, count = 1
+- `testRapidSwitchCancellation`: 20× switch → no leaked tasks after 60s
+
+### Integration Tests
+- `testEndToEnd_unreadBadgeUpdate`: 3 projects → file events → badges update within 300ms
+- `testFSEventsFailure_fallbackPolling`: FSEvents unavailable → fallback engaged, telemetry flag set
+
+### Performance Tests
+- `testIdleCPU`: Monitor 10 projects → ≤2% CPU over 60s
+- `testBurstEvents`: 200 events across 10 projects → process in ≤2s, ≤10 DB transactions
 
 ---
 

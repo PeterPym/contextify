@@ -17,9 +17,14 @@ public final class ConsentManager: @unchecked Sendable {
   }
 
   /// Check if multi-project mode is enabled
+  /// Default to true (auto opt-in) if not explicitly set
   public var isMultiProjectModeEnabled: Bool {
     get {
-      defaults.bool(forKey: preferenceKey)
+      // Auto opt-in: return true if never set, otherwise use stored value
+      if !hasConsentDecision {
+        return true
+      }
+      return defaults.bool(forKey: preferenceKey)
     }
     set {
       defaults.set(newValue, forKey: preferenceKey)

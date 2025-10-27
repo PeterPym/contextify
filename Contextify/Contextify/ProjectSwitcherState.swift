@@ -81,6 +81,9 @@ public final class ProjectSwitcherState {
 
     // Initial load
     Task {
+      // Ensure current project is in database
+      await ensureCurrentProjectInDatabase()
+
       await refreshProjects()
 
       // Start global monitoring if consent given
@@ -145,7 +148,9 @@ public final class ProjectSwitcherState {
         self.unreadCounts = counts
       }
 
-      log.debug("Refreshed \(projectInfos.count) projects")
+      log.info("📊 Refreshed \(projectInfos.count) projects: \(projectInfos.map { $0.name }.joined(separator: ", "))")
+      log.info("📊 Unread counts: \(counts)")
+      log.info("📊 Active project ID: \(self.activeProjectId ?? "nil")")
     } catch {
       log.error("Failed to refresh projects: \(error.localizedDescription)")
     }
@@ -186,6 +191,35 @@ public final class ProjectSwitcherState {
   }
 
   // MARK: - Private
+
+  private func ensureCurrentProjectInDatabase() async {
+    guard let orchestrator = orchestrator else { return }
+
+    // Get current project from HUDViewModel
+    guard let currentRoot = await MainActor.run(body: { HUDViewModel.shared.projectRootURL }) else {
+      log.debug("No current project root set")
+      return
+    }
+
+    let projectPath = currentRoot.path
+
+    do {
+      // Get or create project in database
+      let projectId = try orchestrator.getOrCreateProject(
+        name: currentRoot.lastPathComponent,
+        rootPath: projectPath
+      )
+
+      // Set as active project
+      await MainActor.run {
+        self.activeProjectId = projectId
+      }
+
+      log.info("Ensured current project in database: \(projectId) at \(projectPath)")
+    } catch {
+      log.error("Failed to ensure current project in database: \(error.localizedDescription)")
+    }
+  }
 
   private func observeProjectUpdates() async {
     guard let monitor = activityMonitor else { return }

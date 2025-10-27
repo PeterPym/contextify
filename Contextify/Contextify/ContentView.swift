@@ -27,7 +27,11 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Project switcher (top navigation)
-            if ConsentManager.shared.isMultiProjectModeEnabled && projectSwitcher.allProjects.count > 1 {
+            // Show if multi-project mode enabled and we have at least 1 project
+            let shouldShow = ConsentManager.shared.isMultiProjectModeEnabled && !projectSwitcher.allProjects.isEmpty
+            let _ = uiLog.info("🔍 ProjectSwitcher visibility: enabled=\(ConsentManager.shared.isMultiProjectModeEnabled), projectCount=\(projectSwitcher.allProjects.count), shouldShow=\(shouldShow)")
+
+            if shouldShow {
                 ProjectSwitcherView()
                     .environment(projectSwitcher)
             }
