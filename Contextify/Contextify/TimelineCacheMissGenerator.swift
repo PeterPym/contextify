@@ -38,6 +38,19 @@ actor TimelineCacheMissGenerator {
     private let maxBatchSize = 10
     private let batchDelayNs: UInt64 = 2_000_000_000  // 2 seconds
 
+    // MARK: - Observer Infrastructure (Status Bar Support)
+
+    // UUID-keyed dictionary for proper cleanup (continuations are structs!)
+    private var queueObservers: [UUID: AsyncStream<QueueStats>.Continuation] = [:]
+
+    // Latency tracking for data-driven ETA
+    private var recentBatchLatencies: [TimeInterval] = []
+    private let maxLatencyHistory = 10
+
+    // Error tracking (5-minute sliding window)
+    private var recentErrors: [(timestamp: Date, reason: String)] = []
+    private let errorWindowSeconds: TimeInterval = 300  // 5 minutes
+
     init(orchestrator: TranscriptOrchestrator) {
         self.orchestrator = orchestrator
     }
@@ -76,6 +89,9 @@ actor TimelineCacheMissGenerator {
         }
         log.info("Queued \(added) cache misses (total pending: \(self.pendingMisses.count))")
 
+        // Notify observers of queue change
+        notifyQueueChanged()
+
         // Start processing if not already running
         if generationTask == nil {
             generationTask = Task { [weak self] in
@@ -89,6 +105,7 @@ actor TimelineCacheMissGenerator {
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }
             isProcessing = true
+            notifyQueueChanged()  // Notify that processing started
 
             // Take a batch from dictionary
             let keys = Array(pendingMisses.keys.prefix(maxBatchSize))
@@ -126,8 +143,11 @@ actor TimelineCacheMissGenerator {
 
             log.info("Processing batch of \(batch.count) cache misses (\(self.pendingMisses.count) remaining)")
 
-            // Process batch off-main
+            // Process batch off-main and track latency
+            let startTime = Date()
             await processBatch(batch)
+            let latency = Date().timeIntervalSince(startTime)
+            trackBatchLatency(latency)
 
             // Rate limit: wait between batches
             if !pendingMisses.isEmpty {
@@ -136,6 +156,7 @@ actor TimelineCacheMissGenerator {
         }
 
         isProcessing = false
+        notifyQueueChanged()  // Notify that processing finished
         generationTask = nil
         log.info("Cache miss generation queue empty")
     }
@@ -166,6 +187,7 @@ actor TimelineCacheMissGenerator {
                     reason = error.localizedDescription
                 }
                 log.error("Failed to generate cache after retries: \(reason, privacy: .public)")
+                trackError(reason: reason)  // Track error for status bar
                 errorCount += 1
                 consecutiveFailures += 1
 
@@ -324,6 +346,111 @@ actor TimelineCacheMissGenerator {
     func getStatus() -> (pending: Int, isProcessing: Bool) {
         return (pendingMisses.count, isProcessing)
     }
+
+    // MARK: - Public Observation API
+
+    /// Subscribe to queue state changes
+    /// Returns: AsyncStream that yields QueueStats on every state transition
+    nonisolated func observeQueue() -> AsyncStream<QueueStats> {
+        let observerId = UUID()
+
+        return AsyncStream { continuation in
+            // Register observer (need to access actor-isolated state)
+            Task { [weak self] in
+                guard let self else { return }
+                await self.registerObserver(id: observerId, continuation: continuation)
+            }
+
+            // Cleanup on termination (no capture of continuation itself!)
+            continuation.onTermination = { @Sendable [weak self] _ in
+                Task { await self?.removeObserver(id: observerId) }
+            }
+        }
+    }
+
+    /// Register observer (actor-isolated helper)
+    private func registerObserver(id: UUID, continuation: AsyncStream<QueueStats>.Continuation) {
+        queueObservers[id] = continuation
+
+        // Send current state immediately
+        let stats = makeQueueStats()
+        continuation.yield(stats)
+    }
+
+    /// Remove observer by UUID (called on stream termination)
+    private func removeObserver(id: UUID) {
+        queueObservers.removeValue(forKey: id)
+    }
+
+    // MARK: - Notification
+
+    /// Notify all active observers of queue state changes
+    private func notifyQueueChanged() {
+        let stats = makeQueueStats()
+
+        // Yield to all observers (finished ones are already removed)
+        for (_, continuation) in queueObservers {
+            continuation.yield(stats)
+        }
+    }
+
+    // MARK: - Stats Builder
+
+    /// Build QueueStats with actual latency and error data
+    private func makeQueueStats() -> QueueStats {
+        // Data-driven ETA calculation
+        let avgBatchLatency = recentBatchLatencies.isEmpty ? 2.0 :
+                              recentBatchLatencies.reduce(0, +) / Double(recentBatchLatencies.count)
+
+        // Refined ETA: partial batch + full batches
+        let itemsInCurrentBatch = isProcessing ? min(pendingMisses.count, maxBatchSize) : 0
+        let fullBatchesRemaining = max(0, (pendingMisses.count - itemsInCurrentBatch) / maxBatchSize)
+
+        // Assume avg 200ms per item for partial batch
+        let avgSecondsPerItem = avgBatchLatency / Double(maxBatchSize)
+        let partialBatchETA = Double(itemsInCurrentBatch) * avgSecondsPerItem
+        let fullBatchETA = Double(fullBatchesRemaining) * avgBatchLatency
+
+        let estimatedSeconds = Int(ceil(partialBatchETA + fullBatchETA))
+
+        // Count recent errors (last 5 minutes)
+        let cutoff = Date().addingTimeInterval(-errorWindowSeconds)
+        let errorCount = recentErrors.filter { $0.timestamp > cutoff }.count
+
+        // Get most recent error reason
+        let topError = recentErrors.last?.reason
+
+        return QueueStats(
+            pending: pendingMisses.count,
+            isProcessing: isProcessing,
+            currentBatchSize: isProcessing ? maxBatchSize : 0,
+            estimatedSecondsRemaining: estimatedSeconds,
+            recentErrorCount: errorCount,
+            topErrorReason: topError
+        )
+    }
+
+    // MARK: - Latency Tracking
+
+    /// Track batch completion time for ETA calculation
+    private func trackBatchLatency(_ latency: TimeInterval) {
+        recentBatchLatencies.append(latency)
+        if recentBatchLatencies.count > maxLatencyHistory {
+            recentBatchLatencies.removeFirst()
+        }
+    }
+
+    // MARK: - Error Tracking
+
+    /// Record error for recent error count display
+    private func trackError(reason: String) {
+        recentErrors.append((timestamp: Date(), reason: reason))
+
+        // Keep only last 20 errors
+        if recentErrors.count > 20 {
+            recentErrors.removeFirst()
+        }
+    }
 }
 
 /// Result of LLM summary generation
@@ -334,4 +461,16 @@ struct GeneratedSummary: Sendable {
     let disposition: String
     let isDirective: Bool
     let isCompletion: Bool
+}
+
+// MARK: - Queue Stats Model
+
+/// Sendable stats snapshot for status bar
+struct QueueStats: Sendable, Equatable {
+    let pending: Int
+    let isProcessing: Bool
+    let currentBatchSize: Int
+    let estimatedSecondsRemaining: Int
+    let recentErrorCount: Int
+    let topErrorReason: String?
 }

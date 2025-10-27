@@ -24,26 +24,31 @@ struct ContentView: View {
     @State private var showSemanticSearch = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                Divider()
-                // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-                // Previously here:
-                // - urlEntry: TextField + "Ingest" button for URL ingestion
-                // - IngestDropZone: Drag-and-drop zone for files
-                // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-                // - Session label (e.g., "Session-001")
-                // - Status display / Last output URL
-                //
-                // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-                // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-                composeSection
-            }
-            .frame(minWidth: 640)
-            .padding(16)
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    Divider()
+                    // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+                    // Previously here:
+                    // - urlEntry: TextField + "Ingest" button for URL ingestion
+                    // - IngestDropZone: Drag-and-drop zone for files
+                    // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+                    // - Session label (e.g., "Session-001")
+                    // - Status display / Last output URL
+                    //
+                    // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+                    // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+                    composeSection
+                }
+                .frame(minWidth: 640)
+                .padding(16)
 
-            ConversationTimelineView()
+                ConversationTimelineView()
+            }
+
+            // Status bar footer
+            StatusBarView(queueProvider: timeline.cacheMissGenerator)
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
