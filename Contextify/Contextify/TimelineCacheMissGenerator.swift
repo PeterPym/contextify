@@ -404,7 +404,8 @@ actor TimelineCacheMissGenerator {
     /// Build QueueStats with actual latency and error data
     private func makeQueueStats() -> QueueStats {
         // Data-driven ETA calculation
-        let avgBatchLatency = recentBatchLatencies.isEmpty ? 2.0 :
+        // Default: assume 2.5s per item (25s per 10-item batch) if no history
+        let avgBatchLatency = recentBatchLatencies.isEmpty ? (2.5 * Double(maxBatchSize)) :
                               recentBatchLatencies.reduce(0, +) / Double(recentBatchLatencies.count)
 
         // Accurate ETA using in-flight count
