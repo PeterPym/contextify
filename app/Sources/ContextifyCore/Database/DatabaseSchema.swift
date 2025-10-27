@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 7
+  static let version = 8
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -456,6 +456,39 @@ enum DatabaseSchema {
       }
 
       try db.create(index: "idx_usage_model", on: "assistant_usage", columns: ["model"])
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // MARK: v8 Migration: Add project_visits table for multi-project switcher
+    migrator.registerMigration("v8_project_visits") { db in
+      // Create project_visits table
+      try db.create(table: "project_visits") { t in
+        t.column("project_id", .text).primaryKey()
+          .references("projects", onDelete: .cascade)
+        t.column("last_viewed_at", .text)  // ISO8601Z UTC (NULL = never viewed, all entries unread)
+        t.column("last_selected_at", .text)  // ISO8601Z UTC (last time user switched to this project)
+        t.column("pinned", .integer).notNull().defaults(to: 0)
+          .check(sql: "pinned IN (0,1)")
+      }
+
+      // Create indices for unread calculation (critical for performance)
+      // Index on entries for efficient unread queries
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_project_created_at
+        ON transcript_entries(project_id, created_at)
+      """)
+
+      // Index on project_visits for join optimization
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_project_visits_last_viewed_at
+        ON project_visits(project_id, last_viewed_at)
+      """)
+
+      // Optional: backfill current project only (others default to NULL = all unread)
+      // Get current project from HUDViewModel if available
+      // Note: This is best-effort; new projects will start with NULL (all unread)
 
       // Run ANALYZE to update statistics
       try db.execute(sql: "ANALYZE")
