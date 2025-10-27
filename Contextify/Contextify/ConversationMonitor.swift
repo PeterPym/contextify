@@ -161,7 +161,14 @@ final class ConversationMonitor {
                 }
                 self.log.info("✅ Project \(projectId) verified in database")
 
-                // 3. Initialize cache miss generator
+                // 3. Shutdown old cache miss generator (if exists) before creating new one
+                if let oldGenerator = self.cacheMissGenerator {
+                    Task {
+                        await oldGenerator.shutdown()
+                    }
+                }
+
+                // Initialize new cache miss generator for this project
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
 
                 // 4. Start background work (discovery + debounced updates) in a single parent task

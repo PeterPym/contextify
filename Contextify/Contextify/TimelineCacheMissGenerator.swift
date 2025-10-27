@@ -58,6 +58,25 @@ actor TimelineCacheMissGenerator {
         self.orchestrator = orchestrator
     }
 
+    /// Shutdown generator and cancel any in-flight processing
+    func shutdown() {
+        log.info("Shutting down cache miss generator (pending: \(self.pendingMisses.count))")
+        generationTask?.cancel()
+        generationTask = nil
+        pendingMisses.removeAll()
+        isProcessing = false
+        inFlightCount = 0
+
+        // Notify observers of shutdown
+        notifyQueueChanged()
+
+        // Close all observer streams
+        for (_, continuation) in queueObservers {
+            continuation.finish()
+        }
+        queueObservers.removeAll()
+    }
+
     /// Queue cache misses for background generation with de-duplication and cap
     func queueMisses(_ misses: [CacheMiss]) {
         guard !misses.isEmpty else { return }
