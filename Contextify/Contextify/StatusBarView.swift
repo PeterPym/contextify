@@ -9,13 +9,9 @@
 import SwiftUI
 
 struct StatusBarView: View {
-    private let queueProvider: (any QueueStatsProvider)?
-    @State private var viewModel: StatusBarViewModel
-
-    init(queueProvider: (any QueueStatsProvider)?) {
-        self.queueProvider = queueProvider
-        self._viewModel = State(initialValue: StatusBarViewModel(queueProvider: queueProvider))
-    }
+    @Environment(ConversationMonitor.self) private var timeline
+    @State private var viewModel: StatusBarViewModel?
+    @State private var providerCheckTimer: Timer?
 
     var body: some View {
         HStack(spacing: 16) {
@@ -32,12 +28,40 @@ struct StatusBarView: View {
         .padding(.vertical, 6)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
         .onAppear {
-            viewModel.start()
+            updateViewModel()
+            // Poll for provider availability (will stop once found)
+            startProviderCheck()
         }
         .onDisappear {
-            viewModel.stop()
+            stopProviderCheck()
+            viewModel?.stop()
         }
         .contentTransition(.opacity)  // Smooth state transitions
+    }
+
+    private func updateViewModel() {
+        // Stop old view model if it exists
+        viewModel?.stop()
+
+        // Create new view model with current provider
+        let newViewModel = StatusBarViewModel(queueProvider: timeline.cacheMissGenerator)
+        viewModel = newViewModel
+        newViewModel.start()
+    }
+
+    private func startProviderCheck() {
+        // Check every 0.5s until provider is available
+        providerCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            if timeline.cacheMissGenerator != nil && viewModel?.monitoringActive == false {
+                updateViewModel()
+                stopProviderCheck()  // Stop once we have a provider
+            }
+        }
+    }
+
+    private func stopProviderCheck() {
+        providerCheckTimer?.invalidate()
+        providerCheckTimer = nil
     }
 
     // MARK: - Apple Intelligence Indicator
@@ -60,6 +84,7 @@ struct StatusBarView: View {
     }
 
     private var aiStatusColor: Color {
+        guard let viewModel else { return .secondary }
         switch viewModel.aiStatus {
         case .available:
             // Use Contextify Green from color scheme
@@ -73,6 +98,7 @@ struct StatusBarView: View {
     }
 
     private var aiStatusText: String {
+        guard let viewModel else { return "AI Unavailable" }
         switch viewModel.aiStatus {
         case .available: return "Apple Intelligence"
         case .unavailable: return "AI Unavailable"
@@ -81,6 +107,7 @@ struct StatusBarView: View {
     }
 
     private var aiStatusTooltip: String {
+        guard let viewModel else { return "Initializing..." }
         switch viewModel.aiStatus {
         case .available:
             return "Apple Intelligence is available\nUsing FoundationLLM for on-device summaries"
@@ -92,6 +119,7 @@ struct StatusBarView: View {
     }
 
     private var aiStatusAccessibilityLabel: String {
+        guard let viewModel else { return "Initializing" }
         switch viewModel.aiStatus {
         case .available:
             return "Apple Intelligence available"
@@ -106,7 +134,7 @@ struct StatusBarView: View {
 
     @ViewBuilder
     private var queueStatusView: some View {
-        if !viewModel.monitoringActive {
+        if viewModel == nil || !viewModel!.monitoringActive {
             // Not monitoring state (generator is nil)
             HStack(spacing: 4) {
                 Image(systemName: "pause.circle")
@@ -119,7 +147,7 @@ struct StatusBarView: View {
             .help("Start a project to enable timeline monitoring")
             .accessibilityLabel("Timeline monitoring inactive")
 
-        } else if viewModel.recentErrorCount > 0 {
+        } else if let viewModel, viewModel.recentErrorCount > 0 {
             // Error state
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -134,7 +162,7 @@ struct StatusBarView: View {
             .help(viewModel.topErrorReason ?? "Recent LLM generation errors")
             .accessibilityLabel("\(viewModel.recentErrorCount) generation errors")
 
-        } else if viewModel.isProcessing {
+        } else if let viewModel, viewModel.isProcessing {
             // Processing state
             HStack(spacing: 6) {
                 ProgressView()
@@ -159,7 +187,7 @@ struct StatusBarView: View {
             }
             .accessibilityLabel("Processing \(viewModel.queueDepth) summaries, estimated \(viewModel.estimatedSecondsRemaining) seconds remaining")
 
-        } else if viewModel.queueDepth > 0 {
+        } else if let viewModel, viewModel.queueDepth > 0 {
             // Pending (not processing yet)
             Text("\(viewModel.queueDepth) pending")
                 .font(.caption)
@@ -184,49 +212,4 @@ struct StatusBarView: View {
 }
 
 // MARK: - Previews
-
-#Preview("Available + Processing") {
-    StatusBarView(queueProvider: MockQueueProvider(
-        statsSequence: [
-            QueueStats(pending: 12, isProcessing: true, currentBatchSize: 10,
-                       estimatedSecondsRemaining: 6, recentErrorCount: 0, topErrorReason: nil)
-        ]
-    ))
-    .frame(width: 600, height: 40)
-}
-
-#Preview("Up to Date") {
-    StatusBarView(queueProvider: MockQueueProvider(
-        statsSequence: [
-            QueueStats(pending: 0, isProcessing: false, currentBatchSize: 0,
-                       estimatedSecondsRemaining: 0, recentErrorCount: 0, topErrorReason: nil)
-        ]
-    ))
-    .frame(width: 600, height: 40)
-}
-
-#Preview("Errors") {
-    StatusBarView(queueProvider: MockQueueProvider(
-        statsSequence: [
-            QueueStats(pending: 0, isProcessing: false, currentBatchSize: 0,
-                       estimatedSecondsRemaining: 0, recentErrorCount: 3,
-                       topErrorReason: "LLM timeout after retries")
-        ]
-    ))
-    .frame(width: 600, height: 40)
-}
-
-#Preview("Not Monitoring") {
-    StatusBarView(queueProvider: nil)
-        .frame(width: 600, height: 40)
-}
-
-#Preview("Many Items") {
-    StatusBarView(queueProvider: MockQueueProvider(
-        statsSequence: [
-            QueueStats(pending: 150, isProcessing: true, currentBatchSize: 10,
-                       estimatedSecondsRemaining: 45, recentErrorCount: 0, topErrorReason: nil)
-        ]
-    ))
-    .frame(width: 600, height: 40)
-}
+// Note: Previews disabled as StatusBarView now requires ConversationMonitor environment

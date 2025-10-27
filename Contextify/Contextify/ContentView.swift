@@ -48,7 +48,7 @@ struct ContentView: View {
             }
 
             // Status bar footer
-            StatusBarView(queueProvider: timeline.cacheMissGenerator)
+            StatusBarView()
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
