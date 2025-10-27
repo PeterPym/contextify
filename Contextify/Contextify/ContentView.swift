@@ -67,6 +67,9 @@ struct ContentView: View {
             model.updateGitInfo()
             Task { await refreshSession() }
             TimelineIntegration.shared.startMonitoring()
+
+            // Start project switcher to discover projects
+            projectSwitcher.start()
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
