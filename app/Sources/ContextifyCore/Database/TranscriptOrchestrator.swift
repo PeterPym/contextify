@@ -46,6 +46,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let errorRepo: ParseErrorRepository
   private let metadataRepo: MetadataRepository
   nonisolated(unsafe) private let cacheRepo: CacheRepository  // Thread-safe via GRDB pool
+  private let projectVisitsRepo: ProjectVisitsRepository
 
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
@@ -61,6 +62,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     self.errorRepo = ParseErrorRepositoryImpl(db: pool)
     self.metadataRepo = MetadataRepositoryImpl(db: pool)
     self.cacheRepo = CacheRepositoryImpl(db: pool)
+    self.projectVisitsRepo = ProjectVisitsRepositoryImpl(db: pool)
 
     // v7: Initialize metadata repositories
     let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
@@ -624,6 +626,33 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   ) throws -> UsageAggregate {
     let repo = AssistantUsageRepositoryImpl(db: try dbManager.pool)
     return try repo.aggregateByProject(projectId, startDate: startDate, endDate: endDate)
+  }
+
+  // MARK: - Project Visits (Unread Tracking)
+
+  /// Mark a project as viewed at a specific timestamp
+  public func markProjectViewed(projectId: String, timestamp: String) throws {
+    try projectVisitsRepo.markViewed(projectId: projectId, timestamp: timestamp)
+  }
+
+  /// Mark a project as selected (updates last_selected_at to now)
+  public func markProjectSelected(projectId: String) throws {
+    try projectVisitsRepo.markSelected(projectId: projectId)
+  }
+
+  /// Get unread count for a specific project
+  public func getUnreadCount(projectId: String) throws -> Int {
+    try projectVisitsRepo.getUnreadCount(projectId: projectId)
+  }
+
+  /// Get unread counts for all projects
+  public func getUnreadCounts() throws -> [String: Int] {
+    try projectVisitsRepo.getUnreadCounts()
+  }
+
+  /// Ensure visit record exists for a project
+  public func ensureProjectVisit(projectId: String) throws {
+    try projectVisitsRepo.ensureVisit(projectId: projectId)
   }
 
   // MARK: - File Watching
