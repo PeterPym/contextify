@@ -49,6 +49,11 @@ actor TranscriptMetadataOrchestrator {
   private var stats = Stats()
   private var requestCount = 0
 
+  // MARK: - Observer Infrastructure (Status Bar Support)
+
+  // UUID-keyed dictionary for status bar observers
+  private var queueObservers: [UUID: AsyncStream<QueueStats>.Continuation] = [:]
+
   // MARK: - Public API
 
   /// Ensures metadata exists for a session, generating if needed
@@ -86,6 +91,7 @@ actor TranscriptMetadataOrchestrator {
     }
 
     activeTasks[session.fileURL] = task
+    notifyQueueChanged()
     return try await task.value
   }
 
@@ -93,6 +99,7 @@ actor TranscriptMetadataOrchestrator {
 
   private func removeTask(for url: URL) {
     activeTasks.removeValue(forKey: url)
+    notifyQueueChanged()
   }
 
   /// Convert TranscriptEntry[] to Exchange[] (same logic as SQLBackedMetadataOrchestrator)
@@ -491,6 +498,56 @@ actor TranscriptMetadataOrchestrator {
       needsReview=\(metrics.needsReview)
       """)
   }
+
+  // MARK: - Queue Observation API
+
+  /// Subscribe to metadata generation queue state changes
+  nonisolated func observeQueue() -> AsyncStream<QueueStats> {
+    let observerId = UUID()
+
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      Task {
+        await self.registerObserver(id: observerId, continuation: continuation)
+      }
+      continuation.onTermination = { @Sendable _ in
+        Task { await self.removeObserver(id: observerId) }
+      }
+    }
+  }
+
+  private func registerObserver(id: UUID, continuation: AsyncStream<QueueStats>.Continuation) {
+    queueObservers[id] = continuation
+    let stats = makeQueueStats()
+    continuation.yield(stats)
+  }
+
+  private func removeObserver(id: UUID) {
+    queueObservers.removeValue(forKey: id)
+  }
+
+  private func notifyQueueChanged() {
+    let stats = makeQueueStats()
+    for (_, continuation) in queueObservers {
+      continuation.yield(stats)
+    }
+  }
+
+  private func makeQueueStats() -> QueueStats {
+    let activeCount = activeTasks.count
+    let isProcessing = activeCount > 0
+
+    // No ETA calculation for metadata (tasks complete independently)
+    // No error tracking exposed (handled by circuit breaker internally)
+
+    return QueueStats(
+      pending: activeCount,
+      isProcessing: isProcessing,
+      currentBatchSize: activeCount,  // All tasks run concurrently
+      estimatedSecondsRemaining: 0,   // No predictable ETA
+      recentErrorCount: 0,             // Circuit breaker handles this
+      topErrorReason: nil
+    )
+  }
 }
 
 // MARK: - Error Types
@@ -557,6 +614,10 @@ enum HeuristicMetadata: Sendable {
     return "Conversation with \(exchanges.count) messages."
   }
 }
+
+// MARK: - QueueStatsProvider Conformance
+
+extension TranscriptMetadataOrchestrator: QueueStatsProvider {}
 
 // MARK: - Record to UI Model Conversion
 

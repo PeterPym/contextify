@@ -41,15 +41,25 @@ assets/ icons/
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
   - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
 
-### Timeline & LLM Integration
+### LLM Processing & Timeline Integration
+Contextify uses **two independent LLM processing queues** for content generation (both using Apple Intelligence/FoundationLLM on macOS 26+):
+
+1. **Timeline Summary Generation** - Entry-level summaries (present/past forms)
+2. **Transcript Metadata Generation** - Document-level titles, descriptions, topics
+
+**Key Components:**
 - **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`): Main `@Observable` `@MainActor` component for timeline display. Manages TimelineState, visible entries, and session filtering. Integrates with SQL backend via TranscriptOrchestrator.
-- **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): LLM-powered summary generation for cache misses. Uses FoundationLLM (Apple Intelligence) to generate present/past form summaries.
-- **FoundationLLM** (`Contextify/Contextify/FoundationLLM.swift`): Integration with Apple's LanguageModel/FoundationModels. **Requires macOS 26.0+**. On older macOS, the system falls back to basic summaries (no LLM).
+- **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): Queue #1 - Batched FIFO processing for timeline entry summaries. Generates present/past forms with batching and rate limiting.
+- **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Queue #2 - Concurrent task processing for transcript titles/descriptions/topics. Includes circuit breaker and SQL caching.
+- **FoundationLLM** (`Contextify/Contextify/FoundationLLM.swift`): Shared integration with Apple's LanguageModel/FoundationModels. **Requires macOS 26.0+**. On older macOS, systems fall back to heuristics (no LLM).
+- **StatusBar** (`Contextify/Contextify/StatusBarView.swift`, `StatusBarViewModel.swift`): Aggregates both LLM queues for unified monitoring. Shows processing status, pending counts, ETAs, and errors.
 - **TimelineModels** (`Contextify/Contextify/TimelineModels.swift`): Timeline-specific data models (TimelineEntry, CacheKey, Disposition).
 - **TimelineState** (`ConversationMonitor.swift`): Observable state container for timeline entries, derived cache index, and revision tracking.
 - **Documentation**:
-  - Cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
+  - **⭐ LLM Architecture Overview:** `build/notes/technical-reference/llm-processing-architecture.md` (start here)
+  - Timeline cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
   - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+  - Status bar spec: `build/notes/feature-specs/status-bar/spec-final.md`
 
 ### Core Components (Project Context)
 - **HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`): Main `@Observable` `@MainActor` view model. Manages:
