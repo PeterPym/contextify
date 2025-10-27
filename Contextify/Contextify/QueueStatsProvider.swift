@@ -15,6 +15,7 @@ protocol QueueStatsProvider: Sendable {
 // MARK: - Conformance
 
 extension TimelineCacheMissGenerator: QueueStatsProvider {}
+// Note: TranscriptMetadataOrchestrator conformance is implicit (actor with observeQueue())
 
 // MARK: - Test Mocks
 

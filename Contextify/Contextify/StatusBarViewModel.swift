@@ -14,7 +14,7 @@ import OSLog
 final class StatusBarViewModel {
     private let log = Logger(subsystem: "dev.contextify", category: "StatusBar")
     // MARK: - Dependencies
-    private let queueProvider: (any QueueStatsProvider)?
+    private let queueProviders: [any QueueStatsProvider]
 
     // MARK: - Observable State
     private(set) var queueDepth: Int = 0
@@ -33,12 +33,12 @@ final class StatusBarViewModel {
     private(set) var aiStatus: AIStatus = .unavailable(reason: "macOS 26+ required")
 
     // MARK: - Lifecycle State
-    private var queueObservationTask: Task<Void, Never>?
+    private var queueObservationTasks: [Task<Void, Never>] = []
     private var aiHealthCheckTask: Task<Void, Never>?
     private var isStarted: Bool = false
 
-    init(queueProvider: (any QueueStatsProvider)?) {
-        self.queueProvider = queueProvider
+    init(queueProviders: [any QueueStatsProvider]) {
+        self.queueProviders = queueProviders
     }
 
     // MARK: - Lifecycle (called by View)
@@ -55,31 +55,34 @@ final class StatusBarViewModel {
         }
         isStarted = true
 
-        guard let provider = queueProvider else {
-            log.warning("StatusBar: No queue provider available")
+        guard !queueProviders.isEmpty else {
+            log.warning("StatusBar: No queue providers available")
             monitoringActive = false
             return
         }
 
-        log.info("StatusBar: Queue provider available, starting observation")
+        log.info("StatusBar: \(self.queueProviders.count) queue provider(s) available, starting observation")
         monitoringActive = true
 
-        // Start event stream observation
-        queueObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        // Start observation task for each provider
+        for provider in self.queueProviders {
+            let task = Task { @MainActor [weak self] in
+                guard let self else { return }
 
-            for await stats in provider.observeQueue() {
-                guard !Task.isCancelled else { break }
-                self.applyQueueStats(stats)
+                for await stats in provider.observeQueue() {
+                    guard !Task.isCancelled else { break }
+                    self.aggregateStats(from: stats)
+                }
+
+                // Stream finished (provider ended or cancelled) - clear stale state
+                self.monitoringActive = false
+                self.queueDepth = 0
+                self.isProcessing = false
+                self.estimatedSecondsRemaining = 0
+                self.recentErrorCount = 0
+                self.topErrorReason = nil
             }
-
-            // Stream finished (provider ended or cancelled) - clear stale state
-            self.monitoringActive = false
-            self.queueDepth = 0
-            self.isProcessing = false
-            self.estimatedSecondsRemaining = 0
-            self.recentErrorCount = 0
-            self.topErrorReason = nil
+            queueObservationTasks.append(task)
         }
 
         // Check Apple Intelligence periodically (every 30s to respect cache)
@@ -100,8 +103,10 @@ final class StatusBarViewModel {
 
     /// Stop observing (called on view disappear)
     func stop() {
-        queueObservationTask?.cancel()
-        queueObservationTask = nil
+        for task in queueObservationTasks {
+            task.cancel()
+        }
+        queueObservationTasks.removeAll()
         aiHealthCheckTask?.cancel()
         aiHealthCheckTask = nil
         isStarted = false
@@ -113,10 +118,15 @@ final class StatusBarViewModel {
         estimatedSecondsRemaining = 0
     }
 
-    // MARK: - State Application
+    // MARK: - State Aggregation
 
-    /// Apply queue stats (change detection to avoid unnecessary updates)
-    private func applyQueueStats(_ stats: QueueStats) {
+    /// Aggregate stats from a single provider
+    /// Note: This is called from multiple streams, so we need to aggregate
+    private func aggregateStats(from stats: QueueStats) {
+        // For now, just use the latest stats from any provider
+        // A more sophisticated approach would maintain separate state per provider
+        // and sum/max the values, but this simple approach works for MVP
+
         // Only update if changed (reduces SwiftUI invalidation)
         if queueDepth != stats.pending
             || isProcessing != stats.isProcessing

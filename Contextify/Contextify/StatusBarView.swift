@@ -45,8 +45,16 @@ struct StatusBarView: View {
         // Stop old view model if it exists
         viewModel?.stop()
 
-        // Create new view model with current provider
-        let newViewModel = StatusBarViewModel(queueProvider: timeline.cacheMissGenerator)
+        // Collect all available providers
+        var providers: [any QueueStatsProvider] = []
+        if let generator = timeline.cacheMissGenerator {
+            providers.append(generator)
+        }
+        // Add metadata orchestrator (always available as singleton)
+        providers.append(TranscriptMetadataOrchestrator.shared)
+
+        // Create new view model with all providers
+        let newViewModel = StatusBarViewModel(queueProviders: providers)
         viewModel = newViewModel
         newViewModel.start()
     }
