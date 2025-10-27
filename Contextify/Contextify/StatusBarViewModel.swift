@@ -7,10 +7,12 @@
 
 import Foundation
 import Observation
+import OSLog
 
 @MainActor
 @Observable
 final class StatusBarViewModel {
+    private let log = Logger(subsystem: "dev.contextify", category: "StatusBar")
     // MARK: - Dependencies
     private let queueProvider: (any QueueStatsProvider)?
 
@@ -32,6 +34,7 @@ final class StatusBarViewModel {
 
     // MARK: - Lifecycle State
     private var queueObservationTask: Task<Void, Never>?
+    private var aiHealthCheckTask: Task<Void, Never>?
     private var isStarted: Bool = false
 
     init(queueProvider: (any QueueStatsProvider)?) {
@@ -67,9 +70,19 @@ final class StatusBarViewModel {
             self.monitoringActive = false
         }
 
-        // Check Apple Intelligence (one-shot)
-        Task { @MainActor [weak self] in
-            await self?.checkAppleIntelligenceHealth()
+        // Check Apple Intelligence periodically (every 30s to respect cache)
+        aiHealthCheckTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            // Initial check
+            await self.checkAppleIntelligenceHealth()
+
+            // Periodic refresh (every 30s)
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                guard !Task.isCancelled else { break }
+                await self.checkAppleIntelligenceHealth()
+            }
         }
     }
 
@@ -77,6 +90,8 @@ final class StatusBarViewModel {
     func stop() {
         queueObservationTask?.cancel()
         queueObservationTask = nil
+        aiHealthCheckTask?.cancel()
+        aiHealthCheckTask = nil
         isStarted = false
         monitoringActive = false
     }
@@ -106,17 +121,21 @@ final class StatusBarViewModel {
     private func checkAppleIntelligenceHealth() async {
         guard #available(macOS 26.0, *) else {
             aiStatus = .unavailable(reason: "Requires macOS 26+")
+            log.debug("Apple Intelligence check: macOS < 26")
             return
         }
 
         // Use existing health checker with 30s TTL
         let health = await LLMHealthCheck.shared.checkHealth()
+        log.info("Apple Intelligence health check result: \(String(describing: health))")
 
         switch health {
         case .healthy:
+            log.info("Apple Intelligence: Available ✓")
             aiStatus = .available
 
         case .unavailable(let reason):
+            log.warning("Apple Intelligence: Unavailable - \(reason.userFacingMessage)")
             aiStatus = .unavailable(reason: reason.userFacingMessage)
         }
     }
