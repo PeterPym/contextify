@@ -623,22 +623,42 @@ public final class HUDViewModel {
   /// Switch to a different project
   /// - Parameter projectPath: Absolute path to the new project root
   public func switchToProject(_ projectPath: String) {
-    // Update project root URL
+    // Update project root URL directly (bypass validation)
     let url = URL(fileURLWithPath: projectPath)
-    self.projectRootURL = url.resolvingSymlinksInPath()
+    let resolved = url.resolvingSymlinksInPath()
+    self.projectRootURL = resolved
 
-    // Post notification (ConversationMonitor listens to this)
-    NotificationCenter.default.post(
-      name: NSNotification.Name("ProjectRootChanged"),
-      object: projectPath
-    )
+    // Clear any previous alerts
+    self.alertMessage = nil
 
-    // Refresh git info
-    updateGitInfo()
+    // Detect git info (find .git root if it exists)
+    // TODO: Projects discovered from transcript roots should have git repos - investigate
+    // why some might not have .git directories or are unreadable
+    if let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: resolved) {
+      // Has git - update branch info
+      let info = GitRepositoryResolver.computeGitInfo(
+        environment: ProcessInfo.processInfo.environment,
+        persistedPath: resolved.path,
+        currentRoot: resolved,
+        autoPersist: false
+      )
+      self.branch = info.branch ?? "—"
+      self.projectRootURL = gitRoot
+      HUDPreferences.setPersistedRoot(gitRoot.path)
+    } else {
+      // No git - just use the path as-is
+      self.branch = "—"
+      HUDPreferences.setPersistedRoot(resolved.path)
+    }
+
+    // Update watcher for new git location (or clear if no git)
     updateHeadWatcher()
 
-    // Persist the new project root
-    HUDPreferences.setPersistedRoot(projectPath)
+    // Post notification AFTER state is updated (ConversationMonitor listens to this)
+    NotificationCenter.default.post(
+      name: .projectRootDidChange,
+      object: self.projectRootURL?.path ?? resolved.path
+    )
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {
