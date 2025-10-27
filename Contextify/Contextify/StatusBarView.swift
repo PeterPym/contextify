@@ -11,7 +11,7 @@ import SwiftUI
 struct StatusBarView: View {
     @Environment(ConversationMonitor.self) private var timeline
     @State private var viewModel: StatusBarViewModel?
-    @State private var providerCheckTimer: Timer?
+    @State private var lastSeenGenerator: ObjectIdentifier?
 
     var body: some View {
         HStack(spacing: 16) {
@@ -31,17 +31,31 @@ struct StatusBarView: View {
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
         .onAppear {
             updateViewModel()
-            // Poll for provider availability (will stop once found)
-            startProviderCheck()
         }
         .onDisappear {
-            stopProviderCheck()
             viewModel?.stop()
+        }
+        .task(id: generatorIdentity) {
+            // Automatically recreate ViewModel when generator changes
+            updateViewModel()
         }
         .contentTransition(.opacity)  // Smooth state transitions
     }
 
+    /// Compute stable identity for generator to detect changes
+    private var generatorIdentity: ObjectIdentifier? {
+        timeline.cacheMissGenerator.map { ObjectIdentifier($0) }
+    }
+
     private func updateViewModel() {
+        let currentGeneratorId = generatorIdentity
+
+        // Skip if same generator (avoid unnecessary recreation)
+        if let lastSeenGenerator, lastSeenGenerator == currentGeneratorId {
+            return
+        }
+        lastSeenGenerator = currentGeneratorId
+
         // Stop old view model if it exists
         viewModel?.stop()
 
@@ -57,21 +71,6 @@ struct StatusBarView: View {
         let newViewModel = StatusBarViewModel(queueProviders: providers)
         viewModel = newViewModel
         newViewModel.start()
-    }
-
-    private func startProviderCheck() {
-        // Check every 0.5s until provider is available
-        providerCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            if timeline.cacheMissGenerator != nil && viewModel?.monitoringActive == false {
-                updateViewModel()
-                stopProviderCheck()  // Stop once we have a provider
-            }
-        }
-    }
-
-    private func stopProviderCheck() {
-        providerCheckTimer?.invalidate()
-        providerCheckTimer = nil
     }
 
     // MARK: - Apple Intelligence Indicator
