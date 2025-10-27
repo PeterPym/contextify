@@ -117,12 +117,13 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
   public func getUnreadCount(projectId: String) throws -> Int {
     try db.read { db in
       // Count entries where created_at > last_viewed_at (or last_viewed_at is NULL)
-      // Uses idx_entries_project_created_at index for performance
+      // JOIN through transcripts table since project_id lives there
       let count = try Int.fetchOne(db, sql: """
         SELECT COUNT(*)
         FROM transcript_entries e
-        LEFT JOIN project_visits v ON v.project_id = e.project_id
-        WHERE e.project_id = ?
+        JOIN transcripts t ON t.id = e.transcript_id
+        LEFT JOIN project_visits v ON v.project_id = t.project_id
+        WHERE t.project_id = ?
           AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
       """, arguments: [projectId])
 
@@ -133,16 +134,14 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
   public func getUnreadCounts() throws -> [String: Int] {
     try db.read { db in
       // Batch query for all projects with unread counts
+      // More efficient: single pass without correlated subquery
       let rows = try Row.fetchAll(db, sql: """
-        SELECT p.id AS project_id,
-               COALESCE((
-                 SELECT COUNT(*)
-                 FROM transcript_entries e
-                 WHERE e.project_id = p.id
-                   AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
-               ), 0) AS unread
-        FROM projects p
-        LEFT JOIN project_visits v ON v.project_id = p.id
+        SELECT t.project_id, COUNT(*) AS unread
+        FROM transcript_entries e
+        JOIN transcripts t ON t.id = e.transcript_id
+        LEFT JOIN project_visits v ON v.project_id = t.project_id
+        WHERE (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
+        GROUP BY t.project_id
       """)
 
       var result: [String: Int] = [:]

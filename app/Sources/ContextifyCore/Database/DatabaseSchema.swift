@@ -474,16 +474,19 @@ enum DatabaseSchema {
       }
 
       // Create indices for unread calculation (critical for performance)
-      // Index on entries for efficient unread queries
+      // These support the JOIN query: entries → transcripts → project_visits
+
+      // Index on transcript_entries for efficient JOIN on transcript_id + sorting by created_at
       try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_entries_project_created_at
-        ON transcript_entries(project_id, created_at)
+        CREATE INDEX IF NOT EXISTS idx_transcript_entries_transcript_created
+        ON transcript_entries(transcript_id, created_at)
       """)
 
-      // Index on project_visits for join optimization
+      // Index on transcripts for efficient JOIN on project_id
+      // (may already exist from base schema, but add IF NOT EXISTS for safety)
       try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_project_visits_last_viewed_at
-        ON project_visits(project_id, last_viewed_at)
+        CREATE INDEX IF NOT EXISTS idx_transcripts_project_id
+        ON transcripts(project_id)
       """)
 
       // Optional: backfill current project only (others default to NULL = all unread)
