@@ -195,13 +195,20 @@ final class StatusBarViewModel {
         hooverObservationTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
+            self.log.info("StatusBar: starting hoover observation")
+
             do {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
                 let monitor = ProjectActivityMonitor(orchestrator: orchestrator)
 
+                self.log.info("StatusBar: listening for project events")
+
                 for await event in monitor.observeProjectEvents() {
+                    self.log.info("StatusBar: received hoover event: \(event.kind.rawValue) for \(event.projectId)")
                     await self.handleHooverEvent(event)
                 }
+
+                self.log.warning("StatusBar: hoover event stream ended")
             } catch {
                 self.log.error("Failed to start hoover observation: \(error.localizedDescription)")
             }
