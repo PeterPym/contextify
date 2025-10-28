@@ -24,11 +24,29 @@ struct StatusBarView: View {
             // Queue status
             queueStatusView
 
+            // Hoover status (if active)
+            if let message = viewModel?.hooverMessage {
+                Divider()
+                    .frame(height: 12)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .transition(.opacity.combined(with: .scale))
+            }
+
             Spacer()  // Push content to left
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)  // Reduced from 6 to 4
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
+        .animation(.easeInOut(duration: 0.3), value: viewModel?.hooverMessage)
         .onAppear {
             updateViewModel()
         }
