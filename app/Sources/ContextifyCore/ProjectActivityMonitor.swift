@@ -58,6 +58,37 @@ public actor ProjectActivityMonitor {
 
     // Discover all projects from transcript roots
     try await discoverAllProjects()
+
+    // Start FSEvents monitoring for live transcript updates
+    #if os(macOS)
+    let claudeRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/projects")
+    let codexRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/sessions")
+
+    let roots = [claudeRoot.path, codexRoot.path].filter { path in
+      FileManager.default.fileExists(atPath: path)
+    }
+
+    if !roots.isEmpty {
+      let monitor = await FSEventsMonitor(paths: roots, latency: 0.5)
+      self.fsEventsMonitor = monitor
+      let stream = await monitor.start()
+
+      self.fsEventsTask = Task { [weak self] in
+        for await change in stream {
+          guard let self else { return }
+          await self.handleFileSystemChange(change)
+        }
+      }
+
+      log.info("Started FSEvents monitoring for \(roots.count) transcript roots")
+    } else {
+      log.warning("No transcript roots found for FSEvents monitoring")
+    }
+    #else
+    log.debug("FSEvents monitoring not available on this platform")
+    #endif
   }
 
   /// Stop all monitoring and watchers
@@ -186,5 +217,56 @@ public actor ProjectActivityMonitor {
         log.error("Failed to reverse-mangle path \(directory.lastPathComponent): \(error.localizedDescription)")
       }
     }
+  }
+
+  /// Handle file system change from FSEvents
+  /// Maps changed path → project ID and emits .transcriptUpdated event
+  private func handleFileSystemChange(_ change: FSEventChange) {
+    #if os(macOS)
+    let path = change.path
+
+    // Determine provider from path
+    let provider: String
+    if path.contains("/.claude/projects/") {
+      provider = "claude.code"
+    } else if path.contains("/.codex/sessions/") {
+      provider = "codex.cli"
+    } else {
+      return  // Not a transcript root we care about
+    }
+
+    // Extract mangled directory name (e.g., Users_rob_code_projects_myproject)
+    // Path format: ~/.claude/projects/{mangled_name}/transcript-*.jsonl
+    let components = path.split(separator: "/")
+    guard let projectsIndex = components.firstIndex(where: { $0 == "projects" || $0 == "sessions" }),
+          projectsIndex + 1 < components.count else {
+      return
+    }
+
+    let mangledName = String(components[projectsIndex + 1])
+    let transcriptRoot: URL
+
+    if provider == "claude.code" {
+      transcriptRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects/\(mangledName)")
+    } else {
+      transcriptRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codex/sessions/\(mangledName)")
+    }
+
+    // Reverse-mangle to get project path
+    do {
+      let projectPath = try ProjectIdentity.reverseManglePath(provider: provider, directory: transcriptRoot)
+      let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
+
+      // Emit transcriptUpdated event
+      let event = ProjectEvent(projectId: projectId, kind: .transcriptUpdated)
+      emitEvent(event)
+
+      log.debug("FSEvents: transcript updated for project \(projectId)")
+    } catch {
+      log.error("Failed to reverse-mangle path from FSEvents: \(error.localizedDescription)")
+    }
+    #endif
   }
 }
