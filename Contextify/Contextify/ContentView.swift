@@ -28,8 +28,8 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Project switcher (top navigation)
-            // Show if multi-project mode enabled and we have at least 1 project
-            let shouldShow = ConsentManager.shared.isMultiProjectModeEnabled && !projectSwitcher.allProjects.isEmpty
+            // Show only when we have 2+ projects (otherwise just wastes vertical space)
+            let shouldShow = projectSwitcher.allProjects.count >= 2
 
             if shouldShow {
                 ProjectSwitcherView()
