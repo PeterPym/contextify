@@ -29,7 +29,7 @@ public final class ProjectSwitcherState {
   public static let shared = ProjectSwitcherState()
 
   private var orchestrator: TranscriptOrchestrator?
-  private var activityMonitor: ProjectActivityMonitor?
+  var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
 
   // All discovered projects
   private(set) var allProjects: [ProjectInfo] = []
