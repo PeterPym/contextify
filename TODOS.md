@@ -1450,7 +1450,7 @@ Add a status bar to the main window that shows real-time LLM processing status a
 
 #### Project Switcher Navigation Bar
 
-**Status:** Proposed
+**Status:** Completed (2025-10-27)
 **Priority:** High
 **Related:** Multi-project support, user experience, transcript monitoring
 
@@ -1458,19 +1458,24 @@ Add a navigation bar above the main window that displays all discovered projects
 
 **Full specification:** See `build/notes/feature-specs/project-switcher/spec.md`
 
-**Summary:**
+**Implemented:**
 - Horizontal navigation bar showing all projects with transcripts
 - Unread badges show new activity in non-active projects
-- Click to switch between projects without stopping watchers
-- Global discovery monitors all projects simultaneously
-- Six implementation phases: database, discovery, state, UI, integration, polish
-- Estimated 6-7 days total implementation time
+- Click to switch between projects, timeline updates immediately
+- Keyboard shortcuts: Cmd+Shift+[ / ] to cycle through projects
+- Auto opt-in for multi-project mode
+- DB-derived unread counts (crash-safe, no in-memory state)
+- Status bar tracks LLM work per project (old generator cancelled on switch)
 
 **Key Components:**
-- `ProjectActivityMonitor`: Global project discovery and watching
-- `project_visits` database table: Track visits and unread counts
+- `ProjectActivityMonitor`: Global project discovery (Phase 1)
+- `project_visits` database table: Track visits and unread counts (v8 migration)
 - `ProjectSwitcherState`: Observable state for UI binding
-- `ProjectSwitcherView`: SwiftUI navigation bar component
+- `ProjectSwitcherView`: SwiftUI navigation bar component with keyboard shortcuts
+- `TimelineCacheMissGenerator.shutdown()`: Cancels old project's queue on switch
+
+**Future Enhancement - Background Processing:**
+Currently, switching projects cancels the old project's LLM queue and drops unprocessed cache misses. They're rediscovered from DB when you switch back. Consider implementing a global queue manager that continues processing all projects in background (active project gets priority, others process during idle). This would improve resource utilization and make all projects gradually summarized. Trade-off: battery usage vs UX. Implement as user preference with status bar showing "Active: X items, Background: Y items (Z projects)".
 
 #### Conversation Log Enhancements
 
