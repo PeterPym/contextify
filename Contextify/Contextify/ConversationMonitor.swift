@@ -167,10 +167,9 @@ final class ConversationMonitor {
 
                 // 3. Shutdown old cache miss generator (if exists) before creating new one
                 if let oldGenerator = self.cacheMissGenerator {
-                    Task {
-                        await oldGenerator.shutdown()
-                    }
+                    oldGenerator.shutdown()  // Synchronous - no await needed
                 }
+                self.cacheMissGenerator = nil  // Clear before creating new
 
                 // Initialize new cache miss generator for this project
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)

@@ -94,7 +94,7 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
     try db.write { db in
       // Upsert visit record
       var visit = try ProjectVisit.fetchOne(db, key: projectId) ?? ProjectVisit(projectId: projectId)
-      visit.lastSelectedAt = ISO8601DateFormatter().string(from: clock.now())
+      visit.lastSelectedAt = ISO8601Z.string(from: clock.now())
       try visit.save(db)
     }
   }

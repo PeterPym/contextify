@@ -201,8 +201,8 @@ public final class ProjectSwitcherState {
     do {
       try orchestrator.markProjectSelected(projectId: projectId)
 
-      // Mark as viewed with current timestamp
-      let timestamp = ISO8601DateFormatter().string(from: Date())
+      // Mark as viewed with current timestamp (using centralized formatter)
+      let timestamp = ISO8601Z.string(from: Date())
       try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
 
       // Reset unread count

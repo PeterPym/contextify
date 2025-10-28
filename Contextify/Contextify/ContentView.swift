@@ -29,7 +29,6 @@ struct ContentView: View {
             // Project switcher (top navigation)
             // Show if multi-project mode enabled and we have at least 1 project
             let shouldShow = ConsentManager.shared.isMultiProjectModeEnabled && !projectSwitcher.allProjects.isEmpty
-            let _ = uiLog.info("🔍 ProjectSwitcher visibility: enabled=\(ConsentManager.shared.isMultiProjectModeEnabled), projectCount=\(projectSwitcher.allProjects.count), shouldShow=\(shouldShow)")
 
             if shouldShow {
                 ProjectSwitcherView()
