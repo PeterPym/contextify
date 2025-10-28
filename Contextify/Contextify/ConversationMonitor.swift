@@ -257,8 +257,21 @@ final class ConversationMonitor {
     /// Cancel pending debounce task on project changes to avoid late callbacks into torn state
     @MainActor
     private func onProjectOrSessionChange() {
-        debounceTask?.cancel()
-        debounceTask = nil
+        log.debug("onProjectOrSessionChange: projectId=\(self.currentProjectId ?? "nil")")
+
+        // Cancel any pending debounced updates (they're for the OLD project)
+        if debounceTask != nil {
+            log.debug("onProjectOrSessionChange: cancelling pending debounce task")
+            debounceTask?.cancel()
+            debounceTask = nil
+        }
+
+        // Clear pending LLM requests for non-active projects to prevent resource waste
+        if let generator = cacheMissGenerator {
+            Task {
+                await generator.clearPendingMisses(exceptProjectId: currentProjectId)
+            }
+        }
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
@@ -274,15 +287,24 @@ final class ConversationMonitor {
             await MainActor.run { [weak self] in
                 guard let self else { return }
 
+                log.debug("📬 TranscriptUpdated notification: projectId=\(pid ?? "nil"), currentProjectId=\(self.currentProjectId ?? "nil")")
+
                 // Branch 1: Current project - refresh timeline
                 if pid == self.currentProjectId || pid == nil {
+                    log.debug("📬 Matches current project - scheduling debounced refresh")
                     // Cancel existing debounce task and start new one
                     self.debounceTask?.cancel()
                     self.debounceTask = Task { [weak self] in
                         try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
-                        guard let self, !Task.isCancelled else { return }
+                        guard let self, !Task.isCancelled else {
+                            self?.log.debug("📬 Debounce task cancelled or self deallocated")
+                            return
+                        }
+                        self.log.debug("📬 Debounce complete - calling processIncrementalUpdate")
                         await self.processIncrementalUpdate()
                     }
+                } else {
+                    log.debug("📬 Notification for different project - ignoring (unread count is DB-derived)")
                 }
 
                 // Branch 2: Other project - unread count is DB-derived (no action needed here)
@@ -345,13 +367,17 @@ final class ConversationMonitor {
         log.info("🔄 Project root changed - reloading conversation timeline")
 
         // Stop current monitoring
+        log.debug("handleProjectRootChange: stopping monitoring")
         stopMonitoring()
 
         // Clear all entries
+        log.debug("handleProjectRootChange: clearing entries")
         clearEntries()
 
         // Restart monitoring with new project
+        log.debug("handleProjectRootChange: restarting monitoring")
         startMonitoring()
+        log.info("✅ Project root change complete - monitoring restarted")
     }
 
     @MainActor
@@ -583,6 +609,7 @@ final class ConversationMonitor {
                 if cache == nil, let windowSha = entry.windowSha256 {
                     let miss = CacheMiss(
                         entryId: entry.id,
+                        projectId: projectId,  // Track project for cancellation when switching
                         contentSha256: entry.contentSha256,
                         windowSha256: windowSha,
                         content: entry.content,
@@ -791,6 +818,7 @@ final class ConversationMonitor {
                     if cache == nil, let windowSha = entry.windowSha256 {
                         let miss = CacheMiss(
                             entryId: entry.id,
+                            projectId: projectId,  // Track project for cancellation when switching
                             contentSha256: entry.contentSha256,
                             windowSha256: windowSha,
                             content: entry.content,

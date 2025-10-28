@@ -12,6 +12,7 @@ import ContextifyCore
 /// Represents a cache miss that needs LLM generation
 struct CacheMiss: Sendable {
     let entryId: String
+    let projectId: String  // SQL project ID - for cancellation when switching projects
     let contentSha256: String
     let windowSha256: String
     let content: String
@@ -75,6 +76,24 @@ actor TimelineCacheMissGenerator {
             continuation.finish()
         }
         queueObservers.removeAll()
+    }
+
+    /// Clear pending misses for projects that are not currently active
+    /// Call this when user switches projects to prevent wasting resources on invisible entries
+    func clearPendingMisses(exceptProjectId activeProjectId: String?) {
+        let beforeCount = pendingMisses.count
+
+        // Remove misses that don't match the active project
+        pendingMisses = pendingMisses.filter { _, miss in
+            guard let activeId = activeProjectId else { return false }
+            return miss.projectId == activeId
+        }
+
+        let removed = beforeCount - pendingMisses.count
+        if removed > 0 {
+            log.info("Cleared \(removed) pending misses for inactive projects (kept \(self.pendingMisses.count) for active project)")
+            notifyQueueChanged()
+        }
     }
 
     /// Queue cache misses for background generation with de-duplication and cap

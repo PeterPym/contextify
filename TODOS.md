@@ -412,6 +412,95 @@ Remove terminal integration features and focus exclusively on:
 
 ### Technical Debt / Optimizations
 
+#### Database Lock Contention & WAL Checkpoint Improvements
+**Status:** Open (2025-10-27)
+**Priority:** Medium-High (impacts timeline reliability)
+**Category:** Performance / Reliability
+**Related:** Timeline updates, LLM queue, HooverEngine
+
+**Problem:**
+Timeline stops updating with new conversation entries during high database load. Root cause is SQLite WAL checkpoint failures with `database table is locked` errors. Multiple components compete for write locks:
+1. `TimelineCacheMissGenerator` - Batch LLM summary writes
+2. `HooverEngine` - Streaming transcript ingestion
+3. Background discovery - WAL checkpoint operations (`PRAGMA wal_checkpoint(PASSIVE)`)
+
+**Current Workaround:**
+Restart app to clear locks (temporary fix).
+
+**Mitigations Implemented:**
+- ✅ LLM request cancellation when switching projects (reduces contention by clearing inactive project queues)
+- ✅ Added `projectId` tracking to `CacheMiss` structs
+- ✅ Auto-cancel pending LLM work in `onProjectOrSessionChange()`
+
+**Recommended Long-Term Fixes:**
+
+1. **Reduce WAL Checkpoint Frequency** (2-3 hours)
+   - Current: Aggressive passive checkpointing during background discovery
+   - Solution: Reduce frequency or switch to manual/truncate mode
+   - Files: `ConversationMonitor.swift`, background discovery logic
+   - Risk: WAL file growth (monitor size)
+
+2. **Transaction Timeout & Retry Logic** (1 day)
+   - Add exponential backoff for `SQLITE_BUSY` errors
+   - Implement transaction retry wrapper with max attempts
+   - Files: `DatabaseManager.swift`, all `db.write {}` calls
+   - Benefits: Graceful degradation under load
+
+3. **Connection Pooling Optimization** (2-3 days)
+   - Separate read/write connection pools
+   - Dedicated long-running read connection for queries
+   - Short-lived write connections for commits
+   - Files: `DatabaseManager.swift`
+   - Trade-off: Complexity vs reliability
+
+4. **Deferred Write Queue for LLM Cache** (2-3 days)
+   - Queue LLM cache writes instead of immediate commits
+   - Batch multiple cache entries into single transaction
+   - Flush queue on idle (2s debounce) or size threshold (50 entries)
+   - Files: `TimelineCacheMissGenerator.swift`, `TranscriptOrchestrator.swift`
+   - Benefits: Reduces write frequency by 10-20x
+
+5. **WAL Mode Tuning** (1-2 hours)
+   - Adjust `PRAGMA wal_autocheckpoint` threshold (default: 1000 pages)
+   - Consider `PRAGMA journal_size_limit` to cap WAL growth
+   - Monitor WAL file size: `ls -lh ~/Library/Application\ Support/Contextify/*.db-wal`
+   - Files: `DatabaseSchema.swift`, initialization
+
+**Monitoring & Metrics:**
+Add telemetry to track:
+- Database lock errors per hour
+- WAL file size trends
+- Transaction retry counts
+- Write queue depth (if implementing deferred writes)
+- Checkpoint success/failure rate
+
+**Testing Strategy:**
+1. **Stress test:** Rapid project switching (Cmd+Shift+]) with LLM queue active
+2. **Monitor logs:** `grep "database table is locked" /tmp/contextify-recent.log`
+3. **Success criteria:**
+   - Timeline updates reliably for 8+ hours
+   - WAL checkpoint errors <1 per hour
+   - No user-visible hangs
+
+**Implementation Priority:**
+1. **Phase 1 (Quick Wins - 1-2 days):** WAL tuning + Transaction retry logic
+2. **Phase 2 (Medium Effort - 2-3 days):** Deferred write queue for LLM cache
+3. **Phase 3 (Long Term - 3-5 days):** Connection pooling optimization
+
+**Related Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` - Background discovery, checkpoint calls
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` - LLM cache writes
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift` - Transcript ingestion writes
+- `app/Sources/ContextifyCore/Database/DatabaseManager.swift` - Connection management
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - WAL configuration
+
+**References:**
+- SQLite WAL documentation: https://www.sqlite.org/wal.html
+- GRDB transaction handling: https://github.com/groue/GRDB.swift/blob/master/Documentation/Transactions.md
+- Logs showing lock errors: `/tmp/contextify-recent.log` (search for "database table is locked")
+
+### Technical Debt / Optimizations
+
 #### Phase 2: LLM Session Management & Safety Optimizations
 **Status:** Deferred (Post-P0/P1 cleanup)
 **Priority:** High (P1.5) - Should proceed before new features
