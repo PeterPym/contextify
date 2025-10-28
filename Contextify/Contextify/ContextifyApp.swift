@@ -17,6 +17,22 @@ struct WindowCommands: Commands {
         openWindow(id: "projects")
       }
       .keyboardShortcut("p", modifiers: [.command, .shift])
+
+      Divider()
+
+      Button("Previous Project") {
+        Task { @MainActor in
+          await ProjectSwitcherState.shared.cycleToPreviousProject()
+        }
+      }
+      .keyboardShortcut("[", modifiers: [.command, .shift])
+
+      Button("Next Project") {
+        Task { @MainActor in
+          await ProjectSwitcherState.shared.cycleToNextProject()
+        }
+      }
+      .keyboardShortcut("]", modifiers: [.command, .shift])
     }
   }
 }

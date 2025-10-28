@@ -156,6 +156,38 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Cycle to previous project (for keyboard shortcut)
+  public func cycleToPreviousProject() async {
+    guard !allProjects.isEmpty else { return }
+
+    if let currentId = activeProjectId,
+       let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) {
+      // Move to previous, wrapping around to end
+      let previousIndex = currentIndex > 0 ? currentIndex - 1 : allProjects.count - 1
+      let previousProject = allProjects[previousIndex]
+      await switchToProject(previousProject.id)
+    } else if let first = allProjects.first {
+      // No active project, select first
+      await switchToProject(first.id)
+    }
+  }
+
+  /// Cycle to next project (for keyboard shortcut)
+  public func cycleToNextProject() async {
+    guard !allProjects.isEmpty else { return }
+
+    if let currentId = activeProjectId,
+       let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) {
+      // Move to next, wrapping around to start
+      let nextIndex = currentIndex < allProjects.count - 1 ? currentIndex + 1 : 0
+      let nextProject = allProjects[nextIndex]
+      await switchToProject(nextProject.id)
+    } else if let first = allProjects.first {
+      // No active project, select first
+      await switchToProject(first.id)
+    }
+  }
+
   /// Switch to a different project
   public func switchToProject(_ projectId: String) async {
     guard let orchestrator = orchestrator else { return }

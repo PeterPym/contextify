@@ -35,52 +35,8 @@ struct ProjectSwitcherView: View {
     .onDisappear {
       state.stop()
     }
-    // Keyboard shortcuts: Cmd+Shift+[ and Cmd+Shift+]
-    .background(KeyboardShortcutHandler(
-      onPrevious: cycleToPreviousProject,
-      onNext: cycleToNextProject
-    ))
   }
 
-  private func cycleToPreviousProject() {
-    guard !state.allProjects.isEmpty else { return }
-
-    if let currentId = state.activeProjectId,
-       let currentIndex = state.allProjects.firstIndex(where: { $0.id == currentId }) {
-      // Move to previous, wrapping around to end
-      let previousIndex = currentIndex > 0 ? currentIndex - 1 : state.allProjects.count - 1
-      let previousProject = state.allProjects[previousIndex]
-
-      Task {
-        await state.switchToProject(previousProject.id)
-      }
-    } else if let first = state.allProjects.first {
-      // No active project, select first
-      Task {
-        await state.switchToProject(first.id)
-      }
-    }
-  }
-
-  private func cycleToNextProject() {
-    guard !state.allProjects.isEmpty else { return }
-
-    if let currentId = state.activeProjectId,
-       let currentIndex = state.allProjects.firstIndex(where: { $0.id == currentId }) {
-      // Move to next, wrapping around to start
-      let nextIndex = currentIndex < state.allProjects.count - 1 ? currentIndex + 1 : 0
-      let nextProject = state.allProjects[nextIndex]
-
-      Task {
-        await state.switchToProject(nextProject.id)
-      }
-    } else if let first = state.allProjects.first {
-      // No active project, select first
-      Task {
-        await state.switchToProject(first.id)
-      }
-    }
-  }
 }
 
 /// Individual project tab component
@@ -138,49 +94,4 @@ struct ProjectTabView: View {
   return ProjectSwitcherView()
     .environment(state)
     .frame(width: 600, height: 50)
-}
-
-// MARK: - Keyboard Shortcut Handler
-
-/// Invisible view that handles keyboard shortcuts for project cycling
-private struct KeyboardShortcutHandler: NSViewRepresentable {
-  let onPrevious: () -> Void
-  let onNext: () -> Void
-
-  func makeNSView(context: Context) -> KeyboardShortcutView {
-    let view = KeyboardShortcutView()
-    view.onPrevious = onPrevious
-    view.onNext = onNext
-    return view
-  }
-
-  func updateNSView(_ nsView: KeyboardShortcutView, context: Context) {
-    nsView.onPrevious = onPrevious
-    nsView.onNext = onNext
-  }
-
-  class KeyboardShortcutView: NSView {
-    var onPrevious: (() -> Void)?
-    var onNext: (() -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-      // Cmd+Shift+[ = 0x21 ([)
-      // Cmd+Shift+] = 0x1E (])
-      let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-      if modifiers == [.command, .shift] {
-        if event.charactersIgnoringModifiers == "[" {
-          onPrevious?()
-          return
-        } else if event.charactersIgnoringModifiers == "]" {
-          onNext?()
-          return
-        }
-      }
-
-      super.keyDown(with: event)
-    }
-  }
 }
