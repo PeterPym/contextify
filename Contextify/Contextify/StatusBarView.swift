@@ -171,8 +171,8 @@ struct StatusBarView: View {
             .help(errorTooltip(count: viewModel.recentErrorCount, reason: viewModel.topErrorReason))
             .accessibilityLabel("\(viewModel.recentErrorCount) generation errors")
 
-        } else if let viewModel, viewModel.isProcessing {
-            // Processing state
+        } else if let viewModel, viewModel.isProcessing && viewModel.queueDepth > 0 {
+            // Processing state (only show if items exist - prevents race condition display)
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
