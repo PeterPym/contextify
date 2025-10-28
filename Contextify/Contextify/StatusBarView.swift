@@ -168,7 +168,7 @@ struct StatusBarView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .help(viewModel.topErrorReason ?? "Recent LLM generation errors")
+            .help(errorTooltip(count: viewModel.recentErrorCount, reason: viewModel.topErrorReason))
             .accessibilityLabel("\(viewModel.recentErrorCount) generation errors")
 
         } else if let viewModel, viewModel.isProcessing {
@@ -216,6 +216,41 @@ struct StatusBarView: View {
                     .foregroundStyle(.secondary)
             }
             .accessibilityLabel("All summaries up to date")
+        }
+    }
+
+    // MARK: - Helper Functions
+
+    /// Generate actionable error tooltip
+    private func errorTooltip(count: Int, reason: String?) -> String {
+        var message = "LLM generation failed for \(count) \(count == 1 ? "entry" : "entries")"
+
+        if let reason = reason {
+            // Simplify technical error messages
+            let simplified = simplifyErrorReason(reason)
+            message += "\n\nReason: \(simplified)"
+        }
+
+        message += "\n\nErrors auto-clear after 3 successful generations."
+        message += "\nIf errors persist, check Apple Intelligence in System Settings."
+
+        return message
+    }
+
+    /// Simplify technical error messages for user display
+    private func simplifyErrorReason(_ reason: String) -> String {
+        if reason.contains("REJECTED") {
+            return "Summary quality too low"
+        } else if reason.contains("grounding") {
+            return "Content not grounded in source"
+        } else if reason.contains("leaked") {
+            return "Summary leaked sensitive data"
+        } else if reason.contains("confidence") {
+            return "Low confidence result"
+        } else if reason.contains("timeout") {
+            return "Generation timed out"
+        } else {
+            return reason  // Return as-is if no simplification
         }
     }
 }

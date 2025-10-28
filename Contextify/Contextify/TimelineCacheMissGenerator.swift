@@ -51,9 +51,11 @@ actor TimelineCacheMissGenerator {
     // In-flight tracking for accurate ETA
     private var inFlightCount: Int = 0
 
-    // Error tracking (5-minute sliding window)
+    // Error tracking (5-minute sliding window with auto-clear on success)
     private var recentErrors: [(timestamp: Date, reason: String)] = []
     private let errorWindowSeconds: TimeInterval = 300  // 5 minutes
+    private var consecutiveSuccesses: Int = 0
+    private let successClearThreshold = 3  // Clear 1 error after 3 successes
 
     init(orchestrator: TranscriptOrchestrator) {
         self.orchestrator = orchestrator
@@ -219,6 +221,7 @@ actor TimelineCacheMissGenerator {
                 successCount += 1
                 successfulMisses.append(miss)
                 consecutiveFailures = 0  // Reset on success
+                trackSuccess()  // Track success for error auto-clearing
 
                 // Post immediate UI update for this entry (don't wait for batch to complete)
                 await postCacheUpdateNotification(for: [miss])
@@ -489,6 +492,7 @@ actor TimelineCacheMissGenerator {
     private func trackError(reason: String) {
         let now = Date()
         recentErrors.append((timestamp: now, reason: reason))
+        consecutiveSuccesses = 0  // Reset success counter on error
 
         // Prune errors outside the time window
         let cutoff = now.addingTimeInterval(-errorWindowSeconds)
@@ -497,6 +501,23 @@ actor TimelineCacheMissGenerator {
         // Hard cap to prevent unbounded growth
         if recentErrors.count > 50 {
             recentErrors.removeFirst(recentErrors.count - 50)
+        }
+    }
+
+    /// Track successful generation and auto-clear errors after threshold
+    private func trackSuccess() {
+        guard !recentErrors.isEmpty else { return }  // No errors to clear
+
+        consecutiveSuccesses += 1
+
+        // Auto-clear one error after threshold consecutive successes
+        if consecutiveSuccesses >= successClearThreshold {
+            // Remove oldest error (FIFO - first in, first out)
+            if !recentErrors.isEmpty {
+                recentErrors.removeFirst()
+                log.debug("Auto-cleared 1 error after \(self.consecutiveSuccesses) consecutive successes")
+            }
+            consecutiveSuccesses = 0  // Reset counter
         }
     }
 }
