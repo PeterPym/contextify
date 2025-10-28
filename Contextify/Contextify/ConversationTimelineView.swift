@@ -59,6 +59,17 @@ struct ConversationTimelineView: View {
                         .controlSize(.small)
                 }
                 Button {
+                    openWindow(id: "projects")
+                } label: {
+                    Image(systemName: "folder.badge.gearshape")
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .help("Manage Projects")
+                Button {
                     openWindow(id: "transcript-inventory")
                 } label: {
                     Image(systemName: "doc.text.magnifyingglass")
