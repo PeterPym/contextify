@@ -40,7 +40,7 @@ struct ProjectSwitcherView: View {
       .onChange(of: state.activeProjectId) { oldValue, newValue in
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {
-          withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+          withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
             proxy.scrollTo(newValue, anchor: .center)
           }
         }
