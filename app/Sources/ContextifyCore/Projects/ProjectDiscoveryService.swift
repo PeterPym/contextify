@@ -28,6 +28,10 @@ public actor ProjectDiscoveryService {
   public func discoverAllProjects(currentProjectPath: String?) async throws -> [DiscoveredProject] {
     logger.info("Starting project discovery")
 
+    // Clear stale ingestion errors from previous attempts
+    // Errors will be re-populated if projects are re-ingested
+    ingestionErrors.removeAll()
+
     // 1. Scan ~/.claude/projects/* for Claude Code projects
     let claudeProjects = try await discoverClaudeCodeProjects()
     logger.debug("Found \(claudeProjects.count) Claude Code project paths")
