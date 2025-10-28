@@ -27,7 +27,7 @@ struct ProjectsWindow: View {
         projectsList
       }
     }
-    .frame(width: 800, height: 600)
+    .frame(minWidth: 800, idealWidth: 800, maxWidth: .infinity, minHeight: 600, idealHeight: 600, maxHeight: .infinity)
     .sheet(isPresented: $showingExcluded) {
       ExcludedProjectsView()
         .environment(viewModel)
