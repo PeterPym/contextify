@@ -2,6 +2,46 @@
 
 ## P0 Bug Fixes (feature/project-switcher-fixes)
 
+### 0. Consolidate Project Switching Code Paths (ARCHITECTURAL)
+**Issue:** Two different methods for switching projects with inconsistent behavior and validation.
+
+**Problem:**
+- `HUDViewModel.setProjectRoot(url:)` - Requires Git repository, returns error if not found
+- `HUDViewModel.switchToProject(projectPath:)` - Works with or without Git, no validation
+- This duplication creates confusion and potential bugs
+- Projects without Git repositories should be supported but currently fail with `setProjectRoot()`
+
+**Required Changes:**
+1. **Support non-Git projects:**
+   - Projects should work without `.git` directory
+   - Git branch info should be optional (show "—" if no Git)
+   - All project switching methods should handle both Git and non-Git projects
+
+2. **Consolidate code paths:**
+   - Eliminate duplicate project switching logic
+   - Use single canonical method for all project switches
+   - If one method must remain for legacy reasons, add clear deprecation comments
+
+3. **Specific updates needed:**
+   - `setProjectRoot()`: Remove Git requirement, make it optional
+   - OR deprecate `setProjectRoot()` entirely in favor of `switchToProject()`
+   - Add warning comments: "DO NOT use setProjectRoot() for project switching - use switchToProject() instead"
+   - Ensure `ProjectsViewModel.setAsCurrent()` and `ProjectSwitcherView` tab clicks use same code path
+
+**Files to modify:**
+- `app/Sources/ContextifyCore/HUDCore.swift:799-819` (setProjectRoot)
+- `app/Sources/ContextifyCore/HUDCore.swift:625-662` (switchToProject)
+- `Contextify/Contextify/ProjectsViewModel.swift:82-95` (setAsCurrent)
+- `Contextify/Contextify/ProjectSwitcherView.swift:23-28` (tab click handler)
+
+**Testing checklist:**
+- [ ] Projects without Git repositories can be switched to
+- [ ] Git branch info shows "—" for non-Git projects
+- [ ] Both "Set as Current" button and project tabs use same code path
+- [ ] Timeline updates correctly for both Git and non-Git projects
+
+---
+
 ### 1. Timeline Not Updating with New Messages
 **Issue:** Conversation logs aren't showing new messages from any session (active or inactive projects).
 
