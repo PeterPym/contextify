@@ -127,8 +127,6 @@ struct ProjectsWindow: View {
 
   private var emptyState: some View {
     VStack(spacing: 20) {
-      Spacer()
-
       Image(systemName: "folder.fill.badge.questionmark")
         .font(.system(size: 64))
         .foregroundStyle(.secondary)
@@ -165,12 +163,11 @@ struct ProjectsWindow: View {
       Spacer()
     }
     .padding()
+    .frame(maxHeight: .infinity, alignment: .top)
   }
 
   private var loadingState: some View {
     VStack(spacing: 20) {
-      Spacer()
-
       ProgressView()
         .controlSize(.large)
 
@@ -193,12 +190,11 @@ struct ProjectsWindow: View {
       Spacer()
     }
     .padding()
+    .frame(maxHeight: .infinity, alignment: .top)
   }
 
   private func errorState(message: String) -> some View {
     VStack(spacing: 20) {
-      Spacer()
-
       Image(systemName: "exclamationmark.triangle.fill")
         .font(.system(size: 64))
         .foregroundStyle(.orange)
@@ -221,6 +217,7 @@ struct ProjectsWindow: View {
       Spacer()
     }
     .padding()
+    .frame(maxHeight: .infinity, alignment: .top)
   }
 }
 
