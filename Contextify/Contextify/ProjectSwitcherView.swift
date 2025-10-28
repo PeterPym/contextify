@@ -31,12 +31,6 @@ struct ProjectSwitcherView: View {
         .padding(.vertical, 8)
       }
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-      .task {
-        state.start()
-      }
-      .onDisappear {
-        state.stop()
-      }
       .onChange(of: state.activeProjectId) { oldValue, newValue in
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {
@@ -71,6 +65,8 @@ struct ProjectTabView: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
+    .frame(minHeight: 44)  // Accessibility: Minimum touch target height
+    .contentShape(Rectangle())  // Expand tap area to full frame
     .background(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
     .cornerRadius(6)
     .overlay(
