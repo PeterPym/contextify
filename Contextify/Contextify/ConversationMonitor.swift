@@ -12,10 +12,14 @@ final class TimelineState {
     private(set) var revision: UInt64 = 0
 
     // Derived map stays in sync because it's computed
+    // Uses uniquingKeysWith to handle duplicate cache keys (keeps latest index)
     var indexByCacheKey: [CacheKey: Int] {
-        Dictionary(uniqueKeysWithValues: entries.enumerated().compactMap { i, e in
-            e.cacheKey.map { ($0, i) }
-        })
+        Dictionary(
+            entries.enumerated().compactMap { i, e in
+                e.cacheKey.map { ($0, i) }
+            },
+            uniquingKeysWith: { _, new in new }  // Keep latest index on collision
+        )
     }
 
     func replace(with entries: [TimelineEntry]) {

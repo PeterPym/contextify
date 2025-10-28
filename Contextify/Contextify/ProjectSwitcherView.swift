@@ -10,30 +10,41 @@ struct ProjectSwitcherView: View {
   @Environment(ProjectSwitcherState.self) private var state
 
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(spacing: 8) {
-        ForEach(state.allProjects) { project in
-          ProjectTabView(
-            project: project,
-            isActive: project.id == state.activeProjectId,
-            unreadCount: state.unreadCounts[project.id] ?? 0
-          )
-          .onTapGesture {
-            Task {
-              await state.switchToProject(project.id)
+    ScrollViewReader { proxy in
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          ForEach(state.allProjects) { project in
+            ProjectTabView(
+              project: project,
+              isActive: project.id == state.activeProjectId,
+              unreadCount: state.unreadCounts[project.id] ?? 0
+            )
+            .id(project.id)  // Set ID for ScrollViewReader
+            .onTapGesture {
+              Task {
+                await state.switchToProject(project.id)
+              }
             }
           }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-    }
-    .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-    .task {
-      state.start()
-    }
-    .onDisappear {
-      state.stop()
+      .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+      .task {
+        state.start()
+      }
+      .onDisappear {
+        state.stop()
+      }
+      .onChange(of: state.activeProjectId) { oldValue, newValue in
+        // Auto-scroll to active project when it changes (especially for keyboard nav)
+        if let newValue {
+          withAnimation(.easeInOut(duration: 0.3)) {
+            proxy.scrollTo(newValue, anchor: .center)
+          }
+        }
+      }
     }
   }
 
