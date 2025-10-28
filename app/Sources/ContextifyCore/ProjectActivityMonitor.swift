@@ -294,20 +294,29 @@ public actor ProjectActivityMonitor {
       return
     }
 
-    // Reverse-mangle to get project path and ID
-    do {
-      let providerString = (provider == .claude ? "claude.code" : "codex.cli")
-      let projPath = try ProjectIdentity.reverseManglePath(
-        provider: providerString,
-        directory: transcriptRoot
-      )
-      let projectId = ProjectIdentity.computeProjectID(
-        provider: providerString,
-        path: projPath
-      )
+    // Use canonical path resolution instead of custom mangle/demangle
+    let sessionId = url.deletingPathExtension().lastPathComponent
+    let providerString = (provider == .claude ? "claude.code" : "codex.cli")
 
-      let sessionId = url.deletingPathExtension().lastPathComponent
-      log.debug("FSEvents: projectId=\(projectId) sessionId=\(sessionId)")
+    // For Claude Code: read project path from directory name (reverse the mangle)
+    // For Codex: read from session.json metadata
+    let projPath: String
+    do {
+      if provider == .claude {
+        // Claude mangles: /Users/rob/my-app → -Users-rob-my-app
+        // Reverse: replace - with / and ensure leading /
+        let dirName = transcriptRoot.lastPathComponent
+        let unmangled = dirName.replacingOccurrences(of: "-", with: "/")
+        projPath = unmangled.hasPrefix("/") ? unmangled : "/" + unmangled
+      } else {
+        // Codex stores project_root in session.json
+        let metaPath = transcriptRoot.appendingPathComponent("session.json")
+        let data = try Data(contentsOf: metaPath)
+        struct CodexMeta: Codable { let project_root: String }
+        projPath = try JSONDecoder().decode(CodexMeta.self, from: data).project_root
+      }
+
+      log.debug("FSEvents: sessionId=\(sessionId) projPath=\(projPath)")
 
       // Hoover first, emit event only after completion
       Task {
@@ -338,11 +347,11 @@ public actor ProjectActivityMonitor {
 
           log.info("✅ Emitted events for transcript update: dbProjectId=\(dbProjectId)")
         } catch {
-          log.error("FSEvents: process error=\(String(describing: error))")
+          log.error("FSEvents: hoover failed for \(sessionId): \(String(describing: error))")
         }
       }
     } catch {
-      log.error("FSEvents: reverse-mangle failed path=\(path) err=\(String(describing: error))")
+      log.error("FSEvents: path decode failed for \(mangledDir): \(String(describing: error))")
     }
     #endif
   }
