@@ -204,17 +204,41 @@ public actor ProjectActivityMonitor {
         let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
 
         // Create/upsert project in database
-        let _ = try orchestrator.getOrCreateProject(
+        let dbProjectId = try orchestrator.getOrCreateProject(
           name: URL(fileURLWithPath: projectPath).lastPathComponent,
           rootPath: projectPath
         )
 
-        // Ensure watcher for this project
+        // Discover and hoover all transcript files for this project
+        let transcriptFiles = try FileManager.default.contentsOfDirectory(
+          at: directory,
+          includingPropertiesForKeys: [.isRegularFileKey],
+          options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "jsonl" }
+
+        if !transcriptFiles.isEmpty {
+          let transcripts = transcriptFiles.compactMap { url -> (url: URL, provider: String, sessionId: String?)? in
+            // Extract session ID from filename (e.g., "767f2c90-6979-406b-9644-38cbbfcf8187.jsonl")
+            let sessionId = url.deletingPathExtension().lastPathComponent
+            return (url: url, provider: provider, sessionId: sessionId)
+          }
+
+          // Batch discover and hoover transcripts
+          try orchestrator.discoverTranscripts(
+            projectId: dbProjectId,
+            transcriptFiles: transcripts,
+            progress: nil
+          )
+
+          log.info("Discovered \(transcripts.count) transcripts for project: \(projectPath)")
+        }
+
+        // Ensure watcher for this project (for project-level events)
         let _ = try await ensureWatcher(projectId: projectId)
 
         log.debug("Discovered project: \(projectPath) (provider: \(provider))")
       } catch {
-        log.error("Failed to reverse-mangle path \(directory.lastPathComponent): \(error.localizedDescription)")
+        log.error("Failed to process project directory \(directory.lastPathComponent): \(error.localizedDescription)")
       }
     }
   }
