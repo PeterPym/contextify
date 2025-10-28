@@ -244,7 +244,7 @@ struct StatusBarView: View {
         } else if reason.contains("grounding") {
             return "Content not grounded in source"
         } else if reason.contains("leaked") {
-            return "Summary leaked sensitive data"
+            return "Summary was invalid"
         } else if reason.contains("confidence") {
             return "Low confidence result"
         } else if reason.contains("timeout") {
