@@ -21,6 +21,7 @@ struct ProjectSwitcherView: View {
             )
             .id(project.id)  // Set ID for ScrollViewReader
             .onTapGesture {
+              log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
               Task {
                 await state.switchToProject(project.id)
               }
