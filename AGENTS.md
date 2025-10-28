@@ -30,13 +30,19 @@ assets/ icons/
 ## Architecture & Key Modules
 
 ### Database Layer (SQL Backend)
-- **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, and timeline cache.
+- **Current Schema Version: v11** (see DatabaseSchema.swift for migration history)
+- **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
 - **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, and WAL mode.
-- **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing.
-- **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository).
-- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations.
+- **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. Includes FK-safe assistant_usage insertion with staging fallback.
+- **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository).
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v11).
+  - **v8**: project_visits table for unread tracking
+  - **v9**: Performance indices for unread queries
+  - **v10**: assistant_usage_pending staging table
+  - **v11**: Hardening (composite PK, safety trigger, pruning)
 - **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
-- **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, etc.).
+- **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.).
+- **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
   - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
