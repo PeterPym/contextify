@@ -178,6 +178,10 @@ struct ContextifyApp: App {
     do {
       // Initialize projects view model
       let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+
+      // Reconcile pending assistant_usage records at startup
+      try? orchestrator.reconcileAssistantUsage()
+
       let discoveryService = ProjectDiscoveryService(
         db: try DatabaseManager.shared.pool,
         orchestrator: orchestrator

@@ -189,6 +189,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let transcriptSHA256 = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 
+    // Reconcile pending assistant_usage records after hoover completes
+    try? reconcileAssistantUsage()
+
     // Start watching if requested
     if startWatching {
       try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
@@ -672,6 +675,62 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       return
     }
     try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+  }
+
+  // MARK: - Assistant Usage Reconciliation
+
+  /// Reconcile pending assistant_usage records with transcript_entries
+  /// Moves staged usage records from assistant_usage_pending → assistant_usage when their entries appear
+  /// Also prunes stale pending records (7+ days old)
+  /// Call after hoover passes and at startup to ensure usage metrics are eventually attached
+  public func reconcileAssistantUsage(prune: Bool = true) throws {
+    let pool = try dbManager.pool
+    try pool.write { db in
+      // Count pending before reconciliation
+      let beforeCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM assistant_usage_pending") ?? 0
+
+      // Move pending usage records that now have matching entries
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO assistant_usage (
+          entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens, service_tier,
+          ephemeral_5m_tokens, ephemeral_1h_tokens
+        )
+        SELECT p.entry_id, p.request_id, p.model, p.input_tokens, p.output_tokens,
+               p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
+               p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
+        FROM assistant_usage_pending p
+        WHERE EXISTS (SELECT 1 FROM transcript_entries e WHERE e.id = p.entry_id)
+      """)
+
+      // Clean up pending records that have been reconciled
+      let stmt = try db.makeStatement(sql: """
+        DELETE FROM assistant_usage_pending
+        WHERE entry_id IN (SELECT id FROM transcript_entries)
+      """)
+      try stmt.execute()
+      let reconciledCount = db.changesCount
+
+      // Prune stale pending records (7+ days old) if requested
+      var prunedCount = 0
+      if prune {
+        let pruneStmt = try db.makeStatement(sql: """
+          DELETE FROM assistant_usage_pending
+          WHERE created_at IS NOT NULL
+            AND strftime('%s','now') - strftime('%s', created_at) > 7*24*3600
+        """)
+        try pruneStmt.execute()
+        prunedCount = db.changesCount
+      }
+
+      // Count remaining pending
+      let afterCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM assistant_usage_pending") ?? 0
+
+      // Log telemetry for visibility
+      if reconciledCount > 0 || prunedCount > 0 || afterCount > 0 {
+        log.info("assistant_usage reconciled: \(reconciledCount) moved, \(prunedCount) pruned, \(afterCount) remaining (was \(beforeCount))")
+      }
+    }
   }
 
   // MARK: - Cleanup

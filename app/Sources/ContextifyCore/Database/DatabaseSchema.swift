@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 9
+  static let version = 11
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -506,6 +506,108 @@ enum DatabaseSchema {
       """)
 
       // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // v10: Staging table for assistant_usage when entries arrive out-of-order
+    migrator.registerMigration("v10_assistant_usage_staging") { db in
+      // Staging table for usage records that arrive before their entries
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS assistant_usage_pending (
+          entry_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          model TEXT,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          cache_creation_tokens INTEGER,
+          cache_read_tokens INTEGER,
+          service_tier TEXT,
+          ephemeral_5m_tokens INTEGER,
+          ephemeral_1h_tokens INTEGER,
+          PRIMARY KEY (entry_id, request_id)
+        )
+      """)
+
+      // Index for efficient reconciliation lookups
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_ausage_pending_entry
+        ON assistant_usage_pending(entry_id)
+      """)
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // v11: Harden assistant_usage with composite PK, created_at, and safety trigger
+    migrator.registerMigration("v11_assistant_usage_hardening") { db in
+      // 1. Add created_at to staging table for pruning stale records
+      try db.execute(sql: """
+        ALTER TABLE assistant_usage_pending
+        ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      """)
+
+      // 2. Rebuild assistant_usage with composite PRIMARY KEY (entry_id, request_id)
+      //    This allows multiple usage records per entry (e.g., retries, streaming)
+      try db.execute(sql: """
+        CREATE TABLE assistant_usage_new (
+          entry_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          model TEXT NOT NULL,
+          input_tokens INTEGER NOT NULL,
+          output_tokens INTEGER NOT NULL,
+          cache_creation_tokens INTEGER NOT NULL,
+          cache_read_tokens INTEGER NOT NULL,
+          service_tier TEXT,
+          ephemeral_5m_tokens INTEGER,
+          ephemeral_1h_tokens INTEGER,
+          PRIMARY KEY (entry_id, request_id),
+          FOREIGN KEY (entry_id) REFERENCES transcript_entries(id) ON DELETE CASCADE
+        )
+      """)
+
+      // Copy existing data (dedup by entry_id, request_id)
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO assistant_usage_new
+        SELECT * FROM assistant_usage
+      """)
+
+      // Swap tables
+      try db.execute(sql: "DROP TABLE assistant_usage")
+      try db.execute(sql: "ALTER TABLE assistant_usage_new RENAME TO assistant_usage")
+
+      // Recreate index
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_usage_model
+        ON assistant_usage(model)
+      """)
+
+      // 3. Add BEFORE INSERT trigger to auto-stage unsafe writes
+      //    Any direct insert that violates FK gets staged instead of crashing
+      try db.execute(sql: """
+        CREATE TRIGGER IF NOT EXISTS trg_assistant_usage_stage
+        BEFORE INSERT ON assistant_usage
+        WHEN NOT EXISTS (SELECT 1 FROM transcript_entries WHERE id = NEW.entry_id)
+        BEGIN
+          INSERT OR REPLACE INTO assistant_usage_pending (
+            entry_id, request_id, model, input_tokens, output_tokens,
+            cache_creation_tokens, cache_read_tokens, service_tier,
+            ephemeral_5m_tokens, ephemeral_1h_tokens, created_at
+          ) VALUES (
+            NEW.entry_id, NEW.request_id, NEW.model, NEW.input_tokens, NEW.output_tokens,
+            NEW.cache_creation_tokens, NEW.cache_read_tokens, NEW.service_tier,
+            NEW.ephemeral_5m_tokens, NEW.ephemeral_1h_tokens, CURRENT_TIMESTAMP
+          );
+          SELECT RAISE(IGNORE);
+        END
+      """)
+
+      // 4. One-time cleanup: remove orphaned usage records
+      try db.execute(sql: """
+        DELETE FROM assistant_usage
+        WHERE entry_id NOT IN (SELECT id FROM transcript_entries)
+      """)
+
+      // Run ANALYZE
       try db.execute(sql: "ANALYZE")
     }
 

@@ -458,8 +458,45 @@ public final class HooverEngine {
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
       }
+      // FK-safe usage insert: single-statement to avoid round-trips and races
       for usage in metadata.assistantUsages {
-        try usage.insert(db, onConflict: .ignore)
+        // Try direct insert with EXISTS guard (hot path for in-order ingestion)
+        let stmt = try db.makeStatement(sql: """
+          INSERT OR IGNORE INTO assistant_usage (
+            entry_id, request_id, model, input_tokens, output_tokens,
+            cache_creation_tokens, cache_read_tokens, service_tier,
+            ephemeral_5m_tokens, ephemeral_1h_tokens
+          )
+          SELECT ?,?,?,?,?,?,?,?,?,?
+          WHERE EXISTS (SELECT 1 FROM transcript_entries WHERE id = ?)
+          """)
+        try stmt.execute(arguments: [
+          usage.entryId, usage.requestId, usage.model,
+          usage.inputTokens, usage.outputTokens,
+          usage.cacheCreationTokens, usage.cacheReadTokens,
+          usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens,
+          usage.entryId  // for EXISTS check
+        ])
+
+        // If nothing was inserted (entry doesn't exist yet), stage for reconciliation
+        let inserted = db.changesCount > 0
+        if !inserted {
+          try db.execute(sql: """
+            INSERT OR REPLACE INTO assistant_usage_pending (
+              entry_id, request_id, model, input_tokens, output_tokens,
+              cache_creation_tokens, cache_read_tokens, service_tier,
+              ephemeral_5m_tokens, ephemeral_1h_tokens
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            """,
+            arguments: [
+              usage.entryId, usage.requestId, usage.model,
+              usage.inputTokens, usage.outputTokens,
+              usage.cacheCreationTokens, usage.cacheReadTokens,
+              usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
+            ]
+          )
+          log.debug("Staged usage for entry \(usage.entryId) (entry not yet present)")
+        }
       }
 
       // Insert errors (bulk insert)
