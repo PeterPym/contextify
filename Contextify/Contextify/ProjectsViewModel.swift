@@ -12,6 +12,7 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectsView
 final class ProjectsViewModel {
   let discoveryService: ProjectDiscoveryService  // Public for ExcludedProjectsView
   private let hudModel: HUDViewModel
+  private let activityMonitor: ProjectActivityMonitor
 
   // State
   private(set) var projects: [DiscoveredProject] = []
@@ -21,9 +22,30 @@ final class ProjectsViewModel {
   private(set) var errorMessage: String?
   private(set) var lastScanTime: Date?
 
+  // Event observation
+  @ObservationIgnored private var eventObservationTask: Task<Void, Never>?
+  @ObservationIgnored private var refreshTask: Task<Void, Never>?
+
   init(discoveryService: ProjectDiscoveryService, hudModel: HUDViewModel) {
     self.discoveryService = discoveryService
     self.hudModel = hudModel
+
+    // Get activity monitor from shared orchestrator
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      self.activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
+    } catch {
+      logger.error("Failed to initialize ProjectActivityMonitor: \(error.localizedDescription)")
+      fatalError("Cannot initialize ProjectsViewModel without activity monitor")
+    }
+
+    // Start observing project events for auto-refresh
+    startObservingEvents()
+  }
+
+  deinit {
+    eventObservationTask?.cancel()
+    refreshTask?.cancel()
   }
 
   // MARK: - Actions
@@ -125,5 +147,40 @@ final class ProjectsViewModel {
   /// Gets all excluded projects
   func getExcludedProjects() async -> Set<String> {
     await discoveryService.getExcludedProjects()
+  }
+
+  // MARK: - Event Observation
+
+  private func startObservingEvents() {
+    eventObservationTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      logger.info("ProjectsViewModel: starting event observation")
+
+      for await event in await self.activityMonitor.observeProjectEvents() {
+        await self.handleProjectEvent(event)
+      }
+
+      logger.warning("ProjectsViewModel: event stream ended")
+    }
+  }
+
+  private func handleProjectEvent(_ event: ProjectEvent) async {
+    logger.debug("ProjectsViewModel: received \(event.kind.rawValue) for project \(event.projectId)")
+
+    guard event.kind == .transcriptUpdated else { return }
+
+    // Debounce refreshes - only refresh once per second max
+    refreshTask?.cancel()
+    refreshTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+      guard let self else { return }
+
+      // Refresh metadata for all projects (lightweight query)
+      let currentPath = self.hudModel.projectRootURL?.path
+      if let refreshed = try? await self.discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
+        self.projects = refreshed
+        logger.debug("ProjectsViewModel: refreshed project metadata after transcript update")
+      }
+    }
   }
 }
