@@ -650,6 +650,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectVisitsRepo.getUnreadCounts()
   }
 
+  /// Get unread counts for specific projects (batch query)
+  public func getUnreadCounts(projectIds: [String]) throws -> [String: Int] {
+    try projectVisitsRepo.getUnreadCounts(projectIds: projectIds)
+  }
+
   /// Ensure visit record exists for a project
   public func ensureProjectVisit(projectId: String) throws {
     try projectVisitsRepo.ensureVisit(projectId: projectId)

@@ -66,6 +66,11 @@ public protocol ProjectVisitsRepository {
   /// - Returns: Dictionary mapping project_id to unread count
   func getUnreadCounts() throws -> [String: Int]
 
+  /// Get unread counts for specific projects (batch query)
+  /// - Parameter projectIds: Array of project IDs
+  /// - Returns: Dictionary mapping project_id to unread count
+  func getUnreadCounts(projectIds: [String]) throws -> [String: Int]
+
   /// Ensure visit record exists for a project (creates if missing)
   /// - Parameter projectId: Project ID
   func ensureVisit(projectId: String) throws
@@ -151,6 +156,32 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
         result[projectId] = unread
       }
 
+      return result
+    }
+  }
+
+  public func getUnreadCounts(projectIds: [String]) throws -> [String: Int] {
+    guard !projectIds.isEmpty else { return [:] }
+
+    return try db.read { db in
+      // Build parameterized query with IN clause
+      let placeholders = Array(repeating: "?", count: projectIds.count).joined(separator: ",")
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT t.project_id AS pid, COUNT(*) AS c
+        FROM transcript_entries e
+        JOIN transcripts t ON t.id = e.transcript_id
+        LEFT JOIN project_visits v ON v.project_id = t.project_id
+        WHERE t.project_id IN (\(placeholders))
+          AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
+        GROUP BY t.project_id
+      """, arguments: StatementArguments(projectIds))
+
+      var result: [String: Int] = [:]
+      for row in rows {
+        let pid: String = row["pid"]
+        let c: Int = row["c"]
+        result[pid] = c
+      }
       return result
     }
   }

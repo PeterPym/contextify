@@ -44,6 +44,10 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
   @ObservationIgnored private var isStarted: Bool = false
 
+  // Coalescing state for batch unread updates
+  @ObservationIgnored private var pendingUnread: Set<String> = []
+  @ObservationIgnored private var coalesceTask: Task<Void, Never>?
+
   private init() {
     // Lazy initialization - orchestrator set on start()
     self.orchestrator = nil
@@ -58,8 +62,12 @@ public final class ProjectSwitcherState {
 
   /// Start monitoring (idempotent)
   public func start() {
-    guard !isStarted else { return }
+    guard !isStarted else {
+      log.warning("ProjectSwitcher: start() called while started")
+      return
+    }
     isStarted = true
+    log.info("ProjectSwitcher: starting")
 
     // Initialize orchestrator if not already set
     if orchestrator == nil {
@@ -76,15 +84,18 @@ public final class ProjectSwitcherState {
       return
     }
 
-    // Initialize activity monitor
-    activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
+    // Initialize activity monitor once
+    if activityMonitor == nil {
+      activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
+    }
 
-    // Initial load
+    // Initial discovery & full unread pass based on current DB
     Task {
       // Ensure current project is in database
       await ensureCurrentProjectInDatabase()
 
       await refreshProjects()
+      await refreshUnreadCounts() // current state from DB; events will refine
 
       // Start global monitoring if consent given
       if ConsentManager.shared.isMultiProjectModeEnabled {
@@ -98,12 +109,15 @@ public final class ProjectSwitcherState {
       }
     }
 
-    // Start event stream observation
+    // Single observer loop
     projectObservationTask = Task { @MainActor [weak self] in
-      await self?.observeProjectUpdates()
+      guard let self, let monitor = await self.activityMonitor else { return }
+      log.info("ProjectSwitcher: observing events")
+      for await event in await monitor.observeProjectEvents() {
+        await self.handle(event)
+      }
+      log.warning("ProjectSwitcher: event stream ended")
     }
-
-    log.info("ProjectSwitcherState started")
   }
 
   /// Stop monitoring
@@ -129,9 +143,6 @@ public final class ProjectSwitcherState {
       // Query all projects from database
       let projects = try orchestrator.listProjects()
 
-      // Get unread counts
-      let counts = try orchestrator.getUnreadCounts()
-
       // Map to ProjectInfo
       let projectInfos = projects.map { project in
         ProjectInfo(
@@ -145,14 +156,43 @@ public final class ProjectSwitcherState {
       // Update state on main actor
       await MainActor.run {
         self.allProjects = projectInfos
-        self.unreadCounts = counts
       }
 
-      log.info("📊 Refreshed \(projectInfos.count) projects: \(projectInfos.map { $0.name }.joined(separator: ", "))")
-      log.info("📊 Unread counts: \(counts)")
-      log.info("📊 Active project ID: \(self.activeProjectId ?? "nil")")
+      log.info("ProjectSwitcher: projects=\(projectInfos.count)")
     } catch {
-      log.error("Failed to refresh projects: \(error.localizedDescription)")
+      log.error("ProjectSwitcher: refreshProjects error=\(String(describing: error))")
+    }
+  }
+
+  /// Refresh unread counts for all projects
+  public func refreshUnreadCounts() async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      let counts = try orchestrator.getUnreadCounts()
+      await MainActor.run {
+        self.unreadCounts = counts
+      }
+      log.debug("ProjectSwitcher: unread(all)=\(counts)")
+    } catch {
+      log.error("ProjectSwitcher: refreshUnreadCounts error=\(String(describing: error))")
+    }
+  }
+
+  /// Refresh unread counts for specific projects (for coalescing)
+  private func refreshUnreadCounts(for projectIds: [String]) async {
+    guard let orchestrator = orchestrator, !projectIds.isEmpty else { return }
+
+    do {
+      let pairs = try orchestrator.getUnreadCounts(projectIds: projectIds)
+      await MainActor.run {
+        for (pid, c) in pairs {
+          self.unreadCounts[pid] = c
+        }
+      }
+      log.debug("ProjectSwitcher: unread(batch)=\(pairs)")
+    } catch {
+      log.error("ProjectSwitcher: refreshUnreadCounts(batch) error=\(String(describing: error))")
     }
   }
 
@@ -253,33 +293,39 @@ public final class ProjectSwitcherState {
     }
   }
 
-  private func observeProjectUpdates() async {
-    guard let monitor = activityMonitor else { return }
+  /// Handle project event (called from observer loop)
+  private func handle(_ event: ProjectEvent) async {
+    log.debug("ProjectSwitcher: received \(event.kind.rawValue) project=\(event.projectId)")
 
-    // Observe project events
-    for await event in monitor.observeProjectEvents() {
-      await MainActor.run { [weak self] in
-        guard let self else { return }
+    switch event.kind {
+    case .discovered:
+      await refreshProjects()
+      // let the next transcriptUpdated drive the unread refresh
 
-        switch event.kind {
-        case .discovered:
-          // Refresh projects to include newly discovered project
-          Task {
-            await self.refreshProjects()
-          }
+    case .removed:
+      await MainActor.run {
+        self.allProjects.removeAll { $0.id == event.projectId }
+        self.unreadCounts.removeValue(forKey: event.projectId)
+      }
 
-        case .transcriptUpdated:
-          // Increment unread count if not active project
-          if event.projectId != self.activeProjectId {
-            let current = self.unreadCounts[event.projectId] ?? 0
-            self.unreadCounts[event.projectId] = current + 1
-          }
+    case .transcriptUpdated:
+      // Coalesce to avoid N DB reads for one write
+      guard event.projectId != self.activeProjectId else { return }
+      scheduleUnreadRefresh(for: event.projectId)
+    }
+  }
 
-        case .removed:
-          // Remove project from list
-          self.allProjects.removeAll { $0.id == event.projectId }
-          self.unreadCounts.removeValue(forKey: event.projectId)
-        }
+  /// Schedule coalesced unread refresh for a project
+  private func scheduleUnreadRefresh(for projectId: String) {
+    pendingUnread.insert(projectId)
+    coalesceTask?.cancel()
+    coalesceTask = Task { [weak self] in
+      // Small window to coalesce multiple FSEvents
+      try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+      guard let self else { return }
+      await self.refreshUnreadCounts(for: Array(self.pendingUnread))
+      await MainActor.run {
+        self.pendingUnread.removeAll()
       }
     }
   }

@@ -36,7 +36,7 @@ public struct WatchHandle: Sendable, Hashable {
 public actor ProjectActivityMonitor {
   private let orchestrator: TranscriptOrchestrator
   private var activeWatchers: [String: WatchHandle] = [:]  // projectId -> WatchHandle
-  private var eventContinuation: AsyncStream<ProjectEvent>.Continuation?
+  private let eventStream: (stream: AsyncStream<ProjectEvent>, continuation: AsyncStream<ProjectEvent>.Continuation)
   private var isMonitoring = false
 
   private var fsEventsMonitor: FSEventsMonitor?
@@ -44,6 +44,14 @@ public actor ProjectActivityMonitor {
 
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
+    self.eventStream = AsyncStream<ProjectEvent>.makeStream()
+    self.eventStream.continuation.onTermination = { @Sendable _ in
+      Task { [weak orchestrator] in
+        // Termination hook for cleanup if needed
+        log.debug("ProjectActivity: stream terminated; monitoring stopped")
+      }
+    }
+    log.debug("ProjectActivity: stream initialized")
   }
 
   /// Start global monitoring (FSEvents + fallback polling)
@@ -92,11 +100,9 @@ public actor ProjectActivityMonitor {
   }
 
   /// Stop all monitoring and watchers
-  public func stopAll() async {
+  public func stopGlobalMonitoring() async {
     isMonitoring = false
     activeWatchers.removeAll()
-    eventContinuation?.finish()
-    eventContinuation = nil
 
     // Stop FSEvents monitoring
     if let monitor = fsEventsMonitor {
@@ -108,6 +114,11 @@ public actor ProjectActivityMonitor {
     fsEventsTask = nil
 
     log.info("Stopped all project monitoring")
+  }
+
+  /// Legacy compatibility - calls stopGlobalMonitoring()
+  public func stopAll() async {
+    await stopGlobalMonitoring()
   }
 
   /// Idempotent watcher start (returns existing handle if already started)
@@ -144,11 +155,7 @@ public actor ProjectActivityMonitor {
 
   /// Event stream for UI (debounced per-project)
   public nonisolated func observeProjectEvents() -> AsyncStream<ProjectEvent> {
-    AsyncStream { continuation in
-      Task {
-        await self.setEventContinuation(continuation)
-      }
-    }
+    eventStream.stream
   }
 
   /// Active watcher count (for testing)
@@ -158,12 +165,9 @@ public actor ProjectActivityMonitor {
 
   // MARK: - Private
 
-  private func setEventContinuation(_ continuation: AsyncStream<ProjectEvent>.Continuation) {
-    self.eventContinuation = continuation
-  }
-
   private func emitEvent(_ event: ProjectEvent) {
-    eventContinuation?.yield(event)
+    eventStream.continuation.yield(event)
+    log.debug("ProjectActivity: emitted \(event.kind.rawValue) project=\(event.projectId)")
   }
 
   private func discoverAllProjects() async throws {
@@ -244,52 +248,90 @@ public actor ProjectActivityMonitor {
   }
 
   /// Handle file system change from FSEvents
-  /// Maps changed path → project ID and emits .transcriptUpdated event
+  /// Maps changed path → project ID → hoover → emit event
   private func handleFileSystemChange(_ change: FSEventChange) {
     #if os(macOS)
     let path = change.path
+    log.debug("FSEvents: path=\(path)")
 
-    // Determine provider from path
-    let provider: String
-    if path.contains("/.claude/projects/") {
-      provider = "claude.code"
-    } else if path.contains("/.codex/sessions/") {
-      provider = "codex.cli"
+    // Only process .jsonl files
+    guard path.hasSuffix(".jsonl") else { return }
+
+    let url = URL(fileURLWithPath: path)
+    let comps = url.pathComponents
+
+    // Detect provider and marker
+    enum Provider { case claude, codex }
+    let provider: Provider
+    let marker: String
+    if comps.contains(".claude") && comps.contains("projects") {
+      provider = .claude
+      marker = "projects"
+    } else if comps.contains(".codex") && comps.contains("sessions") {
+      provider = .codex
+      marker = "sessions"
     } else {
-      return  // Not a transcript root we care about
-    }
-
-    // Extract mangled directory name (e.g., Users_rob_code_projects_myproject)
-    // Path format: ~/.claude/projects/{mangled_name}/transcript-*.jsonl
-    let components = path.split(separator: "/")
-    guard let projectsIndex = components.firstIndex(where: { $0 == "projects" || $0 == "sessions" }),
-          projectsIndex + 1 < components.count else {
+      log.debug("FSEvents: non-transcript path ignored")
       return
     }
 
-    let mangledName = String(components[projectsIndex + 1])
-    let transcriptRoot: URL
-
-    if provider == "claude.code" {
-      transcriptRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects/\(mangledName)")
-    } else {
-      transcriptRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions/\(mangledName)")
+    // Extract mangled directory
+    guard let rootIdx = comps.firstIndex(of: marker), rootIdx + 1 < comps.count else {
+      log.warning("FSEvents: malformed path (missing \(marker)) path=\(path)")
+      return
     }
 
-    // Reverse-mangle to get project path
+    let mangledDir = comps[rootIdx + 1]
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    let transcriptRoot = (provider == .claude)
+      ? home.appendingPathComponent(".claude/projects/\(mangledDir)")
+      : home.appendingPathComponent(".codex/sessions/\(mangledDir)")
+
+    // Verify transcript root exists
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: transcriptRoot.path, isDirectory: &isDir), isDir.boolValue else {
+      log.warning("FSEvents: missing transcript dir=\(transcriptRoot.path)")
+      return
+    }
+
+    // Reverse-mangle to get project path and ID
     do {
-      let projectPath = try ProjectIdentity.reverseManglePath(provider: provider, directory: transcriptRoot)
-      let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
+      let providerString = (provider == .claude ? "claude.code" : "codex.cli")
+      let projPath = try ProjectIdentity.reverseManglePath(
+        provider: providerString,
+        directory: transcriptRoot
+      )
+      let projectId = ProjectIdentity.computeProjectID(
+        provider: providerString,
+        path: projPath
+      )
 
-      // Emit transcriptUpdated event
-      let event = ProjectEvent(projectId: projectId, kind: .transcriptUpdated)
-      emitEvent(event)
+      let sessionId = url.deletingPathExtension().lastPathComponent
+      log.debug("FSEvents: projectId=\(projectId) sessionId=\(sessionId)")
 
-      log.debug("FSEvents: transcript updated for project \(projectId)")
+      // Hoover first, emit event only after completion
+      Task {
+        do {
+          let dbProjectId = try await orchestrator.getOrCreateProject(
+            name: URL(fileURLWithPath: projPath).lastPathComponent,
+            rootPath: projPath
+          )
+          try await orchestrator.discoverTranscript(
+            projectId: dbProjectId,
+            fileURL: url,
+            provider: providerString,
+            providerSessionId: sessionId,
+            startWatching: true,
+            progress: nil
+          )
+          // Emit only after hoover finishes
+          await self.emitEvent(ProjectEvent(projectId: projectId, kind: .transcriptUpdated))
+        } catch {
+          log.error("FSEvents: process error=\(String(describing: error))")
+        }
+      }
     } catch {
-      log.error("Failed to reverse-mangle path from FSEvents: \(error.localizedDescription)")
+      log.error("FSEvents: reverse-mangle failed path=\(path) err=\(String(describing: error))")
     }
     #endif
   }

@@ -67,6 +67,11 @@ struct ContextifyApp: App {
       NSApplication.shared.terminate(nil)
       #endif
     }
+
+    // Start ProjectSwitcherState from app init for deterministic startup
+    Task { @MainActor in
+      ProjectSwitcherState.shared.start()
+    }
   }
 
   var body: some Scene {

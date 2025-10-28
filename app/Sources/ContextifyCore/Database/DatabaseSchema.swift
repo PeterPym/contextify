@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 8
+  static let version = 9
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -492,6 +492,18 @@ enum DatabaseSchema {
       // Optional: backfill current project only (others default to NULL = all unread)
       // Get current project from HUDViewModel if available
       // Note: This is best-effort; new projects will start with NULL (all unread)
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // v9: Additional indices for unread count performance
+    migrator.registerMigration("v9_unread_indices") { db in
+      // Index on project_visits for efficient filtering by last_viewed_at
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_project_visits_last_viewed
+        ON project_visits(project_id, last_viewed_at)
+      """)
 
       // Run ANALYZE to update statistics
       try db.execute(sql: "ANALYZE")
