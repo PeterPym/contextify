@@ -131,7 +131,7 @@ final class ConversationMonitor {
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated, accessible to inventory view)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
-    @ObservationIgnored private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
+    private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications

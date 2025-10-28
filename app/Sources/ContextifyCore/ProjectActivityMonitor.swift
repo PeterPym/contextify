@@ -324,8 +324,19 @@ public actor ProjectActivityMonitor {
             startWatching: true,
             progress: nil
           )
-          // Emit only after hoover finishes
-          await self.emitEvent(ProjectEvent(projectId: projectId, kind: .transcriptUpdated))
+          // Emit only after hoover finishes (use dbProjectId for database lookups)
+          await self.emitEvent(ProjectEvent(projectId: dbProjectId, kind: .transcriptUpdated))
+
+          // Also post NotificationCenter event for ConversationMonitor compatibility
+          await MainActor.run {
+            NotificationCenter.default.post(
+              name: Notification.Name("TranscriptUpdated"),
+              object: nil,
+              userInfo: ["projectId": dbProjectId]
+            )
+          }
+
+          log.info("✅ Emitted events for transcript update: dbProjectId=\(dbProjectId)")
         } catch {
           log.error("FSEvents: process error=\(String(describing: error))")
         }
