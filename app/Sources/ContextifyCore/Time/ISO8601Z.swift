@@ -27,7 +27,9 @@ public enum ISO8601Z {
     /// - UTC timezone (no offset)
     /// - Fractional seconds (milliseconds)
     /// - Internet DateTime format (YYYY-MM-DDTHH:MM:SS.sssZ)
-    public static let formatter: ISO8601DateFormatter = {
+    ///
+    /// Note: ISO8601DateFormatter is immutable after creation, making this safe for concurrent access
+    nonisolated(unsafe) public static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.timeZone = TimeZone(secondsFromGMT: 0)
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

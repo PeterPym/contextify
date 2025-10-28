@@ -11,10 +11,16 @@ final class TimelineState {
     var entries: [TimelineEntry] = []
     private(set) var revision: UInt64 = 0
 
-    // Derived map stays in sync because it's computed
+    // Cached index map - rebuilt only when entries change (performance optimization)
     // Uses uniquingKeysWith to handle duplicate cache keys (keeps latest index)
+    @ObservationIgnored private var _indexByCacheKey: [CacheKey: Int] = [:]
+
     var indexByCacheKey: [CacheKey: Int] {
-        Dictionary(
+        _indexByCacheKey
+    }
+
+    private func rebuildCacheIndex() {
+        _indexByCacheKey = Dictionary(
             entries.enumerated().compactMap { i, e in
                 e.cacheKey.map { ($0, i) }
             },
@@ -25,17 +31,26 @@ final class TimelineState {
     func replace(with entries: [TimelineEntry]) {
         self.entries = entries
         revision &+= 1
+        rebuildCacheIndex()  // Rebuild index once when entries change
     }
 
     func append(_ e: TimelineEntry) {
         entries.append(e)
         revision &+= 1
+        // Update cache index incrementally
+        if let key = e.cacheKey {
+            _indexByCacheKey[key] = entries.count - 1
+        }
     }
 
     func update(at index: Int, to newValue: TimelineEntry) {
         guard entries.indices.contains(index) else { return }
         entries[index] = newValue
         revision &+= 1
+        // Update cache index for changed entry
+        if let key = newValue.cacheKey {
+            _indexByCacheKey[key] = index
+        }
     }
 
     func sortChronologically() {
@@ -44,10 +59,15 @@ final class TimelineState {
             return a.sourceIdentifier < b.sourceIdentifier
         }
         revision &+= 1
+        rebuildCacheIndex()  // Full rebuild needed after sort changes indices
     }
 
     func trim(to max: Int) {
-        if entries.count > max { entries = Array(entries.suffix(max)); revision &+= 1 }
+        if entries.count > max {
+            entries = Array(entries.suffix(max))
+            revision &+= 1
+            rebuildCacheIndex()  // Full rebuild needed after trim changes indices
+        }
     }
 }
 
@@ -111,7 +131,9 @@ final class ConversationMonitor {
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated, accessible to inventory view)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
-    private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation (exposed for status bar, observable for StatusBarView)
+    @ObservationIgnored private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
+    // Observable flag for status bar - avoids exposing non-Sendable generator object
+    private(set) var isCacheGeneratorActive = false
     @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
     @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
@@ -167,12 +189,14 @@ final class ConversationMonitor {
 
                 // 3. Shutdown old cache miss generator (if exists) before creating new one
                 if let oldGenerator = self.cacheMissGenerator {
-                    oldGenerator.shutdown()  // Synchronous - no await needed
+                    await oldGenerator.shutdown()  // Actor-isolated method requires await
                 }
                 self.cacheMissGenerator = nil  // Clear before creating new
+                self.isCacheGeneratorActive = false
 
                 // Initialize new cache miss generator for this project
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
+                self.isCacheGeneratorActive = true
 
                 // 4. Start background work (discovery + debounced updates) in a single parent task
                 let orchestrator = self.orchestrator!

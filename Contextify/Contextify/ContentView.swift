@@ -16,7 +16,8 @@ struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
     @Environment(DeveloperMode.self) private var devMode
-    @State private var projectSwitcher = ProjectSwitcherState.shared
+    // Singleton reference - no @State needed since we're not replacing the reference
+    private let projectSwitcher = ProjectSwitcherState.shared
     @State private var showToast = false
     @State private var toastText = ""
     @State private var showEmbeddingTest = false

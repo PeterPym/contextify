@@ -21,14 +21,14 @@ struct WindowCommands: Commands {
       Divider()
 
       Button("Previous Project") {
-        Task { @MainActor in
+        Task {
           await ProjectSwitcherState.shared.cycleToPreviousProject()
         }
       }
       .keyboardShortcut("[", modifiers: [.command, .shift])
 
       Button("Next Project") {
-        Task { @MainActor in
+        Task {
           await ProjectSwitcherState.shared.cycleToNextProject()
         }
       }
