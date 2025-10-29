@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import os.lock
 
 #if os(macOS)
 import CoreServices
@@ -25,7 +26,7 @@ public struct FSEventChange: Sendable {
 @MainActor
 public final class FSEventsMonitor {
   private var stream: FSEventStreamRef?
-  private var continuation: AsyncStream<FSEventChange>.Continuation?
+  private let continuationLock = OSAllocatedUnfairLock<AsyncStream<FSEventChange>.Continuation?>(initialState: nil)
   private let paths: [String]
   private let latency: CFTimeInterval
   private var isRunning = false
@@ -44,8 +45,8 @@ public final class FSEventsMonitor {
 
     isRunning = true
 
-    return AsyncStream { continuation in
-      self.continuation = continuation
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1_000)) { continuation in
+      self.continuationLock.withLock { $0 = continuation }
 
 #if os(macOS)
       // Create FSEventStream
@@ -67,15 +68,29 @@ public final class FSEventsMonitor {
       ) in
         let monitor = Unmanaged<FSEventsMonitor>.fromOpaque(clientCallBackInfo!).takeUnretainedValue()
 
+        // With kFSEventStreamCreateFlagUseCFTypes, eventPaths is a CFArray but must be cast via unsafeBitCast
         let paths = unsafeBitCast(eventPaths, to: NSArray.self) as! [String]
-        let flags = Array(UnsafeBufferPointer(start: eventFlags, count: numEvents))
-        let ids = Array(UnsafeBufferPointer(start: eventIds, count: numEvents))
 
-        for i in 0..<numEvents {
-          let change = FSEventChange(path: paths[i], flags: flags[i], eventId: ids[i])
+        // Build batch with bounds checking to handle potential count mismatches
+        let n = min(numEvents, paths.count)
+        guard n > 0 else { return }
 
+        let flags = Array(UnsafeBufferPointer(start: eventFlags, count: n))
+        let ids = Array(UnsafeBufferPointer(start: eventIds, count: n))
+
+        var batch = [FSEventChange]()
+        batch.reserveCapacity(n)
+        for i in 0..<min(n, flags.count, ids.count) {
+          batch.append(FSEventChange(path: paths[i], flags: flags[i], eventId: ids[i]))
+        }
+
+        // Single Task hop to MainActor, batch yield
+        monitor.continuationLock.withLock { cont in
+          guard let cont else { return }
           Task { @MainActor in
-            monitor.continuation?.yield(change)
+            for change in batch {
+              cont.yield(change)
+            }
           }
         }
       }
@@ -123,8 +138,12 @@ public final class FSEventsMonitor {
     guard isRunning else { return }
 
     isRunning = false
-    continuation?.finish()
-    continuation = nil
+
+    // Clear continuation before invalidating stream
+    continuationLock.withLock { cont in
+      cont?.finish()
+      cont = nil
+    }
 
 #if os(macOS)
     if let stream = stream {
