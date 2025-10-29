@@ -463,24 +463,31 @@ public final class HooverEngine {
       for event in metadata.systemEvents {
         try event.insert(db, onConflict: .ignore)
       }
-      // FK-safe usage insert: single-statement to avoid round-trips and races
+      // FK-safe usage insert: atomic CTE-based check+insert with request_id normalization
       for usage in metadata.assistantUsages {
-        // Try direct insert with EXISTS guard (hot path for in-order ingestion)
+        // Normalize request_id: empty string → entry_id fallback
+        let normalizedRequestId: String = {
+          let trimmed = usage.requestId.trimmingCharacters(in: .whitespacesAndNewlines)
+          return trimmed.isEmpty ? usage.entryId : trimmed
+        }()
+
+        // Atomic check+insert using CTE and RETURNING for single round-trip
         let stmt = try db.makeStatement(sql: """
+          WITH entry_check AS (SELECT 1 FROM transcript_entries WHERE id = ? LIMIT 1)
           INSERT OR IGNORE INTO assistant_usage (
             entry_id, request_id, model, input_tokens, output_tokens,
             cache_creation_tokens, cache_read_tokens, service_tier,
             ephemeral_5m_tokens, ephemeral_1h_tokens
           )
-          SELECT ?,?,?,?,?,?,?,?,?,?
-          WHERE EXISTS (SELECT 1 FROM transcript_entries WHERE id = ?)
+          SELECT ?,?,?,?,?,?,?,?,?,? FROM entry_check
+          RETURNING entry_id;
           """)
         try stmt.execute(arguments: [
-          usage.entryId, usage.requestId, usage.model,
+          usage.entryId,  // for entry_check CTE
+          usage.entryId, normalizedRequestId, usage.model,
           usage.inputTokens, usage.outputTokens,
           usage.cacheCreationTokens, usage.cacheReadTokens,
-          usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens,
-          usage.entryId  // for EXISTS check
+          usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
         ])
 
         // If nothing was inserted (entry doesn't exist yet), stage for reconciliation
@@ -494,7 +501,7 @@ public final class HooverEngine {
             ) VALUES (?,?,?,?,?,?,?,?,?,?)
             """,
             arguments: [
-              usage.entryId, usage.requestId, usage.model,
+              usage.entryId, normalizedRequestId, usage.model,
               usage.inputTokens, usage.outputTokens,
               usage.cacheCreationTokens, usage.cacheReadTokens,
               usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
@@ -535,8 +542,8 @@ public final class HooverEngine {
         )
       """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
 
-      // Reconcile assistant_usage_pending → assistant_usage (now that entries exist)
-      // COALESCE ensures NULL/empty request_id → entry_id fallback
+      // Reconcile assistant_usage_pending → assistant_usage using JOIN (O(N+M) vs O(N×M))
+      // Normalize empty request_id during move to reduce uniqueness churn
       try db.execute(sql: """
         INSERT OR IGNORE INTO assistant_usage (
           entry_id, request_id, model, input_tokens, output_tokens,
@@ -550,16 +557,16 @@ public final class HooverEngine {
           p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
           p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
         FROM assistant_usage_pending p
-        WHERE EXISTS (SELECT 1 FROM transcript_entries e WHERE e.id = p.entry_id)
+        INNER JOIN transcript_entries e ON e.id = p.entry_id
       """)
 
-      // Clean up reconciled records from pending table (EXISTS for compatibility)
+      // Clean up reconciled records via indexed lookup (uses entry_id+request_id)
       try db.execute(sql: """
-        DELETE FROM assistant_usage_pending
+        DELETE FROM assistant_usage_pending p
         WHERE EXISTS (
           SELECT 1 FROM assistant_usage au
-          WHERE au.entry_id = assistant_usage_pending.entry_id
-            AND au.request_id = assistant_usage_pending.request_id
+          WHERE au.entry_id = p.entry_id
+            AND au.request_id = COALESCE(NULLIF(p.request_id, ''), p.entry_id)
         )
       """)
 
