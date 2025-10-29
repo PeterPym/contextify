@@ -89,9 +89,9 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
   public func markViewed(projectId: String, timestamp: String) throws {
     try db.write { db in
       // Update projects.last_viewed_ts with epoch timestamp (monotonic guard)
-      // Convert ISO8601Z string to epoch seconds
+      // Convert ISO8601Z string to epoch seconds, truncate to milliseconds for consistency
       if let date = ISO8601Z.date(from: timestamp) {
-        let epochSeconds = date.timeIntervalSince1970
+        let epochSeconds = TimeUnits.truncateToMillis(date.timeIntervalSince1970)
         try db.execute(
           sql: "UPDATE projects SET last_viewed_ts = MAX(last_viewed_ts, ?) WHERE id = ?",
           arguments: [epochSeconds, projectId]

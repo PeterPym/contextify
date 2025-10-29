@@ -26,10 +26,10 @@ public enum TimeUnits {
     Int(Date().timeIntervalSince1970)
   }
 
-  /// Truncate epoch timestamp to whole seconds (removes fractional precision)
-  /// Used for unread tracking to ensure consistent precision with Int timestamp fields
+  /// Truncate epoch timestamp to milliseconds (preserves sub-second precision)
+  /// Used for unread tracking to ensure consistent precision while avoiding floating-point rounding
   @inline(__always)
-  public static func truncateToSeconds(_ epochSeconds: Double) -> Double {
-    floor(epochSeconds)
+  public static func truncateToMillis(_ epochSeconds: Double) -> Double {
+    floor(epochSeconds * 1000.0) / 1000.0
   }
 }
