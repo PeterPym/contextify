@@ -97,6 +97,12 @@ public final class ProjectSwitcherState {
       await refreshProjects()
       await refreshUnreadCounts() // current state from DB; events will refine
 
+      // Auto-select first project if none is selected (leftmost tab)
+      if activeProjectId == nil && !allProjects.isEmpty {
+        log.info("No project selected on startup, auto-selecting first project")
+        await switchToProject(allProjects[0].id)
+      }
+
       // Start global monitoring if consent given
       if ConsentManager.shared.isMultiProjectModeEnabled {
         do {
