@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-DB_NAME="transcripts.db"
+DB_NAME="contextify.db"
 DB_DIR="$HOME/Library/Application Support/Contextify"
 DB_PATH="$DB_DIR/$DB_NAME"
 BACKUP_DIR="$(pwd)/build/db-backups"

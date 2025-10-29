@@ -68,7 +68,7 @@ public final class DatabaseManager: @unchecked Sendable {
     let contextifyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
     try FileManager.default.createDirectory(at: contextifyDir, withIntermediateDirectories: true)
 
-    return contextifyDir.appendingPathComponent("transcripts.db")
+    return contextifyDir.appendingPathComponent("contextify.db")
   }
 
   /// Validates database integrity

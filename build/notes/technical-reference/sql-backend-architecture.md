@@ -1,8 +1,8 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v6 current)
+**Status:** Post-Implementation (v16 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 6 (v6: removed denormalized fields from transcript_entries)
+**Schema Version:** 16 (v12-v16: unread tracking with epoch timestamps, FK-safe inserts, query optimizations)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
 ---
@@ -31,6 +31,7 @@ projects
 ├── name
 ├── root_path (UNIQUE)
 ├── root_bookmark (security-scoped)
+├── last_viewed_ts (REAL, v12+, epoch for unread tracking)
 └── timestamps
 
 transcripts
@@ -59,6 +60,7 @@ transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
 │   ├── prev2_id
 │   └── window_sha256 (for cache key computation)
 ├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
+├── created_ts (REAL, v12+, millisecond-precision epoch for unread queries)
 ├── git_context (branch, commit, cwd)
 └── embedding (BLOB, optional for RAG features)
     └── v6 REMOVED: summary, disposition, is_completion, is_directive
@@ -130,17 +132,14 @@ let isDirective: Bool = {
 - Recreate indexes (removed `idx_entries_is_completion`)
 - Column count: 23 → 19
 
-### Future: Metadata Storage (v7 Proposed)
+**v7-v11 Migrations:** Metadata tables (file_snapshots, tracked_files, transcript_summaries, system_events, assistant_usage), FK hardening with staging table, composite PKs
 
-**Status:** Proposed (see `TODOS.md` and `implementation-plans/transcript-metadata-storage.md`)
-
-Claude Code transcripts contain valuable metadata beyond conversation messages:
-
-**Currently Ignored:**
-1. **file-history-snapshot** (907 records): File modification tracking
-2. **summary** (48 records): Claude Code's session summaries
-3. **system** (55 records): Slash commands, API errors, compact mode
-4. **usage metadata** (all assistant messages): Token/cost analytics
+**v12-v16 Migrations (2025-10):** Unread Tracking & Performance
+- **v12:** Epoch timestamps (`projects.last_viewed_ts`, `entries.created_ts`) for timezone-free unread tracking
+- **v13:** Partial indices, backfills from legacy project_visits
+- **v14:** Request ID normalization (empty → entry_id fallback) in assistant_usage
+- **v15:** Index cleanup (remove redundant indices, add composite pending index)
+- **v16:** `idx_entries_unread_join` for GROUP BY optimization in unread queries
 
 **Proposed v7 Schema:**
 ```
@@ -246,7 +245,7 @@ CREATE UNIQUE INDEX idx_cache_entry_window
 ┌─────────────────────────────────────┐
 │      SQLite DatabasePool (WAL)      │
 │  ~/Library/Application Support/     │
-│    Contextify/transcripts.db        │
+│    Contextify/contextify.db         │
 └─────────────────────────────────────┘
 ```
 

@@ -256,7 +256,7 @@ These fields violated normalization principles and were removed. All classificat
 
 ## Database Location
 
-- **Production:** `~/Library/Application Support/Contextify/transcripts.db`
+- **Production:** `~/Library/Application Support/Contextify/contextify.db`
 - **Sandboxed:** App's container Application Support directory
 
 ## Key Features
@@ -300,7 +300,7 @@ bash scripts/xc.sh test
 - Download: https://sqlitebrowser.org
 - Best for: Browsing tables, running queries, viewing schema
 - Install: `brew install --cask db-browser-for-sqlite`
-- Open: `/Users/rob/Library/Application Support/Contextify/transcripts.db`
+- Open: `/Users/rob/Library/Application Support/Contextify/contextify.db`
 
 **2. TablePlus (Free tier available)**
 - Download: https://tableplus.com
@@ -316,7 +316,7 @@ bash scripts/xc.sh test
 **4. Command Line (Built-in)**
 ```bash
 # Open SQLite CLI
-sqlite3 ~/Library/Application\ Support/Contextify/transcripts.db
+sqlite3 ~/Library/Application\ Support/Contextify/contextify.db
 
 # Useful commands:
 .tables                    # List all tables
@@ -371,12 +371,12 @@ For real-time updates while the app runs, use **TablePlus**:
 
 ```bash
 # Export to CSV
-sqlite3 -header -csv transcripts.db \
+sqlite3 -header -csv contextify.db \
   "SELECT * FROM transcript_entries LIMIT 1000" \
   > entries.csv
 
 # Export entire database to SQL
-sqlite3 transcripts.db .dump > backup.sql
+sqlite3 contextify.db .dump > backup.sql
 ```
 
 ## Troubleshooting

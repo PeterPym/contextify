@@ -30,16 +30,17 @@ assets/ icons/
 ## Architecture & Key Modules
 
 ### Database Layer (SQL Backend)
-- **Current Schema Version: v11** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v16** (see DatabaseSchema.swift for migration history)
 - **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
 - **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, and WAL mode.
-- **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. Includes FK-safe assistant_usage insertion with staging fallback.
+- **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. CTE-based FK-safe assistant_usage inserts with O(N+M) JOIN reconciliation.
 - **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository).
-- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v11).
-  - **v8**: project_visits table for unread tracking
-  - **v9**: Performance indices for unread queries
-  - **v10**: assistant_usage_pending staging table
-  - **v11**: Hardening (composite PK, safety trigger, pruning)
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v16).
+  - **v8-v9**: project_visits table, unread query indices
+  - **v10-v11**: assistant_usage_pending staging, FK hardening
+  - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
+  - **v14-v15**: Request ID normalization, index cleanup
+  - **v16**: GROUP BY index for unread queries
 - **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
 - **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.).
 - **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.
@@ -126,7 +127,7 @@ Common commands:
 **Database management:**
 - ⚠️  **IMPORTANT:** ALWAYS use `scripts/db_manager.sh` for database operations
 - ⚠️  **NEVER** delete database files manually with `rm` while app is running
-- Database location: `~/Library/Application Support/Contextify/transcripts.db`
+- Database location: `~/Library/Application Support/Contextify/contextify.db`
 - Clean database (creates backup): `make clean-db` or `./scripts/db_manager.sh clean`
 - Create backup: `make db-backup` or `./scripts/db_manager.sh backup`
 - Restore latest: `make db-restore` or `./scripts/db_manager.sh restore latest`

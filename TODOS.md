@@ -63,25 +63,6 @@
 
 ---
 
-### 2. Unread Badges Not Showing for Inactive Projects
-**Issue:** Project tabs don't show unread counts even after new messages arrive in non-active projects.
-
-**Symptoms:**
-- Badge counts remain at 0 despite new entries
-- `ProjectSwitcherState.unreadCounts` dictionary may not be updating
-- Events emitted but unread refresh not triggered
-
-**Investigation needed:**
-- Verify `ProjectEvent.transcriptUpdated` events are emitted after hoover
-- Check if `scheduleUnreadRefresh()` is being called for inactive projects
-- Confirm `getUnreadCounts(projectIds:)` query is correct
-- Check if `activeProjectId` check is too aggressive
-
-**Files to review:**
-- `Contextify/Contextify/ProjectSwitcherState.swift:312-315` (transcriptUpdated handler)
-- `app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift:163-187` (batch unread query)
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:327-328` (event emission after hoover)
-
 ---
 
 ### 3. LLM Status Bar Not Showing In-Progress Work
@@ -148,9 +129,21 @@
 
 ---
 
-## Recently Completed Work (feature/project-switcher)
+## Recently Completed Work
 
-### Project Activity Monitor & Unread Badges
+### Unread Tracking - Epoch Timestamps (feature/unread-badges-refactor)
+- ✅ Epoch timestamp columns (v12: projects.last_viewed_ts, entries.created_ts)
+- ✅ Millisecond precision truncation (prevents burst-entry misclassification)
+- ✅ FK-safe CTE inserts + JOIN reconciliation (O(N+M), was O(N×M))
+- ✅ Unread query GROUP BY index (v16: idx_entries_unread_join)
+- ✅ Request ID normalization (v14: empty → entry_id fallback)
+- ✅ FSEvents improvements (dispatch queue, batching, auto-teardown)
+- ✅ Timeline cache index atomicity (remove stale keys on update)
+
+**Migrations:** v12-v16
+**Commits:** f8c2306, 84fcdce, 5be2bbc, 2e3d942, 47b93ef, 8884a79
+
+### Project Activity Monitor & Unread Badges (feature/project-switcher)
 - ✅ Fixed race conditions in event stream (created at init)
 - ✅ Added termination handling for clean shutdown
 - ✅ Emit events only after hoover completes (no "0 unread" flashes)
