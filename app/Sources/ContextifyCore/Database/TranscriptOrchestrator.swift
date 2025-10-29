@@ -323,6 +323,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
           // Only update provider_session_id if it's currently NULL/empty (avoid UNIQUE constraint conflicts)
           // Use COALESCE to keep existing value if present
+          // If new value is nil/empty, keep NULL (don't set empty string - that violates UNIQUE constraint)
+          let sessionIdArg: String? = (sid == nil || sid!.isEmpty) ? nil : sid
+
           try db.execute(sql: """
             UPDATE transcripts
             SET file_path = ?,
@@ -340,7 +343,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             path,
             normalizedPath,
             pathHash,
-            sid ?? "",
+            sessionIdArg,  // Pass nil as NULL, not empty string
             TimeUnits.secondsFromMs(mtimeMs),  // last_modified in seconds for compatibility
             len > 0 ? Int(len) : nil,
             len,
@@ -356,6 +359,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           transcriptId = UUID().uuidString
           wasCreated = true
 
+          // Use nil instead of empty string for provider_session_id (avoids UNIQUE constraint issues)
+          let sessionIdArg: String? = (sid == nil || sid!.isEmpty) ? nil : sid
+
           try db.execute(sql: """
             INSERT INTO transcripts (
               id, project_id, file_path, normalized_path, path_hash,
@@ -366,7 +372,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             transcriptId, projectId, path, normalizedPath, pathHash,
-            disc.provider, sid ?? "",
+            disc.provider, sessionIdArg,  // Pass nil as NULL, not empty string
             TimeUnits.secondsFromMs(mtimeMs), len > 0 ? Int(len) : nil, len, mtimeMs, sha,
             0, 0, 1, "active",
             nowSec, nowSec
