@@ -88,7 +88,17 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
 
   public func markViewed(projectId: String, timestamp: String) throws {
     try db.write { db in
-      // Upsert visit record
+      // Update projects.last_viewed_ts with epoch timestamp
+      // Convert ISO8601Z string to epoch seconds
+      if let date = ISO8601Z.date(from: timestamp) {
+        let epochSeconds = date.timeIntervalSince1970
+        try db.execute(
+          sql: "UPDATE projects SET last_viewed_ts = ? WHERE id = ?",
+          arguments: [epochSeconds, projectId]
+        )
+      }
+
+      // Also update project_visits for backward compatibility
       var visit = try ProjectVisit.fetchOne(db, key: projectId) ?? ProjectVisit(projectId: projectId)
       visit.lastViewedAt = timestamp
       try visit.save(db)
@@ -121,15 +131,16 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
 
   public func getUnreadCount(projectId: String) throws -> Int {
     try db.read { db in
-      // Count entries where created_at > last_viewed_at (or last_viewed_at is NULL)
-      // JOIN through transcripts table since project_id lives there
+      // Count entries where created_ts > last_viewed_ts (epoch timestamps)
+      // Uses project.last_viewed_ts directly (not project_visits table)
       let count = try Int.fetchOne(db, sql: """
         SELECT COUNT(*)
         FROM transcript_entries e
         JOIN transcripts t ON t.id = e.transcript_id
-        LEFT JOIN project_visits v ON v.project_id = t.project_id
-        WHERE t.project_id = ?
-          AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
+        JOIN projects p ON p.id = t.project_id
+        WHERE p.id = ?
+          AND e.created_ts > p.last_viewed_ts
+          AND e.display_in_timeline = 1
       """, arguments: [projectId])
 
       return count ?? 0
@@ -138,14 +149,15 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
 
   public func getUnreadCounts() throws -> [String: Int] {
     try db.read { db in
-      // Batch query for all projects with unread counts
-      // More efficient: single pass without correlated subquery
+      // Batch query for all projects with unread counts (epoch timestamps)
+      // Uses project.last_viewed_ts directly (defaults to 0, so all entries are unread initially)
       let rows = try Row.fetchAll(db, sql: """
         SELECT t.project_id, COUNT(*) AS unread
         FROM transcript_entries e
         JOIN transcripts t ON t.id = e.transcript_id
-        LEFT JOIN project_visits v ON v.project_id = t.project_id
-        WHERE (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
+        JOIN projects p ON p.id = t.project_id
+        WHERE e.created_ts > p.last_viewed_ts
+          AND e.display_in_timeline = 1
         GROUP BY t.project_id
       """)
 
@@ -164,15 +176,16 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
     guard !projectIds.isEmpty else { return [:] }
 
     return try db.read { db in
-      // Build parameterized query with IN clause
+      // Build parameterized query with IN clause (epoch timestamps)
       let placeholders = Array(repeating: "?", count: projectIds.count).joined(separator: ",")
       let rows = try Row.fetchAll(db, sql: """
         SELECT t.project_id AS pid, COUNT(*) AS c
         FROM transcript_entries e
         JOIN transcripts t ON t.id = e.transcript_id
-        LEFT JOIN project_visits v ON v.project_id = t.project_id
+        JOIN projects p ON p.id = t.project_id
         WHERE t.project_id IN (\(placeholders))
-          AND (v.last_viewed_at IS NULL OR e.created_at > v.last_viewed_at)
+          AND e.created_ts > p.last_viewed_ts
+          AND e.display_in_timeline = 1
         GROUP BY t.project_id
       """, arguments: StatementArguments(projectIds))
 
