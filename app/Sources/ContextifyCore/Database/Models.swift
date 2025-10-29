@@ -8,6 +8,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
   public var name: String?
   public var rootPath: String
   public var rootBookmark: Data?
+  public var lastViewedTs: Double  // Epoch timestamp for unread tracking (v12)
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -18,6 +19,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
     case name
     case rootPath = "root_path"
     case rootBookmark = "root_bookmark"
+    case lastViewedTs = "last_viewed_ts"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }

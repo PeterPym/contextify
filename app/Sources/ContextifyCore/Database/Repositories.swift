@@ -32,6 +32,7 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         name: name,
         rootPath: canonPath,
         rootBookmark: bookmark,
+        lastViewedTs: 0.0,  // Never viewed yet (all entries unread)
         createdAt: now,
         updatedAt: now
       )
