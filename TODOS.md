@@ -180,6 +180,26 @@
 
 ---
 
+### 6. Textarea Label Not Updating with Active Terminal
+**Issue:** The textarea label "Send to: [terminal title]" is not updating to reflect the most recently active terminal window.
+
+**Symptoms:**
+- Label shows stale or incorrect terminal window title
+- Should update automatically when switching terminal windows
+- Should track the most recently active/focused terminal
+
+**Investigation needed:**
+- Check iTerm2Bridge integration for window focus events
+- Verify terminal window title fetching mechanism
+- Confirm label update triggers on window focus change
+
+**Files to review:**
+- `Contextify/Contextify/ITerm2Bridge.swift` (terminal integration)
+- `Contextify/Contextify/ContentView.swift` (textarea label display)
+- `app/Sources/ContextifyCore/HUDCore.swift` (terminal tracking logic)
+
+---
+
 ## Recently Completed Work
 
 ### Unread Tracking - Epoch Timestamps (feature/unread-badges-refactor)
