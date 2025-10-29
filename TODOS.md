@@ -246,6 +246,113 @@
 
 ### Data Management & Cleanup
 
+#### Orphaned Projects (Projects with Missing Directories)
+**Current State:** Projects are created from transcript discovery, extracting CWD from JSONL files. If a project directory is later deleted or renamed, the transcripts remain but the project becomes "orphaned" - it has valid transcripts but no corresponding filesystem directory.
+
+**Problem:** Currently these orphaned projects generate error logs during discovery:
+```
+error: Failed to process project directory -Users-rob-code-personal-job-search:
+       The operation couldn't be completed. (ContextifyCore.ProjectIdentityError error 3.)
+```
+
+**Root Cause:**
+- `ProjectIdentity.reverseManglePath()` extracts CWD from transcript (e.g., `/Users/rob/code/personal/job-search`)
+- `canonicalizePath()` verifies directory exists and throws `invalidPath` (error 3) if missing
+- This is expected behavior for deleted/moved projects, not an error condition
+
+**Proposed Solution:**
+
+**Phase 1: Better Discovery Error Handling**
+1. Distinguish between actual errors and expected orphaned projects:
+   ```swift
+   catch let error as ProjectIdentityError {
+     switch error {
+     case .invalidPath:
+       // Expected: project directory was deleted/moved
+       log.debug("Skipping orphaned project \(directory.lastPathComponent): directory no longer exists")
+     case .cannotReadSessionMetadata:
+       // Expected: empty or malformed session directory
+       log.debug("Skipping invalid session directory \(directory.lastPathComponent): no readable metadata")
+     case .unknownProvider:
+       // Unexpected: should never happen
+       log.error("Unknown provider for \(directory.lastPathComponent)")
+     }
+   }
+   ```
+
+2. Track orphaned projects in database:
+   - Add `is_orphaned` boolean column to `projects` table
+   - Set `is_orphaned = true` when `invalidPath` error occurs during discovery
+   - Clear `is_orphaned = false` if directory reappears
+   - Add `orphaned_since` timestamp for tracking
+
+**Phase 2: Orphaned Projects UI (Projects Window)**
+1. **Visual Decoration:**
+   - Show orphaned badge/icon next to project name (e.g., ⚠️ or grayed out)
+   - Use different text color or strikethrough style
+   - Show tooltip: "Project directory not found: /expected/path"
+
+2. **Filter/Section:**
+   - Add "Show Orphaned Projects" toggle or filter
+   - Or create separate "Orphaned Projects" section at bottom
+   - Show count: "3 orphaned projects"
+
+3. **Restore Action:**
+   - "Restore Project Folder" button for each orphaned project
+   - Shows modal: "Create directory at `/expected/path`? This will create the folder structure but will not restore any files that may have existed."
+   - On confirm: `FileManager.default.createDirectory(atPath:withIntermediateDirectories:)`
+   - After creation, mark `is_orphaned = false` and refresh UI
+   - **Note:** This is a simple convenience feature - useful for projects that just need the folder structure (like note-taking projects)
+
+4. **Remove Action:**
+   - "Remove Project" button (disabled initially - see Transcript Removal Workflow below)
+   - When transcript removal is implemented, this removes project + all transcripts
+   - Shows count: "This will delete X transcripts and Y entries"
+   - Confirmation required
+
+**Phase 3: Advanced Features (Future)**
+1. **Auto-detect moved projects:**
+   - If project directory doesn't exist at original path, search for directories with same name
+   - Offer to "reconnect" if found
+   - Update CWD in database after user confirmation
+
+2. **Export orphaned transcripts:**
+   - Before deletion, offer to export transcripts to JSON/Markdown
+   - Useful for archival purposes
+
+**Database Schema Changes:**
+```sql
+-- Migration vXX: Add orphaned project tracking
+ALTER TABLE projects ADD COLUMN is_orphaned INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN orphaned_since TEXT; -- ISO8601 timestamp
+CREATE INDEX idx_projects_orphaned ON projects(is_orphaned) WHERE is_orphaned = 1;
+```
+
+**Files to Modify:**
+- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:244-246` - Improve error handling
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Add orphaned columns (vXX migration)
+- `app/Sources/ContextifyCore/Database/Models.swift` - Add `isOrphaned`/`orphanedSince` to Project model
+- `app/Sources/ContextifyCore/Database/Repositories.swift` - Add orphaned project queries
+- `Contextify/Contextify/ProjectsWindow.swift` - Add orphaned UI section
+- `Contextify/Contextify/ProjectsViewModel.swift` - Add restore/remove actions
+
+**Testing Checklist:**
+- [ ] Orphaned projects don't spam error logs (only debug level)
+- [ ] Discovery marks projects as orphaned when directory missing
+- [ ] Restore action creates directory and clears orphaned flag
+- [ ] UI shows orphaned badge and correct count
+- [ ] Re-creating directory manually (outside app) clears orphaned status on next discovery
+- [ ] Remove action requires transcript removal workflow (disabled until implemented)
+
+**Dependencies:**
+- Phase 2 "Remove Action" depends on "Transcript Removal Workflow" (below)
+
+**Related Issues:**
+- Error logs: `ProjectIdentityError error 3` for `-Users-rob-code-personal-job-search`
+- Error logs: `ProjectIdentityError error 2` for `2025` (likely empty session dir)
+
+---
+
 #### Transcript Removal Workflow
 **Current State:** Once a transcript is ingested, it remains in the database permanently even if the source file is deleted. This is intentional (transcripts can be reproduced from files if needed), but we need a way for users to explicitly remove unwanted transcripts.
 
