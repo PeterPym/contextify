@@ -244,3 +244,46 @@
 - Track LLM queue depth over time
 - Monitor staging table growth (alert if > 1000 pending)
 
+### Data Management & Cleanup
+
+#### Transcript Removal Workflow
+**Current State:** Once a transcript is ingested, it remains in the database permanently even if the source file is deleted. This is intentional (transcripts can be reproduced from files if needed), but we need a way for users to explicitly remove unwanted transcripts.
+
+**Proposed Solution:**
+Add transcript management to the **Transcript Inventory** window with:
+
+1. **Delete Action:**
+   - Right-click context menu or delete button on transcript rows
+   - Shows confirmation dialog: "Remove [session-name]? This will delete the transcript and all its entries from the database. The source file will not be deleted."
+   - Executes cleanup:
+     ```sql
+     DELETE FROM transcript_entries WHERE transcript_id = ?;
+     DELETE FROM transcripts WHERE id = ?;
+     ```
+   - Refreshes inventory after deletion
+
+2. **Bulk Cleanup:**
+   - "Clean Up Missing Files" button
+   - Scans for transcripts where source file no longer exists
+   - Shows list of orphaned transcripts
+   - Allows batch deletion with confirmation
+
+3. **Test/Debug Transcript Detection:**
+   - Auto-detect test transcripts (files matching `test-*`, `TEST-*` patterns)
+   - Show badge or filter in inventory
+   - "Remove Test Transcripts" action
+
+**Files to Modify:**
+- `Contextify/Contextify/TranscriptInventoryView.swift` - Add delete actions
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` - Add `deleteTranscript(id:)` method
+- Consider adding "deleted_at" soft-delete column instead of hard delete (allows undo)
+
+**Edge Cases:**
+- What if transcript is currently being watched/hoovered? Stop watcher first
+- What if it's the active transcript in timeline? Clear timeline or switch to another
+- Should we archive transcript metadata before deletion? (export to JSON)
+
+**Related Scripts:**
+- `scripts/remove_test_transcripts.sh` - Example of manual cleanup (can be used as reference)
+- `scripts/db_manager.sh` - Already has backup/restore, add transcript removal command
+
