@@ -68,6 +68,35 @@ public final class DatabaseManager: @unchecked Sendable {
     let contextifyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
     try FileManager.default.createDirectory(at: contextifyDir, withIntermediateDirectories: true)
 
+    // ========================================================================
+    // FILE MIGRATION: transcripts.db → contextify.db
+    // ========================================================================
+    let oldPath = contextifyDir.appendingPathComponent("transcripts.db")
+    let newPath = contextifyDir.appendingPathComponent("contextify.db")
+
+    // Only migrate if new doesn't exist but old does
+    if !FileManager.default.fileExists(atPath: newPath.path),
+       FileManager.default.fileExists(atPath: oldPath.path) {
+
+      let oldWal = URL(fileURLWithPath: oldPath.path + "-wal")
+      let oldShm = URL(fileURLWithPath: oldPath.path + "-shm")
+      let newWal = URL(fileURLWithPath: newPath.path + "-wal")
+      let newShm = URL(fileURLWithPath: newPath.path + "-shm")
+
+      // Move main database file
+      try FileManager.default.moveItem(at: oldPath, to: newPath)
+      log.info("Migrated database: transcripts.db → contextify.db")
+
+      // Move WAL and SHM if they exist
+      if FileManager.default.fileExists(atPath: oldWal.path) {
+        try? FileManager.default.moveItem(at: oldWal, to: newWal)
+      }
+      if FileManager.default.fileExists(atPath: oldShm.path) {
+        try? FileManager.default.moveItem(at: oldShm, to: newShm)
+      }
+    }
+    // ========================================================================
+
     return contextifyDir.appendingPathComponent("contextify.db")
   }
 

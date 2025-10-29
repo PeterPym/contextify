@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 
 /// SQLite schema for Contextify transcript storage
-/// Collapsed schema - v16 (all migrations from v1-v16 merged into single base schema)
+/// Current version: v17 (v16 collapse + hotfixes for NULL timestamps, missing indexes, composite PK, file migration)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -22,8 +22,40 @@ enum DatabaseSchema {
       try createV16Schema(db)
     }
 
-    // v17: Hotfix for missing columns/tables from v16 collapse
+    // v17: Comprehensive fixes for v16 collapse issues
+    // - Backfills for created_ts and last_viewed_ts (fixes unread tracking)
+    // - Restore missing indexes from pre-collapse
+    // - Rebuild assistant_usage_pending with composite PK
+    // - Fix trigger with explicit DROP + CREATE
+    // - Add missing transcript_metadata table
     migrator.registerMigration("v17_schema_fixes") { db in
+      // ========================================================================
+      // BACKFILLS (CRITICAL - fixes unread tracking)
+      // ========================================================================
+
+      // Backfill created_ts from timestamp for entries that lack it
+      try db.execute(sql: """
+        UPDATE transcript_entries
+        SET created_ts = CAST(timestamp AS REAL)
+        WHERE created_ts IS NULL
+      """)
+
+      // Backfill last_viewed_ts from project_visits legacy data
+      try db.execute(sql: """
+        UPDATE projects
+        SET last_viewed_ts = MAX(
+          COALESCE(last_viewed_ts, 0),
+          COALESCE((
+            SELECT MAX(strftime('%s', pv.last_viewed_at))
+            FROM project_visits pv
+            WHERE pv.project_id = projects.id
+              AND pv.last_viewed_at IS NOT NULL
+              AND pv.last_viewed_at <> ''
+          ), 0)
+        )
+        WHERE last_viewed_ts = 0
+      """)
+
       // Fix 1: Add missing columns to system_events
       let systemEventsInfo = try Row.fetchAll(db, sql: "PRAGMA table_info(system_events)")
       let existingColumns = Set(systemEventsInfo.map { $0["name"] as! String })
@@ -41,8 +73,35 @@ enum DatabaseSchema {
         try db.execute(sql: "ALTER TABLE system_events ADD COLUMN compact_metadata TEXT")
       }
 
-      // Fix 2: Add DEFAULT to assistant_usage_pending.created_at
-      // SQLite doesn't support ALTER COLUMN, so recreate table
+      // ========================================================================
+      // MISSING INDEXES (PERFORMANCE REGRESSION)
+      // ========================================================================
+
+      // Index for entries→transcripts JOINs
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_project_id
+        ON transcripts(project_id)
+      """)
+
+      // Index for transcript-scoped timeline queries
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_transcript_created_ts_timeline
+        ON transcript_entries(transcript_id, created_ts)
+        WHERE display_in_timeline = 1
+      """)
+
+      // Index for cursor-based pagination (if still used)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_cursor
+        ON transcript_entries(project_id, timestamp, created_at, id)
+        WHERE display_in_timeline = 1
+      """)
+
+      // ========================================================================
+      // ASSISTANT_USAGE_PENDING REBUILD WITH COMPOSITE PK
+      // ========================================================================
+
+      // Create new table with composite PK and DEFAULT created_at
       try db.execute(sql: """
         CREATE TABLE IF NOT EXISTS assistant_usage_pending_new (
           entry_id TEXT NOT NULL,
@@ -55,20 +114,30 @@ enum DatabaseSchema {
           service_tier TEXT,
           ephemeral_5m_tokens INTEGER NOT NULL DEFAULT 0,
           ephemeral_1h_tokens INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+          created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER)),
+          PRIMARY KEY(entry_id, request_id)
         )
       """)
 
-      // Copy existing data if any
+      // Copy data with deduplication (take earliest created_at per key)
       let hasOldTable = try db.tableExists("assistant_usage_pending")
       if hasOldTable {
         try db.execute(sql: """
-          INSERT INTO assistant_usage_pending_new
-          SELECT entry_id, request_id, model, input_tokens, output_tokens,
-                 cache_creation_tokens, cache_read_tokens, service_tier,
-                 ephemeral_5m_tokens, ephemeral_1h_tokens,
-                 COALESCE(created_at, CAST(strftime('%s','now') AS INTEGER))
+          INSERT OR REPLACE INTO assistant_usage_pending_new
+          SELECT
+            entry_id,
+            COALESCE(NULLIF(request_id,''), entry_id) as request_id,
+            model,
+            input_tokens,
+            output_tokens,
+            COALESCE(cache_creation_tokens, 0),
+            COALESCE(cache_read_tokens, 0),
+            service_tier,
+            COALESCE(ephemeral_5m_tokens, 0),
+            COALESCE(ephemeral_1h_tokens, 0),
+            MIN(COALESCE(created_at, CAST(strftime('%s','now') AS INTEGER)))
           FROM assistant_usage_pending
+          GROUP BY entry_id, COALESCE(NULLIF(request_id,''), entry_id)
         """)
         try db.drop(table: "assistant_usage_pending")
       }
@@ -84,10 +153,17 @@ enum DatabaseSchema {
         ON assistant_usage_pending(created_at)
       """)
 
-      // Fix 3: Replace FAIL trigger with staging trigger
+      // ========================================================================
+      // FIX TRIGGER (EXPLICIT DROP + CREATE)
+      // ========================================================================
+
+      // Drop any existing triggers to ensure clean slate
       try db.execute(sql: "DROP TRIGGER IF EXISTS assistant_usage_before_insert")
+      try db.execute(sql: "DROP TRIGGER IF EXISTS trg_assistant_usage_stage")
+
+      // Recreate with staging semantics (RAISE(IGNORE))
       try db.execute(sql: """
-        CREATE TRIGGER IF NOT EXISTS trg_assistant_usage_stage
+        CREATE TRIGGER trg_assistant_usage_stage
         BEFORE INSERT ON assistant_usage
         FOR EACH ROW
         WHEN NOT EXISTS (SELECT 1 FROM transcript_entries WHERE id = NEW.entry_id)

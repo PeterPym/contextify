@@ -1,8 +1,8 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v16 current)
+**Status:** Post-Implementation (v17 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 16 (v12-v16: unread tracking with epoch timestamps, FK-safe inserts, query optimizations)
+**Schema Version:** 17 (v12-v17: unread tracking with epoch timestamps, FK-safe inserts, query optimizations, v16 collapse fixes)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
 ---
@@ -134,12 +134,13 @@ let isDirective: Bool = {
 
 **v7-v11 Migrations:** Metadata tables (file_snapshots, tracked_files, transcript_summaries, system_events, assistant_usage), FK hardening with staging table, composite PKs
 
-**v12-v16 Migrations (2025-10):** Unread Tracking & Performance
+**v12-v17 Migrations (2025-10):** Unread Tracking & Performance
 - **v12:** Epoch timestamps (`projects.last_viewed_ts`, `entries.created_ts`) for timezone-free unread tracking
 - **v13:** Partial indices, backfills from legacy project_visits
 - **v14:** Request ID normalization (empty → entry_id fallback) in assistant_usage
 - **v15:** Index cleanup (remove redundant indices, add composite pending index)
-- **v16:** `idx_entries_unread_join` for GROUP BY optimization in unread queries
+- **v16:** Schema collapse (v1-v16 merged into single base), `idx_entries_unread_join` for GROUP BY optimization
+- **v17:** Hotfix for v16 collapse - backfills for NULL timestamps, missing indexes, composite PK on `assistant_usage_pending`, file migration (transcripts.db → contextify.db)
 
 **Proposed v7 Schema:**
 ```
