@@ -28,32 +28,37 @@ struct ProjectBadgesView: View {
   }
 
   private func detectProviders() async {
-    var detected: Set<DiscoveredProject.Provider> = []
+    // Run file I/O on background thread to avoid blocking main thread
+    let detected = await Task.detached {
+      var result: Set<DiscoveredProject.Provider> = []
 
-    // Check for Claude Code
-    let projectURL = URL(fileURLWithPath: projectPath)
-    let claudeDirName = projectPath.replacingOccurrences(of: "/", with: "-")
-    let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/projects")
-      .appendingPathComponent(claudeDirName)
+      // Check for Claude Code
+      let projectURL = URL(fileURLWithPath: projectPath)
+      let claudeDirName = projectPath.replacingOccurrences(of: "/", with: "-")
+      let claudeDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects")
+        .appendingPathComponent(claudeDirName)
 
-    if FileManager.default.fileExists(atPath: claudeDir.path) {
-      detected.insert(.claudeCode)
-    }
-
-    // Check for Codex
-    let codexDir = projectURL.appendingPathComponent(".codex/sessions")
-    if FileManager.default.fileExists(atPath: codexDir.path) {
-      let hasFiles = (try? FileManager.default.contentsOfDirectory(
-        at: codexDir,
-        includingPropertiesForKeys: nil,
-        options: [.skipsHiddenFiles]
-      ).filter { $0.pathExtension == "jsonl" }.isEmpty) == false
-
-      if hasFiles {
-        detected.insert(.codex)
+      if FileManager.default.fileExists(atPath: claudeDir.path) {
+        result.insert(.claudeCode)
       }
-    }
+
+      // Check for Codex
+      let codexDir = projectURL.appendingPathComponent(".codex/sessions")
+      if FileManager.default.fileExists(atPath: codexDir.path) {
+        let hasFiles = (try? FileManager.default.contentsOfDirectory(
+          at: codexDir,
+          includingPropertiesForKeys: nil,
+          options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "jsonl" }.isEmpty) == false
+
+        if hasFiles {
+          result.insert(.codex)
+        }
+      }
+
+      return result
+    }.value
 
     providers = detected
   }

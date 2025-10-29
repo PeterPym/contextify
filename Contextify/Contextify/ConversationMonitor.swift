@@ -939,11 +939,14 @@ final class ConversationMonitor {
         }
 
         // Get all .jsonl files from this project's directory
-        let filesOnDisk = try FileManager.default.contentsOfDirectory(
-            at: claudeDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "jsonl" }
+        // Run file I/O on background thread to avoid blocking main thread
+        let filesOnDisk = try await Task.detached {
+            try FileManager.default.contentsOfDirectory(
+                at: claudeDir,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ).filter { $0.pathExtension == "jsonl" }
+        }.value
 
         await MainActor.run {
             log.info("🔍 Discovery: Found \(filesOnDisk.count) .jsonl files in \(expectedDirName)")

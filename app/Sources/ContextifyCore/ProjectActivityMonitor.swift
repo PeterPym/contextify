@@ -347,11 +347,11 @@ public actor ProjectActivityMonitor {
 
           log.info("✅ Emitted events for transcript update: dbProjectId=\(dbProjectId)")
         } catch {
-          log.error("FSEvents: hoover failed for \(sessionId): \(String(describing: error))")
+          log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }
       }
     } catch {
-      log.error("FSEvents: path decode failed for \(mangledDir): \(String(describing: error))")
+      log.error("FSEvents: path decode failed for \(mangledDir, privacy: .public): \(String(describing: error), privacy: .public)")
     }
     #endif
   }

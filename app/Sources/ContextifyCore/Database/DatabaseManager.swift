@@ -92,8 +92,16 @@ public final class DatabaseManager: @unchecked Sendable {
       try Int.fetchOne(db, sql: "PRAGMA page_size") ?? 4096
     }
 
-    let row = try pool.read { db in
-      try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
+    // PRAGMA wal_checkpoint(PASSIVE) needs write access to update WAL header
+    // Use pool.write and silently ignore lock errors (checkpoint is opportunistic)
+    let row: Row?
+    do {
+      row = try pool.write { db in
+        try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(PASSIVE)")
+      }
+    } catch let error as DatabaseError where error.resultCode == .SQLITE_BUSY || error.resultCode == .SQLITE_LOCKED {
+      log.debug("WAL checkpoint skipped (database busy)")
+      return
     }
 
     guard let row = row, row.count >= 2 else {

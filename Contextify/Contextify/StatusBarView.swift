@@ -194,7 +194,6 @@ struct StatusBarView: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                    .scaleEffect(0.8)
 
                 if viewModel.queueDepth > 100 {
                     Text("Processing many items...")
