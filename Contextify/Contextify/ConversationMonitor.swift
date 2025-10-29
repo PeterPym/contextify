@@ -151,7 +151,11 @@ final class ConversationMonitor {
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
 
-    private init() {}
+    private init() {
+        // Set up project change notifications early, so we can react to project selection
+        // even if monitoring hasn't started yet
+        setupProjectChangeNotifications()
+    }
 
     @MainActor
     func startMonitoring() {
@@ -244,7 +248,7 @@ final class ConversationMonitor {
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
                 self.setupCacheUpdateNotifications()
-                self.setupProjectChangeNotifications()
+                // Project change notifications already set up in init()
 
                 self.isMonitoring = true
                 self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
