@@ -87,6 +87,21 @@ if ! git rev-parse --verify "$HEAD_REF" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Check for uncommitted changes to code files (ignoring .md and .sh)
+UNCOMMITTED=$(git status --porcelain | grep -vE '\.(md|sh)$' || true)
+if [ -n "$UNCOMMITTED" ]; then
+  echo -e "${YELLOW}❌ Error: You have uncommitted changes to code files.${NC}"
+  echo ""
+  echo "Changes (excluding .md and .sh files):"
+  echo "$UNCOMMITTED"
+  echo ""
+  echo -e "${BLUE}💡 Please commit your changes before generating a review package:${NC}"
+  echo "   git add <files>"
+  echo "   git commit -m \"your message\""
+  echo ""
+  exit 1
+fi
+
 RANGE="${BASE}..${HEAD_REF}"
 RANGE_STAT="${BASE}...${HEAD_REF}"
 DATE=$(date +%Y%m%d)

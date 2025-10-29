@@ -36,6 +36,21 @@ if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
   fi
 fi
 
+# Check for uncommitted changes to code files (ignoring .md and .sh)
+UNCOMMITTED=$(git status --porcelain | grep -vE '\.(md|sh)$' || true)
+if [ -n "$UNCOMMITTED" ]; then
+  echo "❌ Error: You have uncommitted changes to code files."
+  echo ""
+  echo "Changes (excluding .md and .sh files):"
+  echo "$UNCOMMITTED"
+  echo ""
+  echo "💡 Please commit your changes before generating a review package:"
+  echo "   git add <files>"
+  echo "   git commit -m \"your message\""
+  echo ""
+  exit 1
+fi
+
 RANGE="${BASE}..${HEAD_REF}"
 RANGE_STAT="${BASE}...${HEAD_REF}"
 DATE=$(date +%Y%m%d)
