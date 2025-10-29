@@ -321,12 +321,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           transcriptId = id
           wasCreated = false
 
+          // Only update provider_session_id if it's currently NULL/empty (avoid UNIQUE constraint conflicts)
+          // Use COALESCE to keep existing value if present
           try db.execute(sql: """
             UPDATE transcripts
             SET file_path = ?,
                 normalized_path = ?,
                 path_hash = ?,
-                provider_session_id = ?,
+                provider_session_id = COALESCE(NULLIF(provider_session_id, ''), ?),
                 last_modified = ?,
                 file_size = ?,
                 content_length = ?,
