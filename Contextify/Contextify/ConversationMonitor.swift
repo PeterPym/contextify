@@ -45,11 +45,20 @@ final class TimelineState {
 
     func update(at index: Int, to newValue: TimelineEntry) {
         guard entries.indices.contains(index) else { return }
+
+        // Atomic cache index update: remove old key, then add new key
+        let oldKey = entries[index].cacheKey
         entries[index] = newValue
         revision &+= 1
-        // Update cache index for changed entry
-        if let key = newValue.cacheKey {
-            _indexByCacheKey[key] = index
+
+        // Remove stale mapping if cache key changed
+        if let oldKey, oldKey != newValue.cacheKey {
+            _indexByCacheKey.removeValue(forKey: oldKey)
+        }
+
+        // Add new mapping
+        if let newKey = newValue.cacheKey {
+            _indexByCacheKey[newKey] = index
         }
     }
 
