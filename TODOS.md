@@ -63,6 +63,57 @@
 
 ---
 
+### 2. First Startup Experience - No Feedback During Discovery
+**Issue:** On first app launch or with empty database, no feedback about transcript discovery and ingestion progress.
+
+**Symptoms:**
+- Empty project list with no explanation
+- Projects appear slowly, one at a time
+- Conversation logs show as empty initially, then suddenly populate
+- No progress indicator or ETA
+- Appears broken or frozen
+
+**Requirements:**
+1. **Welcome Modal:** Show on first launch with real-time progress
+   - Estimated time to completion
+   - Current project/transcript being processed
+   - Progress bar (X/Y transcripts)
+   - Minimize/dismiss option
+
+2. **Project Tab Loading States:** Show "Loading conversation... 47 transcripts found" placeholder
+   - Replace with actual entries as they arrive
+   - Smooth transition to normal state
+
+3. **Conversation Log Placeholders:** Context-aware empty states
+   - No transcripts: "Use Claude Code or Codex to populate the timeline."
+   - Transcripts found but ingesting: "Loading conversation... ⏱️ About 2 minutes remaining"
+   - Transcripts ingested but empty: "This conversation has not started yet."
+
+4. **Footer Status Indicator:** Show discovery/indexing progress
+   - "🔍 Discovering: 12 projects found"
+   - "⚙️ Indexing: 21/47 transcripts (45%)"
+   - "✓ Ready: 12 projects, 47 transcripts"
+
+**Implementation approach:**
+- Extend HooverEngine with progress callbacks
+- Create FirstStartupOrchestrator for coordination
+- Add loading states to ConversationMonitor
+- Build WelcomeModalView component
+- Add footer progress badge next to LLM status bar
+- Store `firstLaunchCompleted` preference
+
+**Detailed Spec:** `build/notes/feature-specs/first-startup-ux/spec.md`
+
+**Files to create/modify:**
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift` (progress events)
+- `Contextify/Contextify/FirstStartupOrchestrator.swift` (NEW - coordination)
+- `Contextify/Contextify/WelcomeModalView.swift` (NEW - modal UI)
+- `Contextify/Contextify/ConversationMonitor.swift` (loading states)
+- `Contextify/Contextify/ConversationTimelineView.swift` (✅ placeholder states updated)
+- `Contextify/Contextify/ContentView.swift` (footer badge)
+
+**Estimated time:** 4-6 days
+
 ---
 
 ### 3. LLM Status Bar Not Showing In-Progress Work
