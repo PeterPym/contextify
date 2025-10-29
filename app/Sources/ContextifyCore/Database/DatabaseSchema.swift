@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 11
+  static let version = 12
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -606,6 +606,27 @@ enum DatabaseSchema {
         DELETE FROM assistant_usage
         WHERE entry_id NOT IN (SELECT id FROM transcript_entries)
       """)
+
+      // Run ANALYZE
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // v12: Epoch timestamps for unread tracking
+    migrator.registerMigration("v12_epoch_timestamps") { db in
+      // Add epoch timestamp columns
+      try db.execute(sql: "ALTER TABLE projects ADD COLUMN last_viewed_ts REAL NOT NULL DEFAULT 0")
+      try db.execute(sql: "ALTER TABLE transcript_entries ADD COLUMN created_ts REAL")
+
+      // Backfill created_ts from existing timestamp field (Unix seconds Int -> REAL)
+      try db.execute(sql: """
+        UPDATE transcript_entries
+        SET created_ts = CAST(timestamp AS REAL)
+        WHERE created_ts IS NULL
+      """)
+
+      // Create indices for performance
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_last_viewed_ts ON projects(last_viewed_ts)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_entries_created_ts ON transcript_entries(transcript_id, created_ts)")
 
       // Run ANALYZE
       try db.execute(sql: "ANALYZE")
