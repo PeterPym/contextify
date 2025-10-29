@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 16
+  static let version = 17
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -20,6 +20,128 @@ enum DatabaseSchema {
     // Fresh databases get full v16 schema immediately
     migrator.registerMigration("v16_collapsed_schema") { db in
       try createV16Schema(db)
+    }
+
+    // v17: Hotfix for missing columns/tables from v16 collapse
+    migrator.registerMigration("v17_schema_fixes") { db in
+      // Fix 1: Add missing columns to system_events
+      let systemEventsInfo = try Row.fetchAll(db, sql: "PRAGMA table_info(system_events)")
+      let existingColumns = Set(systemEventsInfo.map { $0["name"] as! String })
+
+      if !existingColumns.contains("retry_in_ms") {
+        try db.execute(sql: "ALTER TABLE system_events ADD COLUMN retry_in_ms INTEGER")
+      }
+      if !existingColumns.contains("parent_uuid") {
+        try db.execute(sql: "ALTER TABLE system_events ADD COLUMN parent_uuid TEXT")
+      }
+      if !existingColumns.contains("logical_parent_uuid") {
+        try db.execute(sql: "ALTER TABLE system_events ADD COLUMN logical_parent_uuid TEXT")
+      }
+      if !existingColumns.contains("compact_metadata") {
+        try db.execute(sql: "ALTER TABLE system_events ADD COLUMN compact_metadata TEXT")
+      }
+
+      // Fix 2: Add DEFAULT to assistant_usage_pending.created_at
+      // SQLite doesn't support ALTER COLUMN, so recreate table
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS assistant_usage_pending_new (
+          entry_id TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          model TEXT NOT NULL,
+          input_tokens INTEGER NOT NULL,
+          output_tokens INTEGER NOT NULL,
+          cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+          cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+          service_tier TEXT,
+          ephemeral_5m_tokens INTEGER NOT NULL DEFAULT 0,
+          ephemeral_1h_tokens INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+        )
+      """)
+
+      // Copy existing data if any
+      let hasOldTable = try db.tableExists("assistant_usage_pending")
+      if hasOldTable {
+        try db.execute(sql: """
+          INSERT INTO assistant_usage_pending_new
+          SELECT entry_id, request_id, model, input_tokens, output_tokens,
+                 cache_creation_tokens, cache_read_tokens, service_tier,
+                 ephemeral_5m_tokens, ephemeral_1h_tokens,
+                 COALESCE(created_at, CAST(strftime('%s','now') AS INTEGER))
+          FROM assistant_usage_pending
+        """)
+        try db.drop(table: "assistant_usage_pending")
+      }
+      try db.rename(table: "assistant_usage_pending_new", to: "assistant_usage_pending")
+
+      // Recreate indexes on pending table
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_pending_entry_request
+        ON assistant_usage_pending(entry_id, request_id)
+      """)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_pending_created
+        ON assistant_usage_pending(created_at)
+      """)
+
+      // Fix 3: Replace FAIL trigger with staging trigger
+      try db.execute(sql: "DROP TRIGGER IF EXISTS assistant_usage_before_insert")
+      try db.execute(sql: """
+        CREATE TRIGGER IF NOT EXISTS trg_assistant_usage_stage
+        BEFORE INSERT ON assistant_usage
+        FOR EACH ROW
+        WHEN NOT EXISTS (SELECT 1 FROM transcript_entries WHERE id = NEW.entry_id)
+        BEGIN
+          INSERT OR REPLACE INTO assistant_usage_pending (
+            entry_id, request_id, model, input_tokens, output_tokens,
+            cache_creation_tokens, cache_read_tokens, service_tier,
+            ephemeral_5m_tokens, ephemeral_1h_tokens
+          ) VALUES (
+            NEW.entry_id,
+            COALESCE(NULLIF(NEW.request_id,''), NEW.entry_id),
+            NEW.model, NEW.input_tokens, NEW.output_tokens,
+            COALESCE(NEW.cache_creation_tokens,0), COALESCE(NEW.cache_read_tokens,0),
+            NEW.service_tier,
+            COALESCE(NEW.ephemeral_5m_tokens,0), COALESCE(NEW.ephemeral_1h_tokens,0)
+          );
+          SELECT RAISE(IGNORE);
+        END
+      """)
+
+      // Fix 4: Add transcript_metadata table if missing
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcript_metadata (
+          transcript_id TEXT PRIMARY KEY NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+          project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          topics TEXT NOT NULL CHECK(json_valid(topics)),
+          confidence REAL NOT NULL,
+          may_contain_hallucinations INTEGER NOT NULL DEFAULT 0,
+          needs_review INTEGER NOT NULL DEFAULT 0,
+          generated_at INTEGER NOT NULL,
+          model TEXT NOT NULL,
+          prompt_version INTEGER NOT NULL,
+          generator_version INTEGER NOT NULL,
+          transcript_sha256 TEXT NOT NULL,
+          message_count INTEGER NOT NULL,
+          strategy TEXT NOT NULL CHECK(strategy IN ('full','bookends','heuristic')),
+          llm_calls INTEGER NOT NULL,
+          latency_ms INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      """)
+
+      // Add missing indexes
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_project ON transcript_metadata(project_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_generated_at ON transcript_metadata(generated_at DESC)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_needs_review ON transcript_metadata(needs_review, generated_at DESC)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_events_timestamp ON system_events(timestamp)")
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
     }
 
     return migrator
@@ -178,32 +300,34 @@ enum DatabaseSchema {
     """)
     try db.create(index: "idx_cache_entry_window", on: "timeline_cache", columns: ["entry_id", "window_sha256"], unique: true, ifNotExists: true)
 
-    // Transcript metadata table
-    try db.create(table: "transcript_metadata", ifNotExists: true) { t in
-      t.column("transcript_id", .text).primaryKey().references("transcripts", onDelete: .cascade)
-      t.column("project_id", .text).notNull().references("projects", onDelete: .cascade)
-      t.column("title", .text).notNull()
-      t.column("description", .text).notNull()
-      t.column("topics", .text).notNull().check(sql: "json_valid(topics)")
-      t.column("confidence", .double).notNull()
-      t.column("may_contain_hallucinations", .integer).notNull().defaults(to: 0)
-      t.column("needs_review", .integer).notNull().defaults(to: 0)
-      t.column("generated_at", .integer).notNull()
-      t.column("model", .text).notNull()
-      t.column("prompt_version", .integer).notNull()
-      t.column("generator_version", .integer).notNull()
-      t.column("transcript_sha256", .text).notNull()
-      t.column("message_count", .integer).notNull()
-      t.column("strategy", .text).notNull().check(sql: "strategy IN ('full','bookends','heuristic')")
-      t.column("llm_calls", .integer).notNull()
-      t.column("latency_ms", .integer).notNull()
-      t.column("created_at", .integer).notNull()
-      t.column("updated_at", .integer).notNull()
-    }
-    try db.create(index: "idx_tmeta_project", on: "transcript_metadata", columns: ["project_id"], ifNotExists: true)
-    try db.create(index: "idx_tmeta_needs_review", on: "transcript_metadata", columns: ["needs_review"], ifNotExists: true, condition: "needs_review = 1")
-    try db.create(index: "idx_tmeta_prompt_ver", on: "transcript_metadata", columns: ["prompt_version"], ifNotExists: true)
-    try db.create(index: "idx_tmeta_gen_ver", on: "transcript_metadata", columns: ["generator_version"], ifNotExists: true)
+    // Transcript metadata table (LLM-generated summaries, titles, topics)
+    try db.execute(sql: """
+      CREATE TABLE IF NOT EXISTS transcript_metadata (
+        transcript_id TEXT PRIMARY KEY NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        topics TEXT NOT NULL CHECK(json_valid(topics)),
+        confidence REAL NOT NULL,
+        may_contain_hallucinations INTEGER NOT NULL DEFAULT 0,
+        needs_review INTEGER NOT NULL DEFAULT 0,
+        generated_at INTEGER NOT NULL,
+        model TEXT NOT NULL,
+        prompt_version INTEGER NOT NULL,
+        generator_version INTEGER NOT NULL,
+        transcript_sha256 TEXT NOT NULL,
+        message_count INTEGER NOT NULL,
+        strategy TEXT NOT NULL CHECK(strategy IN ('full','bookends','heuristic')),
+        llm_calls INTEGER NOT NULL,
+        latency_ms INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    """)
+    try db.create(index: "idx_tm_project", on: "transcript_metadata", columns: ["project_id"], ifNotExists: true)
+    try db.create(index: "idx_tm_generated_at", on: "transcript_metadata", columns: ["generated_at"], ifNotExists: true)
+    try db.create(index: "idx_tm_needs_review", on: "transcript_metadata", columns: ["needs_review", "generated_at"], ifNotExists: true)
+    try db.create(index: "idx_tm_sha", on: "transcript_metadata", columns: ["transcript_sha256"], ifNotExists: true)
 
     // Parse errors table
     try db.create(table: "parse_errors", ifNotExists: true) { t in
@@ -264,10 +388,15 @@ enum DatabaseSchema {
       t.column("error", .text)
       t.column("retry_attempt", .integer)
       t.column("max_retries", .integer)
+      t.column("retry_in_ms", .integer)
+      t.column("parent_uuid", .text)
+      t.column("logical_parent_uuid", .text)
+      t.column("compact_metadata", .text)
       t.column("created_at", .integer).notNull()
     }
     try db.create(index: "idx_events_transcript", on: "system_events", columns: ["transcript_id"])
     try db.create(index: "idx_events_subtype", on: "system_events", columns: ["subtype"])
+    try db.create(index: "idx_events_timestamp", on: "system_events", columns: ["timestamp"])
 
     // v7/v11: Assistant usage table (v11: composite PK, v14: request_id normalization)
     try db.execute(sql: """
@@ -301,7 +430,7 @@ enum DatabaseSchema {
         service_tier TEXT,
         ephemeral_5m_tokens INTEGER NOT NULL DEFAULT 0,
         ephemeral_1h_tokens INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
       )
     """)
     // v15: Composite index for pending lookups
@@ -311,14 +440,26 @@ enum DatabaseSchema {
     """)
     try db.create(index: "idx_pending_created", on: "assistant_usage_pending", columns: ["created_at"])
 
-    // v11: BEFORE INSERT trigger for FK safety net
+    // v11: BEFORE INSERT trigger for FK safety net (staging behavior)
     try db.execute(sql: """
-      CREATE TRIGGER IF NOT EXISTS assistant_usage_before_insert
+      CREATE TRIGGER IF NOT EXISTS trg_assistant_usage_stage
       BEFORE INSERT ON assistant_usage
       FOR EACH ROW
       WHEN NOT EXISTS (SELECT 1 FROM transcript_entries WHERE id = NEW.entry_id)
       BEGIN
-        SELECT RAISE(FAIL, 'FK constraint: entry_id does not exist in transcript_entries');
+        INSERT OR REPLACE INTO assistant_usage_pending (
+          entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens, service_tier,
+          ephemeral_5m_tokens, ephemeral_1h_tokens
+        ) VALUES (
+          NEW.entry_id,
+          COALESCE(NULLIF(NEW.request_id,''), NEW.entry_id),
+          NEW.model, NEW.input_tokens, NEW.output_tokens,
+          COALESCE(NEW.cache_creation_tokens,0), COALESCE(NEW.cache_read_tokens,0),
+          NEW.service_tier,
+          COALESCE(NEW.ephemeral_5m_tokens,0), COALESCE(NEW.ephemeral_1h_tokens,0)
+        );
+        SELECT RAISE(IGNORE);
       END
     """)
 
