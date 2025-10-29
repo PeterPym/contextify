@@ -549,11 +549,12 @@ public final class HooverEngine {
         WHERE EXISTS (SELECT 1 FROM transcript_entries e WHERE e.id = p.entry_id)
       """)
 
-      // Clean up reconciled records from pending table
+      // Clean up reconciled records from pending table (EXISTS for compatibility)
       try db.execute(sql: """
-        DELETE FROM assistant_usage_pending
-        WHERE (entry_id, request_id) IN (
-          SELECT au.entry_id, au.request_id FROM assistant_usage au
+        DELETE FROM assistant_usage_pending p
+        WHERE EXISTS (
+          SELECT 1 FROM assistant_usage au
+          WHERE au.entry_id = p.entry_id AND au.request_id = p.request_id
         )
       """)
 

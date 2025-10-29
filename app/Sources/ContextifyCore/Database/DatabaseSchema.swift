@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 13
+  static let version = 14
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -626,7 +626,7 @@ enum DatabaseSchema {
 
       // Create indices for performance
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_last_viewed_ts ON projects(last_viewed_ts)")
-      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_entries_created_ts ON transcript_entries(transcript_id, created_ts)")
+      // Note: Full index on created_ts removed in v13 (replaced by partial index)
 
       // Run ANALYZE
       try db.execute(sql: "ANALYZE")
@@ -634,31 +634,64 @@ enum DatabaseSchema {
 
     // v13: Optimizations and backfills for unread tracking
     migrator.registerMigration("v13_unread_optimizations") { db in
-      // 1. Add partial index for unread queries (display_in_timeline = 1 only)
+      // 1. Drop redundant full index (replaced by partial index)
+      try db.execute(sql: "DROP INDEX IF EXISTS idx_entries_created_ts")
+
+      // 2. Add partial index for unread queries (display_in_timeline = 1 only)
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_entries_transcript_created_ts_timeline
         ON transcript_entries(transcript_id, created_ts)
         WHERE display_in_timeline = 1
       """)
 
-      // 2. Backfill projects.last_viewed_ts from project_visits.last_viewed_at
-      let rows = try Row.fetchAll(db, sql: """
-        SELECT pv.project_id AS pid, pv.last_viewed_at AS lva
-        FROM project_visits pv
-        WHERE lva IS NOT NULL AND lva <> ''
+      // 3. Backfill projects.last_viewed_ts from project_visits.last_viewed_at (pure SQL)
+      try db.execute(sql: """
+        UPDATE projects
+        SET last_viewed_ts = MAX(
+          COALESCE(last_viewed_ts, 0),
+          COALESCE((
+            SELECT MAX(strftime('%s', pv.last_viewed_at))
+            FROM project_visits pv
+            WHERE pv.project_id = projects.id
+              AND pv.last_viewed_at IS NOT NULL AND pv.last_viewed_at <> ''
+          ), 0)
+        )
       """)
-      for r in rows {
-        if let pid: String = r["pid"], let lva: String = r["lva"],
-           let d = ISO8601Z.date(from: lva) {
-          try db.execute(
-            sql: "UPDATE projects SET last_viewed_ts = MAX(last_viewed_ts, ?) WHERE id = ?",
-            arguments: [d.timeIntervalSince1970, pid]
-          )
-        }
-      }
 
       // Run ANALYZE
       try db.execute(sql: "ANALYZE")
+    }
+
+    // v14: Normalize assistant_usage and add reconciliation indexes
+    migrator.registerMigration("v14_assistant_usage_normalization") { db in
+      // 1. Normalize NULL/empty request_id values (fallback to entry_id)
+      try db.execute(sql: """
+        UPDATE assistant_usage SET request_id = entry_id
+        WHERE request_id IS NULL OR request_id = ''
+      """)
+
+      // Also normalize in pending table
+      try db.execute(sql: """
+        UPDATE assistant_usage_pending SET request_id = entry_id
+        WHERE request_id IS NULL OR request_id = ''
+      """)
+
+      // 2. Enforce composite PK uniqueness
+      try db.execute(sql: """
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_assistant_usage_entry_request
+        ON assistant_usage(entry_id, request_id)
+      """)
+
+      // 3. Add indexes for efficient reconciliation
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_assistant_usage_pending_entry
+        ON assistant_usage_pending(entry_id)
+      """)
+
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_assistant_usage_entry_request
+        ON assistant_usage(entry_id, request_id)
+      """)
     }
 
     return migrator

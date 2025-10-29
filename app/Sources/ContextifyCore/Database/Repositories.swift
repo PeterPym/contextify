@@ -943,10 +943,11 @@ public final class AssistantUsageRepositoryImpl: AssistantUsageRepository {
 
   public func get(_ entryId: String) throws -> AssistantUsage? {
     try db.read { db in
-      // With composite PK (entry_id, request_id), fetch most recent by request_id
+      // With composite PK (entry_id, request_id), just fetch first match
+      // Note: request_id is not time-ordered; if multiple exist, order is undefined
+      // Callers needing specific request_id should use get(_:requestId:)
       try AssistantUsage
         .filter(Column("entry_id") == entryId)
-        .order(Column("request_id").desc)
         .fetchOne(db)
     }
   }
