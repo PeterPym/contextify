@@ -34,48 +34,33 @@ public enum ProjectIdentity {
     case "claude.code":
       // Claude Code uses mangled directory names that cannot be reliably reversed
       // (e.g., path hyphens look identical to directory-name hyphens).
-      // Instead, read the CWD from the first JSONL record in any transcript file.
+      // Extract CWD from transcript JSONL files using robust multi-file strategy.
 
-      // Find first .jsonl file in directory
+      // Get all .jsonl files, sorted by size (larger files more likely to contain CWD)
       let transcriptFiles = try FileManager.default.contentsOfDirectory(
         at: directory,
-        includingPropertiesForKeys: [.isRegularFileKey],
+        includingPropertiesForKeys: [.fileSizeKey],
         options: [.skipsHiddenFiles]
-      ).filter { $0.pathExtension == "jsonl" }
+      )
+      .filter { $0.pathExtension == "jsonl" }
+      .sorted { (url1, url2) -> Bool in
+        let size1 = (try? url1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        let size2 = (try? url2.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return size1 > size2  // Larger files first
+      }
 
-      guard let firstTranscript = transcriptFiles.first else {
+      guard !transcriptFiles.isEmpty else {
         throw ProjectIdentityError.cannotReadSessionMetadata
       }
 
-      // Read first few lines to extract CWD (may not be in first line)
-      guard let fileHandle = FileHandle(forReadingAtPath: firstTranscript.path) else {
-        throw ProjectIdentityError.cannotReadSessionMetadata
-      }
-      defer { fileHandle.closeFile() }
-
-      // Read first 16KB (enough for multiple records including file-history-snapshot)
-      let data = fileHandle.readData(ofLength: 16384)
-      guard let content = String(data: data, encoding: .utf8) else {
-        throw ProjectIdentityError.cannotReadSessionMetadata
-      }
-
-      // Parse each line until we find one with a CWD field
-      struct RecordWithCwd: Codable {
-        let cwd: String?
-      }
-
-      let lines = content.components(separatedBy: .newlines)
-      for line in lines where !line.isEmpty {
-        guard let jsonData = line.data(using: .utf8),
-              let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
-              let cwd = record.cwd else {
-          continue
+      // Try each file until we find a CWD
+      for transcriptFile in transcriptFiles {
+        if let cwd = try? extractCwdFromTranscript(transcriptFile) {
+          return try canonicalizePath(cwd)
         }
-
-        return try canonicalizePath(cwd)
       }
 
-      // No CWD found in any record
+      // No CWD found in any transcript file
       throw ProjectIdentityError.cannotReadSessionMetadata
 
     case "codex.cli":
@@ -99,6 +84,40 @@ public enum ProjectIdentity {
     default:
       throw ProjectIdentityError.unknownProvider(provider)
     }
+  }
+
+  /// Extract CWD from a Claude Code transcript JSONL file
+  /// - Parameter fileURL: URL to transcript file
+  /// - Returns: CWD string if found, nil otherwise
+  private static func extractCwdFromTranscript(_ fileURL: URL) throws -> String? {
+    guard let fileHandle = FileHandle(forReadingAtPath: fileURL.path) else {
+      return nil
+    }
+    defer { fileHandle.closeFile() }
+
+    // Read up to 64KB (enough for most transcript headers + initial messages)
+    let data = fileHandle.readData(ofLength: 65536)
+    guard let content = String(data: data, encoding: .utf8) else {
+      return nil
+    }
+
+    // Parse each line until we find one with a CWD field
+    struct RecordWithCwd: Codable {
+      let cwd: String?
+    }
+
+    let lines = content.components(separatedBy: .newlines)
+    for line in lines where !line.isEmpty {
+      guard let jsonData = line.data(using: .utf8),
+            let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
+            let cwd = record.cwd else {
+        continue
+      }
+
+      return cwd
+    }
+
+    return nil
   }
 
   /// Canonicalize a path (resolve symlinks, remove trailing slash, expand tilde)
