@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 15
+  static let version = 16
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -704,6 +704,20 @@ enum DatabaseSchema {
         CREATE INDEX IF NOT EXISTS idx_assistant_usage_pending_entry_request
         ON assistant_usage_pending(entry_id, request_id)
       """)
+    }
+
+    // v16: Add index for unread count queries (GROUP BY project_id optimization)
+    migrator.registerMigration("v16_unread_query_index") { db in
+      // Index for efficient unread count queries (supports JOIN + GROUP BY + WHERE)
+      // Query pattern: FROM transcript_entries WHERE display_in_timeline = 1 AND created_ts > threshold GROUP BY project_id
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_unread_join
+        ON transcript_entries(project_id, created_ts)
+        WHERE display_in_timeline = 1
+      """)
+
+      // Run ANALYZE to update statistics
+      try db.execute(sql: "ANALYZE")
     }
 
     return migrator
