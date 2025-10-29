@@ -321,17 +321,15 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           transcriptId = id
           wasCreated = false
 
-          // Only update provider_session_id if it's currently NULL/empty (avoid UNIQUE constraint conflicts)
-          // Use COALESCE to keep existing value if present
-          // If new value is nil/empty, keep NULL (don't set empty string - that violates UNIQUE constraint)
-          let sessionIdArg: String? = (sid == nil || sid!.isEmpty) ? nil : sid
-
+          // Don't update provider_session_id on UPDATE - preserve existing value
+          // Reason: Session IDs can be duplicated across projects (same file copied),
+          // and we use (project_id, file_path) as primary lookup anyway.
+          // Backfilling NULL values could cause UNIQUE constraint violations.
           try db.execute(sql: """
             UPDATE transcripts
             SET file_path = ?,
                 normalized_path = ?,
                 path_hash = ?,
-                provider_session_id = COALESCE(NULLIF(provider_session_id, ''), ?),
                 last_modified = ?,
                 file_size = ?,
                 content_length = ?,
@@ -343,7 +341,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             path,
             normalizedPath,
             pathHash,
-            sessionIdArg,  // Pass nil as NULL, not empty string
             TimeUnits.secondsFromMs(mtimeMs),  // last_modified in seconds for compatibility
             len > 0 ? Int(len) : nil,
             len,
