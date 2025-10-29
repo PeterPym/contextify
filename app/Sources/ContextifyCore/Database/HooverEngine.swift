@@ -555,10 +555,11 @@ public final class HooverEngine {
 
       // Clean up reconciled records from pending table (EXISTS for compatibility)
       try db.execute(sql: """
-        DELETE FROM assistant_usage_pending p
+        DELETE FROM assistant_usage_pending
         WHERE EXISTS (
           SELECT 1 FROM assistant_usage au
-          WHERE au.entry_id = p.entry_id AND au.request_id = p.request_id
+          WHERE au.entry_id = assistant_usage_pending.entry_id
+            AND au.request_id = assistant_usage_pending.request_id
         )
       """)
 

@@ -952,8 +952,13 @@ final class ConversationMonitor {
         if Task.isCancelled { return }
 
         // Use new upsert API - handles idempotency via path normalization
-        let discovered = filesOnDisk.map {
-            DiscoveredTranscript(fileURL: $0, provider: "claude.code", sessionId: nil)
+        // Extract session ID from filename (matches ProjectDiscoveryService behavior)
+        let discovered = filesOnDisk.map { file in
+            DiscoveredTranscript(
+                fileURL: file,
+                provider: "claude.code",
+                sessionId: file.deletingPathExtension().lastPathComponent
+            )
         }
 
         let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
