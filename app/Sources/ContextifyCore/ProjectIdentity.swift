@@ -47,31 +47,36 @@ public enum ProjectIdentity {
         throw ProjectIdentityError.cannotReadSessionMetadata
       }
 
-      // Read first line to extract CWD
+      // Read first few lines to extract CWD (may not be in first line)
       guard let fileHandle = FileHandle(forReadingAtPath: firstTranscript.path) else {
         throw ProjectIdentityError.cannotReadSessionMetadata
       }
       defer { fileHandle.closeFile() }
 
-      // Read first 8KB (enough for first record)
-      let data = fileHandle.readData(ofLength: 8192)
-      guard let content = String(data: data, encoding: .utf8),
-            let firstLine = content.components(separatedBy: .newlines).first else {
+      // Read first 16KB (enough for multiple records including file-history-snapshot)
+      let data = fileHandle.readData(ofLength: 16384)
+      guard let content = String(data: data, encoding: .utf8) else {
         throw ProjectIdentityError.cannotReadSessionMetadata
       }
 
-      // Parse JSON to extract CWD
-      struct FirstRecord: Codable {
+      // Parse each line until we find one with a CWD field
+      struct RecordWithCwd: Codable {
         let cwd: String?
       }
 
-      guard let jsonData = firstLine.data(using: .utf8),
-            let record = try? JSONDecoder().decode(FirstRecord.self, from: jsonData),
-            let cwd = record.cwd else {
-        throw ProjectIdentityError.cannotReadSessionMetadata
+      let lines = content.components(separatedBy: .newlines)
+      for line in lines where !line.isEmpty {
+        guard let jsonData = line.data(using: .utf8),
+              let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
+              let cwd = record.cwd else {
+          continue
+        }
+
+        return try canonicalizePath(cwd)
       }
 
-      return try canonicalizePath(cwd)
+      // No CWD found in any record
+      throw ProjectIdentityError.cannotReadSessionMetadata
 
     case "codex.cli":
       // Codex CLI uses hash-based directory names, read session metadata
