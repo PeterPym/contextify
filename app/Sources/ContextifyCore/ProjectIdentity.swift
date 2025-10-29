@@ -32,20 +32,46 @@ public enum ProjectIdentity {
   public static func reverseManglePath(provider: String, directory: URL) throws -> String {
     switch provider {
     case "claude.code":
-      // Claude Code mangles paths: /Users/rob/my-app → Users__rob__my-app or Users%2Frob%2Fmy-app
-      let name = directory.lastPathComponent
+      // Claude Code uses mangled directory names that cannot be reliably reversed
+      // (e.g., path hyphens look identical to directory-name hyphens).
+      // Instead, read the CWD from the first JSONL record in any transcript file.
 
-      // Step 1: URL decode (handle %2F → /)
-      let unescaped = name.removingPercentEncoding ?? name
+      // Find first .jsonl file in directory
+      let transcriptFiles = try FileManager.default.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+      ).filter { $0.pathExtension == "jsonl" }
 
-      // Step 2: Replace __ with /
-      let unmangled = unescaped.replacingOccurrences(of: "__", with: "/")
+      guard let firstTranscript = transcriptFiles.first else {
+        throw ProjectIdentityError.cannotReadSessionMetadata
+      }
 
-      // Step 3: Ensure leading slash (absolute path)
-      let absolutePath = unmangled.hasPrefix("/") ? unmangled : "/" + unmangled
+      // Read first line to extract CWD
+      guard let fileHandle = FileHandle(forReadingAtPath: firstTranscript.path) else {
+        throw ProjectIdentityError.cannotReadSessionMetadata
+      }
+      defer { fileHandle.closeFile() }
 
-      // Step 4: Canonicalize (resolve symlinks, remove trailing slash)
-      return try canonicalizePath(absolutePath)
+      // Read first 8KB (enough for first record)
+      let data = fileHandle.readData(ofLength: 8192)
+      guard let content = String(data: data, encoding: .utf8),
+            let firstLine = content.components(separatedBy: .newlines).first else {
+        throw ProjectIdentityError.cannotReadSessionMetadata
+      }
+
+      // Parse JSON to extract CWD
+      struct FirstRecord: Codable {
+        let cwd: String?
+      }
+
+      guard let jsonData = firstLine.data(using: .utf8),
+            let record = try? JSONDecoder().decode(FirstRecord.self, from: jsonData),
+            let cwd = record.cwd else {
+        throw ProjectIdentityError.cannotReadSessionMetadata
+      }
+
+      return try canonicalizePath(cwd)
 
     case "codex.cli":
       // Codex CLI uses hash-based directory names, read session metadata
