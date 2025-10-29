@@ -68,6 +68,7 @@ public struct EntryInsert {
   /// Convert to TranscriptEntry model
   public func toModel() -> TranscriptEntry {
     let now = Int(Date().timeIntervalSince1970)
+    let epochSeconds = timestamp.timeIntervalSince1970
     return TranscriptEntry(
       id: id,
       transcriptId: transcriptId,
@@ -75,7 +76,7 @@ public struct EntryInsert {
       sessionId: sessionId,
       provider: provider,
       kind: kind,
-      timestamp: Int(timestamp.timeIntervalSince1970),
+      timestamp: Int(epochSeconds),
       content: content,
       contentSha256: contentSha256,
       displayInTimeline: hasTextContent ? 1 : 0,  // Hide thinking-only entries from timeline
@@ -86,6 +87,7 @@ public struct EntryInsert {
       prev1Id: nil,
       prev2Id: nil,
       windowSha256: nil,
+      createdTs: epochSeconds,  // Epoch timestamp for unread tracking
       createdAt: now,
       updatedAt: now
     )

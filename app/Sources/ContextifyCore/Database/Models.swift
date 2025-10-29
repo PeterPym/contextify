@@ -108,11 +108,13 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
   public var prev1Id: String?
   public var prev2Id: String?
   public var windowSha256: String?
+  // Epoch timestamp for unread tracking (timezone-free)
+  public var createdTs: Double?
   public var createdAt: Int
   public var updatedAt: Int
 
   public static let databaseTableName = "transcript_entries"
-  public static let databaseColumnCount = 19
+  public static let databaseColumnCount = 20
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -132,6 +134,7 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
     case prev1Id = "prev1_id"
     case prev2Id = "prev2_id"
     case windowSha256 = "window_sha256"
+    case createdTs = "created_ts"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
