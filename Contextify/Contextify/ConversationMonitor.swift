@@ -985,12 +985,12 @@ final class ConversationMonitor {
 
             if !orphaned.isEmpty {
                 await MainActor.run {
-                    log.warning("⚠️ Found \(orphaned.count) orphaned transcripts (existing but never hoovered)")
+                    log.info("📋 Found \(orphaned.count) existing transcript(s) pending initial hoover (will process now)")
                 }
             }
 
             await MainActor.run {
-                log.info("🔄 Starting/verifying watchers for \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new, \(orphaned.count) orphaned)")
+                log.info("🔄 Starting/verifying watchers for \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new, \(orphaned.count) pending)")
             }
 
             // Start watchers for ALL transcripts
