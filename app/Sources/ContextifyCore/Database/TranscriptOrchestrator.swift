@@ -277,26 +277,22 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Clean up session ID (trim whitespace)
         let sid = disc.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Check if transcript exists using canonical identity:
-        // - If provider_session_id present: (provider, provider_session_id)
-        // - Otherwise: (provider, path_hash)
-        // This matches the unique constraints in DatabaseSchema v3
-        let existing: Row?
-        if let sid = sid, !sid.isEmpty {
-          // Lookup by provider + session ID
-          existing = try Row.fetchOne(db, sql: """
-            SELECT id, content_length, mtime_ms, content_sha256
-            FROM transcripts
-            WHERE provider = ? AND provider_session_id = ?
-          """, arguments: [disc.provider, sid])
-        } else {
-          // Lookup by provider + path_hash
-          existing = try Row.fetchOne(db, sql: """
-            SELECT id, content_length, mtime_ms, content_sha256
-            FROM transcripts
-            WHERE provider = ? AND path_hash = ?
-          """, arguments: [disc.provider, pathHash])
-        }
+        // Check if transcript exists - try multiple lookup strategies in order:
+        // 1. (project_id, file_path) - most reliable, handles path normalization
+        // 2. (provider, path_hash) - handles symlinks and moved files
+        // 3. (provider, provider_session_id) - only if session ID is set
+        let existing: Row? = try Row.fetchOne(db, sql: """
+          SELECT id, content_length, mtime_ms, content_sha256
+          FROM transcripts
+          WHERE project_id = ? AND file_path = ?
+        """, arguments: [projectId, path])
+
+        // If not found by (project_id, file_path), try path_hash
+        ?? (try Row.fetchOne(db, sql: """
+          SELECT id, content_length, mtime_ms, content_sha256
+          FROM transcripts
+          WHERE provider = ? AND path_hash = ?
+        """, arguments: [disc.provider, pathHash]))
 
         // Get file facts (streaming SHA256)
         let (len, mtimeMs, sha): (Int64, Int64, String)
