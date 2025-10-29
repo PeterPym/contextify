@@ -1,15 +1,25 @@
 # Review Prep Tools
 
-Tools for generating comprehensive code review packages with full file contents and diffs for LLM feedback.
+Tools for generating comprehensive code review packages for LLM feedback.
 
 ## Overview
 
-These tools solve a common problem: when asking LLMs for code review feedback, providing just a patch/diff lacks context. This generates a **hybrid package** with:
+These tools solve a common problem: when asking LLMs for code review feedback, providing just a patch/diff lacks context. This generates **TWO separate packages**:
 
-1. **Full file contents** (current state after changes) - for complete context
-2. **Detailed diff** - to highlight exact changes
-3. **Commit summary** - to understand the progression
-4. **Metadata** - file counts, line counts, language detection
+### 1. Diff Package (Lightweight - Recommended)
+- Commit summary and stats
+- Detailed diff showing exact changes
+- ~30KB typical size
+- **Best for:** Code review, focusing on what changed
+
+### 2. Full Files Package (Complete - Reference)
+- Commit summary and stats
+- Complete file contents (current state after changes)
+- ~500KB typical size
+- **Best for:** Understanding context, architecture review
+
+**What's Included:** Code files only (Swift, Python, JSON, etc.)
+**What's Excluded:** Documentation (*.md) and scripts (*.sh)
 
 ## Two Ways to Use
 
@@ -55,54 +65,79 @@ Run directly from command line:
 
 ## Output Format
 
-Both methods generate a markdown file in `/tmp/` with this structure:
+Both methods generate **TWO markdown files** in `/tmp/`:
+
+### File Naming
+
+```
+review-{branch14}-diff-{base}..{head}-{date}.md
+review-{branch14}-files-{base}..{head}-{date}.md
+```
+
+**Note:** Branch name is truncated to 14 characters so that `-diff` and `-files` are visible in Finder's list view.
+
+Example (from `feature/unread-badges-refactor` branch):
+```
+/tmp/review-feature-un-diff-7f95849..e869957-20251029.md
+/tmp/review-feature-un-files-7f95849..e869957-20251029.md
+```
+
+### Diff File Structure
 
 ```markdown
-# Code Review Package
+# Code Review: Diff Only
 
-**Generated:** 2025-10-28 22:39:23
+**Generated:** 2025-10-29 12:00:00
 **Branch:** feature/my-changes
-**Range:** `main..HEAD`
+**Range:** `7f95849..HEAD`
 
 ## Summary
-- Commit count, file stats, insertions/deletions
-- List of commits with authors and timestamps
+- Commit count and file stats (code only)
+- List of commits with authors/timestamps
 - File change statistics
-
-## Changed Files (Full Content - After Changes)
-- Complete file contents for each changed file
-- Syntax highlighting based on file extension
-- Collapsible file metadata (line count, type)
 
 ## Detailed Diff
 - Traditional git diff output
 - Shows exact line-by-line changes
+- Excludes .md and .sh files
+```
 
-## Context for LLM Review
-- Instructions for the reviewer
-- Suggested focus areas
+### Full Files Structure
+
+```markdown
+# Code Review: Full Files
+
+(Same header as diff file)
+
+## Changed Files (Full Content)
+- Complete file contents for each changed file
+- Syntax highlighting based on file extension
+- Collapsible file metadata (line count, type)
+- Excludes .md and .sh files
 ```
 
 ## Example Output
 
 ```
-✅ Review package generated successfully!
+✅ Review packages generated successfully!
 
-📊 Package Stats:
-   Lines: 9720
-   Size: 348K
-   Location: /tmp/review-main-to-HEAD-20251028-223923.md
+📄 DIFF FILE (lightweight - recommended for review):
+   File: /tmp/review-main-7f95849..HEAD-diff-20251029.md
+   Lines: 3012
+   Size: 28K
+
+📚 FULL FILES (complete contents - use as reference):
+   File: /tmp/review-main-7f95849..HEAD-files-20251029.md
+   Lines: 11890
+   Size: 496K
 
 📋 Quick Actions:
-   View: cat "/tmp/review-main-to-HEAD-20251028-223923.md"
-   Copy (macOS): cat "/tmp/review-main-to-HEAD-20251028-223923.md" | pbcopy
+   View diff: cat "/tmp/review-main-7f95849..HEAD-diff-20251029.md"
+   Copy diff (macOS): cat "/tmp/review-main-7f95849..HEAD-diff-20251029.md" | pbcopy
 
 🤖 For LLM Review:
-   "Please review the changes in /tmp/review-main-to-HEAD-20251028-223923.md for:
-   - Architectural concerns
-   - Code quality and patterns
-   - Potential bugs or edge cases
-   - Integration with existing code"
+   Start with: /tmp/review-main-7f95849..HEAD-diff-20251029.md
+   Reference: /tmp/review-main-7f95849..HEAD-files-20251029.md (if you need full context)
 ```
 
 ## Typical Workflow
@@ -167,21 +202,34 @@ Without surrounding code, the reviewer can't see:
 - Whether error handling patterns are consistent
 - Impact on other components
 
-### Solution: Full Files + Diff
+### Solution: Two-File Approach
 
-The hybrid approach provides:
-1. **Complete files** - understand architecture and patterns
-2. **Diff highlighting** - focus attention on changes
-3. **Commit history** - understand evolution of changes
+**Diff file** provides focused review:
+1. **Exact changes** - line-by-line what changed
+2. **Commit context** - why it changed
+3. **Lightweight** - fits easily in LLM context (~30KB)
 4. **Ready to paste** - immediately usable in LLM chats
+
+**Full files** provide context when needed:
+5. **Complete files** - understand architecture and patterns
+6. **Reference only** - use when diff isn't clear enough
+7. **Larger but useful** - ~500KB, only load if needed
 
 ## File Size Considerations
 
-- **Small changes** (1-5 files): Usually < 50KB, fits easily in context
-- **Medium changes** (5-15 files): 50-200KB, still manageable
-- **Large changes** (15+ files): 200KB+, consider splitting review
+### Diff File (Recommended for Review)
+- **Small changes** (1-5 files): ~10-30KB
+- **Medium changes** (5-15 files): ~30-100KB
+- **Large changes** (15+ files): ~100KB+
 
-The script shows file size in output so you can judge if it's too large for your LLM's context window.
+### Full Files (Reference Only)
+- **Small changes** (1-5 files): ~50-200KB
+- **Medium changes** (5-15 files): ~200-500KB
+- **Large changes** (15+ files): ~500KB+
+
+**Pro tip:** Start with the diff file. Only load the full files if you need additional context.
+
+The script shows both file sizes so you can choose appropriately for your LLM's context window.
 
 ## Tips for Best Results
 

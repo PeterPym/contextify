@@ -19,93 +19,107 @@ set -e
 
 # Parse arguments
 if [ -z "$1" ]; then
-  # No arguments - use main..HEAD
   BASE="main"
   HEAD_REF="HEAD"
-  RANGE="main..HEAD"
-  RANGE_STAT="main...HEAD"
 elif [ -z "$2" ]; then
-  # One argument - use it as base
   BASE="$1"
   HEAD_REF="HEAD"
-  RANGE="$1..HEAD"
-  RANGE_STAT="$1...HEAD"
 else
-  # Two arguments - use as range
   BASE="$1"
   HEAD_REF="$2"
-  RANGE="$1..$2"
-  RANGE_STAT="$1...$2"
 fi
 
 # Check if base exists, fallback to master if main doesn't exist
 if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
   if [ "$BASE" = "main" ] && git rev-parse --verify master >/dev/null 2>&1; then
     BASE="master"
-    RANGE="master..HEAD"
-    RANGE_STAT="master...HEAD"
   fi
 fi
 
-# Generate timestamp for filename
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-OUTPUT="/tmp/review-${BASE//\//-}-to-${HEAD_REF//\//-}-${TIMESTAMP}.md"
-
-# Get current branch name
+RANGE="${BASE}..${HEAD_REF}"
+RANGE_STAT="${BASE}...${HEAD_REF}"
+DATE=$(date +%Y%m%d)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
+BASE_SHORT=$(git rev-parse --short "$BASE" 2>/dev/null || echo "${BASE:0:7}")
+HEAD_SHORT=$(git rev-parse --short "$HEAD_REF" 2>/dev/null || echo "HEAD")
 
-# Generate the review package
-{
-  echo "# Code Review Package"
+# Generate filenames (truncate branch to 14 chars for Finder visibility)
+BRANCH_CLEAN=$(echo "$CURRENT_BRANCH" | tr '/' '-' | cut -c1-14)
+OUTPUT_DIFF="/tmp/review-${BRANCH_CLEAN}-diff-${BASE_SHORT}..${HEAD_SHORT}-${DATE}.md"
+OUTPUT_FILES="/tmp/review-${BRANCH_CLEAN}-files-${BASE_SHORT}..${HEAD_SHORT}-${DATE}.md"
+
+# Get list of code files (exclude .md and .sh)
+CODE_FILES=$(git diff "${RANGE_STAT}" --name-only | grep -vE '\.(md|sh)$')
+
+# Common header function
+write_header() {
+  echo "# Code Review: $1"
   echo ""
   echo "**Generated:** $(date '+%Y-%m-%d %H:%M:%S')"
   echo "**Branch:** $CURRENT_BRANCH"
-  echo "**Range:** \`$RANGE\`"
+  echo "**Range:** \`$RANGE\` (\`${BASE_SHORT}..${HEAD_SHORT}\`)"
   echo ""
-
-  # Summary stats
   echo "## Summary"
   echo ""
   echo "### Commits"
   echo ""
-  git log "$RANGE" --reverse --format="- \`%h\` %s (%an, %ar)" 2>/dev/null || echo "No commits found"
+  git log "$RANGE" --reverse --format="- \`%h\` %s (%an, %ar)"
   echo ""
-
-  echo "### Files Changed"
+  echo "### Files Changed (code only, excluding .md and .sh)"
   echo ""
   echo '```'
-  git diff "$RANGE_STAT" --stat 2>/dev/null || echo "No changes found"
+  git diff "${RANGE_STAT}" --stat | grep -vE '\.(md|sh) '
   echo '```'
   echo ""
+}
 
-  # Get list of changed files
-  CHANGED_FILES=$(git diff "$RANGE_STAT" --name-only 2>/dev/null)
+if [ -n "$CODE_FILES" ]; then
+  # Generate DIFF file (lightweight - just changes)
+  {
+    write_header "Diff Only"
 
-  if [ -n "$CHANGED_FILES" ]; then
     echo "---"
     echo ""
-    echo "## Changed Files (Full Content - After Changes)"
+    echo "## Detailed Diff"
     echo ""
-    echo "These files show the **current state** after all changes in the range."
+    echo "**Note:** This file contains only the diff. For full file contents, see:"
+    echo "\`$(basename "$OUTPUT_FILES")\`"
+    echo ""
+    echo '```diff'
+
+    FILE_LIST=$(echo "$CODE_FILES" | tr '\n' ' ')
+    git diff "${RANGE_STAT}" -- $FILE_LIST
+
+    echo '```'
+    echo ""
+  } > "$OUTPUT_DIFF"
+
+  # Generate FILES file (complete - full contents)
+  {
+    write_header "Full Files"
+
+    echo "---"
+    echo ""
+    echo "## Changed Files (Full Content)"
+    echo ""
+    echo "**Note:** This file contains complete file contents. For just the diff, see:"
+    echo "\`$(basename "$OUTPUT_DIFF")\`"
     echo ""
 
-    while IFS= read -r file; do
+    echo "$CODE_FILES" | while IFS= read -r file; do
       if [ -f "$file" ]; then
         echo ""
         echo "### \`$file\`"
         echo ""
 
-        # Detect language for syntax highlighting
         EXT="${file##*.}"
         case "$EXT" in
           swift) LANG="swift" ;;
           py) LANG="python" ;;
           js) LANG="javascript" ;;
           ts) LANG="typescript" ;;
-          md) LANG="markdown" ;;
           json) LANG="json" ;;
           yml|yaml) LANG="yaml" ;;
-          sh) LANG="bash" ;;
           *) LANG="" ;;
         esac
 
@@ -113,36 +127,26 @@ CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached")
         cat "$file"
         echo '```'
         echo ""
-      else
-        echo ""
-        echo "### \`$file\` *(deleted)*"
-        echo ""
       fi
-    done <<< "$CHANGED_FILES"
-  fi
+    done
+  } > "$OUTPUT_FILES"
 
-  echo "---"
+  echo "✅ Review packages generated:"
   echo ""
-  echo "## Detailed Diff"
+  echo "📄 DIFF (lightweight - recommended for review):"
+  echo "   File: $OUTPUT_DIFF"
+  wc -l "$OUTPUT_DIFF" | awk '{print "   Lines: " $1}'
+  du -h "$OUTPUT_DIFF" | awk '{print "   Size: " $1}'
   echo ""
-  echo "This shows the exact changes made in the commit range."
+  echo "📚 FULL FILES (complete contents - use as reference):"
+  echo "   File: $OUTPUT_FILES"
+  wc -l "$OUTPUT_FILES" | awk '{print "   Lines: " $1}'
+  du -h "$OUTPUT_FILES" | awk '{print "   Size: " $1}'
   echo ""
-  echo '```diff'
-  git diff "$RANGE_STAT" 2>/dev/null || echo "No diff available"
-  echo '```'
-  echo ""
-
-} > "$OUTPUT"
-
-echo "✅ Review package written to: $OUTPUT"
-echo ""
-echo "📊 Stats:"
-wc -l "$OUTPUT" | awk '{print "   Lines: " $1}'
-du -h "$OUTPUT" | awk '{print "   Size: " $1}'
-echo ""
-echo "📋 To copy to clipboard:"
-echo "   macOS: cat \"$OUTPUT\" | pbcopy"
-echo "   Linux: cat \"$OUTPUT\" | xclip -selection clipboard"
+  echo "📋 Copy diff to clipboard: cat \"$OUTPUT_DIFF\" | pbcopy"
+else
+  echo "No code files changed (only documentation/scripts)."
+fi
 ```
 
 3. **After running the script, ask the user:**
@@ -171,7 +175,12 @@ User says: `/review-prep`
 
 ## Notes
 
-- The script generates a markdown file with full file contents (after changes)
-- The diff section shows the exact changes
-- File is saved to `/tmp/review-{base}-to-{head}-{timestamp}.md`
-- The script is idempotent and safe to run multiple times
+- The script generates a markdown file with:
+  - List of all commits
+  - Statistics of changed files
+  - Full file contents (final state after all changes)
+  - Detailed diff showing exact line-by-line changes
+- **Excluded from review**: `*.md` and `*.sh` files (documentation and scripts)
+- **Included**: All code files (Swift, Python, JSON, YAML, etc.)
+- Output: `/tmp/review-{base}-to-{head}-{timestamp}.md`
+- The diff shows squashed/net changes across all commits (not individual commit diffs)
