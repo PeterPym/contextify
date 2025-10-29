@@ -25,4 +25,11 @@ public enum TimeUnits {
   public static func nowSec() -> Int {
     Int(Date().timeIntervalSince1970)
   }
+
+  /// Truncate epoch timestamp to whole seconds (removes fractional precision)
+  /// Used for unread tracking to ensure consistent precision with Int timestamp fields
+  @inline(__always)
+  public static func truncateToSeconds(_ epochSeconds: Double) -> Double {
+    floor(epochSeconds)
+  }
 }

@@ -87,7 +87,7 @@ public struct EntryInsert {
       prev1Id: nil,
       prev2Id: nil,
       windowSha256: nil,
-      createdTs: epochSeconds,  // Epoch timestamp for unread tracking
+      createdTs: TimeUnits.truncateToSeconds(epochSeconds),  // Truncate to match Int timestamp precision
       createdAt: now,
       updatedAt: now
     )
