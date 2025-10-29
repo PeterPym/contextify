@@ -458,7 +458,7 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
 
         let assistantUsage = AssistantUsage(
           entryId: entryId,
-          requestId: message["id"] as? String,
+          requestId: (message["id"] as? String) ?? entryId,  // Fallback to entryId if missing
           model: model,
           inputTokens: inputTokens,
           outputTokens: outputTokens,

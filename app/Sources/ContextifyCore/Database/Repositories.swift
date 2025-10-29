@@ -943,7 +943,11 @@ public final class AssistantUsageRepositoryImpl: AssistantUsageRepository {
 
   public func get(_ entryId: String) throws -> AssistantUsage? {
     try db.read { db in
-      try AssistantUsage.fetchOne(db, key: entryId)
+      // With composite PK (entry_id, request_id), fetch most recent by request_id
+      try AssistantUsage
+        .filter(Column("entry_id") == entryId)
+        .order(Column("request_id").desc)
+        .fetchOne(db)
     }
   }
 

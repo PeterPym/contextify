@@ -428,6 +428,15 @@ public final class HooverEngine {
 
         do {
           try model.insert(db, onConflict: .ignore)
+
+          // Only update window tracking if insert actually happened (not ignored due to conflict)
+          let inserted = db.changesCount > 0
+          if inserted {
+            previousEntries.append(entry.id)
+            if previousEntries.count > 2 {
+              previousEntries.removeFirst()
+            }
+          }
         } catch {
           // Log detailed FK error info
           log.error("❌ Entry insert failed: \(error.localizedDescription)")
@@ -438,12 +447,6 @@ public final class HooverEngine {
           log.error("   Prev1 ID: \(model.prev1Id ?? "nil")")
           log.error("   Prev2 ID: \(model.prev2Id ?? "nil")")
           throw error
-        }
-
-        // Update tracking (keep last 2)
-        previousEntries.append(entry.id)
-        if previousEntries.count > 2 {
-          previousEntries.removeFirst()
         }
       }
 
@@ -531,6 +534,28 @@ public final class HooverEngine {
           LIMIT -1 OFFSET ?
         )
       """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
+
+      // Reconcile assistant_usage_pending → assistant_usage (now that entries exist)
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO assistant_usage (
+          entry_id, request_id, model, input_tokens, output_tokens,
+          cache_creation_tokens, cache_read_tokens, service_tier,
+          ephemeral_5m_tokens, ephemeral_1h_tokens
+        )
+        SELECT p.entry_id, p.request_id, p.model, p.input_tokens, p.output_tokens,
+               p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
+               p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
+        FROM assistant_usage_pending p
+        WHERE EXISTS (SELECT 1 FROM transcript_entries e WHERE e.id = p.entry_id)
+      """)
+
+      // Clean up reconciled records from pending table
+      try db.execute(sql: """
+        DELETE FROM assistant_usage_pending
+        WHERE (entry_id, request_id) IN (
+          SELECT au.entry_id, au.request_id FROM assistant_usage au
+        )
+      """)
 
       // Update transcript checkpoint with last processed entry ID
       // Use COALESCE to preserve existing ID if this batch had only errors

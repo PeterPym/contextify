@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 12
+  static let version = 13
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -627,6 +627,35 @@ enum DatabaseSchema {
       // Create indices for performance
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_last_viewed_ts ON projects(last_viewed_ts)")
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_entries_created_ts ON transcript_entries(transcript_id, created_ts)")
+
+      // Run ANALYZE
+      try db.execute(sql: "ANALYZE")
+    }
+
+    // v13: Optimizations and backfills for unread tracking
+    migrator.registerMigration("v13_unread_optimizations") { db in
+      // 1. Add partial index for unread queries (display_in_timeline = 1 only)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_transcript_created_ts_timeline
+        ON transcript_entries(transcript_id, created_ts)
+        WHERE display_in_timeline = 1
+      """)
+
+      // 2. Backfill projects.last_viewed_ts from project_visits.last_viewed_at
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT pv.project_id AS pid, pv.last_viewed_at AS lva
+        FROM project_visits pv
+        WHERE lva IS NOT NULL AND lva <> ''
+      """)
+      for r in rows {
+        if let pid: String = r["pid"], let lva: String = r["lva"],
+           let d = ISO8601Z.date(from: lva) {
+          try db.execute(
+            sql: "UPDATE projects SET last_viewed_ts = MAX(last_viewed_ts, ?) WHERE id = ?",
+            arguments: [d.timeIntervalSince1970, pid]
+          )
+        }
+      }
 
       // Run ANALYZE
       try db.execute(sql: "ANALYZE")

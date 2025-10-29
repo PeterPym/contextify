@@ -586,7 +586,7 @@ public struct SystemEvent: Codable, FetchableRecord, PersistableRecord, Sendable
 /// Token usage and billing metadata from assistant messages
 public struct AssistantUsage: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var entryId: String
-  public var requestId: String?
+  public var requestId: String  // NOT NULL (composite PK with entryId); fallback to entryId if missing
   public var model: String
   public var inputTokens: Int
   public var outputTokens: Int
@@ -598,7 +598,7 @@ public struct AssistantUsage: Codable, FetchableRecord, PersistableRecord, Senda
 
   public init(
     entryId: String,
-    requestId: String?,
+    requestId: String,
     model: String,
     inputTokens: Int,
     outputTokens: Int,
