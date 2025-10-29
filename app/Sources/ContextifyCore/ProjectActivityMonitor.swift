@@ -242,7 +242,7 @@ public actor ProjectActivityMonitor {
 
         log.debug("Discovered project: \(projectPath) (provider: \(provider))")
       } catch {
-        log.error("Failed to process project directory \(directory.lastPathComponent): \(error.localizedDescription)")
+        log.error("Failed to process project directory \(directory.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
       }
     }
   }
