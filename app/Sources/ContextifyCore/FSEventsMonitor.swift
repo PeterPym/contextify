@@ -30,6 +30,7 @@ public final class FSEventsMonitor {
   private let paths: [String]
   private let latency: CFTimeInterval
   private var isRunning = false
+  private var dispatchQueue: DispatchQueue?
 
   public init(paths: [String], latency: CFTimeInterval = 0.5) {
     self.paths = paths
@@ -45,7 +46,8 @@ public final class FSEventsMonitor {
 
     isRunning = true
 
-    return AsyncStream(bufferingPolicy: .bufferingNewest(1_000)) { continuation in
+    // Use bufferingOldest to preserve event causality (create→modify→delete ordering)
+    return AsyncStream(bufferingPolicy: .bufferingOldest(1_000)) { continuation in
       self.continuationLock.withLock { $0 = continuation }
 
 #if os(macOS)
@@ -68,20 +70,20 @@ public final class FSEventsMonitor {
       ) in
         let monitor = Unmanaged<FSEventsMonitor>.fromOpaque(clientCallBackInfo!).takeUnretainedValue()
 
-        // With kFSEventStreamCreateFlagUseCFTypes, eventPaths is a CFArray but must be cast via unsafeBitCast
-        let paths = unsafeBitCast(eventPaths, to: NSArray.self) as! [String]
-
-        // Build batch with bounds checking to handle potential count mismatches
-        let n = min(numEvents, paths.count)
+        let n = Int(numEvents)
         guard n > 0 else { return }
 
-        let flags = Array(UnsafeBufferPointer(start: eventFlags, count: n))
-        let ids = Array(UnsafeBufferPointer(start: eventIds, count: n))
-
+        // Zero-copy CFArray read: cast to CFArray then access CFString elements directly
+        let pathsArray = unsafeBitCast(eventPaths, to: CFArray.self)
         var batch = [FSEventChange]()
         batch.reserveCapacity(n)
-        for i in 0..<min(n, flags.count, ids.count) {
-          batch.append(FSEventChange(path: paths[i], flags: flags[i], eventId: ids[i]))
+
+        for i in 0..<n {
+          let pathPtr = CFArrayGetValueAtIndex(pathsArray, i)
+          let path = unsafeBitCast(pathPtr, to: CFString.self) as String
+          let flag = eventFlags[i]
+          let id = eventIds[i]
+          batch.append(FSEventChange(path: path, flags: flag, eventId: id))
         }
 
         // Single Task hop to MainActor, batch yield
@@ -95,6 +97,13 @@ public final class FSEventsMonitor {
         }
       }
 
+      // Complete flag set for robust monitoring
+      let flags: FSEventStreamCreateFlags =
+        FSEventStreamCreateFlags(kFSEventStreamCreateFlagUseCFTypes) |
+        FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents) |
+        FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer) |
+        FSEventStreamCreateFlags(kFSEventStreamCreateFlagWatchRoot)
+
       guard let stream = FSEventStreamCreate(
         nil,
         callback,
@@ -102,7 +111,7 @@ public final class FSEventsMonitor {
         paths as CFArray,
         FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
         latency,
-        FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+        flags
       ) else {
         log.error("Failed to create FSEventStream")
         continuation.finish()
@@ -111,7 +120,10 @@ public final class FSEventsMonitor {
 
       self.stream = stream
 
-      FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
+      // Use dispatch queue instead of runloop to avoid main actor contention
+      let queue = DispatchQueue(label: "dev.contextify.fsevents", qos: .userInitiated)
+      self.dispatchQueue = queue
+      FSEventStreamSetDispatchQueue(stream, queue)
 
       if !FSEventStreamStart(stream) {
         log.error("Failed to start FSEventStream")
@@ -153,11 +165,11 @@ public final class FSEventsMonitor {
       self.stream = nil
       log.info("FSEventsMonitor stopped")
     }
+    self.dispatchQueue = nil
 #endif
   }
 
-  deinit {
-    // Note: deinit cannot access @MainActor properties
-    // Cleanup must be done via explicit stop() call before deallocation
-  }
+  // Note: deinit cannot safely clean up stream in Swift 6 with @MainActor
+  // Caller must call stop() before deallocation. Stream termination hook will
+  // call stop() automatically when continuation terminates.
 }
