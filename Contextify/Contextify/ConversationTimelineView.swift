@@ -185,10 +185,19 @@ struct ConversationTimelineView: View {
             Text("No Activity Yet")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("Use Claude Code in iTerm2 to populate the timeline.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+
+            // Show different message based on whether transcripts exist
+            if monitor.allSessions.isEmpty {
+                Text("Use Claude Code or Codex to populate the timeline.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("This conversation has not started yet.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 160)
     }
