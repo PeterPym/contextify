@@ -536,15 +536,19 @@ public final class HooverEngine {
       """, arguments: [transcriptId, MonitorConfig.parseErrorRetentionPerTranscript])
 
       // Reconcile assistant_usage_pending → assistant_usage (now that entries exist)
+      // COALESCE ensures NULL/empty request_id → entry_id fallback
       try db.execute(sql: """
         INSERT OR IGNORE INTO assistant_usage (
           entry_id, request_id, model, input_tokens, output_tokens,
           cache_creation_tokens, cache_read_tokens, service_tier,
           ephemeral_5m_tokens, ephemeral_1h_tokens
         )
-        SELECT p.entry_id, p.request_id, p.model, p.input_tokens, p.output_tokens,
-               p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
-               p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
+        SELECT
+          p.entry_id,
+          COALESCE(NULLIF(p.request_id, ''), p.entry_id) AS request_id,
+          p.model, p.input_tokens, p.output_tokens,
+          p.cache_creation_tokens, p.cache_read_tokens, p.service_tier,
+          p.ephemeral_5m_tokens, p.ephemeral_1h_tokens
         FROM assistant_usage_pending p
         WHERE EXISTS (SELECT 1 FROM transcript_entries e WHERE e.id = p.entry_id)
       """)

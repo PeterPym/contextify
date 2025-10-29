@@ -622,8 +622,8 @@ public struct AssistantUsage: Codable, FetchableRecord, PersistableRecord, Senda
 
   public static let databaseTableName = "assistant_usage"
 
-  // Composite primary key for GRDB
-  public static var primaryKey: [String] { ["entry_id", "request_id"] }
+  // Note: Uses unique index on (entry_id, request_id), not true composite PRIMARY KEY
+  // (Would require table rebuild with PRIMARY KEY(entry_id, request_id))
 
   enum CodingKeys: String, CodingKey {
     case entryId = "entry_id"

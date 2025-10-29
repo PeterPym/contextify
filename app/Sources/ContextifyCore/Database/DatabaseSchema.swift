@@ -10,7 +10,7 @@ import GRDB
 /// - Rationale: Seconds provide sufficient precision for most operations, milliseconds used where needed
 /// - Future: Consider migrating all timestamps to milliseconds for consistency
 enum DatabaseSchema {
-  static let version = 14
+  static let version = 15
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -691,6 +691,18 @@ enum DatabaseSchema {
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_assistant_usage_entry_request
         ON assistant_usage(entry_id, request_id)
+      """)
+    }
+
+    // v15: Final index cleanup and reconciliation hardening
+    migrator.registerMigration("v15_index_cleanup") { db in
+      // 1. Drop redundant non-unique index (unique index already exists)
+      try db.execute(sql: "DROP INDEX IF EXISTS idx_assistant_usage_entry_request")
+
+      // 2. Add composite index on pending table for efficient cleanup
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_assistant_usage_pending_entry_request
+        ON assistant_usage_pending(entry_id, request_id)
       """)
     }
 
