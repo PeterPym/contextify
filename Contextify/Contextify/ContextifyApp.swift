@@ -80,6 +80,7 @@ struct ContextifyApp: App {
         .environment(model)
         .environment(timeline)
         .environment(DeveloperMode.shared)
+        .environment(ProjectSwitcherState.shared)  // Inject singleton so UI uses same instance
         .background(WindowAccessor())
         .task {
           // Initialize projects system and auto-discover at app launch
