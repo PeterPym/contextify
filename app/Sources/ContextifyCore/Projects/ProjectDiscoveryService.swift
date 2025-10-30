@@ -69,13 +69,24 @@ public actor ProjectDiscoveryService {
         entryCount: metadata.entryCount,
         lastActivity: metadata.lastActivity,
         isCurrent: projectPath.path == currentProjectPath,
-        ingestionError: ingestionErrors[projectPath.path]
+        ingestionError: ingestionErrors[projectPath.path],
+        displayOrder: metadata.displayOrder
       ))
     }
 
-    // 6. Sort by last activity (most recent first)
-    let sorted = discovered.sorted {
-      ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast)
+    // 6. Sort by display_order (matching main window tab bar order)
+    let sorted = discovered.sorted { lhs, rhs in
+      // Primary: display_order ascending (matches ProjectSwitcherState sorting)
+      if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder {
+        return lOrder < rOrder
+      } else if lhs.displayOrder != nil {
+        return true  // Projects with display_order come first
+      } else if rhs.displayOrder != nil {
+        return false
+      } else {
+        // Fallback: sort by last activity (most recent first) for unordered projects
+        return (lhs.lastActivity ?? .distantPast) > (rhs.lastActivity ?? .distantPast)
+      }
     }
 
     logger.info("Discovery complete: \(sorted.count) projects found")
@@ -329,6 +340,7 @@ public actor ProjectDiscoveryService {
       // Join through projects table to support both UUID and path lookups
       let sql = """
         SELECT
+          p.display_order,
           COUNT(DISTINCT t.id) AS transcript_count,
           COUNT(e.id) AS entry_count,
           MAX(e.timestamp) AS last_activity
@@ -345,12 +357,14 @@ public actor ProjectDiscoveryService {
           projectId: projectId,
           transcriptCount: 0,
           entryCount: 0,
-          lastActivity: nil
+          lastActivity: nil,
+          displayOrder: nil
         )
       }
 
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
+      let displayOrder: Int? = row["display_order"]
       self.logger.notice("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
       let timestamp: Int? = row["last_activity"]
       let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
@@ -359,7 +373,8 @@ public actor ProjectDiscoveryService {
         projectId: projectId,
         transcriptCount: transcriptCount,
         entryCount: entryCount,
-        lastActivity: lastActivity
+        lastActivity: lastActivity,
+        displayOrder: displayOrder
       )
     }
   }

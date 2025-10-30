@@ -11,6 +11,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
   public let lastActivity: Date?       // Most recent transcript timestamp
   public let isCurrent: Bool           // Is this the active project?
   public let ingestionError: String?   // Error message if ingestion failed
+  public let displayOrder: Int?        // Display order from database (for tab bar sorting)
 
   public init(
     id: String,
@@ -21,7 +22,8 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
     entryCount: Int,
     lastActivity: Date?,
     isCurrent: Bool,
-    ingestionError: String? = nil
+    ingestionError: String? = nil,
+    displayOrder: Int? = nil
   ) {
     self.id = id
     self.name = name
@@ -32,6 +34,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
     self.lastActivity = lastActivity
     self.isCurrent = isCurrent
     self.ingestionError = ingestionError
+    self.displayOrder = displayOrder
   }
 
   public enum Provider: String, Sendable, Hashable, CaseIterable {
@@ -68,17 +71,20 @@ public struct ProjectMetadata: Sendable {
   public let transcriptCount: Int
   public let entryCount: Int
   public let lastActivity: Date?
+  public let displayOrder: Int?
 
   public init(
     projectId: String,
     transcriptCount: Int,
     entryCount: Int,
-    lastActivity: Date?
+    lastActivity: Date?,
+    displayOrder: Int? = nil
   ) {
     self.projectId = projectId
     self.transcriptCount = transcriptCount
     self.entryCount = entryCount
     self.lastActivity = lastActivity
+    self.displayOrder = displayOrder
   }
 }
 

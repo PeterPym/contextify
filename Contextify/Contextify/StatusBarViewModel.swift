@@ -224,6 +224,10 @@ final class StatusBarViewModel {
         case .removed:
             // Don't show removal messages
             break
+
+        case .reordered:
+            // Don't show reorder messages in status bar
+            break
         }
     }
 

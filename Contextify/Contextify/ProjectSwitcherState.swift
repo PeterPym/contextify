@@ -406,6 +406,12 @@ public final class ProjectSwitcherState {
       // Atomically update all display_order values in a single transaction
       try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
 
+      // Emit reordered event for first project (Projects window will refresh entire list)
+      if let firstProjectId = orderedProjectIds.first, let monitor = activityMonitor {
+        await monitor.emitProjectEvent(ProjectEvent(projectId: firstProjectId, kind: .reordered))
+        log.debug("Emitted .reordered event for project: \(firstProjectId)")
+      }
+
       // Refresh to reflect new order
       await refreshProjects()
 
@@ -465,6 +471,11 @@ public final class ProjectSwitcherState {
       // Coalesce to avoid N DB reads for one write
       guard event.projectId != self.activeProjectId else { return }
       scheduleUnreadRefresh(for: event.projectId)
+
+    case .reordered:
+      // Reorder event is handled by ProjectsViewModel for Projects window
+      // Main window already refreshes via reorderProjects() -> refreshProjects()
+      break
     }
   }
 

@@ -9,6 +9,7 @@ public struct ProjectEvent: Sendable {
     case discovered
     case transcriptUpdated
     case removed
+    case reordered
   }
 
   public let projectId: String
@@ -167,6 +168,11 @@ public actor ProjectActivityMonitor {
   /// Active watcher count (for testing)
   public var activeWatcherCount: Int {
     activeWatchers.count
+  }
+
+  /// Emit a project event (public for reorder events from UI)
+  public func emitProjectEvent(_ event: ProjectEvent) {
+    emitEvent(event)
   }
 
   // MARK: - Private

@@ -249,7 +249,8 @@ final class ProjectsViewModel {
   private func handleProjectEvent(_ event: ProjectEvent) async {
     logger.debug("ProjectsViewModel: received \(event.kind.rawValue) for project \(event.projectId)")
 
-    guard event.kind == .transcriptUpdated else { return }
+    // Handle both transcript updates and reordering
+    guard event.kind == .transcriptUpdated || event.kind == .reordered else { return }
 
     // Debounce refreshes - only refresh once per second max
     refreshTask?.cancel()
@@ -261,7 +262,8 @@ final class ProjectsViewModel {
       let currentPath = self.hudModel.projectRootURL?.path
       if let refreshed = try? await self.discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
         self.projects = refreshed
-        logger.debug("ProjectsViewModel: refreshed project metadata after transcript update")
+        let reason = event.kind == .reordered ? "reorder" : "transcript update"
+        logger.debug("ProjectsViewModel: refreshed project list after \(reason)")
       }
     }
   }
