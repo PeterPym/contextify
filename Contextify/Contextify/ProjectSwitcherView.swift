@@ -232,6 +232,13 @@ struct ProjectDropDelegate: DropDelegate {
       toIndex = projectIndex + 1
     }
 
+    // Only show insertion indicator if this would actually change position
+    // Invalid positions: immediately before (toIndex == fromIndex) or after (toIndex == fromIndex + 1) itself
+    guard toIndex != fromIndex && toIndex != fromIndex + 1 else {
+      insertionIndex = nil
+      return
+    }
+
     // Show insertion indicator (UI only, no DB write)
     insertionIndex = toIndex
   }
