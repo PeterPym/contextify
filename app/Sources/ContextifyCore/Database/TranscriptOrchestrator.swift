@@ -38,6 +38,15 @@ public struct ResolvedTranscript: Sendable {
 /// High-level orchestrator for transcript ingestion and monitoring
 /// NOT @MainActor - allows safe concurrent access from background tasks
 /// Sendable: GRDB pool handles thread-safety, repositories are stateless
+///
+/// ## Thread-Safety Contract
+/// - **Reads**: Safe to call concurrently from any thread
+/// - **Writes**: While technically safe via GRDB pool + WAL mode, concurrent writes from
+///   multiple sources (e.g., ConversationMonitor debounce + ProjectSwitcher auto-reload)
+///   may trigger "database is locked" errors under high load
+/// - **Busy Timeout**: DatabaseManager configures 5-second busy timeout to reduce lock errors
+/// - **Best Practice**: Callers should implement retry logic for transient database lock errors,
+///   or serialize writes through a single actor/queue when possible
 public final class TranscriptOrchestrator: @unchecked Sendable {
   private let dbManager: DatabaseManager
   private let projectRepo: ProjectRepository
@@ -576,10 +585,20 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try cacheRepo.getManyWithSignature(keys: keys, generatorSignature: generatorSignature)
   }
 
+  /// Save timeline cache entry (LLM-generated summary)
+  ///
+  /// **Concurrency Note**: While thread-safe via GRDB pool, concurrent writes from multiple
+  /// sources may cause transient "database is locked" errors. DatabaseManager enforces 5-second
+  /// busy timeout to mitigate this. Callers should retry on SQLITE_BUSY (GRDB.DatabaseError code 5).
   nonisolated public func saveCachedTimeline(_ cache: TimelineCache) throws {
     try cacheRepo.upsert(cache)
   }
 
+  /// Save multiple timeline cache entries in a single transaction
+  ///
+  /// **Concurrency Note**: While thread-safe via GRDB pool, concurrent writes from multiple
+  /// sources may cause transient "database is locked" errors. DatabaseManager enforces 5-second
+  /// busy timeout to mitigate this. Callers should retry on SQLITE_BUSY (GRDB.DatabaseError code 5).
   nonisolated public func saveCachedTimelineMany(_ caches: [TimelineCache]) throws {
     try cacheRepo.upsertMany(caches)
   }
