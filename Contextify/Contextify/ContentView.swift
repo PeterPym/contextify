@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var showDatabaseTest = false
     @State private var showBatchEmbedding = false
     @State private var showSemanticSearch = false
+    @State private var workspaceObserver: AnyObject?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +72,9 @@ struct ContentView: View {
 
             // Start project switcher to discover projects
             projectSwitcher.start()
+
+            // Monitor iTerm2 activation for automatic session refresh
+            setupWorkspaceMonitoring()
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
@@ -299,5 +303,23 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
+    }
+
+    func setupWorkspaceMonitoring() {
+        // Observe when iTerm2 becomes active to auto-refresh session name
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak model] notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+
+            // Check if iTerm2 was activated
+            if app.bundleIdentifier == "com.googlecode.iterm2" {
+                Task { @MainActor in
+                    model?.targetSessionName = await ITerm2Bridge.getCurrentSessionName()
+                }
+            }
+        }
     }
 }
