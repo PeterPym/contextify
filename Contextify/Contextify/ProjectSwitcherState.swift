@@ -160,8 +160,21 @@ public final class ProjectSwitcherState {
       // Filter out hidden projects (v18)
       let visibleProjects = projects.filter { !$0.hidden }
 
+      // Sort by display_order (v19), falling back to created_at for nulls
+      let sortedProjects = visibleProjects.sorted { lhs, rhs in
+        if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder {
+          return lOrder < rOrder
+        } else if lhs.displayOrder != nil {
+          return true  // Projects with display_order come first
+        } else if rhs.displayOrder != nil {
+          return false
+        } else {
+          return lhs.createdAt < rhs.createdAt  // Fall back to created_at
+        }
+      }
+
       // Map to ProjectInfo
-      let projectInfos = visibleProjects.map { project in
+      let projectInfos = sortedProjects.map { project in
         ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,

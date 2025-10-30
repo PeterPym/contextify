@@ -11,6 +11,7 @@ public protocol ProjectRepository {
   func list() throws -> [Project]
   func get(id: String) throws -> Project?
   func update(id: String, name: String?, bookmark: Data?) throws
+  func setDisplayOrder(id: String, displayOrder: Int) throws
   func delete(id: String) throws
 }
 
@@ -27,6 +28,10 @@ public final class ProjectRepositoryImpl: ProjectRepository {
     let canonPath = PathUtils.canonicalizePath(rootPath)
 
     try db.write { db in
+      // Compute next display_order (append to end)
+      let maxOrder = try Int.fetchOne(db, sql: "SELECT MAX(display_order) FROM projects") ?? -1
+      let nextOrder = maxOrder + 1
+
       let project = Project(
         id: id,
         name: name,
@@ -34,6 +39,7 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         rootBookmark: bookmark,
         lastViewedTs: 0.0,  // Never viewed yet (all entries unread)
         hidden: false,  // Visible by default (v18)
+        displayOrder: nextOrder,  // Append to end (v19)
         createdAt: now,
         updatedAt: now
       )
@@ -64,6 +70,19 @@ public final class ProjectRepositoryImpl: ProjectRepository {
       }
       project.name = name
       project.rootBookmark = bookmark
+      project.updatedAt = now
+      try project.update(db)
+    }
+  }
+
+  public func setDisplayOrder(id: String, displayOrder: Int) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.displayOrder = displayOrder
       project.updatedAt = now
       try project.update(db)
     }

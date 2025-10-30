@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 18
+  static let version = 19
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -232,6 +232,23 @@ enum DatabaseSchema {
       """)
     }
 
+    // v19: Add display_order column for custom project ordering
+    migrator.registerMigration("v19_project_display_order") { db in
+      try db.execute(sql: "ALTER TABLE projects ADD COLUMN display_order INTEGER")
+
+      // Backfill existing projects with ascending order based on created_at
+      try db.execute(sql: """
+        UPDATE projects
+        SET display_order = (
+          SELECT COUNT(*) FROM projects p2
+          WHERE p2.created_at < projects.created_at
+        )
+      """)
+
+      // Add index for ordered queries
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
+    }
+
     return migrator
   }
 
@@ -240,7 +257,7 @@ enum DatabaseSchema {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
-    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management)
+    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering)
     try db.create(table: "projects", ifNotExists: true) { t in
       t.column("id", .text).primaryKey()
       t.column("name", .text)
@@ -248,6 +265,7 @@ enum DatabaseSchema {
       t.column("root_bookmark", .blob)
       t.column("last_viewed_ts", .double).notNull().defaults(to: 0.0)  // v12: epoch timestamp
       t.column("hidden", .integer).notNull().defaults(to: 0)  // v18: project visibility
+      t.column("display_order", .integer)  // v19: custom project ordering
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
     }
@@ -257,6 +275,7 @@ enum DatabaseSchema {
       ON projects(hidden)
       WHERE hidden = 1
     """)
+    try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
 
     // Transcripts table (v2: last_processed_entry_id, v3: identity fields, v3: unique indexes)
     try db.create(table: "transcripts", ifNotExists: true) { t in

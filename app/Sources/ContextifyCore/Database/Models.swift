@@ -10,6 +10,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
   public var rootBookmark: Data?
   public var lastViewedTs: Double  // Epoch timestamp for unread tracking (v12)
   public var hidden: Bool  // Project visibility flag (v18)
+  public var displayOrder: Int?  // Custom project ordering (v19)
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -22,6 +23,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
     case rootBookmark = "root_bookmark"
     case lastViewedTs = "last_viewed_ts"
     case hidden
+    case displayOrder = "display_order"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
