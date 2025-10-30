@@ -143,8 +143,8 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
-    @ObservationIgnored private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
-    @ObservationIgnored private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
+    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: AnyObject?  // For cache update notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: AnyObject?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
@@ -155,6 +155,16 @@ final class ConversationMonitor {
         // Set up project change notifications early, so we can react to project selection
         // even if monitoring hasn't started yet
         setupProjectChangeNotifications()
+    }
+
+    deinit {
+        // Clean up observers (only relevant for tests/previews, not for singleton)
+        if let observer = projectChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = cacheUpdateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     @MainActor
@@ -711,6 +721,12 @@ final class ConversationMonitor {
     }
 
     private func setupProjectChangeNotifications() {
+        // Idempotent: only register once for lifetime of singleton
+        guard projectChangeObserver == nil else {
+            log.debug("Project change observer already registered, skipping duplicate setup")
+            return
+        }
+
         projectChangeObserver = NotificationCenter.default.addObserver(
             forName: .projectRootDidChange,
             object: nil,
@@ -722,6 +738,7 @@ final class ConversationMonitor {
                 self?.handleProjectRootChange()
             }
         }
+        log.debug("Project change observer registered")
     }
 
     /// Keyed bulk refresh: Update specific entries when their caches are ready

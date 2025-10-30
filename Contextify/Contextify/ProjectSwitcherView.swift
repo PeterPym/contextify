@@ -40,6 +40,19 @@ struct ProjectSwitcherView: View {
           }
         }
       }
+      .task {
+        // Verify we're using the correct singleton instance (not a separate @Environment copy)
+        let stateId = ObjectIdentifier(state)
+        let sharedId = ObjectIdentifier(ProjectSwitcherState.shared)
+        if stateId != sharedId {
+          let stateIdStr = "\(stateId)"
+          let sharedIdStr = "\(sharedId)"
+          log.fault("⚠️ ProjectSwitcherView is using wrong ProjectSwitcherState instance! state=\(stateIdStr) != shared=\(sharedIdStr)")
+          assertionFailure("ProjectSwitcherView must use ProjectSwitcherState.shared - verify .environment() injection")
+        } else {
+          log.debug("✅ ProjectSwitcherView verified using correct singleton instance")
+        }
+      }
     }
   }
 
