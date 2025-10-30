@@ -31,6 +31,11 @@ assets/ icons/
 
 ### Database Layer (SQL Backend)
 - **Current Schema Version: v16** (see DatabaseSchema.swift for migration history)
+- **Recent Migrations:**
+  - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts)
+  - **v14**: Request ID normalization (empty → entry_id fallback)
+  - **v15**: Index cleanup and optimization
+  - **v16**: GROUP BY index for unread queries (idx_entries_unread_join)
 - **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
 - **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, and WAL mode.
 - **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. CTE-based FK-safe assistant_usage inserts with O(N+M) JOIN reconciliation.
