@@ -43,8 +43,9 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   @Binding var insertionIndex: Int?
   let onReorder: ([String]) -> Void
 
-  // Add a tiny hysteresis to avoid boundary jitter.
-  private let hysteresis: CGFloat = 6.0
+  // Hysteresis and stickiness to avoid boundary jitter
+  private let hysteresis: CGFloat = 8.0
+  private let stickyDistance: CGFloat = 20.0  // Must move this far to change slots
 
   // 0...N "slots" determined by tab boundaries (left/right halves)
   private func proposedInsertionIndex(for locationX: CGFloat) -> Int {
@@ -98,8 +99,35 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     let proposed = proposedInsertionIndex(for: x)
 
     if isValidMove(from: fromIndex, to: proposed) {
-      if insertionIndex != proposed { insertionIndex = proposed }
+      // Apply stickiness: only change if significantly different from current
+      if let current = insertionIndex {
+        // Calculate distance from current slot position
+        let frames = allProjects.compactMap { tabFrames[$0.id] }
+        guard !frames.isEmpty else {
+          insertionIndex = proposed
+          return .init(operation: .move)
+        }
+
+        let currentSlotX: CGFloat
+        if current == 0 {
+          currentSlotX = frames.first!.minX
+        } else if current >= frames.count {
+          currentSlotX = frames.last!.maxX
+        } else {
+          // Between tabs: use gap center
+          currentSlotX = (frames[current - 1].maxX + frames[current].minX) / 2
+        }
+
+        // Only change slot if we've moved far enough
+        if abs(x - currentSlotX) > stickyDistance {
+          insertionIndex = proposed
+        }
+      } else {
+        // First time setting slot - no stickiness needed
+        insertionIndex = proposed
+      }
     } else {
+      // Invalid move - clear insertion index
       if insertionIndex != nil { insertionIndex = nil }
     }
     return .init(operation: .move)
