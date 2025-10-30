@@ -65,7 +65,43 @@ final class ProjectsViewModel {
       // Phase 1: Discovery
       print("📍 Phase 1: Starting discovery")
       logger.info("Starting project discovery")
-      let currentPath = hudModel.projectRootURL?.path
+
+      // Get current project path - check multiple sources to handle initialization timing
+      let currentPath: String?
+
+      // First, try ProjectSwitcherState if it's been initialized
+      if let activeId = ProjectSwitcherState.shared.activeProjectId {
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          let projects = try orchestrator.listProjects()
+          currentPath = projects.first(where: { $0.id == activeId })?.rootPath
+          logger.debug("Using active project from ProjectSwitcherState: \(currentPath ?? "nil")")
+        } catch {
+          logger.warning("Failed to get active project path from database: \(error.localizedDescription)")
+          currentPath = hudModel.projectRootURL?.path
+        }
+      } else if let hudPath = hudModel.projectRootURL?.path {
+        // Fall back to HUD model
+        currentPath = hudPath
+        logger.debug("Using project from HUDViewModel: \(hudPath)")
+      } else {
+        // Last resort: check database for most recently viewed project
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          let projects = try orchestrator.listProjects()
+          // Sort by last_viewed_ts to find the current project
+          let mostRecent = projects
+            .filter { $0.lastViewedTs != nil }
+            .sorted { ($0.lastViewedTs ?? 0) > ($1.lastViewedTs ?? 0) }
+            .first
+          currentPath = mostRecent?.rootPath
+          logger.debug("Using most recently viewed project from database: \(currentPath ?? "nil")")
+        } catch {
+          logger.warning("Failed to get most recent project from database: \(error.localizedDescription)")
+          currentPath = nil
+        }
+      }
+
       let discovered = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
 
       logger.info("Found \(discovered.count) projects")
