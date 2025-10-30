@@ -192,26 +192,13 @@ final class StatusBarViewModel {
     // MARK: - Hoover Observation
 
     private func startHooverObservation() {
-        hooverObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            self.log.info("StatusBar: starting hoover observation")
-
-            // Use the ProjectSwitcherState's activity monitor which has active file watchers
-            guard let monitor = await ProjectSwitcherState.shared.activityMonitor else {
-                self.log.warning("StatusBar: ProjectActivityMonitor not available from ProjectSwitcherState")
-                return
-            }
-
-            self.log.info("StatusBar: listening for project events from shared monitor")
-
-            for await event in await monitor.observeProjectEvents() {
-                self.log.info("StatusBar: received hoover event: \(event.kind.rawValue) for \(event.projectId)")
-                await self.handleHooverEvent(event)
-            }
-
-            self.log.warning("StatusBar: hoover event stream ended")
-        }
+        // DISABLED: AsyncStream can only have ONE consumer. ProjectSwitcherState already observes
+        // the ProjectActivityMonitor event stream. Multiple observers cause the stream to terminate
+        // prematurely, breaking project switching. If we need hoover events here, we should either:
+        // 1. Have ProjectSwitcherState multicast events, or
+        // 2. Observe ProjectSwitcherState's state changes instead
+        // For now, hoover toast messages are disabled.
+        self.log.info("StatusBar: hoover observation disabled (prevents AsyncStream multi-consumer issue)")
     }
 
     private func handleHooverEvent(_ event: ProjectEvent) async {
