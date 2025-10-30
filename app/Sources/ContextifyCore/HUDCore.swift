@@ -448,10 +448,21 @@ public final class HUDViewModel {
   }
 
   public init() {
-    let bookmarkURL = HUDPreferences.resolveBookmark()
-    let persistedPath = HUDPreferences.getPersistedRoot()
+    // Defer all file I/O to async startup() to avoid blocking main thread
+  }
+
+  /// Async startup to restore persisted project root without blocking main thread
+  public func startup() async {
+    // Run file I/O on background thread
+    let (bookmarkURL, persistedPath) = await Task.detached {
+      return (HUDPreferences.resolveBookmark(), HUDPreferences.getPersistedRoot())
+    }.value
+
+    // Back on main actor to update state
     if let bookmark = bookmarkURL {
-      let canonical = bookmark.resolvingSymlinksInPath()
+      let canonical = await Task.detached {
+        bookmark.resolvingSymlinksInPath()
+      }.value
       projectRootURL = canonical
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
@@ -460,12 +471,15 @@ public final class HUDViewModel {
       updateGitInfo()
       updateHeadWatcher()
     } else if let path = persistedPath, !path.isEmpty {
-      let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+      let (canonical, scoped) = await Task.detached {
+        let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        let scoped = HUDPreferences.resolveBookmark() ?? canonical
+        return (canonical, scoped)
+      }.value
       projectRootURL = canonical
       lastPersistedPath = canonical.path
       lastPersistedAt = Date()
       persistRootIfNeeded(canonical, force: true)
-      let scoped = HUDPreferences.resolveBookmark() ?? canonical
       updateSecurityScope(for: scoped, persisted: true)
       updateGitInfo()
       updateHeadWatcher()

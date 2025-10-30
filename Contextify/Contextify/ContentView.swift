@@ -63,9 +63,10 @@ struct ContentView: View {
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
-        .onAppear {
-            model.updateGitInfo()
-            Task { await refreshSession() }
+        .task {
+            // Async startup to avoid blocking main thread with file I/O
+            await model.startup()
+            await refreshSession()
             TimelineIntegration.shared.startMonitoring()
 
             // Start project switcher to discover projects

@@ -280,7 +280,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Check if transcript exists - try multiple lookup strategies in order:
         // 1. (project_id, file_path) - most reliable, handles path normalization
         // 2. (provider, path_hash) - handles symlinks and moved files
-        // 3. (provider, provider_session_id) - only if session ID is set
+        // 3. (provider, provider_session_id) - only if session ID is set (prevents UNIQUE constraint violation)
         let existing: Row? = try Row.fetchOne(db, sql: """
           SELECT id, content_length, mtime_ms, content_sha256
           FROM transcripts
@@ -293,6 +293,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           FROM transcripts
           WHERE provider = ? AND path_hash = ?
         """, arguments: [disc.provider, pathHash]))
+
+        // If not found by path, try (provider, provider_session_id) if session ID exists
+        ?? (sid != nil ? try Row.fetchOne(db, sql: """
+          SELECT id, content_length, mtime_ms, content_sha256
+          FROM transcripts
+          WHERE provider = ? AND provider_session_id = ?
+        """, arguments: [disc.provider, sid!]) : nil)
 
         // Get file facts (streaming SHA256)
         let (len, mtimeMs, sha): (Int64, Int64, String)

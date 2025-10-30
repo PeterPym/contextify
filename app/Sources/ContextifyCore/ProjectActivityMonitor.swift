@@ -209,8 +209,10 @@ public actor ProjectActivityMonitor {
       }
 
       // Reverse-mangle to get project path
+      var projectPathForLogging = directory.lastPathComponent
       do {
         let projectPath = try ProjectIdentity.reverseManglePath(provider: provider, directory: directory)
+        projectPathForLogging = projectPath  // Update with unmangled path for error logging
         let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
 
         // Create/upsert project in database
@@ -248,7 +250,7 @@ public actor ProjectActivityMonitor {
 
         log.debug("Discovered project: \(projectPath) (provider: \(provider))")
       } catch {
-        log.error("Failed to process project directory \(directory.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        log.error("Failed to process project directory \(projectPathForLogging, privacy: .public) [mangled: \(directory.lastPathComponent, privacy: .public)]: \(error.localizedDescription, privacy: .public)")
       }
     }
   }
