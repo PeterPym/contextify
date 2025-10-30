@@ -332,11 +332,11 @@ final class ConversationMonitor {
             await MainActor.run { [weak self] in
                 guard let self else { return }
 
-                log.debug("📬 TranscriptUpdated notification: projectId=\(pid ?? "nil"), currentProjectId=\(self.currentProjectId ?? "nil")")
+                log.info("📬 TranscriptUpdated notification received: projectId=\(pid ?? "nil"), currentProjectId=\(self.currentProjectId ?? "nil")")
 
                 // Branch 1: Current project - refresh timeline
                 if pid == self.currentProjectId || pid == nil {
-                    log.debug("📬 Matches current project - scheduling debounced refresh")
+                    log.info("📬 ✅ Matches current project - scheduling debounced refresh")
                     // Cancel existing debounce task and start new one
                     self.debounceTask?.cancel()
                     self.debounceTask = Task { [weak self] in
@@ -345,11 +345,11 @@ final class ConversationMonitor {
                             self?.log.debug("📬 Debounce task cancelled or self deallocated")
                             return
                         }
-                        self.log.debug("📬 Debounce complete - calling processIncrementalUpdate")
+                        self.log.info("📬 Debounce complete - calling processIncrementalUpdate")
                         await self.processIncrementalUpdate()
                     }
                 } else {
-                    log.debug("📬 Notification for different project - ignoring (unread count is DB-derived)")
+                    log.info("📬 ❌ Notification for different project (pid=\(pid ?? "nil") != current=\(self.currentProjectId ?? "nil")) - ignoring")
                 }
 
                 // Branch 2: Other project - unread count is DB-derived (no action needed here)
@@ -816,6 +816,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
+        log.info("🔄 processIncrementalUpdate called - updateInFlight=\(updateInFlight)")
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer {
@@ -826,11 +827,14 @@ final class ConversationMonitor {
         repeat {
             updateDirty = false
 
-            guard let projectId = currentProjectId, orchestrator != nil else { return }
+            guard let projectId = currentProjectId, orchestrator != nil else {
+                log.warning("⚠️ processIncrementalUpdate: No projectId or orchestrator - aborting")
+                return
+            }
 
             // If no cursor, do full reload instead
             guard let cursor = lastSeenCursor else {
-                log.info("No cursor available, doing full reload")
+                log.info("🔄 No cursor available, doing full reload")
                 await loadFeedFromSQL()
                 return
             }
@@ -838,6 +842,7 @@ final class ConversationMonitor {
             do {
                 let startTime = Date()
 
+                log.info("🔄 Fetching new entries after cursor for projectId=\(projectId)")
                 // Get new entries using keyset pagination (prevents duplicates/skips)
                 let newEntries = try orchestrator.getEntriesAfterCursor(
                     forProject: projectId,
@@ -845,9 +850,11 @@ final class ConversationMonitor {
                 )
 
                 guard !newEntries.isEmpty else {
-                    log.debug("No new entries in incremental update")
+                    log.info("🔄 No new entries in incremental update")
                     break  // No more entries, exit the drain loop
                 }
+
+                log.info("🔄 Found \(newEntries.count) new entries to process")
 
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
