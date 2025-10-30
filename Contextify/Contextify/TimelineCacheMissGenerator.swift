@@ -434,7 +434,7 @@ actor TimelineCacheMissGenerator {
     private func notifyQueueChanged() {
         let stats = makeQueueStats()
 
-        log.info("📢 CacheMissGenerator: Notifying \(self.queueObservers.count) observers - pending=\(stats.pending), isProcessing=\(stats.isProcessing)")
+        log.debug("📢 CacheMissGenerator: Notifying \(self.queueObservers.count) observers - pending=\(stats.pending), isProcessing=\(stats.isProcessing)")
 
         // Yield to all observers (finished ones are already removed)
         for (_, continuation) in queueObservers {
