@@ -812,26 +812,40 @@ public final class HUDViewModel {
     #endif
   }
 
+  /// Set project root (supports both Git and non-Git projects)
+  /// - Parameter url: The project directory URL
+  /// - Returns: Result with the resolved project root URL
+  /// - Note: Git repositories use the .git root; non-Git projects use the provided path
   public func setProjectRoot(url: URL) -> Result<URL, ProjectRootError> {
     let canonical = url.resolvingSymlinksInPath()
     var isDir: ObjCBool = false
     guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir), isDir.boolValue else {
       alertMessage = "Selected folder is not readable:\n\(canonical.path)"
-      status = "Select a Git repository"
+      status = "Select a project folder"
       return .failure(.unreadable(canonical))
     }
-    guard let repo = GitRepositoryResolver.findGitRoot(startingAt: canonical) else {
-      alertMessage = "Selected folder is not a Git repository:\n\(canonical.path)"
-      status = "Select a Git repository"
-      return .failure(.notGit(canonical))
+
+    // Try to find Git root (optional - not required)
+    let finalRoot: URL
+    if let repo = GitRepositoryResolver.findGitRoot(startingAt: canonical) {
+      // Has Git - use repository root
+      finalRoot = repo
+      adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true, scopedURL: url)
+    } else {
+      // No Git - use provided path as-is
+      finalRoot = canonical
+      projectRootURL = canonical
+      branch = "—"
+      status = "Ready"
+      persistRootIfNeeded(canonical, force: true)
     }
-    adoptDetectedRoot(repo, source: "manual", persist: true, forcePersist: true, scopedURL: url)
+
     updateGitInfo()
 
     // Notify observers that project root has changed
-    NotificationCenter.default.post(name: .projectRootDidChange, object: repo)
+    NotificationCenter.default.post(name: .projectRootDidChange, object: finalRoot)
 
-    return .success(repo)
+    return .success(finalRoot)
   }
 
   // MARK: - Compose Methods
