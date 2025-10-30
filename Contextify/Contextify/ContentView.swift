@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var showDatabaseTest = false
     @State private var showBatchEmbedding = false
     @State private var showSemanticSearch = false
-    @State private var workspaceObserver: AnyObject?
+    @State private var workspaceObserver: NSObjectProtocol?
 
     var body: some View {
         VStack(spacing: 0) {

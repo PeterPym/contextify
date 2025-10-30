@@ -175,9 +175,11 @@ public final class ProjectSwitcherState {
         }
       }
 
-      // Map to ProjectInfo (check orphaned status once here, not per-tab)
+      // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
       let projectInfos = sortedProjects.map { project in
-        let isOrphaned = !FileManager.default.fileExists(atPath: project.rootPath)
+        // Use DB bit as source of truth, OR with FS check to catch newly missing directories
+        let isOrphaned = project.isOrphaned
+          || !FileManager.default.fileExists(atPath: project.rootPath)
         return ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,

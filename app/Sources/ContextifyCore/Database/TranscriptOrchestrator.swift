@@ -479,14 +479,17 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     guard !deletedIds.isEmpty else { return [] }
 
     // Phase 3: Delete missing transcripts atomically in single write transaction
+    // Chunk deletions to avoid SQLite parameter limits (max 999)
     try dbManager.pool.write { db in
-      let placeholders = Array(repeating: "?", count: deletedIds.count).joined(separator: ",")
-      let sql = "DELETE FROM transcripts WHERE id IN (\(placeholders))"
-      try db.execute(sql: sql, arguments: StatementArguments(deletedIds))
+      for chunk in deletedIds.chunked(into: 900) {
+        let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+        let sql = "DELETE FROM transcripts WHERE id IN (\(placeholders))"
+        try db.execute(sql: sql, arguments: StatementArguments(chunk))
+      }
     }
 
-    for (transcript, id) in zip(missingTranscripts, deletedIds) {
-      log.info("Cleaned up transcript with missing file: \(id) at \(transcript.filePath)")
+    for transcript in missingTranscripts {
+      log.info("Cleaned up transcript with missing file: \(transcript.id) at \(transcript.filePath)")
     }
 
     if deletedIds.isEmpty {
