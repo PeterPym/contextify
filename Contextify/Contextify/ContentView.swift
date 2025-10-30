@@ -342,16 +342,14 @@ private extension ContentView {
 
             // Check if iTerm2 was activated
             if app.bundleIdentifier == "com.googlecode.iterm2" {
-                // Do work off-main to avoid blocking UI during slow AppleScript execution
-                Task.detached {
+                // AppleScript/ScriptingBridge calls must run on MainActor
+                Task { @MainActor [weak model] in
                     let sessionName = await ITerm2Bridge.getCurrentSessionName()
-                    await MainActor.run { [weak model] in
-                        if let sessionName {
-                            model?.targetSessionName = sessionName
-                        } else {
-                            // Session name fetch returned nil (iTerm2 not responding or no session)
-                            uiLog.debug("iTerm2 session name unavailable")
-                        }
+                    if let sessionName {
+                        model?.targetSessionName = sessionName
+                    } else {
+                        // Session name fetch returned nil (iTerm2 not responding or no session)
+                        uiLog.debug("iTerm2 session name unavailable")
                     }
                 }
             }
