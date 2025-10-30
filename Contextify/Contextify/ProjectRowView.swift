@@ -51,8 +51,10 @@ struct ProjectRowView: View {
       HStack(spacing: 8) {
         ForEach(Array(project.providers.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { provider in
           HStack(spacing: 4) {
-            Text(provider.icon)
-              .font(.caption)
+            Image(provider.iconImage)
+              .renderingMode(.template)
+              .foregroundStyle(providerColor(provider))
+              .imageScale(.small)
             Text(provider.displayName)
               .font(.caption)
               .foregroundStyle(.secondary)
@@ -119,6 +121,13 @@ struct ProjectRowView: View {
     .padding()
     .background(Color.secondary.opacity(project.isCurrent ? 0.08 : 0.03))
     .cornerRadius(8)
+  }
+
+  private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {
+    switch provider {
+    case .claudeCode: return .orange
+    case .codex: return .white
+    }
   }
 }
 
