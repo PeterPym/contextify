@@ -332,6 +332,25 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Reorder projects by updating display_order for all projects
+  public func reorderProjects(_ orderedProjectIds: [String]) async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Update display_order for each project based on position in array
+      for (index, projectId) in orderedProjectIds.enumerated() {
+        try orchestrator.setProjectDisplayOrder(projectId: projectId, displayOrder: index)
+      }
+
+      // Refresh to reflect new order
+      await refreshProjects()
+
+      log.info("Reordered \(orderedProjectIds.count) projects")
+    } catch {
+      log.error("Failed to reorder projects: \(error.localizedDescription)")
+    }
+  }
+
   // MARK: - Private
 
   private func ensureCurrentProjectInDatabase() async {

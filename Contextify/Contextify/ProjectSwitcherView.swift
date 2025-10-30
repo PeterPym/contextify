@@ -1,6 +1,7 @@
 import SwiftUI
 import OSLog
 import AppKit
+import UniformTypeIdentifiers
 import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcherUI")
@@ -9,6 +10,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher
 /// Shows project tabs with unread badges and active state
 struct ProjectSwitcherView: View {
   @Environment(ProjectSwitcherState.self) private var state
+  @State private var draggingProject: ProjectInfo?
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -27,6 +29,20 @@ struct ProjectSwitcherView: View {
                 await state.switchToProject(project.id)
               }
             }
+            .onDrag {
+              self.draggingProject = project
+              return NSItemProvider(object: project.id as NSString)
+            }
+            .onDrop(of: [.text], delegate: ProjectDropDelegate(
+              project: project,
+              allProjects: state.allProjects,
+              draggingProject: $draggingProject,
+              onReorder: { orderedIds in
+                Task {
+                  await state.reorderProjects(orderedIds)
+                }
+              }
+            ))
           }
         }
         .padding(.horizontal, 12)
@@ -121,6 +137,42 @@ struct ProjectTabView: View {
     .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
     .accessibilityHint("Activate to switch to this project")
     .accessibilityAddTraits(.isButton)
+  }
+}
+
+// MARK: - Drag and Drop
+
+/// Drop delegate for project tab reordering
+struct ProjectDropDelegate: DropDelegate {
+  let project: ProjectInfo
+  let allProjects: [ProjectInfo]
+  @Binding var draggingProject: ProjectInfo?
+  let onReorder: ([String]) -> Void
+
+  func dropEntered(info: DropInfo) {
+    guard let draggingProject = draggingProject,
+          draggingProject.id != project.id else {
+      return
+    }
+
+    // Calculate new order
+    var updatedProjects = allProjects
+    guard let fromIndex = updatedProjects.firstIndex(where: { $0.id == draggingProject.id }),
+          let toIndex = updatedProjects.firstIndex(where: { $0.id == project.id }) else {
+      return
+    }
+
+    // Move the project
+    updatedProjects.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+
+    // Trigger reorder callback with new order
+    let orderedIds = updatedProjects.map { $0.id }
+    onReorder(orderedIds)
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    draggingProject = nil
+    return true
   }
 }
 
