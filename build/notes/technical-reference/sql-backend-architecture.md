@@ -1,8 +1,8 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v17 current)
+**Status:** Post-Implementation (v20 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 17 (v12-v17: unread tracking with epoch timestamps, FK-safe inserts, query optimizations, v16 collapse fixes)
+**Schema Version:** 20 (v18-v20: project visibility, display order, orphan tracking)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
 ---
@@ -32,6 +32,10 @@ projects
 ├── root_path (UNIQUE)
 ├── root_bookmark (security-scoped)
 ├── last_viewed_ts (REAL, v12+, epoch for unread tracking)
+├── hidden (INTEGER DEFAULT 0, v18+, hide from UI)
+├── display_order (INTEGER, v19+, tab ordering)
+├── is_orphaned (INTEGER DEFAULT 0, v20+, directory missing)
+├── orphaned_since (TEXT, v20+, ISO8601 timestamp)
 └── timestamps
 
 transcripts
@@ -478,6 +482,26 @@ generator.queueMisses([miss])  // Async processing
 **Load Tests:** `ContextifyTests/FeedLoadingDiagnosticTest.swift`
 - Feed query performance with 50K entries
 - Cache lookup performance with 10K cached entries
+
+---
+
+## Recent Migrations (v18-v20)
+
+**v18: Project Visibility**
+- Add `hidden` column (default 0)
+- Partial index on `hidden = 1` for filtering
+- UI: Hide/restore projects from tab bar
+
+**v19: Display Order**
+- Add `display_order` column with deterministic backfill (id-based)
+- Index for ORDER BY queries
+- Two-phase bulk update (negative ranks, then final) to avoid transient odd ordering
+- One-shot SQLITE_BUSY retry for WAL contention
+
+**v20: Orphan Tracking**
+- Add `is_orphaned` and `orphaned_since` columns
+- Detect missing directories at discovery time
+- UI: Show warning badge, allow cleanup
 
 ---
 
