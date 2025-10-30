@@ -49,7 +49,7 @@ public final class ProjectSwitcherState {
 
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
-  @ObservationIgnored nonisolated(unsafe) private var projectRootObserver: NSObjectProtocol?
+  @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
 
   // Coalescing state for batch unread updates
@@ -62,9 +62,8 @@ public final class ProjectSwitcherState {
   }
 
   deinit {
-    if let observer = projectRootObserver {
-      NotificationCenter.default.removeObserver(observer)
-    }
+    // Note: projectRootObserver cleanup happens in stop() (MainActor-isolated)
+    // NotificationCenter automatically removes all observers when self is deallocated
   }
 
   /// Initialize with explicit orchestrator (for testing)
@@ -75,6 +74,7 @@ public final class ProjectSwitcherState {
   // MARK: - Lifecycle
 
   /// Start monitoring (idempotent)
+  @MainActor
   public func start() {
     guard !isStarted else {
       log.warning("ProjectSwitcher: start() called while started")
@@ -145,31 +145,18 @@ public final class ProjectSwitcherState {
       log.warning("ProjectSwitcher: event stream ended")
     }
 
-    // Listen for project root changes from HUDViewModel (e.g., "Set as Current" button)
-    projectRootObserver = NotificationCenter.default.addObserver(
-      forName: .projectRootDidChange,
-      object: nil,
-      queue: .main
-    ) { [weak self] notification in
-      guard let self, let projectURL = notification.object as? URL else { return }
-
-      // Find the project ID from the path and switch to it
-      Task { @MainActor in
-        await self.handleProjectRootChange(projectURL)
-      }
-    }
+    // Install observer synchronously on the main thread (no async gap).
+    installProjectRootObserver()
   }
 
   /// Stop monitoring
+  @MainActor
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
     coalesceTask?.cancel()
     coalesceTask = nil
-    if let observer = projectRootObserver {
-      NotificationCenter.default.removeObserver(observer)
-      projectRootObserver = nil
-    }
+    removeProjectRootObserver()
     isStarted = false
 
     Task {
@@ -524,5 +511,29 @@ public final class ProjectSwitcherState {
 
     let nextIndex = (currentIndex + 1) % allProjects.count
     await switchToProject(allProjects[nextIndex].id)
+  }
+
+  // MARK: - Observer lifecycle (MainActor)
+
+  @MainActor
+  private func installProjectRootObserver() {
+    guard projectRootObserver == nil else { return }
+    projectRootObserver = NotificationCenter.default.addObserver(
+      forName: .projectRootDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      guard let self, let projectURL = notification.object as? URL else { return }
+      // Hop to MainActor for UI-adjacent switching logic.
+      Task { @MainActor in await self.handleProjectRootChange(projectURL) }
+    }
+  }
+
+  @MainActor
+  private func removeProjectRootObserver() {
+    if let observer = projectRootObserver {
+      NotificationCenter.default.removeObserver(observer)
+      projectRootObserver = nil
+    }
   }
 }

@@ -25,7 +25,7 @@ final class ProjectsViewModel {
   // Event observation
   @ObservationIgnored private var eventObservationTask: Task<Void, Never>?
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
-  @ObservationIgnored nonisolated(unsafe) private var projectRootObserver: NSObjectProtocol?
+  @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
 
   init(discoveryService: ProjectDiscoveryService, hudModel: HUDViewModel) {
     self.discoveryService = discoveryService
@@ -50,9 +50,8 @@ final class ProjectsViewModel {
   deinit {
     eventObservationTask?.cancel()
     refreshTask?.cancel()
-    if let observer = projectRootObserver {
-      NotificationCenter.default.removeObserver(observer)
-    }
+    // Note: projectRootObserver cleanup happens in stop() (MainActor-isolated)
+    // NotificationCenter automatically removes all observers when self is deallocated
   }
 
   // MARK: - Actions
@@ -76,8 +75,8 @@ final class ProjectsViewModel {
       // Get current project path - check multiple sources to handle initialization timing
       let currentPath: String?
 
-      // First, try ProjectSwitcherState if it's been initialized
-      if let activeId = ProjectSwitcherState.shared.activeProjectId {
+      // First, try ProjectSwitcherState if it's been initialized (MainActor read)
+      if let activeId = await MainActor.run(body: { ProjectSwitcherState.shared.activeProjectId }) {
         do {
           let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
           let projects = try orchestrator.listProjects()
@@ -228,8 +227,8 @@ final class ProjectsViewModel {
     // Lightweight refresh - just re-discover to update isCurrent flags
     let currentPath: String?
 
-    // Use same logic as discoverProjects to get current path
-    if let activeId = ProjectSwitcherState.shared.activeProjectId {
+    // Use same logic as discoverProjects to get current path (MainActor read)
+    if let activeId = await MainActor.run(body: { ProjectSwitcherState.shared.activeProjectId }) {
       do {
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         let projects = try orchestrator.listProjects()
