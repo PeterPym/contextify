@@ -12,6 +12,8 @@ public protocol ProjectRepository {
   func get(id: String) throws -> Project?
   func update(id: String, name: String?, bookmark: Data?) throws
   func setDisplayOrder(id: String, displayOrder: Int) throws
+  func markOrphaned(id: String, orphanedSince: Int) throws
+  func markRestored(id: String) throws
   func delete(id: String) throws
 }
 
@@ -40,6 +42,8 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         lastViewedTs: 0.0,  // Never viewed yet (all entries unread)
         hidden: false,  // Visible by default (v18)
         displayOrder: nextOrder,  // Append to end (v19)
+        isOrphaned: false,  // Not orphaned (v20)
+        orphanedSince: nil,  // No orphan timestamp (v20)
         createdAt: now,
         updatedAt: now
       )
@@ -83,6 +87,34 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         throw RepositoryError.notFound
       }
       project.displayOrder = displayOrder
+      project.updatedAt = now
+      try project.update(db)
+    }
+  }
+
+  public func markOrphaned(id: String, orphanedSince: Int) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.isOrphaned = true
+      project.orphanedSince = orphanedSince
+      project.updatedAt = now
+      try project.update(db)
+    }
+  }
+
+  public func markRestored(id: String) throws {
+    let now = Int(Date().timeIntervalSince1970)
+
+    try db.write { db in
+      guard var project = try Project.fetchOne(db, key: id) else {
+        throw RepositoryError.notFound
+      }
+      project.isOrphaned = false
+      project.orphanedSince = nil
       project.updatedAt = now
       try project.update(db)
     }

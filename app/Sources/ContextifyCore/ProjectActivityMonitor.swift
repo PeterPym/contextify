@@ -254,7 +254,35 @@ public actor ProjectActivityMonitor {
         switch error {
         case .invalidPath:
           // Expected: project directory was deleted/moved after transcript was created
-          log.debug("Skipping orphaned project \(projectPathForLogging) [mangled: \(directory.lastPathComponent)]: directory no longer exists")
+          // Try to extract project path from transcripts to mark as orphaned
+          do {
+            // Try to extract CWD from transcript files even if directory is invalid
+            let transcriptFiles = try FileManager.default.contentsOfDirectory(
+              at: directory,
+              includingPropertiesForKeys: [.fileSizeKey],
+              options: [.skipsHiddenFiles]
+            ).filter { $0.pathExtension == "jsonl" }
+
+            if let firstTranscript = transcriptFiles.first,
+               let projectPath = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(firstTranscript) {
+              let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
+
+              // Check if this project exists in database
+              if let existingProject = try? orchestrator.getProject(id: projectId),
+                 !existingProject.isOrphaned {
+                // Mark as orphaned
+                let now = Int(Date().timeIntervalSince1970)
+                try orchestrator.markProjectOrphaned(projectId: projectId, orphanedSince: now)
+                log.info("Marked project as orphaned: \(projectPath) (transcripts exist but directory missing)")
+              } else {
+                log.debug("Skipping orphaned project \(projectPath) [mangled: \(directory.lastPathComponent)]: directory no longer exists")
+              }
+            } else {
+              log.debug("Skipping orphaned project \(projectPathForLogging) [mangled: \(directory.lastPathComponent)]: directory no longer exists, cannot determine project path")
+            }
+          } catch {
+            log.debug("Skipping orphaned project [mangled: \(directory.lastPathComponent)]: \(error.localizedDescription)")
+          }
         case .cannotReadSessionMetadata:
           // Expected: empty or malformed session directory (e.g., just a "2025" folder with no session.json)
           log.debug("Skipping invalid session directory \(directory.lastPathComponent): no readable metadata")

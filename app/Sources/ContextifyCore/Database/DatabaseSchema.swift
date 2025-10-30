@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 19
+  static let version = 20
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -249,6 +249,19 @@ enum DatabaseSchema {
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
     }
 
+    // v20: Add orphaned project tracking columns
+    migrator.registerMigration("v20_orphaned_projects") { db in
+      try db.execute(sql: "ALTER TABLE projects ADD COLUMN is_orphaned INTEGER NOT NULL DEFAULT 0")
+      try db.execute(sql: "ALTER TABLE projects ADD COLUMN orphaned_since INTEGER")
+
+      // Add partial index for orphaned projects
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_projects_orphaned
+        ON projects(is_orphaned, orphaned_since)
+        WHERE is_orphaned = 1
+      """)
+    }
+
     return migrator
   }
 
@@ -257,7 +270,7 @@ enum DatabaseSchema {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
-    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering)
+    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management, v19: added display_order for custom ordering, v20: added orphaned tracking)
     try db.create(table: "projects", ifNotExists: true) { t in
       t.column("id", .text).primaryKey()
       t.column("name", .text)
@@ -266,6 +279,8 @@ enum DatabaseSchema {
       t.column("last_viewed_ts", .double).notNull().defaults(to: 0.0)  // v12: epoch timestamp
       t.column("hidden", .integer).notNull().defaults(to: 0)  // v18: project visibility
       t.column("display_order", .integer)  // v19: custom project ordering
+      t.column("is_orphaned", .integer).notNull().defaults(to: 0)  // v20: orphaned tracking
+      t.column("orphaned_since", .integer)  // v20: when directory went missing
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
     }
@@ -276,6 +291,11 @@ enum DatabaseSchema {
       WHERE hidden = 1
     """)
     try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_orphaned
+      ON projects(is_orphaned, orphaned_since)
+      WHERE is_orphaned = 1
+    """)
 
     // Transcripts table (v2: last_processed_entry_id, v3: identity fields, v3: unique indexes)
     try db.create(table: "transcripts", ifNotExists: true) { t in

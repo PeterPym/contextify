@@ -136,6 +136,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.get(id: id)
   }
 
+  public func markProjectOrphaned(projectId: String, orphanedSince: Int) throws {
+    try projectRepo.markOrphaned(id: projectId, orphanedSince: orphanedSince)
+  }
+
+  public func markProjectRestored(projectId: String) throws {
+    try projectRepo.markRestored(id: projectId)
+  }
+
   // MARK: - Transcript Discovery & Ingestion
 
   /// Discover and ingest a transcript file

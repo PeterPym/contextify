@@ -86,6 +86,42 @@ public enum ProjectIdentity {
     }
   }
 
+  /// Extract CWD from a Claude Code transcript JSONL file (for orphaned project detection)
+  /// Returns the CWD path WITHOUT validation - use for orphaned projects where directory may not exist
+  /// - Parameter fileURL: URL to transcript file
+  /// - Returns: CWD string if found, nil otherwise
+  public static func extractCwdFromTranscriptForOrphaned(_ fileURL: URL) throws -> String? {
+    guard let fileHandle = FileHandle(forReadingAtPath: fileURL.path) else {
+      return nil
+    }
+    defer { fileHandle.closeFile() }
+
+    // Read up to 64KB (enough for most transcript headers + initial messages)
+    let data = fileHandle.readData(ofLength: 65536)
+    guard let content = String(data: data, encoding: .utf8) else {
+      return nil
+    }
+
+    // Parse each line until we find one with a CWD field
+    struct RecordWithCwd: Codable {
+      let cwd: String?
+    }
+
+    let lines = content.components(separatedBy: .newlines)
+    for line in lines where !line.isEmpty {
+      guard let jsonData = line.data(using: .utf8),
+            let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
+            let cwd = record.cwd else {
+        continue
+      }
+
+      // Return raw CWD without canonicalization (directory may not exist for orphaned projects)
+      return cwd
+    }
+
+    return nil
+  }
+
   /// Extract CWD from a Claude Code transcript JSONL file
   /// - Parameter fileURL: URL to transcript file
   /// - Returns: CWD string if found, nil otherwise

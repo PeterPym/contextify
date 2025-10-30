@@ -11,6 +11,8 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
   public var lastViewedTs: Double  // Epoch timestamp for unread tracking (v12)
   public var hidden: Bool  // Project visibility flag (v18)
   public var displayOrder: Int?  // Custom project ordering (v19)
+  public var isOrphaned: Bool  // Orphaned tracking - directory missing (v20)
+  public var orphanedSince: Int?  // When directory went missing (v20)
   public var createdAt: Int
   public var updatedAt: Int
 
@@ -24,6 +26,8 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
     case lastViewedTs = "last_viewed_ts"
     case hidden
     case displayOrder = "display_order"
+    case isOrphaned = "is_orphaned"
+    case orphanedSince = "orphaned_since"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
   }
