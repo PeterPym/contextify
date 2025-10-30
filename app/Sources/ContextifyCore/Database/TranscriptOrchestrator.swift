@@ -165,17 +165,27 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Uses two-phase update to avoid transient unique constraint violations if added later
   public func setProjectDisplayOrderBulk(_ orderedIds: [String]) throws {
     let now = Int(Date().timeIntervalSince1970)
-    try dbManager.pool.write { db in
-      // Phase 1: assign negative ranks preserving order (avoids odd ordering if observed mid-transaction)
-      // Using -n ... -1 ensures proper ordering even in temporary state
-      for (i, id) in orderedIds.enumerated() {
-        let tempOrder = -(orderedIds.count - i)  // -count, -count+1, ..., -1
-        try db.execute(sql: "UPDATE projects SET display_order = ? WHERE id = ?", arguments: [tempOrder, id])
+    let writeBlock: () throws -> Void = {
+      try self.dbManager.pool.write { db in
+        // Phase 1: assign negative ranks preserving order (avoids odd ordering if observed mid-transaction)
+        // Using -n ... -1 ensures proper ordering even in temporary state
+        for (i, id) in orderedIds.enumerated() {
+          let tempOrder = -(orderedIds.count - i)  // -count, -count+1, ..., -1
+          try db.execute(sql: "UPDATE projects SET display_order = ? WHERE id = ?", arguments: [tempOrder, id])
+        }
+        // Phase 2: final non-negative ordering + updated_at
+        for (i, id) in orderedIds.enumerated() {
+          try db.execute(sql: "UPDATE projects SET display_order = ?, updated_at = ? WHERE id = ?", arguments: [i, now, id])
+        }
       }
-      // Phase 2: final non-negative ordering + updated_at
-      for (i, id) in orderedIds.enumerated() {
-        try db.execute(sql: "UPDATE projects SET display_order = ?, updated_at = ? WHERE id = ?", arguments: [i, now, id])
-      }
+    }
+
+    // One-shot retry on SQLITE_BUSY
+    do {
+      try writeBlock()
+    } catch let e as DatabaseError where e.resultCode == .SQLITE_BUSY {
+      usleep(50_000) // 50ms backoff
+      try writeBlock()
     }
   }
 
