@@ -158,11 +158,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public func setProjectDisplayOrderBulk(_ orderedIds: [String]) throws {
     let now = Int(Date().timeIntervalSince1970)
     try dbManager.pool.write { db in
-      // Phase 1: move to temporary high range to avoid transient conflicts
+      // Phase 1: assign negative ranks preserving order (avoids odd ordering if observed mid-transaction)
+      // Using -n ... -1 ensures proper ordering even in temporary state
       for (i, id) in orderedIds.enumerated() {
-        try db.execute(sql: "UPDATE projects SET display_order = ? WHERE id = ?", arguments: [i + 10_000, id])
+        let tempOrder = -(orderedIds.count - i)  // -count, -count+1, ..., -1
+        try db.execute(sql: "UPDATE projects SET display_order = ? WHERE id = ?", arguments: [tempOrder, id])
       }
-      // Phase 2: final ordering + updated_at
+      // Phase 2: final non-negative ordering + updated_at
       for (i, id) in orderedIds.enumerated() {
         try db.execute(sql: "UPDATE projects SET display_order = ?, updated_at = ? WHERE id = ?", arguments: [i, now, id])
       }
