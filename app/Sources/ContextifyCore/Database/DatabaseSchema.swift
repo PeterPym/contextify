@@ -236,12 +236,13 @@ enum DatabaseSchema {
     migrator.registerMigration("v19_project_display_order") { db in
       try db.execute(sql: "ALTER TABLE projects ADD COLUMN display_order INTEGER")
 
-      // Backfill existing projects with ascending order based on created_at
+      // Backfill existing projects with ascending order based on (created_at, id) for determinism
       try db.execute(sql: """
         UPDATE projects
         SET display_order = (
           SELECT COUNT(*) FROM projects p2
           WHERE p2.created_at < projects.created_at
+             OR (p2.created_at = projects.created_at AND p2.id < projects.id)
         )
       """)
 
