@@ -142,12 +142,16 @@ final class StatusBarViewModel {
         // A more sophisticated approach would maintain separate state per provider
         // and sum/max the values, but this simple approach works for MVP
 
+        log.info("📊 StatusBar: Received stats - pending=\(stats.pending), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining)s")
+
         // Only update if changed (reduces SwiftUI invalidation)
         if queueDepth != stats.pending
             || isProcessing != stats.isProcessing
             || estimatedSecondsRemaining != stats.estimatedSecondsRemaining
             || recentErrorCount != stats.recentErrorCount
             || topErrorReason != stats.topErrorReason {
+
+            log.info("📊 StatusBar: Updating UI - queueDepth: \(self.queueDepth)→\(stats.pending), isProcessing: \(self.isProcessing)→\(stats.isProcessing)")
 
             queueDepth = stats.pending
             isProcessing = stats.isProcessing
