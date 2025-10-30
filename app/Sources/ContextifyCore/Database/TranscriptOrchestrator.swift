@@ -430,6 +430,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try transcriptRepo.byProject(projectId)
   }
 
+  /// Delete a transcript and all its associated data
+  /// - Parameter transcriptId: Transcript ID to delete
+  /// - Note: Cascading deletes will remove: transcript_entries, timeline_cache, parse_errors, file_snapshots, tracked_files, transcript_summaries, system_events, assistant_usage
+  public func deleteTranscript(transcriptId: String) throws {
+    try transcriptRepo.delete(id: transcriptId)
+    log.info("Deleted transcript: \(transcriptId)")
+  }
+
   /// Get count of displayable entries for a transcript (excludes metadata-only records)
   public func getEntryCount(transcriptId: String) throws -> Int {
     try dbManager.pool.read { db in

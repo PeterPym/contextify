@@ -151,6 +151,7 @@ public protocol TranscriptRepository {
   func byProject(_ projectId: String) throws -> [Transcript]
   func get(_ transcriptId: String) throws -> Transcript?
   func needsReparse(currentVersion: Int) throws -> [Transcript]
+  func delete(id: String) throws
 }
 
 public final class TranscriptRepositoryImpl: TranscriptRepository {
@@ -255,6 +256,13 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
       try Transcript
         .filter(Column("parser_version") < currentVersion)
         .fetchAll(db)
+    }
+  }
+
+  public func delete(id: String) throws {
+    try db.write { db in
+      // Delete transcript (CASCADE will handle related entries via FK constraints)
+      try Transcript.deleteOne(db, key: id)
     }
   }
 }
