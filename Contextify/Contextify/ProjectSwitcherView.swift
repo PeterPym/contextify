@@ -46,26 +46,34 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   // Add a tiny hysteresis to avoid boundary jitter.
   private let hysteresis: CGFloat = 6.0
 
-  // 0...N "slots" determined by midpoints between tab centers
+  // 0...N "slots" determined by tab boundaries (left/right halves)
   private func proposedInsertionIndex(for locationX: CGFloat) -> Int {
     // Order frames by current project order
     let frames = allProjects.compactMap { tabFrames[$0.id] }
     guard !frames.isEmpty else { return 0 }
 
-    // Centers for each tab
-    let centers = frames.map(\.midX)
+    // Find which tab the cursor is over based on left/right halves
+    for (i, frame) in frames.enumerated() {
+      let tabCenter = frame.midX
 
-    // Before first center → 0 ; after last center → count
-    if locationX < centers[0] - hysteresis { return 0 }
-    if locationX >= centers[centers.count - 1] + hysteresis { return centers.count }
+      // Left half of tab → insert before (index i)
+      if locationX >= frame.minX - hysteresis && locationX < tabCenter {
+        return i
+      }
 
-    // Between centers i and i+1 → slot i+1
-    for i in 0..<(centers.count - 1) {
-      let boundary = (centers[i] + centers[i + 1]) * 0.5
-      if locationX < boundary - hysteresis { return i + 1 }
-      if abs(locationX - boundary) <= hysteresis { return i + 1 } // sticky boundary
+      // Right half of tab → insert after (index i+1)
+      if locationX >= tabCenter && locationX <= frame.maxX + hysteresis {
+        return i + 1
+      }
     }
-    return centers.count
+
+    // Before first tab
+    if locationX < frames.first!.minX {
+      return 0
+    }
+
+    // After last tab
+    return frames.count
   }
 
   private func isValidMove(from fromIndex: Int, to toIndex: Int) -> Bool {
@@ -122,48 +130,6 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   }
 }
 
-// MARK: - Ghost overlay
-
-private struct GhostInsertionOverlay: View {
-  let draggingProject: ProjectInfo
-  let slot: Int                 // 0...N
-  let allProjects: [ProjectInfo]
-  let tabFrames: [String: CGRect]
-
-  private func slotX() -> CGFloat? {
-    let frames = allProjects.compactMap { tabFrames[$0.id] }
-    guard !frames.isEmpty else { return nil }
-
-    switch slot {
-    case 0:              return frames.first!.minX
-    case frames.count:   return frames.last!.maxX
-    default:
-      let left  = frames[slot - 1]
-      let right = frames[slot]
-      return (left.maxX + right.minX) * 0.5
-    }
-  }
-
-  private func ghostSize() -> CGSize? {
-    if let f = tabFrames[draggingProject.id] { return f.size }
-    let frames = allProjects.compactMap { tabFrames[$0.id] }
-    guard let first = frames.first else { return nil }
-    let avgW = frames.map(\.width).reduce(0, +) / CGFloat(frames.count)
-    return CGSize(width: avgW, height: first.height)
-  }
-
-  var body: some View {
-    if let x = slotX(), let size = ghostSize() {
-      InsertionIndicator(draggingProject: draggingProject)
-        .frame(width: size.width, height: size.height)
-        .position(x: x + size.width / 2.0,
-                  y: (tabFrames.values.first?.midY ?? 22))
-        .transition(.opacity.combined(with: .scale))
-        .allowsHitTesting(false)
-    }
-  }
-}
-
 /// SwiftUI component for project navigation bar
 /// Shows project tabs with unread badges and active state
 struct ProjectSwitcherView: View {
@@ -174,61 +140,67 @@ struct ProjectSwitcherView: View {
 
   var body: some View {
     ScrollViewReader { proxy in
-      ZStack(alignment: .topLeading) {
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 8) {
-            ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { _, project in
-              ProjectTabView(
-                project: project,
-                isActive: project.id == state.activeProjectId,
-                unreadCount: state.unreadCounts[project.id] ?? 0,
-                isDragging: draggingProject?.id == project.id
-              )
-              .id(project.id)
-              .trackTabFrame(id: project.id)
-              .onTapGesture {
-                log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
-                Task {
-                  await state.switchToProject(project.id)
-                }
-              }
-              .onDrag {
-                self.draggingProject = project
-                return NSItemProvider(object: project.id as NSString)
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
+            // Insertion indicator before this tab
+            if insertionIndex == index, let draggingProject {
+              InsertionIndicator(draggingProject: draggingProject)
+                .transition(.asymmetric(
+                  insertion: .scale(scale: 0.5).combined(with: .opacity),
+                  removal: .scale(scale: 0.5).combined(with: .opacity)
+                ))
+            }
+
+            ProjectTabView(
+              project: project,
+              isActive: project.id == state.activeProjectId,
+              unreadCount: state.unreadCounts[project.id] ?? 0,
+              isDragging: draggingProject?.id == project.id
+            )
+            .id(project.id)
+            .trackTabFrame(id: project.id)
+            .onTapGesture {
+              log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
+              Task {
+                await state.switchToProject(project.id)
               }
             }
+            .onDrag {
+              self.draggingProject = project
+              return NSItemProvider(object: project.id as NSString)
+            }
           }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .coordinateSpace(name: "projectsContainer")
-          .onPreferenceChange(TabPositionPreferenceKey.self) { v in
-            tabPositions = v
-          }
-          // Container-level drop delegate (wide, stable)
-          .onDrop(
-            of: [.text],
-            delegate: ProjectTabsDropDelegate(
-              allProjects: state.allProjects,
-              tabFrames: tabPositions,
-              draggingProject: $draggingProject,
-              insertionIndex: $insertionIndex,
-              onReorder: { orderedIds in
-                Task { await state.reorderProjects(orderedIds) }
-              }
-            )
-          )
-        }
 
-        // Overlay: ghost indicator does not affect layout
-        if let dragging = draggingProject, let slot = insertionIndex {
-          GhostInsertionOverlay(
-            draggingProject: dragging,
-            slot: slot,
-            allProjects: state.allProjects,
-            tabFrames: tabPositions
-          )
-          .animation(.spring(response: 0.3, dampingFraction: 0.7), value: insertionIndex)
+          // Insertion indicator after last tab
+          if let insertionIndex, insertionIndex == state.allProjects.count, let draggingProject {
+            InsertionIndicator(draggingProject: draggingProject)
+              .transition(.asymmetric(
+                insertion: .scale(scale: 0.5).combined(with: .opacity),
+                removal: .scale(scale: 0.5).combined(with: .opacity)
+              ))
+          }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: insertionIndex)
+        .coordinateSpace(name: "projectsContainer")
+        .onPreferenceChange(TabPositionPreferenceKey.self) { v in
+          tabPositions = v
+        }
+        // Container-level drop delegate (wide, stable)
+        .onDrop(
+          of: [.text],
+          delegate: ProjectTabsDropDelegate(
+            allProjects: state.allProjects,
+            tabFrames: tabPositions,
+            draggingProject: $draggingProject,
+            insertionIndex: $insertionIndex,
+            onReorder: { orderedIds in
+              Task { await state.reorderProjects(orderedIds) }
+            }
+          )
+        )
       }
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
       .onChange(of: state.activeProjectId) { _, newValue in
