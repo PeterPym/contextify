@@ -342,3 +342,31 @@ public final class ProjectSwitcherState {
     }
   }
 }
+
+  /// Switch to the previous project in the list (cycles to end if at beginning)
+  public func switchToPreviousProject() async {
+    guard !allProjects.isEmpty else { return }
+    guard let currentId = activeProjectId,
+          let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) else {
+      // No active project - switch to first
+      await switchToProject(allProjects[0].id)
+      return
+    }
+
+    let previousIndex = currentIndex == 0 ? allProjects.count - 1 : currentIndex - 1
+    await switchToProject(allProjects[previousIndex].id)
+  }
+
+  /// Switch to the next project in the list (cycles to beginning if at end)
+  public func switchToNextProject() async {
+    guard !allProjects.isEmpty else { return }
+    guard let currentId = activeProjectId,
+          let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) else {
+      // No active project - switch to first
+      await switchToProject(allProjects[0].id)
+      return
+    }
+
+    let nextIndex = (currentIndex + 1) % allProjects.count
+    await switchToProject(allProjects[nextIndex].id)
+  }
