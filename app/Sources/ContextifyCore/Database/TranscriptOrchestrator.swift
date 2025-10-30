@@ -144,6 +144,22 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.setDisplayOrder(id: projectId, displayOrder: displayOrder)
   }
 
+  /// Atomically update display order for all projects in a single transaction
+  /// Uses two-phase update to avoid transient unique constraint violations if added later
+  public func setProjectDisplayOrderBulk(_ orderedIds: [String]) throws {
+    let now = Int(Date().timeIntervalSince1970)
+    try dbManager.pool.write { db in
+      // Phase 1: move to temporary high range to avoid transient conflicts
+      for (i, id) in orderedIds.enumerated() {
+        try db.execute(sql: "UPDATE projects SET display_order = ? WHERE id = ?", arguments: [i + 10_000, id])
+      }
+      // Phase 2: final ordering + updated_at
+      for (i, id) in orderedIds.enumerated() {
+        try db.execute(sql: "UPDATE projects SET display_order = ?, updated_at = ? WHERE id = ?", arguments: [i, now, id])
+      }
+    }
+  }
+
   public func markProjectOrphaned(projectId: String, orphanedSince: Int) throws {
     try projectRepo.markOrphaned(id: projectId, orphanedSince: orphanedSince)
   }
@@ -449,23 +465,28 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Find and delete all transcripts whose files no longer exist on disk
   /// - Returns: Array of deleted transcript IDs
   public func cleanupMissingTranscripts() throws -> [String] {
-    var deletedIds: [String] = []
+    // Phase 1: Read all transcripts (read transaction, no lock held)
+    let allTranscripts: [Transcript] = try dbManager.pool.read { db in
+      try Transcript.fetchAll(db)
+    }
 
-    // Query all transcripts directly from database
+    // Phase 2: Check filesystem outside any transaction (no DB lock)
+    let missingTranscripts = allTranscripts.filter { transcript in
+      !FileManager.default.fileExists(atPath: transcript.filePath)
+    }
+
+    let deletedIds = missingTranscripts.map(\.id)
+    guard !deletedIds.isEmpty else { return [] }
+
+    // Phase 3: Delete missing transcripts atomically in single write transaction
     try dbManager.pool.write { db in
-      let transcripts = try Transcript.fetchAll(db)
+      let placeholders = Array(repeating: "?", count: deletedIds.count).joined(separator: ",")
+      let sql = "DELETE FROM transcripts WHERE id IN (\(placeholders))"
+      try db.execute(sql: sql, arguments: StatementArguments(deletedIds))
+    }
 
-      for transcript in transcripts {
-        let fileURL = URL(fileURLWithPath: transcript.filePath)
-
-        // Check if file exists
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-          // File missing - delete transcript (CASCADE will handle related entries)
-          try transcript.delete(db)
-          deletedIds.append(transcript.id)
-          log.info("Cleaned up transcript with missing file: \(transcript.id) at \(transcript.filePath)")
-        }
-      }
+    for (transcript, id) in zip(missingTranscripts, deletedIds) {
+      log.info("Cleaned up transcript with missing file: \(id) at \(transcript.filePath)")
     }
 
     if deletedIds.isEmpty {

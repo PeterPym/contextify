@@ -12,13 +12,15 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
   public let rootPath: String
   public let transcriptCount: Int
   public let lastViewedAt: Date?  // Last time this project was viewed
+  public let isOrphaned: Bool  // Whether the project directory is missing
 
-  public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil) {
+  public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil, isOrphaned: Bool = false) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
     self.transcriptCount = transcriptCount
     self.lastViewedAt = lastViewedAt
+    self.isOrphaned = isOrphaned
   }
 }
 
@@ -173,13 +175,15 @@ public final class ProjectSwitcherState {
         }
       }
 
-      // Map to ProjectInfo
+      // Map to ProjectInfo (check orphaned status once here, not per-tab)
       let projectInfos = sortedProjects.map { project in
-        ProjectInfo(
+        let isOrphaned = !FileManager.default.fileExists(atPath: project.rootPath)
+        return ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
           rootPath: project.rootPath,
-          transcriptCount: 0  // TODO: query actual count
+          transcriptCount: 0,  // TODO: query actual count
+          isOrphaned: isOrphaned
         )
       }
 
@@ -332,15 +336,13 @@ public final class ProjectSwitcherState {
     }
   }
 
-  /// Reorder projects by updating display_order for all projects
+  /// Reorder projects by updating display_order for all projects atomically
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = orchestrator else { return }
 
     do {
-      // Update display_order for each project based on position in array
-      for (index, projectId) in orderedProjectIds.enumerated() {
-        try orchestrator.setProjectDisplayOrder(projectId: projectId, displayOrder: index)
-      }
+      // Atomically update all display_order values in a single transaction
+      try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
 
       // Refresh to reflect new order
       await refreshProjects()

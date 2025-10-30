@@ -76,6 +76,13 @@ struct ContentView: View {
             // Monitor iTerm2 activation for automatic session refresh
             setupWorkspaceMonitoring()
         }
+        .onDisappear {
+            // Clean up workspace observer to prevent leak
+            if let token = workspaceObserver {
+                NSWorkspace.shared.notificationCenter.removeObserver(token)
+                workspaceObserver = nil
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
             let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval

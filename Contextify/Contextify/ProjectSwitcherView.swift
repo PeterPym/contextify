@@ -87,12 +87,11 @@ struct ProjectTabView: View {
   let isDragging: Bool
   let isDropTarget: Bool
   @Environment(ProjectSwitcherState.self) private var state
-  @State private var isOrphaned: Bool = false
 
   var body: some View {
     HStack(spacing: 4) {
       // Orphaned indicator
-      if isOrphaned {
+      if project.isOrphaned {
         Image(systemName: "exclamationmark.triangle.fill")
           .font(.caption2)
           .foregroundStyle(.orange)
@@ -143,17 +142,11 @@ struct ProjectTabView: View {
         }
       }
 
-      if isOrphaned {
+      if project.isOrphaned {
         Divider()
         Text("Directory Missing: \(project.rootPath)")
           .font(.caption)
           .foregroundStyle(.secondary)
-      }
-    }
-    .task {
-      // Check if project is orphaned
-      if let details = await state.getProjectDetails(project.id) {
-        isOrphaned = details.isOrphaned
       }
     }
     .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
@@ -178,22 +171,8 @@ struct ProjectDropDelegate: DropDelegate {
       return
     }
 
-    // Show drop target indicator
+    // Show drop target indicator (UI only, no DB write)
     dropTargetId = project.id
-
-    // Calculate new order
-    var updatedProjects = allProjects
-    guard let fromIndex = updatedProjects.firstIndex(where: { $0.id == draggingProject.id }),
-          let toIndex = updatedProjects.firstIndex(where: { $0.id == project.id }) else {
-      return
-    }
-
-    // Move the project
-    updatedProjects.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
-
-    // Trigger reorder callback with new order
-    let orderedIds = updatedProjects.map { $0.id }
-    onReorder(orderedIds)
   }
 
   func dropExited(info: DropInfo) {
@@ -204,7 +183,29 @@ struct ProjectDropDelegate: DropDelegate {
 
   func performDrop(info: DropInfo) -> Bool {
     dropTargetId = nil
-    draggingProject = nil
+
+    // Persist final order exactly once on drop
+    guard let draggingProject = draggingProject else {
+      self.draggingProject = nil
+      return false
+    }
+
+    var updatedProjects = allProjects
+    guard let fromIndex = updatedProjects.firstIndex(where: { $0.id == draggingProject.id }),
+          let toIndex = updatedProjects.firstIndex(where: { $0.id == project.id }) else {
+      self.draggingProject = nil
+      return false
+    }
+
+    // Calculate final order
+    updatedProjects.move(fromOffsets: IndexSet(integer: fromIndex),
+                        toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+
+    // Persist atomically
+    let orderedIds = updatedProjects.map { $0.id }
+    onReorder(orderedIds)
+
+    self.draggingProject = nil
     return true
   }
 }
