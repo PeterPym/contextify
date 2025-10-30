@@ -640,6 +640,16 @@ private extension Database {
   /// Check if a column exists in a table
   /// Used by migrations to avoid "duplicate column" errors on clean installs
   func columnExists(_ column: String, in table: String) throws -> Bool {
-    try Int.fetchOne(self, sql: "SELECT 1 FROM pragma_table_info(?) WHERE name = ?", arguments: [table, column]) != nil
+    // Validate table name to prevent SQL injection (PRAGMA doesn't support bound parameters)
+    // SQLite identifiers: alphanumeric, underscore, must not start with digit (unless quoted)
+    let validTableName = table.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
+    guard validTableName, !table.isEmpty else {
+      throw DatabaseError(message: "Invalid table name: \(table)")
+    }
+
+    // Use string interpolation for table name (PRAGMA doesn't support bound parameters)
+    // Keep bound parameter for column name
+    let sql = "SELECT 1 FROM pragma_table_info('\(table)') WHERE name = ?"
+    return try Int.fetchOne(self, sql: sql, arguments: [column]) != nil
   }
 }
