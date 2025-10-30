@@ -222,45 +222,61 @@ enum DatabaseSchema {
 
     // v18: Add hidden column for project visibility management
     migrator.registerMigration("v18_project_hidden_column") { db in
-      try db.execute(sql: "ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+      // Guard against clean installs where column already exists
+      if try !db.columnExists("hidden", in: "projects") {
+        try db.execute(sql: "ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
 
-      // Add index for filtering hidden projects
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_projects_hidden
-        ON projects(hidden)
-        WHERE hidden = 1
-      """)
+        // Add index for filtering hidden projects
+        try db.execute(sql: """
+          CREATE INDEX IF NOT EXISTS idx_projects_hidden
+          ON projects(hidden)
+          WHERE hidden = 1
+        """)
+      }
     }
 
     // v19: Add display_order column for custom project ordering
     migrator.registerMigration("v19_project_display_order") { db in
-      try db.execute(sql: "ALTER TABLE projects ADD COLUMN display_order INTEGER")
+      // Guard against clean installs where column already exists
+      if try !db.columnExists("display_order", in: "projects") {
+        try db.execute(sql: "ALTER TABLE projects ADD COLUMN display_order INTEGER")
 
-      // Backfill existing projects with ascending order based on (created_at, id) for determinism
-      try db.execute(sql: """
-        UPDATE projects
-        SET display_order = (
-          SELECT COUNT(*) FROM projects p2
-          WHERE p2.created_at < projects.created_at
-             OR (p2.created_at = projects.created_at AND p2.id < projects.id)
-        )
-      """)
+        // Backfill existing projects with ascending order based on (created_at, id) for determinism
+        try db.execute(sql: """
+          UPDATE projects
+          SET display_order = (
+            SELECT COUNT(*) FROM projects p2
+            WHERE p2.created_at < projects.created_at
+               OR (p2.created_at = projects.created_at AND p2.id < projects.id)
+          )
+        """)
 
-      // Add index for ordered queries
-      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
+        // Add index for ordered queries
+        try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_projects_display_order ON projects(display_order)")
+      }
     }
 
     // v20: Add orphaned project tracking columns
     migrator.registerMigration("v20_orphaned_projects") { db in
-      try db.execute(sql: "ALTER TABLE projects ADD COLUMN is_orphaned INTEGER NOT NULL DEFAULT 0")
-      try db.execute(sql: "ALTER TABLE projects ADD COLUMN orphaned_since INTEGER")
+      // Guard against clean installs where columns already exist
+      var didAlter = false
+      if try !db.columnExists("is_orphaned", in: "projects") {
+        try db.execute(sql: "ALTER TABLE projects ADD COLUMN is_orphaned INTEGER NOT NULL DEFAULT 0")
+        didAlter = true
+      }
+      if try !db.columnExists("orphaned_since", in: "projects") {
+        try db.execute(sql: "ALTER TABLE projects ADD COLUMN orphaned_since INTEGER")
+        didAlter = true
+      }
 
-      // Add partial index for orphaned projects
-      try db.execute(sql: """
-        CREATE INDEX IF NOT EXISTS idx_projects_orphaned
-        ON projects(is_orphaned, orphaned_since)
-        WHERE is_orphaned = 1
-      """)
+      // Add partial index for orphaned projects (only if we altered the schema)
+      if didAlter {
+        try db.execute(sql: """
+          CREATE INDEX IF NOT EXISTS idx_projects_orphaned
+          ON projects(is_orphaned, orphaned_since)
+          WHERE is_orphaned = 1
+        """)
+      }
     }
 
     return migrator
@@ -615,5 +631,15 @@ enum DatabaseSchema {
 
     // Run ANALYZE to update statistics
     try db.execute(sql: "ANALYZE")
+  }
+}
+
+// MARK: - Database Extension for Migration Safety
+
+private extension Database {
+  /// Check if a column exists in a table
+  /// Used by migrations to avoid "duplicate column" errors on clean installs
+  func columnExists(_ column: String, in table: String) throws -> Bool {
+    try Int.fetchOne(self, sql: "SELECT 1 FROM pragma_table_info(?) WHERE name = ?", arguments: [table, column]) != nil
   }
 }

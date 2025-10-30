@@ -424,6 +424,7 @@ public final class ProjectSwitcherState {
   }
 
   /// Switch to the previous project in the list (cycles to end if at beginning)
+  @MainActor
   public func switchToPreviousProject() async {
     guard !allProjects.isEmpty else { return }
     guard let currentId = activeProjectId,
@@ -438,6 +439,7 @@ public final class ProjectSwitcherState {
   }
 
   /// Switch to the next project in the list (cycles to beginning if at end)
+  @MainActor
   public func switchToNextProject() async {
     guard !allProjects.isEmpty else { return }
     guard let currentId = activeProjectId,

@@ -313,6 +313,9 @@ private extension ContentView {
     }
 
     func setupWorkspaceMonitoring() {
+        // Prevent duplicate observers if called again
+        guard workspaceObserver == nil else { return }
+
         // Observe when iTerm2 becomes active to auto-refresh session name
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -324,7 +327,9 @@ private extension ContentView {
             // Check if iTerm2 was activated
             if app.bundleIdentifier == "com.googlecode.iterm2" {
                 Task { @MainActor in
-                    model?.targetSessionName = await ITerm2Bridge.getCurrentSessionName()
+                    // Do the work off-main to avoid blocking UI (ITerm2Bridge async call)
+                    let sessionName = await ITerm2Bridge.getCurrentSessionName()
+                    model?.targetSessionName = sessionName
                 }
             }
         }
