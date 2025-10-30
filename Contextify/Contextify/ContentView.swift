@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
     @Environment(DeveloperMode.self) private var devMode
+    @Environment(\.scenePhase) private var scenePhase
     // Singleton reference - no @State needed since we're not replacing the reference
     private let projectSwitcher = ProjectSwitcherState.shared
     @State private var showToast = false
@@ -77,10 +78,14 @@ struct ContentView: View {
             setupWorkspaceMonitoring()
         }
         .onDisappear {
-            // Clean up workspace observer to prevent leak
-            if let token = workspaceObserver {
-                NSWorkspace.shared.notificationCenter.removeObserver(token)
-                workspaceObserver = nil
+            cleanupWorkspaceMonitoring()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Clean up on background; re-setup on active (if not already set up)
+            if phase == .background {
+                cleanupWorkspaceMonitoring()
+            } else if phase == .active, workspaceObserver == nil {
+                setupWorkspaceMonitoring()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
@@ -312,9 +317,20 @@ private extension ContentView {
         // If duration is 0, toast persists until manually dismissed
     }
 
+    func cleanupWorkspaceMonitoring() {
+        if let token = workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(token)
+            workspaceObserver = nil
+            uiLog.debug("Workspace observer removed")
+        }
+    }
+
     func setupWorkspaceMonitoring() {
         // Prevent duplicate observers if called again
-        guard workspaceObserver == nil else { return }
+        guard workspaceObserver == nil else {
+            uiLog.debug("Workspace observer already set up, skipping")
+            return
+        }
 
         // Observe when iTerm2 becomes active to auto-refresh session name
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -326,12 +342,21 @@ private extension ContentView {
 
             // Check if iTerm2 was activated
             if app.bundleIdentifier == "com.googlecode.iterm2" {
-                Task { @MainActor in
-                    // Do the work off-main to avoid blocking UI (ITerm2Bridge async call)
+                // Do work off-main to avoid blocking UI during slow AppleScript execution
+                Task.detached {
                     let sessionName = await ITerm2Bridge.getCurrentSessionName()
-                    model?.targetSessionName = sessionName
+                    await MainActor.run { [weak model] in
+                        if let sessionName {
+                            model?.targetSessionName = sessionName
+                        } else {
+                            // Session name fetch returned nil (iTerm2 not responding or no session)
+                            uiLog.debug("iTerm2 session name unavailable")
+                        }
+                    }
                 }
             }
         }
+
+        uiLog.debug("Workspace observer set up for iTerm2 activation")
     }
 }
