@@ -33,6 +33,7 @@ public final class ProjectRepositoryImpl: ProjectRepository {
         rootPath: canonPath,
         rootBookmark: bookmark,
         lastViewedTs: 0.0,  // Never viewed yet (all entries unread)
+        hidden: false,  // Visible by default (v18)
         createdAt: now,
         updatedAt: now
       )

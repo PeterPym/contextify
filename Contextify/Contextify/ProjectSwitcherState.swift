@@ -157,8 +157,11 @@ public final class ProjectSwitcherState {
       // Query all projects from database
       let projects = try orchestrator.listProjects()
 
+      // Filter out hidden projects (v18)
+      let visibleProjects = projects.filter { !$0.hidden }
+
       // Map to ProjectInfo
-      let projectInfos = projects.map { project in
+      let projectInfos = visibleProjects.map { project in
         ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
@@ -172,7 +175,7 @@ public final class ProjectSwitcherState {
         self.allProjects = projectInfos
       }
 
-      log.info("ProjectSwitcher: projects=\(projectInfos.count)")
+      log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(projects.count - visibleProjects.count))")
     } catch {
       log.error("ProjectSwitcher: refreshProjects error=\(String(describing: error))")
     }

@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 17
+  static let version = 18
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -220,6 +220,18 @@ enum DatabaseSchema {
       try db.execute(sql: "ANALYZE")
     }
 
+    // v18: Add hidden column for project visibility management
+    migrator.registerMigration("v18_project_hidden_column") { db in
+      try db.execute(sql: "ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+
+      // Add index for filtering hidden projects
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_projects_hidden
+        ON projects(hidden)
+        WHERE hidden = 1
+      """)
+    }
+
     return migrator
   }
 
@@ -228,17 +240,23 @@ enum DatabaseSchema {
     try db.execute(sql: "PRAGMA foreign_keys = ON")
     try db.execute(sql: "PRAGMA journal_mode = WAL")
 
-    // Projects table (v12: added last_viewed_ts for unread tracking)
+    // Projects table (v12: added last_viewed_ts for unread tracking, v18: added hidden for visibility management)
     try db.create(table: "projects", ifNotExists: true) { t in
       t.column("id", .text).primaryKey()
       t.column("name", .text)
       t.column("root_path", .text).notNull()
       t.column("root_bookmark", .blob)
       t.column("last_viewed_ts", .double).notNull().defaults(to: 0.0)  // v12: epoch timestamp
+      t.column("hidden", .integer).notNull().defaults(to: 0)  // v18: project visibility
       t.column("created_at", .integer).notNull()
       t.column("updated_at", .integer).notNull()
     }
     try db.create(index: "idx_projects_root_path", on: "projects", columns: ["root_path"], unique: true, ifNotExists: true)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_projects_hidden
+      ON projects(hidden)
+      WHERE hidden = 1
+    """)
 
     // Transcripts table (v2: last_processed_entry_id, v3: identity fields, v3: unique indexes)
     try db.create(table: "transcripts", ifNotExists: true) { t in
