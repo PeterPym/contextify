@@ -716,8 +716,9 @@ final class ConversationMonitor {
             forName: .projectRootDidChange,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             guard let self else { return }
+            log.info("📬 ConversationMonitor: Received .projectRootDidChange notification (object: \(String(describing: notification.object)))")
             Task { @MainActor [weak self] in
                 self?.handleProjectRootChange()
             }

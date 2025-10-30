@@ -45,13 +45,19 @@ public actor ProjectActivityMonitor {
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
     self.eventStream = AsyncStream<ProjectEvent>.makeStream()
-    self.eventStream.continuation.onTermination = { @Sendable _ in
-      Task { [weak orchestrator] in
+    let monitorId = "\(ObjectIdentifier(self))"
+    self.eventStream.continuation.onTermination = { @Sendable [monitorId] _ in
+      Task {
         // Termination hook for cleanup if needed
-        log.debug("ProjectActivity: stream terminated; monitoring stopped")
+        log.warning("⚠️ ProjectActivity: stream terminated for monitor \(monitorId)")
       }
     }
-    log.debug("ProjectActivity: stream initialized")
+    log.info("✅ ProjectActivity: monitor initialized (id: \(monitorId))")
+  }
+
+  deinit {
+    let monitorId = "\(ObjectIdentifier(self))"
+    log.warning("🗑️ ProjectActivity: monitor deallocated (id: \(monitorId))")
   }
 
   /// Start global monitoring (FSEvents + fallback polling)

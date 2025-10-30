@@ -86,7 +86,13 @@ public final class ProjectSwitcherState {
 
     // Initialize activity monitor once
     if activityMonitor == nil {
-      activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
+      let monitor = ProjectActivityMonitor(orchestrator: orchestrator)
+      activityMonitor = monitor
+      let monitorId = "\(ObjectIdentifier(monitor))"
+      log.info("✅ ProjectSwitcher: created new activity monitor (id: \(monitorId))")
+    } else {
+      let monitorId = "\(ObjectIdentifier(activityMonitor!))"
+      log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
     // Initial discovery & full unread pass based on current DB
@@ -238,7 +244,7 @@ public final class ProjectSwitcherState {
   public func switchToProject(_ projectId: String) async {
     guard let orchestrator = orchestrator else { return }
 
-    log.info("Switching to project: \(projectId)")
+    log.info("🔀 ProjectSwitcher: Switching to project: \(projectId)")
 
     // Update active project ID
     activeProjectId = projectId

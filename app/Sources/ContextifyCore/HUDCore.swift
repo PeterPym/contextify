@@ -655,9 +655,11 @@ public final class HUDViewModel {
     updateHeadWatcher()
 
     // Post notification AFTER state is updated (ConversationMonitor listens to this)
+    let notificationPath = self.projectRootURL?.path ?? resolved.path
+    lifecycleLog.info("📢 HUDViewModel: Posting .projectRootDidChange notification for: \(notificationPath)")
     NotificationCenter.default.post(
       name: .projectRootDidChange,
-      object: self.projectRootURL?.path ?? resolved.path
+      object: notificationPath
     )
   }
 
