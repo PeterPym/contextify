@@ -35,7 +35,7 @@ public final class ProjectSwitcherState {
   private var orchestrator: TranscriptOrchestrator?
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
 
-  // All discovered projects
+  // All discovered projects (visible only)
   private(set) var allProjects: [ProjectInfo] = []
 
   // Currently active project ID
@@ -44,8 +44,12 @@ public final class ProjectSwitcherState {
   // Unread counts per project
   private(set) var unreadCounts: [String: Int] = [:]
 
+  // Tracks whether any hidden projects exist
+  private(set) var hasHiddenProjects: Bool = false
+
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
+  @ObservationIgnored nonisolated(unsafe) private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
 
   // Coalescing state for batch unread updates
@@ -55,6 +59,12 @@ public final class ProjectSwitcherState {
   private init() {
     // Lazy initialization - orchestrator set on start()
     self.orchestrator = nil
+  }
+
+  deinit {
+    if let observer = projectRootObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   /// Initialize with explicit orchestrator (for testing)
@@ -134,12 +144,32 @@ public final class ProjectSwitcherState {
       }
       log.warning("ProjectSwitcher: event stream ended")
     }
+
+    // Listen for project root changes from HUDViewModel (e.g., "Set as Current" button)
+    projectRootObserver = NotificationCenter.default.addObserver(
+      forName: .projectRootDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      guard let self, let projectURL = notification.object as? URL else { return }
+
+      // Find the project ID from the path and switch to it
+      Task { @MainActor in
+        await self.handleProjectRootChange(projectURL)
+      }
+    }
   }
 
   /// Stop monitoring
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
+    coalesceTask?.cancel()
+    coalesceTask = nil
+    if let observer = projectRootObserver {
+      NotificationCenter.default.removeObserver(observer)
+      projectRootObserver = nil
+    }
     isStarted = false
 
     Task {
@@ -147,6 +177,30 @@ public final class ProjectSwitcherState {
     }
 
     log.info("ProjectSwitcherState stopped")
+  }
+
+  /// Handle project root change notification from HUDViewModel
+  private func handleProjectRootChange(_ projectURL: URL) async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Find the project in the database by path
+      let projects = try orchestrator.listProjects()
+      if let project = projects.first(where: { $0.rootPath == projectURL.path }) {
+        let projectName = project.name ?? "unknown"
+        let projectId = project.id
+        log.info("ProjectSwitcher: Switching to project \(projectName) (id: \(projectId)) from external change")
+        await switchToProject(project.id)
+      } else {
+        let urlPath = projectURL.path
+        log.warning("ProjectSwitcher: No project found in DB for path: \(urlPath)")
+        // Refresh projects to ensure DB is in sync
+        await refreshProjects()
+      }
+    } catch {
+      let errorDesc = error.localizedDescription
+      log.error("ProjectSwitcher: Failed to handle project root change: \(errorDesc)")
+    }
   }
 
   // MARK: - Public API
@@ -161,6 +215,7 @@ public final class ProjectSwitcherState {
 
       // Filter out hidden projects (v18)
       let visibleProjects = projects.filter { !$0.hidden }
+      let hiddenCount = projects.count - visibleProjects.count
 
       // Sort by display_order (v19), falling back to created_at for nulls
       let sortedProjects = visibleProjects.sorted { lhs, rhs in
@@ -192,9 +247,10 @@ public final class ProjectSwitcherState {
       // Update state on main actor
       await MainActor.run {
         self.allProjects = projectInfos
+        self.hasHiddenProjects = hiddenCount > 0
       }
 
-      log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(projects.count - visibleProjects.count))")
+      log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
     } catch {
       log.error("ProjectSwitcher: refreshProjects error=\(String(describing: error))")
     }
