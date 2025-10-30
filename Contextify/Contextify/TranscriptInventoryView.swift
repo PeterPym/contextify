@@ -41,6 +41,9 @@ struct TranscriptInventoryView: View {
   @State private var lastFlushCount = 0
   @State private var showingDeleteConfirmation = false
   @State private var transcriptToDelete: TranscriptSession?
+  @State private var showingCleanupConfirmation = false
+  @State private var cleanupResult: (count: Int, ids: [String])? = nil
+  @State private var showingCleanupAlert = false
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
@@ -121,6 +124,15 @@ struct TranscriptInventoryView: View {
                 .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
+
+            Button {
+              showingCleanupConfirmation = true
+            } label: {
+              Label("Clean Up Missing Files", systemImage: "trash.circle")
+                .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderless)
+            .help("Delete transcript records for files that no longer exist")
           }
         }
       }
@@ -139,6 +151,27 @@ struct TranscriptInventoryView: View {
         }
       } message: { session in
         Text("This will permanently delete the transcript '\(session.identifier)' from the database. The transcript file will remain on disk.\n\nThis action cannot be undone.")
+      }
+      .alert("Clean Up Missing Transcript Files?", isPresented: $showingCleanupConfirmation) {
+        Button("Cancel", role: .cancel) { }
+        Button("Clean Up", role: .destructive) {
+          performCleanup()
+        }
+      } message: {
+        Text("This will scan all transcripts and delete records for files that no longer exist on disk.\n\nThis action cannot be undone.")
+      }
+      .alert("Cleanup Complete", isPresented: $showingCleanupAlert) {
+        Button("OK") {
+          cleanupResult = nil
+        }
+      } message: {
+        if let result = cleanupResult {
+          if result.count == 0 {
+            Text("No missing transcript files were found.")
+          } else {
+            Text("Cleaned up \(result.count) transcript(s) with missing files.")
+          }
+        }
       }
 
       // Scope filter
@@ -442,6 +475,31 @@ struct TranscriptInventoryView: View {
       }
 
       transcriptToDelete = nil
+    }
+  }
+
+  private func performCleanup() {
+    Task {
+      do {
+        // Clean up missing transcripts
+        let deletedIds = try monitor.orchestrator.cleanupMissingTranscripts()
+
+        // Refresh session list
+        await monitor.loadAllSessionsFromDatabase()
+
+        // Clear selection if deleted session was selected
+        if let selectedId = selectedTranscriptId, deletedIds.contains(selectedId) {
+          selectedTranscriptId = nil
+        }
+
+        // Show result
+        cleanupResult = (count: deletedIds.count, ids: deletedIds)
+        showingCleanupAlert = true
+
+        log.info("Cleanup complete: \(deletedIds.count) transcripts removed")
+      } catch {
+        log.error("Failed to perform cleanup: \(error.localizedDescription)")
+      }
     }
   }
 

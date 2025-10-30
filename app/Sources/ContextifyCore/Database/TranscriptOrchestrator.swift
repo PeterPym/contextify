@@ -446,6 +446,37 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     log.info("Deleted transcript: \(transcriptId)")
   }
 
+  /// Find and delete all transcripts whose files no longer exist on disk
+  /// - Returns: Array of deleted transcript IDs
+  public func cleanupMissingTranscripts() throws -> [String] {
+    var deletedIds: [String] = []
+
+    // Query all transcripts directly from database
+    try dbManager.pool.write { db in
+      let transcripts = try Transcript.fetchAll(db)
+
+      for transcript in transcripts {
+        let fileURL = URL(fileURLWithPath: transcript.filePath)
+
+        // Check if file exists
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+          // File missing - delete transcript (CASCADE will handle related entries)
+          try transcript.delete(db)
+          deletedIds.append(transcript.id)
+          log.info("Cleaned up transcript with missing file: \(transcript.id) at \(transcript.filePath)")
+        }
+      }
+    }
+
+    if deletedIds.isEmpty {
+      log.info("No missing transcript files found during cleanup")
+    } else {
+      log.info("Cleaned up \(deletedIds.count) transcripts with missing files")
+    }
+
+    return deletedIds
+  }
+
   /// Get count of displayable entries for a transcript (excludes metadata-only records)
   public func getEntryCount(transcriptId: String) throws -> Int {
     try dbManager.pool.read { db in
