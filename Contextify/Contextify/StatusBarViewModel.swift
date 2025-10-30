@@ -144,18 +144,21 @@ final class StatusBarViewModel {
 
         log.debug("📊 StatusBar: Received stats - pending=\(stats.pending), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining)s")
 
+        // Guard: only show processing when we actually have items to process
+        let uiProcessing = stats.isProcessing && stats.pending > 0
+
         // Only update if changed (reduces SwiftUI invalidation)
         if queueDepth != stats.pending
-            || isProcessing != stats.isProcessing
+            || isProcessing != uiProcessing
             || estimatedSecondsRemaining != stats.estimatedSecondsRemaining
             || recentErrorCount != stats.recentErrorCount
             || topErrorReason != stats.topErrorReason {
 
-            log.debug("📊 StatusBar: Updating UI - queueDepth: \(self.queueDepth)→\(stats.pending), isProcessing: \(self.isProcessing)→\(stats.isProcessing)")
+            log.debug("📊 StatusBar: Updating UI - queueDepth: \(self.queueDepth)→\(stats.pending), isProcessing: \(self.isProcessing)→\(uiProcessing)")
 
             queueDepth = stats.pending
-            isProcessing = stats.isProcessing
-            estimatedSecondsRemaining = stats.estimatedSecondsRemaining
+            isProcessing = uiProcessing
+            estimatedSecondsRemaining = uiProcessing ? stats.estimatedSecondsRemaining : 0
             recentErrorCount = stats.recentErrorCount
             topErrorReason = stats.topErrorReason
         }
