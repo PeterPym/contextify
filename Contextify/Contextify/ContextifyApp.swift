@@ -234,6 +234,18 @@ struct ProjectRootCommands: Commands {
   var body: some Commands {
     CommandGroup(after: .newItem) {
       Button("Open project...") { pickProjectRoot() }
+
+      Divider()
+
+      Button("Previous Project") {
+        Task { await ProjectSwitcherState.shared.switchToPreviousProject() }
+      }
+      .keyboardShortcut("[", modifiers: [.command, .shift])
+
+      Button("Next Project") {
+        Task { await ProjectSwitcherState.shared.switchToNextProject() }
+      }
+      .keyboardShortcut("]", modifiers: [.command, .shift])
     }
   }
 
