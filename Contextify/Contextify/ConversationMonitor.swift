@@ -158,6 +158,9 @@ final class ConversationMonitor {
     }
 
     deinit {
+        // Cancel any pending debounce task
+        debounceTask?.cancel()
+
         // Clean up observers (only relevant for tests/previews, not for singleton)
         if let observer = projectChangeObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -165,6 +168,8 @@ final class ConversationMonitor {
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+
+        log.info("ConversationMonitor deinit: cancelled debounceTask and removed observers")
     }
 
     @MainActor
