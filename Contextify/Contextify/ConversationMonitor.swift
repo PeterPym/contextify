@@ -816,7 +816,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
-        log.info("🔄 processIncrementalUpdate called - updateInFlight=\(updateInFlight)")
+        log.info("🔄 processIncrementalUpdate called - updateInFlight=\(self.updateInFlight)")
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer {

@@ -371,3 +371,4 @@ public final class ProjectSwitcherState {
     let nextIndex = (currentIndex + 1) % allProjects.count
     await switchToProject(allProjects[nextIndex].id)
   }
+}
