@@ -39,6 +39,8 @@ struct TranscriptInventoryView: View {
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
+  @State private var showingDeleteConfirmation = false
+  @State private var transcriptToDelete: TranscriptSession?
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
@@ -127,6 +129,16 @@ struct TranscriptInventoryView: View {
         Button("OK") { }
       } message: {
         Text("Flushed \(lastFlushCount) heuristic metadata files. The transcripts will be re-analyzed automatically.")
+      }
+      .alert("Delete Transcript?", isPresented: $showingDeleteConfirmation, presenting: transcriptToDelete) { session in
+        Button("Cancel", role: .cancel) {
+          transcriptToDelete = nil
+        }
+        Button("Delete", role: .destructive) {
+          deleteTranscript(session)
+        }
+      } message: { session in
+        Text("This will permanently delete the transcript '\(session.identifier)' from the database. The transcript file will remain on disk.\n\nThis action cannot be undone.")
       }
 
       // Scope filter
@@ -387,6 +399,15 @@ struct TranscriptInventoryView: View {
     } label: {
       Label("Copy Path", systemImage: "doc.on.doc")
     }
+
+    Divider()
+
+    Button(role: .destructive) {
+      transcriptToDelete = session
+      showingDeleteConfirmation = true
+    } label: {
+      Label("Delete Transcript", systemImage: "trash")
+    }
   }
 
   private func exportToCodex(_ session: TranscriptSession) {
@@ -398,6 +419,29 @@ struct TranscriptInventoryView: View {
   private func exportToClaudeCode(_ session: TranscriptSession) {
     Task {
       await performExport(session: session, to: .claudeCode)
+    }
+  }
+
+  private func deleteTranscript(_ session: TranscriptSession) {
+    Task {
+      do {
+        // Delete from database (cascading will remove all related data)
+        try monitor.orchestrator.deleteTranscript(transcriptId: session.identifier)
+
+        // Refresh session list
+        await monitor.loadAllSessionsFromDatabase()
+
+        // Clear selection if deleted session was selected
+        if selectedTranscriptId == session.identifier {
+          selectedTranscriptId = nil
+        }
+
+        log.info("Deleted transcript: \(session.identifier)")
+      } catch {
+        log.error("Failed to delete transcript: \(error.localizedDescription)")
+      }
+
+      transcriptToDelete = nil
     }
   }
 
