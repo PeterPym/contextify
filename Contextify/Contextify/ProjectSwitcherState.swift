@@ -292,6 +292,46 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Get full project details (for checking orphaned status, etc.)
+  public func getProjectDetails(_ projectId: String) async -> Project? {
+    guard let orchestrator = orchestrator else { return nil }
+    return try? orchestrator.getProject(id: projectId)
+  }
+
+  /// Hide a project from the switcher tabs
+  public func hideProject(_ projectId: String) async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Update hidden state
+      try orchestrator.setProjectHidden(projectId: projectId, hidden: true)
+
+      // Refresh project list to remove hidden project
+      await refreshProjects()
+
+      log.info("Hidden project: \(projectId)")
+    } catch {
+      log.error("Failed to hide project: \(error.localizedDescription)")
+    }
+  }
+
+  /// Unhide a project (must be called from management UI)
+  public func unhideProject(_ projectId: String) async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Update hidden state
+      try orchestrator.setProjectHidden(projectId: projectId, hidden: false)
+
+      // Refresh project list
+      await refreshProjects()
+
+      log.info("Unhidden project: \(projectId)")
+    } catch {
+      log.error("Failed to unhide project: \(error.localizedDescription)")
+    }
+  }
+
   // MARK: - Private
 
   private func ensureCurrentProjectInDatabase() async {

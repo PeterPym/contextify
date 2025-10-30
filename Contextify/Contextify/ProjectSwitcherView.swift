@@ -1,6 +1,7 @@
 import SwiftUI
 import OSLog
 import AppKit
+import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcherUI")
 
@@ -63,9 +64,19 @@ struct ProjectTabView: View {
   let project: ProjectInfo
   let isActive: Bool
   let unreadCount: Int
+  @Environment(ProjectSwitcherState.self) private var state
+  @State private var isOrphaned: Bool = false
 
   var body: some View {
     HStack(spacing: 4) {
+      // Orphaned indicator
+      if isOrphaned {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.caption2)
+          .foregroundStyle(.orange)
+          .help("Project directory is missing")
+      }
+
       Text(project.name)
         .font(.subheadline)
         .fontWeight(isActive ? .semibold : .regular)
@@ -87,6 +98,26 @@ struct ProjectTabView: View {
       RoundedRectangle(cornerRadius: 6)
         .stroke(isActive ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
     )
+    .contextMenu {
+      Button("Hide from Tabs") {
+        Task {
+          await state.hideProject(project.id)
+        }
+      }
+
+      if isOrphaned {
+        Divider()
+        Text("Directory Missing: \(project.rootPath)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .task {
+      // Check if project is orphaned
+      if let details = await state.getProjectDetails(project.id) {
+        isOrphaned = details.isOrphaned
+      }
+    }
     .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
     .accessibilityHint("Activate to switch to this project")
     .accessibilityAddTraits(.isButton)

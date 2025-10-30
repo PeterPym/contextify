@@ -136,6 +136,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.get(id: id)
   }
 
+  public func setProjectHidden(projectId: String, hidden: Bool) throws {
+    try projectRepo.setHidden(id: projectId, hidden: hidden)
+  }
+
   public func markProjectOrphaned(projectId: String, orphanedSince: Int) throws {
     try projectRepo.markOrphaned(id: projectId, orphanedSince: orphanedSince)
   }
