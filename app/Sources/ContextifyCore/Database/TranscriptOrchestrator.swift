@@ -149,6 +149,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.setHidden(id: projectId, hidden: hidden)
   }
 
+  /// Restore all hidden projects (set hidden=false for all projects)
+  public func restoreAllHiddenProjects() throws {
+    let now = Int(Date().timeIntervalSince1970)
+    try dbManager.pool.write { db in
+      try db.execute(sql: "UPDATE projects SET hidden = 0, updated_at = ? WHERE hidden = 1", arguments: [now])
+    }
+  }
+
   public func setProjectDisplayOrder(projectId: String, displayOrder: Int) throws {
     try projectRepo.setDisplayOrder(id: projectId, displayOrder: displayOrder)
   }

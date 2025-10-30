@@ -334,6 +334,12 @@ struct ProjectTabView: View {
         }
       }
 
+      Button("Restore All Hidden Tabs") {
+        Task {
+          await state.restoreAllHiddenProjects()
+        }
+      }
+
       if project.isOrphaned {
         Divider()
         Text("Directory Missing: \(project.rootPath)")

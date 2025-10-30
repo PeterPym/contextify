@@ -338,6 +338,23 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Restore all hidden projects at once
+  public func restoreAllHiddenProjects() async {
+    guard let orchestrator = orchestrator else { return }
+
+    do {
+      // Update all hidden projects in bulk
+      try orchestrator.restoreAllHiddenProjects()
+
+      // Refresh project list
+      await refreshProjects()
+
+      log.info("Restored all hidden projects")
+    } catch {
+      log.error("Failed to restore hidden projects: \(error.localizedDescription)")
+    }
+  }
+
   /// Reorder projects by updating display_order for all projects atomically
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = orchestrator else { return }
