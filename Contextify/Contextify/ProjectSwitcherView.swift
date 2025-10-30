@@ -11,7 +11,6 @@ private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher
 struct ProjectSwitcherView: View {
   @Environment(ProjectSwitcherState.self) private var state
   @State private var draggingProject: ProjectInfo?
-  @State private var dropTargetId: String?
   @State private var insertionIndex: Int?  // Track where insertion indicator should appear
 
   var body: some View {
@@ -21,8 +20,8 @@ struct ProjectSwitcherView: View {
           ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
             HStack(spacing: 0) {
               // Insertion indicator (appears before project when this is the drop target)
-              if insertionIndex == index {
-                InsertionIndicator()
+              if insertionIndex == index, let draggingProject {
+                InsertionIndicator(draggingProject: draggingProject)
                   .transition(.asymmetric(
                     insertion: .scale(scale: 0.5).combined(with: .opacity),
                     removal: .scale(scale: 0.5).combined(with: .opacity)
@@ -33,8 +32,7 @@ struct ProjectSwitcherView: View {
                 project: project,
                 isActive: project.id == state.activeProjectId,
                 unreadCount: state.unreadCounts[project.id] ?? 0,
-                isDragging: draggingProject?.id == project.id,
-                isDropTarget: dropTargetId == project.id
+                isDragging: draggingProject?.id == project.id
               )
               .id(project.id)  // Set ID for ScrollViewReader
               .onTapGesture {
@@ -52,7 +50,6 @@ struct ProjectSwitcherView: View {
                 projectIndex: index,
                 allProjects: state.allProjects,
                 draggingProject: $draggingProject,
-                dropTargetId: $dropTargetId,
                 insertionIndex: $insertionIndex,
                 onReorder: { orderedIds in
                   Task {
@@ -64,8 +61,8 @@ struct ProjectSwitcherView: View {
           }
 
           // Insertion indicator at the end (for dropping after last item)
-          if let insertionIndex, insertionIndex == state.allProjects.count {
-            InsertionIndicator()
+          if let insertionIndex, insertionIndex == state.allProjects.count, let draggingProject {
+            InsertionIndicator(draggingProject: draggingProject)
               .transition(.asymmetric(
                 insertion: .scale(scale: 0.5).combined(with: .opacity),
                 removal: .scale(scale: 0.5).combined(with: .opacity)
@@ -109,7 +106,6 @@ struct ProjectTabView: View {
   let isActive: Bool
   let unreadCount: Int
   let isDragging: Bool
-  let isDropTarget: Bool
   @Environment(ProjectSwitcherState.self) private var state
 
   var body: some View {
@@ -137,27 +133,16 @@ struct ProjectTabView: View {
     .padding(.vertical, 6)
     .frame(minHeight: 44)  // Accessibility: Minimum touch target height
     .contentShape(Rectangle())  // Expand tap area to full frame
-    .background(
-      Group {
-        if isDropTarget {
-          Color.accentColor.opacity(0.3)  // Highlight drop target
-        } else if isActive {
-          Color.accentColor.opacity(0.2)
-        } else {
-          Color.clear
-        }
-      }
-    )
+    .background(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
     .cornerRadius(6)
     .overlay(
       RoundedRectangle(cornerRadius: 6)
         .stroke(
-          isDropTarget ? Color.accentColor : (isActive ? Color.accentColor : Color.secondary.opacity(0.3)),
-          lineWidth: isDropTarget ? 2 : 1
+          isActive ? Color.accentColor : Color.secondary.opacity(0.3),
+          lineWidth: 1
         )
     )
     .opacity(isDragging ? 0.5 : 1.0)  // Reduce opacity while dragging
-    .animation(.easeInOut(duration: 0.2), value: isDropTarget)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .contextMenu {
       Button("Hide from Tabs") {
@@ -182,31 +167,36 @@ struct ProjectTabView: View {
 // MARK: - Insertion Indicator
 
 /// Visual indicator showing where dragged item will be inserted
-/// Follows Apple HIG: thick, dashed line wider than items for visibility
+/// Full-sized tab placeholder matching the dimensions of the dragged tab
 struct InsertionIndicator: View {
-  var body: some View {
-    Rectangle()
-      .fill(Color.accentColor)
-      .frame(width: 4, height: 50)  // Taller than items (44pt min height)
-      .overlay(
-        // Dashed effect using repeating pattern
-        GeometryReader { geometry in
-          Path { path in
-            let dashHeight: CGFloat = 6
-            let gapHeight: CGFloat = 4
-            let totalPattern = dashHeight + gapHeight
-            let dashCount = Int(ceil(geometry.size.height / totalPattern))
+  let draggingProject: ProjectInfo
 
-            for i in 0..<dashCount {
-              let y = CGFloat(i) * totalPattern
-              path.move(to: CGPoint(x: 0, y: y))
-              path.addLine(to: CGPoint(x: 0, y: min(y + dashHeight, geometry.size.height)))
-            }
-          }
-          .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-        }
-      )
-      .padding(.horizontal, 4)  // Add space around indicator
+  var body: some View {
+    HStack(spacing: 4) {
+      // Match the structure of ProjectTabView but render as ghost placeholder
+      if draggingProject.isOrphaned {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .font(.caption2)
+          .foregroundStyle(.orange.opacity(0.5))
+      }
+
+      Text(draggingProject.name)
+        .font(.subheadline)
+        .lineLimit(1)
+        .foregroundStyle(.secondary.opacity(0.5))
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
+    .frame(minHeight: 44)
+    .background(Color.accentColor.opacity(0.1))
+    .cornerRadius(6)
+    .overlay(
+      RoundedRectangle(cornerRadius: 6)
+        .strokeBorder(
+          style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+        )
+        .foregroundStyle(Color.accentColor)
+    )
   }
 }
 
@@ -218,7 +208,6 @@ struct ProjectDropDelegate: DropDelegate {
   let projectIndex: Int
   let allProjects: [ProjectInfo]
   @Binding var draggingProject: ProjectInfo?
-  @Binding var dropTargetId: String?
   @Binding var insertionIndex: Int?
   let onReorder: ([String]) -> Void
 
@@ -243,20 +232,15 @@ struct ProjectDropDelegate: DropDelegate {
       toIndex = projectIndex + 1
     }
 
-    // Show insertion indicator and drop target highlight (UI only, no DB write)
+    // Show insertion indicator (UI only, no DB write)
     insertionIndex = toIndex
-    dropTargetId = project.id
   }
 
   func dropExited(info: DropInfo) {
-    if dropTargetId == project.id {
-      dropTargetId = nil
-      insertionIndex = nil
-    }
+    insertionIndex = nil
   }
 
   func performDrop(info: DropInfo) -> Bool {
-    dropTargetId = nil
     insertionIndex = nil
 
     // Persist final order exactly once on drop
