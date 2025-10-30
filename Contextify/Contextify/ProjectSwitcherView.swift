@@ -48,7 +48,8 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   private let stickyDistance: CGFloat = 20.0  // Must move this far to change slots
 
   // 0...N "slots" determined by tab boundaries (left/right halves)
-  private func proposedInsertionIndex(for locationX: CGFloat) -> Int {
+  // Returns nil if cursor is in a gap between tabs (non-responsive)
+  private func proposedInsertionIndex(for locationX: CGFloat) -> Int? {
     // Order frames by current project order
     let frames = allProjects.compactMap { tabFrames[$0.id] }
     guard !frames.isEmpty else { return 0 }
@@ -68,13 +69,18 @@ private struct ProjectTabsDropDelegate: DropDelegate {
       }
     }
 
-    // Before first tab
-    if locationX < frames.first!.minX {
+    // Before first tab (with hysteresis)
+    if locationX < frames.first!.minX - hysteresis {
       return 0
     }
 
-    // After last tab
-    return frames.count
+    // After last tab (with hysteresis)
+    if locationX > frames.last!.maxX + hysteresis {
+      return frames.count
+    }
+
+    // Cursor is in gap between tabs → non-responsive
+    return nil
   }
 
   private func isValidMove(from fromIndex: Int, to toIndex: Int) -> Bool {
@@ -97,6 +103,11 @@ private struct ProjectTabsDropDelegate: DropDelegate {
 
     let x = info.location.x
     let proposed = proposedInsertionIndex(for: x)
+
+    // If cursor is in gap (nil), keep current slot (non-responsive)
+    guard let proposed = proposed else {
+      return .init(operation: .move)
+    }
 
     if isValidMove(from: fromIndex, to: proposed) {
       // Apply stickiness: only change if significantly different from current
@@ -143,11 +154,14 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     guard let dragging = draggingProject,
           let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else { return false }
 
-    // If insertionIndex is nil (e.g., very fast drop), compute a final slot once.
-    let finalSlot: Int = {
+    // If insertionIndex is nil (e.g., very fast drop or dropped in gap), compute a final slot once.
+    let finalSlot: Int? = {
       if let ii = insertionIndex { return ii }
       return proposedInsertionIndex(for: info.location.x)
     }()
+
+    // If dropped in gap, reject the drop
+    guard let finalSlot = finalSlot else { return false }
 
     guard finalSlot != fromIndex && finalSlot != fromIndex + 1 else { return false }
 
