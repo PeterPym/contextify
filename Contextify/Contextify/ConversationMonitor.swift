@@ -440,20 +440,35 @@ final class ConversationMonitor {
     /// Public method for user-initiated session switch from transcript inventory
     @MainActor
     func switchToSessionFromUser(_ session: TranscriptSession) async {
-        // Filter by transcript file path
-        guard let projectId = currentProjectId, orchestrator != nil else {
-            log.warning("Cannot switch session: no project or orchestrator")
+        guard orchestrator != nil else {
+            log.warning("Cannot switch session: no orchestrator")
             return
         }
 
         do {
-            // Find transcript ID by file path
-            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-            guard let transcript = transcripts.first(where: { $0.filePath == session.fileURL.path }) else {
+            // Find transcript by file path across ALL projects (session might be from different project)
+            let allProjects = try orchestrator.listProjects()
+            var foundTranscript: Transcript? = nil
+
+            for project in allProjects {
+                let transcripts = try orchestrator.getTranscripts(forProject: project.id)
+                if let transcript = transcripts.first(where: { $0.filePath == session.fileURL.path }) {
+                    foundTranscript = transcript
+                    break
+                }
+            }
+
+            guard let transcript = foundTranscript else {
                 log.warning("No transcript found for session: \(session.fileURL.path)")
                 // Fall back to loading all entries
                 await loadFeedFromSQL()
                 return
+            }
+
+            // Switch to the transcript's project if it's different from current
+            if currentProjectId != transcript.projectId {
+                log.info("Switching to project \(transcript.projectId) for session \(session.identifier)")
+                await ProjectSwitcherState.shared.switchToProject(transcript.projectId)
             }
 
             // Get entries for this specific transcript
@@ -821,7 +836,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
-        log.info("🔄 processIncrementalUpdate called - updateInFlight=\(self.updateInFlight)")
+        log.debug("🔄 processIncrementalUpdate called - updateInFlight=\(self.updateInFlight)")
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer {
@@ -839,7 +854,7 @@ final class ConversationMonitor {
 
             // If no cursor, do full reload instead
             guard let cursor = lastSeenCursor else {
-                log.info("🔄 No cursor available, doing full reload")
+                log.debug("🔄 No cursor available, doing full reload")
                 await loadFeedFromSQL()
                 return
             }
@@ -847,7 +862,7 @@ final class ConversationMonitor {
             do {
                 let startTime = Date()
 
-                log.info("🔄 Fetching new entries after cursor for projectId=\(projectId)")
+                log.debug("🔄 Fetching new entries after cursor for projectId=\(projectId)")
                 // Get new entries using keyset pagination (prevents duplicates/skips)
                 let newEntries = try orchestrator.getEntriesAfterCursor(
                     forProject: projectId,
@@ -855,11 +870,11 @@ final class ConversationMonitor {
                 )
 
                 guard !newEntries.isEmpty else {
-                    log.info("🔄 No new entries in incremental update")
+                    log.debug("🔄 No new entries in incremental update")
                     break  // No more entries, exit the drain loop
                 }
 
-                log.info("🔄 Found \(newEntries.count) new entries to process")
+                log.debug("🔄 Found \(newEntries.count) new entries to process")
 
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
