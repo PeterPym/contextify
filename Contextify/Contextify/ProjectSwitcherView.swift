@@ -52,9 +52,10 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   // 0...N "slots" determined by tab boundaries (left/right halves)
   // Returns nil if cursor is in a gap between tabs (non-responsive)
   private func proposedInsertionIndex(for locationX: CGFloat) -> Int? {
-    // Order frames by current project order
+    // Require complete measurement for stable behavior
+    guard tabFrames.count == allProjects.count else { return nil }
     let frames = allProjects.compactMap { tabFrames[$0.id] }
-    guard !frames.isEmpty else { return 0 }
+    guard frames.count == allProjects.count, !frames.isEmpty else { return nil }
 
     // Find which tab the cursor is over based on left/right halves
     for (i, frame) in frames.enumerated() {
@@ -116,7 +117,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
       if let current = insertionIndex {
         // Calculate distance from current slot position
         let frames = allProjects.compactMap { tabFrames[$0.id] }
-        guard !frames.isEmpty else {
+        guard frames.count == allProjects.count, !frames.isEmpty else {
           insertionIndex = proposed
           return .init(operation: .move)
         }
@@ -334,9 +335,12 @@ struct ProjectTabView: View {
         }
       }
 
-      Button("Restore All Hidden Tabs") {
-        Task {
-          await state.restoreAllHiddenProjects()
+      // Only show restore option when there are hidden projects
+      if state.hasHiddenProjects {
+        Button("Restore All Hidden Tabs") {
+          Task {
+            await state.restoreAllHiddenProjects()
+          }
         }
       }
 
