@@ -249,6 +249,19 @@ public actor ProjectActivityMonitor {
         let _ = try await ensureWatcher(projectId: projectId)
 
         log.debug("Discovered project: \(projectPath) (provider: \(provider))")
+      } catch let error as ProjectIdentityError {
+        // Distinguish between expected orphaned projects and actual errors
+        switch error {
+        case .invalidPath:
+          // Expected: project directory was deleted/moved after transcript was created
+          log.debug("Skipping orphaned project \(projectPathForLogging) [mangled: \(directory.lastPathComponent)]: directory no longer exists")
+        case .cannotReadSessionMetadata:
+          // Expected: empty or malformed session directory (e.g., just a "2025" folder with no session.json)
+          log.debug("Skipping invalid session directory \(directory.lastPathComponent): no readable metadata")
+        case .unknownProvider, .invalidDirectory:
+          // Unexpected: should rarely happen
+          log.error("Failed to process project directory \(projectPathForLogging, privacy: .public) [mangled: \(directory.lastPathComponent, privacy: .public)]: \(error, privacy: .public)")
+        }
       } catch {
         log.error("Failed to process project directory \(projectPathForLogging, privacy: .public) [mangled: \(directory.lastPathComponent, privacy: .public)]: \(error.localizedDescription, privacy: .public)")
       }
