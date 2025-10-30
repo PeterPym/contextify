@@ -6,35 +6,186 @@ import ContextifyCore
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcherUI")
 
+// MARK: - Tab frame measurement
+
+private struct TabPositionPreferenceKey: PreferenceKey {
+  static var defaultValue: [String: CGRect] = [:]
+  static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+    value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+  }
+}
+
+private extension View {
+  /// Tracks the view's frame in the "projectsContainer" coordinate space under a given id.
+  func trackTabFrame(id: String) -> some View {
+    background(
+      GeometryReader { proxy in
+        Color.clear
+          .preference(
+            key: TabPositionPreferenceKey.self,
+            value: [id: proxy.frame(in: .named("projectsContainer"))]
+          )
+      }
+    )
+  }
+}
+
+private extension CGRect {
+  var midX: CGFloat { (minX + maxX) * 0.5 }
+}
+
+// MARK: - Container drop delegate
+
+private struct ProjectTabsDropDelegate: DropDelegate {
+  let allProjects: [ProjectInfo]
+  let tabFrames: [String: CGRect]
+  @Binding var draggingProject: ProjectInfo?
+  @Binding var insertionIndex: Int?
+  let onReorder: ([String]) -> Void
+
+  // Add a tiny hysteresis to avoid boundary jitter.
+  private let hysteresis: CGFloat = 6.0
+
+  // 0...N "slots" determined by midpoints between tab centers
+  private func proposedInsertionIndex(for locationX: CGFloat) -> Int {
+    // Order frames by current project order
+    let frames = allProjects.compactMap { tabFrames[$0.id] }
+    guard !frames.isEmpty else { return 0 }
+
+    // Centers for each tab
+    let centers = frames.map(\.midX)
+
+    // Before first center → 0 ; after last center → count
+    if locationX < centers[0] - hysteresis { return 0 }
+    if locationX >= centers[centers.count - 1] + hysteresis { return centers.count }
+
+    // Between centers i and i+1 → slot i+1
+    for i in 0..<(centers.count - 1) {
+      let boundary = (centers[i] + centers[i + 1]) * 0.5
+      if locationX < boundary - hysteresis { return i + 1 }
+      if abs(locationX - boundary) <= hysteresis { return i + 1 } // sticky boundary
+    }
+    return centers.count
+  }
+
+  private func isValidMove(from fromIndex: Int, to toIndex: Int) -> Bool {
+    // No-op when dropping immediately before self or immediately after self
+    toIndex != fromIndex && toIndex != (fromIndex + 1)
+  }
+
+  func validateDrop(info: DropInfo) -> Bool { draggingProject != nil }
+
+  func dropEntered(info: DropInfo) {
+    // No-op: we drive all updates from dropUpdated for stability.
+  }
+
+  func dropUpdated(info: DropInfo) -> DropProposal? {
+    guard let dragging = draggingProject,
+          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else {
+      insertionIndex = nil
+      return .init(operation: .move)
+    }
+
+    let x = info.location.x
+    let proposed = proposedInsertionIndex(for: x)
+
+    if isValidMove(from: fromIndex, to: proposed) {
+      if insertionIndex != proposed { insertionIndex = proposed }
+    } else {
+      if insertionIndex != nil { insertionIndex = nil }
+    }
+    return .init(operation: .move)
+  }
+
+  func dropExited(info: DropInfo) {
+    // Intentionally left blank. We don't clear here to avoid flicker during minor layout/scroll changes.
+  }
+
+  func performDrop(info: DropInfo) -> Bool {
+    defer { draggingProject = nil; insertionIndex = nil }
+
+    guard let dragging = draggingProject,
+          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else { return false }
+
+    // If insertionIndex is nil (e.g., very fast drop), compute a final slot once.
+    let finalSlot: Int = {
+      if let ii = insertionIndex { return ii }
+      return proposedInsertionIndex(for: info.location.x)
+    }()
+
+    guard finalSlot != fromIndex && finalSlot != fromIndex + 1 else { return false }
+
+    var updated = allProjects
+    updated.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: finalSlot)
+    onReorder(updated.map(\.id))
+    return true
+  }
+}
+
+// MARK: - Ghost overlay
+
+private struct GhostInsertionOverlay: View {
+  let draggingProject: ProjectInfo
+  let slot: Int                 // 0...N
+  let allProjects: [ProjectInfo]
+  let tabFrames: [String: CGRect]
+
+  private func slotX() -> CGFloat? {
+    let frames = allProjects.compactMap { tabFrames[$0.id] }
+    guard !frames.isEmpty else { return nil }
+
+    switch slot {
+    case 0:              return frames.first!.minX
+    case frames.count:   return frames.last!.maxX
+    default:
+      let left  = frames[slot - 1]
+      let right = frames[slot]
+      return (left.maxX + right.minX) * 0.5
+    }
+  }
+
+  private func ghostSize() -> CGSize? {
+    if let f = tabFrames[draggingProject.id] { return f.size }
+    let frames = allProjects.compactMap { tabFrames[$0.id] }
+    guard let first = frames.first else { return nil }
+    let avgW = frames.map(\.width).reduce(0, +) / CGFloat(frames.count)
+    return CGSize(width: avgW, height: first.height)
+  }
+
+  var body: some View {
+    if let x = slotX(), let size = ghostSize() {
+      InsertionIndicator(draggingProject: draggingProject)
+        .frame(width: size.width, height: size.height)
+        .position(x: x + size.width / 2.0,
+                  y: (tabFrames.values.first?.midY ?? 22))
+        .transition(.opacity.combined(with: .scale))
+        .allowsHitTesting(false)
+    }
+  }
+}
+
 /// SwiftUI component for project navigation bar
 /// Shows project tabs with unread badges and active state
 struct ProjectSwitcherView: View {
   @Environment(ProjectSwitcherState.self) private var state
   @State private var draggingProject: ProjectInfo?
-  @State private var insertionIndex: Int?  // Track where insertion indicator should appear
+  @State private var insertionIndex: Int?
+  @State private var tabPositions: [String: CGRect] = [:]
 
   var body: some View {
     ScrollViewReader { proxy in
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
-            HStack(spacing: 0) {
-              // Insertion indicator (appears before project when this is the drop target)
-              if insertionIndex == index, let draggingProject {
-                InsertionIndicator(draggingProject: draggingProject)
-                  .transition(.asymmetric(
-                    insertion: .scale(scale: 0.5).combined(with: .opacity),
-                    removal: .scale(scale: 0.5).combined(with: .opacity)
-                  ))
-              }
-
+      ZStack(alignment: .topLeading) {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { _, project in
               ProjectTabView(
                 project: project,
                 isActive: project.id == state.activeProjectId,
                 unreadCount: state.unreadCounts[project.id] ?? 0,
                 isDragging: draggingProject?.id == project.id
               )
-              .id(project.id)  // Set ID for ScrollViewReader
+              .id(project.id)
+              .trackTabFrame(id: project.id)
               .onTapGesture {
                 log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
                 Task {
@@ -45,36 +196,42 @@ struct ProjectSwitcherView: View {
                 self.draggingProject = project
                 return NSItemProvider(object: project.id as NSString)
               }
-              .onDrop(of: [.text], delegate: ProjectDropDelegate(
-                project: project,
-                projectIndex: index,
-                allProjects: state.allProjects,
-                draggingProject: $draggingProject,
-                insertionIndex: $insertionIndex,
-                onReorder: { orderedIds in
-                  Task {
-                    await state.reorderProjects(orderedIds)
-                  }
-                }
-              ))
             }
           }
-
-          // Insertion indicator at the end (for dropping after last item)
-          if let insertionIndex, insertionIndex == state.allProjects.count, let draggingProject {
-            InsertionIndicator(draggingProject: draggingProject)
-              .transition(.asymmetric(
-                insertion: .scale(scale: 0.5).combined(with: .opacity),
-                removal: .scale(scale: 0.5).combined(with: .opacity)
-              ))
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .coordinateSpace(name: "projectsContainer")
+          .onPreferenceChange(TabPositionPreferenceKey.self) { v in
+            tabPositions = v
           }
+          // Container-level drop delegate (wide, stable)
+          .onDrop(
+            of: [.text],
+            delegate: ProjectTabsDropDelegate(
+              allProjects: state.allProjects,
+              tabFrames: tabPositions,
+              draggingProject: $draggingProject,
+              insertionIndex: $insertionIndex,
+              onReorder: { orderedIds in
+                Task { await state.reorderProjects(orderedIds) }
+              }
+            )
+          )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: insertionIndex)
+
+        // Overlay: ghost indicator does not affect layout
+        if let dragging = draggingProject, let slot = insertionIndex {
+          GhostInsertionOverlay(
+            draggingProject: dragging,
+            slot: slot,
+            allProjects: state.allProjects,
+            tabFrames: tabPositions
+          )
+          .animation(.spring(response: 0.3, dampingFraction: 0.7), value: insertionIndex)
+        }
       }
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
-      .onChange(of: state.activeProjectId) { oldValue, newValue in
+      .onChange(of: state.activeProjectId) { _, newValue in
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
@@ -197,90 +354,6 @@ struct InsertionIndicator: View {
         )
         .foregroundStyle(Color.accentColor)
     )
-  }
-}
-
-// MARK: - Drag and Drop
-
-/// Drop delegate for project tab reordering with insertion indicator
-struct ProjectDropDelegate: DropDelegate {
-  let project: ProjectInfo
-  let projectIndex: Int
-  let allProjects: [ProjectInfo]
-  @Binding var draggingProject: ProjectInfo?
-  @Binding var insertionIndex: Int?
-  let onReorder: ([String]) -> Void
-
-  func dropEntered(info: DropInfo) {
-    guard let draggingProject = draggingProject,
-          draggingProject.id != project.id else {
-      return
-    }
-
-    // Calculate insertion point based on drag position
-    guard let fromIndex = allProjects.firstIndex(where: { $0.id == draggingProject.id }) else {
-      return
-    }
-
-    // Determine if we're inserting before or after this project based on position
-    let toIndex: Int
-    if fromIndex < projectIndex {
-      // Dragging forward: insert before target
-      toIndex = projectIndex
-    } else {
-      // Dragging backward: insert after target (before next)
-      toIndex = projectIndex + 1
-    }
-
-    // Only show insertion indicator if this would actually change position
-    // Invalid positions: immediately before (toIndex == fromIndex) or after (toIndex == fromIndex + 1) itself
-    guard toIndex != fromIndex && toIndex != fromIndex + 1 else {
-      insertionIndex = nil
-      return
-    }
-
-    // Show insertion indicator (UI only, no DB write)
-    insertionIndex = toIndex
-  }
-
-  func dropExited(info: DropInfo) {
-    insertionIndex = nil
-  }
-
-  func performDrop(info: DropInfo) -> Bool {
-    insertionIndex = nil
-
-    // Persist final order exactly once on drop
-    guard let draggingProject = draggingProject else {
-      self.draggingProject = nil
-      return false
-    }
-
-    var updatedProjects = allProjects
-    guard let fromIndex = updatedProjects.firstIndex(where: { $0.id == draggingProject.id }),
-          let toIndex = updatedProjects.firstIndex(where: { $0.id == project.id }) else {
-      self.draggingProject = nil
-      return false
-    }
-
-    // Calculate final order based on drop position
-    let finalIndex: Int
-    if fromIndex < toIndex {
-      // Moving forward: insert before target
-      finalIndex = toIndex
-    } else {
-      // Moving backward: insert after target
-      finalIndex = toIndex + 1
-    }
-
-    updatedProjects.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: finalIndex)
-
-    // Persist atomically
-    let orderedIds = updatedProjects.map { $0.id }
-    onReorder(orderedIds)
-
-    self.draggingProject = nil
-    return true
   }
 }
 
