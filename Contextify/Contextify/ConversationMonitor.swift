@@ -273,10 +273,9 @@ final class ConversationMonitor {
             cacheUpdateObserver = nil
         }
 
-        if let observer = projectChangeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            projectChangeObserver = nil
-        }
+        // NOTE: Do NOT remove projectChangeObserver here! It needs to persist across
+        // project switches so we can receive notifications for subsequent switches.
+        // It's set up once in init() and should only be removed in deinit.
 
         // Stop all watchers using shared orchestrator
         if orchestrator != nil {
