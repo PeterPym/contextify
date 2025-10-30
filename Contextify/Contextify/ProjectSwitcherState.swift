@@ -11,12 +11,14 @@ public struct ProjectInfo: Identifiable, Sendable, Hashable {
   public let name: String  // display name
   public let rootPath: String
   public let transcriptCount: Int
+  public let lastViewedAt: Date?  // Last time this project was viewed
 
-  public init(id: String, name: String, rootPath: String, transcriptCount: Int) {
+  public init(id: String, name: String, rootPath: String, transcriptCount: Int, lastViewedAt: Date? = nil) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
     self.transcriptCount = transcriptCount
+    self.lastViewedAt = lastViewedAt
   }
 }
 
@@ -341,7 +343,6 @@ public final class ProjectSwitcherState {
       }
     }
   }
-}
 
   /// Switch to the previous project in the list (cycles to end if at beginning)
   public func switchToPreviousProject() async {
