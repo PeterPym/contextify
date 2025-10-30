@@ -25,6 +25,7 @@ final class ProjectsViewModel {
   // Event observation
   @ObservationIgnored private var eventObservationTask: Task<Void, Never>?
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
+  @ObservationIgnored nonisolated(unsafe) private var projectRootObserver: NSObjectProtocol?
 
   init(discoveryService: ProjectDiscoveryService, hudModel: HUDViewModel) {
     self.discoveryService = discoveryService
@@ -41,11 +42,17 @@ final class ProjectsViewModel {
 
     // Start observing project events for auto-refresh
     startObservingEvents()
+
+    // Listen for project changes from main window
+    startObservingProjectChanges()
   }
 
   deinit {
     eventObservationTask?.cancel()
     refreshTask?.cancel()
+    if let observer = projectRootObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   // MARK: - Actions
@@ -197,6 +204,46 @@ final class ProjectsViewModel {
       }
 
       logger.warning("ProjectsViewModel: event stream ended")
+    }
+  }
+
+  private func startObservingProjectChanges() {
+    projectRootObserver = NotificationCenter.default.addObserver(
+      forName: .projectRootDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard let self else { return }
+      logger.debug("ProjectsViewModel: received project change notification, refreshing isCurrent flags")
+
+      // Refresh the project list to update isCurrent flags
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        await self.refreshCurrentProjectFlag()
+      }
+    }
+  }
+
+  private func refreshCurrentProjectFlag() async {
+    // Lightweight refresh - just re-discover to update isCurrent flags
+    let currentPath: String?
+
+    // Use same logic as discoverProjects to get current path
+    if let activeId = ProjectSwitcherState.shared.activeProjectId {
+      do {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        let projects = try orchestrator.listProjects()
+        currentPath = projects.first(where: { $0.id == activeId })?.rootPath
+      } catch {
+        currentPath = hudModel.projectRootURL?.path
+      }
+    } else {
+      currentPath = hudModel.projectRootURL?.path
+    }
+
+    if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
+      projects = refreshed
+      logger.debug("ProjectsViewModel: refreshed isCurrent flags after project change")
     }
   }
 
