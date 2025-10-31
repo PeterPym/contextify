@@ -218,12 +218,12 @@ struct ProjectSwitcherView: View {
   private let baseSpacing: CGFloat = 8
 
   /// Calculate gap width between two adjacent tabs
-  /// Collapses to 0 if either neighbor is the dragged tab
+  /// Collapses to 0 only on the LEFT side of the dragged tab (keeps right side normal)
   private func gapWidth(betweenIndex i: Int) -> CGFloat {
     guard let dragged = draggingProject else { return baseSpacing }
-    let left = state.allProjects[i].id
     let right = state.allProjects[i + 1].id
-    return (dragged.id == left || dragged.id == right) ? 0 : baseSpacing
+    // Only collapse if the gap is immediately to the left of (before) the dragged tab
+    return (dragged.id == right) ? 0 : baseSpacing
   }
 
   var body: some View {
