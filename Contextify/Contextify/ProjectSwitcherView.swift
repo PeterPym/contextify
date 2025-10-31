@@ -329,7 +329,7 @@ struct ProjectTabView: View {
     .opacity(isDragging ? 0.5 : 1.0)  // Reduce opacity while dragging
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .contextMenu {
-      Button("Hide from Tabs") {
+      Button("Hide this Project") {
         Task {
           await state.hideProject(project.id)
         }
@@ -337,7 +337,7 @@ struct ProjectTabView: View {
 
       // Only show restore option when there are hidden projects
       if state.hasHiddenProjects {
-        Button("Restore All Hidden Tabs") {
+        Button("Restore Hidden Projects") {
           Task {
             await state.restoreAllHiddenProjects()
           }
