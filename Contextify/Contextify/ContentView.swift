@@ -71,8 +71,8 @@ struct ContentView: View {
             await refreshSession()
             TimelineIntegration.shared.startMonitoring()
 
-            // Start project switcher to discover projects
-            projectSwitcher.start()
+            // Note: ProjectSwitcherState.shared.start() is called in ContextifyApp init
+            // for deterministic startup order. Do not call it here.
 
             // Monitor iTerm2 activation for automatic session refresh
             setupWorkspaceMonitoring()

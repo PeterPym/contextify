@@ -115,12 +115,16 @@ public final class ProjectSwitcherState {
       await ensureCurrentProjectInDatabase()
 
       await refreshProjects()
+      log.info("📊 After refreshProjects: \(self.allProjects.count) projects, activeProjectId=\(self.activeProjectId ?? "nil")")
       await refreshUnreadCounts() // current state from DB; events will refine
 
       // Auto-select first project if none is selected (leftmost tab)
       if activeProjectId == nil && !allProjects.isEmpty {
-        log.info("No project selected on startup, auto-selecting first project")
-        await switchToProject(allProjects[0].id)
+        log.info("🎯 No project selected on startup, auto-selecting first project: \(self.allProjects[0].name)")
+        await switchToProject(self.allProjects[0].id)
+        log.info("✅ After switchToProject: activeProjectId=\(self.activeProjectId ?? "nil")")
+      } else {
+        log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
       }
 
       // Start global monitoring if consent given
@@ -311,10 +315,11 @@ public final class ProjectSwitcherState {
   public func switchToProject(_ projectId: String) async {
     guard let orchestrator = orchestrator else { return }
 
-    log.info("🔀 ProjectSwitcher: Switching to project: \(projectId)")
+    log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
 
     // Update active project ID
     activeProjectId = projectId
+    log.info("🔀 Set activeProjectId to: \(self.activeProjectId ?? "nil", privacy: .public)")
 
     // Mark project as selected
     do {
@@ -428,11 +433,12 @@ public final class ProjectSwitcherState {
 
     // Get current project from HUDViewModel
     guard let currentRoot = await MainActor.run(body: { HUDViewModel.shared.projectRootURL }) else {
-      log.debug("No current project root set")
+      log.info("🏁 No current project root set in HUDViewModel")
       return
     }
 
     let projectPath = currentRoot.path
+    log.info("🏁 ensureCurrentProjectInDatabase: HUDViewModel has project at \(projectPath, privacy: .public)")
 
     do {
       // Get or create project in database
@@ -446,7 +452,8 @@ public final class ProjectSwitcherState {
         self.activeProjectId = projectId
       }
 
-      log.info("Ensured current project in database: \(projectId) at \(projectPath)")
+      log.info("🏁 Ensured current project in database: \(projectId, privacy: .public) at \(projectPath, privacy: .public)")
+      log.info("🏁 Set activeProjectId to: \(self.activeProjectId ?? "nil", privacy: .public)")
     } catch {
       log.error("Failed to ensure current project in database: \(error.localizedDescription)")
     }
