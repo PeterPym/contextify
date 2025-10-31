@@ -233,11 +233,19 @@ struct ProjectSwitcherView: View {
           ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
             if insertionIndex == index, let draggingProject {
+              // Gap before insertion indicator (unless at start)
+              if index > 0 {
+                Gap(width: baseSpacing)
+              }
+
               InsertionIndicator(draggingProject: draggingProject)
                 .transition(.asymmetric(
                   insertion: .scale(scale: 0.5).combined(with: .opacity),
                   removal: .scale(scale: 0.5).combined(with: .opacity)
                 ))
+
+              // Gap after insertion indicator
+              Gap(width: baseSpacing)
             }
 
             ProjectTabView(
@@ -272,6 +280,9 @@ struct ProjectSwitcherView: View {
 
           // Insertion indicator after last tab
           if let insertionIndex, insertionIndex == state.allProjects.count, let draggingProject {
+            // Gap before insertion indicator
+            Gap(width: baseSpacing)
+
             InsertionIndicator(draggingProject: draggingProject)
               .transition(.asymmetric(
                 insertion: .scale(scale: 0.5).combined(with: .opacity),
