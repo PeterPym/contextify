@@ -152,10 +152,13 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   }
 
   func performDrop(info: DropInfo) -> Bool {
-    defer { draggingProject = nil; insertionIndex = nil }
-
     guard let dragging = draggingProject,
-          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else { return false }
+          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else {
+      // Clear immediately on early exit
+      draggingProject = nil
+      insertionIndex = nil
+      return false
+    }
 
     // If insertionIndex is nil (e.g., very fast drop or dropped in gap), compute a final slot once.
     let finalSlot: Int? = {
@@ -164,9 +167,19 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     }()
 
     // If dropped in gap, reject the drop
-    guard let finalSlot = finalSlot else { return false }
+    guard let finalSlot = finalSlot else {
+      // Clear immediately on rejection
+      draggingProject = nil
+      insertionIndex = nil
+      return false
+    }
 
-    guard finalSlot != fromIndex && finalSlot != fromIndex + 1 else { return false }
+    guard finalSlot != fromIndex && finalSlot != fromIndex + 1 else {
+      // Clear immediately on no-op
+      draggingProject = nil
+      insertionIndex = nil
+      return false
+    }
 
     var updated = allProjects
     updated.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: finalSlot)
@@ -175,6 +188,14 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     // Auto-activate reordered project if it's not already active
     if dragging.id != activeProjectId {
       onActivate(dragging.id)
+    }
+
+    // Delay clearing placeholder until after animation completes
+    // This prevents the jarring collapse before the real tab appears
+    // Matches spring animation (response: 0.3, dampingFraction: 0.7) ≈ 0.3s
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+      draggingProject = nil
+      insertionIndex = nil
     }
 
     return true
