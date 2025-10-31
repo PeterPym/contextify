@@ -189,20 +189,6 @@ public extension Notification.Name {
     /// - UserInfo: ["projectId": String]
     static let transcriptFileUpdated = Notification.Name("TranscriptFileUpdated")
 
-    /// Posted when project root changes (from HUDViewModel)
-    /// - Object: String (path) - for backward compatibility
-    /// - UserInfo keys: See ProjectRootDidChangeKeys
-    static let projectRootDidChange = Notification.Name("ProjectRootDidChange")
-}
-
-/// UserInfo keys for .projectRootDidChange notification
-public enum ProjectRootDidChangeKeys {
-    /// URL of the project root
-    public static let url = "url"
-    /// String path (absolute) of the project root
-    public static let path = "path"
-    /// Source of the change (e.g., "switchToProject", "setProjectRoot")
-    public static let source = "source"
 }
 
 // MARK: - Timeline Cache

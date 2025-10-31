@@ -397,6 +397,9 @@ public final class HUDViewModel {
   public var alertMessage: String? = nil
   public private(set) var projectRootURL: URL? = nil
 
+  // Track last posted path to avoid duplicate notifications (nit #2)
+  private var lastPostedPath: String?
+
   // Compose state (active as of 2025-10-02)
   public var composeText: String = ""
   public var targetSessionName: String? = nil
@@ -490,8 +493,11 @@ public final class HUDViewModel {
     }
 
     // Notify observers if we discovered a project root during startup
+    // Defer to next runloop tick to ensure ProjectSwitcherState observer is installed (nit #3)
     if let root = discoveredRoot {
-      postProjectRootDidChange(root, source: "startup")
+      DispatchQueue.main.async { [weak self] in
+        self?.postProjectRootDidChange(root, source: "startup")
+      }
     }
   }
 
@@ -643,18 +649,40 @@ public final class HUDViewModel {
 
   // MARK: - Project Switching (Multi-Project Mode)
 
+  /// Canonicalize URL path (resolve symlinks, standardize)
+  /// - Parameter url: URL to canonicalize
+  /// - Returns: Canonical absolute path
+  private func canonicalPath(_ url: URL) -> String {
+    url.resolvingSymlinksInPath().standardizedFileURL.path
+  }
+
   /// Post project root change notification with both URL and String types
   /// - Parameters:
   ///   - url: Project root URL
   ///   - source: Source of the change (for diagnostics)
   private func postProjectRootDidChange(_ url: URL, source: String) {
-    let path = url.path
+    // Canonicalize path to avoid symlink flutter (nit #1)
+    let path = canonicalPath(url)
+
+    // Emitter-side deduplication to reduce notification noise (nit #2)
+    if lastPostedPath == path {
+      lifecycleLog.debug("🔇 HUDViewModel: Skipping duplicate post src=\(source) path=\(path)")
+      return
+    }
+    lastPostedPath = path
+
+    #if DEBUG
+    // Ensure URL and path are present (nit #7)
+    assert(!path.isEmpty, "postProjectRootDidChange: path is empty")
+    assert(path.hasPrefix("/"), "postProjectRootDidChange: path is not absolute")
+    #endif
+
     lifecycleLog.info("📢 HUDViewModel: .projectRootDidChange src=\(source) path=\(path)")
     NotificationCenter.default.post(
       name: .projectRootDidChange,
       object: path,  // Keep String for backward compatibility
       userInfo: [
-        ProjectRootDidChangeKeys.url: url,
+        ProjectRootDidChangeKeys.url: URL(fileURLWithPath: path),  // Use canonical path
         ProjectRootDidChangeKeys.path: path,
         ProjectRootDidChangeKeys.source: source
       ]

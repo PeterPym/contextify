@@ -549,6 +549,13 @@ public final class ProjectSwitcherState {
     suppressExternalNotificationsUntil = CFAbsoluteTimeGetCurrent() + milliseconds / 1000.0
   }
 
+  /// Canonicalize URL path (resolve symlinks, standardize)
+  /// - Parameter url: URL to canonicalize
+  /// - Returns: Canonical absolute path
+  private func canonicalPath(_ url: URL) -> String {
+    url.resolvingSymlinksInPath().standardizedFileURL.path
+  }
+
   @MainActor
   private func installProjectRootObserver() {
     guard projectRootObserver == nil else { return }
@@ -580,7 +587,8 @@ public final class ProjectSwitcherState {
         return
       }
 
-      let path = projectURL.path
+      // Canonicalize path to match emitter (nit #1)
+      let path = self.canonicalPath(projectURL)
 
       // Coalesce identical path within small window
       if self.lastHandledPath == path && (now - self.lastHandledAt) * 1000 < self.debounceMs {
