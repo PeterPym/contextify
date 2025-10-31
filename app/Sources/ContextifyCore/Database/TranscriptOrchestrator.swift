@@ -59,6 +59,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
+  private let validator: TranscriptValidator
 
   public init(dbManager: DatabaseManager) throws {
     self.dbManager = dbManager
@@ -102,6 +103,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       hooverEngine: hooverEngine,
       transcriptRepo: transcriptRepo
     )
+
+    // Initialize validator
+    self.validator = TranscriptValidator()
 
     // Set metadata invalidation callback with weak self reference
     watcher.setMetadataInvalidator { [weak self] transcriptId in
@@ -214,6 +218,23 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       throw RepositoryError.notFound
     }
     log.debug("✅ FK validation: project \(projectId) exists")
+
+    // Validate transcript integrity before hoovering
+    let validationResult = validator.validate(
+      fileURL: fileURL,
+      projectRootPath: project.rootPath ?? "",
+      provider: provider
+    )
+
+    guard validationResult.isValid else {
+      log.error("❌ Transcript validation failed for \(fileURL.lastPathComponent, privacy: .public)")
+      for error in validationResult.errors {
+        log.error("   \(error.description, privacy: .public)")
+      }
+      throw validationResult.errors.first ?? RepositoryError.invalidData
+    }
+
+    log.debug("✅ Transcript validation passed: \(fileURL.lastPathComponent)")
 
     // Get file metadata
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
