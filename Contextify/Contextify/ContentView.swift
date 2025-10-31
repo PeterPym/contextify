@@ -26,70 +26,74 @@ struct ContentView: View {
     @State private var showBatchEmbedding = false
     @State private var showSemanticSearch = false
     @State private var workspaceObserver: NSObjectProtocol?
-    @State private var isComposeSectionCollapsed = false
+
+    // Persisted column visibility
+    @AppStorage("ui.columnVisibility") private var columnVisibilityStore: String = "all"
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+
+    // Persisted sidebar width (compose)
+    @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 520
+    private var composeIdeal: CGFloat { CGFloat(composeSidebarWidthStore).clamped(480, 640) }
+
+    init() {
+        _columnVisibility = State(initialValue: Self.visibilityFromStore(columnVisibilityStore))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // Project switcher (top navigation)
             // Show only when we have 2+ projects (otherwise just wastes vertical space)
-            let shouldShow = projectSwitcher.allProjects.count >= 2
-
-            if shouldShow {
+            if projectSwitcher.allProjects.count >= 2 {
                 ProjectSwitcherView()
                     .environment(projectSwitcher)
             }
 
-            HStack(spacing: 0) {
-                if !isComposeSectionCollapsed {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        Divider()
-                        // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-                        // Previously here:
-                        // - urlEntry: TextField + "Ingest" button for URL ingestion
-                        // - IngestDropZone: Drag-and-drop zone for files
-                        // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-                        // - Session label (e.g., "Session-001")
-                        // - Status display / Last output URL
-                        //
-                        // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-                        // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-                        composeSection
-                    }
-                    .padding(16)  // Include padding inside width constraints
-                    .frame(minWidth: 480, maxWidth: 640)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+            NavigationSplitView(columnVisibility: $columnVisibility) {
+                // Sidebar: Compose panel
+                VStack(alignment: .leading, spacing: 16) {
+                    headerWithoutComposeToggle
+                    Divider()
+                    // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+                    // Previously here:
+                    // - urlEntry: TextField + "Ingest" button for URL ingestion
+                    // - IngestDropZone: Drag-and-drop zone for files
+                    // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+                    // - Session label (e.g., "Session-001")
+                    // - Status display / Last output URL
+                    //
+                    // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+                    // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+                    composeSection
                 }
-
-                ConversationTimelineView()
-                    .frame(minWidth: 320, maxWidth: .infinity)
-                    .overlay(alignment: .topLeading) {
-                        // Floating toggle button when collapsed
-                        if isComposeSectionCollapsed {
-                            Button(action: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    isComposeSectionCollapsed.toggle()
-                                }
-                            }) {
-                                Image(systemName: "chevron.right")
-                                    .font(.title3)
-                                    .foregroundStyle(.secondary)
-                                    .padding(8)
-                                    .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
-                                    .clipShape(Circle())
-                            }
-                            .buttonStyle(.plain)
-                            .help("Show compose panel")
-                            .padding(12)
+                .padding(16)
+                .navigationSplitViewColumnWidth(min: 480, ideal: composeIdeal, max: 640)
+                .background(SidebarWidthReader(width: Binding(
+                    get: { CGFloat(composeSidebarWidthStore) },
+                    set: { composeSidebarWidthStore = Double($0) }
+                )))
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        Button {
+                            withAnimation { columnVisibility.toggleSplitVisibility() }
+                        } label: {
+                            Image(systemName: "sidebar.left")
                         }
+                        .help(columnVisibility == .all ? "Hide compose panel" : "Show compose panel")
                     }
+                }
+            } detail: {
+                // Detail: Timeline (width synced to internal collapsed state)
+                ConversationTimelineView()
+                    .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
             }
+            .navigationSplitViewStyle(.balanced)
 
             // Status bar footer
             StatusBarView()
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
+        .frame(minHeight: 360)
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -113,6 +117,9 @@ struct ContentView: View {
                 setupWorkspaceMonitoring()
             }
         }
+        .onChange(of: columnVisibility) { _, v in
+            columnVisibilityStore = Self.visibilityToStore(v)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
             let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval
@@ -135,38 +142,9 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(
-            minWidth: isComposeSectionCollapsed ? 320 : 800,
-            maxWidth: isComposeSectionCollapsed ? 500 : .infinity,  // Limit width when collapsed
-            minHeight: 360
-        )
-        .onChange(of: isComposeSectionCollapsed) { _, isCollapsed in
-            // Programmatically resize window to match content when collapsing
-            guard let window = MainWindowTracker.shared.window else { return }
-
-            let currentFrame = window.frame
-            let targetWidth: CGFloat = isCollapsed ? 320 : 900
-
-            // Only resize if current width is significantly different from target
-            guard abs(currentFrame.width - targetWidth) > 50 else { return }
-
-            // Calculate new frame (preserve RIGHT edge - anchor on trailing edge)
-            // Keep the right edge at the same screen position
-            let rightEdge = currentFrame.origin.x + currentFrame.width
-            var newFrame = currentFrame
-            newFrame.size.width = targetWidth
-            newFrame.origin.x = rightEdge - targetWidth  // Position so right edge stays fixed
-
-            // Animate the resize
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.3
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                window.animator().setFrame(newFrame, display: true)
-            }
-        }
     }
 
-    private var header: some View {
+    private var headerWithoutComposeToggle: some View {
         HStack(spacing: 12) {
             if let projectPath = model.projectRootURL?.path {
                 HStack(spacing: 4) {
@@ -225,17 +203,6 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Semantic Search")
-
-            // Collapse/expand compose panel button
-            Button(action: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    isComposeSectionCollapsed.toggle()
-                }
-            }) {
-                Image(systemName: "chevron.left")
-            }
-            .buttonStyle(.borderless)
-            .help("Hide compose panel")
         }
         .sheet(isPresented: $showEmbeddingTest) {
             EmbeddingTestView()
@@ -318,6 +285,60 @@ struct ContentView: View {
 }
 
 #Preview { ContentView().environment(HUDViewModel()) }
+
+// MARK: - NavigationSplitView Helpers
+
+private extension NavigationSplitViewVisibility {
+    mutating func toggleSplitVisibility() {
+        self = (self == .all) ? .detailOnly : .all
+    }
+}
+
+private extension ContentView {
+    static func visibilityFromStore(_ s: String) -> NavigationSplitViewVisibility {
+        switch s {
+        case "detailOnly": return .detailOnly
+        case "all": fallthrough
+        default: return .all
+        }
+    }
+    static func visibilityToStore(_ v: NavigationSplitViewVisibility) -> String {
+        (v == .detailOnly) ? "detailOnly" : "all"
+    }
+}
+
+struct DetailWidthSync: ViewModifier {
+    let isCollapsed: Bool
+    func body(content: Content) -> some View {
+        let min = isCollapsed ? 52 : 320
+        let ideal = isCollapsed ? 52 : 440
+        content.navigationSplitViewColumnWidth(min: CGFloat(min), ideal: CGFloat(ideal))
+    }
+}
+
+struct SidebarWidthReader: View {
+    @Binding var width: CGFloat
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .preference(key: SidebarWidthKey.self, value: proxy.size.width)
+        }
+        .onPreferenceChange(SidebarWidthKey.self) { new in
+            if abs(new - width) > 1.0 { width = new }
+        }
+    }
+}
+
+private struct SidebarWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = .zero
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+extension CGFloat {
+    func clamped(_ min: CGFloat, _ max: CGFloat) -> CGFloat {
+        Swift.max(min, Swift.min(self, max))
+    }
+}
 
 private extension ContentView {
     @discardableResult
