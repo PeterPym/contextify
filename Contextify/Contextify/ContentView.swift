@@ -145,16 +145,17 @@ struct ContentView: View {
             guard let window = MainWindowTracker.shared.window else { return }
 
             let currentFrame = window.frame
-            let targetWidth: CGFloat = isCollapsed ? 450 : 900
+            let targetWidth: CGFloat = isCollapsed ? 320 : 900
 
             // Only resize if current width is significantly different from target
             guard abs(currentFrame.width - targetWidth) > 50 else { return }
 
-            // Calculate new frame (preserve top-RIGHT corner - anchor on trailing edge)
-            let widthDelta = targetWidth - currentFrame.width
+            // Calculate new frame (preserve RIGHT edge - anchor on trailing edge)
+            // Keep the right edge at the same screen position
+            let rightEdge = currentFrame.origin.x + currentFrame.width
             var newFrame = currentFrame
             newFrame.size.width = targetWidth
-            newFrame.origin.x -= widthDelta  // Shift left by the width change to keep right edge fixed
+            newFrame.origin.x = rightEdge - targetWidth  // Position so right edge stays fixed
 
             // Animate the resize
             NSAnimationContext.runAnimationGroup { context in
