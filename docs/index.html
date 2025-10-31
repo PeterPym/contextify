@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contextify Help - macOS AI Session Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 50px;
+        }
+
+        header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        header p {
+            font-size: 1.3em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .card h3 {
+            color: #764ba2;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .card ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+
+        .card li {
+            margin-bottom: 10px;
+        }
+
+        .card code {
+            background: #f5f5f5;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .feature-item {
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-item h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .kbd {
+            display: inline-block;
+            padding: 3px 8px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.85em;
+            color: #333;
+            background: #f5f5f5;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 0 rgba(0,0,0,0.1);
+        }
+
+        .support-section {
+            text-align: center;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            margin-top: 30px;
+        }
+
+        .support-section h2 {
+            color: white;
+            margin-bottom: 15px;
+        }
+
+        .support-section a {
+            display: inline-block;
+            padding: 12px 30px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            margin-top: 15px;
+            transition: transform 0.2s;
+        }
+
+        .support-section a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 50px;
+            opacity: 0.8;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Contextify</h1>
+            <p>AI Session Manager for macOS</p>
+        </header>
+
+        <div class="card">
+            <h2>Welcome to Contextify</h2>
+            <p>Contextify is a macOS application that helps you manage and navigate your Claude Code and Codex CLI sessions with powerful features including real-time timeline summaries, multi-project support, and intelligent search.</p>
+        </div>
+
+        <div class="card">
+            <h2>Key Features</h2>
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <h4>📊 Timeline View</h4>
+                    <p>Real-time conversation summaries powered by Apple Intelligence</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🗂️ Multi-Project</h4>
+                    <p>Manage multiple projects with drag-and-drop tab ordering</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🔍 Transcript Search</h4>
+                    <p>Browse and search all your AI conversation history</p>
+                </div>
+                <div class="feature-item">
+                    <h4>📝 Session Metadata</h4>
+                    <p>Automatic titles, descriptions, and topic tagging</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Getting Started</h2>
+
+            <h3>Setting Your Project Root</h3>
+            <ol>
+                <li>Launch Contextify</li>
+                <li>Click "Set Project Root" in the main window</li>
+                <li>Select your project directory</li>
+                <li>Contextify will automatically discover transcripts from:
+                    <ul>
+                        <li><code>~/.claude/projects/</code> (Claude Code)</li>
+                        <li><code>&lt;project&gt;/.codex/sessions/</code> (Codex CLI)</li>
+                    </ul>
+                </li>
+            </ol>
+
+            <h3>Project Management</h3>
+            <ul>
+                <li><strong>Switch Projects:</strong> Click tabs at the top or use <span class="kbd">⌘⇧[</span> / <span class="kbd">⌘⇧]</span></li>
+                <li><strong>Reorder Tabs:</strong> Drag and drop project tabs to your preferred order</li>
+                <li><strong>Hide Projects:</strong> Right-click a tab → "Hide from Tabs"</li>
+                <li><strong>View All Projects:</strong> <span class="kbd">⌘⇧P</span> opens the Projects window</li>
+            </ul>
+
+            <h3>Transcript Inventory</h3>
+            <ul>
+                <li>Open with <span class="kbd">⌘⌃I</span> or Window → Show Transcript Inventory</li>
+                <li>Browse all sessions across all projects</li>
+                <li>Click any session to load it in the timeline</li>
+                <li>Delete old sessions or cleanup missing transcripts</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Keyboard Shortcuts</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px; font-weight: 600;">Action</td>
+                    <td style="padding: 12px; font-weight: 600;">Shortcut</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px;">Next Project</td>
+                    <td style="padding: 12px;"><span class="kbd">⌘⇧]</span></td>
+                </tr>
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px;">Previous Project</td>
+                    <td style="padding: 12px;"><span class="kbd">⌘⇧[</span></td>
+                </tr>
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px;">Open Projects Window</td>
+                    <td style="padding: 12px;"><span class="kbd">⌘⇧P</span></td>
+                </tr>
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 12px;">Open Transcript Inventory</td>
+                    <td style="padding: 12px;"><span class="kbd">⌘⌃I</span></td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Timeline Features</h2>
+            <ul>
+                <li><strong>Auto-Summaries:</strong> Each conversation turn gets a present and past tense summary</li>
+                <li><strong>Session Filtering:</strong> Click session IDs to filter timeline by specific conversations</li>
+                <li><strong>Live Updates:</strong> Timeline automatically updates as you work in Claude Code or Codex</li>
+                <li><strong>Status Bar:</strong> Shows LLM processing status and queue information at the bottom</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Database & Storage</h2>
+            <p>Contextify stores all data locally in:</p>
+            <ul>
+                <li><code>~/Library/Application Support/Contextify/contextify.db</code></li>
+                <li>SQLite database with WAL mode for concurrent access</li>
+                <li>No cloud sync - all data stays on your Mac</li>
+            </ul>
+
+            <h3>Database Management</h3>
+            <p>Use the included scripts for maintenance:</p>
+            <ul>
+                <li><code>make clean-db</code> - Clean database (creates backup first)</li>
+                <li><code>make db-backup</code> - Create manual backup</li>
+                <li><code>make db-restore</code> - Restore latest backup</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Requirements</h2>
+            <ul>
+                <li><strong>macOS 15.6+</strong> (some features require macOS 26.0+)</li>
+                <li><strong>Apple Silicon or Intel Mac</strong></li>
+                <li><strong>Claude Code or Codex CLI</strong> for transcript generation</li>
+                <li><strong>Apple Intelligence</strong> (optional) - for LLM-powered summaries on macOS 26.0+</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Troubleshooting</h2>
+
+            <h3>Timeline Not Updating</h3>
+            <ul>
+                <li>Check that transcripts exist in <code>~/.claude/projects/</code></li>
+                <li>Verify file system permissions for the transcript directories</li>
+                <li>Try manually refreshing in the Transcript Inventory</li>
+            </ul>
+
+            <h3>LLM Processing Stuck</h3>
+            <ul>
+                <li>Check status bar for error messages</li>
+                <li>On macOS &lt; 26.0, LLM features fall back to heuristics</li>
+                <li>Circuit breaker activates after repeated failures (auto-recovers)</li>
+            </ul>
+
+            <h3>Projects Not Appearing</h3>
+            <ul>
+                <li>Open Projects window (<span class="kbd">⌘⇧P</span>) and click Refresh</li>
+                <li>Check for hidden projects (context menu → "Restore All Hidden Tabs")</li>
+                <li>Verify project directory exists and has transcripts</li>
+            </ul>
+        </div>
+
+        <div class="support-section">
+            <h2>Need Help?</h2>
+            <p>If you can't find what you're looking for, we're here to help!</p>
+            <a href="mailto:rob@banagale.com?subject=Contextify%20App%20Support%20Request">Contact Support</a>
+            <p style="margin-top: 15px; font-size: 0.9em;">Or use Help → Contact Support in the app</p>
+        </div>
+
+        <footer>
+            <p>
+                <a href="https://github.com/banagale/contextify" target="_blank">GitHub Repository</a>
+                &nbsp;•&nbsp;
+                Made with ❤️ for macOS
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

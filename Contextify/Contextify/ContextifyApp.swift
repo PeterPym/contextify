@@ -40,6 +40,15 @@ struct WindowCommands: Commands {
 struct HelpCommands: Commands {
   var body: some Commands {
     CommandGroup(after: .help) {
+      Button("Contextify Help") {
+        if let url = URL(string: "https://banagale.github.io/contextify/") {
+          NSWorkspace.shared.open(url)
+        }
+      }
+      .keyboardShortcut("?", modifiers: [.command])
+
+      Divider()
+
       Button("Contact Support...") {
         SystemInfo.openSupportEmail()
       }
