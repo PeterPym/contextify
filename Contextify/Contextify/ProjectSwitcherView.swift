@@ -347,7 +347,7 @@ struct ProjectTabView: View {
           lineWidth: 1
         )
     )
-    .opacity(isDragging ? 0.5 : 1.0)  // Reduce opacity while dragging
+    .opacity(isDragging ? 0.0 : 1.0)  // Fully hide while dragging (only placeholder visible)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .contextMenu {
       Button("Hide this Project") {
