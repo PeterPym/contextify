@@ -660,6 +660,7 @@ public final class HUDViewModel {
   /// - Parameters:
   ///   - url: Project root URL
   ///   - source: Source of the change (for diagnostics)
+  @MainActor
   private func postProjectRootDidChange(_ url: URL, source: String) {
     // Canonicalize path to avoid symlink flutter (nit #1)
     let path = canonicalPath(url)
@@ -691,6 +692,7 @@ public final class HUDViewModel {
 
   /// Switch to a different project
   /// - Parameter projectPath: Absolute path to the new project root
+  @MainActor
   public func switchToProject(_ projectPath: String) {
     // Update project root URL directly (bypass validation)
     let url = URL(fileURLWithPath: projectPath)
@@ -866,6 +868,7 @@ public final class HUDViewModel {
   /// - Parameter url: The project directory URL
   /// - Returns: Result with the resolved project root URL
   /// - Note: Git repositories use the .git root; non-Git projects use the provided path
+  @MainActor
   public func setProjectRoot(url: URL) -> Result<URL, ProjectRootError> {
     let canonical = url.resolvingSymlinksInPath()
     var isDir: ObjCBool = false

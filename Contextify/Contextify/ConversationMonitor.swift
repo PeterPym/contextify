@@ -105,11 +105,17 @@ final class ConversationMonitor {
     /// Read-only view over state.entries (single source of truth)
     var entries: [TimelineEntry] { state.entries }
 
+    /// Maximum number of entries to display (tuneable for performance)
+    private let visibleEntryLimit = 50
+
     /// All entries are visible - sessions appear as one continuous stream
     /// No filtering by session - timeline shows chronological view across all sessions
-    /// Limited to most recent 50 entries for performance
+    /// Limited for performance (tuneable via visibleEntryLimit)
     var visibleEntries: [TimelineEntry] {
-        Array(state.entries.suffix(50))
+        let n = max(visibleEntryLimit, 1)
+        return state.entries.count > n
+          ? Array(state.entries.suffix(n))
+          : state.entries
     }
 
     private(set) var isCollapsed = false

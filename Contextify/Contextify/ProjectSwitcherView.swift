@@ -193,9 +193,14 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     // Delay clearing placeholder until after animation completes
     // This prevents the jarring collapse before the real tab appears
     // Matches spring animation (response: 0.3, dampingFraction: 0.7) ≈ 0.3s
+    // Token-checked to avoid clearing a subsequent drag that starts within 300ms
+    let scheduledId = dragging.id
+    let scheduledIndex = insertionIndex
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-      draggingProject = nil
-      insertionIndex = nil
+      if draggingProject?.id == scheduledId && insertionIndex == scheduledIndex {
+        draggingProject = nil
+        insertionIndex = nil
+      }
     }
 
     return true

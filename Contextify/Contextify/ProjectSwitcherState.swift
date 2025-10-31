@@ -339,8 +339,10 @@ public final class ProjectSwitcherState {
 
       // Get project root path and update HUDViewModel
       if let project = try orchestrator.getProject(id: projectId) {
-        // Suppress feedback: HUD will post notification, but we don't want to handle it
-        suppressExternalNotifications(for: 300)
+        // Suppress feedback on MainActor to avoid data races
+        await MainActor.run {
+          self.suppressExternalNotifications(for: 300)
+        }
 
         // Call HUDViewModel to switch project (updates git info, watchers, etc.)
         await MainActor.run {
@@ -566,6 +568,7 @@ public final class ProjectSwitcherState {
 
   /// Suppress external notifications for a brief window to prevent feedback loops
   /// Call this before programmatically triggering HUDViewModel changes
+  @MainActor
   private func suppressExternalNotifications(for milliseconds: Double) {
     suppressExternalNotificationsUntil = CFAbsoluteTimeGetCurrent() + milliseconds / 1000.0
   }

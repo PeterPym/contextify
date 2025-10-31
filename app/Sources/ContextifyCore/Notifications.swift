@@ -5,6 +5,10 @@ import Foundation
 extension Notification.Name {
   /// Posted when the project root changes (via HUD, ProjectSwitcher, or startup)
   public static let projectRootDidChange = Notification.Name("projectRootDidChange")
+
+  /// Backward-compatibility alias (deprecated)
+  @available(*, deprecated, renamed: "projectRootDidChange")
+  public static let ProjectRootDidChange = Notification.Name("projectRootDidChange")
 }
 
 // MARK: - Notification UserInfo Keys
