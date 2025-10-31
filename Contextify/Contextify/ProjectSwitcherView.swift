@@ -218,7 +218,7 @@ struct ProjectSwitcherView: View {
   var body: some View {
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: draggingProject != nil ? 0 : 8) {
+        HStack(spacing: 8) {
           ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
             if insertionIndex == index, let draggingProject {
@@ -241,6 +241,7 @@ struct ProjectSwitcherView: View {
               width: draggingProject?.id == project.id ? 0 : nil,
               height: draggingProject?.id == project.id ? 0 : nil
             )
+            .padding(.horizontal, draggingProject?.id == project.id ? -4 : 0)  // Collapse spacing around dragged tab
             .clipped()  // Clip content when frame is 0x0
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
