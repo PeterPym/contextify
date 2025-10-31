@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var showBatchEmbedding = false
     @State private var showSemanticSearch = false
     @State private var workspaceObserver: NSObjectProtocol?
+    @State private var isComposeSectionCollapsed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,25 +40,48 @@ struct ContentView: View {
             }
 
             HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    Divider()
-                    // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-                    // Previously here:
-                    // - urlEntry: TextField + "Ingest" button for URL ingestion
-                    // - IngestDropZone: Drag-and-drop zone for files
-                    // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-                    // - Session label (e.g., "Session-001")
-                    // - Status display / Last output URL
-                    //
-                    // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-                    // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-                    composeSection
+                if !isComposeSectionCollapsed {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        Divider()
+                        // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+                        // Previously here:
+                        // - urlEntry: TextField + "Ingest" button for URL ingestion
+                        // - IngestDropZone: Drag-and-drop zone for files
+                        // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+                        // - Session label (e.g., "Session-001")
+                        // - Status display / Last output URL
+                        //
+                        // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+                        // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+                        composeSection
+                    }
+                    .frame(minWidth: 640)
+                    .padding(16)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                .frame(minWidth: 640)
-                .padding(16)
 
                 ConversationTimelineView()
+                    .overlay(alignment: .topLeading) {
+                        // Floating toggle button when collapsed
+                        if isComposeSectionCollapsed {
+                            Button(action: {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    isComposeSectionCollapsed.toggle()
+                                }
+                            }) {
+                                Image(systemName: "chevron.right")
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                                    .padding(8)
+                                    .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("Show compose panel")
+                            .padding(12)
+                        }
+                    }
             }
 
             // Status bar footer
@@ -172,6 +196,17 @@ struct ContentView: View {
             }
             .buttonStyle(.borderless)
             .help("Semantic Search")
+
+            // Collapse/expand compose panel button
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isComposeSectionCollapsed.toggle()
+                }
+            }) {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .help("Hide compose panel")
         }
         .sheet(isPresented: $showEmbeddingTest) {
             EmbeddingTestView()
