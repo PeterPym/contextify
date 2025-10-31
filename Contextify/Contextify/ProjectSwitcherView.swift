@@ -224,25 +224,23 @@ struct ProjectSwitcherView: View {
                 ))
             }
 
-            // Hide the dragging tab completely - only show placeholder
-            if draggingProject?.id != project.id {
-              ProjectTabView(
-                project: project,
-                isActive: project.id == state.activeProjectId,
-                unreadCount: state.unreadCounts[project.id] ?? 0
-              )
-              .id(project.id)
-              .trackTabFrame(id: project.id)
-              .onTapGesture {
-                log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
-                Task {
-                  await state.switchToProject(project.id)
-                }
+            ProjectTabView(
+              project: project,
+              isActive: project.id == state.activeProjectId,
+              unreadCount: state.unreadCounts[project.id] ?? 0,
+              isDragging: draggingProject?.id == project.id
+            )
+            .id(project.id)
+            .trackTabFrame(id: project.id)
+            .onTapGesture {
+              log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
+              Task {
+                await state.switchToProject(project.id)
               }
-              .onDrag {
-                self.draggingProject = project
-                return NSItemProvider(object: project.id as NSString)
-              }
+            }
+            .onDrag {
+              self.draggingProject = project
+              return NSItemProvider(object: project.id as NSString)
             }
           }
 
@@ -312,6 +310,7 @@ struct ProjectTabView: View {
   let project: ProjectInfo
   let isActive: Bool
   let unreadCount: Int
+  let isDragging: Bool
   @Environment(ProjectSwitcherState.self) private var state
 
   var body: some View {
@@ -348,6 +347,8 @@ struct ProjectTabView: View {
           lineWidth: 1
         )
     )
+    .opacity(isDragging ? 0.5 : 1.0)  // Reduce opacity while dragging
+    .animation(.easeInOut(duration: 0.15), value: isDragging)
     .contextMenu {
       Button("Hide this Project") {
         Task {
