@@ -62,6 +62,7 @@ struct ContentView: View {
                 }
 
                 ConversationTimelineView()
+                    .frame(minWidth: 400, idealWidth: isComposeSectionCollapsed ? 500 : 800, maxWidth: .infinity)
                     .overlay(alignment: .topLeading) {
                         // Floating toggle button when collapsed
                         if isComposeSectionCollapsed {
@@ -83,6 +84,7 @@ struct ContentView: View {
                         }
                     }
             }
+            .frame(idealWidth: isComposeSectionCollapsed ? 500 : 1400)
 
             // Status bar footer
             StatusBarView()
