@@ -215,10 +215,21 @@ struct ProjectSwitcherView: View {
   @State private var insertionIndex: Int?
   @State private var tabPositions: [String: CGRect] = [:]
 
+  private let baseSpacing: CGFloat = 8
+
+  /// Calculate gap width between two adjacent tabs
+  /// Collapses to 0 if either neighbor is the dragged tab
+  private func gapWidth(betweenIndex i: Int) -> CGFloat {
+    guard let dragged = draggingProject else { return baseSpacing }
+    let left = state.allProjects[i].id
+    let right = state.allProjects[i + 1].id
+    return (dragged.id == left || dragged.id == right) ? 0 : baseSpacing
+  }
+
   var body: some View {
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {  // No global spacing - use explicit Gap views
           ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
             if insertionIndex == index, let draggingProject {
@@ -241,7 +252,6 @@ struct ProjectSwitcherView: View {
               width: draggingProject?.id == project.id ? 0 : nil,
               height: draggingProject?.id == project.id ? 0 : nil
             )
-            .padding(.horizontal, draggingProject?.id == project.id ? -4 : 0)  // Collapse spacing around dragged tab
             .clipped()  // Clip content when frame is 0x0
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
@@ -252,6 +262,11 @@ struct ProjectSwitcherView: View {
             .onDrag {
               self.draggingProject = project
               return NSItemProvider(object: project.id as NSString)
+            }
+
+            // Pairwise gap - collapses only if either neighbor is dragged
+            if index < state.allProjects.count - 1 {
+              Gap(width: gapWidth(betweenIndex: index))
             }
           }
 
@@ -386,6 +401,20 @@ struct ProjectTabView: View {
     .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
     .accessibilityHint("Activate to switch to this project")
     .accessibilityAddTraits(.isButton)
+  }
+}
+
+// MARK: - Gap View
+
+/// Fixed-width spacer for pairwise gap control in drag-and-drop
+/// Allows collapsing gaps only around dragged tab without affecting global spacing
+private struct Gap: View {
+  let width: CGFloat
+
+  var body: some View {
+    Color.clear
+      .frame(width: width, height: 1)
+      .allowsHitTesting(false)
   }
 }
 
