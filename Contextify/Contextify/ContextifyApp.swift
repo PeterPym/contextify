@@ -37,6 +37,16 @@ struct WindowCommands: Commands {
   }
 }
 
+struct HelpCommands: Commands {
+  var body: some Commands {
+    CommandGroup(after: .help) {
+      Button("Contact Support...") {
+        SystemInfo.openSupportEmail()
+      }
+    }
+  }
+}
+
 @main
 struct ContextifyApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -92,6 +102,7 @@ struct ContextifyApp: App {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
       WindowCommands()
+      HelpCommands()
     }
 
     Settings {
