@@ -24,7 +24,6 @@ struct ConversationTimelineView: View {
             maxWidth: .infinity
         )
         .background(.ultraThinMaterial)
-        .animation(.easeInOut(duration: 0.2), value: monitor.isCollapsed)
         .overlay(alignment: .bottomTrailing) {
             if monitor.lastError != nil {
                 Button {
@@ -111,7 +110,9 @@ struct ConversationTimelineView: View {
                 Image(systemName: monitor.isCollapsed ? "arrow.left.square" : "arrow.right.square")
             }
             .buttonStyle(.plain)
-            .help(monitor.isCollapsed ? "Expand timeline" : "Collapse timeline")
+            .help(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
+            .accessibilityLabel(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
+            .padding(4)
         }
         .padding(.horizontal, monitor.isCollapsed ? 12 : 16)
         .padding(.vertical, 12)

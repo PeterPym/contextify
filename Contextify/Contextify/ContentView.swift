@@ -12,6 +12,10 @@ import OSLog
 import ContextifyCore
 private let uiLog = Logger(subsystem: "dev.contextify", category: "UI")
 
+extension Notification.Name {
+    static let toggleComposeSidebar = Notification.Name("toggleComposeSidebar")
+}
+
 struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
@@ -78,7 +82,9 @@ struct ContentView: View {
                         } label: {
                             Image(systemName: "sidebar.left")
                         }
+                        .accessibilityLabel(columnVisibility == .all ? "Hide compose panel" : "Show compose panel")
                         .help(columnVisibility == .all ? "Hide compose panel" : "Show compose panel")
+                        .padding(4)
                     }
                 }
             } detail: {
@@ -119,6 +125,9 @@ struct ContentView: View {
         }
         .onChange(of: columnVisibility) { _, v in
             columnVisibilityStore = Self.visibilityToStore(v)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleComposeSidebar)) { _ in
+            withAnimation { columnVisibility.toggleSplitVisibility() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
@@ -318,13 +327,25 @@ struct DetailWidthSync: ViewModifier {
 
 struct SidebarWidthReader: View {
     @Binding var width: CGFloat
+    @State private var debounceTask: Task<Void, Never>?
+
     var body: some View {
         GeometryReader { proxy in
             Color.clear
                 .preference(key: SidebarWidthKey.self, value: proxy.size.width)
         }
         .onPreferenceChange(SidebarWidthKey.self) { new in
-            if abs(new - width) > 1.0 { width = new }
+            guard abs(new - width) > 1.0 else { return }
+
+            // Cancel existing debounce task
+            debounceTask?.cancel()
+
+            // Create new debounced write (50ms delay)
+            debounceTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                guard !Task.isCancelled else { return }
+                width = new
+            }
         }
     }
 }

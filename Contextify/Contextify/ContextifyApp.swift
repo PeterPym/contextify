@@ -104,6 +104,12 @@ struct ContextifyApp: App {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
       WindowCommands()
+      CommandGroup(after: .sidebar) {
+        Button("Toggle Sidebar") {
+          NotificationCenter.default.post(name: .toggleComposeSidebar, object: nil)
+        }
+        .keyboardShortcut("s", modifiers: [.option, .command])
+      }
       HelpCommands()
     }
 
