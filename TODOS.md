@@ -2,111 +2,53 @@
 
 ## P0 Bug Fixes
 
-### 0. Consolidate Project Switching Code Paths (ARCHITECTURAL)
-**Issue:** Two different methods for switching projects with inconsistent behavior and validation.
+### 0. First Startup Experience - Implemented, Needs Testing
+**Status:** Implementation complete, requires testing with clean database.
 
-**Problem:**
-- `HUDViewModel.setProjectRoot(url:)` - Requires Git repository, returns error if not found
-- `HUDViewModel.switchToProject(projectPath:)` - Works with or without Git, no validation
-- This duplication creates confusion and potential bugs
-- Projects without Git repositories should be supported but currently fail with `setProjectRoot()`
+**What was implemented:**
+- ✅ Conversation log placeholders with context-aware empty states
+- ✅ Loading states in ConversationMonitor
+- ⚠️ Welcome modal and footer progress badge not yet implemented
 
-**Required Changes:**
-1. **Support non-Git projects:**
-   - Projects should work without `.git` directory
-   - Git branch info should be optional (show "—" if no Git)
-   - All project switching methods should handle both Git and non-Git projects
+**Testing required:**
+- [ ] Test with clean database (delete `~/Library/Application Support/Contextify/contextify.db`)
+- [ ] Verify placeholder states appear correctly during first startup
+- [ ] Confirm smooth transition from loading to populated state
+- [ ] Check that empty states show appropriate messages
 
-2. **Consolidate code paths:**
-   - Eliminate duplicate project switching logic
-   - Use single canonical method for all project switches
-   - If one method must remain for legacy reasons, add clear deprecation comments
+**Still TODO:**
+- Welcome modal for first launch with progress tracking
+- Footer status indicator for discovery/indexing progress
+- Progress callbacks from HooverEngine
 
-3. **Specific updates needed:**
-   - `setProjectRoot()`: Remove Git requirement, make it optional
-   - OR deprecate `setProjectRoot()` entirely in favor of `switchToProject()`
-   - Add warning comments: "DO NOT use setProjectRoot() for project switching - use switchToProject() instead"
-   - Ensure `ProjectsViewModel.setAsCurrent()` and `ProjectSwitcherView` tab clicks use same code path
+**Files modified:**
+- ✅ `Contextify/Contextify/ConversationTimelineView.swift` - Placeholder states
 
-**Files to modify:**
-- `app/Sources/ContextifyCore/HUDCore.swift:799-819` (setProjectRoot)
-- `app/Sources/ContextifyCore/HUDCore.swift:625-662` (switchToProject)
-- `Contextify/Contextify/ProjectsViewModel.swift:82-95` (setAsCurrent)
-- `Contextify/Contextify/ProjectSwitcherView.swift:23-28` (tab click handler)
-
-**Testing checklist:**
-- [ ] Projects without Git repositories can be switched to
-- [ ] Git branch info shows "—" for non-Git projects
-- [ ] Both "Set as Current" button and project tabs use same code path
-- [ ] Timeline updates correctly for both Git and non-Git projects
-
----
-
-### 1. First Startup Experience - No Feedback During Discovery
-**Issue:** On first app launch or with empty database, no feedback about transcript discovery and ingestion progress.
-
-**Symptoms:**
-- Empty project list with no explanation
-- Projects appear slowly, one at a time
-- Conversation logs show as empty initially, then suddenly populate
-- No progress indicator or ETA
-- Appears broken or frozen
-
-**Requirements:**
-1. **Welcome Modal:** Show on first launch with real-time progress
-   - Estimated time to completion
-   - Current project/transcript being processed
-   - Progress bar (X/Y transcripts)
-   - Minimize/dismiss option
-
-2. **Project Tab Loading States:** Show "Loading conversation... 47 transcripts found" placeholder
-   - Replace with actual entries as they arrive
-   - Smooth transition to normal state
-
-3. **Conversation Log Placeholders:** Context-aware empty states
-   - No transcripts: "Use Claude Code or Codex to populate the timeline."
-   - Transcripts found but ingesting: "Loading conversation... ⏱️ About 2 minutes remaining"
-   - Transcripts ingested but empty: "This conversation has not started yet."
-
-4. **Footer Status Indicator:** Show discovery/indexing progress
-   - "🔍 Discovering: 12 projects found"
-   - "⚙️ Indexing: 21/47 transcripts (45%)"
-   - "✓ Ready: 12 projects, 47 transcripts"
-
-**Implementation approach:**
-- Extend HooverEngine with progress callbacks
-- Create FirstStartupOrchestrator for coordination
-- Add loading states to ConversationMonitor
-- Build WelcomeModalView component
-- Add footer progress badge next to LLM status bar
-- Store `firstLaunchCompleted` preference
-
-**Detailed Spec:** `build/notes/feature-specs/first-startup-ux/spec.md`
-
-**Files to create/modify:**
-- `app/Sources/ContextifyCore/Database/HooverEngine.swift` (progress events)
+**Files still needed:**
 - `Contextify/Contextify/FirstStartupOrchestrator.swift` (NEW - coordination)
 - `Contextify/Contextify/WelcomeModalView.swift` (NEW - modal UI)
-- `Contextify/Contextify/ConversationMonitor.swift` (loading states)
-- `Contextify/Contextify/ConversationTimelineView.swift` (✅ placeholder states updated)
 - `Contextify/Contextify/ContentView.swift` (footer badge)
-
-**Estimated time:** 4-6 days
 
 ---
 
-### 2. Textarea Label Not Updating with Active Terminal
-**Issue:** The textarea label "Send to: [terminal title]" is not updating to reflect the most recently active terminal window.
+### 1. Terminal Label Update Requires App Focus Cycle
+**Issue:** The textarea label "Send to: [terminal title]" updates, but requires tabbing back to the app, then to terminal, then back to app to see the update.
 
-**Symptoms:**
-- Label shows stale or incorrect terminal window title
-- Should update automatically when switching terminal windows
-- Should track the most recently active/focused terminal
+**Current Behavior:**
+- Terminal label does update when terminal window changes
+- But requires: Terminal → Contextify → Terminal → Contextify to see the update
+- Label is stale on direct Terminal → Contextify switch
 
-**Investigation needed:**
-- Check iTerm2Bridge integration for window focus events
-- Verify terminal window title fetching mechanism
-- Confirm label update triggers on window focus change
+**Root Cause Investigation Needed:**
+- iTerm2Bridge may only fetch active terminal title on app focus
+- Window focus event handlers may not be triggering proactively
+- Terminal title fetch might need to happen on a timer or via notifications
+
+**Possible Solutions:**
+1. Poll terminal title on a timer when app is active (every 1-2 seconds)
+2. Use NSWorkspace notifications to detect terminal window changes
+3. Register for iTerm2 window change notifications if available
+4. Fetch title immediately on any app activation, not just first activation
 
 **Files to review:**
 - `Contextify/Contextify/ITerm2Bridge.swift` (terminal integration)
@@ -116,6 +58,23 @@
 ---
 
 ## Recently Completed Work
+
+### Consolidated Project Switching Code Paths (2025-10-30)
+- ✅ Eliminated duplicate project switching logic
+- ✅ Single canonical method for all project switches (`switchToProject`)
+- ✅ Support for non-Git projects (Git branch shows "—" when not available)
+- ✅ Both "Set as Current" button and project tab clicks use same code path
+- ✅ Timeline updates correctly for both Git and non-Git projects
+
+**Implementation:**
+- Consolidated all project switching through `HUDViewModel.switchToProject()`
+- Made Git repository detection optional (project works without `.git`)
+- Both UI entry points now use consistent validation and state updates
+
+**Files modified:**
+- `app/Sources/ContextifyCore/HUDCore.swift` (switchToProject)
+- `Contextify/Contextify/ProjectsViewModel.swift` (setAsCurrent)
+- `Contextify/Contextify/ProjectSwitcherView.swift` (tab click handler)
 
 ### Path Demangling Fix & UNIQUE Constraint Violations (2025-10-30)
 - ✅ Fixed naive path demangling breaking for hyphenated directories
