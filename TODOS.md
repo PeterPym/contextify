@@ -244,6 +244,7 @@
 - Add keyboard shortcuts for project switching (Cmd+Shift+[/])
 - Show "last active" timestamp on project tabs
 - Add "pin" feature to keep important projects at top
+- Add preference setting for timeline entry limit (currently hardcoded to 25 in ConversationMonitor.swift)
 - Implement project search/filter in tabs
 
 ### Observability

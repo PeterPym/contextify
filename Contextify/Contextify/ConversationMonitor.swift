@@ -106,7 +106,7 @@ final class ConversationMonitor {
     var entries: [TimelineEntry] { state.entries }
 
     /// Maximum number of entries to display (tuneable for performance)
-    private let visibleEntryLimit = 50
+    private let visibleEntryLimit = 25
 
     /// All entries are visible - sessions appear as one continuous stream
     /// No filtering by session - timeline shows chronological view across all sessions
