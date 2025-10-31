@@ -6,7 +6,7 @@ struct ConversationTimelineView: View {
     @State private var scrollTask: Task<Void, Never>?
 
     private let collapsedWidth: CGFloat = 52
-    private let expandedWidth: CGFloat = 320
+    private let expandedMinWidth: CGFloat = 320
     private let scrollAnchorID = "timeline-scroll-anchor"
 
     var body: some View {
@@ -19,7 +19,10 @@ struct ConversationTimelineView: View {
                 timelineContent
             }
         }
-        .frame(width: monitor.isCollapsed ? collapsedWidth : expandedWidth)
+        .frame(
+            minWidth: monitor.isCollapsed ? collapsedWidth : expandedMinWidth,
+            maxWidth: .infinity
+        )
         .background(.ultraThinMaterial)
         .animation(.easeInOut(duration: 0.2), value: monitor.isCollapsed)
         .overlay(alignment: .bottomTrailing) {

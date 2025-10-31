@@ -56,13 +56,13 @@ struct ContentView: View {
                         // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
                         composeSection
                     }
-                    .frame(minWidth: 640)
-                    .padding(16)
+                    .padding(16)  // Include padding inside width constraints
+                    .frame(minWidth: 480, maxWidth: 640)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
                 ConversationTimelineView()
-                    .frame(minWidth: 400, idealWidth: isComposeSectionCollapsed ? 500 : 800, maxWidth: .infinity)
+                    .frame(minWidth: 320, maxWidth: .infinity)
                     .overlay(alignment: .topLeading) {
                         // Floating toggle button when collapsed
                         if isComposeSectionCollapsed {
@@ -84,7 +84,6 @@ struct ContentView: View {
                         }
                     }
             }
-            .frame(idealWidth: isComposeSectionCollapsed ? 500 : 1400)
 
             // Status bar footer
             StatusBarView()
@@ -136,7 +135,34 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: isComposeSectionCollapsed ? 400 : 940, minHeight: 360)
+        .frame(
+            minWidth: isComposeSectionCollapsed ? 320 : 800,
+            maxWidth: isComposeSectionCollapsed ? 500 : .infinity,  // Limit width when collapsed
+            minHeight: 360
+        )
+        .onChange(of: isComposeSectionCollapsed) { _, isCollapsed in
+            // Programmatically resize window to match content when collapsing
+            guard let window = MainWindowTracker.shared.window else { return }
+
+            let currentFrame = window.frame
+            let targetWidth: CGFloat = isCollapsed ? 450 : 900
+
+            // Only resize if current width is significantly different from target
+            guard abs(currentFrame.width - targetWidth) > 50 else { return }
+
+            // Calculate new frame (preserve top-RIGHT corner - anchor on trailing edge)
+            let widthDelta = targetWidth - currentFrame.width
+            var newFrame = currentFrame
+            newFrame.size.width = targetWidth
+            newFrame.origin.x -= widthDelta  // Shift left by the width change to keep right edge fixed
+
+            // Animate the resize
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.3
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().setFrame(newFrame, display: true)
+            }
+        }
     }
 
     private var header: some View {
