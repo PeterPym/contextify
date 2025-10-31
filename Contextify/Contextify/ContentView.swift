@@ -136,7 +136,7 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(minWidth: 940, minHeight: 360)
+        .frame(minWidth: isComposeSectionCollapsed ? 400 : 940, minHeight: 360)
     }
 
     private var header: some View {
