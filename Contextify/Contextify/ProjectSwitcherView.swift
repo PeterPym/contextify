@@ -43,6 +43,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   @Binding var insertionIndex: Int?
   let activeProjectId: String?
   let onReorder: ([String]) -> Void
+  let onActivate: (String) -> Void
 
   // Hysteresis and stickiness to avoid boundary jitter
   private let hysteresis: CGFloat = 8.0
@@ -171,8 +172,10 @@ private struct ProjectTabsDropDelegate: DropDelegate {
     updated.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: finalSlot)
     onReorder(updated.map(\.id))
 
-    // Don't auto-activate on drop - let user explicitly click to switch
-    // Removed: onActivate(dragging.id) to eliminate delay on reordering
+    // Auto-activate reordered project if it's not already active
+    if dragging.id != activeProjectId {
+      onActivate(dragging.id)
+    }
 
     return true
   }
@@ -247,6 +250,9 @@ struct ProjectSwitcherView: View {
             activeProjectId: state.activeProjectId,
             onReorder: { orderedIds in
               Task { await state.reorderProjects(orderedIds) }
+            },
+            onActivate: { projectId in
+              Task { await state.switchToProject(projectId) }
             }
           )
         )
