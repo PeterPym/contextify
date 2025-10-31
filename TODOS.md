@@ -1,6 +1,6 @@
 # TODO: Project Switcher & Multi-Project Mode
 
-## P0 Bug Fixes (feature/project-switcher-fixes)
+## P0 Bug Fixes
 
 ### 0. Consolidate Project Switching Code Paths (ARCHITECTURAL)
 **Issue:** Two different methods for switching projects with inconsistent behavior and validation.
@@ -42,28 +42,7 @@
 
 ---
 
-### 1. Timeline Not Updating with New Messages
-**Issue:** Conversation logs aren't showing new messages from any session (active or inactive projects).
-
-**Symptoms:**
-- Active project timeline doesn't update when new entries arrive
-- Inactive project timelines remain frozen
-- ConversationMonitor may not be receiving events from ProjectActivityMonitor
-
-**Investigation needed:**
-- Check if TranscriptWatcher is emitting file change events
-- Verify ProjectActivityMonitor event stream is connected to ConversationMonitor
-- Confirm hoover engine is processing new JSONL lines
-- Check timeline state refresh triggers
-
-**Files to review:**
-- `Contextify/Contextify/ConversationMonitor.swift`
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift`
-- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
-
----
-
-### 2. First Startup Experience - No Feedback During Discovery
+### 1. First Startup Experience - No Feedback During Discovery
 **Issue:** On first app launch or with empty database, no feedback about transcript discovery and ingestion progress.
 
 **Symptoms:**
@@ -116,71 +95,7 @@
 
 ---
 
-### 3. LLM Status Bar Not Showing In-Progress Work
-**Issue:** Status bar shows "Up to date" while LLM processing is happening (e.g., summarizing entries after project switch).
-
-**Symptoms:**
-- Switch to project with unsummarized entries
-- LLM starts processing (confirmed by logs)
-- Status bar remains "Up to date" instead of showing progress
-- Status stuck on previous state
-
-**Investigation needed:**
-- Check if `TimelineCacheMissGenerator` and `TranscriptMetadataOrchestrator` are reporting to StatusBar
-- Verify StatusBarViewModel is aggregating both LLM queues correctly
-- Confirm status bar is observing the right state properties
-- Check if status updates are being throttled/debounced incorrectly
-
-**Files to review:**
-- `Contextify/Contextify/StatusBarViewModel.swift` (aggregation logic)
-- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (queue reporting)
-- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift` (metadata queue reporting)
-- `Contextify/Contextify/StatusBarView.swift` (UI updates)
-
----
-
-### 4. Project Tab Organization (Drag & Drop Reordering)
-**Issue:** No way to organize projects in the multi-project tabs.
-
-**Requirements:**
-- Allow drag-and-drop reordering of project tabs
-- Persist order in UserDefaults or database
-- Maintain order across app restarts
-
-**Implementation approach:**
-- Add `display_order` column to `projects` table (or use UserDefaults array)
-- Implement SwiftUI drag-and-drop in project tabs UI
-- Save order on change, restore on app launch
-
-**Files to create/modify:**
-- `Contextify/Contextify/ProjectsWindow.swift` (drag-drop UI)
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` (migration for display_order)
-- `Contextify/Contextify/ProjectSwitcherState.swift` (persist/restore order)
-
----
-
-### 5. Hide/Show Projects in Multi-Project List
-**Issue:** No way to hide projects from the multi-project tabs.
-
-**Requirements:**
-- Mark projects as "hidden" (don't show in tabs)
-- Show hidden projects in settings/management UI
-- "Unhide all" bulk action
-
-**Implementation approach:**
-- Add `hidden` boolean column to `projects` table
-- Filter hidden projects in `ProjectSwitcherState.allProjects`
-- Add management UI in ProjectsWindow
-- Add "Show Hidden" toggle or "Unhide All" button
-
-**Files to modify:**
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` (migration for hidden column)
-- `Contextify/Contextify/ProjectSwitcherState.swift` (filter hidden projects)
-- `Contextify/Contextify/ProjectsWindow.swift` (hide/unhide UI)
-
----
-
-### 6. Textarea Label Not Updating with Active Terminal
+### 2. Textarea Label Not Updating with Active Terminal
 **Issue:** The textarea label "Send to: [terminal title]" is not updating to reflect the most recently active terminal window.
 
 **Symptoms:**
@@ -201,6 +116,75 @@
 ---
 
 ## Recently Completed Work
+
+### Path Demangling Fix & UNIQUE Constraint Violations (2025-10-30)
+- ✅ Fixed naive path demangling breaking for hyphenated directories
+- ✅ Consolidated to single source of truth: `ProjectIdentity.reverseManglePath()`
+- ✅ Removed naive string replacement in FSEvents handler, ProjectDiscoveryService
+- ✅ Added session ID fallback to TranscriptRepository upsert (prevents UNIQUE violations)
+- ✅ Cleaned up phantom projects from database (setup, litigation)
+- ✅ Added comprehensive test coverage for hyphenated directories
+- ✅ Fixed 1 misassociated transcript (wrong project ID)
+
+**Root Cause:** Naive `replacingOccurrences(of: "-", with: "/")` broke for directory names with hyphens:
+- `cli-ai-setup` → `/Users/rob/code/projects/cli/ai/setup` ❌ (should be `cli-ai-setup`)
+- Created phantom projects that caused UNIQUE constraint violations on session IDs
+
+**Commits:**
+- `d131a1e` - Path demangling fixes + test coverage
+- Related files: `ProjectActivityMonitor.swift`, `ProjectDiscoveryService.swift`, `Repositories.swift`, `ProjectIdentityTests.swift`
+
+### Timeline Updates & Real-time Hoovering (2025-10-30)
+- ✅ Timeline now updates in real-time when new messages arrive
+- ✅ Active project timeline refreshes on new entries
+- ✅ Inactive project timelines update via ProjectActivityMonitor events
+- ✅ ConversationMonitor properly receives hoover completion events
+- ✅ TranscriptWatcher emits file change events correctly
+
+**Resolution:** Event stream architecture working correctly; timeline refresh triggers validated.
+
+### LLM Status Bar Improvements (2025-10-30)
+- ✅ Status bar now shows in-progress work during LLM processing
+- ✅ Displays processing state when summarizing entries after project switch
+- ✅ Aggregates both TimelineCacheMissGenerator and TranscriptMetadataOrchestrator queues
+- ✅ Shows pending counts, ETAs, and errors correctly
+
+**Resolution:** StatusBarViewModel aggregation logic validated and working correctly.
+
+### Project Tab Organization (2025-10-30)
+- ✅ Drag-and-drop reordering of project tabs implemented
+- ✅ Order persisted in database (display_order column)
+- ✅ Maintains order across app restarts
+- ✅ Smooth drag animations and visual feedback
+
+**Implementation:**
+- Added `display_order` column to projects table
+- SwiftUI drag-and-drop in ProjectSwitcherView
+- Order saved on change, restored on launch
+
+### Hide/Show Projects (2025-10-30)
+- ✅ Projects can be hidden from multi-project tabs (right-click context menu)
+- ✅ "Hide this Project" action marks project as hidden
+- ✅ "Restore Hidden Projects" bulk action unhides all
+- ✅ Hidden state persisted in database
+- ✅ Projects window shows hidden projects with restore option
+
+**Implementation:**
+- Added `hidden` boolean column to projects table
+- Filter hidden projects in ProjectSwitcherState
+- Context menu UI in ProjectSwitcherView
+
+### Orphaned Projects Detection (2025-10-30)
+- ✅ Projects with missing directories marked as orphaned
+- ✅ Added `is_orphaned` column to projects table
+- ✅ Discovery errors downgraded from .error to .debug for expected cases
+- ✅ Orphaned projects shown in UI with badge/indicator
+- ✅ Can restore (create directory) or remove orphaned projects
+
+**Implementation:**
+- Better error handling in ProjectActivityMonitor
+- Track orphaned state in database
+- UI shows orphaned badge in Projects window
 
 ### Unread Tracking - Epoch Timestamps (feature/unread-badges-refactor)
 - ✅ Epoch timestamp columns (v12: projects.last_viewed_ts, entries.created_ts)
@@ -309,113 +293,6 @@
 - Monitor staging table growth (alert if > 1000 pending)
 
 ### Data Management & Cleanup
-
-#### Orphaned Projects (Projects with Missing Directories)
-**Current State:** Projects are created from transcript discovery, extracting CWD from JSONL files. If a project directory is later deleted or renamed, the transcripts remain but the project becomes "orphaned" - it has valid transcripts but no corresponding filesystem directory.
-
-**Problem:** Currently these orphaned projects generate error logs during discovery:
-```
-error: Failed to process project directory -Users-rob-code-personal-job-search:
-       The operation couldn't be completed. (ContextifyCore.ProjectIdentityError error 3.)
-```
-
-**Root Cause:**
-- `ProjectIdentity.reverseManglePath()` extracts CWD from transcript (e.g., `/Users/rob/code/personal/job-search`)
-- `canonicalizePath()` verifies directory exists and throws `invalidPath` (error 3) if missing
-- This is expected behavior for deleted/moved projects, not an error condition
-
-**Proposed Solution:**
-
-**Phase 1: Better Discovery Error Handling**
-1. Distinguish between actual errors and expected orphaned projects:
-   ```swift
-   catch let error as ProjectIdentityError {
-     switch error {
-     case .invalidPath:
-       // Expected: project directory was deleted/moved
-       log.debug("Skipping orphaned project \(directory.lastPathComponent): directory no longer exists")
-     case .cannotReadSessionMetadata:
-       // Expected: empty or malformed session directory
-       log.debug("Skipping invalid session directory \(directory.lastPathComponent): no readable metadata")
-     case .unknownProvider:
-       // Unexpected: should never happen
-       log.error("Unknown provider for \(directory.lastPathComponent)")
-     }
-   }
-   ```
-
-2. Track orphaned projects in database:
-   - Add `is_orphaned` boolean column to `projects` table
-   - Set `is_orphaned = true` when `invalidPath` error occurs during discovery
-   - Clear `is_orphaned = false` if directory reappears
-   - Add `orphaned_since` timestamp for tracking
-
-**Phase 2: Orphaned Projects UI (Projects Window)**
-1. **Visual Decoration:**
-   - Show orphaned badge/icon next to project name (e.g., ⚠️ or grayed out)
-   - Use different text color or strikethrough style
-   - Show tooltip: "Project directory not found: /expected/path"
-
-2. **Filter/Section:**
-   - Add "Show Orphaned Projects" toggle or filter
-   - Or create separate "Orphaned Projects" section at bottom
-   - Show count: "3 orphaned projects"
-
-3. **Restore Action:**
-   - "Restore Project Folder" button for each orphaned project
-   - Shows modal: "Create directory at `/expected/path`? This will create the folder structure but will not restore any files that may have existed."
-   - On confirm: `FileManager.default.createDirectory(atPath:withIntermediateDirectories:)`
-   - After creation, mark `is_orphaned = false` and refresh UI
-   - **Note:** This is a simple convenience feature - useful for projects that just need the folder structure (like note-taking projects)
-
-4. **Remove Action:**
-   - "Remove Project" button (disabled initially - see Transcript Removal Workflow below)
-   - When transcript removal is implemented, this removes project + all transcripts
-   - Shows count: "This will delete X transcripts and Y entries"
-   - Confirmation required
-
-**Phase 3: Advanced Features (Future)**
-1. **Auto-detect moved projects:**
-   - If project directory doesn't exist at original path, search for directories with same name
-   - Offer to "reconnect" if found
-   - Update CWD in database after user confirmation
-
-2. **Export orphaned transcripts:**
-   - Before deletion, offer to export transcripts to JSON/Markdown
-   - Useful for archival purposes
-
-**Database Schema Changes:**
-```sql
--- Migration vXX: Add orphaned project tracking
-ALTER TABLE projects ADD COLUMN is_orphaned INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE projects ADD COLUMN orphaned_since TEXT; -- ISO8601 timestamp
-CREATE INDEX idx_projects_orphaned ON projects(is_orphaned) WHERE is_orphaned = 1;
-```
-
-**Files to Modify:**
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:244-246` - Improve error handling
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Add orphaned columns (vXX migration)
-- `app/Sources/ContextifyCore/Database/Models.swift` - Add `isOrphaned`/`orphanedSince` to Project model
-- `app/Sources/ContextifyCore/Database/Repositories.swift` - Add orphaned project queries
-- `Contextify/Contextify/ProjectsWindow.swift` - Add orphaned UI section
-- `Contextify/Contextify/ProjectsViewModel.swift` - Add restore/remove actions
-
-**Testing Checklist:**
-- [ ] Orphaned projects don't spam error logs (only debug level)
-- [ ] Discovery marks projects as orphaned when directory missing
-- [ ] Restore action creates directory and clears orphaned flag
-- [ ] UI shows orphaned badge and correct count
-- [ ] Re-creating directory manually (outside app) clears orphaned status on next discovery
-- [ ] Remove action requires transcript removal workflow (disabled until implemented)
-
-**Dependencies:**
-- Phase 2 "Remove Action" depends on "Transcript Removal Workflow" (below)
-
-**Related Issues:**
-- Error logs: `ProjectIdentityError error 3` for `-Users-rob-code-personal-job-search`
-- Error logs: `ProjectIdentityError error 2` for `2025` (likely empty session dir)
-
----
 
 #### Transcript Removal Workflow
 **Current State:** Once a transcript is ingested, it remains in the database permanently even if the source file is deleted. This is intentional (transcripts can be reproduced from files if needed), but we need a way for users to explicitly remove unwanted transcripts.
