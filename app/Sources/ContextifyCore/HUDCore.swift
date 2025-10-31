@@ -459,6 +459,8 @@ public final class HUDViewModel {
     }.value
 
     // Back on main actor to update state
+    var discoveredRoot: URL?
+
     if let bookmark = bookmarkURL {
       let canonical = await Task.detached {
         bookmark.resolvingSymlinksInPath()
@@ -470,6 +472,7 @@ public final class HUDViewModel {
       updateSecurityScope(for: bookmark, persisted: true)
       updateGitInfo()
       updateHeadWatcher()
+      discoveredRoot = canonical
     } else if let path = persistedPath, !path.isEmpty {
       let (canonical, scoped) = await Task.detached {
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
@@ -483,6 +486,12 @@ public final class HUDViewModel {
       updateSecurityScope(for: scoped, persisted: true)
       updateGitInfo()
       updateHeadWatcher()
+      discoveredRoot = canonical
+    }
+
+    // Notify observers if we discovered a project root during startup
+    if let root = discoveredRoot {
+      postProjectRootDidChange(root, source: "startup")
     }
   }
 
@@ -634,6 +643,24 @@ public final class HUDViewModel {
 
   // MARK: - Project Switching (Multi-Project Mode)
 
+  /// Post project root change notification with both URL and String types
+  /// - Parameters:
+  ///   - url: Project root URL
+  ///   - source: Source of the change (for diagnostics)
+  private func postProjectRootDidChange(_ url: URL, source: String) {
+    let path = url.path
+    lifecycleLog.info("📢 HUDViewModel: .projectRootDidChange src=\(source) path=\(path)")
+    NotificationCenter.default.post(
+      name: .projectRootDidChange,
+      object: path,  // Keep String for backward compatibility
+      userInfo: [
+        ProjectRootDidChangeKeys.url: url,
+        ProjectRootDidChangeKeys.path: path,
+        ProjectRootDidChangeKeys.source: source
+      ]
+    )
+  }
+
   /// Switch to a different project
   /// - Parameter projectPath: Absolute path to the new project root
   public func switchToProject(_ projectPath: String) {
@@ -668,13 +695,8 @@ public final class HUDViewModel {
     // Update watcher for new git location (or clear if no git)
     updateHeadWatcher()
 
-    // Post notification AFTER state is updated (ConversationMonitor listens to this)
-    let notificationPath = self.projectRootURL?.path ?? resolved.path
-    lifecycleLog.info("📢 HUDViewModel: Posting .projectRootDidChange notification for: \(notificationPath)")
-    NotificationCenter.default.post(
-      name: .projectRootDidChange,
-      object: notificationPath
-    )
+    // Post notification AFTER state is updated
+    postProjectRootDidChange(self.projectRootURL ?? resolved, source: "switchToProject")
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {
@@ -843,7 +865,7 @@ public final class HUDViewModel {
     updateGitInfo()
 
     // Notify observers that project root has changed
-    NotificationCenter.default.post(name: .projectRootDidChange, object: finalRoot)
+    postProjectRootDidChange(finalRoot, source: "setProjectRoot")
 
     return .success(finalRoot)
   }

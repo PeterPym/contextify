@@ -107,8 +107,9 @@ final class ConversationMonitor {
 
     /// All entries are visible - sessions appear as one continuous stream
     /// No filtering by session - timeline shows chronological view across all sessions
+    /// Limited to most recent 50 entries for performance
     var visibleEntries: [TimelineEntry] {
-        state.entries
+        Array(state.entries.suffix(50))
     }
 
     private(set) var isCollapsed = false

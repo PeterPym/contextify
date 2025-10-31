@@ -56,6 +56,12 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var pendingUnread: Set<String> = []
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
 
+  // Notification coalescing to prevent duplicate/oscillating notifications
+  @ObservationIgnored private var lastHandledPath: String?
+  @ObservationIgnored private var lastHandledAt: CFAbsoluteTime = 0
+  @ObservationIgnored private var suppressExternalNotificationsUntil: CFAbsoluteTime = 0
+  private let debounceMs: Double = 150  // Coalesce identical notifications within 150ms
+
   private init() {
     // Lazy initialization - orchestrator set on start()
     self.orchestrator = nil
@@ -111,12 +117,11 @@ public final class ProjectSwitcherState {
 
     // Initial discovery & full unread pass based on current DB
     Task {
-      // Ensure current project is in database
+      // Ensure current project is in database (waits for HUD startup)
       await ensureCurrentProjectInDatabase()
 
       await refreshProjects()
-      log.info("📊 After refreshProjects: \(self.allProjects.count) projects, activeProjectId=\(self.activeProjectId ?? "nil")")
-      await refreshUnreadCounts() // current state from DB; events will refine
+      await refreshUnreadCounts()
 
       // Auto-select first project if none is selected (leftmost tab)
       if activeProjectId == nil && !allProjects.isEmpty {
@@ -334,6 +339,9 @@ public final class ProjectSwitcherState {
 
       // Get project root path and update HUDViewModel
       if let project = try orchestrator.getProject(id: projectId) {
+        // Suppress feedback: HUD will post notification, but we don't want to handle it
+        suppressExternalNotifications(for: 300)
+
         // Call HUDViewModel to switch project (updates git info, watchers, etc.)
         await MainActor.run {
           HUDViewModel.shared.switchToProject(project.rootPath)
@@ -432,8 +440,10 @@ public final class ProjectSwitcherState {
     guard let orchestrator = orchestrator else { return }
 
     // Get current project from HUDViewModel
+    // Note: On clean startup, this might be nil if HUD hasn't loaded yet.
+    // That's OK - the notification observer will sync when HUD posts .projectRootDidChange
     guard let currentRoot = await MainActor.run(body: { HUDViewModel.shared.projectRootURL }) else {
-      log.info("🏁 No current project root set in HUDViewModel")
+      log.debug("No current project root set yet - will sync when HUD startup notification arrives")
       return
     }
 
@@ -533,6 +543,12 @@ public final class ProjectSwitcherState {
 
   // MARK: - Observer lifecycle (MainActor)
 
+  /// Suppress external notifications for a brief window to prevent feedback loops
+  /// Call this before programmatically triggering HUDViewModel changes
+  private func suppressExternalNotifications(for milliseconds: Double) {
+    suppressExternalNotificationsUntil = CFAbsoluteTimeGetCurrent() + milliseconds / 1000.0
+  }
+
   @MainActor
   private func installProjectRootObserver() {
     guard projectRootObserver == nil else { return }
@@ -541,9 +557,49 @@ public final class ProjectSwitcherState {
       object: nil,
       queue: .main
     ) { [weak self] notification in
-      guard let self, let projectURL = notification.object as? URL else { return }
-      // Hop to MainActor for UI-adjacent switching logic.
-      Task { @MainActor in await self.handleProjectRootChange(projectURL) }
+      guard let self else { return }
+
+      // Simple self-suppression window to avoid feedback loops
+      let now = CFAbsoluteTimeGetCurrent()
+      if now < self.suppressExternalNotificationsUntil {
+        log.debug("📭 Suppressing external notification (self-triggered)")
+        return
+      }
+
+      // Prefer URL from userInfo, then object as URL, then String -> URL
+      let userURL = notification.userInfo?[ProjectRootDidChangeKeys.url] as? URL
+      let objURL = notification.object as? URL
+      let strURL = (notification.object as? String).map { URL(fileURLWithPath: $0) }
+
+      guard let projectURL = userURL ?? objURL ?? strURL else {
+        #if DEBUG
+        let objectType = type(of: notification.object)
+        log.warning("📭 projectRootDidChange missing URL (object=\(String(describing: objectType)))")
+        assertionFailure("projectRootDidChange missing URL")
+        #endif
+        return
+      }
+
+      let path = projectURL.path
+
+      // Coalesce identical path within small window
+      if self.lastHandledPath == path && (now - self.lastHandledAt) * 1000 < self.debounceMs {
+        log.debug("📭 Coalescing duplicate notification for: \(path)")
+        return
+      }
+      self.lastHandledPath = path
+      self.lastHandledAt = now
+
+      // Log source for diagnostics
+      if let source = notification.userInfo?[ProjectRootDidChangeKeys.source] as? String {
+        log.info("📬 Received .projectRootDidChange src=\(source) path=\(path)")
+      } else {
+        log.info("📬 Received .projectRootDidChange path=\(path)")
+      }
+
+      Task { @MainActor in
+        await self.handleProjectRootChange(projectURL)
+      }
     }
   }
 
