@@ -272,9 +272,13 @@ struct ProjectSwitcherView: View {
               return NSItemProvider(object: project.id as NSString)
             }
 
-            // Pairwise gap - collapses only if either neighbor is dragged
+            // Pairwise gap - skip if insertion indicator will appear at next position
             if index < state.allProjects.count - 1 {
-              Gap(width: gapWidth(betweenIndex: index))
+              // Skip gap if insertion indicator will appear between this tab and next
+              let skipGap = insertionIndex == index + 1
+              if !skipGap {
+                Gap(width: gapWidth(betweenIndex: index))
+              }
             }
           }
 
