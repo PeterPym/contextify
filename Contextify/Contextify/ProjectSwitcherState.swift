@@ -415,22 +415,43 @@ public final class ProjectSwitcherState {
   public func reorderProjects(_ orderedProjectIds: [String]) async {
     guard let orchestrator = orchestrator else { return }
 
-    do {
-      // Atomically update all display_order values in a single transaction
-      try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
+    // OPTIMIZATION: Update UI immediately without waiting for DB/FS operations
+    // Create ordered list from existing allProjects array
+    let reorderedProjects = orderedProjectIds.compactMap { id in
+      allProjects.first(where: { $0.id == id })
+    }
 
-      // Emit reordered event for first project (Projects window will refresh entire list)
-      if let firstProjectId = orderedProjectIds.first, let monitor = activityMonitor {
-        await monitor.emitProjectEvent(ProjectEvent(projectId: firstProjectId, kind: .reordered))
-        log.debug("Emitted .reordered event for project: \(firstProjectId)")
+    // Update state immediately for instant visual feedback
+    await MainActor.run {
+      self.allProjects = reorderedProjects
+    }
+
+    // Persist to database asynchronously (non-blocking)
+    Task { [weak self] in
+      guard let self else { return }
+
+      do {
+        // Atomically update all display_order values in a single transaction
+        try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
+
+        // Emit reordered event for first project (Projects window will refresh entire list)
+        if let firstProjectId = orderedProjectIds.first, let monitor = await self.activityMonitor {
+          await monitor.emitProjectEvent(ProjectEvent(projectId: firstProjectId, kind: .reordered))
+          await MainActor.run {
+            log.debug("Emitted .reordered event for project: \(firstProjectId)")
+          }
+        }
+
+        await MainActor.run {
+          log.info("Persisted reorder for \(orderedProjectIds.count) projects")
+        }
+      } catch {
+        await MainActor.run {
+          log.error("Failed to persist reorder: \(error.localizedDescription)")
+        }
+        // Revert to DB state on error
+        await self.refreshProjects()
       }
-
-      // Refresh to reflect new order
-      await refreshProjects()
-
-      log.info("Reordered \(orderedProjectIds.count) projects")
-    } catch {
-      log.error("Failed to reorder projects: \(error.localizedDescription)")
     }
   }
 
