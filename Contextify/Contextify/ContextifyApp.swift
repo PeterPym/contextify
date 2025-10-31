@@ -39,7 +39,8 @@ struct WindowCommands: Commands {
 
 struct HelpCommands: Commands {
   var body: some Commands {
-    CommandGroup(after: .help) {
+    // Replace the default help menu to remove "Contextify Help" item
+    CommandGroup(replacing: .help) {
       Button("Contact Support...") {
         SystemInfo.openSupportEmail()
       }
