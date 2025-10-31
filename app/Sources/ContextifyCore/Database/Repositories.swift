@@ -188,7 +188,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
     let lastModifiedInt = Int(lastModified.timeIntervalSince1970)
 
     return try db.write { db in
-      // Try to find existing
+      // Try to find existing by (project_id, file_path)
       if let existing = try Transcript
         .filter(Column("project_id") == projectId && Column("file_path") == filePath)
         .fetchOne(db) {
@@ -199,30 +199,45 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
         transcript.updatedAt = now
         try transcript.update(db)
         return existing.id
-      } else {
-        // Insert new
-        let id = providerSessionId ?? UUID().uuidString
-        let transcript = Transcript(
-          id: id,
-          projectId: projectId,
-          filePath: filePath,
-          provider: provider,
-          providerSessionId: providerSessionId,
-          lastModified: lastModifiedInt,
-          fileSize: fileSize,
-          lineCount: 0,
-          bookmark: nil,
-          lastProcessedLine: 0,
-          lastProcessedEntryId: nil,
-          parserVersion: 1,
-          status: "active",
-          lastError: nil,
-          createdAt: now,
-          updatedAt: now
-        )
-        try transcript.insert(db)
-        return id
       }
+
+      // Fallback: Check by (provider, provider_session_id) if session ID exists
+      // This prevents UNIQUE constraint violations when same transcript is associated with different projects
+      if let sessionId = providerSessionId,
+         let existing = try Transcript
+           .filter(Column("provider") == provider && Column("provider_session_id") == sessionId)
+           .fetchOne(db) {
+        // Found by session ID - update the existing record
+        var transcript = existing
+        transcript.lastModified = lastModifiedInt
+        transcript.fileSize = fileSize
+        transcript.updatedAt = now
+        try transcript.update(db)
+        return existing.id
+      }
+
+      // Insert new
+      let id = providerSessionId ?? UUID().uuidString
+      let transcript = Transcript(
+        id: id,
+        projectId: projectId,
+        filePath: filePath,
+        provider: provider,
+        providerSessionId: providerSessionId,
+        lastModified: lastModifiedInt,
+        fileSize: fileSize,
+        lineCount: 0,
+        bookmark: nil,
+        lastProcessedLine: 0,
+        lastProcessedEntryId: nil,
+        parserVersion: 1,
+        status: "active",
+        lastError: nil,
+        createdAt: now,
+        updatedAt: now
+      )
+      try transcript.insert(db)
+      return id
     }
   }
 

@@ -353,23 +353,14 @@ public actor ProjectActivityMonitor {
     let sessionId = url.deletingPathExtension().lastPathComponent
     let providerString = (provider == .claude ? "claude.code" : "codex.cli")
 
-    // For Claude Code: read project path from directory name (reverse the mangle)
-    // For Codex: read from session.json metadata
+    // Use ProjectIdentity.reverseManglePath() to properly demangle project paths
+    // This handles both Claude Code and Codex, and correctly handles hyphens in directory names
     let projPath: String
     do {
-      if provider == .claude {
-        // Claude mangles: /Users/rob/my-app → -Users-rob-my-app
-        // Reverse: replace - with / and ensure leading /
-        let dirName = transcriptRoot.lastPathComponent
-        let unmangled = dirName.replacingOccurrences(of: "-", with: "/")
-        projPath = unmangled.hasPrefix("/") ? unmangled : "/" + unmangled
-      } else {
-        // Codex stores project_root in session.json
-        let metaPath = transcriptRoot.appendingPathComponent("session.json")
-        let data = try Data(contentsOf: metaPath)
-        struct CodexMeta: Codable { let project_root: String }
-        projPath = try JSONDecoder().decode(CodexMeta.self, from: data).project_root
-      }
+      projPath = try ProjectIdentity.reverseManglePath(
+        provider: providerString,
+        directory: transcriptRoot
+      )
 
       log.debug("FSEvents: sessionId=\(sessionId) projPath=\(projPath)")
 

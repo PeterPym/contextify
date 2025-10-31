@@ -243,23 +243,17 @@ public actor ProjectDiscoveryService {
       }
     }
 
-    // Fallback: heuristic based on directory name
-    // Only use if it produces a valid existing path
-    let dirName = dirURL.lastPathComponent
-    let guessedPath = dirName.replacingOccurrences(of: "-", with: "/")
-    guard guessedPath.hasPrefix("/") else {
-      logger.debug("Fallback failed: not absolute path (\(dirName))")
+    // Fallback: use ProjectIdentity.reverseManglePath() if possible
+    // This properly handles hyphens in directory names
+    do {
+      let path = try ProjectIdentity.reverseManglePath(provider: "claude.code", directory: dirURL)
+      let url = URL(fileURLWithPath: path)
+      logger.debug("Using fallback with proper demangling for: \(dirURL.lastPathComponent) → \(path)")
+      return url
+    } catch {
+      logger.debug("Fallback failed: cannot reverse mangle (\(dirURL.lastPathComponent)): \(error)")
       return nil
     }
-
-    let url = URL(fileURLWithPath: guessedPath)
-    guard fm.fileExists(atPath: url.path) else {
-      logger.debug("Fallback failed: path doesn't exist (\(guessedPath))")
-      return nil
-    }
-
-    logger.debug("Using fallback heuristic for: \(dirName) → \(guessedPath)")
-    return url
   }
 
   /// Checks if a project has Codex transcripts

@@ -124,7 +124,12 @@ final class ProjectDiscoveryTests: XCTestCase {
 // MARK: - Mock Service for Testing
 
 class MockDiscoveryService {
+  // NOTE: These test helpers use simplified path demangling for testing purposes only.
+  // Production code MUST use ProjectIdentity.reverseManglePath() which correctly handles
+  // hyphens in directory names by reading CWD from transcript files.
+
   func testReversePathMapping(dirName: String) -> URL? {
+    // Simplified for testing - does not handle hyphens correctly
     let path = dirName.replacingOccurrences(of: "-", with: "/")
     guard path.hasPrefix("/") else { return nil }
     let url = URL(fileURLWithPath: path)
@@ -135,6 +140,7 @@ class MockDiscoveryService {
   }
 
   func testGeneratePath(dirName: String) -> String {
+    // Simplified for testing - does not handle hyphens correctly
     return dirName.replacingOccurrences(of: "-", with: "/")
   }
 

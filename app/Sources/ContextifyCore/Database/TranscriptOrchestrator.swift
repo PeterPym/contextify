@@ -261,7 +261,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Verify transcript has correct project ID
     guard transcript.projectId == projectId else {
-      log.error("❌ Transcript projectId mismatch: expected \(projectId), got \(transcript.projectId)")
+      log.error("❌ Transcript projectId mismatch: expected \(projectId, privacy: .public), got \(transcript.projectId, privacy: .public)")
       throw RepositoryError.invalidData
     }
 
