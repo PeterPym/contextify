@@ -232,6 +232,11 @@ struct ProjectSwitcherView: View {
             )
             .id(project.id)
             .trackTabFrame(id: project.id)
+            .frame(
+              width: draggingProject?.id == project.id ? 0 : nil,
+              height: draggingProject?.id == project.id ? 0 : nil
+            )
+            .clipped()  // Clip content when frame is 0x0
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
               Task {
