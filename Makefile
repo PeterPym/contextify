@@ -1,9 +1,12 @@
 # Minimal helpers that delegate to scripts/xc.sh to avoid duplication.
 
-.PHONY: build test clean hooks-setup setup logs logs-live clean-db debug db-backup db-restore db-list
+.PHONY: build build-release test clean hooks-setup setup logs logs-live clean-db debug db-backup db-restore db-list sign-dmg sign-dmg-no-notarize release release-dry-run
 
 build:
 	bash scripts/xc.sh build
+
+build-release:
+	bash scripts/xc.sh Release build
 
 test:
 	bash scripts/xc.sh test
@@ -46,3 +49,20 @@ db-list:
 # Build with automatic log capture (30 seconds)
 debug:
 	@bash scripts/build-and-capture-logs.sh 30
+
+# Release workflow targets
+# Sign and create DMG with notarization (production)
+sign-dmg:
+	@python3 scripts/sign_and_notarize.py
+
+# Sign and create DMG without notarization (faster testing)
+sign-dmg-no-notarize:
+	@python3 scripts/sign_and_notarize.py --no-notarize
+
+# Full release workflow (interactive)
+release:
+	@python3 scripts/release.py
+
+# Dry-run release (preview what would happen)
+release-dry-run:
+	@python3 scripts/release.py --dry-run
