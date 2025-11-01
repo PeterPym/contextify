@@ -407,12 +407,12 @@ private struct Layout {
     static let grabberWidth: CGFloat = 10  // Wide hit area for easy grabbing
     static let animationDuration: TimeInterval = 0.25
 
-    // LEFT side: Compose textarea (needs more space for writing)
-    static let composeMin: CGFloat = 400
+    // LEFT side: Compose textarea
+    static let composeMin: CGFloat = 100  // Allow compose to shrink way down
     static let composeMax: CGFloat = 800
 
-    // RIGHT side: Timeline/conversation log (can collapse very narrow)
-    static let timelineMin: CGFloat = 100  // Allow timeline to shrink way down
+    // RIGHT side: Timeline/conversation log (PRIORITY - never crush this!)
+    static let timelineMin: CGFloat = 340  // User requirement: timeline min 340px
     static let timelineMinCollapsed: CGFloat = 52
 
     static let containerPadding: CGFloat = 8

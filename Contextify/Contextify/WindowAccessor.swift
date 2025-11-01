@@ -8,8 +8,8 @@ struct WindowAccessor: NSViewRepresentable {
       if let window = view.window {
         MainWindowTracker.shared.window = window
         window.isReleasedWhenClosed = false
-        // Enforce minimum window size to prevent timeline from being crushed
-        window.minSize = NSSize(width: 340, height: 360)
+        // Enforce minimum window size: compose(100) + timeline(340) + divider(11) + padding(16) = 467px
+        window.minSize = NSSize(width: 467, height: 360)
       }
     }
     return view
