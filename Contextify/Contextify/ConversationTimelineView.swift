@@ -113,8 +113,8 @@ struct ConversationTimelineView: View {
             .accessibilityLabel(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
             .padding(4)
         }
-        .padding(.horizontal, monitor.isCollapsed ? 12 : 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
     }
 
     private var collapsedContent: some View {
@@ -134,7 +134,7 @@ struct ConversationTimelineView: View {
     private var timelineContent: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
                     if let error = monitor.lastError {
                         errorBanner(error)
                     }
@@ -160,7 +160,6 @@ struct ConversationTimelineView: View {
                             .id(scrollAnchorID)
                     }
                 }
-                .padding(16)
             }
             .scrollContentBackground(.hidden)
             .onChange(of: monitor.visibleEntries.count) { _, _ in

@@ -444,8 +444,7 @@ private extension ContentView {
 
     @MainActor
     func clampedWindowWidth(_ requested: CGFloat, in vis: CGRect, min minWidth: CGFloat) -> CGFloat {
-        let minW = Swift.max(minWidth, 500) // hard floor so the UI can breathe
-        return Swift.max(minW, Swift.min(requested, vis.width))
+        return Swift.max(minWidth, Swift.min(requested, vis.width))
     }
 
     @discardableResult
