@@ -90,7 +90,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     if let message = json["message"] as? [String: Any] {
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
-      hasTextContent = hasText
+      // User messages should ALWAYS be displayed in timeline, regardless of thinking metadata
+      hasTextContent = (type == "user") ? true : hasText
       // Skip entries with empty content (tool_use blocks, etc.)
       guard !content.isEmpty else {
         throw ParserError.skipEntry
