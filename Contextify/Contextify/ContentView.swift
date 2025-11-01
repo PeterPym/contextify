@@ -36,7 +36,7 @@ struct ContentView: View {
     @State private var isAnimatingSidebar = false
 
     // Persisted sidebar width (compose)
-    @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 520
+    @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 400
     private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.composeMin, Layout.composeMax) }
 
     var body: some View {
