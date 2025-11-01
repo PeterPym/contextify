@@ -70,27 +70,36 @@ struct ContentView: View {
                     )) { dx in
                         guard let window = currentWindow() else { return }
 
-                        let oldSidebarW = clampedSidebarWidth(composeSidebarWidth)
-                        let newSidebarW = clampedSidebarWidth(composeSidebarWidth + dx)
-
-                        // Update persisted width
-                        composeSidebarWidthStore = Double(newSidebarW)
-
-                        // Resize window: keep right edge fixed, adjust left edge
                         let frame = window.frame
                         let vis = visibleFrame(for: window)
                         let rightEdgeX = frame.maxX  // Anchor point
 
+                        // Calculate current layout widths
+                        let oldSidebarW = clampedSidebarWidth(composeSidebarWidth)
+                        let overhead = 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
+
+                        // Calculate requested new sidebar width
+                        let requestedSidebarW = composeSidebarWidth + dx
+
+                        // Clamp sidebar to ensure detail never goes below minimum
+                        let detailMin = Layout.detailMinWidthExpanded
+                        let maxSidebarForDetail = frame.width - detailMin - overhead
+                        let newSidebarW = requestedSidebarW.clamped(Layout.sidebarMin, Swift.min(Layout.sidebarMax, maxSidebarForDetail))
+
+                        // Update persisted width
+                        composeSidebarWidthStore = Double(newSidebarW)
+
                         // Calculate how much sidebar width changed
                         let sidebarDelta = newSidebarW - oldSidebarW
 
-                        // New window width = current + sidebar delta
-                        let requestedWidth = frame.width + sidebarDelta
+                        // If sidebar grew, window must grow too (anchored right)
+                        // If sidebar shrunk, we could shrink window OR keep it same size (giving detail more room)
+                        // For now, always adjust window to match sidebar change (keep detail constant)
+                        let requestedWindowWidth = frame.width + sidebarDelta
 
-                        // Clamp to screen and min detail width
-                        let detailMin = Layout.detailMinWidthExpanded
-                        let minWindowW = newSidebarW + detailMin + 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
-                        let newWidth = Swift.max(minWindowW, Swift.min(requestedWidth, vis.width))
+                        // Ensure we meet minimum window requirements
+                        let minWindowW = newSidebarW + detailMin + overhead
+                        let newWidth = Swift.max(minWindowW, Swift.min(requestedWindowWidth, vis.width))
 
                         // Calculate new origin to keep right edge fixed
                         var newX = rightEdgeX - newWidth
