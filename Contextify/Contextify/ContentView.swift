@@ -78,19 +78,6 @@ struct ContentView: View {
                     get: { CGFloat(composeSidebarWidthStore) },
                     set: { composeSidebarWidthStore = Double($0) }
                 )))
-                .toolbar(.hidden, for: .automatic)
-                .toolbar {
-                    ToolbarItem(placement: .navigation) {
-                        Button {
-                            withAnimation { columnVisibility.toggleSplitVisibility() }
-                        } label: {
-                            Image(systemName: "sidebar.left")
-                        }
-                        .accessibilityLabel(columnVisibility == .all ? "Hide compose panel" : "Show compose panel")
-                        .help(columnVisibility == .all ? "Hide compose panel" : "Show compose panel")
-                        .padding(4)
-                    }
-                }
             } detail: {
                 // Detail: Timeline (width synced to internal collapsed state)
                 Group {
@@ -104,9 +91,19 @@ struct ContentView: View {
                     }
                 }
                 .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
-                .toolbar(.hidden, for: .automatic)
             }
             .navigationSplitViewStyle(.balanced)
+            .toolbarRole(.editor)
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation { columnVisibility.toggleSplitVisibility() }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .help(columnVisibility == .all ? "Hide sidebar" : "Show sidebar")
+                }
+            }
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
 
@@ -475,7 +472,8 @@ private extension ContentView {
         withAnimation { showToast = true }
         let autoDismissDuration = duration ?? 2  // Default 2 seconds
         if autoDismissDuration > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + autoDismissDuration) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(autoDismissDuration))
                 withAnimation { showToast = false }
             }
         }

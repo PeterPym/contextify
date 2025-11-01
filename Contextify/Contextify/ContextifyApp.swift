@@ -100,6 +100,7 @@ struct ContextifyApp: App {
     }
     .defaultSize(width: 940, height: 360)
     .windowResizability(.contentSize)
+    .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
