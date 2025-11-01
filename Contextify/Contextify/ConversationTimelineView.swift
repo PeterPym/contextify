@@ -113,7 +113,6 @@ struct ConversationTimelineView: View {
             .accessibilityLabel(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
             .padding(4)
         }
-        .padding(.horizontal, 8)
         .padding(.vertical, 8)
     }
 
