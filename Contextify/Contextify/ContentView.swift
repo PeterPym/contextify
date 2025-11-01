@@ -68,44 +68,21 @@ struct ContentView: View {
                         get: { self.composeSidebarWidth },
                         set: { self.composeSidebarWidthStore = Double($0) }
                     )) { dx in
+                        // Drag resize: adjust internal panel widths only, window stays fixed
                         guard let window = currentWindow() else { return }
-
                         let frame = window.frame
-                        let vis = visibleFrame(for: window)
-                        let rightEdgeX = frame.maxX  // Anchor point
-
-                        // Calculate current layout widths
-                        let oldSidebarW = clampedSidebarWidth(composeSidebarWidth)
                         let overhead = 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
 
-                        // Calculate requested new sidebar width
-                        let requestedSidebarW = composeSidebarWidth + dx
+                        // Calculate requested new compose width
+                        let requestedComposeW = composeSidebarWidth + dx
 
                         // Clamp compose width to ensure timeline never goes below minimum
                         let timelineMin = Layout.timelineMin
                         let maxComposeForTimeline = frame.width - timelineMin - overhead
-                        let newSidebarW = requestedSidebarW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForTimeline))
+                        let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForTimeline))
 
-                        // Update persisted width
-                        composeSidebarWidthStore = Double(newSidebarW)
-
-                        // Calculate how much sidebar width changed
-                        let sidebarDelta = newSidebarW - oldSidebarW
-
-                        // If sidebar grew, window must grow too (anchored right)
-                        // If sidebar shrunk, we could shrink window OR keep it same size (giving detail more room)
-                        // For now, always adjust window to match sidebar change (keep detail constant)
-                        let requestedWindowWidth = frame.width + sidebarDelta
-
-                        // Ensure we meet minimum window requirements
-                        let minWindowW = newSidebarW + timelineMin + overhead
-                        let newWidth = Swift.max(minWindowW, Swift.min(requestedWindowWidth, vis.width))
-
-                        // Calculate new origin to keep right edge fixed
-                        var newX = rightEdgeX - newWidth
-                        if newX < vis.minX { newX = vis.minX }  // Don't go off-screen
-
-                        window.setFrame(CGRect(x: newX, y: frame.origin.y, width: newWidth, height: frame.height), display: true, animate: false)
+                        // Update persisted width (window stays fixed size)
+                        composeSidebarWidthStore = Double(newComposeW)
                     }
 
                     Rectangle()
