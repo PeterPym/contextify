@@ -23,7 +23,7 @@ struct ConversationTimelineView: View {
             minWidth: monitor.isCollapsed ? collapsedWidth : expandedMinWidth,
             maxWidth: .infinity
         )
-        .background(.ultraThinMaterial)
+        .background(Color.clear)
         .overlay(alignment: .bottomTrailing) {
             if monitor.lastError != nil {
                 Button {
@@ -163,6 +163,7 @@ struct ConversationTimelineView: View {
                 }
                 .padding(16)
             }
+            .scrollContentBackground(.hidden)
             .onChange(of: monitor.visibleEntries.count) { _, _ in
                 // Cancel any pending scroll task
                 scrollTask?.cancel()

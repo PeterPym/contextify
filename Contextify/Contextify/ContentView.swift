@@ -50,31 +50,35 @@ struct ContentView: View {
             if projectSwitcher.allProjects.count >= 2 {
                 ProjectSwitcherView()
                     .environment(projectSwitcher)
+                Divider()
             }
 
+            // Global content gutter so both columns sit below the top strip
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 // Sidebar: Compose panel
-                VStack(alignment: .leading, spacing: 16) {
-                    headerWithoutComposeToggle
-                    Divider()
-                    // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-                    // Previously here:
-                    // - urlEntry: TextField + "Ingest" button for URL ingestion
-                    // - IngestDropZone: Drag-and-drop zone for files
-                    // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-                    // - Session label (e.g., "Session-001")
-                    // - Status display / Last output URL
-                    //
-                    // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-                    // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-                    composeSection
+                SurfaceCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        headerWithoutComposeToggle
+                        Divider()
+                        // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
+                        // Previously here:
+                        // - urlEntry: TextField + "Ingest" button for URL ingestion
+                        // - IngestDropZone: Drag-and-drop zone for files
+                        // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
+                        // - Session label (e.g., "Session-001")
+                        // - Status display / Last output URL
+                        //
+                        // These features created timestamped Markdown artifacts in ~/Contextify/outputs
+                        // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
+                        composeSection
+                    }
                 }
-                .padding(16)
                 .navigationSplitViewColumnWidth(min: 480, ideal: composeIdeal, max: 640)
                 .background(SidebarWidthReader(width: Binding(
                     get: { CGFloat(composeSidebarWidthStore) },
                     set: { composeSidebarWidthStore = Double($0) }
                 )))
+                .toolbar(.hidden, for: .automatic)
                 .toolbar {
                     ToolbarItem(placement: .navigation) {
                         Button {
@@ -89,10 +93,22 @@ struct ContentView: View {
                 }
             } detail: {
                 // Detail: Timeline (width synced to internal collapsed state)
-                ConversationTimelineView()
-                    .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
+                Group {
+                    if timeline.isCollapsed {
+                        // In rail mode we skip the card; a 52pt rounded box looks awkward
+                        ConversationTimelineView()
+                    } else {
+                        SurfaceCard {
+                            ConversationTimelineView()
+                        }
+                    }
+                }
+                .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
+                .toolbar(.hidden, for: .automatic)
             }
             .navigationSplitViewStyle(.balanced)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
 
             // Status bar footer
             StatusBarView()
@@ -294,6 +310,49 @@ struct ContentView: View {
 }
 
 #Preview { ContentView().environment(HUDViewModel()) }
+
+// MARK: - Shared Surface
+
+private struct SurfaceCard<Content: View>: View {
+    let content: Content
+    let includeShadow: Bool
+
+    init(includeShadow: Bool = true, @ViewBuilder content: () -> Content) {
+        self.content = content()
+        self.includeShadow = includeShadow
+    }
+
+    private let corner: CGFloat = 12
+    private let inner: CGFloat = 12
+
+    var body: some View {
+        content
+            .padding(inner)
+            .background(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+            )
+            .if(includeShadow) { view in
+                view.shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+            }
+    }
+}
+
+// Helper for conditional modifiers
+private extension View {
+    @ViewBuilder
+    func `if`<Transform: View>(_ condition: Bool, transform: (Self) -> Transform) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
 
 // MARK: - NavigationSplitView Helpers
 
