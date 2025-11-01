@@ -31,17 +31,12 @@ struct ContentView: View {
     @State private var showSemanticSearch = false
     @State private var workspaceObserver: NSObjectProtocol?
 
-    // Persisted column visibility
-    @AppStorage("ui.columnVisibility") private var columnVisibilityStore: String = "all"
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    // Sidebar visibility (replacing columnVisibility)
+    @AppStorage("ui.sidebarVisible") private var sidebarVisible: Bool = true
 
     // Persisted sidebar width (compose)
     @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 520
-    private var composeIdeal: CGFloat { CGFloat(composeSidebarWidthStore).clamped(480, 640) }
-
-    init() {
-        _columnVisibility = State(initialValue: Self.visibilityFromStore(columnVisibilityStore))
-    }
+    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(480, 640) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,71 +48,51 @@ struct ContentView: View {
                 Divider()
             }
 
-            // Global content gutter so both columns sit below the top strip
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                // Sidebar: Compose panel
-                SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 0) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        headerWithoutComposeToggle
-                        Divider()
-                        // REMOVED UI (2025-10-02): Contextify file/URL ingestion features
-                        // Previously here:
-                        // - urlEntry: TextField + "Ingest" button for URL ingestion
-                        // - IngestDropZone: Drag-and-drop zone for files
-                        // - controls: "New Session", "Checkpoint", "Reveal Outputs" buttons
-                        // - Session label (e.g., "Session-001")
-                        // - Status display / Last output URL
-                        //
-                        // These features created timestamped Markdown artifacts in ~/Contextify/outputs
-                        // For restoration, see git history or build/notes/archive/2025-10-02-compose-panel.md
-                        composeSection
-                    }
-                }
-                .navigationSplitViewColumnWidth(min: 480, ideal: composeIdeal, max: 640)
-                .padding(.trailing, 6)  // Space between columns
-                .background(SidebarWidthReader(width: Binding(
-                    get: { CGFloat(composeSidebarWidthStore) },
-                    set: { composeSidebarWidthStore = Double($0) }
-                )))
-            } detail: {
-                // Detail: Timeline (width synced to internal collapsed state)
-                Group {
-                    if timeline.isCollapsed {
-                        // In rail mode we skip the card; a 52pt rounded box looks awkward
-                        ConversationTimelineView()
-                    } else {
-                        SurfaceCard(includeShadow: false) {
-                            ConversationTimelineView()
+            // Manual HStack layout (replaces NavigationSplitView for better control)
+            HStack(spacing: 0) {
+                // Compose sidebar (conditionally visible)
+                if sidebarVisible {
+                    SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 12) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            headerWithoutComposeToggle
+                            Divider()
+                            composeSection
                         }
                     }
+                    .frame(width: composeSidebarWidth)
+                    .transition(.move(edge: .leading))
+
+                    Divider()
                 }
-                .padding(.leading, 6)  // Space between columns
-                .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
-                .task {
-                    // Trigger window resize immediately to force layout
-                    triggerWindowResize()
+
+                // Timeline (detail) - always visible, takes remaining space
+                SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 12) {
+                    ConversationTimelineView()
                 }
+                .frame(maxWidth: .infinity)
             }
-            .navigationSplitViewStyle(.balanced)
-            .toolbarRole(.editor)
+            .padding(8)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
-                        withAnimation { columnVisibility.toggleSplitVisibility() }
+                        toggleSidebar()
                     } label: {
                         Image(systemName: "sidebar.left")
                     }
-                    .help(columnVisibility == .all ? "Hide sidebar" : "Show sidebar")
+                    .help(sidebarVisible ? "Hide sidebar" : "Show sidebar")
                 }
             }
-            .padding(.vertical, 8)
+            .task {
+                // Trigger window resize immediately to force layout
+                triggerWindowResize()
+            }
 
             // Status bar footer
             StatusBarView()
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
-        .frame(minHeight: 360)
+        .frame(minWidth: 600, minHeight: 360)
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -141,16 +116,8 @@ struct ContentView: View {
                 setupWorkspaceMonitoring()
             }
         }
-        .onChange(of: columnVisibility) { oldValue, newValue in
-            columnVisibilityStore = Self.visibilityToStore(newValue)
-
-            // Anchor right edge when toggling sidebar
-            // When showing sidebar, window should grow LEFT
-            // When hiding sidebar, window should shrink from LEFT
-            adjustWindowFrameForSidebarToggle(oldVisibility: oldValue, newVisibility: newValue)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleComposeSidebar)) { _ in
-            withAnimation { columnVisibility.toggleSplitVisibility() }
+            toggleSidebar()
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
@@ -366,65 +333,7 @@ private extension View {
     }
 }
 
-// MARK: - NavigationSplitView Helpers
-
-private extension NavigationSplitViewVisibility {
-    mutating func toggleSplitVisibility() {
-        self = (self == .all) ? .detailOnly : .all
-    }
-}
-
-private extension ContentView {
-    static func visibilityFromStore(_ s: String) -> NavigationSplitViewVisibility {
-        switch s {
-        case "detailOnly": return .detailOnly
-        case "all": fallthrough
-        default: return .all
-        }
-    }
-    static func visibilityToStore(_ v: NavigationSplitViewVisibility) -> String {
-        (v == .detailOnly) ? "detailOnly" : "all"
-    }
-}
-
-struct DetailWidthSync: ViewModifier {
-    let isCollapsed: Bool
-    func body(content: Content) -> some View {
-        let min = isCollapsed ? 52 : 320
-        let ideal = isCollapsed ? 52 : 440
-        content.navigationSplitViewColumnWidth(min: CGFloat(min), ideal: CGFloat(ideal))
-    }
-}
-
-struct SidebarWidthReader: View {
-    @Binding var width: CGFloat
-    @State private var debounceTask: Task<Void, Never>?
-
-    var body: some View {
-        GeometryReader { proxy in
-            Color.clear
-                .preference(key: SidebarWidthKey.self, value: proxy.size.width)
-        }
-        .onPreferenceChange(SidebarWidthKey.self) { new in
-            guard abs(new - width) > 1.0 else { return }
-
-            // Cancel existing debounce task
-            debounceTask?.cancel()
-
-            // Create new debounced write (50ms delay)
-            debounceTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
-                guard !Task.isCancelled else { return }
-                width = new
-            }
-        }
-    }
-}
-
-private struct SidebarWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = .zero
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
+// MARK: - Sidebar Toggle & Window Resizing
 
 extension CGFloat {
     func clamped(_ min: CGFloat, _ max: CGFloat) -> CGFloat {
@@ -559,28 +468,59 @@ private extension ContentView {
     }
 
     @MainActor
-    func adjustWindowFrameForSidebarToggle(oldVisibility: NavigationSplitViewVisibility, newVisibility: NavigationSplitViewVisibility) {
-        guard let window = NSApp.windows.first else { return }
-
-        // Capture right edge position before resize
-        let rightEdgeX = window.frame.maxX
-
-        // Wait for SwiftUI to resize the window naturally
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-
-            // Get the new frame after SwiftUI's resize
-            let currentFrame = window.frame
-            let newWidth = currentFrame.width
-
-            // Calculate new origin to maintain right edge position
-            var adjustedFrame = currentFrame
-            adjustedFrame.origin.x = rightEdgeX - newWidth
-
-            // Apply with animation
-            window.setFrame(adjustedFrame, display: true, animate: true)
-
-            uiLog.debug("Adjusted window frame to anchor right edge (old=\(oldVisibility == .all ? "all" : "detail"), new=\(newVisibility == .all ? "all" : "detail"))")
+    func toggleSidebar() {
+        guard let window = NSApp.windows.first else {
+            sidebarVisible.toggle()
+            uiLog.warning("No window found for sidebar toggle")
+            return
         }
+
+        // Capture current state
+        let currentFrame = window.frame
+        let rightEdgeX = currentFrame.maxX
+        let wasVisible = sidebarVisible
+
+        // Calculate new window width
+        let sidebarWidth = composeSidebarWidth + 1  // +1 for divider
+        let newWidth: CGFloat
+        if wasVisible {
+            // Hiding sidebar - shrink window
+            newWidth = currentFrame.width - sidebarWidth
+        } else {
+            // Showing sidebar - expand window
+            newWidth = currentFrame.width + sidebarWidth
+        }
+
+        // Calculate new origin to keep right edge fixed
+        let newOrigin = CGPoint(
+            x: rightEdgeX - newWidth,
+            y: currentFrame.origin.y
+        )
+
+        var newFrame = CGRect(
+            origin: newOrigin,
+            size: CGSize(width: newWidth, height: currentFrame.height)
+        )
+
+        // Check screen bounds to prevent window going off-screen
+        if let screenFrame = window.screen?.visibleFrame {
+            if newFrame.minX < screenFrame.minX {
+                newFrame.origin.x = screenFrame.minX
+            }
+        }
+
+        // Animate window resize and content change together
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(newFrame, display: true)
+        }
+
+        // Toggle sidebar visibility with SwiftUI animation
+        withAnimation(.easeInOut(duration: 0.25)) {
+            sidebarVisible.toggle()
+        }
+
+        uiLog.info("Toggled sidebar: \(sidebarVisible ? "visible" : "hidden"), window resized to \(Int(newWidth))px")
     }
 }

@@ -100,8 +100,7 @@ struct ContextifyApp: App {
           await initializeProjectsSystem()
         }
     }
-    .defaultSize(width: 940, height: 360)
-    .windowResizability(.contentSize)
+    .defaultSize(width: 1200, height: 360)  // Sidebar (520) + Detail (600) + padding
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
