@@ -69,17 +69,15 @@ struct ContentView: View {
                         set: { self.composeSidebarWidthStore = Double($0) }
                     )) { dx in
                         // Drag resize: adjust internal panel widths only, window stays fixed
-                        guard let window = currentWindow() else { return }
-                        let frame = window.frame
+                        let frame = currentWindow()?.frame ?? .zero
                         let overhead = 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
 
                         // Calculate requested new compose width
                         let requestedComposeW = composeSidebarWidth + dx
 
-                        // Clamp compose width to ensure timeline never goes below minimum
-                        let timelineMin = Layout.timelineMin
-                        let maxComposeForTimeline = frame.width - timelineMin - overhead
-                        let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForTimeline))
+                        // Clamp compose width to window bounds (timeline will enforce its own minimum)
+                        let maxComposeForWindow = frame.width - overhead
+                        let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForWindow))
 
                         // Update persisted width (window stays fixed size)
                         composeSidebarWidthStore = Double(newComposeW)
@@ -91,10 +89,11 @@ struct ContentView: View {
                 }
 
                 // Timeline (detail) - always visible, takes remaining space
+                // Let timeline manage its own min width based on collapse state
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                     ConversationTimelineView()
                 }
-                .frame(minWidth: Layout.timelineMin, maxWidth: .infinity)
+                .frame(maxWidth: .infinity)
             }
             .padding(Layout.containerPadding)
             .toolbar {
@@ -117,7 +116,7 @@ struct ContentView: View {
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
-        .frame(minWidth: 600, minHeight: 360)
+        .frame(minWidth: 320, minHeight: 360)
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -597,12 +596,12 @@ private extension ContentView {
         let rightEdgeX = frame.maxX
 
         let sidebarWidth = clampedSidebarWidth(composeSidebarWidth) + Layout.dividerThickness
-        let timelineMin = Layout.timelineMin
 
         // Compute target width (anchored right)
         let requestedWidth = sidebarVisible ? (frame.width - sidebarWidth)   // hiding → shrink
                                             : (frame.width + sidebarWidth)   // showing → grow
-        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + timelineMin + 2 * Layout.containerPadding
+        // Timeline will enforce its own minimum, so just use a small floor for window
+        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + 100 + 2 * Layout.containerPadding
         let newWidth = clampedWindowWidth(requestedWidth, in: visFrame, min: minWindowWidth)
 
         var newOriginX = rightEdgeX - newWidth
