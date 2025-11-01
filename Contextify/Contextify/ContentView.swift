@@ -82,7 +82,7 @@ struct ContentView: View {
                         let requestedSidebarW = composeSidebarWidth + dx
 
                         // Clamp compose width to ensure timeline never goes below minimum
-                        let timelineMin = Layout.timelineMinExpanded
+                        let timelineMin = Layout.timelineMin
                         let maxComposeForTimeline = frame.width - timelineMin - overhead
                         let newSidebarW = requestedSidebarW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForTimeline))
 
@@ -117,7 +117,7 @@ struct ContentView: View {
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                     ConversationTimelineView()
                 }
-                .frame(minWidth: Layout.timelineMinExpanded, maxWidth: .infinity)
+                .frame(minWidth: Layout.timelineMin, maxWidth: .infinity)
             }
             .padding(Layout.containerPadding)
             .toolbar {
@@ -436,7 +436,7 @@ private struct Layout {
     static let composeMax: CGFloat = 800
 
     // RIGHT side: Timeline/conversation log (can collapse very narrow)
-    static let timelineMinExpanded: CGFloat = 320
+    static let timelineMin: CGFloat = 100  // Allow timeline to shrink way down
     static let timelineMinCollapsed: CGFloat = 52
 
     static let containerPadding: CGFloat = 8
@@ -620,7 +620,7 @@ private extension ContentView {
         let rightEdgeX = frame.maxX
 
         let sidebarWidth = clampedSidebarWidth(composeSidebarWidth) + Layout.dividerThickness
-        let timelineMin = Layout.timelineMinExpanded
+        let timelineMin = Layout.timelineMin
 
         // Compute target width (anchored right)
         let requestedWidth = sidebarVisible ? (frame.width - sidebarWidth)   // hiding → shrink
