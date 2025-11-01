@@ -75,8 +75,9 @@ struct ContentView: View {
                         // Calculate requested new compose width
                         let requestedComposeW = composeSidebarWidth + dx
 
-                        // Clamp compose width to window bounds (timeline will enforce its own minimum)
-                        let maxComposeForWindow = frame.width - overhead
+                        // Reserve space for timeline minimum (MUST protect timeline!)
+                        let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
+                        let maxComposeForWindow = frame.width - overhead - timelineMin
                         let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForWindow))
 
                         // Update persisted width (window stays fixed size)
