@@ -33,10 +33,11 @@ struct ContentView: View {
 
     // Sidebar visibility (replacing columnVisibility)
     @AppStorage("ui.sidebarVisible") private var sidebarVisible: Bool = true
+    @State private var isAnimatingSidebar = false
 
     // Persisted sidebar width (compose)
     @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 520
-    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(480, 640) }
+    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.sidebarMin, Layout.sidebarMax) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,26 +53,50 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 // Compose sidebar (conditionally visible)
                 if sidebarVisible {
-                    SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 12) {
+                    SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                         VStack(alignment: .leading, spacing: 16) {
                             headerWithoutComposeToggle
                             Divider()
                             composeSection
                         }
                     }
-                    .frame(width: composeSidebarWidth)
+                    .frame(width: clampedSidebarWidth(composeSidebarWidth))
                     .transition(.move(edge: .leading))
 
-                    Divider()
+                    // Resizable divider
+                    SidebarGrabber(width: Binding(
+                        get: { self.composeSidebarWidth },
+                        set: { self.composeSidebarWidthStore = Double($0) }
+                    )) { dx in
+                        let oldWidth = clampedSidebarWidth(composeSidebarWidth)
+                        let newW = clampedSidebarWidth(composeSidebarWidth + dx)
+                        composeSidebarWidthStore = Double(newW)
+
+                        // Option B: Resize window to keep right edge pinned
+                        if let window = currentWindow() {
+                            let frame = window.frame
+                            let vis = visibleFrame(for: window)
+                            let right = frame.maxX
+                            let deltaWidth = newW - oldWidth
+                            let requestedWidth = frame.width + deltaWidth
+                            let newWidth = clampedWindowWidth(requestedWidth, in: vis, min: frame.width)
+                            let newX = max(vis.minX, right - newWidth)
+                            window.setFrame(CGRect(x: newX, y: frame.origin.y, width: newWidth, height: frame.height), display: true, animate: false)
+                        }
+                    }
+
+                    Rectangle()
+                        .frame(width: Layout.dividerThickness)
+                        .foregroundStyle(.separator)
                 }
 
                 // Timeline (detail) - always visible, takes remaining space
-                SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 12) {
+                SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                     ConversationTimelineView()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(minWidth: Layout.detailMinWidthExpanded, maxWidth: .infinity)
             }
-            .padding(8)
+            .padding(Layout.containerPadding)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
@@ -285,6 +310,42 @@ struct ContentView: View {
 
 #Preview { ContentView().environment(HUDViewModel()) }
 
+// MARK: - Sidebar Grabber
+
+private struct SidebarGrabber: View {
+    @Binding var width: CGFloat
+    var onDragDelta: ((CGFloat) -> Void)? = nil
+
+    @State private var lastX: CGFloat?
+
+    var body: some View {
+        Rectangle()
+            .frame(width: Layout.dividerThickness)
+            .opacity(0.001) // hit area
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if let last = lastX {
+                            let dx = value.location.x - last
+                            onDragDelta?(dx)
+                        }
+                        lastX = value.location.x
+                    }
+                    .onEnded { _ in lastX = nil }
+            )
+            .background(Color(nsColor: .separatorColor))
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .accessibilityIdentifier("sidebar-grabber")
+    }
+}
+
 // MARK: - Shared Surface
 
 private struct SurfaceCard<Content: View>: View {
@@ -335,6 +396,17 @@ private extension View {
 
 // MARK: - Sidebar Toggle & Window Resizing
 
+private struct Layout {
+    static let dividerThickness: CGFloat = 1
+    static let animationDuration: TimeInterval = 0.25
+    static let detailMinWidthExpanded: CGFloat = 320
+    static let detailMinWidthCollapsed: CGFloat = 52
+    static let sidebarMin: CGFloat = 480
+    static let sidebarMax: CGFloat = 640
+    static let containerPadding: CGFloat = 8
+    static let cardPadding: CGFloat = 12
+}
+
 extension CGFloat {
     func clamped(_ min: CGFloat, _ max: CGFloat) -> CGFloat {
         Swift.max(min, Swift.min(self, max))
@@ -342,6 +414,28 @@ extension CGFloat {
 }
 
 private extension ContentView {
+    @MainActor
+    func currentWindow() -> NSWindow? {
+        if let w = MainWindowTracker.shared.window, w.isVisible { return w }
+        return NSApp.keyWindow ?? NSApp.mainWindow
+    }
+
+    @MainActor
+    func visibleFrame(for window: NSWindow) -> CGRect {
+        window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    }
+
+    @MainActor
+    func clampedSidebarWidth(_ w: CGFloat) -> CGFloat {
+        w.clamped(Layout.sidebarMin, Layout.sidebarMax)
+    }
+
+    @MainActor
+    func clampedWindowWidth(_ requested: CGFloat, in vis: CGRect, min minWidth: CGFloat) -> CGFloat {
+        let minW = Swift.max(minWidth, 500) // hard floor so the UI can breathe
+        return Swift.max(minW, Swift.min(requested, vis.width))
+    }
+
     @discardableResult
     func pickProjectRoot() -> Bool {
         let panel = NSOpenPanel()
@@ -469,58 +563,54 @@ private extension ContentView {
 
     @MainActor
     func toggleSidebar() {
-        guard let window = NSApp.windows.first else {
+        guard let window = currentWindow() else {
             sidebarVisible.toggle()
             uiLog.warning("No window found for sidebar toggle")
             return
         }
 
-        // Capture current state
-        let currentFrame = window.frame
-        let rightEdgeX = currentFrame.maxX
-        let wasVisible = sidebarVisible
-
-        // Calculate new window width
-        let sidebarWidth = composeSidebarWidth + 1  // +1 for divider
-        let newWidth: CGFloat
-        if wasVisible {
-            // Hiding sidebar - shrink window
-            newWidth = currentFrame.width - sidebarWidth
-        } else {
-            // Showing sidebar - expand window
-            newWidth = currentFrame.width + sidebarWidth
-        }
-
-        // Calculate new origin to keep right edge fixed
-        let newOrigin = CGPoint(
-            x: rightEdgeX - newWidth,
-            y: currentFrame.origin.y
-        )
-
-        var newFrame = CGRect(
-            origin: newOrigin,
-            size: CGSize(width: newWidth, height: currentFrame.height)
-        )
-
-        // Check screen bounds to prevent window going off-screen
-        if let screenFrame = window.screen?.visibleFrame {
-            if newFrame.minX < screenFrame.minX {
-                newFrame.origin.x = screenFrame.minX
+        // Coalesce rapid toggles
+        guard !isAnimatingSidebar else { return }
+        isAnimatingSidebar = true
+        defer {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Layout.animationDuration) {
+                self.isAnimatingSidebar = false
             }
         }
 
-        // Animate window resize and content change together
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        // Capture current state
+        let frame = window.frame
+        let visFrame = visibleFrame(for: window)
+        let rightEdgeX = frame.maxX
+
+        let sidebarWidth = clampedSidebarWidth(composeSidebarWidth) + Layout.dividerThickness
+        let detailMin = Layout.detailMinWidthExpanded
+
+        // Compute target width (anchored right)
+        let requestedWidth = sidebarVisible ? (frame.width - sidebarWidth)   // hiding → shrink
+                                            : (frame.width + sidebarWidth)   // showing → grow
+        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + detailMin + 2 * Layout.containerPadding
+        let newWidth = clampedWindowWidth(requestedWidth, in: visFrame, min: minWindowWidth)
+
+        var newOriginX = rightEdgeX - newWidth
+        if newOriginX < visFrame.minX { newOriginX = visFrame.minX }  // don't go off left
+
+        let newFrame = CGRect(x: newOriginX, y: frame.origin.y, width: newWidth, height: frame.height)
+
+        // Start both animations on same tick
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Layout.animationDuration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().setFrame(newFrame, display: true)
+
+            // Kick off SwiftUI animation concurrently
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: Layout.animationDuration)) {
+                    self.sidebarVisible.toggle()
+                }
+            }
         }
 
-        // Toggle sidebar visibility with SwiftUI animation
-        withAnimation(.easeInOut(duration: 0.25)) {
-            sidebarVisible.toggle()
-        }
-
-        uiLog.info("Toggled sidebar: \(sidebarVisible ? "visible" : "hidden"), window resized to \(Int(newWidth))px")
+        uiLog.info("Sidebar \(sidebarVisible ? "→ hidden" : "→ visible"); window \(Int(frame.width))→\(Int(newWidth)) (anchored right)")
     }
 }
