@@ -68,21 +68,35 @@ struct ContentView: View {
                         get: { self.composeSidebarWidth },
                         set: { self.composeSidebarWidthStore = Double($0) }
                     )) { dx in
-                        let oldWidth = clampedSidebarWidth(composeSidebarWidth)
-                        let newW = clampedSidebarWidth(composeSidebarWidth + dx)
-                        composeSidebarWidthStore = Double(newW)
+                        guard let window = currentWindow() else { return }
 
-                        // Option B: Resize window to keep right edge pinned
-                        if let window = currentWindow() {
-                            let frame = window.frame
-                            let vis = visibleFrame(for: window)
-                            let right = frame.maxX
-                            let deltaWidth = newW - oldWidth
-                            let requestedWidth = frame.width + deltaWidth
-                            let newWidth = clampedWindowWidth(requestedWidth, in: vis, min: frame.width)
-                            let newX = max(vis.minX, right - newWidth)
-                            window.setFrame(CGRect(x: newX, y: frame.origin.y, width: newWidth, height: frame.height), display: true, animate: false)
-                        }
+                        let oldSidebarW = clampedSidebarWidth(composeSidebarWidth)
+                        let newSidebarW = clampedSidebarWidth(composeSidebarWidth + dx)
+
+                        // Update persisted width
+                        composeSidebarWidthStore = Double(newSidebarW)
+
+                        // Resize window: keep right edge fixed, adjust left edge
+                        let frame = window.frame
+                        let vis = visibleFrame(for: window)
+                        let rightEdgeX = frame.maxX  // Anchor point
+
+                        // Calculate how much sidebar width changed
+                        let sidebarDelta = newSidebarW - oldSidebarW
+
+                        // New window width = current + sidebar delta
+                        let requestedWidth = frame.width + sidebarDelta
+
+                        // Clamp to screen and min detail width
+                        let detailMin = Layout.detailMinWidthExpanded
+                        let minWindowW = newSidebarW + detailMin + 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
+                        let newWidth = Swift.max(minWindowW, Swift.min(requestedWidth, vis.width))
+
+                        // Calculate new origin to keep right edge fixed
+                        var newX = rightEdgeX - newWidth
+                        if newX < vis.minX { newX = vis.minX }  // Don't go off-screen
+
+                        window.setFrame(CGRect(x: newX, y: frame.origin.y, width: newWidth, height: frame.height), display: true, animate: false)
                     }
 
                     Rectangle()
@@ -319,30 +333,37 @@ private struct SidebarGrabber: View {
     @State private var lastX: CGFloat?
 
     var body: some View {
-        Rectangle()
-            .frame(width: Layout.dividerThickness)
-            .opacity(0.001) // hit area
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        if let last = lastX {
-                            let dx = value.location.x - last
-                            onDragDelta?(dx)
-                        }
-                        lastX = value.location.x
+        ZStack {
+            // Wide invisible hit area
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: Layout.grabberWidth)
+                .contentShape(Rectangle())
+
+            // Thin visible divider line
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: Layout.dividerThickness)
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    if let last = lastX {
+                        let dx = value.location.x - last
+                        onDragDelta?(dx)
                     }
-                    .onEnded { _ in lastX = nil }
-            )
-            .background(Color(nsColor: .separatorColor))
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
+                    lastX = value.location.x
                 }
+                .onEnded { _ in lastX = nil }
+        )
+        .onHover { hovering in
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
             }
-            .accessibilityIdentifier("sidebar-grabber")
+        }
+        .accessibilityIdentifier("sidebar-grabber")
     }
 }
 
@@ -398,10 +419,11 @@ private extension View {
 
 private struct Layout {
     static let dividerThickness: CGFloat = 1
+    static let grabberWidth: CGFloat = 10  // Wide hit area for easy grabbing
     static let animationDuration: TimeInterval = 0.25
     static let detailMinWidthExpanded: CGFloat = 320
     static let detailMinWidthCollapsed: CGFloat = 52
-    static let sidebarMin: CGFloat = 480
+    static let sidebarMin: CGFloat = 320  // Reduced from 480 to allow narrower sidebar
     static let sidebarMax: CGFloat = 640
     static let containerPadding: CGFloat = 8
     static let cardPadding: CGFloat = 12
