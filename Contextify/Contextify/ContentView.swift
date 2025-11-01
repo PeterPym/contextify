@@ -37,7 +37,7 @@ struct ContentView: View {
 
     // Persisted sidebar width (compose)
     @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 520
-    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.sidebarMin, Layout.sidebarMax) }
+    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.composeMin, Layout.composeMax) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -81,10 +81,10 @@ struct ContentView: View {
                         // Calculate requested new sidebar width
                         let requestedSidebarW = composeSidebarWidth + dx
 
-                        // Clamp sidebar to ensure detail never goes below minimum
-                        let detailMin = Layout.detailMinWidthExpanded
-                        let maxSidebarForDetail = frame.width - detailMin - overhead
-                        let newSidebarW = requestedSidebarW.clamped(Layout.sidebarMin, Swift.min(Layout.sidebarMax, maxSidebarForDetail))
+                        // Clamp compose width to ensure timeline never goes below minimum
+                        let timelineMin = Layout.timelineMinExpanded
+                        let maxComposeForTimeline = frame.width - timelineMin - overhead
+                        let newSidebarW = requestedSidebarW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForTimeline))
 
                         // Update persisted width
                         composeSidebarWidthStore = Double(newSidebarW)
@@ -98,7 +98,7 @@ struct ContentView: View {
                         let requestedWindowWidth = frame.width + sidebarDelta
 
                         // Ensure we meet minimum window requirements
-                        let minWindowW = newSidebarW + detailMin + overhead
+                        let minWindowW = newSidebarW + timelineMin + overhead
                         let newWidth = Swift.max(minWindowW, Swift.min(requestedWindowWidth, vis.width))
 
                         // Calculate new origin to keep right edge fixed
@@ -117,7 +117,7 @@ struct ContentView: View {
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                     ConversationTimelineView()
                 }
-                .frame(minWidth: Layout.detailMinWidthExpanded, maxWidth: .infinity)
+                .frame(minWidth: Layout.timelineMinExpanded, maxWidth: .infinity)
             }
             .padding(Layout.containerPadding)
             .toolbar {
@@ -430,10 +430,15 @@ private struct Layout {
     static let dividerThickness: CGFloat = 1
     static let grabberWidth: CGFloat = 10  // Wide hit area for easy grabbing
     static let animationDuration: TimeInterval = 0.25
-    static let detailMinWidthExpanded: CGFloat = 320
-    static let detailMinWidthCollapsed: CGFloat = 52
-    static let sidebarMin: CGFloat = 320  // Reduced from 480 to allow narrower sidebar
-    static let sidebarMax: CGFloat = 640
+
+    // LEFT side: Compose textarea (needs more space for writing)
+    static let composeMin: CGFloat = 400
+    static let composeMax: CGFloat = 800
+
+    // RIGHT side: Timeline/conversation log (can collapse very narrow)
+    static let timelineMinExpanded: CGFloat = 320
+    static let timelineMinCollapsed: CGFloat = 52
+
     static let containerPadding: CGFloat = 8
     static let cardPadding: CGFloat = 12
 }
@@ -458,7 +463,7 @@ private extension ContentView {
 
     @MainActor
     func clampedSidebarWidth(_ w: CGFloat) -> CGFloat {
-        w.clamped(Layout.sidebarMin, Layout.sidebarMax)
+        w.clamped(Layout.composeMin, Layout.composeMax)
     }
 
     @MainActor
@@ -615,12 +620,12 @@ private extension ContentView {
         let rightEdgeX = frame.maxX
 
         let sidebarWidth = clampedSidebarWidth(composeSidebarWidth) + Layout.dividerThickness
-        let detailMin = Layout.detailMinWidthExpanded
+        let timelineMin = Layout.timelineMinExpanded
 
         // Compute target width (anchored right)
         let requestedWidth = sidebarVisible ? (frame.width - sidebarWidth)   // hiding → shrink
                                             : (frame.width + sidebarWidth)   // showing → grow
-        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + detailMin + 2 * Layout.containerPadding
+        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + timelineMin + 2 * Layout.containerPadding
         let newWidth = clampedWindowWidth(requestedWidth, in: visFrame, min: minWindowWidth)
 
         var newOriginX = rightEdgeX - newWidth
