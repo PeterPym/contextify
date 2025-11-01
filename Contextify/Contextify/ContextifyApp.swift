@@ -55,6 +55,8 @@ struct ContextifyApp: App {
   private let timeline = ConversationMonitor.shared
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
+  @State private var projectDirectoryMonitor: FSEventsMonitor?
+  @State private var projectMonitoringTask: Task<Void, Never>?
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
@@ -224,8 +226,8 @@ struct ContextifyApp: App {
         object: vm.projects
       )
 
-      // Start background refresh timer (every 10 minutes)
-      startBackgroundRefresh(viewModel: vm)
+      // Start FSEvents monitoring for new projects
+      await startProjectDirectoryMonitoring(viewModel: vm)
 
     } catch {
       log.error("❌ Failed to initialize projects system: \(error.localizedDescription)")
@@ -233,20 +235,61 @@ struct ContextifyApp: App {
   }
 
   @MainActor
-  private func startBackgroundRefresh(viewModel: ProjectsViewModel) {
+  private func startProjectDirectoryMonitoring(viewModel: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
-    log.info("⏰ Starting background refresh timer (10 minutes)")
 
-    // Cancel any existing timer
-    backgroundRefreshTimer?.invalidate()
+    // Get paths to monitor - Claude Code and Codex CLI project directories
+    let claudeProjectsPath = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/projects")
+      .path
+    let codexProjectsPath = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/projects")
+      .path
 
-    // Create new timer
-    backgroundRefreshTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { _ in
-      Task { @MainActor in
-        log.debug("⏰ Background refresh triggered")
-        await viewModel.discoverProjects()
+    // Only watch directories that exist
+    var pathsToWatch: [String] = []
+    if FileManager.default.fileExists(atPath: claudeProjectsPath) {
+      pathsToWatch.append(claudeProjectsPath)
+      log.info("📁 Monitoring Claude Code projects: \(claudeProjectsPath)")
+    }
+    if FileManager.default.fileExists(atPath: codexProjectsPath) {
+      pathsToWatch.append(codexProjectsPath)
+      log.info("📁 Monitoring Codex CLI projects: \(codexProjectsPath)")
+    }
+
+    guard !pathsToWatch.isEmpty else {
+      log.warning("⚠️ No project directories found to monitor")
+      return
+    }
+
+    // Create FSEvents monitor with 0.5s latency
+    let monitor = FSEventsMonitor(paths: pathsToWatch, latency: 0.5)
+    self.projectDirectoryMonitor = monitor
+
+    // Start monitoring in background task
+    let monitoringTask = Task { @MainActor in
+      log.info("👀 Starting FSEvents monitoring for new projects")
+      let stream = monitor.start()
+
+      for await event in stream {
+        // Check if this is a directory creation event
+        let isCreated = (event.flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)) != 0 &&
+                       (event.flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated)) != 0
+
+        if isCreated {
+          log.info("🆕 New project directory detected: \(event.path)")
+
+          // Debounce - wait a moment for files to be written
+          try? await Task.sleep(for: .seconds(1))
+
+          // Re-discover projects
+          await viewModel.discoverProjects()
+          log.info("✅ Project discovery triggered by FSEvents")
+        }
       }
     }
+
+    self.projectMonitoringTask = monitoringTask
   }
 }
 

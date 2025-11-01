@@ -56,7 +56,7 @@ struct ContentView: View {
             // Global content gutter so both columns sit below the top strip
             NavigationSplitView(columnVisibility: $columnVisibility) {
                 // Sidebar: Compose panel
-                SurfaceCard {
+                SurfaceCard(includeShadow: false, verticalPadding: 8, horizontalPadding: 0) {
                     VStack(alignment: .leading, spacing: 16) {
                         headerWithoutComposeToggle
                         Divider()
@@ -74,6 +74,7 @@ struct ContentView: View {
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 480, ideal: composeIdeal, max: 640)
+                .padding(.trailing, 6)  // Space between columns
                 .background(SidebarWidthReader(width: Binding(
                     get: { CGFloat(composeSidebarWidthStore) },
                     set: { composeSidebarWidthStore = Double($0) }
@@ -85,12 +86,17 @@ struct ContentView: View {
                         // In rail mode we skip the card; a 52pt rounded box looks awkward
                         ConversationTimelineView()
                     } else {
-                        SurfaceCard {
+                        SurfaceCard(includeShadow: false) {
                             ConversationTimelineView()
                         }
                     }
                 }
+                .padding(.leading, 6)  // Space between columns
                 .modifier(DetailWidthSync(isCollapsed: timeline.isCollapsed))
+                .task {
+                    // Trigger window resize immediately to force layout
+                    triggerWindowResize()
+                }
             }
             .navigationSplitViewStyle(.balanced)
             .toolbarRole(.editor)
@@ -104,8 +110,7 @@ struct ContentView: View {
                     .help(columnVisibility == .all ? "Hide sidebar" : "Show sidebar")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
+            .padding(.vertical, 8)
 
             // Status bar footer
             StatusBarView()
@@ -136,8 +141,13 @@ struct ContentView: View {
                 setupWorkspaceMonitoring()
             }
         }
-        .onChange(of: columnVisibility) { _, v in
-            columnVisibilityStore = Self.visibilityToStore(v)
+        .onChange(of: columnVisibility) { oldValue, newValue in
+            columnVisibilityStore = Self.visibilityToStore(newValue)
+
+            // Anchor right edge when toggling sidebar
+            // When showing sidebar, window should grow LEFT
+            // When hiding sidebar, window should shrink from LEFT
+            adjustWindowFrameForSidebarToggle(oldVisibility: oldValue, newVisibility: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleComposeSidebar)) { _ in
             withAnimation { columnVisibility.toggleSplitVisibility() }
@@ -313,18 +323,23 @@ struct ContentView: View {
 private struct SurfaceCard<Content: View>: View {
     let content: Content
     let includeShadow: Bool
+    let verticalPadding: CGFloat?
+    let horizontalPadding: CGFloat?
 
-    init(includeShadow: Bool = true, @ViewBuilder content: () -> Content) {
+    init(includeShadow: Bool = true, verticalPadding: CGFloat? = nil, horizontalPadding: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.content = content()
         self.includeShadow = includeShadow
+        self.verticalPadding = verticalPadding
+        self.horizontalPadding = horizontalPadding
     }
 
     private let corner: CGFloat = 12
-    private let inner: CGFloat = 12
+    private let defaultPadding: CGFloat = 12
 
     var body: some View {
         content
-            .padding(inner)
+            .padding(.vertical, verticalPadding ?? defaultPadding)
+            .padding(.horizontal, horizontalPadding ?? defaultPadding)
             .background(
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
@@ -519,5 +534,53 @@ private extension ContentView {
         }
 
         uiLog.debug("Workspace observer set up for iTerm2 activation")
+    }
+
+    @MainActor
+    func triggerWindowResize() {
+        guard let window = NSApp.windows.first else {
+            uiLog.warning("No window found for resize trigger")
+            return
+        }
+
+        let originalFrame = window.frame
+        var nudgedFrame = originalFrame
+        nudgedFrame.size.width += 1  // Minimal 1-pixel nudge
+
+        // Resize with animation disabled to make it invisible
+        window.setFrame(nudgedFrame, display: true, animate: false)
+
+        // Wait just long enough for layout to recalculate, then restore
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            window.setFrame(originalFrame, display: true, animate: false)
+            uiLog.debug("Window resize trigger completed")
+        }
+    }
+
+    @MainActor
+    func adjustWindowFrameForSidebarToggle(oldVisibility: NavigationSplitViewVisibility, newVisibility: NavigationSplitViewVisibility) {
+        guard let window = NSApp.windows.first else { return }
+
+        // Capture right edge position before resize
+        let rightEdgeX = window.frame.maxX
+
+        // Wait for SwiftUI to resize the window naturally
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+
+            // Get the new frame after SwiftUI's resize
+            let currentFrame = window.frame
+            let newWidth = currentFrame.width
+
+            // Calculate new origin to maintain right edge position
+            var adjustedFrame = currentFrame
+            adjustedFrame.origin.x = rightEdgeX - newWidth
+
+            // Apply with animation
+            window.setFrame(adjustedFrame, display: true, animate: true)
+
+            uiLog.debug("Adjusted window frame to anchor right edge (old=\(oldVisibility == .all ? "all" : "detail"), new=\(newVisibility == .all ? "all" : "detail"))")
+        }
     }
 }

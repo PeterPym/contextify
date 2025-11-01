@@ -436,6 +436,13 @@ public final class HooverEngine {
             if previousEntries.count > 2 {
               previousEntries.removeFirst()
             }
+          } else {
+            // Log when entry is silently ignored (likely duplicate ID or other constraint)
+            log.warning("⚠️ Entry silently ignored (duplicate constraint?)")
+            log.warning("   Entry ID: \(model.id)")
+            log.warning("   Kind: \(model.kind)")
+            log.warning("   Content preview: \(String(model.content.prefix(80)))")
+            log.warning("   Content SHA256: \(model.contentSha256)")
           }
         } catch {
           // Log detailed FK error info
