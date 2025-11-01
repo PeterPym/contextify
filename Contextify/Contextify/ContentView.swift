@@ -90,11 +90,14 @@ struct ContentView: View {
                 }
 
                 // Timeline (detail) - always visible, takes remaining space
-                // Let timeline manage its own min width based on collapse state
+                // ENFORCE minimum width to prevent crushing during drag
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
                     ConversationTimelineView()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(
+                    minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
+                    maxWidth: .infinity
+                )
             }
             .padding(Layout.containerPadding)
             .toolbar {
