@@ -78,7 +78,7 @@ public final class DatabaseManager: @unchecked Sendable {
     // Try to resolve bookmark first (sandboxed builds)
     if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
       let dbPath = bookmarkURL.appendingPathComponent("contextify.db")
-      log.info("Using custom database location (bookmark): \(dbPath.path)")
+      log.debug("Using custom database location (bookmark): \(dbPath.path)")
       return dbPath
     }
 
@@ -93,7 +93,7 @@ public final class DatabaseManager: @unchecked Sendable {
       )
 
       let dbPath = baseURL.appendingPathComponent("contextify.db")
-      log.info("Using custom database location: \(dbPath.path)")
+      log.debug("Using custom database location: \(dbPath.path)")
       return dbPath
     }
 

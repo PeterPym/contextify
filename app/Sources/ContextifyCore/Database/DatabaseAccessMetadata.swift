@@ -1,7 +1,6 @@
 import Foundation
 import GRDB
 import OSLog
-import IOKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseMetadata")
 
@@ -76,35 +75,9 @@ public enum DatabaseAccessTracker {
     return nil
   }
 
-  /// Gets unique machine identifier
+  /// Gets unique machine identifier (App Store-safe, Keychain-backed)
   private static func getMachineId() -> String {
-    // Use UUID from IOKit for persistent machine ID
-    if let machineUUID = getMachineUUID() {
-      return machineUUID
-    }
-
-    // Fallback: use hostname
-    return Host.current().localizedName ?? "unknown-\(UUID().uuidString)"
-  }
-
-  /// Retrieves hardware UUID from IOKit
-  private static func getMachineUUID() -> String? {
-    let platformExpert = IOServiceGetMatchingService(
-      kIOMasterPortDefault,
-      IOServiceMatching("IOPlatformExpertDevice")
-    )
-
-    guard platformExpert != 0 else { return nil }
-    defer { IOObjectRelease(platformExpert) }
-
-    guard let uuidCF = IORegistryEntryCreateCFProperty(
-      platformExpert,
-      "IOPlatformUUID" as CFString,
-      kCFAllocatorDefault,
-      0
-    ) else { return nil }
-
-    return uuidCF.takeRetainedValue() as? String
+    return MachineID.current()
   }
 
   /// Schema migration to add metadata table

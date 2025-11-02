@@ -75,31 +75,15 @@ public enum DatabaseMigration {
       throw MigrationError.insufficientSpace(required: dbSize * 2, available: availableSpace)
     }
 
-    // 6. Copy database files
-    log.info("📦 Copying database files (\(ByteCountFormatter.string(fromByteCount: dbSize, countStyle: .file)))...")
+    // 6. Copy main database file only (WAL/SHM intentionally not copied)
+    // The pool was checkpointed and closed, so the main DB file is complete
+    log.info("📦 Copying database file (\(ByteCountFormatter.string(fromByteCount: dbSize, countStyle: .file)))...")
 
     do {
-      // Copy main database
       try FileManager.default.copyItem(at: sourcePath, to: targetPath)
-
-      // Copy WAL file if exists
-      let sourceWal = sourcePath.appendingPathExtension("wal")
-      if FileManager.default.fileExists(atPath: sourceWal.path) {
-        let targetWal = targetPath.appendingPathExtension("wal")
-        try FileManager.default.copyItem(at: sourceWal, to: targetWal)
-      }
-
-      // Copy SHM file if exists
-      let sourceShm = sourcePath.appendingPathExtension("shm")
-      if FileManager.default.fileExists(atPath: sourceShm.path) {
-        let targetShm = targetPath.appendingPathExtension("shm")
-        try FileManager.default.copyItem(at: sourceShm, to: targetShm)
-      }
     } catch {
       // Clean up partial copy on failure
       try? FileManager.default.removeItem(at: targetPath)
-      try? FileManager.default.removeItem(at: targetPath.appendingPathExtension("wal"))
-      try? FileManager.default.removeItem(at: targetPath.appendingPathExtension("shm"))
       throw MigrationError.copyFailed(underlying: error)
     }
 
@@ -124,35 +108,19 @@ public enum DatabaseMigration {
     if deleteSource {
       log.info("🗑 Deleting source database...")
       try? FileManager.default.removeItem(at: sourcePath)
-      try? FileManager.default.removeItem(at: sourcePath.appendingPathExtension("wal"))
-      try? FileManager.default.removeItem(at: sourcePath.appendingPathExtension("shm"))
+      // Note: WAL/SHM files are not copied, so no need to delete them separately
     }
 
     log.info("✅ Database migration complete")
   }
 
-  /// Calculates total size of database files
+  /// Calculates size of main database file only
+  /// Note: We only copy the main DB after checkpoint, not WAL/SHM
   private static func databaseSize(at path: URL) throws -> Int64 {
-    var totalSize: Int64 = 0
-
-    // Main database
     if let attrs = try? FileManager.default.attributesOfItem(atPath: path.path) {
-      totalSize += (attrs[.size] as? Int64) ?? 0
+      return (attrs[.size] as? Int64) ?? 0
     }
-
-    // WAL file
-    let walPath = path.appendingPathExtension("wal")
-    if let attrs = try? FileManager.default.attributesOfItem(atPath: walPath.path) {
-      totalSize += (attrs[.size] as? Int64) ?? 0
-    }
-
-    // SHM file
-    let shmPath = path.appendingPathExtension("shm")
-    if let attrs = try? FileManager.default.attributesOfItem(atPath: shmPath.path) {
-      totalSize += (attrs[.size] as? Int64) ?? 0
-    }
-
-    return totalSize
+    return 0
   }
 
   /// Gets available disk space at a path

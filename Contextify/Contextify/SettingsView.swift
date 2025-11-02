@@ -185,10 +185,12 @@ struct DatabaseSettingsView: View {
           }
           .buttonStyle(.bordered)
 
-          Button("Backup") {
+          #if DEBUG
+          Button("Backup (Dev)") {
             backupDatabase()
           }
           .buttonStyle(.bordered)
+          #endif
         }
       }
     }
@@ -224,7 +226,7 @@ struct DatabaseSettingsView: View {
         switch conflict {
         case .recentConflict(let machine, let timeSince):
           let minutes = Int(timeSince / 60)
-          conflictWarning = "Warning: \(machine) accessed this database \(minutes) minute\(minutes == 1 ? "" : "s") ago. Concurrent access may cause sync issues."
+          conflictWarning = "Heads-up: \(machine) used this database ~\(minutes)m ago. If two Macs write at once (e.g., via Dropbox), data loss can occur."
         case .multiMachine(let machines):
           conflictWarning = "Info: This database has been accessed from: \(machines.joined(separator: ", "))"
         }
