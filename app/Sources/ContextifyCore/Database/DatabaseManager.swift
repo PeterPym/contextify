@@ -41,24 +41,30 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
-    // Start security-scoped access if using bookmark (sandboxed builds)
+    // Start security-scoped access if using bookmark (sandboxed builds only)
     if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
-      // Only start if not already accessing this URL
-      if securityScopedDirURL != bookmarkURL {
-        // Stop previous scope if different URL
-        if let previousURL = securityScopedDirURL {
-          previousURL.stopAccessingSecurityScopedResource()
-        }
+      if Sandbox.isSandboxed {
+        // Only start if not already accessing this URL
+        if securityScopedDirURL != bookmarkURL {
+          // Stop previous scope if different URL
+          if let previousURL = securityScopedDirURL {
+            previousURL.stopAccessingSecurityScopedResource()
+          }
 
-        guard bookmarkURL.startAccessingSecurityScopedResource() else {
-          throw NSError(
-            domain: "dev.contextify.DatabaseManager",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Failed to access security-scoped directory"]
-          )
+          guard bookmarkURL.startAccessingSecurityScopedResource() else {
+            throw NSError(
+              domain: "dev.contextify.DatabaseManager",
+              code: 1,
+              userInfo: [NSLocalizedDescriptionKey: "Failed to access security-scoped directory"]
+            )
+          }
+          securityScopedDirURL = bookmarkURL
+          log.debug("Started security-scoped access: \(bookmarkURL.path)")
         }
-        securityScopedDirURL = bookmarkURL
-        log.debug("Started security-scoped access: \(bookmarkURL.path)")
+      } else {
+        // Non-sandbox build: no security scope needed
+        securityScopedDirURL = nil
+        log.debug("Using custom database location (non-sandbox): \(bookmarkURL.path)")
       }
     }
 
@@ -295,8 +301,8 @@ public final class DatabaseManager: @unchecked Sendable {
 
     _pool = nil  // Release the pool, connection will be closed
 
-    // Stop security-scoped access
-    if let url = securityScopedDirURL {
+    // Stop security-scoped access (sandbox only)
+    if Sandbox.isSandboxed, let url = securityScopedDirURL {
       url.stopAccessingSecurityScopedResource()
       securityScopedDirURL = nil
       log.debug("Stopped security-scoped access: \(url.path)")

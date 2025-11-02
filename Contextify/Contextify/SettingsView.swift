@@ -2,6 +2,7 @@ import SwiftUI
 import OSLog
 import ContextifyCore
 import UniformTypeIdentifiers
+import AppKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "Settings")
 
@@ -280,15 +281,21 @@ struct DatabaseSettingsView: View {
     case .success(let urls):
       guard let url = urls.first else { return }
 
-      // Start accessing security-scoped resource
-      guard url.startAccessingSecurityScopedResource() else {
-        migrationError = "Failed to access selected folder"
-        return
+      // Start accessing security-scoped resource (sandbox only)
+      if Sandbox.isSandboxed {
+        guard url.startAccessingSecurityScopedResource() else {
+          migrationError = "Failed to access selected folder"
+          return
+        }
       }
 
       // Migrate with resource access, then stop when done
       Task {
-        defer { url.stopAccessingSecurityScopedResource() }
+        defer {
+          if Sandbox.isSandboxed {
+            url.stopAccessingSecurityScopedResource()
+          }
+        }
         await migrateDatabase(to: url)
       }
 
@@ -389,20 +396,25 @@ struct DatabaseSettingsView: View {
       let panel = NSOpenPanel()
       panel.canChooseFiles = false
       panel.canChooseDirectories = true
+      panel.canCreateDirectories = true
       panel.allowsMultipleSelection = false
       panel.directoryURL = url
       panel.prompt = "Use Folder"
       panel.message = "Contextify needs access to this folder to store its database."
 
       if panel.runModal() == .OK, let grantedURL = panel.url {
-        // Start scoped access for the duration of the migration
-        guard grantedURL.startAccessingSecurityScopedResource() else {
-          await MainActor.run {
+        // Start scoped access for the duration of the migration (sandbox only)
+        if Sandbox.isSandboxed {
+          guard grantedURL.startAccessingSecurityScopedResource() else {
             migrationError = "Failed to access selected folder"
+            return
           }
-          return
         }
-        defer { grantedURL.stopAccessingSecurityScopedResource() }
+        defer {
+          if Sandbox.isSandboxed {
+            grantedURL.stopAccessingSecurityScopedResource()
+          }
+        }
 
         await migrateDatabase(to: grantedURL)
         if migrationError == nil {

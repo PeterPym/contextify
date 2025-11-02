@@ -171,8 +171,8 @@ public enum HUDPreferences {
 
 // MARK: - Sandbox
 
-enum Sandbox {
-  static var isSandboxed: Bool {
+public enum Sandbox {
+  public static var isSandboxed: Bool {
     #if os(macOS)
     if getenv("APP_SANDBOX_CONTAINER_ID") != nil { return true }
     if ProcessInfo.processInfo.environment["__XPC_SANDBOXED"] == "1" { return true }
