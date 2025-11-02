@@ -2,7 +2,112 @@
 
 ## P0 Bug Fixes
 
-### 0. First Startup Experience - Implemented, Needs Testing
+### 0. App Sandbox for App Store Submission
+**Status:** Reverted due to file access issues. Requires proper implementation before App Store submission.
+
+**Why it was reverted:**
+Enabling `com.apple.security.app-sandbox = true` broke core functionality:
+- ❌ Cannot access `~/.claude/projects` and `~/.codex/projects` for project discovery
+- ❌ FSEvents monitoring blocked (cannot watch project directories)
+- ❌ Projects window shows 0 projects
+- ❌ Database location changes from `~/Library/Application Support/Contextify/` to sandboxed container
+
+**What's needed:**
+See detailed implementation plan: `build/notes/app-store/sandbox-implementation-plan.md`
+
+**Commits:**
+- `35ce380` - Removed iTerm2/terminal integration (entitlements cleanup)
+- `b4b4762` - Enabled sandbox (reverted in `b1fe869`)
+
+---
+
+### 1. Timeline Summaries Show "infer from message" Placeholder
+**Status:** High Priority - User-facing quality issue in timeline summaries
+
+**Issue:**
+User request summaries frequently show the placeholder text:
+```
+"You requested Claude Code to infer from message"
+```
+
+This happens when `classifyUserIntent()` returns `.unknown` because none of its heuristic patterns match the user's message.
+
+**Root Cause:**
+`FoundationLLM.swift:282-375` - `classifyUserIntent()` function uses pattern matching:
+- **Directive patterns:** "can you", "could you", "please", imperative verbs
+- **Question patterns:** "what", "why", "how", question mark at end
+- **Report patterns:** "i updated", "i fixed", "i created"
+- **Affirmative/Negative:** "yes", "ok", "no", "nope"
+- **Default:** Returns `.unknown` if no patterns match (line 374)
+
+When intent is `.unknown`, the LLM prompt template (line 1109) uses:
+```
+"You requested \(assistantName) to [infer from message]"
+```
+
+The LLM is supposed to replace `[infer from message]` with actual content, but sometimes it doesn't, leaving the placeholder visible.
+
+**Example Messages That Trigger `.unknown`:**
+- Single-word or terse commands not in imperative list ("revert", "investigate")
+- Statements without clear directive words ("this broke the build")
+- Context-dependent requests ("the project tab bar issue")
+- Informal/casual phrasing that doesn't match patterns
+
+**Investigation Needed:**
+1. **Log intent classification results** to see which messages are classified as `.unknown`
+2. **Sample real user messages** from database to identify common unmatched patterns
+3. **Test if LLM is actually replacing the placeholder** or if it's passing through
+
+**Possible Solutions:**
+
+**Option A: Improve Heuristics (Quick Win)**
+Add missing patterns to `classifyUserIntent()`:
+- More imperative verbs: "investigate", "revert", "verify", "confirm", "try"
+- Statement patterns: "this [verb]", "the [noun] [verb]"
+- Shortened directives: "need to", "gotta", "lemme"
+
+**Option B: Better LLM Prompt (More Reliable)**
+Change line 1109 from:
+```swift
+- UNKNOWN     → "You requested \(assistantName) to [infer from message]"
+```
+To:
+```swift
+- UNKNOWN     → "You [infer concise action verb from MESSAGE]"
+```
+
+This removes the placeholder entirely and forces the LLM to synthesize the intent.
+
+**Option C: Two-Pass Classification (More Expensive)**
+If intent is `.unknown`, make a second LLM call to classify intent before summarizing. Cache the result.
+
+**Option D: Remove UNKNOWN Template (Fallback)**
+Don't provide a template for `.unknown` - let the LLM use generic "You [action]" format without guidance.
+
+**Recommended Approach:**
+1. Start with **Option A** - Add 10-15 more common patterns (1 hour)
+2. Monitor logs to see if it reduces `.unknown` frequency
+3. If still frequent, try **Option B** - Better prompt without placeholder
+4. If persistent, investigate if LLM is ignoring instructions (**Option D**)
+
+**Files to Modify:**
+- `Contextify/Contextify/FoundationLLM.swift:282-375` - `classifyUserIntent()`
+- `Contextify/Contextify/FoundationLLM.swift:1109` - Template for UNKNOWN intent
+
+**Testing:**
+1. Add logging to see intent classification distribution
+2. Query database for messages with "infer from message" in summary
+3. Test new patterns against real user messages
+4. Verify summaries no longer show placeholder
+
+**Success Criteria:**
+- Less than 5% of user messages classified as `.unknown`
+- Zero summaries containing "infer from message" placeholder
+- Summaries accurately reflect user intent
+
+---
+
+### 2. First Startup Experience - Implemented, Needs Testing
 **Status:** Implementation complete, requires testing with clean database.
 
 **What was implemented:**
