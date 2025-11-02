@@ -37,6 +37,7 @@ struct ContentView: View {
 
     // Persisted sidebar width (compose)
     @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 400
+    @State private var availableWidth: CGFloat = 1200  // Track window width for dynamic constraints
     private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.composeMin, Layout.composeMax) }
 
     var body: some View {
@@ -50,56 +51,61 @@ struct ContentView: View {
             }
 
             // Manual HStack layout (replaces NavigationSplitView for better control)
-            HStack(spacing: 0) {
-                // Compose sidebar (conditionally visible)
-                if sidebarVisible {
-                    SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            headerWithoutComposeToggle
-                            Divider()
-                            composeSection
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    // Compose sidebar (conditionally visible)
+                    if sidebarVisible {
+                        SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
+                            VStack(alignment: .leading, spacing: 16) {
+                                headerWithoutComposeToggle
+                                Divider()
+                                composeSection
+                            }
                         }
+                        .frame(width: effectiveComposeSidebarWidth(containerWidth: geometry.size.width))
+                        .transition(.move(edge: .leading))
+
+                        // Resizable divider
+                        SidebarGrabber(width: Binding(
+                            get: { self.composeSidebarWidth },
+                            set: { self.composeSidebarWidthStore = Double($0) }
+                        )) { dx in
+                            // Drag resize: adjust internal panel widths only, window stays fixed
+                            let containerWidth = geometry.size.width - 2 * Layout.containerPadding
+                            let overhead = Layout.grabberWidth + Layout.dividerThickness
+
+                            // Calculate requested new compose width
+                            let requestedComposeW = composeSidebarWidth + dx
+
+                            // Reserve space for timeline minimum (MUST protect timeline!)
+                            let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
+                            let maxComposeForWindow = containerWidth - overhead - timelineMin
+                            let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForWindow))
+
+                            // Update persisted width (window stays fixed size)
+                            composeSidebarWidthStore = Double(newComposeW)
+                        }
+
+                        Rectangle()
+                            .frame(width: Layout.dividerThickness)
+                            .foregroundStyle(.separator)
                     }
-                    .frame(width: clampedSidebarWidth(composeSidebarWidth))
-                    .transition(.move(edge: .leading))
 
-                    // Resizable divider
-                    SidebarGrabber(width: Binding(
-                        get: { self.composeSidebarWidth },
-                        set: { self.composeSidebarWidthStore = Double($0) }
-                    )) { dx in
-                        // Drag resize: adjust internal panel widths only, window stays fixed
-                        let frame = currentWindow()?.frame ?? .zero
-                        let overhead = 2 * Layout.containerPadding + Layout.grabberWidth + Layout.dividerThickness
-
-                        // Calculate requested new compose width
-                        let requestedComposeW = composeSidebarWidth + dx
-
-                        // Reserve space for timeline minimum (MUST protect timeline!)
-                        let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
-                        let maxComposeForWindow = frame.width - overhead - timelineMin
-                        let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForWindow))
-
-                        // Update persisted width (window stays fixed size)
-                        composeSidebarWidthStore = Double(newComposeW)
+                    // Timeline (detail) - always visible, takes remaining space
+                    // ENFORCE minimum width to prevent crushing during drag
+                    SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
+                        ConversationTimelineView()
                     }
-
-                    Rectangle()
-                        .frame(width: Layout.dividerThickness)
-                        .foregroundStyle(.separator)
+                    .frame(
+                        minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
+                        maxWidth: .infinity
+                    )
                 }
-
-                // Timeline (detail) - always visible, takes remaining space
-                // ENFORCE minimum width to prevent crushing during drag
-                SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                    ConversationTimelineView()
+                .padding(Layout.containerPadding)
+                .onChange(of: geometry.size.width) { _, newWidth in
+                    availableWidth = newWidth
                 }
-                .frame(
-                    minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
-                    maxWidth: .infinity
-                )
             }
-            .padding(Layout.containerPadding)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button {
@@ -511,6 +517,23 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
+    }
+
+    /// Calculate effective compose sidebar width, protecting timeline minimum
+    func effectiveComposeSidebarWidth(containerWidth: CGFloat) -> CGFloat {
+        let overhead = Layout.grabberWidth + Layout.dividerThickness
+        let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
+
+        // Maximum compose width that still protects timeline
+        let maxComposeForContainer = containerWidth - 2 * Layout.containerPadding - overhead - timelineMin
+
+        // Clamp to both user preference and space available
+        let effectiveWidth = composeSidebarWidth.clamped(
+            Layout.composeMin,
+            Swift.min(Layout.composeMax, maxComposeForContainer)
+        )
+
+        return effectiveWidth
     }
 
     func cleanupWorkspaceMonitoring() {
