@@ -2,14 +2,14 @@ import Foundation
 import GRDB
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v17 (v16 collapse + hotfixes for NULL timestamps, missing indexes, composite PK, file migration)
+/// Current version: v21 (added database_access_metadata for conflict detection)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 20
+  static let version = 21
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -276,6 +276,16 @@ enum DatabaseSchema {
           ON projects(is_orphaned, orphaned_since)
           WHERE is_orphaned = 1
         """)
+      }
+    }
+
+    // v21: Add database access metadata for multi-machine conflict detection
+    migrator.registerMigration("v21_access_metadata") { db in
+      try db.create(table: "database_access_metadata", ifNotExists: true) { t in
+        t.column("machine_id", .text).primaryKey()
+        t.column("machine_name", .text).notNull()
+        t.column("last_access", .datetime).notNull()
+        t.column("app_version", .text).notNull()
       }
     }
 

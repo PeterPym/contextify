@@ -52,6 +52,11 @@ public final class DatabaseManager: @unchecked Sendable {
     // Validate database
     try validateDatabase(pool)
 
+    // Record access for conflict detection
+    try pool.write { db in
+      try DatabaseAccessTracker.recordAccess(db: db)
+    }
+
     log.info("Database opened and validated successfully")
 
     return pool
@@ -59,6 +64,44 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Returns the path to the database file
   public func databasePath() throws -> URL {
+    // Check for custom database location first
+    if let customLocation = try? customDatabasePath() {
+      return customLocation
+    }
+
+    // Fall back to default location
+    return try defaultDatabasePath()
+  }
+
+  /// Returns custom database path if configured
+  private func customDatabasePath() throws -> URL? {
+    // Try to resolve bookmark first (sandboxed builds)
+    if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
+      let dbPath = bookmarkURL.appendingPathComponent("contextify.db")
+      log.info("Using custom database location (bookmark): \(dbPath.path)")
+      return dbPath
+    }
+
+    // Try direct path (non-sandboxed builds)
+    if let customPath = HUDPreferences.getCustomDatabaseLocation() {
+      let baseURL = URL(fileURLWithPath: customPath)
+
+      // Ensure directory exists
+      try FileManager.default.createDirectory(
+        at: baseURL,
+        withIntermediateDirectories: true
+      )
+
+      let dbPath = baseURL.appendingPathComponent("contextify.db")
+      log.info("Using custom database location: \(dbPath.path)")
+      return dbPath
+    }
+
+    return nil
+  }
+
+  /// Returns default database path
+  private func defaultDatabasePath() throws -> URL {
     let appSupport = try FileManager.default.url(
       for: .applicationSupportDirectory,
       in: .userDomainMask,
@@ -111,6 +154,14 @@ public final class DatabaseManager: @unchecked Sendable {
     }
 
     log.info("Database OK: \(projectCount) projects")
+  }
+
+  /// Checks for multi-machine access conflicts
+  public func checkForAccessConflicts() throws -> DatabaseAccessTracker.ConflictType? {
+    let pool = try self.pool
+    return try pool.read { db in
+      try DatabaseAccessTracker.checkForConflicts(db: db)
+    }
   }
 
   /// Checks WAL size and triggers checkpoint if needed

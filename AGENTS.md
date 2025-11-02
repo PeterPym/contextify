@@ -30,28 +30,35 @@ assets/ icons/
 ## Architecture & Key Modules
 
 ### Database Layer (SQL Backend)
-- **Current Schema Version: v16** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v21** (see DatabaseSchema.swift for migration history)
 - **Recent Migrations:**
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts)
   - **v14**: Request ID normalization (empty → entry_id fallback)
   - **v15**: Index cleanup and optimization
   - **v16**: GROUP BY index for unread queries (idx_entries_unread_join)
+  - **v17-v20**: Schema fixes, file migration, orphaned project tracking
+  - **v21**: Database access metadata for multi-machine conflict detection
 - **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
-- **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, and WAL mode.
+- **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, WAL mode, and custom database locations. Supports bookmark-based access for sandboxed builds.
+- **DatabaseMigration** (`app/Sources/ContextifyCore/Database/DatabaseMigration.swift`): Safe database file migration between locations. Handles disk space checks, atomic copies, and validation.
+- **DatabaseAccessMetadata** (`app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift`): Multi-machine access tracking and conflict detection. Warns users of concurrent access issues.
 - **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. CTE-based FK-safe assistant_usage inserts with O(N+M) JOIN reconciliation.
 - **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository).
-- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v16).
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v21).
   - **v8-v9**: project_visits table, unread query indices
   - **v10-v11**: assistant_usage_pending staging, FK hardening
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
   - **v14-v15**: Request ID normalization, index cleanup
   - **v16**: GROUP BY index for unread queries
+  - **v17-v20**: Schema fixes, file migration, orphaned project tracking
+  - **v21**: database_access_metadata table
 - **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
 - **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.).
 - **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
   - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
+  - Custom location feature: `build/notes/feature-specs/custom-database-location/spec.md`
 
 ### LLM Processing & Timeline Integration
 Contextify uses **two independent LLM processing queues** for content generation (both using Apple Intelligence/FoundationLLM on macOS 26+):
@@ -133,7 +140,11 @@ Common commands:
 **Database management:**
 - ⚠️  **IMPORTANT:** ALWAYS use `scripts/db_manager.sh` for database operations
 - ⚠️  **NEVER** delete database files manually with `rm` while app is running
-- Database location: `~/Library/Application Support/Contextify/contextify.db`
+- Database location: `~/Library/Application Support/Contextify/contextify.db` (default)
+  - **Custom locations supported** via Settings > Database tab
+  - Supports Dropbox, iCloud Drive, or any user-selected directory
+  - Migration preserves all data (copies db, wal, shm files)
+  - Multi-machine conflict detection warns of concurrent access
 - Clean database (creates backup): `make clean-db` or `./scripts/db_manager.sh clean`
 - Create backup: `make db-backup` or `./scripts/db_manager.sh backup`
 - Restore latest: `make db-restore` or `./scripts/db_manager.sh restore latest`

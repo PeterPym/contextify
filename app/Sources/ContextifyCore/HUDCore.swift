@@ -15,6 +15,10 @@ public enum HUDPreferences {
   public static let projectRootBookmarkKey = "dev.contextify.projectRootBookmark"
   public static let autoPersistKey = "dev.contextify.autoPersist"
 
+  // Database location
+  public static let customDatabaseLocationKey = "dev.contextify.customDatabaseLocation"
+  public static let customDatabaseBookmarkKey = "dev.contextify.customDatabaseBookmark"
+
   nonisolated(unsafe) private static let sharedDefaults: UserDefaults = {
     if let suite = UserDefaults(suiteName: "dev.contextify"), probeDefaultsWriteability(suite) {
       return suite
@@ -55,12 +59,49 @@ public enum HUDPreferences {
     sharedDefaults.set(enabled, forKey: autoPersistKey)
   }
 
-  public static func resolveBookmark() -> URL? {
-    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey) else { return nil }
-    return resolveBookmarkData(data)
+  // MARK: - Database Location
+
+  public static func getCustomDatabaseLocation() -> String? {
+    warnIfLegacyDefaultsPresent()
+    return sharedDefaults.string(forKey: customDatabaseLocationKey)
   }
 
-  private static func resolveBookmarkData(_ data: Data) -> URL? {
+  public static func setCustomDatabaseLocation(_ path: String?) {
+    guard let path, !path.isEmpty else {
+      clearCustomDatabaseLocation()
+      return
+    }
+    storeDatabaseURL(URL(fileURLWithPath: path))
+  }
+
+  public static func setCustomDatabaseLocation(_ url: URL) {
+    storeDatabaseURL(url)
+  }
+
+  public static func clearCustomDatabaseLocation() {
+    sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
+    sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
+  }
+
+  public static func resolveDatabaseBookmark() -> URL? {
+    guard let data = sharedDefaults.data(forKey: customDatabaseBookmarkKey) else { return nil }
+    return resolveBookmarkData(data, pathKey: customDatabaseLocationKey, bookmarkKey: customDatabaseBookmarkKey)
+  }
+
+  private static func storeDatabaseURL(_ url: URL) {
+    let canonical = url.resolvingSymlinksInPath()
+    sharedDefaults.set(canonical.path, forKey: customDatabaseLocationKey)
+    try? storeBookmark(for: canonical, key: customDatabaseBookmarkKey)
+  }
+
+  // MARK: - Bookmark Resolution
+
+  public static func resolveBookmark() -> URL? {
+    guard let data = sharedDefaults.data(forKey: projectRootBookmarkKey) else { return nil }
+    return resolveBookmarkData(data, pathKey: projectRootKey, bookmarkKey: projectRootBookmarkKey)
+  }
+
+  private static func resolveBookmarkData(_ data: Data, pathKey: String, bookmarkKey: String) -> URL? {
     let primary: URL.BookmarkResolutionOptions = Sandbox.isSandboxed ? [.withSecurityScope] : []
     for options in [primary, []] {
       var stale = false
@@ -72,18 +113,21 @@ public enum HUDPreferences {
           bookmarkDataIsStale: &stale
         )
         if stale {
-          storeRootURL(url)
+          // Re-store the bookmark to update it
+          let canonical = url.resolvingSymlinksInPath()
+          sharedDefaults.set(canonical.path, forKey: pathKey)
+          try? storeBookmark(for: canonical, key: bookmarkKey)
         }
         return url
       } catch {
         continue
       }
     }
-    sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
-    if let path = sharedDefaults.string(forKey: projectRootKey) {
+    sharedDefaults.removeObject(forKey: bookmarkKey)
+    if let path = sharedDefaults.string(forKey: pathKey) {
       var isDir: ObjCBool = false
       if !(FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue) {
-        sharedDefaults.removeObject(forKey: projectRootKey)
+        sharedDefaults.removeObject(forKey: pathKey)
       }
     }
     return nil
@@ -92,14 +136,14 @@ public enum HUDPreferences {
   private static func storeRootURL(_ url: URL) {
     let canonical = url.resolvingSymlinksInPath()
     sharedDefaults.set(canonical.path, forKey: projectRootKey)
-    try? storeBookmark(for: canonical)
+    try? storeBookmark(for: canonical, key: projectRootBookmarkKey)
   }
 
-  private static func storeBookmark(for url: URL) throws {
+  private static func storeBookmark(for url: URL, key: String) throws {
     #if os(macOS)
     let options: URL.BookmarkCreationOptions = Sandbox.isSandboxed ? [.withSecurityScope] : []
     let data = try url.bookmarkData(options: options, includingResourceValuesForKeys: nil, relativeTo: nil)
-    sharedDefaults.set(data, forKey: projectRootBookmarkKey)
+    sharedDefaults.set(data, forKey: key)
     #endif
   }
 
