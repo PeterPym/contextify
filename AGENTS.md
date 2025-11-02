@@ -94,8 +94,9 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 ### Supporting Components
 - **WindowTitleWriter** (`Contextify/Contextify/WindowTitleWriter.swift`): Updates window title to show current project name.
-- **ComposeURLRouter/ComposeWindowManager** (`Contextify/Contextify/ComposeURLRouter.swift`, `ComposeWindowManager.swift`): URL routing and compose window lifecycle (automation support).
-- **ITerm2Bridge** (`Contextify/Contextify/ITerm2Bridge.swift`): iTerm2 integration for shell bindings.
+- **SystemInfo** (`Contextify/Contextify/SystemInfo.swift`): System information utilities (machine ID, support email).
+
+> **Note:** iTerm2/terminal integration (ITerm2Bridge, ComposeWindowManager, GlobalHotkeyManager) was removed in commit 35ce380 for App Store compliance. See `build/notes/future-features.md` "Removed Features" section for re-implementation guidance if needed.
 
 ### Transcript Parsing & Metadata
 - **TranscriptParsers** (`app/Sources/ContextifyCore/Database/TranscriptParsers.swift`): JSONL parsers for Claude Code and Codex CLI formats. Used by HooverEngine during ingestion (JSONL → DB).
