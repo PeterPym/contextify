@@ -11,7 +11,22 @@ One-shot release helper that:
   • uploads release (gh CLI)
 
 Requirements: git, gh (logged-in), bash, python3
-Usage: python3 scripts/release.py [--dry-run] [--no-notarize]
+
+Usage:
+  Interactive mode (prompts for version):
+    python3 scripts/release.py
+
+  Non-interactive mode (fully automated):
+    python3 scripts/release.py --version 1.0.1 --yes
+
+  Dry run (preview what would happen):
+    python3 scripts/release.py --version 1.0.1 --dry-run
+
+  Skip notarization (faster testing):
+    python3 scripts/release.py --version 1.0.1 --yes --no-notarize
+
+  Allow uncommitted changes:
+    python3 scripts/release.py --allow-dirty
 """
 
 from __future__ import annotations
@@ -185,16 +200,22 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Contextify release automation")
     ap.add_argument("--dry-run", action="store_true", help="Simulate only, don't make changes")
     ap.add_argument("--no-notarize", action="store_true", help="Skip notarization (faster for testing)")
+    ap.add_argument("--version", help="Version to release (e.g., 1.0.1). If not specified, prompts interactively")
+    ap.add_argument("--yes", "-y", action="store_true", help="Skip all confirmation prompts (auto-confirm)")
+    ap.add_argument("--allow-dirty", action="store_true", help="Allow uncommitted changes in working directory")
     args = ap.parse_args()
 
     print("🚀 Contextify Release Automation\n")
 
     # Check for uncommitted changes
-    if git_has_changes():
+    if git_has_changes() and not args.allow_dirty:
         print("⚠️  Warning: You have uncommitted changes.")
-        ans = input("Continue anyway? [y/N] ").lower()
-        if ans != "y":
-            sys.exit(1)
+        if args.yes:
+            print("Continuing anyway (--yes flag enabled)")
+        else:
+            ans = input("Continue anyway? [y/N] ").lower()
+            if ans != "y":
+                sys.exit(1)
 
     # Get current version state
     xcode_ver = current_xcode_version()
@@ -205,16 +226,31 @@ def main() -> None:
     print()
 
     # Decide next version
-    if xcode_ver == tag_ver:
+    if args.version:
+        # Version specified via argument
+        next_ver = args.version
+        # Validate version format
+        if not re.match(r'^\d+\.\d+\.\d+$', next_ver):
+            sys.exit(f"✖ Invalid version format: {next_ver} (expected: X.Y.Z)")
+        print(f"Using specified version: {next_ver}")
+    elif xcode_ver == tag_ver:
         next_default = bump_patch(xcode_ver)
-        ans = input(f"Next version [{next_default}]: ").strip()
-        next_ver = ans or next_default
+        if args.yes:
+            next_ver = next_default
+            print(f"Auto-selecting next version: {next_ver}")
+        else:
+            ans = input(f"Next version [{next_default}]: ").strip()
+            next_ver = ans or next_default
     else:
         print("⚠️  Version mismatch between Xcode and git tags.")
-        ans = input(f"Proceed with Xcode version ({xcode_ver})? [y/N] ").lower()
-        if ans != "y":
-            sys.exit(1)
-        next_ver = xcode_ver
+        if args.yes:
+            next_ver = xcode_ver
+            print(f"Using Xcode version: {next_ver}")
+        else:
+            ans = input(f"Proceed with Xcode version ({xcode_ver})? [y/N] ").lower()
+            if ans != "y":
+                sys.exit(1)
+            next_ver = xcode_ver
 
     print(f"\n📦 Releasing version: {next_ver}")
 
@@ -228,10 +264,13 @@ def main() -> None:
         return
 
     # Confirm before proceeding
-    ans = input("\nProceed with release? [y/N] ").lower()
-    if ans != "y":
-        print("Cancelled.")
-        sys.exit(0)
+    if not args.yes:
+        ans = input("\nProceed with release? [y/N] ").lower()
+        if ans != "y":
+            print("Cancelled.")
+            sys.exit(0)
+    else:
+        print("\n▶️  Auto-proceeding (--yes flag enabled)")
 
     # Execute release workflow
     print("\n" + "="*60)

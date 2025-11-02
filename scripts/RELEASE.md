@@ -34,7 +34,7 @@ All commands must be run on **macOS** (signing/notarization require macOS):
 
 ## Quick Start
 
-### Full Release (Recommended)
+### Full Release (Interactive)
 
 ```bash
 make release
@@ -48,18 +48,49 @@ This runs the complete workflow:
 5. Signs and notarizes DMG
 6. Creates GitHub release with DMG + SHA256
 
-### Faster Testing (Skip Notarization)
+### Automated Release (Non-Interactive)
+
+Perfect for CI/CD or when you know the exact version:
 
 ```bash
-python3 scripts/release.py --no-notarize
+# Fully automated - no prompts
+python3 scripts/release.py --version 1.0.1 --yes
+
+# Or via make
+make release
 ```
 
-**Warning:** DMG will show Gatekeeper warnings on other Macs. Use only for testing!
+**Available Arguments:**
+- `--version X.Y.Z` - Specify exact version to release
+- `--yes` / `-y` - Skip all confirmation prompts (auto-confirm)
+- `--dry-run` - Preview what would happen without making changes
+- `--no-notarize` - Skip notarization (faster testing, but DMG will show warnings)
+- `--allow-dirty` - Allow uncommitted changes in working directory
+
+**Examples:**
+
+```bash
+# Preview release of version 1.0.1
+python3 scripts/release.py --version 1.0.1 --dry-run
+
+# Fully automated release (for CI/CD)
+python3 scripts/release.py --version 1.0.1 --yes
+
+# Fast testing without notarization
+python3 scripts/release.py --version 1.0.1 --yes --no-notarize
+
+# Release with uncommitted changes (not recommended)
+python3 scripts/release.py --version 1.0.1 --yes --allow-dirty
+```
 
 ### Preview Only (Dry Run)
 
 ```bash
+# Via make
 make release-dry-run
+
+# Or directly with specific version
+python3 scripts/release.py --version 1.0.1 --dry-run
 ```
 
 Shows what would happen without making any changes.
