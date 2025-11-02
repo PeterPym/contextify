@@ -16,6 +16,16 @@ extension Notification.Name {
     static let toggleComposeSidebar = Notification.Name("toggleComposeSidebar")
 }
 
+// Sheet presentation options
+enum ActiveSheet: Identifiable {
+    case embeddingTest
+    case databaseTest
+    case batchEmbedding
+    case semanticSearch
+
+    var id: Int { hashValue }
+}
+
 struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
@@ -25,10 +35,7 @@ struct ContentView: View {
     @Environment(ProjectSwitcherState.self) private var projectSwitcher
     @State private var showToast = false
     @State private var toastText = ""
-    @State private var showEmbeddingTest = false
-    @State private var showDatabaseTest = false
-    @State private var showBatchEmbedding = false
-    @State private var showSemanticSearch = false
+    @State private var activeSheet: ActiveSheet?
     @State private var workspaceObserver: NSObjectProtocol?
 
     // Sidebar visibility (replacing columnVisibility)
@@ -134,6 +141,8 @@ struct ContentView: View {
                         Image(systemName: "folder")
                     }
                     .buttonStyle(.borderless)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(Rectangle())
                     .help("Open project...")
 
                     Text(model.projectDisplayName)
@@ -158,47 +167,59 @@ struct ContentView: View {
 
             // Developer-only test buttons (hidden by default)
             if devMode.isEnabled {
-                Button(action: { showEmbeddingTest.toggle() }) {
+                Button(action: { activeSheet = .embeddingTest }) {
                     Image(systemName: "testtube.2")
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
                 .help("Test Embedding Service")
 
-                Button(action: { showDatabaseTest.toggle() }) {
+                Button(action: { activeSheet = .databaseTest }) {
                     Image(systemName: "cylinder")
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
                 .help("Test Embedding Database")
             }
 
-            Button(action: { showBatchEmbedding.toggle() }) {
+            Button(action: { activeSheet = .batchEmbedding }) {
                 Image(systemName: "gearshape.2")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
             .help("Batch Embedding Generation")
 
-            Button(action: { showSemanticSearch.toggle() }) {
+            Button(action: { activeSheet = .semanticSearch }) {
                 Image(systemName: "magnifyingglass.circle")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
             .help("Semantic Search")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor))
-        .sheet(isPresented: $showEmbeddingTest) {
-            EmbeddingTestView()
-        }
-        .sheet(isPresented: $showDatabaseTest) {
-            EmbeddingDatabaseTestView()
-        }
-        .sheet(isPresented: $showBatchEmbedding) {
-            BatchEmbeddingView()
-        }
-        .sheet(isPresented: $showSemanticSearch) {
-            SemanticSearchView()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .embeddingTest:
+                EmbeddingTestView()
+            case .databaseTest:
+                EmbeddingDatabaseTestView()
+            case .batchEmbedding:
+                BatchEmbeddingView()
+            case .semanticSearch:
+                SemanticSearchView()
+            }
         }
     }
+
+    // MARK: - Legacy Compose/Sidebar (Dormant for v1.0 - Retained for v1.1)
+    // These components are not rendered when sidebarVisible = false
+    // To restore: set sidebarVisible = true, restore toolbar button/shortcut/observer
 
     private var headerWithoutComposeToggle: some View {
         HStack(spacing: 12) {
@@ -235,42 +256,50 @@ struct ContentView: View {
 
             // Developer-only test buttons (hidden by default)
             if devMode.isEnabled {
-              Button(action: { showEmbeddingTest.toggle() }) {
+              Button(action: { activeSheet = .embeddingTest }) {
                   Image(systemName: "testtube.2")
               }
               .buttonStyle(.borderless)
+              .frame(minWidth: 28, minHeight: 28)
+              .contentShape(Rectangle())
               .help("Test Embedding Service")
 
-              Button(action: { showDatabaseTest.toggle() }) {
+              Button(action: { activeSheet = .databaseTest }) {
                   Image(systemName: "cylinder")
               }
               .buttonStyle(.borderless)
+              .frame(minWidth: 28, minHeight: 28)
+              .contentShape(Rectangle())
               .help("Test Embedding Database")
             }
 
-            Button(action: { showBatchEmbedding.toggle() }) {
+            Button(action: { activeSheet = .batchEmbedding }) {
                 Image(systemName: "gearshape.2")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
             .help("Batch Embedding Generation")
 
-            Button(action: { showSemanticSearch.toggle() }) {
+            Button(action: { activeSheet = .semanticSearch }) {
                 Image(systemName: "magnifyingglass.circle")
             }
             .buttonStyle(.borderless)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
             .help("Semantic Search")
         }
-        .sheet(isPresented: $showEmbeddingTest) {
-            EmbeddingTestView()
-        }
-        .sheet(isPresented: $showDatabaseTest) {
-            EmbeddingDatabaseTestView()
-        }
-        .sheet(isPresented: $showBatchEmbedding) {
-            BatchEmbeddingView()
-        }
-        .sheet(isPresented: $showSemanticSearch) {
-            SemanticSearchView()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .embeddingTest:
+                EmbeddingTestView()
+            case .databaseTest:
+                EmbeddingDatabaseTestView()
+            case .batchEmbedding:
+                BatchEmbeddingView()
+            case .semanticSearch:
+                SemanticSearchView()
+            }
         }
     }
 
@@ -342,7 +371,7 @@ struct ContentView: View {
 
 #Preview { ContentView().environment(HUDViewModel()) }
 
-// MARK: - Sidebar Grabber
+// MARK: - Sidebar Grabber (Dormant - not instantiated when sidebarVisible = false)
 
 private struct SidebarGrabber: View {
     @Binding var width: CGFloat
@@ -550,6 +579,8 @@ private extension ContentView {
         }
         // If duration is 0, toast persists until manually dismissed
     }
+
+    // MARK: - Dormant Sidebar Layout Functions (unused when sidebarVisible = false)
 
     /// Calculate effective compose sidebar width, protecting timeline minimum
     func effectiveComposeSidebarWidth(containerWidth: CGFloat) -> CGFloat {
