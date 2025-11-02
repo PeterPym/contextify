@@ -281,22 +281,26 @@ struct DatabaseSettingsView: View {
     case .success(let urls):
       guard let url = urls.first else { return }
 
-      // Start accessing security-scoped resource (sandbox only)
+      var didStartScope = false
       if Sandbox.isSandboxed {
         guard url.startAccessingSecurityScopedResource() else {
           migrationError = "Failed to access selected folder"
           return
         }
+        didStartScope = true
       }
 
-      // Migrate with resource access, then stop when done
-      Task {
+      // Run the heavy migration work off the main thread
+      Task.detached(priority: .userInitiated) {
         defer {
-          if Sandbox.isSandboxed {
+          if didStartScope {
             url.stopAccessingSecurityScopedResource()
           }
         }
         await migrateDatabase(to: url)
+        await MainActor.run {
+          loadCurrentLocation()
+        }
       }
 
     case .failure(let error):
@@ -332,7 +336,8 @@ struct DatabaseSettingsView: View {
   private func resetToDefaultLocation() {
     guard HUDPreferences.getCustomDatabaseLocation() != nil else { return }
 
-    Task {
+    // Run the heavy migration work off the main thread
+    Task.detached(priority: .userInitiated) {
       await MainActor.run {
         isMigrating = true
         migrationError = nil
@@ -348,12 +353,12 @@ struct DatabaseSettingsView: View {
         HUDPreferences.clearCustomDatabaseLocation()
         await MainActor.run {
           loadCurrentLocation()
+          log.info("Database reset to default location")
         }
-        log.info("Database reset to default location")
       } catch {
-        log.error("Reset to default failed: \(error)")
         await MainActor.run {
           migrationError = error.localizedDescription
+          log.error("Reset to default failed: \(error)")
         }
       }
 
@@ -403,22 +408,29 @@ struct DatabaseSettingsView: View {
       panel.message = "Contextify needs access to this folder to store its database."
 
       if panel.runModal() == .OK, let grantedURL = panel.url {
-        // Start scoped access for the duration of the migration (sandbox only)
+        var didStartScope = false
         if Sandbox.isSandboxed {
           guard grantedURL.startAccessingSecurityScopedResource() else {
             migrationError = "Failed to access selected folder"
             return
           }
-        }
-        defer {
-          if Sandbox.isSandboxed {
-            grantedURL.stopAccessingSecurityScopedResource()
-          }
+          didStartScope = true
         }
 
-        await migrateDatabase(to: grantedURL)
-        if migrationError == nil {
-          log.info("Migrated to \(name): \(grantedURL.path)")
+        // Run the heavy migration work off the main thread
+        Task.detached(priority: .userInitiated) {
+          defer {
+            if didStartScope {
+              grantedURL.stopAccessingSecurityScopedResource()
+            }
+          }
+          await migrateDatabase(to: grantedURL)
+          await MainActor.run {
+            if migrationError == nil {
+              log.info("Migrated to \(name): \(grantedURL.path)")
+              loadCurrentLocation()
+            }
+          }
         }
       }
     }
