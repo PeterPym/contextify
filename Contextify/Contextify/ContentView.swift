@@ -33,14 +33,12 @@ struct ContentView: View {
     @Environment(HUDViewModel.self) private var model
     @Environment(ConversationMonitor.self) private var timeline
     @Environment(DeveloperMode.self) private var devMode
-    @Environment(\.scenePhase) private var scenePhase
     // Observe project switcher so body re-renders when project list changes
     @Environment(ProjectSwitcherState.self) private var projectSwitcher
     @State private var showToast = false
     @State private var toastText = ""
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
-    @State private var workspaceObserver: NSObjectProtocol?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,25 +75,10 @@ struct ContentView: View {
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
-            await refreshSession()
             TimelineIntegration.shared.startMonitoring()
 
             // Note: ProjectSwitcherState.shared.start() is called in ContextifyApp init
             // for deterministic startup order. Do not call it here.
-
-            // Monitor iTerm2 activation for automatic session refresh
-            setupWorkspaceMonitoring()
-        }
-        .onDisappear {
-            cleanupWorkspaceMonitoring()
-        }
-        .onChange(of: scenePhase) { _, phase in
-            // Clean up on background; re-setup on active (if not already set up)
-            if phase == .background {
-                cleanupWorkspaceMonitoring()
-            } else if phase == .active, workspaceObserver == nil {
-                setupWorkspaceMonitoring()
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
@@ -323,10 +306,6 @@ private extension ContentView {
         return false
     }
 
-    func refreshSession() async {
-        model.targetSessionName = await ITerm2Bridge.getCurrentSessionName()
-    }
-
     func presentToast(_ message: String, duration: TimeInterval? = nil) {
         // Cancel any existing auto-dismiss task to prevent premature hiding of new toast
         toastDismissTask?.cancel()
@@ -343,46 +322,5 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
-    }
-
-    func cleanupWorkspaceMonitoring() {
-        if let token = workspaceObserver {
-            NSWorkspace.shared.notificationCenter.removeObserver(token)
-            workspaceObserver = nil
-            uiLog.debug("Workspace observer removed")
-        }
-    }
-
-    func setupWorkspaceMonitoring() {
-        // Prevent duplicate observers if called again
-        guard workspaceObserver == nil else {
-            uiLog.debug("Workspace observer already set up, skipping")
-            return
-        }
-
-        // Observe when iTerm2 becomes active to auto-refresh session name
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil,
-            queue: .main
-        ) { [weak model] notification in
-            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-
-            // Check if iTerm2 was activated
-            if app.bundleIdentifier == "com.googlecode.iterm2" {
-                // AppleScript/ScriptingBridge calls must run on MainActor
-                Task { @MainActor [weak model] in
-                    let sessionName = await ITerm2Bridge.getCurrentSessionName()
-                    if let sessionName {
-                        model?.targetSessionName = sessionName
-                    } else {
-                        // Session name fetch returned nil (iTerm2 not responding or no session)
-                        uiLog.debug("iTerm2 session name unavailable")
-                    }
-                }
-            }
-        }
-
-        uiLog.debug("Workspace observer set up for iTerm2 activation")
     }
 }
