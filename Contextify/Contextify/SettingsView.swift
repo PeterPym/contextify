@@ -374,27 +374,40 @@ struct DatabaseSettingsView: View {
   }
 
   private func getICloudPath() -> URL? {
-    // Try to get iCloud Drive path
-    if let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) {
-      return iCloudURL.appendingPathComponent("Documents/Contextify")
+    // Only return iCloud path if we have the entitlement
+    guard let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) else {
+      return nil
     }
-
-    // Fallback: try direct path
-    let directPath = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/Contextify")
-
-    if FileManager.default.fileExists(atPath: directPath.path) {
-      return directPath
-    }
-
-    return directPath  // Return even if it doesn't exist - we'll create it during migration
+    return iCloudURL.appendingPathComponent("Documents/Contextify")
   }
 
   private func migrateToPreset(_ url: URL, name: String) {
-    Task {
-      await migrateDatabase(to: url)
-      if migrationError == nil {
-        log.info("Migrated to \(name): \(url.path)")
+    Task { @MainActor in
+      guard !isMigrating else { return }
+
+      // Use NSOpenPanel to get security-scoped access for sandboxed builds
+      let panel = NSOpenPanel()
+      panel.canChooseFiles = false
+      panel.canChooseDirectories = true
+      panel.allowsMultipleSelection = false
+      panel.directoryURL = url
+      panel.prompt = "Use Folder"
+      panel.message = "Contextify needs access to this folder to store its database."
+
+      if panel.runModal() == .OK, let grantedURL = panel.url {
+        // Start scoped access for the duration of the migration
+        guard grantedURL.startAccessingSecurityScopedResource() else {
+          await MainActor.run {
+            migrationError = "Failed to access selected folder"
+          }
+          return
+        }
+        defer { grantedURL.stopAccessingSecurityScopedResource() }
+
+        await migrateDatabase(to: grantedURL)
+        if migrationError == nil {
+          log.info("Migrated to \(name): \(grantedURL.path)")
+        }
       }
     }
   }

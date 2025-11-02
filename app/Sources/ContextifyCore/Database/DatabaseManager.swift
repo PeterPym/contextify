@@ -84,8 +84,12 @@ public final class DatabaseManager: @unchecked Sendable {
     // Validate database
     try validateDatabase(pool)
 
-    // Record access for conflict detection
+    // Record access for conflict detection (post-migration safe)
     try pool.write { db in
+      // Ensure table exists before recording access (guards against pre-v21 DBs)
+      if try !db.tableExists("database_access_metadata") {
+        try DatabaseAccessTracker.addAccessMetadataTable(db: db)
+      }
       try DatabaseAccessTracker.recordAccess(db: db)
     }
 
