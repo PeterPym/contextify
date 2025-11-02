@@ -222,15 +222,20 @@ struct DatabaseSettingsView: View {
       isCustomLocation = HUDPreferences.getCustomDatabaseLocation() != nil
 
       // Check for multi-machine conflicts
-      if let conflict = try? DatabaseManager.shared.checkForAccessConflicts() {
-        switch conflict {
-        case .recentConflict(let machine, let timeSince):
-          let minutes = Int(timeSince / 60)
-          conflictWarning = "Heads-up: \(machine) used this database ~\(minutes)m ago. If two Macs write at once (e.g., via Dropbox), data loss can occur."
-        case .multiMachine(let machines):
-          conflictWarning = "Info: This database has been accessed from: \(machines.joined(separator: ", "))"
+      do {
+        if let conflict = try DatabaseManager.shared.checkForAccessConflicts() {
+          switch conflict {
+          case .recentConflict(let machine, let timeSince):
+            let minutes = Int(timeSince / 60)
+            conflictWarning = "Heads-up: \(machine) used this database ~\(minutes)m ago. If two Macs write at once (e.g., via Dropbox), data loss can occur."
+          case .multiMachine(let machines):
+            conflictWarning = "Info: This database has been accessed from: \(machines.joined(separator: ", "))"
+          }
+        } else {
+          conflictWarning = nil
         }
-      } else {
+      } catch {
+        log.error("Failed to check access conflicts: \(error.localizedDescription)")
         conflictWarning = nil
       }
     } catch {

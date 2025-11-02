@@ -97,7 +97,7 @@ public final class DatabaseManager: @unchecked Sendable {
   /// Returns the path to the database file
   public func databasePath() throws -> URL {
     // Check for custom database location first
-    if let customLocation = try? customDatabasePath() {
+    if let customLocation = try customDatabasePath() {
       return customLocation
     }
 

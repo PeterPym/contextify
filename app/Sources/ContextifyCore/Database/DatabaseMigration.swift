@@ -101,8 +101,10 @@ public enum DatabaseMigration {
     log.info("✅ Verifying migrated database...")
 
     do {
+      // Allow the pool to open at the new location
+      DatabaseManager.shared.setMigrationInProgress(false)
       let pool = try DatabaseManager.shared.pool
-      let checkResult = try await pool.read { db in
+      let checkResult: String? = try await pool.read { db in
         try String.fetchOne(db, sql: "PRAGMA quick_check")
       }
 
@@ -112,7 +114,7 @@ public enum DatabaseMigration {
         throw MigrationError.validationFailed
       }
     } catch {
-      // Rollback: clear custom location to go back to source
+      // Roll back preference so next open returns to source
       HUDPreferences.clearCustomDatabaseLocation()
       throw MigrationError.validationFailed
     }
