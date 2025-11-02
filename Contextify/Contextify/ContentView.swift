@@ -21,8 +21,8 @@ struct ContentView: View {
     @Environment(ConversationMonitor.self) private var timeline
     @Environment(DeveloperMode.self) private var devMode
     @Environment(\.scenePhase) private var scenePhase
-    // Singleton reference - no @State needed since we're not replacing the reference
-    private let projectSwitcher = ProjectSwitcherState.shared
+    // Observe project switcher so body re-renders when project list changes
+    @Environment(ProjectSwitcherState.self) private var projectSwitcher
     @State private var showToast = false
     @State private var toastText = ""
     @State private var showEmbeddingTest = false
@@ -47,7 +47,6 @@ struct ContentView: View {
             // Show only when we have 2+ projects (otherwise just wastes vertical space)
             if projectSwitcher.allProjects.count >= 2 {
                 ProjectSwitcherView()
-                    .environment(projectSwitcher)
                 Divider()
             }
 
@@ -179,7 +178,7 @@ struct ContentView: View {
             .help("Batch Embedding Generation")
 
             Button(action: { showSemanticSearch.toggle() }) {
-                Image(systemName: "magnifyingllass.circle")
+                Image(systemName: "magnifyingglass.circle")
             }
             .buttonStyle(.borderless)
             .help("Semantic Search")
