@@ -48,6 +48,15 @@ struct HelpCommands: Commands {
   }
 }
 
+// Shared container for background tasks that need lifecycle management
+@MainActor
+final class AppLifecycleState {
+  static let shared = AppLifecycleState()
+  var projectMonitoringTask: Task<Void, Never>?
+
+  private init() {}
+}
+
 @main
 struct ContextifyApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -56,11 +65,10 @@ struct ContextifyApp: App {
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
-  @State private var projectMonitoringTask: Task<Void, Never>?
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
-    startupLog.fault("🚀🚀🚀 CONTEXTIFY LAUNCHED - NEW BUILD WITH DIAGNOSTIC LOGGING 🚀🚀🚀")
+    startupLog.notice("🚀 Contextify launched")
 
     // Check for existing instance
     if isAnotherInstanceRunning() {
@@ -100,18 +108,12 @@ struct ContextifyApp: App {
           await initializeProjectsSystem()
         }
     }
-    .defaultSize(width: 1200, height: 360)  // Sidebar (520) + Detail (600) + padding
+    .defaultSize(width: 1200, height: 360)  // Timeline-only default for v1.0
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
       ProjectRootCommands()
       WindowCommands()
-      CommandGroup(after: .sidebar) {
-        Button("Toggle Sidebar") {
-          NotificationCenter.default.post(name: .toggleComposeSidebar, object: nil)
-        }
-        .keyboardShortcut("s", modifiers: [.option, .command])
-      }
       HelpCommands()
     }
 
@@ -265,8 +267,8 @@ struct ContextifyApp: App {
     let monitor = FSEventsMonitor(paths: pathsToWatch, latency: 0.5)
     self.projectDirectoryMonitor = monitor
 
-    // Start monitoring in background task
-    let monitoringTask = Task { @MainActor in
+    // Start monitoring in background task (off MainActor to avoid UI blocking)
+    let monitoringTask = Task(priority: .utility) { [weak viewModel] in
       log.info("👀 Starting FSEvents monitoring for new projects")
       let stream = monitor.start()
 
@@ -281,14 +283,15 @@ struct ContextifyApp: App {
           // Debounce - wait a moment for files to be written
           try? await Task.sleep(for: .seconds(1))
 
-          // Re-discover projects
-          await viewModel.discoverProjects()
+          // Re-discover projects (hop to main for VM interaction)
+          guard let vm = viewModel else { continue }
+          await vm.discoverProjects()
           log.info("✅ Project discovery triggered by FSEvents")
         }
       }
     }
 
-    self.projectMonitoringTask = monitoringTask
+    AppLifecycleState.shared.projectMonitoringTask = monitoringTask
   }
 }
 
@@ -296,21 +299,10 @@ struct ProjectRootCommands: Commands {
   var body: some Commands {
     CommandGroup(after: .newItem) {
       Button("Open project...") { pickProjectRoot() }
-
-      Divider()
-
-      Button("Previous Project") {
-        Task { await ProjectSwitcherState.shared.switchToPreviousProject() }
-      }
-      .keyboardShortcut("[", modifiers: [.command, .shift])
-
-      Button("Next Project") {
-        Task { await ProjectSwitcherState.shared.switchToNextProject() }
-      }
-      .keyboardShortcut("]", modifiers: [.command, .shift])
     }
   }
 
+  @MainActor
   private func pickProjectRoot() {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false

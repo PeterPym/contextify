@@ -400,11 +400,6 @@ public final class HUDViewModel {
   // Track last posted path to avoid duplicate notifications (nit #2)
   private var lastPostedPath: String?
 
-  // Compose state (active as of 2025-10-02)
-  public var composeText: String = ""
-  public var targetSessionName: String? = nil
-  public var lastCapturedTerminalText: String? = nil
-
   private var branchTimer: Timer? = nil
   private let coalesceQueue = DispatchQueue(label: "dev.contextify.git-coalesce")
   private var pendingDrainAt: Date = .distantPast
@@ -902,23 +897,6 @@ public final class HUDViewModel {
   }
 
   // MARK: - Compose Methods
-
-  public func updateComposeText(_ text: String) {
-    composeText = text
-    lastCapturedTerminalText = text
-  }
-
-  public func refreshTargetSession() async {
-    // Import ITerm2Bridge will be handled in the app layer
-    // This is just a placeholder for now
-    targetSessionName = nil
-  }
-
-  public func sendToTerminal() async {
-    // Will be implemented in the app layer with ITerm2Bridge
-    // For now, just clear the text on "success"
-    composeText = ""
-  }
 
   private func startBranchMonitor(interval: TimeInterval = 2.0) {
     branchTimer?.invalidate()

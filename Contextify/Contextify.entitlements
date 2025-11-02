@@ -4,26 +4,9 @@
   <dict>
     <key>com.apple.security.app-sandbox</key>
     <false/>
-    <key>com.apple.security.automation.apple-events</key>
-    <true/>
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.get-task-allow</key>
     <true/>
-    <key>com.apple.security.temporary-exception.apple-events</key>
-    <array>
-      <string>com.googlecode.iterm2</string>
-    </array>
-    <key>com.apple.security.scripting-targets</key>
-    <dict>
-      <key>com.apple.systempreferences</key>
-      <array>
-        <string>com.apple.preference.security</string>
-      </array>
-      <key>com.googlecode.iterm2</key>
-      <array>
-        <string>com.apple.accessibility.api</string>
-      </array>
-    </dict>
   </dict>
 </plist>

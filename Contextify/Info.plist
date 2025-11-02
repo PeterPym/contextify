@@ -20,26 +20,7 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Contextify needs permission to control iTerm2 in order to send your composed text.</string>
-	<key>NSAccessibilityUsageDescription</key>
-	<string>Contextify needs accessibility access to capture text from your terminal for quick compose. This allows the global hotkey (Cmd+Shift+K+K) to read terminal content and send it to the compose window.</string>
-	<key>NSScreenCaptureUsageDescription</key>
-	<string>Contextify needs screen recording permission to read text content from your terminal window when using the global hotkey (Cmd+Shift+K+K).</string>
-	<key>NSInputMonitoringUsageDescription</key>
-	<string>Contextify needs to monitor keyboard input to detect the Cmd+Shift+K+K hotkey for quick compose.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>dev.contextify.url</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>contextify</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>

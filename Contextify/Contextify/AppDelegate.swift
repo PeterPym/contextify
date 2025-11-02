@@ -14,11 +14,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
-    // Register global hotkey (Shift+G+G)
-    Task { @MainActor in
-      GlobalHotkeyManager.shared.registerContextifyHotkey()
-    }
-
     // Perform comprehensive LLM health check
     Task {
       await performLLMHealthCheck()
@@ -31,14 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    // Unregister global hotkey
     Task { @MainActor in
-      GlobalHotkeyManager.shared.unregister()
+      // Cancel FSEvents monitoring task
+      AppLifecycleState.shared.projectMonitoringTask?.cancel()
     }
-  }
-
-  func application(_ application: NSApplication, open urls: [URL]) {
-    urls.forEach { ComposeURLRouter.handle($0) }
   }
 
   func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
