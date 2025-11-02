@@ -32,7 +32,8 @@ struct ContentView: View {
     @State private var workspaceObserver: NSObjectProtocol?
 
     // Sidebar visibility (replacing columnVisibility)
-    @AppStorage("ui.sidebarVisible") private var sidebarVisible: Bool = true
+    // NOTE: Sidebar hidden for v1.0 - compose panel removed from initial release
+    @AppStorage("ui.sidebarVisible") private var sidebarVisible: Bool = false
     @State private var isAnimatingSidebar = false
 
     // Persisted sidebar width (compose)
@@ -50,76 +51,19 @@ struct ContentView: View {
                 Divider()
             }
 
-            // Manual HStack layout (replaces NavigationSplitView for better control)
-            GeometryReader { geometry in
-                HStack(spacing: 0) {
-                    // Compose sidebar (conditionally visible)
-                    if sidebarVisible {
-                        SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                            VStack(alignment: .leading, spacing: 16) {
-                                headerWithoutComposeToggle
-                                Divider()
-                                composeSection
-                            }
-                        }
-                        .frame(width: effectiveComposeSidebarWidth(containerWidth: geometry.size.width))
-                        .transition(.move(edge: .leading))
+            // Project header (always visible for v1.0)
+            projectHeader
+            Divider()
 
-                        // Resizable divider
-                        SidebarGrabber(width: Binding(
-                            get: { self.composeSidebarWidth },
-                            set: { self.composeSidebarWidthStore = Double($0) }
-                        )) { dx in
-                            // Drag resize: adjust internal panel widths only, window stays fixed
-                            let containerWidth = geometry.size.width - 2 * Layout.containerPadding
-                            let overhead = Layout.grabberWidth + Layout.dividerThickness
-
-                            // Calculate requested new compose width
-                            let requestedComposeW = composeSidebarWidth + dx
-
-                            // Reserve space for timeline minimum (MUST protect timeline!)
-                            let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
-                            let maxComposeForWindow = containerWidth - overhead - timelineMin
-                            let newComposeW = requestedComposeW.clamped(Layout.composeMin, Swift.min(Layout.composeMax, maxComposeForWindow))
-
-                            // Update persisted width (window stays fixed size)
-                            composeSidebarWidthStore = Double(newComposeW)
-                        }
-
-                        Rectangle()
-                            .frame(width: Layout.dividerThickness)
-                            .foregroundStyle(.separator)
-                    }
-
-                    // Timeline (detail) - always visible, takes remaining space
-                    // ENFORCE minimum width to prevent crushing during drag
-                    SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                        ConversationTimelineView()
-                    }
-                    .frame(
-                        minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
-                        maxWidth: .infinity
-                    )
-                }
-                .padding(Layout.containerPadding)
-                .onChange(of: geometry.size.width) { _, newWidth in
-                    availableWidth = newWidth
-                }
+            // Timeline - full width, no sidebar
+            SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
+                ConversationTimelineView()
             }
-            .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    Button {
-                        toggleSidebar()
-                    } label: {
-                        Image(systemName: "sidebar.left")
-                    }
-                    .help(sidebarVisible ? "Hide sidebar" : "Show sidebar")
-                }
-            }
-            .task {
-                // Trigger window resize immediately to force layout
-                triggerWindowResize()
-            }
+            .frame(
+                minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
+                maxWidth: .infinity
+            )
+            .padding(Layout.containerPadding)
 
             // Status bar footer
             StatusBarView()
@@ -127,7 +71,7 @@ struct ContentView: View {
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
         .frame(
-            minWidth: sidebarVisible ? Layout.windowMinWidth : Layout.windowMinWidthCollapsed,
+            minWidth: Layout.timelineMin,  // Timeline-only minimum for v1.0
             minHeight: 360
         )
         .task {
@@ -153,9 +97,6 @@ struct ContentView: View {
                 setupWorkspaceMonitoring()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleComposeSidebar)) { _ in
-            toggleSidebar()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .contextifyShowToast)) { notification in
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
             let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval
@@ -177,6 +118,86 @@ struct ContentView: View {
                     withAnimation { showToast = false }
                 }
             }
+        }
+    }
+
+    // MARK: - Project Header (Extracted for v1.0)
+
+    /// Project header - always visible at top, extracted from sidebar for v1.0 release
+    private var projectHeader: some View {
+        HStack(spacing: 12) {
+            if let projectPath = model.projectRootURL?.path {
+                HStack(spacing: 4) {
+                    Button {
+                        let ok = pickProjectRoot()
+                        uiLog.info("Open project result=\(ok, privacy: .public)")
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open project...")
+
+                    Text(model.projectDisplayName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    ProjectBadgesView(projectPath: projectPath)
+                }
+                Label(model.branchDisplay, systemImage: "arrow.branch")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.secondary)
+            } else {
+                Button("Open project...") {
+                    let ok = pickProjectRoot()
+                    uiLog.info("Open project result=\(ok, privacy: .public)")
+                }
+                .buttonStyle(.link)
+                .accessibilityIdentifier("set-project-root")
+            }
+            Spacer()
+
+            // Developer-only test buttons (hidden by default)
+            if devMode.isEnabled {
+                Button(action: { showEmbeddingTest.toggle() }) {
+                    Image(systemName: "testtube.2")
+                }
+                .buttonStyle(.borderless)
+                .help("Test Embedding Service")
+
+                Button(action: { showDatabaseTest.toggle() }) {
+                    Image(systemName: "cylinder")
+                }
+                .buttonStyle(.borderless)
+                .help("Test Embedding Database")
+            }
+
+            Button(action: { showBatchEmbedding.toggle() }) {
+                Image(systemName: "gearshape.2")
+            }
+            .buttonStyle(.borderless)
+            .help("Batch Embedding Generation")
+
+            Button(action: { showSemanticSearch.toggle() }) {
+                Image(systemName: "magnifyingllass.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Semantic Search")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .sheet(isPresented: $showEmbeddingTest) {
+            EmbeddingTestView()
+        }
+        .sheet(isPresented: $showDatabaseTest) {
+            EmbeddingDatabaseTestView()
+        }
+        .sheet(isPresented: $showBatchEmbedding) {
+            BatchEmbeddingView()
+        }
+        .sheet(isPresented: $showSemanticSearch) {
+            SemanticSearchView()
         }
     }
 
