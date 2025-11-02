@@ -421,7 +421,7 @@ private struct Layout {
     static let animationDuration: TimeInterval = 0.25
 
     // LEFT side: Compose textarea
-    static let composeMin: CGFloat = 100  // Allow compose to shrink way down
+    static let composeMin: CGFloat = 172  // Minimum width for compose panel
     static let composeMax: CGFloat = 800
 
     // RIGHT side: Timeline/conversation log (PRIORITY - never crush this!)
