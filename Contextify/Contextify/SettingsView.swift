@@ -87,8 +87,16 @@ struct DatabaseSettingsView: View {
 
         // Current location display
         VStack(alignment: .leading, spacing: 8) {
-          Text("Current Location:")
-            .font(.subheadline)
+          HStack {
+            Text("Current Location:")
+              .font(.subheadline)
+            Spacer()
+            Button(action: { openDatabaseFolder() }) {
+              Label("Reveal in Finder", systemImage: "folder")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+          }
 
           Text(currentLocation)
             .font(.system(.caption, design: .monospaced))
@@ -117,39 +125,18 @@ struct DatabaseSettingsView: View {
           .disabled(isMigrating)
 
           if isCustomLocation {
-            // Quick presets
             VStack(alignment: .leading, spacing: 8) {
-              Text("Quick Presets:")
+              Text("Selecting a new location will move your database from its current location.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-              HStack(spacing: 8) {
-                if let dropboxPath = getDropboxPath() {
-                  Button(action: { migrateToPreset(dropboxPath, name: "Dropbox") }) {
-                    Label("Dropbox", systemImage: "cloud")
-                  }
-                  .buttonStyle(.bordered)
-                  .disabled(isMigrating)
-                }
-
-                if let iCloudPath = getICloudPath() {
-                  Button(action: { migrateToPreset(iCloudPath, name: "iCloud Drive") }) {
-                    Label("iCloud Drive", systemImage: "icloud")
-                  }
-                  .buttonStyle(.bordered)
-                  .disabled(isMigrating)
-                }
+              Button(action: { showingFilePicker = true }) {
+                Label("Choose Custom Location...", systemImage: "folder")
               }
+              .buttonStyle(.bordered)
+              .disabled(isMigrating)
             }
-
-            Divider()
-              .padding(.vertical, 4)
-
-            Button(action: { showingFilePicker = true }) {
-              Label("Choose Custom Location...", systemImage: "folder")
-            }
-            .buttonStyle(.bordered)
-            .disabled(isMigrating)
+            .padding(.top, 4)
           }
         }
 
@@ -176,23 +163,15 @@ struct DatabaseSettingsView: View {
             .padding(.top, 8)
         }
 
+        #if DEBUG
         Divider()
           .padding(.vertical, 8)
 
-        // Quick actions
-        HStack(spacing: 8) {
-          Button("Open Folder") {
-            openDatabaseFolder()
-          }
-          .buttonStyle(.bordered)
-
-          #if DEBUG
-          Button("Backup (Dev)") {
-            backupDatabase()
-          }
-          .buttonStyle(.bordered)
-          #endif
+        Button("Backup (Dev)") {
+          backupDatabase()
         }
+        .buttonStyle(.bordered)
+        #endif
       }
     }
     .padding()
@@ -368,73 +347,6 @@ struct DatabaseSettingsView: View {
     }
   }
 
-  // MARK: - Preset Locations
-
-  private func getDropboxPath() -> URL? {
-    let candidates = [
-      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Dropbox"),
-      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Dropbox (Personal)"),
-      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Dropbox (Work)")
-    ]
-
-    for path in candidates {
-      if FileManager.default.fileExists(atPath: path.path) {
-        return path.appendingPathComponent("Apps/Contextify")
-      }
-    }
-    return nil
-  }
-
-  private func getICloudPath() -> URL? {
-    // Only return iCloud path if we have the entitlement
-    guard let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: nil) else {
-      return nil
-    }
-    return iCloudURL.appendingPathComponent("Documents/Contextify")
-  }
-
-  private func migrateToPreset(_ url: URL, name: String) {
-    Task { @MainActor in
-      guard !isMigrating else { return }
-
-      // Use NSOpenPanel to get security-scoped access for sandboxed builds
-      let panel = NSOpenPanel()
-      panel.canChooseFiles = false
-      panel.canChooseDirectories = true
-      panel.canCreateDirectories = true
-      panel.allowsMultipleSelection = false
-      panel.directoryURL = url
-      panel.prompt = "Use Folder"
-      panel.message = "Contextify needs access to this folder to store its database."
-
-      if panel.runModal() == .OK, let grantedURL = panel.url {
-        var didStartScope = false
-        if Sandbox.isSandboxed {
-          guard grantedURL.startAccessingSecurityScopedResource() else {
-            migrationError = "Failed to access selected folder"
-            return
-          }
-          didStartScope = true
-        }
-
-        // Run the heavy migration work off the main thread
-        Task.detached(priority: .userInitiated) {
-          defer {
-            if didStartScope {
-              grantedURL.stopAccessingSecurityScopedResource()
-            }
-          }
-          await migrateDatabase(to: grantedURL)
-          await MainActor.run {
-            if migrationError == nil {
-              log.info("Migrated to \(name): \(grantedURL.path)")
-              loadCurrentLocation()
-            }
-          }
-        }
-      }
-    }
-  }
 }
 
 #Preview {
