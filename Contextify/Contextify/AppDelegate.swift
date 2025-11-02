@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // Unregister global hotkey
     Task { @MainActor in
       GlobalHotkeyManager.shared.unregister()
+
+      // Cancel FSEvents monitoring task
+      AppLifecycleState.shared.projectMonitoringTask?.cancel()
     }
   }
 

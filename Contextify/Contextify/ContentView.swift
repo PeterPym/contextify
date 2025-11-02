@@ -23,7 +23,14 @@ enum ActiveSheet: Identifiable {
     case batchEmbedding
     case semanticSearch
 
-    var id: Int { hashValue }
+    var id: String {
+        switch self {
+        case .embeddingTest: return "embeddingTest"
+        case .databaseTest: return "databaseTest"
+        case .batchEmbedding: return "batchEmbedding"
+        case .semanticSearch: return "semanticSearch"
+        }
+    }
 }
 
 struct ContentView: View {
@@ -35,6 +42,7 @@ struct ContentView: View {
     @Environment(ProjectSwitcherState.self) private var projectSwitcher
     @State private var showToast = false
     @State private var toastText = ""
+    @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
     @State private var workspaceObserver: NSObjectProtocol?
 
@@ -118,11 +126,7 @@ struct ContentView: View {
         }
         .onChange(of: model.state) { _, newState in
             if case .success(let msg) = newState {
-                toastText = msg
-                withAnimation { showToast = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    withAnimation { showToast = false }
-                }
+                presentToast(msg)
             }
         }
     }
@@ -352,6 +356,8 @@ struct ContentView: View {
                     Text(toastText)
                         .fixedSize(horizontal: false, vertical: true)  // Allow multiline
                     Button(action: {
+                        toastDismissTask?.cancel()
+                        toastDismissTask = nil
                         withAnimation { showToast = false }
                     }) {
                         Image(systemName: "xmark.circle.fill")
@@ -519,6 +525,7 @@ private extension ContentView {
     }
 
     @discardableResult
+    @MainActor
     func pickProjectRoot() -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -568,13 +575,18 @@ private extension ContentView {
     }
 
     func presentToast(_ message: String, duration: TimeInterval? = nil) {
+        // Cancel any existing auto-dismiss task to prevent premature hiding of new toast
+        toastDismissTask?.cancel()
+        toastDismissTask = nil
+
         toastText = message
         withAnimation { showToast = true }
         let autoDismissDuration = duration ?? 2  // Default 2 seconds
         if autoDismissDuration > 0 {
-            Task { @MainActor in
+            toastDismissTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(autoDismissDuration))
                 withAnimation { showToast = false }
+                toastDismissTask = nil
             }
         }
         // If duration is 0, toast persists until manually dismissed
