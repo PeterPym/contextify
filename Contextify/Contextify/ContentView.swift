@@ -126,7 +126,10 @@ struct ContentView: View {
         }
         .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
-        .frame(minWidth: 320, minHeight: 360)
+        .frame(
+            minWidth: sidebarVisible ? Layout.windowMinWidth : Layout.windowMinWidthCollapsed,
+            minHeight: 360
+        )
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -427,6 +430,15 @@ private struct Layout {
 
     static let containerPadding: CGFloat = 8
     static let cardPadding: CGFloat = 12
+
+    // Window minimum: sum of both panel minimums + overhead
+    static var windowMinWidth: CGFloat {
+        composeMin + timelineMin + grabberWidth + dividerThickness + (2 * containerPadding)
+    }
+
+    static var windowMinWidthCollapsed: CGFloat {
+        timelineMinCollapsed + (2 * containerPadding)
+    }
 }
 
 extension CGFloat {
