@@ -12,12 +12,8 @@ import OSLog
 import ContextifyCore
 private let uiLog = Logger(subsystem: "dev.contextify", category: "UI")
 
-extension Notification.Name {
-    static let toggleComposeSidebar = Notification.Name("toggleComposeSidebar")
-}
-
 // Sheet presentation options
-enum ActiveSheet: Identifiable {
+enum ActiveSheet: Identifiable, Sendable {
     case embeddingTest
     case databaseTest
     case batchEmbedding
@@ -45,16 +41,6 @@ struct ContentView: View {
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
     @State private var workspaceObserver: NSObjectProtocol?
-
-    // Sidebar visibility (replacing columnVisibility)
-    // NOTE: Sidebar hidden for v1.0 - compose panel removed from initial release
-    @AppStorage("ui.sidebarVisible") private var sidebarVisible: Bool = false
-    @State private var isAnimatingSidebar = false
-
-    // Persisted sidebar width (compose)
-    @AppStorage("ui.composeSidebarWidth") private var composeSidebarWidthStore: Double = 400
-    @State private var availableWidth: CGFloat = 1200  // Track window width for dynamic constraints
-    private var composeSidebarWidth: CGFloat { CGFloat(composeSidebarWidthStore).clamped(Layout.composeMin, Layout.composeMax) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -221,134 +207,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Legacy Compose/Sidebar (Dormant for v1.0 - Retained for v1.1)
-    // These components are not rendered when sidebarVisible = false
-    // To restore: set sidebarVisible = true, restore toolbar button/shortcut/observer
-
-    private var headerWithoutComposeToggle: some View {
-        HStack(spacing: 12) {
-            if let projectPath = model.projectRootURL?.path {
-                HStack(spacing: 4) {
-                    Button {
-                        let ok = pickProjectRoot()
-                        uiLog.info("Open project result=\(ok, privacy: .public)")
-                    } label: {
-                        Image(systemName: "folder")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Open project...")
-
-                    Text(model.projectDisplayName)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    ProjectBadgesView(projectPath: projectPath)
-                }
-                Label(model.branchDisplay, systemImage: "arrow.branch")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
-            } else {
-                Button("Open project...") {
-                    let ok = pickProjectRoot()
-                    uiLog.info("Open project result=\(ok, privacy: .public)")
-                }
-                .buttonStyle(.link)
-                .accessibilityIdentifier("set-project-root")
-            }
-            Spacer()
-
-            // Developer-only test buttons (hidden by default)
-            if devMode.isEnabled {
-              Button(action: { activeSheet = .embeddingTest }) {
-                  Image(systemName: "testtube.2")
-              }
-              .buttonStyle(.borderless)
-              .frame(minWidth: 28, minHeight: 28)
-              .contentShape(Rectangle())
-              .help("Test Embedding Service")
-
-              Button(action: { activeSheet = .databaseTest }) {
-                  Image(systemName: "cylinder")
-              }
-              .buttonStyle(.borderless)
-              .frame(minWidth: 28, minHeight: 28)
-              .contentShape(Rectangle())
-              .help("Test Embedding Database")
-            }
-
-            Button(action: { activeSheet = .batchEmbedding }) {
-                Image(systemName: "gearshape.2")
-            }
-            .buttonStyle(.borderless)
-            .frame(minWidth: 28, minHeight: 28)
-            .contentShape(Rectangle())
-            .help("Batch Embedding Generation")
-
-            Button(action: { activeSheet = .semanticSearch }) {
-                Image(systemName: "magnifyingglass.circle")
-            }
-            .buttonStyle(.borderless)
-            .frame(minWidth: 28, minHeight: 28)
-            .contentShape(Rectangle())
-            .help("Semantic Search")
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .embeddingTest:
-                EmbeddingTestView()
-            case .databaseTest:
-                EmbeddingDatabaseTestView()
-            case .batchEmbedding:
-                BatchEmbeddingView()
-            case .semanticSearch:
-                SemanticSearchView()
-            }
-        }
-    }
-
-    private var composeSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Session header
-            HStack {
-                Text("Send to:")
-                    .foregroundStyle(.secondary)
-                if let sessionName = model.targetSessionName {
-                    Text("✳ \(sessionName)")
-                        .font(.system(.body, design: .monospaced))
-                } else {
-                    Text("iTerm2 (not running)")
-                        .foregroundStyle(.tertiary)
-                }
-                Button(action: { Task { await refreshSession() } }) {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.plain)
-                .help("Refresh iTerm2 session")
-                Spacer()
-            }
-            .font(.subheadline)
-
-            // Text area
-            FocusableTextView(text: Binding(
-                get: { model.composeText },
-                set: { model.composeText = $0 }
-            ))
-            .frame(minHeight: 120)
-
-            // Send button
-            HStack {
-                Spacer()
-                Button("Send") {
-                    Task { await sendToTerminal() }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(model.composeText.isEmpty)
-            }
-        }
-    }
-
     private var toast: some View {
         Group {
             if showToast {
@@ -376,49 +234,6 @@ struct ContentView: View {
 }
 
 #Preview { ContentView().environment(HUDViewModel()) }
-
-// MARK: - Sidebar Grabber (Dormant - not instantiated when sidebarVisible = false)
-
-private struct SidebarGrabber: View {
-    @Binding var width: CGFloat
-    var onDragDelta: ((CGFloat) -> Void)? = nil
-
-    @State private var lastX: CGFloat?
-
-    var body: some View {
-        ZStack {
-            // Wide invisible hit area
-            Rectangle()
-                .fill(Color.clear)
-                .frame(width: Layout.grabberWidth)
-                .contentShape(Rectangle())
-
-            // Thin visible divider line
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor))
-                .frame(width: Layout.dividerThickness)
-        }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    if let last = lastX {
-                        let dx = value.location.x - last
-                        onDragDelta?(dx)
-                    }
-                    lastX = value.location.x
-                }
-                .onEnded { _ in lastX = nil }
-        )
-        .onHover { hovering in
-            if hovering {
-                NSCursor.resizeLeftRight.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-        .accessibilityIdentifier("sidebar-grabber")
-    }
-}
 
 // MARK: - Shared Surface
 
@@ -468,62 +283,20 @@ private extension View {
     }
 }
 
-// MARK: - Sidebar Toggle & Window Resizing
+// MARK: - Layout Constants
 
 private struct Layout {
     static let dividerThickness: CGFloat = 1
-    static let grabberWidth: CGFloat = 10  // Wide hit area for easy grabbing
-    static let animationDuration: TimeInterval = 0.25
 
-    // LEFT side: Compose textarea
-    static let composeMin: CGFloat = 172  // Minimum width for compose panel
-    static let composeMax: CGFloat = 800
-
-    // RIGHT side: Timeline/conversation log (PRIORITY - never crush this!)
+    // Timeline/conversation log
     static let timelineMin: CGFloat = 340  // User requirement: timeline min 340px
     static let timelineMinCollapsed: CGFloat = 52
 
     static let containerPadding: CGFloat = 8
     static let cardPadding: CGFloat = 12
-
-    // Window minimum: sum of both panel minimums + overhead
-    static var windowMinWidth: CGFloat {
-        composeMin + timelineMin + grabberWidth + dividerThickness + (2 * containerPadding)
-    }
-
-    static var windowMinWidthCollapsed: CGFloat {
-        timelineMinCollapsed + (2 * containerPadding)
-    }
-}
-
-extension CGFloat {
-    func clamped(_ min: CGFloat, _ max: CGFloat) -> CGFloat {
-        Swift.max(min, Swift.min(self, max))
-    }
 }
 
 private extension ContentView {
-    @MainActor
-    func currentWindow() -> NSWindow? {
-        if let w = MainWindowTracker.shared.window, w.isVisible { return w }
-        return NSApp.keyWindow ?? NSApp.mainWindow
-    }
-
-    @MainActor
-    func visibleFrame(for window: NSWindow) -> CGRect {
-        window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
-    }
-
-    @MainActor
-    func clampedSidebarWidth(_ w: CGFloat) -> CGFloat {
-        w.clamped(Layout.composeMin, Layout.composeMax)
-    }
-
-    @MainActor
-    func clampedWindowWidth(_ requested: CGFloat, in vis: CGRect, min minWidth: CGFloat) -> CGFloat {
-        return Swift.max(minWidth, Swift.min(requested, vis.width))
-    }
-
     @discardableResult
     @MainActor
     func pickProjectRoot() -> Bool {
@@ -554,26 +327,6 @@ private extension ContentView {
         model.targetSessionName = await ITerm2Bridge.getCurrentSessionName()
     }
 
-    func sendToTerminal() async {
-        let textToSend = model.composeText
-        let currentLine = await TerminalContentReader.shared.captureCurrentLineFast()
-
-        if let currentLine, !currentLine.isEmpty {
-            TerminalTextHistory.shared.push(currentLine)
-        }
-
-        let result = await ITerm2Bridge.send(text: textToSend, newline: false, mode: .replace(existingLine: currentLine))
-        switch result {
-        case .success:
-            model.lastCapturedTerminalText = textToSend
-            model.composeText = ""
-            presentToast("Sent to iTerm2 (Cmd+Z to undo)")
-            TimelineIntegration.shared.requestManualRefresh(trigger: .hudSend)
-        case .failure(let error):
-            presentToast("Failed: \(error.localizedDescription)")
-        }
-    }
-
     func presentToast(_ message: String, duration: TimeInterval? = nil) {
         // Cancel any existing auto-dismiss task to prevent premature hiding of new toast
         toastDismissTask?.cancel()
@@ -590,25 +343,6 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
-    }
-
-    // MARK: - Dormant Sidebar Layout Functions (unused when sidebarVisible = false)
-
-    /// Calculate effective compose sidebar width, protecting timeline minimum
-    func effectiveComposeSidebarWidth(containerWidth: CGFloat) -> CGFloat {
-        let overhead = Layout.grabberWidth + Layout.dividerThickness
-        let timelineMin = timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin
-
-        // Maximum compose width that still protects timeline
-        let maxComposeForContainer = containerWidth - 2 * Layout.containerPadding - overhead - timelineMin
-
-        // Clamp to both user preference and space available
-        let effectiveWidth = composeSidebarWidth.clamped(
-            Layout.composeMin,
-            Swift.min(Layout.composeMax, maxComposeForContainer)
-        )
-
-        return effectiveWidth
     }
 
     func cleanupWorkspaceMonitoring() {
@@ -650,80 +384,5 @@ private extension ContentView {
         }
 
         uiLog.debug("Workspace observer set up for iTerm2 activation")
-    }
-
-    @MainActor
-    func triggerWindowResize() {
-        guard let window = NSApp.windows.first else {
-            uiLog.warning("No window found for resize trigger")
-            return
-        }
-
-        let originalFrame = window.frame
-        var nudgedFrame = originalFrame
-        nudgedFrame.size.width += 1  // Minimal 1-pixel nudge
-
-        // Resize with animation disabled to make it invisible
-        window.setFrame(nudgedFrame, display: true, animate: false)
-
-        // Wait just long enough for layout to recalculate, then restore
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(50))
-            window.setFrame(originalFrame, display: true, animate: false)
-            uiLog.debug("Window resize trigger completed")
-        }
-    }
-
-    @MainActor
-    func toggleSidebar() {
-        guard let window = currentWindow() else {
-            sidebarVisible.toggle()
-            uiLog.warning("No window found for sidebar toggle")
-            return
-        }
-
-        // Coalesce rapid toggles
-        guard !isAnimatingSidebar else { return }
-        isAnimatingSidebar = true
-        defer {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Layout.animationDuration) {
-                self.isAnimatingSidebar = false
-            }
-        }
-
-        // Capture current state
-        let frame = window.frame
-        let visFrame = visibleFrame(for: window)
-        let rightEdgeX = frame.maxX
-
-        let sidebarWidth = clampedSidebarWidth(composeSidebarWidth) + Layout.dividerThickness
-
-        // Compute target width (anchored right)
-        let requestedWidth = sidebarVisible ? (frame.width - sidebarWidth)   // hiding → shrink
-                                            : (frame.width + sidebarWidth)   // showing → grow
-        // Timeline will enforce its own minimum, so just use a small floor for window
-        let minWindowWidth = (sidebarVisible ? 0 : sidebarWidth) + 100 + 2 * Layout.containerPadding
-        let newWidth = clampedWindowWidth(requestedWidth, in: visFrame, min: minWindowWidth)
-
-        var newOriginX = rightEdgeX - newWidth
-        if newOriginX < visFrame.minX { newOriginX = visFrame.minX }  // don't go off left
-
-        let newFrame = CGRect(x: newOriginX, y: frame.origin.y, width: newWidth, height: frame.height)
-
-        // Start both animations on same tick
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = Layout.animationDuration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().setFrame(newFrame, display: true)
-
-            // Kick off SwiftUI animation concurrently
-            DispatchQueue.main.async {
-                withAnimation(.easeInOut(duration: Layout.animationDuration)) {
-                    self.sidebarVisible.toggle()
-                }
-            }
-        }
-
-        uiLog.info("Sidebar \(sidebarVisible ? "→ hidden" : "→ visible"); window \(Int(frame.width))→\(Int(newWidth)) (anchored right)")
     }
 }

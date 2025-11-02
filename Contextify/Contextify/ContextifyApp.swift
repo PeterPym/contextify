@@ -108,7 +108,7 @@ struct ContextifyApp: App {
           await initializeProjectsSystem()
         }
     }
-    .defaultSize(width: 1200, height: 360)  // Sidebar (520) + Detail (600) + padding
+    .defaultSize(width: 1200, height: 360)  // Timeline-only default for v1.0
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
