@@ -4,6 +4,55 @@ This document tracks work items for Contextify, organized by priority and catego
 
 ---
 
+## ⚠️ Removed Features (App Store Compliance)
+
+### iTerm2/Terminal Integration - REMOVED 2025-11-01
+**Status:** 🔴 **REMOVED** (commit `35ce380`)
+
+**What Was Removed:**
+- All terminal integration code (11 Swift files, ~1,866 lines)
+  - `ITerm2Bridge.swift`, `ITerm2DaemonClient.swift`, `TerminalContentReader.swift`
+  - `GlobalHotkeyManager.swift` (Cmd+Shift+K+K hotkey system)
+  - `ComposeWindowManager.swift`, `ComposeURLRouter.swift`
+- Python runtime bundle (~6MB: iterm2, protobuf, websockets)
+- macOS entitlements that would block App Store approval:
+  - `com.apple.security.automation.apple-events` (AppleScript/iTerm2 control)
+
+**Permissions That Were Required** (for reference if re-implemented):
+```xml
+<!-- In project.pbxproj or Info.plist -->
+<key>NSAppleEventsUsageDescription</key>
+<string>Contextify needs permission to control iTerm2 in order to send your composed text.</string>
+
+<key>NSAccessibilityUsageDescription</key>
+<string>Contextify needs accessibility access to capture text from your terminal for quick compose.</string>
+
+<key>NSScreenCaptureUsageDescription</key>
+<string>Contextify needs screen recording permission to read text content from your terminal window.</string>
+
+<key>NSInputMonitoringUsageDescription</key>
+<string>Contextify needs to monitor keyboard input to detect the Cmd+Shift+K+K hotkey.</string>
+```
+
+**Why Removed:**
+- App Store rejection risk due to unnecessary entitlements
+- Compose panel hidden for v1.0 (see "feat/hide-compose-panel" branch)
+- Focus shifted to timeline/conversation monitoring (core value prop)
+
+**If Re-implementing:**
+1. Add back required entitlements to `Contextify.entitlements`
+2. Add permission descriptions to `project.pbxproj` (INFOPLIST_KEY_* settings)
+3. Restore Python daemon for iTerm2 API (see `build/notes/archive/2025-10-03-python-daemon.md`)
+4. Re-enable compose window infrastructure
+5. Test notarization with new entitlements (may require justification to Apple)
+
+**Related Documentation:**
+- Removal commit message: `35ce380` (Nov 1, 2025)
+- Python daemon implementation: `build/notes/archive/2025-10-03-python-daemon.md`
+- Original compose design: `build/notes/archive/2025-10-02-compose-panel.md`
+
+---
+
 ## 🔴 Critical - Build & Infrastructure
 
 ### ~~Bundle Daemon Resources in App~~ → Venv Auto-Repair
@@ -255,6 +304,9 @@ This document tracks work items for Contextify, organized by priority and catego
 ---
 
 ## 🟢 Nice to Have - Compose Features
+
+> ⚠️ **NOTE:** These features require iTerm2/terminal integration (removed 2025-11-01 for App Store compliance).
+> See "Removed Features" section above for re-implementation guidance.
 
 ### Global Hotkey Focus Textarea
 **Priority:** P1

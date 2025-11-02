@@ -143,7 +143,15 @@ Common commands:
 
 **For detailed debugging workflows:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
 
-**Build output:** `.derived/Build/Products/Debug/Contextify.app`
+**Release workflow (macOS only):**
+- Build Release configuration: `make build-release` or `bash scripts/xc.sh Release build`
+- Sign and create DMG: `make sign-dmg` (production) or `make sign-dmg-no-notarize` (testing)
+- Full release automation: `make release` (interactive workflow)
+- Preview release: `make release-dry-run` (shows what would happen)
+- ⚠️  **IMPORTANT:** Default `make build` uses **Debug** configuration. Always use `make build-release` for distribution!
+- **Detailed guide:** See `scripts/RELEASE.md` for complete release documentation
+
+**Build output:** `.derived/Build/Products/Debug/Contextify.app` (Debug) or `.derived/Build/Products/Release/Contextify.app` (Release)
 
 - Logs/Results: script writes logs to `build/logs/` and result bundles to `build/ResultBundles/`. Use these for error triage; builds fail fast on non-zero.
 - Direct (beta): `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Contextify/Contextify.xcodeproj -scheme Contextify -destination 'platform=macOS' build`
