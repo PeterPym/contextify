@@ -53,10 +53,25 @@ The LLM is supposed to replace `[infer from message]` with actual content, but s
 - Context-dependent requests ("the project tab bar issue")
 - Informal/casual phrasing that doesn't match patterns
 
-**Investigation Needed:**
-1. **Log intent classification results** to see which messages are classified as `.unknown`
-2. **Sample real user messages** from database to identify common unmatched patterns
-3. **Test if LLM is actually replacing the placeholder** or if it's passing through
+**Database Analysis Tools:**
+📊 **NEW:** Comprehensive analysis workflow to survey existing database and identify missing patterns:
+
+```bash
+# 1. Survey database for all placeholder instances
+./scripts/analyze_intent_classification.sh
+
+# 2. Generate pattern recommendations from real user messages
+python3 scripts/generate_intent_improvements.py build/analysis/intent-classification-data-TIMESTAMP.csv
+```
+
+**Documentation:** `build/notes/technical-reference/intent-classification-analysis.md`
+
+The analysis tools will:
+1. Query all timeline cache entries with "infer from message" placeholder
+2. Extract the original user messages that triggered `.unknown` classification
+3. Identify missing imperative verbs, statement patterns, and terse commands
+4. Generate specific Swift code additions for `classifyUserIntent()`
+5. Provide before/after metrics for validation
 
 **Possible Solutions:**
 
@@ -85,25 +100,34 @@ If intent is `.unknown`, make a second LLM call to classify intent before summar
 Don't provide a template for `.unknown` - let the LLM use generic "You [action]" format without guidance.
 
 **Recommended Approach:**
-1. Start with **Option A** - Add 10-15 more common patterns (1 hour)
-2. Monitor logs to see if it reduces `.unknown` frequency
-3. If still frequent, try **Option B** - Better prompt without placeholder
-4. If persistent, investigate if LLM is ignoring instructions (**Option D**)
+1. **Run database analysis** - Use the analysis scripts to survey real user messages (5 min)
+2. **Implement Option A** - Add missing patterns identified by the analysis (30 min)
+3. **Invalidate affected cache** - Clear timeline cache entries with placeholders to force regeneration
+4. **Test and re-analyze** - Run analysis again to measure improvement
+5. If still frequent (>5%), try **Option B** - Better prompt without placeholder
+6. If persistent, investigate if LLM is ignoring instructions (**Option D**)
 
 **Files to Modify:**
 - `Contextify/Contextify/FoundationLLM.swift:282-375` - `classifyUserIntent()`
 - `Contextify/Contextify/FoundationLLM.swift:1109` - Template for UNKNOWN intent
 
 **Testing:**
-1. Add logging to see intent classification distribution
-2. Query database for messages with "infer from message" in summary
-3. Test new patterns against real user messages
-4. Verify summaries no longer show placeholder
+1. **Baseline measurement** - Run `./scripts/analyze_intent_classification.sh` before changes
+2. **Implement improvements** - Add patterns and update prompt template
+3. **Invalidate cache** - Clear affected timeline cache entries
+4. **Rebuild and test** - `make build` and use the app normally
+5. **Re-measure** - Run analysis script again to verify improvement
+6. **Manual review** - Check timeline summaries for quality
 
 **Success Criteria:**
 - Less than 5% of user messages classified as `.unknown`
 - Zero summaries containing "infer from message" placeholder
 - Summaries accurately reflect user intent
+
+**Analysis Scripts:**
+- `scripts/analyze_intent_classification.sh` - Survey database and generate report
+- `scripts/generate_intent_improvements.py` - Extract patterns and recommend code changes
+- **Docs:** `build/notes/technical-reference/intent-classification-analysis.md`
 
 ---
 
