@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import OSLog
+import IOKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseMetadata")
 
@@ -89,7 +90,7 @@ public enum DatabaseAccessTracker {
   /// Retrieves hardware UUID from IOKit
   private static func getMachineUUID() -> String? {
     let platformExpert = IOServiceGetMatchingService(
-      kIOMainPortDefault,
+      kIOMasterPortDefault,
       IOServiceMatching("IOPlatformExpertDevice")
     )
 

@@ -237,4 +237,20 @@ public final class DatabaseManager: @unchecked Sendable {
     }
   }
 
+  /// Closes the current database connection (used for migrations)
+  public func closeDatabase() {
+    poolLock.lock()
+    defer { poolLock.unlock() }
+
+    if let pool = _pool {
+      // Run a checkpoint to flush WAL to main database
+      try? pool.writeWithoutTransaction { db in
+        try db.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+      }
+      log.info("Database connection closed for migration")
+    }
+
+    _pool = nil  // Release the pool, connection will be closed
+  }
+
 }

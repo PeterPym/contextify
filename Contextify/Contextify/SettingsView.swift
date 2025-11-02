@@ -273,13 +273,15 @@ struct DatabaseSettingsView: View {
     case .success(let urls):
       guard let url = urls.first else { return }
 
+      // Start accessing security-scoped resource
       guard url.startAccessingSecurityScopedResource() else {
         migrationError = "Failed to access selected folder"
         return
       }
-      defer { url.stopAccessingSecurityScopedResource() }
 
+      // Migrate with resource access, then stop when done
       Task {
+        defer { url.stopAccessingSecurityScopedResource() }
         await migrateDatabase(to: url)
       }
 
@@ -317,8 +319,9 @@ struct DatabaseSettingsView: View {
           .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
           .appendingPathComponent("Contextify")
 
-        HUDPreferences.clearCustomDatabaseLocation()
+        // Migrate FIRST, then clear preference on success
         try await DatabaseMigration.migrateDatabase(to: defaultDir, deleteSource: false)
+        HUDPreferences.clearCustomDatabaseLocation()
         loadCurrentLocation()
         log.info("Database reset to default location")
       } catch {

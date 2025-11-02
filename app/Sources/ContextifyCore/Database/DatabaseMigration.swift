@@ -38,18 +38,22 @@ public enum DatabaseMigration {
   public static func migrateDatabase(to targetDirectory: URL, deleteSource: Bool = false) async throws {
     log.info("🔄 Starting database migration to: \(targetDirectory.path)")
 
-    // 1. Close existing database connection
-    try await closeDatabaseConnection()
-
-    // 2. Get current database location
+    // 1. Get current database location BEFORE closing connection
     let sourcePath = try DatabaseManager.shared.databasePath()
     let sourceDir = sourcePath.deletingLastPathComponent()
 
+    // 2. Close existing database connection to release file locks
+    DatabaseManager.shared.closeDatabase()
+
+    // Wait a moment for connection to fully close
+    try await Task.sleep(for: .milliseconds(100))
+
+    // 3. Verify source exists
     guard FileManager.default.fileExists(atPath: sourcePath.path) else {
       throw MigrationError.sourceNotFound
     }
 
-    // 3. Prepare target location
+    // 4. Prepare target location
     let targetPath = targetDirectory.appendingPathComponent("contextify.db")
 
     // Check if target already exists
@@ -63,7 +67,7 @@ public enum DatabaseMigration {
       withIntermediateDirectories: true
     )
 
-    // 4. Check available disk space
+    // 5. Check available disk space
     let dbSize = try databaseSize(at: sourcePath)
     let availableSpace = try availableDiskSpace(at: targetDirectory)
 
@@ -71,7 +75,7 @@ public enum DatabaseMigration {
       throw MigrationError.insufficientSpace(required: dbSize * 2, available: availableSpace)
     }
 
-    // 5. Copy database files
+    // 6. Copy database files
     log.info("📦 Copying database files (\(ByteCountFormatter.string(fromByteCount: dbSize, countStyle: .file)))...")
 
     do {
@@ -99,10 +103,10 @@ public enum DatabaseMigration {
       throw MigrationError.copyFailed(underlying: error)
     }
 
-    // 6. Update preference to use new location
+    // 7. Update preference to use new location
     HUDPreferences.setCustomDatabaseLocation(targetDirectory)
 
-    // 7. Reopen database at new location and validate
+    // 8. Reopen database at new location and validate
     log.info("✅ Verifying migrated database...")
 
     do {
@@ -116,7 +120,7 @@ public enum DatabaseMigration {
       throw MigrationError.validationFailed
     }
 
-    // 8. Delete source if requested
+    // 9. Delete source if requested
     if deleteSource {
       log.info("🗑 Deleting source database...")
       try? FileManager.default.removeItem(at: sourcePath)
@@ -125,13 +129,6 @@ public enum DatabaseMigration {
     }
 
     log.info("✅ Database migration complete")
-  }
-
-  /// Closes the database connection
-  private static func closeDatabaseConnection() async throws {
-    // DatabaseManager doesn't expose a close method, so we'll just let the pool be recreated
-    // The connection will be closed when the pool is deallocated
-    log.debug("Closing database connection...")
   }
 
   /// Calculates total size of database files
