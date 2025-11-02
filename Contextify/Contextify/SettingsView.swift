@@ -294,27 +294,37 @@ struct DatabaseSettingsView: View {
   }
 
   private func migrateDatabase(to targetDirectory: URL) async {
-    isMigrating = true
-    migrationError = nil
+    await MainActor.run {
+      isMigrating = true
+      migrationError = nil
+    }
 
     do {
       try await DatabaseMigration.migrateDatabase(to: targetDirectory, deleteSource: false)
-      loadCurrentLocation()
+      await MainActor.run {
+        loadCurrentLocation()
+      }
       log.info("Database migrated successfully to: \(targetDirectory.path)")
     } catch {
       log.error("Migration failed: \(error)")
-      migrationError = error.localizedDescription
+      await MainActor.run {
+        migrationError = error.localizedDescription
+      }
     }
 
-    isMigrating = false
+    await MainActor.run {
+      isMigrating = false
+    }
   }
 
   private func resetToDefaultLocation() {
     guard HUDPreferences.getCustomDatabaseLocation() != nil else { return }
 
     Task {
-      isMigrating = true
-      migrationError = nil
+      await MainActor.run {
+        isMigrating = true
+        migrationError = nil
+      }
 
       do {
         let defaultDir = try FileManager.default
@@ -324,14 +334,20 @@ struct DatabaseSettingsView: View {
         // Migrate FIRST, then clear preference on success
         try await DatabaseMigration.migrateDatabase(to: defaultDir, deleteSource: false)
         HUDPreferences.clearCustomDatabaseLocation()
-        loadCurrentLocation()
+        await MainActor.run {
+          loadCurrentLocation()
+        }
         log.info("Database reset to default location")
       } catch {
         log.error("Reset to default failed: \(error)")
-        migrationError = error.localizedDescription
+        await MainActor.run {
+          migrationError = error.localizedDescription
+        }
       }
 
-      isMigrating = false
+      await MainActor.run {
+        isMigrating = false
+      }
     }
   }
 

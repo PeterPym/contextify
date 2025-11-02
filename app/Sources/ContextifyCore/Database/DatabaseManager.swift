@@ -11,11 +11,22 @@ public final class DatabaseManager: @unchecked Sendable {
 
   private let poolLock = NSLock()
   private var _pool: DatabasePool?
+  private var securityScopedDirURL: URL?
+  private var isMigrationInProgress = false
 
   public var pool: DatabasePool {
     get throws {
       poolLock.lock()
       defer { poolLock.unlock() }
+
+      // Block pool access during migration to prevent race conditions
+      if isMigrationInProgress {
+        throw NSError(
+          domain: "dev.contextify.DatabaseManager",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Database is being migrated"]
+        )
+      }
 
       if let pool = _pool {
         return pool
@@ -30,6 +41,27 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
+    // Start security-scoped access if using bookmark (sandboxed builds)
+    if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
+      // Only start if not already accessing this URL
+      if securityScopedDirURL != bookmarkURL {
+        // Stop previous scope if different URL
+        if let previousURL = securityScopedDirURL {
+          previousURL.stopAccessingSecurityScopedResource()
+        }
+
+        guard bookmarkURL.startAccessingSecurityScopedResource() else {
+          throw NSError(
+            domain: "dev.contextify.DatabaseManager",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Failed to access security-scoped directory"]
+          )
+        }
+        securityScopedDirURL = bookmarkURL
+        log.debug("Started security-scoped access: \(bookmarkURL.path)")
+      }
+    }
+
     let dbPath = try databasePath()
     log.info("Opening database at: \(dbPath.path)")
 
@@ -237,6 +269,13 @@ public final class DatabaseManager: @unchecked Sendable {
     }
   }
 
+  /// Sets migration in progress flag to block pool access during migration
+  public func setMigrationInProgress(_ inProgress: Bool) {
+    poolLock.lock()
+    defer { poolLock.unlock() }
+    isMigrationInProgress = inProgress
+  }
+
   /// Closes the current database connection (used for migrations)
   public func closeDatabase() {
     poolLock.lock()
@@ -251,6 +290,13 @@ public final class DatabaseManager: @unchecked Sendable {
     }
 
     _pool = nil  // Release the pool, connection will be closed
+
+    // Stop security-scoped access
+    if let url = securityScopedDirURL {
+      url.stopAccessingSecurityScopedResource()
+      securityScopedDirURL = nil
+      log.debug("Stopped security-scoped access: \(url.path)")
+    }
   }
 
 }

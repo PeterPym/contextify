@@ -38,22 +38,29 @@ public enum DatabaseMigration {
   public static func migrateDatabase(to targetDirectory: URL, deleteSource: Bool = false) async throws {
     log.info("🔄 Starting database migration to: \(targetDirectory.path)")
 
-    // 1. Get current database location BEFORE closing connection
+    // 1. Set migration flag to block pool re-opens during migration
+    DatabaseManager.shared.setMigrationInProgress(true)
+    defer {
+      // Always clear flag on exit (success or error)
+      DatabaseManager.shared.setMigrationInProgress(false)
+    }
+
+    // 2. Get current database location BEFORE closing connection
     let sourcePath = try DatabaseManager.shared.databasePath()
     let sourceDir = sourcePath.deletingLastPathComponent()
 
-    // 2. Close existing database connection to release file locks
+    // 3. Close existing database connection to release file locks
     DatabaseManager.shared.closeDatabase()
 
     // Wait a moment for connection to fully close
     try await Task.sleep(for: .milliseconds(100))
 
-    // 3. Verify source exists
+    // 4. Verify source exists
     guard FileManager.default.fileExists(atPath: sourcePath.path) else {
       throw MigrationError.sourceNotFound
     }
 
-    // 4. Prepare target location
+    // 5. Prepare target location
     let targetPath = targetDirectory.appendingPathComponent("contextify.db")
 
     // Check if target already exists
@@ -67,7 +74,7 @@ public enum DatabaseMigration {
       withIntermediateDirectories: true
     )
 
-    // 5. Check available disk space
+    // 6. Check available disk space
     let dbSize = try databaseSize(at: sourcePath)
     let availableSpace = try availableDiskSpace(at: targetDirectory)
 
@@ -75,7 +82,7 @@ public enum DatabaseMigration {
       throw MigrationError.insufficientSpace(required: dbSize * 2, available: availableSpace)
     }
 
-    // 6. Copy main database file only (WAL/SHM intentionally not copied)
+    // 7. Copy main database file only (WAL/SHM intentionally not copied)
     // The pool was checkpointed and closed, so the main DB file is complete
     log.info("📦 Copying database file (\(ByteCountFormatter.string(fromByteCount: dbSize, countStyle: .file)))...")
 
@@ -87,16 +94,22 @@ public enum DatabaseMigration {
       throw MigrationError.copyFailed(underlying: error)
     }
 
-    // 7. Update preference to use new location
+    // 8. Update preference to use new location
     HUDPreferences.setCustomDatabaseLocation(targetDirectory)
 
-    // 8. Reopen database at new location and validate
+    // 9. Reopen database at new location and validate
     log.info("✅ Verifying migrated database...")
 
     do {
       let pool = try DatabaseManager.shared.pool
-      try await pool.read { db in
-        try db.execute(sql: "PRAGMA quick_check")
+      let checkResult = try await pool.read { db in
+        try String.fetchOne(db, sql: "PRAGMA quick_check")
+      }
+
+      // Assert that quick_check returned "ok"
+      guard checkResult == "ok" else {
+        log.error("Database validation failed: \(checkResult ?? "nil")")
+        throw MigrationError.validationFailed
       }
     } catch {
       // Rollback: clear custom location to go back to source
@@ -104,7 +117,7 @@ public enum DatabaseMigration {
       throw MigrationError.validationFailed
     }
 
-    // 9. Delete source if requested
+    // 10. Delete source if requested
     if deleteSource {
       log.info("🗑 Deleting source database...")
       try? FileManager.default.removeItem(at: sourcePath)
