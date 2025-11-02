@@ -46,7 +46,28 @@ Allow users to configure where Contextify stores its database file, enabling clo
 
 ---
 
+## Distribution Strategy
+
+**Dual Build Support:** Release (DMG) + App Store (sandboxed)
+
+- **Release/DMG builds:** Direct filesystem access, no bookmarks needed
+- **App Store builds:** Sandboxed, requires security-scoped bookmarks
+- **Same codebase:** Runtime detection via `isSandboxed()` adapts behavior
+- **Two entitlements files:** `Contextify.entitlements` (sandbox=false), `Contextify-AppStore.entitlements` (sandbox=true)
+
+---
+
 ## Technical Design
+
+### 0. Runtime Sandbox Detection
+
+```swift
+func isSandboxed() -> Bool {
+    ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+}
+```
+
+All code paths check `isSandboxed()` to determine whether to use direct file access (Release) or bookmarks (App Store).
 
 ### 1. Database Location Storage
 
@@ -295,22 +316,57 @@ Contextify will sync changes, but concurrent editing may cause conflicts.
 - [ ] Warning appears when opening DB from different machine
 - [ ] Refresh action reloads timeline correctly
 
-### Phase 4: Sandbox Compatibility (2 hours)
-**Goal:** Support sandboxed builds with security-scoped bookmarks
+### Phase 4: BookmarkManager Foundation (3 hours)
+**Goal:** Create unified bookmark infrastructure for all external directories
 
 **Tasks:**
-1. Store security-scoped bookmarks for custom locations
-2. Resolve bookmarks on app launch
-3. Handle bookmark invalidation gracefully
+1. Create `BookmarkManager.swift` with runtime sandbox detection
+2. Support bookmarks for database location, Claude projects, Codex projects
+3. Integrate with `DatabaseManager` for custom DB location
+4. Add App Store entitlements file (`Contextify-AppStore.entitlements`)
+
+**Files to Create:**
+- `app/Sources/ContextifyCore/BookmarkManager.swift`
+- `Contextify/Contextify-AppStore.entitlements`
 
 **Files to Modify:**
-- `app/Sources/ContextifyCore/HUDPreferences.swift`
 - `app/Sources/ContextifyCore/Database/DatabaseManager.swift`
+- `Contextify/Contextify/SettingsView.swift`
 
 **Testing:**
-- [ ] Bookmark is created when selecting custom location
-- [ ] Bookmark is resolved correctly on app launch
-- [ ] Graceful fallback if bookmark becomes invalid
+- [ ] Runtime sandbox detection works correctly
+- [ ] Bookmarks created/resolved in sandboxed builds
+- [ ] Direct access works in non-sandboxed builds
+- [ ] Database location persists across app restarts
+
+### Phase 5: Project Discovery Sandbox Support (4 hours)
+**Goal:** Enable project discovery in App Store builds with bookmarks
+
+**Tasks:**
+1. Add first-launch setup wizard for App Store builds
+2. Request bookmarks for `~/.claude/projects` and `~/.codex/projects`
+3. Integrate `BookmarkManager` with `ProjectDiscoveryService`
+4. Integrate `BookmarkManager` with `ProjectActivityMonitor` (FSEvents)
+5. Add AppStore build configuration to Xcode project
+
+**Files to Create:**
+- `Contextify/Contextify/FirstLaunchSetupView.swift`
+- `scripts/xc-appstore.sh`
+- `scripts/ExportOptions-AppStore.plist`
+
+**Files to Modify:**
+- `Contextify/Contextify/ProjectDiscoveryService.swift`
+- `Contextify/Contextify/ProjectActivityMonitor.swift`
+- `Contextify/Contextify/ContextifyApp.swift` (show setup on first launch)
+- `Contextify/Contextify.xcodeproj/project.pbxproj` (AppStore configuration)
+- `Makefile` (add appstore targets)
+
+**Testing:**
+- [ ] First launch wizard appears in sandboxed builds
+- [ ] Projects discovered after granting bookmarks
+- [ ] FSEvents monitoring works with bookmarked directories
+- [ ] No wizard appears in non-sandboxed builds
+- [ ] Both build types discover projects correctly
 
 ---
 
@@ -382,15 +438,39 @@ Contextify will sync changes, but concurrent editing may cause conflicts.
 
 ## Documentation Updates
 
-### User-Facing
-- **Settings:** In-app help text explaining database location options
-- **Migration Guide:** Step-by-step instructions for moving database
-- **Sync Guide:** How to sync between multiple machines safely
+### Phase 0: Pre-Implementation Audit (1 hour)
+**Validate existing docs reflect recent changes before adding new content**
 
-### Developer-Facing
-- Update `CLAUDE.md` with database location configuration
-- Document preference keys in `HUDPreferences.swift`
-- Add migration testing guide
+1. **Release/Signing Documentation**
+   - Verify `scripts/RELEASE.md` is current (added in commit 6664f27)
+   - Verify `scripts/SIGNING-SETUP.md` is current (added in commit 6664f27)
+   - Check `build/notes/release-build-verification.md` is accurate
+
+2. **iTerm2/Terminal Integration Removal**
+   - Confirm `build/notes/future-features.md` documents removal (updated in commit 14c0410)
+   - Check `CLAUDE.md` doesn't reference removed features
+   - Remove/update any permission descriptions for removed entitlements
+
+3. **Technical Reference Updates**
+   - `build/notes/technical-reference/sql-backend-architecture.md` - Check database location references
+   - Database schema version (currently v16) is documented
+
+### Phase 6: Post-Implementation Documentation (2 hours)
+
+**CLAUDE.md Updates:**
+- Add Database Location section under Project Structure
+- Document BookmarkManager for App Store builds
+- Update build configurations (Debug, Release, AppStore)
+- Note dual distribution strategy
+
+**Technical Reference:**
+- Create `build/notes/technical-reference/bookmark-manager.md`
+- Document runtime sandbox detection pattern
+- Security-scoped bookmark lifecycle
+
+**User-Facing (if Settings window exists):**
+- In-app help text for database location settings
+- Brief migration guide
 
 ---
 
