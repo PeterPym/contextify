@@ -302,15 +302,8 @@ actor FoundationLLM {
         }
 
         // Check for problem reports / negative feedback (treat as implicit directives to fix)
-        let problemIndicators = [
-            "did not work", "didn't work", "not working", "does not work", "doesn't work",
-            "did not do", "didn't do", "does not do", "doesn't do",
-            "not seeing", "not showing", "not displayed", "not appearing",
-            "that did not", "that didn't", "no that did", "nope that"
-        ]
-        for indicator in problemIndicators {
-            if Self.containsPhrase(normalized, phrase: indicator) { return .directive }
-        }
+        // Using prebuilt alternation pattern for performance
+        if Self.matchesProblemIndicators(normalized) { return .directive }
 
         // Observation patterns (only when followed by negative/problem context)
         if (normalized.hasPrefix("seems ") && !normalized.contains(" good") && !normalized.contains(" fine") && !normalized.contains(" correct")) ||
@@ -333,7 +326,7 @@ actor FoundationLLM {
         if Self.containsPhrase(normalized, phrase: "i want to know") { return .question }
         if Self.containsPhrase(normalized, phrase: "i want") { return .directive }
 
-        // Check for imperative verbs at start
+        // Check for imperative verbs at start (allow productive prefixes like "reinvestigate")
         let firstWord = tokens.first ?? ""
         let imperatives: Set<String> = [
             "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
@@ -341,7 +334,7 @@ actor FoundationLLM {
             "optimize", "implement", "modify", "debug", "install", "configure", "look",
             "read", "investigate", "try", "revert", "verify", "analyze", "review"
         ]
-        if imperatives.contains(firstWord) { return .directive }
+        if Self.isImperativeLike(firstWord, baseVerbs: imperatives) { return .directive }
 
         // Check for question patterns
         let questionWords = ["what", "why", "how", "when", "where", "which", "who"]
@@ -988,34 +981,38 @@ actor SessionController {
 // MARK: - Word-boundary helpers for intent classification
 
 private extension FoundationLLM {
+    /// Simple regex cache to avoid recompilation in hot paths
+    final class RegexCache: @unchecked Sendable {
+        nonisolated(unsafe) static let shared = RegexCache()
+        private var cache: [String: NSRegularExpression] = [:]
+        private let lock = NSLock()
+
+        func regex(for pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
+            lock.lock()
+            defer { lock.unlock() }
+            if let rx = cache[pattern] { return rx }
+            guard let rx = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+            cache[pattern] = rx
+            return rx
+        }
+    }
+
     /// Normalize text for intent classification (single normalization pass)
     nonisolated static func normalizeForIntent(_ text: String) -> String {
         var normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        // Normalize punctuation variations to handle informal writing
-        // Map various apostrophe types to standard apostrophe
-        let apostropheVariants = ["'", "'", "'", "`"]  // curly quotes, backtick
-        for variant in apostropheVariants {
-            normalized = normalized.replacingOccurrences(of: variant, with: "'")
-        }
+        // Normalize apostrophes: U+2018 ('), U+2019 ('), U+2032 (′), backtick
+        let apostropheVariants = ["\u{2018}", "\u{2019}", "\u{2032}", "`"]
+        apostropheVariants.forEach { normalized = normalized.replacingOccurrences(of: $0, with: "'") }
 
-        // Handle common contractions missing apostrophes
-        // Pattern: word boundary + "lets" + space/punctuation → "let's"
-        normalized = normalized.replacingOccurrences(of: " lets ", with: " let's ")
-        normalized = normalized.replacingOccurrences(of: " dont ", with: " don't ")
-        normalized = normalized.replacingOccurrences(of: " cant ", with: " can't ")
-        normalized = normalized.replacingOccurrences(of: " wont ", with: " won't ")
-        normalized = normalized.replacingOccurrences(of: " shouldnt ", with: " shouldn't ")
-        normalized = normalized.replacingOccurrences(of: " wouldnt ", with: " wouldn't ")
-        normalized = normalized.replacingOccurrences(of: " couldnt ", with: " couldn't ")
-
-        // Handle start of string cases
-        if normalized.hasPrefix("lets ") {
-            normalized = "let's " + normalized.dropFirst(5)
-        }
-        if normalized.hasPrefix("dont ") {
-            normalized = "don't " + normalized.dropFirst(5)
-        }
+        // Handle common contractions missing apostrophes with boundary-aware regexes
+        normalized = replaceWordBoundary(normalized, from: "lets", to: "let's")
+        normalized = replaceWordBoundary(normalized, from: "dont", to: "don't")
+        normalized = replaceWordBoundary(normalized, from: "cant", to: "can't")
+        normalized = replaceWordBoundary(normalized, from: "wont", to: "won't")
+        normalized = replaceWordBoundary(normalized, from: "shouldnt", to: "shouldn't")
+        normalized = replaceWordBoundary(normalized, from: "wouldnt", to: "wouldn't")
+        normalized = replaceWordBoundary(normalized, from: "couldnt", to: "couldn't")
 
         // Fix common typos that might affect intent detection
         let typoFixes = [
@@ -1034,27 +1031,32 @@ private extension FoundationLLM {
         return normalized
     }
 
+    /// Replace a whole word regardless of trailing punctuation using Unicode boundaries
+    nonisolated static func replaceWordBoundary(_ text: String, from: String, to: String) -> String {
+        let pattern = "(^|[^\\p{L}\\p{N}])(\(regexEscape(from)))(?=$|[^\\p{L}\\p{N}])"
+        let repl = "$1\(to)"
+        guard let rx = RegexCache.shared.regex(for: pattern, options: [.caseInsensitive]) else { return text }
+        return rx.stringByReplacingMatches(in: text, options: [], range: NSRange(text.startIndex..., in: text), withTemplate: repl)
+    }
+
     /// Escape string for use in regex pattern
     nonisolated static func regexEscape(_ s: String) -> String {
         NSRegularExpression.escapedPattern(for: s)
     }
 
-    /// Check if text contains exact word match with word boundaries (case-insensitive)
+    /// Unicode-aware word boundary check: start/end or any non-letter/number
     nonisolated static func containsWord(_ text: String, word: String) -> Bool {
-        let pattern = "\\b\(regexEscape(word))\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return false
-        }
-        return regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
+        let pattern = "(^|[^\\p{L}\\p{N}])\(regexEscape(word))(?=$|[^\\p{L}\\p{N}])"
+        guard let rx = RegexCache.shared.regex(for: pattern, options: [.caseInsensitive]) else { return false }
+        return rx.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
     }
 
-    /// Check if text contains phrase with word boundaries at start and end (case-insensitive)
+    /// Phrase match with word-like boundaries at both ends, tolerant to punctuation
     nonisolated static func containsPhrase(_ text: String, phrase: String) -> Bool {
-        let pattern = "\\b\(regexEscape(phrase))\\b"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return false
-        }
-        return regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
+        let core = regexEscape(phrase).replacingOccurrences(of: "\\ ", with: "\\s+")
+        let pattern = "(^|[^\\p{L}\\p{N}])\(core)(?=$|[^\\p{L}\\p{N}])"
+        guard let rx = RegexCache.shared.regex(for: pattern, options: [.caseInsensitive]) else { return false }
+        return rx.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
     }
 
     /// Check if text starts with any of the given prefixes (fast path without regex)
@@ -1063,6 +1065,41 @@ private extension FoundationLLM {
             if text.hasPrefix(prefix) { return true }
         }
         return false
+    }
+
+    /// Treat "reinvestigate" as "investigate", etc. (productive prefixes)
+    nonisolated static func isImperativeLike(_ word: String, baseVerbs: Set<String>) -> Bool {
+        if baseVerbs.contains(word) { return true }
+        // Common productive prefixes seen in requests
+        let prefixes = ["re", "pre", "auto", "de"]
+        for p in prefixes {
+            if word.hasPrefix(p), let idx = word.index(word.startIndex, offsetBy: p.count, limitedBy: word.endIndex) {
+                let stem = String(word[idx...])
+                if baseVerbs.contains(stem) { return true }
+            }
+        }
+        return false
+    }
+
+    /// Prebuilt alternation pattern for problem indicators (compiled once, cached)
+    nonisolated static func matchesProblemIndicators(_ text: String) -> Bool {
+        // Lazy-init pattern on first use
+        struct Static {
+            static let pattern: String = {
+                let phrases = [
+                    "did not work", "didn't work", "not working", "does not work", "doesn't work",
+                    "did not do", "didn't do", "does not do", "doesn't do",
+                    "not seeing", "not showing", "not displayed", "not appearing",
+                    "that did not", "that didn't", "no that did", "nope that"
+                ]
+                let escaped = phrases.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+                return "(^|[^\\p{L}\\p{N}])(\(escaped))(?=$|[^\\p{L}\\p{N}])"
+            }()
+        }
+        guard let rx = RegexCache.shared.regex(for: Static.pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        return rx.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
     }
 }
 

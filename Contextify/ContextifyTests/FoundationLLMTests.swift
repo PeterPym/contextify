@@ -295,6 +295,58 @@ final class UserIntentTests: XCTestCase {
         let reinvestigateIntent = await FoundationLLM.shared._testClassifyUserIntent("reinvestigate the bug")
         XCTAssertEqual(reinvestigateIntent, .directive, "'reinvestigate' should be directive")
     }
+
+    // MARK: - Robustness tests (from code review)
+
+    func testCurlyApostrophesNormalize() async throws {
+        // U+2019 (right single quotation mark) should normalize to straight apostrophe
+        let curlyIntent = await FoundationLLM.shared._testClassifyUserIntent("that didn\u{2019}t work")
+        XCTAssertEqual(curlyIntent, .directive, "Curly apostrophe should normalize to standard apostrophe")
+    }
+
+    func testPunctuationAroundPhrases() async throws {
+        // "did not" with trailing comma should still match
+        let commaIntent = await FoundationLLM.shared._testClassifyUserIntent("that did not, actually")
+        XCTAssertEqual(commaIntent, .directive, "Phrase with trailing comma should match")
+
+        // "didn't work" with period
+        let periodIntent = await FoundationLLM.shared._testClassifyUserIntent("that didn't work.")
+        XCTAssertEqual(periodIntent, .directive, "Phrase with trailing period should match")
+    }
+
+    func testWhitespaceInsensitivePhrase() async throws {
+        // Multiple spaces between words should still match
+        let spacedIntent = await FoundationLLM.shared._testClassifyUserIntent("that   did   not   work")
+        XCTAssertEqual(spacedIntent, .directive, "Phrase with extra whitespace should match")
+    }
+
+    func testProductivePrefixCoverage() async throws {
+        // "reconfigure" should be directive (re- + configure)
+        let reconfigureIntent = await FoundationLLM.shared._testClassifyUserIntent("reconfigure the logger")
+        XCTAssertEqual(reconfigureIntent, .directive, "'reconfigure' should match via re- prefix")
+
+        // "retest" should be directive (re- + test)
+        let retestIntent = await FoundationLLM.shared._testClassifyUserIntent("retest the component")
+        XCTAssertEqual(retestIntent, .directive, "'retest' should match via re- prefix")
+
+        // "debug" is in the base set
+        let debugIntent = await FoundationLLM.shared._testClassifyUserIntent("debug the issue")
+        XCTAssertEqual(debugIntent, .directive, "'debug' should be directive")
+
+        // "predebug" should match via pre- prefix
+        let predebugIntent = await FoundationLLM.shared._testClassifyUserIntent("predebug the script")
+        XCTAssertEqual(predebugIntent, .directive, "'predebug' should match via pre- prefix")
+    }
+
+    func testWordBoundaryNegativeControl() async throws {
+        // "workflow" must NOT trigger "work" problem indicator
+        let workflowIntent = await FoundationLLM.shared._testClassifyUserIntent("discussing the workflow here")
+        XCTAssertNotEqual(workflowIntent, .directive, "'workflow' should not match 'work' indicator")
+
+        // Should be unknown or question, not directive
+        XCTAssertTrue(workflowIntent == .unknown || workflowIntent == .question,
+                     "'workflow' context should be unknown or question, not directive")
+    }
 }
 
 #if canImport(FoundationModels)
