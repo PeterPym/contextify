@@ -281,46 +281,7 @@ actor FoundationLLM {
     /// Authoritatively classify user intent using deterministic rules
     func classifyUserIntent(_ text: String) -> UserIntent {
         let clean = stripQuotedAndCode(text)
-        var normalized = clean.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        // Normalize punctuation variations to handle informal writing
-        // Map various apostrophe types to standard apostrophe
-        let apostropheVariants = ["'", "'", "'", "`"]  // curly quotes, backtick
-        for variant in apostropheVariants {
-            normalized = normalized.replacingOccurrences(of: variant, with: "'")
-        }
-
-        // Handle common contractions missing apostrophes
-        // Pattern: word boundary + "lets" + space/punctuation → "let's"
-        normalized = normalized.replacingOccurrences(of: " lets ", with: " let's ")
-        normalized = normalized.replacingOccurrences(of: " dont ", with: " don't ")
-        normalized = normalized.replacingOccurrences(of: " cant ", with: " can't ")
-        normalized = normalized.replacingOccurrences(of: " wont ", with: " won't ")
-        normalized = normalized.replacingOccurrences(of: " shouldnt ", with: " shouldn't ")
-        normalized = normalized.replacingOccurrences(of: " wouldnt ", with: " wouldn't ")
-        normalized = normalized.replacingOccurrences(of: " couldnt ", with: " couldn't ")
-
-        // Handle start of string cases
-        if normalized.hasPrefix("lets ") {
-            normalized = "let's " + normalized.dropFirst(5)
-        }
-        if normalized.hasPrefix("dont ") {
-            normalized = "don't " + normalized.dropFirst(5)
-        }
-
-        // Fix common typos that might affect intent detection
-        let typoFixes = [
-            ("develioper", "developer"),
-            ("devleoper", "developer"),
-            ("teh ", "the "),
-            (" taht ", " that "),
-            (" wiht ", " with "),
-            (" brnach", " branch"),
-            (" barnch", " branch")
-        ]
-        for (typo, correct) in typoFixes {
-            normalized = normalized.replacingOccurrences(of: typo, with: correct)
-        }
+        let normalized = Self.normalizeForIntent(clean)
 
         // Gate for short utterances (affirmative/negative) - allow up to 5 token confirmations
         // Strip punctuation from tokens to handle "yes," "ok." etc.
@@ -348,7 +309,7 @@ actor FoundationLLM {
             "that did not", "that didn't", "no that did", "nope that"
         ]
         for indicator in problemIndicators {
-            if normalized.contains(indicator) { return .directive }
+            if Self.containsPhrase(normalized, phrase: indicator) { return .directive }
         }
 
         // Observation patterns (only when followed by negative/problem context)
@@ -365,12 +326,12 @@ actor FoundationLLM {
         // Check for directive patterns (request phrases)
         let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i need"]
         for pattern in directivePatterns {
-            if normalized.contains(pattern) { return .directive }
+            if Self.containsPhrase(normalized, phrase: pattern) { return .directive }
         }
 
         // Separate "i want to know" (question) from general "i want" (directive)
-        if normalized.contains("i want to know") { return .question }
-        if normalized.contains("i want") { return .directive }
+        if Self.containsPhrase(normalized, phrase: "i want to know") { return .question }
+        if Self.containsPhrase(normalized, phrase: "i want") { return .directive }
 
         // Check for imperative verbs at start
         let firstWord = tokens.first ?? ""
@@ -384,7 +345,7 @@ actor FoundationLLM {
 
         // Check for question patterns
         let questionWords = ["what", "why", "how", "when", "where", "which", "who"]
-        if questionWords.contains(where: { normalized.hasPrefix($0) }) { return .question }
+        if Self.startsWithAny(normalized, prefixes: questionWords) { return .question }
         if normalized.hasSuffix("?") { return .question }
 
         // Additional question patterns (questions without traditional question words)
@@ -398,7 +359,7 @@ actor FoundationLLM {
         // Check for past-tense self-reports
         let reportPatterns = ["i updated", "i fixed", "i created", "i modified", "i changed", "i added"]
         for pattern in reportPatterns {
-            if normalized.contains(pattern) { return .report }
+            if Self.containsPhrase(normalized, phrase: pattern) { return .report }
         }
 
         // Informal statements (treat as implicit directives)
@@ -1024,6 +985,87 @@ actor SessionController {
 }
 #endif
 
+// MARK: - Word-boundary helpers for intent classification
+
+private extension FoundationLLM {
+    /// Normalize text for intent classification (single normalization pass)
+    nonisolated static func normalizeForIntent(_ text: String) -> String {
+        var normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Normalize punctuation variations to handle informal writing
+        // Map various apostrophe types to standard apostrophe
+        let apostropheVariants = ["'", "'", "'", "`"]  // curly quotes, backtick
+        for variant in apostropheVariants {
+            normalized = normalized.replacingOccurrences(of: variant, with: "'")
+        }
+
+        // Handle common contractions missing apostrophes
+        // Pattern: word boundary + "lets" + space/punctuation → "let's"
+        normalized = normalized.replacingOccurrences(of: " lets ", with: " let's ")
+        normalized = normalized.replacingOccurrences(of: " dont ", with: " don't ")
+        normalized = normalized.replacingOccurrences(of: " cant ", with: " can't ")
+        normalized = normalized.replacingOccurrences(of: " wont ", with: " won't ")
+        normalized = normalized.replacingOccurrences(of: " shouldnt ", with: " shouldn't ")
+        normalized = normalized.replacingOccurrences(of: " wouldnt ", with: " wouldn't ")
+        normalized = normalized.replacingOccurrences(of: " couldnt ", with: " couldn't ")
+
+        // Handle start of string cases
+        if normalized.hasPrefix("lets ") {
+            normalized = "let's " + normalized.dropFirst(5)
+        }
+        if normalized.hasPrefix("dont ") {
+            normalized = "don't " + normalized.dropFirst(5)
+        }
+
+        // Fix common typos that might affect intent detection
+        let typoFixes = [
+            ("develioper", "developer"),
+            ("devleoper", "developer"),
+            ("teh ", "the "),
+            (" taht ", " that "),
+            (" wiht ", " with "),
+            (" brnach", " branch"),
+            (" barnch", " branch")
+        ]
+        for (typo, correct) in typoFixes {
+            normalized = normalized.replacingOccurrences(of: typo, with: correct)
+        }
+
+        return normalized
+    }
+
+    /// Escape string for use in regex pattern
+    nonisolated static func regexEscape(_ s: String) -> String {
+        NSRegularExpression.escapedPattern(for: s)
+    }
+
+    /// Check if text contains exact word match with word boundaries (case-insensitive)
+    nonisolated static func containsWord(_ text: String, word: String) -> Bool {
+        let pattern = "\\b\(regexEscape(word))\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        return regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// Check if text contains phrase with word boundaries at start and end (case-insensitive)
+    nonisolated static func containsPhrase(_ text: String, phrase: String) -> Bool {
+        let pattern = "\\b\(regexEscape(phrase))\\b"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        return regex.firstMatch(in: text, options: [], range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// Check if text starts with any of the given prefixes (fast path without regex)
+    nonisolated static func startsWithAny(_ text: String, prefixes: [String]) -> Bool {
+        for prefix in prefixes {
+            if text.hasPrefix(prefix) { return true }
+        }
+        return false
+    }
+}
+
 private extension FoundationLLM {
     struct PrefixPolicy {
         let allowed: [String]
@@ -1148,7 +1190,7 @@ private extension FoundationLLM {
             - REPORT      → "You made [description]"
             - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
             - NEGATIVE    → "You requested \(assistantName) not to proceed."
-            - UNKNOWN     → "You [concisely describe the user's action or question based on MESSAGE]"
+            - UNKNOWN     → "You asked about this."
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes

@@ -234,6 +234,67 @@ final class UserIntentTests: XCTestCase {
         let cleaned = await FoundationLLM.shared._testStripQuotedAndCode("Fix this:\n```swift\nfunc foo() {}\n```\nplease")
         XCTAssertFalse(cleaned.contains("func foo"))
     }
+
+    // MARK: - Word-boundary tests (INT-1)
+
+    func testImperativeWordBoundaries() async throws {
+        // "read" as imperative should be directive
+        let readIntent = await FoundationLLM.shared._testClassifyUserIntent("read the log")
+        XCTAssertEqual(readIntent, .directive, "Standalone 'read' should be directive")
+
+        // "readme" should NOT be classified as directive (contains "read" but is different word)
+        let readmeIntent = await FoundationLLM.shared._testClassifyUserIntent("readme updated")
+        XCTAssertNotEqual(readmeIntent, .directive, "'readme' should not match imperative 'read'")
+    }
+
+    func testProblemIndicatorsBoundaries() async throws {
+        // "did not work" should be directive
+        let problemIntent = await FoundationLLM.shared._testClassifyUserIntent("that did not work")
+        XCTAssertEqual(problemIntent, .directive, "'did not work' should be directive")
+
+        // "didnotworkflow" (contrived example) should NOT match if we had word boundaries
+        let workflowIntent = await FoundationLLM.shared._testClassifyUserIntent("discussing the workflow here")
+        XCTAssertNotEqual(workflowIntent, .directive, "'workflow' should not match 'work' problem indicator")
+    }
+
+    func testInterjections() async throws {
+        // "hm." should be directive (observation interjection)
+        let hmIntent = await FoundationLLM.shared._testClassifyUserIntent("hm. weird")
+        XCTAssertEqual(hmIntent, .directive, "'hm.' should be directive")
+
+        // "hmm" should be directive
+        let hmmIntent = await FoundationLLM.shared._testClassifyUserIntent("hmm ok")
+        XCTAssertEqual(hmmIntent, .directive, "'hmm' should be directive")
+    }
+
+    func testUnknownFallbackSummary() async throws {
+        // When intent is UNKNOWN, the LLM instructions should provide a safe fallback
+        // This is tested indirectly through the instruction template
+        // The template now specifies: UNKNOWN → "You asked about this."
+        // This test documents the expected behavior
+        let unknownIntent = await FoundationLLM.shared._testClassifyUserIntent("lorem ipsum dolor sit amet")
+        XCTAssertEqual(unknownIntent, .unknown, "Unclassifiable text should return .unknown")
+    }
+
+    func testLookVsLookups() async throws {
+        // "look" should be directive
+        let lookIntent = await FoundationLLM.shared._testClassifyUserIntent("look at the code")
+        XCTAssertEqual(lookIntent, .directive, "'look' should be directive")
+
+        // "lookups" should NOT be classified as directive (different word)
+        let lookupsIntent = await FoundationLLM.shared._testClassifyUserIntent("the lookups are slow")
+        XCTAssertNotEqual(lookupsIntent, .directive, "'lookups' should not match imperative 'look'")
+    }
+
+    func testInvestigateVsReinvestigate() async throws {
+        // "investigate" should be directive
+        let investigateIntent = await FoundationLLM.shared._testClassifyUserIntent("investigate this issue")
+        XCTAssertEqual(investigateIntent, .directive, "'investigate' should be directive")
+
+        // "reinvestigate" should also be directive (still an imperative form)
+        let reinvestigateIntent = await FoundationLLM.shared._testClassifyUserIntent("reinvestigate the bug")
+        XCTAssertEqual(reinvestigateIntent, .directive, "'reinvestigate' should be directive")
+    }
 }
 
 #if canImport(FoundationModels)
