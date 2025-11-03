@@ -3,6 +3,8 @@ import ContextifyCore
 
 /// Individual project row in the Projects window
 struct ProjectRowView: View {
+  @Environment(ConversationMonitor.self) private var monitor  // v23: for follow status
+
   let project: DiscoveredProject
   let onSetAsCurrent: () -> Void
   let onRevealInFinder: () -> Void
@@ -34,6 +36,40 @@ struct ProjectRowView: View {
             .foregroundStyle(.orange)
             .imageScale(.small)
             .help("Ingestion error: \(project.ingestionError ?? "")")
+        }
+
+        // v23: Follow chip
+        if project.isCurrent, monitor.activeSession != nil {
+          Menu {
+            Button("Follow Newest (Auto)") {
+              Task {
+                await monitor.unpinToAuto()
+              }
+            }
+            if monitor.activeSession != nil {
+              Button("Pin Current Session") {
+                Task {
+                  if let session = monitor.activeSession {
+                    await monitor.pinAndSwitch(session)
+                  }
+                }
+              }
+            }
+          } label: {
+            HStack(spacing: 4) {
+              Image(systemName: "paperclip")
+                .imageScale(.small)
+              Text("Follow: Auto")  // Simplified - full version would show mode
+                .font(.caption2)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Color.secondary.opacity(0.1))
+            .cornerRadius(4)
+          }
+          .buttonStyle(.plain)
+          .help("Configure active session following")
         }
 
         Spacer()

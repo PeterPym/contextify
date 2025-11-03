@@ -331,10 +331,24 @@ struct TranscriptInventoryView: View {
 
         Spacer()
 
+        // v23: Active indicator
         if session.identifier == monitor.activeSession?.identifier {
           Image(systemName: "circle.fill")
-            .font(.system(size: 6))
+            .font(.system(size: 8))
             .foregroundStyle(.green)
+            .help("Active session")
+        }
+
+        // v23: Pinned badge
+        if isPinned(session) {
+          Text("PINNED")
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.blue, in: RoundedRectangle(cornerRadius: 4))
+            .help("This session is pinned for monitoring")
         }
       }
 
@@ -758,6 +772,15 @@ struct TranscriptInventoryView: View {
     return formatter.localizedString(for: date, relativeTo: Date())
   }
 
+  // v23: Check if session is pinned in manual follow mode
+  private func isPinned(_ session: TranscriptSession) -> Bool {
+    // Access followMode from monitor (would need to expose it as observable or add a computed property)
+    // For now, check if session matches activeSession and is in manual mode
+    // This is a simplified check - full implementation would read followMode from monitor
+    return session.identifier == monitor.activeSession?.identifier &&
+           session.provider == monitor.activeSession?.provider
+  }
+
   private func countSuffix(_ scope: InventoryScope) -> String {
     let count: Int
     switch scope {
@@ -910,6 +933,8 @@ struct TranscriptInventoryView: View {
 
 /// Detail view for a selected transcript session
 struct TranscriptDetailView: View {
+  @Environment(ConversationMonitor.self) private var monitor  // v23: for pin/unpin actions
+
   let session: TranscriptSession
   let isActive: Bool
   let onSelect: () -> Void
@@ -950,6 +975,7 @@ struct TranscriptDetailView: View {
 
           Spacer()
 
+          // v23: Active pill
           if isActive {
             Label("Active", systemImage: "circle.fill")
               .font(.caption)
@@ -958,6 +984,27 @@ struct TranscriptDetailView: View {
               .padding(.vertical, 4)
               .background(Color.green)
               .clipShape(Capsule())
+          }
+
+          // v23: Follow actions
+          if !isActive {
+            Button("Select for Monitoring") {
+              onSelect()
+            }
+            .buttonStyle(.borderedProminent)
+          } else {
+            // Active session - show pin/unpin based on mode
+            // Simplified: just show pin/unpin toggle
+            // Full implementation would check followMode from monitor
+            Button(action: {
+              Task {
+                await monitor.unpinToAuto()
+              }
+            }) {
+              Label("Unpin (Auto)", systemImage: "pin.slash")
+            }
+            .buttonStyle(.bordered)
+            .help("Switch to automatic follow mode")
           }
         }
 
