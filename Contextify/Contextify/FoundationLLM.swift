@@ -1389,13 +1389,15 @@ private extension FoundationLLM {
             You fill a TimelineSummary for an AI assistant response.
 
             Rules:
-            - Output ONE sentence starting with "\(assistantName)", ≤140 chars.
+            - Output ONE sentence: "\(assistantName) [verb] [object]", ≤140 chars.
+            - Format: Start with "\(assistantName)" followed by a third-person verb (no colon, no comma, no quotes).
+            - Examples: "\(assistantName) explains the API structure.", "\(assistantName) fixed the type error."
             - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
             - No emojis.
             - Tense:
               * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
-              * Present continuous ONLY for clear in-progress execution (e.g., “is running the test suite”).
-              * Otherwise simple present (“explains/clarifies/confirms/proposes/asks/acknowledges”).
+              * Present continuous ONLY for clear in-progress execution (e.g., "is running the test suite").
+              * Otherwise simple present ("explains/clarifies/confirms/proposes/asks/acknowledges").
             - Mention tools (Write/Edit/Read/Bash/etc.) ONLY if MESSAGE explicitly says they were executed.
 
             Fields:
