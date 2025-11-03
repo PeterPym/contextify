@@ -61,9 +61,9 @@ struct TimelineEntryRow: View {
             }
         }
         .contextMenu {
-            Button("Copy Markdown Snippet") { copy(entry.markdownPayload()) }
             Button("Copy Summary") { copy(entry.summary) }
             Button("Copy Detail") { copy(entry.detail) }
+            Button("Copy Both as JSON") { copyAsJSON() }
 
             if entry.contentSha256 != nil && entry.windowSha256 != nil {
                 Divider()
@@ -166,6 +166,21 @@ struct TimelineEntryRow: View {
                 showCopiedToast = false
             }
         }
+    }
+
+    private func copyAsJSON() {
+        let json: [String: String] = [
+            "summary": entry.summary,
+            "detail": entry.detail,
+            "timestamp": ISO8601DateFormatter().string(from: entry.timestamp)
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return
+        }
+
+        copy(jsonString)
     }
 
     private func regenerateSummary() {

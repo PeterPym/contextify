@@ -156,14 +156,6 @@ extension TimelineEntry {
         return CacheKey(content: content, window: window)
     }
 
-    func markdownPayload() -> String {
-        let logText = detail
-        let sourceText = sourceContent ?? detail
-        let reference = sourceContext?.formattedReference ?? sourceIdentifier
-
-        return "\(logText)\n---\n\(sourceText)\n---\n\(reference)"
-    }
-
     /// Create a copy with modified fields
     func copyWith(
         summary: String? = nil,
