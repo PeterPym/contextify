@@ -85,15 +85,16 @@ struct ProjectRowView: View {
 
       // Actions
       HStack(spacing: 12) {
-        Button(action: onSetAsCurrent) {
-          HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle")
-              .imageScale(.small)
-            Text("Set as Current")
+        if !project.isCurrent {
+          Button(action: onSetAsCurrent) {
+            HStack(spacing: 4) {
+              Image(systemName: "checkmark.circle")
+                .imageScale(.small)
+              Text("Set as Current")
+            }
           }
+          .buttonStyle(.bordered)
         }
-        .buttonStyle(.bordered)
-        .disabled(project.isCurrent)
 
         Button(action: onRevealInFinder) {
           HStack(spacing: 4) {
