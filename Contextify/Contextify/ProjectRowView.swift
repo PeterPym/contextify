@@ -6,7 +6,6 @@ struct ProjectRowView: View {
   let project: DiscoveredProject
   let onSetAsCurrent: () -> Void
   let onRevealInFinder: () -> Void
-  let onExclude: () -> Void
   let onShowStats: () -> Void
 
   var body: some View {
@@ -107,16 +106,12 @@ struct ProjectRowView: View {
 
         Spacer()
 
-        Menu {
-          Button("View Statistics", action: onShowStats)
-          Divider()
-          Button("Hide from List", action: onExclude)
-        } label: {
-          Image(systemName: "ellipsis.circle")
+        Button(action: onShowStats) {
+          Image(systemName: "chart.bar")
             .imageScale(.large)
         }
-        .menuStyle(.borderlessButton)
-        .help("More actions")
+        .buttonStyle(.borderless)
+        .help("View Statistics")
       }
     }
     .padding()
@@ -146,7 +141,6 @@ struct ProjectRowView: View {
     ),
     onSetAsCurrent: {},
     onRevealInFinder: {},
-    onExclude: {},
     onShowStats: {}
   )
   .padding()

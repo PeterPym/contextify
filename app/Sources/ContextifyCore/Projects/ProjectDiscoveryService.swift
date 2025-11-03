@@ -6,18 +6,15 @@ import OSLog
 public actor ProjectDiscoveryService {
   private let db: DatabasePool
   private let orchestrator: TranscriptOrchestrator
-  private let exclusionManager: ProjectExclusionManager
   private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
   private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
 
   public init(
     db: DatabasePool,
-    orchestrator: TranscriptOrchestrator,
-    exclusionManager: ProjectExclusionManager = ProjectExclusionManager()
+    orchestrator: TranscriptOrchestrator
   ) {
     self.db = db
     self.orchestrator = orchestrator
-    self.exclusionManager = exclusionManager
   }
 
   // MARK: - Public API
@@ -36,18 +33,10 @@ public actor ProjectDiscoveryService {
     let claudeProjects = try await discoverClaudeCodeProjects()
     logger.debug("Found \(claudeProjects.count) Claude Code project paths")
 
-    // 2. Filter out excluded projects
-    let excluded = await exclusionManager.getExcludedProjects()
-    let filteredProjects = claudeProjects.filter { !excluded.contains($0.path) }
-
-    if claudeProjects.count > filteredProjects.count {
-      logger.debug("Filtered out \(claudeProjects.count - filteredProjects.count) excluded projects")
-    }
-
     var discovered: [DiscoveredProject] = []
 
-    // 3. For each Claude project, check if it also has Codex transcripts
-    for projectPath in filteredProjects {
+    // 2. For each Claude project, check if it also has Codex transcripts
+    for projectPath in claudeProjects {
       var providers: Set<DiscoveredProject.Provider> = [.claudeCode]
 
       if hasCodexTranscripts(at: projectPath) {
@@ -371,25 +360,6 @@ public actor ProjectDiscoveryService {
         displayOrder: displayOrder
       )
     }
-  }
-
-  // MARK: - Exclusion Management
-
-  /// Excludes a project from future discovery
-  public func excludeProject(_ projectPath: String) async {
-    await exclusionManager.excludeProject(projectPath)
-    logger.info("Excluded project: \(projectPath)")
-  }
-
-  /// Includes a previously excluded project
-  public func includeProject(_ projectPath: String) async {
-    await exclusionManager.includeProject(projectPath)
-    logger.info("Included project: \(projectPath)")
-  }
-
-  /// Gets all excluded project paths
-  public func getExcludedProjects() async -> Set<String> {
-    await exclusionManager.getExcludedProjects()
   }
 
   // MARK: - Ingestion Methods
