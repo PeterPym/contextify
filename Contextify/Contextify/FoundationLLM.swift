@@ -552,12 +552,19 @@ actor FoundationLLM {
             // Preprocess and classify for user messages
             let intent: UserIntent?
             let cleanMessage: String
+            let trailingQuestion: String?
             if kind == .user {
                 intent = classifyUserIntent(clamped)
                 cleanMessage = stripQuotedAndCode(clamped)
+                trailingQuestion = nil
             } else {
                 intent = nil
                 cleanMessage = clamped
+                // Detect trailing question in assistant messages
+                trailingQuestion = extractTrailingQuestion(clamped)
+                if let q = trailingQuestion {
+                    log.debug("[\(reqNum)] timeline: detected trailing question: '\(q, privacy: .public)'")
+                }
             }
 
             let payloadInput: String
@@ -570,7 +577,12 @@ actor FoundationLLM {
                     payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>\nDETECTED_INTENT: \(intentStr)"
                 }
             } else {
-                payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>"
+                // Assistant messages with trailing questions get special handling
+                if let question = trailingQuestion {
+                    payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>\nTRAILING_QUESTION:\n<<<\(question)>>>"
+                } else {
+                    payloadInput = "MESSAGE:\n<<<\(cleanMessage)>>>"
+                }
             }
 
             do {
@@ -1130,6 +1142,68 @@ private extension FoundationLLM {
             return nil // Unknown command, caller will use generic fallback
         }
     }
+
+    /// Extract trailing question from assistant message (for hybrid question preservation)
+    /// Returns the question if found, prioritizing common patterns
+    nonisolated func extractTrailingQuestion(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Fast-path: Check common question starters (case-insensitive)
+        let commonPatterns = [
+            "would you like",
+            "should i",
+            "shall i",
+            "do you want",
+            "would you prefer",
+            "can i",
+            "may i",
+            "could i",
+            "shall we",
+            "should we",
+            "do you need",
+            "would it help"
+        ]
+
+        let lowercased = trimmed.lowercased()
+        for pattern in commonPatterns {
+            if lowercased.contains(pattern) && lowercased.contains("?") {
+                // Extract sentence containing the pattern
+                if let question = extractSentenceContaining(pattern, from: trimmed) {
+                    print("[DEBUG] extractTrailingQuestion: Found via pattern '\(pattern)': '\(question)'")
+                    return question
+                }
+            }
+        }
+
+        // Fallback: Extract last sentence if it's a question
+        let sentences = trimmed.components(separatedBy: CharacterSet(charactersIn: ".!\n"))
+        for sentence in sentences.reversed() {
+            let cleaned = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.contains("?") && cleaned.count > 10 {
+                print("[DEBUG] extractTrailingQuestion: Found via fallback: '\(cleaned)'")
+                return cleaned
+            }
+        }
+
+        print("[DEBUG] extractTrailingQuestion: No question found in text of length \(trimmed.count)")
+        return nil
+    }
+
+    /// Extract sentence containing a specific pattern
+    private nonisolated func extractSentenceContaining(_ pattern: String, from text: String) -> String? {
+        // Split by sentence boundaries (but not "?" to preserve question marks)
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!\n"))
+        let lowercasedPattern = pattern.lowercased()
+
+        for sentence in sentences {
+            let cleaned = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.lowercased().contains(lowercasedPattern) && cleaned.contains("?") {
+                return cleaned
+            }
+        }
+
+        return nil
+    }
 }
 
 // MARK: - Word-boundary helpers for intent classification
@@ -1362,9 +1436,13 @@ private extension FoundationLLM {
             - No emojis.
             - Tense:
               * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
-              * Present continuous ONLY for clear in-progress execution (e.g., “is running the test suite”).
-              * Otherwise simple present (“explains/clarifies/confirms/proposes/asks/acknowledges”).
+              * Present continuous ONLY for clear in-progress execution (e.g., "is running the test suite").
+              * Otherwise simple present ("explains/clarifies/confirms/proposes/asks/acknowledges").
             - Mention tools (Write/Edit/Read/Bash/etc.) ONLY if MESSAGE explicitly says they were executed.
+            - Question preservation:
+              * If TRAILING_QUESTION is provided, append it to the summary after describing the main action.
+              * Format: "\(assistantName) [action]. Asked: [question]" OR "\(assistantName) [action] and asked [question]"
+              * Prefer concise phrasing; omit "Asked:" if it flows naturally.
 
             Fields:
             - summary: one sentence following the rules.
@@ -1376,6 +1454,9 @@ private extension FoundationLLM {
             Input format:
             MESSAGE:
             <<<assistant text>>>
+
+            Optional TRAILING_QUESTION (if detected):
+            <<<question text>>>
             """
         case .user:
             return """
