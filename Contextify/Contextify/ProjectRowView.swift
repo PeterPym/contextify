@@ -59,7 +59,7 @@ struct ProjectRowView: View {
             HStack(spacing: 4) {
               Image(systemName: "paperclip")
                 .imageScale(.small)
-              Text("Follow: Auto")  // Simplified - full version would show mode
+              Text(monitor.isPinnedMode ? "Follow: Pinned" : "Follow: Auto")  // P0-4: Bound to observable state
                 .font(.caption2)
             }
             .foregroundStyle(.secondary)

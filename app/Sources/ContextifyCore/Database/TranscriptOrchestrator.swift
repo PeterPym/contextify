@@ -71,11 +71,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let validator: TranscriptValidator
 
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
-  private var writeQueue: DatabaseWriteQueue!
+  private let writeQueue: DatabaseWriteQueue
 
   public init(dbManager: DatabaseManager) throws {
     self.dbManager = dbManager
     let pool = try dbManager.pool
+
+    // v23: Initialize write queue early (P0-3: non-optional let)
+    self.writeQueue = DatabaseWriteQueue(pool: pool)
 
     // Initialize repositories
     self.projectRepo = ProjectRepositoryImpl(db: pool)
@@ -118,9 +121,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Initialize validator
     self.validator = TranscriptValidator()
-
-    // v23: Initialize write queue
-    self.writeQueue = DatabaseWriteQueue(pool: pool)
 
     // Set metadata invalidation callback with weak self reference
     watcher.setMetadataInvalidator { [weak self] transcriptId in
@@ -588,8 +588,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try entryRepo.newByProject(projectId, afterTimestamp: afterTimestamp)
   }
 
-  public func getEntriesAfterCursor(forProject projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
-    try entryRepo.entriesAfterCursor(projectId: projectId, after: after)
+  public func getEntriesAfterCursor(forProject projectId: String, after: EntryCursor) throws -> [TranscriptEntry] {
+    // Convert EntryCursor to tuple for compatibility with entriesAfterCursor
+    let tuple = (timestamp: Int(after.timestamp), createdAt: Int(after.createdAt), id: after.id)
+    return try entryRepo.entriesAfterCursor(projectId: projectId, after: tuple)
   }
 
   public func searchEntries(content: String, projectId: String?) throws -> [TranscriptEntry] {

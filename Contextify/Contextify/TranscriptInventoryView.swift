@@ -772,13 +772,10 @@ struct TranscriptInventoryView: View {
     return formatter.localizedString(for: date, relativeTo: Date())
   }
 
-  // v23: Check if session is pinned in manual follow mode
+  // v23 (P0-4): Check if session is pinned in manual follow mode
   private func isPinned(_ session: TranscriptSession) -> Bool {
-    // Access followMode from monitor (would need to expose it as observable or add a computed property)
-    // For now, check if session matches activeSession and is in manual mode
-    // This is a simplified check - full implementation would read followMode from monitor
-    return session.identifier == monitor.activeSession?.identifier &&
-           session.provider == monitor.activeSession?.provider
+    guard let pinned = monitor.pinnedKey else { return false }
+    return pinned.sessionId == session.identifier && pinned.provider == session.provider
   }
 
   private func countSuffix(_ scope: InventoryScope) -> String {

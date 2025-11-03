@@ -142,7 +142,7 @@ final class ConversationMonitor {
             onProjectOrSessionChange()
         }
     }
-    @ObservationIgnored private var lastSeenCursor: (timestamp: Int, createdAt: Int, id: String)?  // Keyset cursor for incremental updates
+    @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated, accessible to inventory view)
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
@@ -160,13 +160,20 @@ final class ConversationMonitor {
     // v23: Active session follow state
     @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
     @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
-    @ObservationIgnored private var followMode: FollowMode = .automatic
+    private(set) var followMode: FollowMode = .automatic  // P0-4: Observable for UI
     @ObservationIgnored private var lastActiveKey: SessionKey?
     @ObservationIgnored private var lastSwitchAt: Date?
     @ObservationIgnored private var lastSystemEventTs: Int64?
     @ObservationIgnored private var seenSystemEventIds = Set<String>()
     @ObservationIgnored private let policyEngine = ActiveSessionPolicyEngine()
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
+
+    // P0-4: Computed properties for UI binding
+    var isPinnedMode: Bool {
+        if case .manual = followMode { return true }
+        return false
+    }
+    var pinnedKey: SessionKey? { followMode.pinnedKey }
 
     private init() {
         // Set up project change notifications early, so we can react to project selection
@@ -326,6 +333,12 @@ final class ConversationMonitor {
     private func onProjectOrSessionChange() {
         log.debug("onProjectOrSessionChange: projectId=\(self.currentProjectId ?? "nil")")
 
+        // v23 (P0-2, P1-1): Reset follow state for new project
+        isReadyForUpdates = false
+        sessionsLoaded = false
+        seenSystemEventIds.removeAll()
+        lastSystemEventTs = nil
+
         // Cancel any pending debounced updates (they're for the OLD project)
         if debounceTask != nil {
             log.debug("onProjectOrSessionChange: cancelling pending debounce task")
@@ -338,6 +351,31 @@ final class ConversationMonitor {
             Task {
                 await generator.clearPendingMisses(exceptProjectId: currentProjectId)
             }
+        }
+
+        // v23 (P0-2): Orderly startup sequence
+        Task { @MainActor in
+            // 1. Load policy from DB (sync read)
+            // TODO: loadPolicyForCurrentProject() - need to implement
+
+            // 2. Load all sessions before reconciliation
+            await self.loadAllSessionsFromDatabase()
+            self.sessionsLoaded = true
+
+            // 3. Reconcile policy with available sessions
+            await self.reconcilePolicyWithAvailableSessions()
+
+            // 4. Load persisted cursor (P1-4: restart safety)
+            self.loadCursor()
+
+            // 5. Load feed and initialize cursor
+            await self.loadFeedFromSQL()
+
+            // 6. Replay switch events
+            await self.loadSwitchEventsFromSQL()
+
+            // 7. Enable incremental updates
+            self.isReadyForUpdates = true
         }
     }
 
@@ -512,9 +550,10 @@ final class ConversationMonitor {
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
-            // Update cursor from latest entry
+            // Update cursor from latest entry (P1-4: persist)
             if let latest = transcriptEntries.first {
-                lastSeenCursor = (timestamp: latest.timestamp, createdAt: latest.createdAt, id: latest.id)
+                lastSeenCursor = EntryCursor(from: latest)
+                saveCursor()
             }
 
             currentSessionId = session.identifier
@@ -743,10 +782,11 @@ final class ConversationMonitor {
                 }
             }
 
-            // v23: Initialize cursor from tail (last entry) for restart-safe incremental updates
+            // v23 (P1-4): Initialize cursor from tail (last entry) for restart-safe incremental updates
             if let tailEntry = feed.last {
                 let e = tailEntry.0
-                lastSeenCursor = (timestamp: e.timestamp, createdAt: e.createdAt, id: e.id)
+                lastSeenCursor = EntryCursor(from: e)
+                saveCursor()  // P1-4: Persist cursor for project
                 log.debug("Initialized cursor from tail: \(e.id)")
             }
 
@@ -765,6 +805,51 @@ final class ConversationMonitor {
         } catch {
             lastError = "Failed to load timeline: \(error.localizedDescription)"
             log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// v23: Load and replay system switch events from database (restart-safe)
+    private func loadSwitchEventsFromSQL() async {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        do {
+            let events = try await orchestrator.getRecentSystemSwitchEvents(projectId: pidInt, since: lastSystemEventTs)
+            for ev in events where !seenSystemEventIds.contains(ev.id) {
+                if let content = ev.content {
+                    await appendSystemEntry(summary: content)
+                }
+                seenSystemEventIds.insert(ev.id)
+                lastSystemEventTs = max(lastSystemEventTs ?? 0, Int64(ev.timestamp))
+            }
+            if !events.isEmpty {
+                log.info("Loaded \(events.count) system switch events from database")
+            }
+        } catch {
+            log.error("Failed to load system switch events: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Cursor Persistence (P1-4)
+
+    /// Load persisted cursor for current project from UserDefaults
+    private func loadCursor() {
+        guard let projectId = currentProjectId else { return }
+        let key = "dev.contextify.cursor.\(projectId)"
+
+        if let data = UserDefaults.standard.data(forKey: key),
+           let cursor = try? JSONDecoder().decode(EntryCursor.self, from: data) {
+            lastSeenCursor = cursor
+            log.debug("Loaded persisted cursor for project \(projectId): \(cursor.id)")
+        }
+    }
+
+    /// Save current cursor to UserDefaults for restart safety
+    private func saveCursor() {
+        guard let projectId = currentProjectId, let cursor = lastSeenCursor else { return }
+        let key = "dev.contextify.cursor.\(projectId)"
+
+        if let data = try? JSONEncoder().encode(cursor) {
+            UserDefaults.standard.set(data, forKey: key)
+            log.debug("Saved cursor for project \(projectId): \(cursor.id)")
         }
     }
 
@@ -974,16 +1059,37 @@ final class ConversationMonitor {
                 trimEntries()
                 pruneSeenIDsIfNeeded()
 
-                // Update cursor to latest entry added
+                // Update cursor to latest entry added (P1-4: persist)
                 if let latestNew = newEntries.max(by: { a, b in
                     if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
                     if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
                     return a.id < b.id
                 }) {
-                    lastSeenCursor = (timestamp: latestNew.timestamp, createdAt: latestNew.createdAt, id: latestNew.id)
+                    lastSeenCursor = EntryCursor(from: latestNew)
+                    saveCursor()
                 }
 
                 lastUpdate = Date()
+
+                // v23: Evaluate follow decision after feed/apply
+                if isReadyForUpdates {
+                    let newestKey = computeNewestKey()
+                    let now = Date()
+                    let decision = policyEngine.decide(inputs: .init(
+                        followMode: followMode,
+                        lastActiveKey: lastActiveKey,
+                        newestCandidate: newestKey,
+                        now: now,
+                        lastSwitchAt: lastSwitchAt,
+                        cooldown: 5.0
+                    ))
+                    if let target = decision.nextActive {
+                        await setActive(from: lastActiveKey, to: target,
+                                        reason: decision.reason ?? .newerWrite,
+                                        emit: decision.shouldEmitMessage)
+                        lastSwitchAt = now
+                    }
+                }
 
                 let elapsed = Date().timeIntervalSince(startTime)
                 log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
@@ -1266,6 +1372,7 @@ final class ConversationMonitor {
     }
 
     /// Pinned-missing handler with zero-session persistence
+    @MainActor
     private func handlePinnedMissing() async {
         guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
         do {
@@ -1285,7 +1392,9 @@ final class ConversationMonitor {
                     content: "Pinned session unavailable — awaiting new activity",
                     metadataJSON: toJSON(["reason": "pinnedMissing", "noSessions": true, "mode": "automatic"])
                 )
-                try? await orchestrator.insertSystemEvent(ev)
+                Task {
+                    try? await orchestrator.insertSystemEvent(ev)
+                }
                 appendSystemEntry(summary: ev.content)  // also display immediately
                 lastActiveKey = nil
                 log.info("No sessions available - persisted project-scoped event")
@@ -1296,6 +1405,7 @@ final class ConversationMonitor {
     }
 
     /// Active session switching with system event emission
+    @MainActor
     private func setActive(from: SessionKey?, to: SessionKey, reason: SwitchReason, emit: Bool) async {
         guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
         guard let t = allSessions.first(where: { $0.identifier == to.sessionId && $0.provider == to.provider }) else {
@@ -1322,12 +1432,14 @@ final class ConversationMonitor {
                 content: followSummary(to, reason: reason),
                 metadataJSON: toJSON(payload)
             )
-            do {
-                try await orchestrator.insertSystemEvent(ev)
-                publishTypedEvent(to: to, reason: reason)
-                log.info("System event persisted for session switch: \(reason.rawValue)")
-            } catch {
-                log.error("Failed to persist system event: \(error.localizedDescription)")
+            Task {
+                do {
+                    try await orchestrator.insertSystemEvent(ev)
+                    await MainActor.run { self.publishTypedEvent(to: to, reason: reason) }
+                    log.info("System event persisted for session switch: \(reason.rawValue)")
+                } catch {
+                    log.error("Failed to persist system event: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -1358,6 +1470,7 @@ final class ConversationMonitor {
     }
 
     /// Publish typed event to Combine and NotificationCenter
+    @MainActor
     private func publishTypedEvent(to: SessionKey, reason: SwitchReason) {
         let evt = ActiveSessionDidChangeEvent(
             projectPath: HUDViewModel.shared.projectRootURL?.path ?? "",
@@ -1372,6 +1485,7 @@ final class ConversationMonitor {
     }
 
     /// Helper to append system messages directly to timeline
+    @MainActor
     private func appendSystemEntry(summary: String) {
         let entry = TimelineEntry(
             kind: .system,
@@ -1396,6 +1510,7 @@ final class ConversationMonitor {
     }
 
     /// Public API: Switch to automatic follow mode
+    @MainActor
     func unpinToAuto() async {
         guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
         do {
@@ -1408,6 +1523,7 @@ final class ConversationMonitor {
     }
 
     /// Public API: Pin to specific session
+    @MainActor
     func pinAndSwitch(_ session: TranscriptSession) async {
         guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
         do {

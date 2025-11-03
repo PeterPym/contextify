@@ -95,6 +95,12 @@ struct TimelineEntryRow: View {
                     .foregroundStyle(.tertiary)
                     .help("Summary not yet generated")
             }
+            if entry.action == .nonSummarizable {
+                Text("—")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .help("No summary available (non-summarizable content)")
+            }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")
                     .font(.caption)
