@@ -14,6 +14,8 @@ struct SettingsView: View {
   @State private var showingFilePicker: Bool = false
   @State private var conflictWarning: String?
 
+  private let devMode = DeveloperMode.shared
+
   var body: some View {
     Form {
       Section {
@@ -118,15 +120,15 @@ struct SettingsView: View {
             .padding(.top, 8)
         }
 
-        #if DEBUG
-        Divider()
-          .padding(.vertical, 8)
+        if devMode.isEnabled {
+          Divider()
+            .padding(.vertical, 8)
 
-        Button("Backup (Dev)") {
-          backupDatabase()
+          Button("Backup (Dev)") {
+            backupDatabase()
+          }
+          .buttonStyle(.bordered)
         }
-        .buttonStyle(.bordered)
-        #endif
       }
     }
     .padding()
