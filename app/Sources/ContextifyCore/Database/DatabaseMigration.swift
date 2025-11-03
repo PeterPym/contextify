@@ -119,11 +119,20 @@ public enum DatabaseMigration {
       throw MigrationError.validationFailed
     }
 
-    // 10. Delete source if requested
+    // 10. Delete source if requested, or clean up orphaned WAL/SHM
     if deleteSource {
       log.info("🗑 Deleting source database...")
       try? FileManager.default.removeItem(at: sourcePath)
-      // Note: WAL/SHM files are not copied, so no need to delete them separately
+      // WAL/SHM files deleted automatically with main DB
+    } else {
+      // Keep main database as backup, but clean up orphaned WAL/SHM files
+      // (they're useless without an active connection and cause confusion)
+      log.info("🧹 Cleaning up orphaned WAL/SHM files at old location...")
+      let walPath = URL(fileURLWithPath: sourcePath.path + "-wal")
+      let shmPath = URL(fileURLWithPath: sourcePath.path + "-shm")
+      try? FileManager.default.removeItem(at: walPath)
+      try? FileManager.default.removeItem(at: shmPath)
+      log.info("✅ Old database kept as backup at: \(sourcePath.path)")
     }
 
     log.info("✅ Database migration complete")
