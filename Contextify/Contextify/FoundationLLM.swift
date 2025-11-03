@@ -1390,14 +1390,14 @@ private extension FoundationLLM {
 
             Rules:
             - Output ONE sentence: "\(assistantName) [verb] [object]", ≤140 chars.
-            - Format: Start with "\(assistantName)" followed by a third-person verb (no colon, no comma, no quotes).
-            - Examples: "\(assistantName) explains the API structure.", "\(assistantName) fixed the type error."
+            - Format: Start with "\(assistantName)" followed by a past-tense third-person verb (no colon, no comma, no quotes).
+            - Examples: "\(assistantName) explained the API structure.", "\(assistantName) fixed the type error."
             - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
             - No emojis.
-            - Tense:
-              * Past when completion is explicitly reported (done/✅/completed/fixed/resolved/merged/wrote/saved).
-              * Present continuous ONLY for clear in-progress execution (e.g., "is running the test suite").
-              * Otherwise simple present ("explains/clarifies/confirms/proposes/asks/acknowledges").
+            - Tense: ALWAYS use past tense (the timeline is a historical record).
+              * "explained", "proposed", "fixed", "confirmed", "asked", "acknowledged"
+              * Even for statements like "I'll build this" → "proposed building"
+              * Even for "Let's test" → "suggested testing"
             - Mention tools (Write/Edit/Read/Bash/etc.) ONLY if MESSAGE explicitly says they were executed.
 
             Fields:
