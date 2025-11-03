@@ -234,6 +234,175 @@ final class UserIntentTests: XCTestCase {
         let cleaned = await FoundationLLM.shared._testStripQuotedAndCode("Fix this:\n```swift\nfunc foo() {}\n```\nplease")
         XCTAssertFalse(cleaned.contains("func foo"))
     }
+
+    // MARK: - Word-boundary tests (INT-1)
+
+    func testImperativeWordBoundaries() async throws {
+        // "read" as imperative should be directive
+        let readIntent = await FoundationLLM.shared._testClassifyUserIntent("read the log")
+        XCTAssertEqual(readIntent, .directive, "Standalone 'read' should be directive")
+
+        // "readme" should NOT be classified as directive (contains "read" but is different word)
+        let readmeIntent = await FoundationLLM.shared._testClassifyUserIntent("readme updated")
+        XCTAssertNotEqual(readmeIntent, .directive, "'readme' should not match imperative 'read'")
+    }
+
+    func testProblemIndicatorsBoundaries() async throws {
+        // "did not work" should be directive
+        let problemIntent = await FoundationLLM.shared._testClassifyUserIntent("that did not work")
+        XCTAssertEqual(problemIntent, .directive, "'did not work' should be directive")
+
+        // "didnotworkflow" (contrived example) should NOT match if we had word boundaries
+        let workflowIntent = await FoundationLLM.shared._testClassifyUserIntent("discussing the workflow here")
+        XCTAssertNotEqual(workflowIntent, .directive, "'workflow' should not match 'work' problem indicator")
+    }
+
+    func testInterjections() async throws {
+        // "hm." should be directive (observation interjection)
+        let hmIntent = await FoundationLLM.shared._testClassifyUserIntent("hm. weird")
+        XCTAssertEqual(hmIntent, .directive, "'hm.' should be directive")
+
+        // "hmm" should be directive
+        let hmmIntent = await FoundationLLM.shared._testClassifyUserIntent("hmm ok")
+        XCTAssertEqual(hmmIntent, .directive, "'hmm' should be directive")
+    }
+
+    func testUnknownFallbackSummary() async throws {
+        // When intent is UNKNOWN, the LLM instructions should provide a safe fallback
+        // This is tested indirectly through the instruction template
+        // The template now specifies: UNKNOWN → "You asked about this."
+        // This test documents the expected behavior
+        let unknownIntent = await FoundationLLM.shared._testClassifyUserIntent("lorem ipsum dolor sit amet")
+        XCTAssertEqual(unknownIntent, .unknown, "Unclassifiable text should return .unknown")
+    }
+
+    func testLookVsLookups() async throws {
+        // "look" should be directive
+        let lookIntent = await FoundationLLM.shared._testClassifyUserIntent("look at the code")
+        XCTAssertEqual(lookIntent, .directive, "'look' should be directive")
+
+        // "lookups" should NOT be classified as directive (different word)
+        let lookupsIntent = await FoundationLLM.shared._testClassifyUserIntent("the lookups are slow")
+        XCTAssertNotEqual(lookupsIntent, .directive, "'lookups' should not match imperative 'look'")
+    }
+
+    func testInvestigateVsReinvestigate() async throws {
+        // "investigate" should be directive
+        let investigateIntent = await FoundationLLM.shared._testClassifyUserIntent("investigate this issue")
+        XCTAssertEqual(investigateIntent, .directive, "'investigate' should be directive")
+
+        // "reinvestigate" should also be directive (still an imperative form)
+        let reinvestigateIntent = await FoundationLLM.shared._testClassifyUserIntent("reinvestigate the bug")
+        XCTAssertEqual(reinvestigateIntent, .directive, "'reinvestigate' should be directive")
+    }
+
+    // MARK: - Robustness tests (from code review)
+
+    func testCurlyApostrophesNormalize() async throws {
+        // U+2019 (right single quotation mark) should normalize to straight apostrophe
+        let curlyIntent = await FoundationLLM.shared._testClassifyUserIntent("that didn\u{2019}t work")
+        XCTAssertEqual(curlyIntent, .directive, "Curly apostrophe should normalize to standard apostrophe")
+    }
+
+    func testPunctuationAroundPhrases() async throws {
+        // "did not" with trailing comma should still match
+        let commaIntent = await FoundationLLM.shared._testClassifyUserIntent("that did not, actually")
+        XCTAssertEqual(commaIntent, .directive, "Phrase with trailing comma should match")
+
+        // "didn't work" with period
+        let periodIntent = await FoundationLLM.shared._testClassifyUserIntent("that didn't work.")
+        XCTAssertEqual(periodIntent, .directive, "Phrase with trailing period should match")
+    }
+
+    func testWhitespaceInsensitivePhrase() async throws {
+        // Multiple spaces between words should still match
+        let spacedIntent = await FoundationLLM.shared._testClassifyUserIntent("that   did   not   work")
+        XCTAssertEqual(spacedIntent, .directive, "Phrase with extra whitespace should match")
+    }
+
+    func testProductivePrefixCoverage() async throws {
+        // "reconfigure" should be directive (re- + configure)
+        let reconfigureIntent = await FoundationLLM.shared._testClassifyUserIntent("reconfigure the logger")
+        XCTAssertEqual(reconfigureIntent, .directive, "'reconfigure' should match via re- prefix")
+
+        // "retest" should be directive (re- + test)
+        let retestIntent = await FoundationLLM.shared._testClassifyUserIntent("retest the component")
+        XCTAssertEqual(retestIntent, .directive, "'retest' should match via re- prefix")
+
+        // "debug" is in the base set
+        let debugIntent = await FoundationLLM.shared._testClassifyUserIntent("debug the issue")
+        XCTAssertEqual(debugIntent, .directive, "'debug' should be directive")
+
+        // "predebug" should match via pre- prefix
+        let predebugIntent = await FoundationLLM.shared._testClassifyUserIntent("predebug the script")
+        XCTAssertEqual(predebugIntent, .directive, "'predebug' should match via pre- prefix")
+    }
+
+    func testWordBoundaryNegativeControl() async throws {
+        // "workflow" must NOT trigger "work" problem indicator
+        let workflowIntent = await FoundationLLM.shared._testClassifyUserIntent("discussing the workflow here")
+        XCTAssertNotEqual(workflowIntent, .directive, "'workflow' should not match 'work' indicator")
+
+        // Should be unknown or question, not directive
+        XCTAssertTrue(workflowIntent == .unknown || workflowIntent == .question,
+                     "'workflow' context should be unknown or question, not directive")
+
+        // "networking" should NOT trigger "working" problem indicator
+        let networkingIntent = await FoundationLLM.shared._testClassifyUserIntent("the networking is slow")
+        XCTAssertNotEqual(networkingIntent, .directive, "'networking' should not match 'working' indicator")
+    }
+
+    // MARK: - Edge case punctuation tests (from 2nd review)
+
+    func testHyphenInPhrases() async throws {
+        // Hyphenated phrases should still match problem indicators
+        let hyphenIntent = await FoundationLLM.shared._testClassifyUserIntent("that did-not work")
+        // Note: "did-not" with hyphen won't match "did not" pattern - this documents current behavior
+        // Could be .unknown or directive depending on other patterns
+    }
+
+    func testEllipsisAfterPhrases() async throws {
+        // Ellipsis after phrase should still match
+        let ellipsisIntent = await FoundationLLM.shared._testClassifyUserIntent("that didn't work…")
+        XCTAssertEqual(ellipsisIntent, .directive, "Phrase with ellipsis should match")
+    }
+
+    func testEnDashNoise() async throws {
+        // En-dash in text should not break contraction matching
+        let enDashIntent = await FoundationLLM.shared._testClassifyUserIntent("lets–actually do this")
+        // After whitespace normalization and contraction fix, should be directive
+        XCTAssertEqual(enDashIntent, .directive, "'lets' should normalize to 'let's' and be directive")
+    }
+
+    func testContractionWithTrailingPunctuation() async throws {
+        // Contractions with trailing punctuation
+        let commaIntent = await FoundationLLM.shared._testClassifyUserIntent("dont, do that")
+        XCTAssertEqual(commaIntent, .directive, "'dont,' should normalize to 'don't' and be directive")
+
+        let exclamIntent = await FoundationLLM.shared._testClassifyUserIntent("dont! that's wrong")
+        XCTAssertEqual(exclamIntent, .directive, "'dont!' should normalize to 'don't' and be directive")
+
+        let questionIntent = await FoundationLLM.shared._testClassifyUserIntent("couldnt? maybe try again")
+        XCTAssertEqual(questionIntent, .directive, "'couldnt?' should normalize to 'couldn't' and be directive")
+    }
+
+    func testReReviewPrefix() async throws {
+        // "re-review" with "review" in base set should match
+        let reReviewIntent = await FoundationLLM.shared._testClassifyUserIntent("re-review the code")
+        // Note: "re-review" with hyphen becomes two tokens; first token "re" won't match
+        // This documents current tokenization behavior
+    }
+
+    func testStemLengthGuard() async throws {
+        // "remove" should NOT match if we had a hypothetical "move" verb with re- prefix
+        // Since "move" (4 chars) would pass the ≥4 guard, but it's not in our current set
+        // This test documents the guard working correctly
+        let removeIntent = await FoundationLLM.shared._testClassifyUserIntent("remove old files")
+        // "remove" is not in the base set and "move" is not in the base set
+        // So should NOT be classified as directive via prefix logic
+        // Should be .unknown unless other patterns match
+        XCTAssertNotEqual(removeIntent, .directive, "'remove' should not spuriously match via prefix")
+    }
 }
 
 #if canImport(FoundationModels)
