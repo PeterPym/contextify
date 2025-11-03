@@ -25,9 +25,8 @@ public actor ProjectDiscoveryService {
   public func discoverAllProjects(currentProjectPath: String?) async throws -> [DiscoveredProject] {
     logger.info("Starting project discovery")
 
-    // Clear stale ingestion errors from previous attempts
-    // Errors will be re-populated if projects are re-ingested
-    ingestionErrors.removeAll()
+    // Do not clear ingestionErrors here. We keep prior errors visible until a
+    // subsequent successful ingest explicitly replaces them.
 
     // 1. Scan ~/.claude/projects/* for Claude Code projects
     let claudeProjects = try await discoverClaudeCodeProjects()
@@ -104,7 +103,7 @@ public actor ProjectDiscoveryService {
       progressHandler?(DiscoveryProgress(
         phase: .ingesting,
         currentProject: projectName,
-        projectsCompleted: index,
+        projectsCompleted: index + 1,
         projectsTotal: total,
         message: "Ingesting \(projectName)..."
       ))

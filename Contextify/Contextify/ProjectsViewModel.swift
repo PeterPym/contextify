@@ -10,7 +10,7 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectsView
 @MainActor
 @Observable
 final class ProjectsViewModel {
-  let discoveryService: ProjectDiscoveryService  // Public for ExcludedProjectsView
+  let discoveryService: ProjectDiscoveryService
   private let hudModel: HUDViewModel
   private let activityMonitor: ProjectActivityMonitor
 
@@ -47,11 +47,14 @@ final class ProjectsViewModel {
     startObservingProjectChanges()
   }
 
-  deinit {
+  nonisolated deinit {
     eventObservationTask?.cancel()
     refreshTask?.cancel()
-    // Note: projectRootObserver cleanup happens in stop() (MainActor-isolated)
-    // NotificationCenter automatically removes all observers when self is deallocated
+    MainActor.assumeIsolated {
+      if let token = projectRootObserver {
+        NotificationCenter.default.removeObserver(token)
+      }
+    }
   }
 
   // MARK: - Actions
@@ -59,17 +62,16 @@ final class ProjectsViewModel {
   /// Discovers and ingests all projects
   func discoverProjects() async {
     guard !isDiscovering else {
-      print("⚠️ ALREADY DISCOVERING - SKIPPING")
+      logger.debug("Already discovering; skipping duplicate call")
       return
     }
 
-    print("✅ DISCOVER PROJECTS CALLED")
+    logger.debug("discoverProjects() invoked")
     isDiscovering = true
     errorMessage = nil
 
     do {
       // Phase 1: Discovery
-      print("📍 Phase 1: Starting discovery")
       logger.info("Starting project discovery")
 
       // Get current project path - check multiple sources to handle initialization timing

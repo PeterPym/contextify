@@ -109,9 +109,12 @@ struct ProjectRowView: View {
         Button(action: onShowStats) {
           Image(systemName: "chart.bar")
             .imageScale(.large)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .help("View Statistics")
+        .accessibilityLabel(Text("View statistics for \(project.name)"))
       }
     }
     .padding()
