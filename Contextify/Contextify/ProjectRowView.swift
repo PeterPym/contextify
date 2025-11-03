@@ -6,7 +6,6 @@ struct ProjectRowView: View {
   let project: DiscoveredProject
   let onSetAsCurrent: () -> Void
   let onRevealInFinder: () -> Void
-  let onExclude: () -> Void
   let onShowStats: () -> Void
 
   var body: some View {
@@ -85,15 +84,16 @@ struct ProjectRowView: View {
 
       // Actions
       HStack(spacing: 12) {
-        Button(action: onSetAsCurrent) {
-          HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle")
-              .imageScale(.small)
-            Text("Set as Current")
+        if !project.isCurrent {
+          Button(action: onSetAsCurrent) {
+            HStack(spacing: 4) {
+              Image(systemName: "checkmark.circle")
+                .imageScale(.small)
+              Text("Set as Current")
+            }
           }
+          .buttonStyle(.bordered)
         }
-        .buttonStyle(.bordered)
-        .disabled(project.isCurrent)
 
         Button(action: onRevealInFinder) {
           HStack(spacing: 4) {
@@ -106,16 +106,15 @@ struct ProjectRowView: View {
 
         Spacer()
 
-        Menu {
-          Button("View Statistics", action: onShowStats)
-          Divider()
-          Button("Hide from List", action: onExclude)
-        } label: {
-          Image(systemName: "ellipsis.circle")
+        Button(action: onShowStats) {
+          Image(systemName: "chart.bar")
             .imageScale(.large)
+            .frame(minWidth: 28, minHeight: 28)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .help("More actions")
+        .buttonStyle(.borderless)
+        .help("View Statistics")
+        .accessibilityLabel(Text("View statistics for \(project.name)"))
       }
     }
     .padding()
@@ -145,7 +144,6 @@ struct ProjectRowView: View {
     ),
     onSetAsCurrent: {},
     onRevealInFinder: {},
-    onExclude: {},
     onShowStats: {}
   )
   .padding()

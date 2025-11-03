@@ -315,10 +315,10 @@ struct TranscriptInventoryView: View {
             .lineLimit(1)
         } else if loadingMetadata.contains(session.identifier) {
           HStack(spacing: 4) {
-            ProgressView()
-              .controlSize(.mini)
-              .scaleEffect(0.7)
-              .frame(width: 10, height: 10)
+            Image(systemName: "hourglass")
+              .font(.caption2)
+              .symbolRenderingMode(.monochrome)
+              .foregroundStyle(.tertiary)
             Text("Analyzing…")
               .font(.caption)
               .foregroundStyle(.secondary)

@@ -4,7 +4,6 @@ import ContextifyCore
 /// Dedicated window for browsing and managing discovered projects
 struct ProjectsWindow: View {
   @Environment(ProjectsViewModel.self) private var viewModel
-  @State private var showingExcluded = false
   @State private var selectedProject: DiscoveredProject?
 
   var body: some View {
@@ -28,10 +27,6 @@ struct ProjectsWindow: View {
       }
     }
     .frame(minWidth: 800, idealWidth: 800, maxWidth: .infinity, minHeight: 600, idealHeight: 600, maxHeight: .infinity)
-    .sheet(isPresented: $showingExcluded) {
-      ExcludedProjectsView()
-        .environment(viewModel)
-    }
     .sheet(item: $selectedProject) { project in
       ProjectStatsView(project: project)
     }
@@ -83,18 +78,11 @@ struct ProjectsWindow: View {
         }
       }
 
-      HStack(spacing: 8) {
-        Button("Show Excluded") {
-          showingExcluded = true
-        }
-        .buttonStyle(.bordered)
-
-        Button("Refresh Projects") {
-          viewModel.refresh()
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(viewModel.isDiscovering)
+      Button("Refresh Projects") {
+        viewModel.refresh()
       }
+      .buttonStyle(.borderedProminent)
+      .disabled(viewModel.isDiscovering)
     }
   }
 
@@ -111,9 +99,6 @@ struct ProjectsWindow: View {
             },
             onRevealInFinder: {
               viewModel.revealInFinder(project)
-            },
-            onExclude: {
-              viewModel.excludeProject(project)
             },
             onShowStats: {
               selectedProject = project
