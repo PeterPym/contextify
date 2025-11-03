@@ -136,6 +136,111 @@ Don't provide a template for `.unknown` - let the LLM use generic "You [action]"
 
 ---
 
+### 3. Complete Convert-to-Codex/Claude Code Transcript Behaviors
+**Status:** High Priority - Transcript conversion feature incomplete
+
+**Current State:**
+TranscriptConverter.swift exists (33KB, last modified Oct 25) but conversion behaviors need completion and testing.
+
+**What Exists:**
+- ✅ `app/Sources/ContextifyCore/TranscriptConverter.swift` - Core conversion logic
+- ✅ Documentation in `build/notes/archive/implementation-docs/transcript-tool-conversion/`
+- ✅ Format specifications in `build/notes/technical-reference/claude-code-transcript-format.md`
+
+**What Needs Completion:**
+- [ ] Audit current conversion implementation for correctness
+- [ ] Test convert-to-codex behavior (Claude Code → Codex format)
+- [ ] Test convert-to-claude-code behavior (Codex → Claude Code format)
+- [ ] Verify field mappings (content blocks, message types, UUIDs)
+- [ ] Handle edge cases (empty transcripts, metadata-only files, malformed records)
+- [ ] Add validation to detect format mismatches
+- [ ] UI integration for triggering conversions (if not already present)
+- [ ] Documentation of when/why users would convert formats
+
+**Key Considerations:**
+- Claude Code uses `text` content blocks, Codex uses `input_text`/`output_text`
+- Message structure differences: Claude Code has top-level `uuid`/`type`, Codex wraps in `payload.type:"message"`
+- Metadata record handling (file-history, summary, system messages)
+- Timestamp format preservation
+
+**Testing Scenarios:**
+1. Convert real Claude Code transcript → Codex → verify in Codex CLI
+2. Convert real Codex transcript → Claude Code → verify in Contextify
+3. Round-trip conversion (both directions) and compare checksums
+4. Convert empty/metadata-only transcripts
+5. Convert large transcripts (10k+ entries)
+
+**Files to Review:**
+- `app/Sources/ContextifyCore/TranscriptConverter.swift`
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` (for format reference)
+- `build/notes/technical-reference/claude-code-transcript-format.md` (spec)
+
+**Success Criteria:**
+- Converted transcripts load correctly in target tool (Claude Code or Codex)
+- No data loss in conversion (all messages, metadata preserved)
+- Conversion errors handled gracefully with clear error messages
+
+---
+
+### 4. QA Mixed-Mode Transcript Following & System Messages
+**Status:** High Priority - Need to test/restore system message behavior
+
+**Issue:**
+When Contextify detects it's now following a different transcript for a project (e.g., user switched from Claude Code to Codex CLI, or started a new session), the app should show a system message in the timeline indicating the switch. This behavior may not be working correctly or may have regressed.
+
+**Expected Behavior:**
+- User is viewing project A in Contextify, following transcript session X
+- User switches to a different transcript session Y (same project, different session ID)
+- Contextify timeline should show a system message like:
+  - "Now following session: [session-Y-name]"
+  - "Switched from Claude Code to Codex CLI"
+  - Or similar indicator that the active transcript changed
+
+**Testing Scenarios:**
+1. **Same Provider, Different Session:**
+   - Start Claude Code session A in project
+   - View in Contextify (should show session A timeline)
+   - Start new Claude Code session B in same project
+   - Verify system message appears: "Now following session B"
+
+2. **Different Provider (Mixed Mode):**
+   - Start Codex CLI session in project
+   - View in Contextify (should show Codex timeline)
+   - Start Claude Code session in same project
+   - Verify system message: "Switched to Claude Code session"
+
+3. **Transcript Deleted/Missing:**
+   - Follow transcript X
+   - Delete/move transcript X source file
+   - Start new transcript Y
+   - Verify system message: "Previous transcript no longer available, showing: [Y]"
+
+4. **Manual Transcript Switch:**
+   - Use Transcript Inventory to switch active transcript
+   - Verify system message appears in timeline
+
+**Files to Investigate:**
+- `Contextify/Contextify/ConversationMonitor.swift` - Timeline state management, transcript switching logic
+- `Contextify/Contextify/TimelineModels.swift` - System message models (`TimelineEntry` with `disposition: .system`?)
+- `Contextify/Contextify/ConversationTimelineView.swift` - System message rendering
+- `Contextify/Contextify/ConversationSources.swift` - Provider detection (Claude Code vs Codex)
+- `app/Sources/ContextifyCore/Database/Repositories.swift` - Active transcript tracking
+
+**Investigation Steps:**
+1. Search codebase for "system message" or similar patterns
+2. Check if system message insertion code was removed or disabled
+3. Review timeline entry creation logic for transcript switches
+4. Add logging to track when transcript switches occur
+5. Test all scenarios above and document actual vs expected behavior
+
+**Success Criteria:**
+- Clear system messages appear when switching transcripts
+- Messages are visually distinct (different styling, icon, color)
+- User never confused about which transcript they're viewing
+- System messages persist across app restarts
+
+---
+
 ### 1. Terminal Label Update Requires App Focus Cycle
 **Issue:** The textarea label "Send to: [terminal title]" updates, but requires tabbing back to the app, then to terminal, then back to app to see the update.
 
@@ -351,6 +456,109 @@ Don't provide a template for `.unknown` - let the LLM use generic "You [action]"
 - Add "pin" feature to keep important projects at top
 - Add preference setting for timeline entry limit (currently hardcoded to 25 in ConversationMonitor.swift)
 - Implement project search/filter in tabs
+
+#### System Tray Support with Unread Indicator
+**Proposed Feature:** Allow app to be closed to system tray instead of quitting, with visual indicator for activity.
+
+**Requirements:**
+- Close window (Cmd+W or red button) minimizes to system tray instead of quitting
+- System tray icon shows unread count for currently selected project
+- Click tray icon to restore window
+- Optionally show unread counts for all projects (if space allows)
+- Consider badge/dot indicator when any project has unread messages
+- Preference setting: "Keep in system tray when closed" (default: enabled)
+
+**Implementation Notes:**
+- Use `NSStatusBar` for menu bar/system tray icon
+- Monitor unread count changes via ProjectActivityMonitor events
+- Update icon/badge when unread counts change
+- Handle window close event to hide instead of terminate
+- Right-click tray icon: "Show Contextify", "Quit"
+
+**Files to Create/Modify:**
+- `Contextify/Contextify/SystemTrayManager.swift` (NEW)
+- `Contextify/Contextify/ContextifyApp.swift` - Handle window close behavior
+- `Contextify/Contextify/SettingsView.swift` - Add system tray preference
+
+**Design Considerations:**
+- Should app launch directly to tray on startup if preference enabled?
+- What icon to use? (Contextify logo, custom design, SF Symbol?)
+- How to render unread count on small icon? (badge, text overlay)
+- Notification integration? (e.g., show notification when unread count increases)
+
+#### Transcript Inventory: Use Hourglass Icon for Pending Summarization
+**Issue:** Transcript Inventory currently shows an "analyzing" spinner for transcripts with pending LLM summarization. This should use the hourglass icon (⏳ or SF Symbol "hourglass") to match the Conversation Log design pattern.
+
+**Current Behavior:**
+- Transcript rows show animated spinner when metadata generation is in progress
+- Inconsistent with Conversation Log, which uses hourglass for pending summaries
+
+**Expected Behavior:**
+- Use same hourglass icon as Conversation Log (TimelineEntryRow.swift:192-206)
+- No animation (static icon)
+- Match styling/color with timeline entries
+
+**Files to Modify:**
+- `Contextify/Contextify/TranscriptInventoryView.swift` - Replace spinner with hourglass
+
+**Reference Implementation:**
+- `Contextify/Contextify/TimelineEntryRow.swift:192-206` - Hourglass icon usage
+
+#### Transcript Inventory: Investigate Missing Metadata (UUID-only Display)
+**Issue:** Many transcripts in Transcript Inventory show only the UUID with no title, description, or other metadata.
+
+**Expected Behavior:**
+- Transcripts should show:
+  - Session title (generated or inferred from content)
+  - Description (LLM summary)
+  - Topics/tags (if available)
+  - Timestamp range (first/last message dates)
+  - Entry count
+
+**Current Behavior:**
+- Some transcripts display as UUID only (e.g., "A31F3D0A-4820-41AB-8121-0C81AC8533C4")
+- Unclear why metadata is missing
+
+**Investigation Steps:**
+1. **Check database state:**
+   - Query `transcripts` table for rows with NULL/empty metadata fields
+   - Check if TranscriptMetadataOrchestrator processed these transcripts
+   - Review `timeline_cache` for metadata entries
+
+2. **Review metadata generation:**
+   - Check if metadata generation failed (errors in logs)
+   - Verify TranscriptMetadataOrchestrator is running
+   - Check for empty/metadata-only transcripts (see transcript classification docs)
+   - Review circuit breaker state (did generation get rate-limited?)
+
+3. **Test metadata generation:**
+   - Pick a UUID-only transcript
+   - Manually trigger metadata generation
+   - Verify it appears in UI after generation
+
+4. **Check UI fallback logic:**
+   - `TranscriptInventoryView.swift` - How does it handle missing metadata?
+   - Should show placeholder text like "Untitled Transcript" instead of UUID?
+   - Should trigger metadata generation on first view?
+
+**Possible Root Causes:**
+- Metadata generation never ran for these transcripts
+- Empty/metadata-only transcripts (no conversational content to summarize)
+- TranscriptMetadataOrchestrator circuit breaker tripped
+- Database migration issue (metadata columns not populated)
+- UI not falling back gracefully when metadata is NULL
+
+**Files to Investigate:**
+- `Contextify/Contextify/TranscriptInventoryView.swift` - UI rendering
+- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift` - Generation logic
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Transcript table schema
+- `app/Sources/ContextifyCore/Database/Models.swift` - Transcript model
+
+**Success Criteria:**
+- All transcripts show meaningful metadata (title, description, or placeholder)
+- UUID never shown as primary display (use as fallback only)
+- Empty transcripts show clear indicator (e.g., "No conversational content")
+- Metadata generation triggered automatically for new transcripts
 
 ### Observability
 - Add telemetry for unread refresh frequency
