@@ -437,12 +437,11 @@ public final class HooverEngine {
               previousEntries.removeFirst()
             }
           } else {
-            // Log when entry is silently ignored (likely duplicate ID or other constraint)
-            log.warning("⚠️ Entry silently ignored (duplicate constraint?)")
-            log.warning("   Entry ID: \(model.id, privacy: .public)")
-            log.warning("   Kind: \(model.kind, privacy: .public)")
-            log.warning("   Content preview: \(String(model.content.prefix(80)), privacy: .public)")
-            log.warning("   Content SHA256: \(model.contentSha256, privacy: .public)")
+            // Entry silently ignored (likely duplicate ID from re-ingestion) - expected during database rebuilds
+            log.debug("Entry silently ignored (duplicate constraint?)")
+            log.debug("   Entry ID: \(model.id, privacy: .public)")
+            log.debug("   Kind: \(model.kind, privacy: .public)")
+            log.debug("   Content preview: \(String(model.content.prefix(80)), privacy: .public)")
           }
         } catch {
           // Log detailed FK error info
