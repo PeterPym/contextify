@@ -96,6 +96,11 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       guard !content.isEmpty else {
         throw ParserError.skipEntry
       }
+
+      // Skip empty local-command-stdout wrappers (structural artifacts with no semantic value)
+      if content == "<local-command-stdout></local-command-stdout>" {
+        throw ParserError.skipEntry
+      }
     } else {
       throw ParserError.missingRequiredField("message.content")
     }
