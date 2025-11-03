@@ -7,51 +7,6 @@ import AppKit
 private let log = Logger(subsystem: "dev.contextify", category: "Settings")
 
 struct SettingsView: View {
-  var body: some View {
-    TabView {
-      GeneralSettingsView()
-        .tabItem {
-          Label("General", systemImage: "gearshape")
-        }
-
-      DatabaseSettingsView()
-        .tabItem {
-          Label("Database", systemImage: "cylinder")
-        }
-    }
-    .frame(width: 550, height: 450)
-  }
-}
-
-struct GeneralSettingsView: View {
-  @AppStorage("outputsDirectory") private var outputsDirectory = "~/Contextify/outputs"
-
-  var body: some View {
-    Form {
-      Section {
-        Text("General Settings")
-          .font(.headline)
-
-        Divider()
-
-        LabeledContent("Outputs Directory:") {
-          Text(outputsDirectory)
-            .foregroundStyle(.secondary)
-            .font(.caption)
-        }
-
-        Text("Configure application preferences and behavior")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .padding(.top, 8)
-      }
-    }
-    .padding()
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-  }
-}
-
-struct DatabaseSettingsView: View {
   @State private var currentLocation: String = ""
   @State private var isCustomLocation: Bool = false
   @State private var isMigrating: Bool = false
@@ -62,7 +17,7 @@ struct DatabaseSettingsView: View {
   var body: some View {
     Form {
       Section {
-        Text("Database Settings")
+        Text("Settings")
           .font(.headline)
 
         Divider()

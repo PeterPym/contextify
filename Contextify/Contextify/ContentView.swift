@@ -93,11 +93,6 @@ struct ContentView: View {
         } message: {
             Text(model.alertMessage ?? "")
         }
-        .onChange(of: model.state) { _, newState in
-            if case .success(let msg) = newState {
-                presentToast(msg)
-            }
-        }
     }
 
     // MARK: - Project Header (Extracted for v1.0)

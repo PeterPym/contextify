@@ -418,7 +418,6 @@ public struct GitRepositoryResolver {
 public final class HUDViewModel {
   public static let shared = HUDViewModel()
 
-  public enum UIState: Equatable { case idle, ingesting, success(String), error(String) }
   public enum ProjectRootError: Error, Equatable { case notGit(URL), unreadable(URL) }
 
   private let gitLog = Logger(subsystem: "dev.contextify", category: "Git")
@@ -426,14 +425,6 @@ public final class HUDViewModel {
   private let watcherLog = Logger(subsystem: "dev.contextify", category: "Watcher")
 
   public var branch: String = "—"
-
-  // DEPRECATED (2025-10-02): Ingestion/session UI removed in favor of inline compose
-  // These properties remain for potential future restoration:
-  public var session: String = "Session-001"       // Was: session identifier for checkpoints
-  public var status: String = "Ready"              // Was: status text display
-  public var lastOutputURL: URL? = nil             // Was: last ingested file/checkpoint
-  public var state: UIState = .idle                // Was: ingestion state (idle/ingesting/success/error)
-  public var urlText: String = ""                  // Was: URL entry field binding
 
   public var projectDisplayName: String {
     projectRootURL?.lastPathComponent ?? "Unknown Project"
@@ -473,20 +464,6 @@ public final class HUDViewModel {
     if branch.hasPrefix("refs/heads/") { return String(branch.dropFirst("refs/heads/".count)) }
     if branch.hasPrefix("refs/") { return branch.split(separator: "/").last.map(String.init) ?? branch }
     return branch
-  }
-
-  public var outputsDirectory: URL {
-    #if os(macOS)
-    if Sandbox.isSandboxed {
-      let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      return appSupport.appendingPathComponent("Contextify/outputs", isDirectory: true)
-    }
-    #endif
-    if let override = ProcessInfo.processInfo.environment["CONTEXTIFY_OUTPUTS_DIR"], !override.isEmpty {
-      return URL(fileURLWithPath: override, isDirectory: true)
-    }
-    let base = FileManager.default.homeDirectoryForCurrentUser
-    return base.appendingPathComponent("Contextify/outputs", isDirectory: true)
   }
 
   public init() {
@@ -550,140 +527,6 @@ public final class HUDViewModel {
       #endif
       securityScopedURL = nil
     }
-  }
-
-  public func ingestURLString() async {
-    let trimmed = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let url = URL(string: trimmed), !trimmed.isEmpty else {
-      state = .error("Enter a valid URL")
-      return
-    }
-    await ingest(.url(url))
-  }
-
-  public enum IngestItem: Sendable { case file(URL), url(URL) }
-
-  public func ingest(_ item: IngestItem) async {
-    state = .ingesting
-    let branchSnapshot = branch
-    let sessionSnapshot = session
-    let outputsDir = outputsDirectory
-
-    let result = await Task(priority: .utility) { () -> Result<(URL, String), Error> in
-      do {
-        let fm = FileManager.default
-        try fm.createDirectory(at: outputsDir, withIntermediateDirectories: true)
-        let stamp = Int(Date().timeIntervalSince1970)
-        let out = outputsDir.appendingPathComponent("\(stamp).md")
-
-        let content: String
-        switch item {
-        case .file(let src):
-          let ingestDir = outputsDir.appendingPathComponent("ingest", isDirectory: true)
-          try fm.createDirectory(at: ingestDir, withIntermediateDirectories: true)
-          let copyName = "\(stamp)-\(src.lastPathComponent)"
-          let dest = ingestDir.appendingPathComponent(copyName)
-          if fm.fileExists(atPath: dest.path) {
-            try fm.removeItem(at: dest)
-          }
-          try fm.copyItem(at: src, to: dest)
-          let attrs = try fm.attributesOfItem(atPath: dest.path)
-          let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
-          content = """
-          # File Ingest
-
-          - Source: \(src.path)
-          - Copied: ingest/\(copyName)
-          - Size: \(size) bytes
-          - Session: \(sessionSnapshot)
-          - Branch: \(branchSnapshot)
-          - Saved: \(Date())
-
-          ## Notes
-          - Add a summary here.
-          """
-        case .url(let u):
-          content = """
-          # URL Ingest
-
-          - URL: \(u.absoluteString)
-          - Session: \(sessionSnapshot)
-          - Branch: \(branchSnapshot)
-          - Saved: \(Date())
-
-          ## Notes
-          - Add findings here.
-          """
-        }
-
-        try content.write(to: out, atomically: true, encoding: .utf8)
-        return .success((out, out.lastPathComponent))
-      } catch {
-        return .failure(error)
-      }
-    }.value
-
-    switch result {
-    case .success(let payload):
-      let (out, name) = payload
-      state = .success("Saved to outputs: \(name)")
-      status = "Last: \(name)"
-      lastOutputURL = out
-    case .failure(let error):
-      state = .error("Failed to save: \(error.localizedDescription)")
-    }
-  }
-
-  public func newSession() {
-    session = "Session-\(Int.random(in: 100...999))"
-    urlText = ""
-    lastOutputURL = nil
-    status = "Ready"
-  }
-
-  public func checkpoint() async {
-    let branchSnapshot = branch
-    let sessionSnapshot = session
-    let outputsDir = outputsDirectory
-
-    let result = await Task(priority: .utility) { () -> Result<(URL, String), Error> in
-      do {
-        let fm = FileManager.default
-        try fm.createDirectory(at: outputsDir, withIntermediateDirectories: true)
-        let cpDir = outputsDir.appendingPathComponent("checkpoints", isDirectory: true)
-        try fm.createDirectory(at: cpDir, withIntermediateDirectories: true)
-        let ts = Int(Date().timeIntervalSince1970)
-        let file = cpDir.appendingPathComponent("checkpoint-\(sessionSnapshot)-\(ts).md")
-        let body = """
-        # Checkpoint
-        - Session: \(sessionSnapshot)
-        - Branch: \(branchSnapshot)
-        - Timestamp: \(Date())
-        """
-        try body.write(to: file, atomically: true, encoding: .utf8)
-        return .success((file, file.lastPathComponent))
-      } catch {
-        return .failure(error)
-      }
-    }.value
-
-    switch result {
-    case .success(let payload):
-      let (file, name) = payload
-      status = "Checkpoint at \(Date())"
-      lastOutputURL = file
-      state = .success("Saved to outputs: \(name)")
-    case .failure(let error):
-      state = .error("Failed to save checkpoint: \(error.localizedDescription)")
-    }
-  }
-
-  public func prepareOutputsDirectory() async -> URL {
-    let dir = outputsDirectory
-    _ = await Task(priority: .utility) {
-      try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    }.value
-    return dir
   }
 
   // MARK: - Project Switching (Multi-Project Mode)
@@ -835,7 +678,6 @@ public final class HUDViewModel {
 
     guard let root = info.root else {
       branch = "—"
-      status = "Select a Git repository"
       stopBranchMonitor()
       cancelHeadAndRefWatchers()
       pendingUpdate = false
@@ -876,7 +718,6 @@ public final class HUDViewModel {
       securityScopedURL = nil
     }
     projectRootURL = canonical
-    status = "Ready"
     if persist {
       persistRootIfNeeded(canonical, force: forcePersist)
     }
@@ -913,7 +754,6 @@ public final class HUDViewModel {
     var isDir: ObjCBool = false
     guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir), isDir.boolValue else {
       alertMessage = "Selected folder is not readable:\n\(canonical.path)"
-      status = "Select a project folder"
       return .failure(.unreadable(canonical))
     }
 
@@ -928,7 +768,6 @@ public final class HUDViewModel {
       finalRoot = canonical
       projectRootURL = canonical
       branch = "—"
-      status = "Ready"
       persistRootIfNeeded(canonical, force: true)
     }
 
