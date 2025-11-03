@@ -130,7 +130,7 @@ struct SettingsView: View {
       }
     }
     .padding()
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .frame(width: 480, height: 400)
     .fileImporter(
       isPresented: $showingFilePicker,
       allowedContentTypes: [.folder],
