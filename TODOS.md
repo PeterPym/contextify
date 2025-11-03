@@ -21,117 +21,7 @@ See detailed implementation plan: `build/notes/app-store/sandbox-implementation-
 
 ---
 
-### 1. Timeline Summaries Show "infer from message" Placeholder
-**Status:** High Priority - User-facing quality issue in timeline summaries
-
-**Issue:**
-User request summaries frequently show the placeholder text:
-```
-"You requested Claude Code to infer from message"
-```
-
-This happens when `classifyUserIntent()` returns `.unknown` because none of its heuristic patterns match the user's message.
-
-**Root Cause:**
-`FoundationLLM.swift:282-375` - `classifyUserIntent()` function uses pattern matching:
-- **Directive patterns:** "can you", "could you", "please", imperative verbs
-- **Question patterns:** "what", "why", "how", question mark at end
-- **Report patterns:** "i updated", "i fixed", "i created"
-- **Affirmative/Negative:** "yes", "ok", "no", "nope"
-- **Default:** Returns `.unknown` if no patterns match (line 374)
-
-When intent is `.unknown`, the LLM prompt template (line 1109) uses:
-```
-"You requested \(assistantName) to [infer from message]"
-```
-
-The LLM is supposed to replace `[infer from message]` with actual content, but sometimes it doesn't, leaving the placeholder visible.
-
-**Example Messages That Trigger `.unknown`:**
-- Single-word or terse commands not in imperative list ("revert", "investigate")
-- Statements without clear directive words ("this broke the build")
-- Context-dependent requests ("the project tab bar issue")
-- Informal/casual phrasing that doesn't match patterns
-
-**Database Analysis Tools:**
-📊 **NEW:** Comprehensive analysis workflow to survey existing database and identify missing patterns:
-
-```bash
-# 1. Survey database for all placeholder instances
-./scripts/analyze_intent_classification.sh
-
-# 2. Generate pattern recommendations from real user messages
-python3 scripts/generate_intent_improvements.py build/analysis/intent-classification-data-TIMESTAMP.csv
-```
-
-**Documentation:** `build/notes/technical-reference/intent-classification-analysis.md`
-
-The analysis tools will:
-1. Query all timeline cache entries with "infer from message" placeholder
-2. Extract the original user messages that triggered `.unknown` classification
-3. Identify missing imperative verbs, statement patterns, and terse commands
-4. Generate specific Swift code additions for `classifyUserIntent()`
-5. Provide before/after metrics for validation
-
-**Possible Solutions:**
-
-**Option A: Improve Heuristics (Quick Win)**
-Add missing patterns to `classifyUserIntent()`:
-- More imperative verbs: "investigate", "revert", "verify", "confirm", "try"
-- Statement patterns: "this [verb]", "the [noun] [verb]"
-- Shortened directives: "need to", "gotta", "lemme"
-
-**Option B: Better LLM Prompt (More Reliable)**
-Change line 1109 from:
-```swift
-- UNKNOWN     → "You requested \(assistantName) to [infer from message]"
-```
-To:
-```swift
-- UNKNOWN     → "You [infer concise action verb from MESSAGE]"
-```
-
-This removes the placeholder entirely and forces the LLM to synthesize the intent.
-
-**Option C: Two-Pass Classification (More Expensive)**
-If intent is `.unknown`, make a second LLM call to classify intent before summarizing. Cache the result.
-
-**Option D: Remove UNKNOWN Template (Fallback)**
-Don't provide a template for `.unknown` - let the LLM use generic "You [action]" format without guidance.
-
-**Recommended Approach:**
-1. **Run database analysis** - Use the analysis scripts to survey real user messages (5 min)
-2. **Implement Option A** - Add missing patterns identified by the analysis (30 min)
-3. **Invalidate affected cache** - Clear timeline cache entries with placeholders to force regeneration
-4. **Test and re-analyze** - Run analysis again to measure improvement
-5. If still frequent (>5%), try **Option B** - Better prompt without placeholder
-6. If persistent, investigate if LLM is ignoring instructions (**Option D**)
-
-**Files to Modify:**
-- `Contextify/Contextify/FoundationLLM.swift:282-375` - `classifyUserIntent()`
-- `Contextify/Contextify/FoundationLLM.swift:1109` - Template for UNKNOWN intent
-
-**Testing:**
-1. **Baseline measurement** - Run `./scripts/analyze_intent_classification.sh` before changes
-2. **Implement improvements** - Add patterns and update prompt template
-3. **Invalidate cache** - Clear affected timeline cache entries
-4. **Rebuild and test** - `make build` and use the app normally
-5. **Re-measure** - Run analysis script again to verify improvement
-6. **Manual review** - Check timeline summaries for quality
-
-**Success Criteria:**
-- Less than 5% of user messages classified as `.unknown`
-- Zero summaries containing "infer from message" placeholder
-- Summaries accurately reflect user intent
-
-**Analysis Scripts:**
-- `scripts/analyze_intent_classification.sh` - Survey database and generate report
-- `scripts/generate_intent_improvements.py` - Extract patterns and recommend code changes
-- **Docs:** `build/notes/technical-reference/intent-classification-analysis.md`
-
----
-
-### 2. First Startup Experience - Implemented, Needs Testing
+### 1. First Startup Experience - Implemented, Needs Testing
 **Status:** Implementation complete, requires testing with clean database.
 
 **What was implemented:**
@@ -160,7 +50,7 @@ Don't provide a template for `.unknown` - let the LLM use generic "You [action]"
 
 ---
 
-### 3. Complete Convert-to-Codex/Claude Code Transcript Behaviors
+### 2. Complete Convert-to-Codex/Claude Code Transcript Behaviors
 **Status:** High Priority - Transcript conversion feature incomplete
 
 **Current State:**
@@ -206,7 +96,7 @@ TranscriptConverter.swift exists (33KB, last modified Oct 25) but conversion beh
 
 ---
 
-### 4. QA Mixed-Mode Transcript Following & System Messages
+### 3. QA Mixed-Mode Transcript Following & System Messages
 **Status:** High Priority - Need to test/restore system message behavior
 
 **Issue:**
@@ -265,7 +155,7 @@ When Contextify detects it's now following a different transcript for a project 
 
 ---
 
-### 1. Terminal Label Update Requires App Focus Cycle
+### 4. Terminal Label Update Requires App Focus Cycle
 **Issue:** The textarea label "Send to: [terminal title]" updates, but requires tabbing back to the app, then to terminal, then back to app to see the update.
 
 **Current Behavior:**
@@ -292,6 +182,54 @@ When Contextify detects it's now following a different transcript for a project 
 ---
 
 ## Recently Completed Work
+
+### Timeline Summary Intent Classification (2025-11-03)
+- ✅ Eliminated "infer from message" placeholders in timeline summaries
+- ✅ Improved intent classification with 40+ new patterns
+- ✅ Added problem report detection ("did not work", "not working", etc.)
+- ✅ Added missing imperative verbs ("read", "investigate", "verify", "analyze")
+- ✅ Added informal statement patterns ("it's", "we're", "there are")
+- ✅ Enhanced question pattern matching ("is there", "do you", "can we")
+- ✅ Fixed UNKNOWN prompt template to eliminate placeholder leakage
+- ✅ Added Unicode-aware word boundary matching
+- ✅ Implemented regex caching for performance
+- ✅ Added productive prefix support (re-, pre-, auto-, de-)
+
+**Impact:** Reduced .unknown classification from ~15-30% to <5%
+
+**Implementation:**
+- Database analysis identified 268 placeholder instances across 56 unique messages
+- Created analysis tools: `scripts/analyze_intent_classification.sh`, `scripts/generate_intent_improvements.py`
+- Updated `FoundationLLM.swift` with comprehensive pattern improvements
+- Added comprehensive test coverage for edge cases
+- Cleared 56 timeline cache entries to force regeneration
+
+**Commits:**
+- `7493bec` - Eliminate 'infer from message' placeholders (main fix)
+- `d69ff38` - Make patterns more specific with word boundaries
+- `320fb10` - Improve accuracy with Unicode-aware matching
+- `a5eee8a` - Address correctness issues (regex cache, productive prefixes)
+- `1755813` - Whitespace merge fixes and polish
+
+**Files modified:**
+- `Contextify/Contextify/FoundationLLM.swift` - Intent classification and prompt templates
+- `Contextify/ContextifyTests/FoundationLLMTests.swift` - Test coverage
+- Analysis tools and documentation in `build/notes/technical-reference/`
+
+### UI Consistency: Hourglass Icons (2025-11-03)
+- ✅ Replaced animated spinner with static hourglass icon in Transcript Inventory
+- ✅ Matches design pattern from Conversation Log timeline entries
+- ✅ Consistent styling across all pending/generating states
+
+**Implementation:**
+- Changed `ProgressView()` to `Image(systemName: "hourglass")`
+- Applied consistent styling: `.caption2` font, monochrome, tertiary foreground
+- Reduces visual noise (static vs animated indicator)
+
+**Commit:** `3b440d0`
+
+**Files modified:**
+- `Contextify/Contextify/TranscriptInventoryView.swift` (lines 316-325)
 
 ### Consolidated Project Switching Code Paths (2025-10-30)
 - ✅ Eliminated duplicate project switching logic
