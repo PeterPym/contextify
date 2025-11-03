@@ -644,6 +644,18 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try cacheRepo.upsertMany(caches)
   }
 
+  /// Delete a timeline cache entry by its composite key
+  ///
+  /// Allows manual regeneration of summaries by invalidating cached entries.
+  /// The TimelineCacheMissGenerator will automatically regenerate on next access.
+  ///
+  /// - Parameters:
+  ///   - contentSha256: SHA256 hash of the entry content
+  ///   - windowSha256: SHA256 hash of the context window
+  nonisolated public func deleteCachedTimeline(contentSha256: String, windowSha256: String) throws {
+    try cacheRepo.delete(contentSha256: contentSha256, windowSha256: windowSha256)
+  }
+
   // MARK: - Metadata Management
 
   public func getMetadata(forTranscript transcriptId: String) throws -> TranscriptMetadataRecord? {

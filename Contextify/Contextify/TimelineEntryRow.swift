@@ -13,6 +13,7 @@ struct TimelineEntryRow: View {
     @State private var isExpanded = false
     @State private var showCopiedToast = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(ConversationMonitor.self) private var monitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -63,6 +64,13 @@ struct TimelineEntryRow: View {
             Button("Copy Markdown Snippet") { copy(entry.markdownPayload()) }
             Button("Copy Summary") { copy(entry.summary) }
             Button("Copy Detail") { copy(entry.detail) }
+
+            if entry.contentSha256 != nil && entry.windowSha256 != nil {
+                Divider()
+                Button("Regenerate Summary") {
+                    regenerateSummary()
+                }
+            }
         }
     }
 
@@ -163,6 +171,17 @@ struct TimelineEntryRow: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 showCopiedToast = false
             }
+        }
+    }
+
+    private func regenerateSummary() {
+        guard let contentSha = entry.contentSha256,
+              let windowSha = entry.windowSha256 else {
+            return
+        }
+
+        Task {
+            await monitor.regenerateSummary(contentSha256: contentSha, windowSha256: windowSha)
         }
     }
 
