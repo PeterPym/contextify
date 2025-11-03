@@ -19,6 +19,7 @@ enum TimelineEntryAction: Hashable, Sendable {
     case none
     case revealInInventory(transcriptPath: String)
     case generating  // Background LLM generation in progress
+    case nonSummarizable  // Entry cannot be summarized (no window context)
 }
 
 struct TimelineEntry: Identifiable, Hashable, Sendable {

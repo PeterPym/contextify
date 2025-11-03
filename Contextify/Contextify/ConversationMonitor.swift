@@ -126,7 +126,6 @@ final class ConversationMonitor {
     var autoScroll = true
 
     @ObservationIgnored private var didEmitSessionStart = false
-    @ObservationIgnored private(set) var activeSession: TranscriptSession?
     // MUST be observable for UI - inventory and session switching depend on this
     private(set) var allSessions: [TranscriptSession] = []
     @ObservationIgnored private var lastUserDirectiveId: UUID?
@@ -157,6 +156,17 @@ final class ConversationMonitor {
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
+
+    // v23: Active session follow state
+    @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
+    @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
+    @ObservationIgnored private var followMode: FollowMode = .automatic
+    @ObservationIgnored private var lastActiveKey: SessionKey?
+    @ObservationIgnored private var lastSwitchAt: Date?
+    @ObservationIgnored private var lastSystemEventTs: Int64?
+    @ObservationIgnored private var seenSystemEventIds = Set<String>()
+    @ObservationIgnored private let policyEngine = ActiveSessionPolicyEngine()
+    private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     private init() {
         // Set up project change notifications early, so we can react to project selection
@@ -637,7 +647,8 @@ final class ConversationMonitor {
             } else {
                 summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
             }
-            action = .generating  // Mark as pending generation
+            // v23: Non-summarizable entries (nil windowSha256) should not show spinner
+            action = entry.windowSha256 == nil ? .nonSummarizable : .generating
         }
 
         // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
@@ -732,10 +743,11 @@ final class ConversationMonitor {
                 }
             }
 
-            // Track latest cursor for incremental updates
-            if let latestEntry = feed.first {
-                let e = latestEntry.0
+            // v23: Initialize cursor from tail (last entry) for restart-safe incremental updates
+            if let tailEntry = feed.last {
+                let e = tailEntry.0
                 lastSeenCursor = (timestamp: e.timestamp, createdAt: e.createdAt, id: e.id)
+                log.debug("Initialized cursor from tail: \(e.id)")
             }
 
             lastUpdate = Date()
@@ -1235,6 +1247,177 @@ final class ConversationMonitor {
 
         // With SQL backend, session start is tracked automatically
         // This legacy method is kept for compatibility but does nothing
+    }
+
+    // MARK: - Active Session Follow (v23)
+
+    /// Policy reconciliation - checks if pinned session still exists
+    private func reconcilePolicyWithAvailableSessions() async {
+        guard sessionsLoaded else {
+            log.warning("Skipping policy reconciliation - sessions not yet loaded")
+            return
+        }
+        guard case .manual(let sid, let prov) = followMode else { return }
+
+        if !allSessions.contains(where: { $0.identifier == sid && $0.provider == prov }) {
+            log.info("Pinned session \(sid) no longer available - triggering handlePinnedMissing")
+            await handlePinnedMissing()
+        }
+    }
+
+    /// Pinned-missing handler with zero-session persistence
+    private func handlePinnedMissing() async {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        do {
+            try await orchestrator.setAutomatic(projectId: pidInt)
+            followMode = .automatic
+            log.info("Switched to automatic mode due to pinned session missing")
+
+            if let nk = computeNewestKey() {
+                await setActive(from: lastActiveKey, to: nk, reason: .pinnedMissing, emit: true)
+            } else {
+                // No sessions exist: persist a project-scoped event and show now
+                let ev = TranscriptOrchestrator.SystemEventInsert(
+                    id: UUID().uuidString,
+                    transcriptId: "project:\(pid)",  // synthetic id, not joined
+                    projectId: pidInt,
+                    timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
+                    content: "Pinned session unavailable — awaiting new activity",
+                    metadataJSON: toJSON(["reason": "pinnedMissing", "noSessions": true, "mode": "automatic"])
+                )
+                try? await orchestrator.insertSystemEvent(ev)
+                appendSystemEntry(summary: ev.content)  // also display immediately
+                lastActiveKey = nil
+                log.info("No sessions available - persisted project-scoped event")
+            }
+        } catch {
+            log.error("Pinned-missing reconcile failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Active session switching with system event emission
+    private func setActive(from: SessionKey?, to: SessionKey, reason: SwitchReason, emit: Bool) async {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let t = allSessions.first(where: { $0.identifier == to.sessionId && $0.provider == to.provider }) else {
+            log.warning("Session \(to.sessionId) not found in allSessions - cannot setActive")
+            return
+        }
+
+        lastActiveKey = to
+        activeSession = t
+        log.debug("Set active session: \(to.sessionId) (\(to.provider.displayName))")
+
+        if emit {
+            let payload: [String: Any] = [
+                "from": from.map { ["sessionId": $0.sessionId, "provider": $0.provider.rawValue] as [String: Any] } as Any,
+                "to": ["sessionId": to.sessionId, "provider": to.provider.rawValue] as [String: Any],
+                "reason": reason.rawValue,
+                "mode": (followMode == .automatic ? "automatic" : "manual")
+            ]
+            let ev = TranscriptOrchestrator.SystemEventInsert(
+                id: UUID().uuidString,
+                transcriptId: t.identifier,
+                projectId: pidInt,
+                timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
+                content: followSummary(to, reason: reason),
+                metadataJSON: toJSON(payload)
+            )
+            do {
+                try await orchestrator.insertSystemEvent(ev)
+                publishTypedEvent(to: to, reason: reason)
+                log.info("System event persisted for session switch: \(reason.rawValue)")
+            } catch {
+                log.error("Failed to persist system event: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Compute the newest session based on last activity
+    private func computeNewestKey() -> SessionKey? {
+        guard let s = allSessions.max(by: { $0.lastActivity < $1.lastActivity }) else { return nil }
+        return SessionKey(sessionId: s.identifier, provider: s.provider)
+    }
+
+    /// Generate a human-readable summary for session switches
+    private func followSummary(_ to: SessionKey, reason: SwitchReason) -> String {
+        let modeStr = followMode == .automatic ? "Auto-follow" : "Pinned"
+        let reasonStr: String
+        switch reason {
+        case .newerWrite:
+            reasonStr = "newer activity"
+        case .pinnedMissing:
+            reasonStr = "pinned session unavailable"
+        case .manualSelection:
+            reasonStr = "manual selection"
+        case .unpinToAuto:
+            reasonStr = "unpinned to automatic"
+        case .projectChange:
+            reasonStr = "project change"
+        }
+        return "[\(modeStr)] Following \(to.provider.displayName) session — \(reasonStr)"
+    }
+
+    /// Publish typed event to Combine and NotificationCenter
+    private func publishTypedEvent(to: SessionKey, reason: SwitchReason) {
+        let evt = ActiveSessionDidChangeEvent(
+            projectPath: HUDViewModel.shared.projectRootURL?.path ?? "",
+            sessionId: to.sessionId,
+            provider: to.provider.rawValue,
+            mode: (followMode == .automatic ? "automatic" : "manual"),
+            reason: reason.rawValue,
+            timestamp: Date()
+        )
+        NotificationCenter.default.post(name: .activeSessionDidChange, object: evt)
+        log.debug("Published ActiveSessionDidChangeEvent via NotificationCenter")
+    }
+
+    /// Helper to append system messages directly to timeline
+    private func appendSystemEntry(summary: String) {
+        let entry = TimelineEntry(
+            kind: .system,
+            timestamp: Date(),
+            summary: summary,
+            detail: "",
+            sourceIdentifier: "system-\(UUID().uuidString)",
+            isError: false,
+            action: .none
+        )
+        state.append(entry)
+        log.debug("Appended system entry: \(summary)")
+    }
+
+    /// Convert dictionary to JSON string
+    private func toJSON(_ dict: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+              let str = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return str
+    }
+
+    /// Public API: Switch to automatic follow mode
+    func unpinToAuto() async {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        do {
+            try await orchestrator.setAutomatic(projectId: pidInt)
+            followMode = .automatic
+            log.info("Switched to automatic follow mode")
+        } catch {
+            log.error("Failed to unpin: \(error.localizedDescription)")
+        }
+    }
+
+    /// Public API: Pin to specific session
+    func pinAndSwitch(_ session: TranscriptSession) async {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        do {
+            try await orchestrator.setManual(projectId: pidInt, sessionId: session.identifier, provider: session.provider.rawValue)
+            followMode = .manual(sessionId: session.identifier, provider: session.provider)
+            activeSession = session
+            log.info("Pinned to session: \(session.identifier)")
+        } catch {
+            log.error("Failed to pin: \(error.localizedDescription)")
+        }
     }
 }
 
