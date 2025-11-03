@@ -340,6 +340,23 @@ actor FoundationLLM {
             if allNegative { return .negative }
         }
 
+        // Check for problem reports / negative feedback (treat as implicit directives to fix)
+        let problemIndicators = [
+            "did not work", "didn't work", "not working", "does not work", "doesn't work",
+            "did not do", "didn't do", "does not do", "doesn't do",
+            "not seeing", "not showing", "not displayed", "not appearing",
+            "that did not", "that didn't", "no that did", "nope that",
+            "seems", "appears", "looks like"
+        ]
+        for indicator in problemIndicators {
+            if normalized.contains(indicator) { return .directive }
+        }
+
+        // Observation interjections (informal problem reports)
+        if normalized.hasPrefix("hm.") || normalized.hasPrefix("hmm") {
+            return .directive
+        }
+
         // Check for directive patterns (request phrases)
         let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i need"]
         for pattern in directivePatterns {
@@ -355,7 +372,8 @@ actor FoundationLLM {
         let imperatives: Set<String> = [
             "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
             "write", "explain", "show", "make", "delete", "remove", "check", "refactor",
-            "optimize", "implement", "modify", "debug", "install", "configure", "look"
+            "optimize", "implement", "modify", "debug", "install", "configure", "look",
+            "read", "investigate", "try", "revert", "verify", "analyze", "review"
         ]
         if imperatives.contains(firstWord) { return .directive }
 
@@ -364,10 +382,26 @@ actor FoundationLLM {
         if questionWords.contains(where: { normalized.hasPrefix($0) }) { return .question }
         if normalized.hasSuffix("?") { return .question }
 
+        // Additional question patterns (questions without traditional question words)
+        if normalized.hasPrefix("is there") || normalized.hasPrefix("is that") ||
+           normalized.hasPrefix("are those") || normalized.hasPrefix("are there") ||
+           normalized.hasPrefix("do you") || normalized.hasPrefix("does it") ||
+           normalized.hasPrefix("can we") || normalized.hasPrefix("should we") {
+            return .question
+        }
+
         // Check for past-tense self-reports
         let reportPatterns = ["i updated", "i fixed", "i created", "i modified", "i changed", "i added"]
         for pattern in reportPatterns {
             if normalized.contains(pattern) { return .report }
+        }
+
+        // Informal statements (treat as implicit directives)
+        if normalized.hasPrefix("its ") || normalized.hasPrefix("it's ") ||
+           normalized.hasPrefix("we ") || normalized.hasPrefix("we're ") || normalized.hasPrefix("we don't ") ||
+           normalized.hasPrefix("there are ") || normalized.hasPrefix("there is ") ||
+           normalized.hasPrefix("i'm ") || normalized.hasPrefix("i think ") {
+            return .directive
         }
 
         // Default to unknown
@@ -1106,7 +1140,7 @@ private extension FoundationLLM {
             - REPORT      → "You made [description]"
             - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
             - NEGATIVE    → "You requested \(assistantName) not to proceed."
-            - UNKNOWN     → "You requested \(assistantName) to [infer from message]"
+            - UNKNOWN     → "You [concisely describe the user's action or question based on MESSAGE]"
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
