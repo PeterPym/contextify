@@ -2,14 +2,14 @@ import Foundation
 import GRDB
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v21 (added database_access_metadata for conflict detection)
+/// Current version: v22 (fixed strategy CHECK constraint to include adaptive/signalFirst)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 21
+  static let version = 22
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -201,7 +201,7 @@ enum DatabaseSchema {
           generator_version INTEGER NOT NULL,
           transcript_sha256 TEXT NOT NULL,
           message_count INTEGER NOT NULL,
-          strategy TEXT NOT NULL CHECK(strategy IN ('full','bookends','heuristic')),
+          strategy TEXT NOT NULL CHECK(strategy IN ('full','adaptive','bookends','signalFirst','heuristic')),
           llm_calls INTEGER NOT NULL,
           latency_ms INTEGER NOT NULL,
           created_at INTEGER NOT NULL,
@@ -287,6 +287,58 @@ enum DatabaseSchema {
         t.column("last_access", .datetime).notNull()
         t.column("app_version", .text).notNull()
       }
+    }
+
+    // v22: Fix strategy CHECK constraint to include all GenerationStrategy enum values
+    // SQLite doesn't support ALTER TABLE to modify CHECK constraints, so we recreate the table
+    migrator.registerMigration("v22_strategy_constraint_fix") { db in
+      // Check if transcript_metadata table exists
+      let tableExists = try db.tableExists("transcript_metadata")
+      guard tableExists else { return }
+
+      // Create temp table with corrected CHECK constraint
+      try db.execute(sql: """
+        CREATE TABLE transcript_metadata_new (
+          transcript_id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          topics TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          may_contain_hallucinations INTEGER NOT NULL,
+          needs_review INTEGER NOT NULL,
+          generated_at INTEGER NOT NULL,
+          model TEXT NOT NULL,
+          prompt_version INTEGER NOT NULL,
+          generator_version INTEGER NOT NULL,
+          transcript_sha256 TEXT NOT NULL,
+          message_count INTEGER NOT NULL,
+          strategy TEXT NOT NULL CHECK(strategy IN ('full','adaptive','bookends','signalFirst','heuristic')),
+          llm_calls INTEGER NOT NULL,
+          latency_ms INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
+        )
+      """)
+
+      // Copy data
+      try db.execute(sql: """
+        INSERT INTO transcript_metadata_new
+        SELECT * FROM transcript_metadata
+      """)
+
+      // Drop old table
+      try db.execute(sql: "DROP TABLE transcript_metadata")
+
+      // Rename new table
+      try db.execute(sql: "ALTER TABLE transcript_metadata_new RENAME TO transcript_metadata")
+
+      // Recreate indexes
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_project ON transcript_metadata(project_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_generated_at ON transcript_metadata(generated_at DESC)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_needs_review ON transcript_metadata(needs_review, generated_at DESC)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)")
     }
 
     return migrator
