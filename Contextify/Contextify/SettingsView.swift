@@ -11,6 +11,7 @@ struct SettingsView: View {
   @State private var isCustomLocation: Bool = false
   @State private var isMigrating: Bool = false
   @State private var migrationError: String?
+  @State private var migrationSuccess: String?
   @State private var showingFilePicker: Bool = false
   @State private var conflictWarning: String?
 
@@ -108,6 +109,27 @@ struct SettingsView: View {
           .padding(.top, 8)
         }
 
+        // Success display
+        if let success = migrationSuccess {
+          HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+              .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Migration complete")
+                .font(.caption)
+                .fontWeight(.semibold)
+              Text(success)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(Color.green.opacity(0.1))
+          .cornerRadius(4)
+          .padding(.top, 8)
+        }
+
         // Error display
         if let error = migrationError {
           Text(error)
@@ -144,6 +166,7 @@ struct SettingsView: View {
       loadCurrentLocation()
     }
     .onChange(of: isCustomLocation) { _, newValue in
+      migrationSuccess = nil  // Clear success message when toggling
       if !newValue {
         resetToDefaultLocation()
       }
@@ -246,15 +269,20 @@ struct SettingsView: View {
   }
 
   private func migrateDatabase(to targetDirectory: URL) async {
+    // Capture old path before migration
+    let oldPath = (try? DatabaseManager.shared.databasePath().deletingLastPathComponent().path) ?? "previous location"
+
     await MainActor.run {
       isMigrating = true
       migrationError = nil
+      migrationSuccess = nil
     }
 
     do {
       try await DatabaseMigration.migrateDatabase(to: targetDirectory, deleteSource: false)
       await MainActor.run {
         loadCurrentLocation()
+        migrationSuccess = "Old database kept as backup at:\n\(oldPath)\n\nYou can manually delete it after verifying sync is working."
       }
       log.info("Database migrated successfully to: \(targetDirectory.path)")
     } catch {
@@ -274,9 +302,13 @@ struct SettingsView: View {
 
     // Run the heavy migration work off the main thread
     Task.detached(priority: .userInitiated) {
+      // Capture old path before migration
+      let oldPath = (try? DatabaseManager.shared.databasePath().deletingLastPathComponent().path) ?? "previous location"
+
       await MainActor.run {
         isMigrating = true
         migrationError = nil
+        migrationSuccess = nil
       }
 
       do {
@@ -289,6 +321,7 @@ struct SettingsView: View {
         HUDPreferences.clearCustomDatabaseLocation()
         await MainActor.run {
           loadCurrentLocation()
+          migrationSuccess = "Old database kept as backup at:\n\(oldPath)\n\nYou can manually delete it after verifying sync is working."
           log.info("Database reset to default location")
         }
       } catch {
