@@ -125,7 +125,7 @@ struct ProjectRowView: View {
   private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {
     switch provider {
     case .claudeCode: return .orange
-    case .codex: return .white
+    case .codexCLI: return .white
     }
   }
 }
@@ -136,7 +136,7 @@ struct ProjectRowView: View {
       id: "/Users/rob/code/projects/contextify",
       name: "contextify",
       path: URL(fileURLWithPath: "/Users/rob/code/projects/contextify"),
-      providers: [.claudeCode, .codex],
+      providers: [.claudeCode, .codexCLI],
       transcriptCount: 24,
       entryCount: 1247,
       lastActivity: Date().addingTimeInterval(-300),

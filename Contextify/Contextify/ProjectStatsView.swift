@@ -288,7 +288,7 @@ struct TimelineChart: View {
       id: "/Users/rob/code/projects/contextify",
       name: "contextify",
       path: URL(fileURLWithPath: "/Users/rob/code/projects/contextify"),
-      providers: [.claudeCode, .codex],
+      providers: [.claudeCode, .codexCLI],
       transcriptCount: 24,
       entryCount: 1247,
       lastActivity: Date(),

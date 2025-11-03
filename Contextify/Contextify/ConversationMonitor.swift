@@ -1049,7 +1049,7 @@ final class ConversationMonitor {
         let discovered = filesOnDisk.map { file in
             DiscoveredTranscript(
                 fileURL: file,
-                provider: "claude.code",
+                provider: .claudeCode,
                 sessionId: file.deletingPathExtension().lastPathComponent
             )
         }

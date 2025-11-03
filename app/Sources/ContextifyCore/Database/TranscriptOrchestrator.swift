@@ -13,9 +13,18 @@ public struct DiscoveredTranscript: Sendable {
   public let provider: String
   public let sessionId: String?
 
-  public init(fileURL: URL, provider: String, sessionId: String?) {
+  /// Compile-time enforced provider initialization (prevents "codex" drift)
+  public init(fileURL: URL, provider: DiscoveredProject.Provider, sessionId: String?) {
     self.fileURL = fileURL
-    self.provider = provider
+    self.provider = provider.rawValue
+    self.sessionId = sessionId
+  }
+
+  /// Legacy string-based init (deprecated - use Provider enum)
+  @available(*, deprecated, message: "Use init(fileURL:provider:sessionId:) with Provider enum")
+  public init(fileURL: URL, providerString: String, sessionId: String?) {
+    self.fileURL = fileURL
+    self.provider = providerString
     self.sessionId = sessionId
   }
 }
@@ -60,6 +69,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
   private let validator: TranscriptValidator
+
+  // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
+  private var writeQueue: DatabaseWriteQueue!
 
   public init(dbManager: DatabaseManager) throws {
     self.dbManager = dbManager
@@ -106,6 +118,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Initialize validator
     self.validator = TranscriptValidator()
+
+    // v23: Initialize write queue
+    self.writeQueue = DatabaseWriteQueue(pool: pool)
 
     // Set metadata invalidation callback with weak self reference
     watcher.setMetadataInvalidator { [weak self] transcriptId in
@@ -892,9 +907,152 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  // MARK: - Active Session Follow (v23)
+
+  /// Input for inserting system switch events
+  public struct SystemEventInsert: Sendable {
+    public let id: String
+    public let transcriptId: String
+    public let projectId: Int64
+    public let timestampMs: Int64
+    public let content: String
+    public let metadataJSON: String
+
+    public init(id: String, transcriptId: String, projectId: Int64, timestampMs: Int64, content: String, metadataJSON: String) {
+      self.id = id
+      self.transcriptId = transcriptId
+      self.projectId = projectId
+      self.timestampMs = timestampMs
+      self.content = content
+      self.metadataJSON = metadataJSON
+    }
+  }
+
+  /// Set project to automatic follow mode
+  public func setAutomatic(projectId: Int64) async throws {
+    try await writeQueue.write { db in
+      try db.execute(sql: """
+        INSERT INTO project_follow_policy(project_id, mode, pinned_session_id, pinned_provider, updated_at)
+        VALUES (?, 0, NULL, NULL, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        ON CONFLICT(project_id) DO UPDATE SET
+          mode=excluded.mode,
+          pinned_session_id=NULL,
+          pinned_provider=NULL,
+          updated_at=excluded.updated_at
+      """, arguments: [projectId])
+    }
+  }
+
+  /// Set project to manual follow mode with pinned session
+  public func setManual(projectId: Int64, sessionId: String, provider: String) async throws {
+    try await writeQueue.write { db in
+      try db.execute(sql: """
+        INSERT INTO project_follow_policy(project_id, mode, pinned_session_id, pinned_provider, updated_at)
+        VALUES (?, 1, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+        ON CONFLICT(project_id) DO UPDATE SET
+          mode=excluded.mode,
+          pinned_session_id=excluded.pinned_session_id,
+          pinned_provider=excluded.pinned_provider,
+          updated_at=excluded.updated_at
+      """, arguments: [projectId, sessionId, provider])
+    }
+  }
+
+  /// Insert a system switch event (persisted to DB)
+  public func insertSystemEvent(_ e: SystemEventInsert) async throws {
+    try await writeQueue.write { db in
+      try db.execute(sql: """
+        INSERT INTO system_events(id, transcript_id, project_id, timestamp, subtype, content, level, metadata_json)
+        VALUES (?, ?, ?, ?, 'session_switch', ?, 'info', ?)
+      """, arguments: [e.id, e.transcriptId, e.projectId, e.timestampMs, e.content, e.metadataJSON])
+    }
+  }
+
+  /// Retrieve recent system switch events for a project (for restart-safe timeline display)
+  public func getRecentSystemSwitchEvents(projectId: Int64, since: Int64?) async throws -> [SystemEvent] {
+    let pool = try dbManager.pool
+    return try await pool.read { db in
+      if let since {
+        return try SystemEvent.fetchAll(db, sql: """
+          SELECT *
+            FROM system_events
+           WHERE project_id = ?
+             AND subtype = 'session_switch'
+             AND timestamp > ?
+           ORDER BY timestamp ASC
+        """, arguments: [projectId, since])
+      } else {
+        return try SystemEvent.fetchAll(db, sql: """
+          SELECT *
+            FROM system_events
+           WHERE project_id = ?
+             AND subtype = 'session_switch'
+           ORDER BY timestamp ASC
+        """, arguments: [projectId])
+      }
+    }
+  }
+
+  /// Get follow policy for a project
+  public func getFollowPolicy(projectId: Int64) throws -> FollowPolicyRow? {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      try FollowPolicyRow.fetchOne(db, sql: """
+        SELECT * FROM project_follow_policy WHERE project_id = ?
+      """, arguments: [projectId])
+    }
+  }
+
+  /// Get entries after a cursor for deterministic incremental ingestion
+  /// Uses composite cursor (timestamp, created_at, id) with covering index
+  /// Handles out-of-order entry arrival without skips or duplicates
+  public func getEntriesAfterCursor(projectId: String, after cursor: EntryCursor?) throws -> [TranscriptEntry] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      if let c = cursor {
+        // Scalar comparison workaround (SQLite has no tuple >)
+        return try TranscriptEntry.fetchAll(db, sql: """
+          SELECT * FROM transcript_entries
+           WHERE project_id = :pid AND (
+                  timestamp > :ts
+               OR (timestamp = :ts AND created_at > :ca)
+               OR (timestamp = :ts AND created_at = :ca AND id > :id)
+           )
+           ORDER BY timestamp ASC, created_at ASC, id ASC
+        """, arguments: ["pid": projectId, "ts": c.timestamp, "ca": c.createdAt, "id": c.id])
+      } else {
+        // Initial load: no cursor
+        return try TranscriptEntry.fetchAll(db, sql: """
+          SELECT * FROM transcript_entries
+           WHERE project_id = :pid
+           ORDER BY timestamp ASC, created_at ASC, id ASC
+        """, arguments: ["pid": projectId])
+      }
+    }
+  }
+
   // MARK: - Cleanup
 
   public func stopAllWatchers() {
     watcher.stopAll()
+  }
+}
+
+// MARK: - Follow Policy Models
+
+/// Row representation of project_follow_policy table
+public struct FollowPolicyRow: Codable, FetchableRecord, Sendable {
+  public let projectId: Int64
+  public let mode: Int  // 0=auto, 1=manual
+  public let pinnedSessionId: String?
+  public let pinnedProvider: String?
+  public let updatedAt: String
+
+  enum CodingKeys: String, CodingKey {
+    case projectId = "project_id"
+    case mode
+    case pinnedSessionId = "pinned_session_id"
+    case pinnedProvider = "pinned_provider"
+    case updatedAt = "updated_at"
   }
 }

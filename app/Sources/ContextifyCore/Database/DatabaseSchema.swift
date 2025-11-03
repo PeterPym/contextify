@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 22
+  static let version = 23
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -339,6 +339,75 @@ enum DatabaseSchema {
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_generated_at ON transcript_metadata(generated_at DESC)")
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_needs_review ON transcript_metadata(needs_review, generated_at DESC)")
       try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_tm_sha ON transcript_metadata(transcript_sha256)")
+    }
+
+    // v23: Active transcript follow - surgical fix for session switching
+    migrator.registerMigration("v23_active_transcript_follow") { db in
+      // A) Follow policy table
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS project_follow_policy (
+          project_id        INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+          mode              INTEGER NOT NULL,             -- 0=auto, 1=manual
+          pinned_session_id TEXT,
+          pinned_provider   TEXT,
+          updated_at        TEXT NOT NULL
+        )
+      """)
+
+      // Initialize policy for existing projects (all start in auto mode)
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO project_follow_policy(project_id, mode, updated_at)
+        SELECT id, 0, strftime('%Y-%m-%dT%H:%M:%SZ','now') FROM projects
+      """)
+
+      // B) Provider normalization (codex -> codex.cli)
+      try db.execute(sql: """
+        UPDATE transcripts SET provider = 'codex.cli' WHERE provider = 'codex'
+      """)
+      try db.execute(sql: """
+        UPDATE transcript_entries SET provider = 'codex.cli' WHERE provider = 'codex'
+      """)
+
+      // C) Cursor performance index for deterministic scans
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_entries_cursor
+        ON transcript_entries(project_id, timestamp, created_at, id)
+      """)
+
+      // D) Add project_id to system_events for project-scoped events
+      // Check if column already exists to avoid errors on re-run
+      if try !db.columnExists("project_id", in: "system_events") {
+        try db.execute(sql: """
+          ALTER TABLE system_events ADD COLUMN project_id INTEGER REFERENCES projects(id)
+        """)
+      }
+
+      // Backfill project_id for existing events
+      try db.execute(sql: """
+        UPDATE system_events AS se
+        SET project_id = (
+          SELECT t.project_id
+          FROM transcripts t
+          WHERE t.id = se.transcript_id
+        )
+        WHERE project_id IS NULL
+      """)
+
+      // Create index for project-scoped queries
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_system_events_project
+        ON system_events(project_id, timestamp)
+      """)
+
+      // E) Add metadata_json column to system_events if missing
+      if try !db.columnExists("metadata_json", in: "system_events") {
+        try db.execute(sql: """
+          ALTER TABLE system_events ADD COLUMN metadata_json TEXT
+        """)
+      }
+
+      // Update ANALYZE statistics
+      try db.execute(sql: "ANALYZE")
     }
 
     return migrator

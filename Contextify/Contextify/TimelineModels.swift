@@ -78,8 +78,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     }
 }
 
-struct TimelineSourceContext: Hashable, Sendable {
-    enum Provider: String, Sendable {
+public struct TimelineSourceContext: Hashable, Sendable {
+    public enum Provider: String, Sendable {
         case claudeCode = "claude.code"
         case codexCLI = "codex.cli"
         case other

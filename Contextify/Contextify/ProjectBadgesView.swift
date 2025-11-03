@@ -23,7 +23,7 @@ struct ProjectBadgesView: View {
   private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {
     switch provider {
     case .claudeCode: return .orange
-    case .codex: return .white
+    case .codexCLI: return .white
     }
   }
 
@@ -53,7 +53,7 @@ struct ProjectBadgesView: View {
         ).filter { $0.pathExtension == "jsonl" }.isEmpty) == false
 
         if hasFiles {
-          result.insert(.codex)
+          result.insert(.codexCLI)
         }
       }
 

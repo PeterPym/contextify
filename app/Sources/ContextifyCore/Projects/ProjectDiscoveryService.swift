@@ -39,7 +39,7 @@ public actor ProjectDiscoveryService {
       var providers: Set<DiscoveredProject.Provider> = [.claudeCode]
 
       if hasCodexTranscripts(at: projectPath) {
-        providers.insert(.codex)
+        providers.insert(.codexCLI)
       }
 
       // 4. Get metadata from database (if already ingested)
@@ -382,7 +382,7 @@ public actor ProjectDiscoveryService {
     let discovered = transcriptFiles.map { file in
       DiscoveredTranscript(
         fileURL: file,
-        provider: "claude.code",
+        provider: .claudeCode,
         sessionId: file.deletingPathExtension().lastPathComponent
       )
     }
@@ -409,7 +409,7 @@ public actor ProjectDiscoveryService {
     let discovered = transcriptFiles.map { file in
       DiscoveredTranscript(
         fileURL: file,
-        provider: "codex",
+        provider: .codexCLI,
         sessionId: file.deletingPathExtension().lastPathComponent
       )
     }

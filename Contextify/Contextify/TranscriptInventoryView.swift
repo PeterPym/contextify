@@ -846,7 +846,7 @@ struct TranscriptInventoryView: View {
       let discovered = sessions.map { session in
         DiscoveredTranscript(
           fileURL: session.fileURL,
-          provider: session.provider.rawValue,
+          providerString: session.provider.rawValue,
           sessionId: nil  // TranscriptSession doesn't have providerSessionId
         )
       }

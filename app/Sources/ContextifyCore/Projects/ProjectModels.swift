@@ -39,19 +39,19 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
 
   public enum Provider: String, Sendable, Hashable, CaseIterable {
     case claudeCode = "claude.code"
-    case codex = "codex"
+    case codexCLI = "codex.cli"
 
     public var displayName: String {
       switch self {
       case .claudeCode: return "Claude Code"
-      case .codex: return "Codex CLI"
+      case .codexCLI: return "Codex CLI"
       }
     }
 
     public var icon: String {
       switch self {
       case .claudeCode: return "🔵"
-      case .codex: return "🟡"
+      case .codexCLI: return "🟡"
       }
     }
 
@@ -59,7 +59,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
     public var iconImage: String {
       switch self {
       case .claudeCode: return "claude-code-icon"
-      case .codex: return "codex-icon"
+      case .codexCLI: return "codex-icon"
       }
     }
   }
