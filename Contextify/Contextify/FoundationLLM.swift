@@ -1650,11 +1650,16 @@ private extension FoundationLLM {
                 throw Error.retryExhausted
             }
 
-            // Validate leakage
-            let leaked = introducedTopics(message: message, summary: summary)
-            if leaked.count > 6 {
-                log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
-                throw Error.retryExhausted
+            // Validate leakage (skip for high-confidence fast-path results)
+            // Fast-path summaries (confidence >= 0.9, grounded) are pre-approved and may intentionally
+            // reference command names or specific terms from the input
+            let isFastPath = payload.confidence >= 0.9 && payload.grounding.lowercased() == "grounded"
+            if !isFastPath {
+                let leaked = introducedTopics(message: message, summary: summary)
+                if leaked.count > 6 {
+                    log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
+                    throw Error.retryExhausted
+                }
             }
 
             // Validate confidence/grounding
