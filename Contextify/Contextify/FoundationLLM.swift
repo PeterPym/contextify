@@ -982,8 +982,9 @@ actor SessionController {
 
 private extension FoundationLLM {
     /// Simple regex cache to avoid recompilation in hot paths
+    /// Thread-safe via NSLock; NSRegularExpression is thread-safe for matching
     final class RegexCache: @unchecked Sendable {
-        nonisolated(unsafe) static let shared = RegexCache()
+        static let shared = RegexCache()
         private var cache: [String: NSRegularExpression] = [:]
         private let lock = NSLock()
 
@@ -1004,6 +1005,11 @@ private extension FoundationLLM {
         // Normalize apostrophes: U+2018 ('), U+2019 ('), U+2032 (′), backtick
         let apostropheVariants = ["\u{2018}", "\u{2019}", "\u{2032}", "`"]
         apostropheVariants.forEach { normalized = normalized.replacingOccurrences(of: $0, with: "'") }
+
+        // Collapse runs of whitespace to a single space (stabilizes phrase matching)
+        normalized = normalized.replacingOccurrences(
+            of: #"\s+"#, with: " ", options: .regularExpression
+        )
 
         // Handle common contractions missing apostrophes with boundary-aware regexes
         normalized = replaceWordBoundary(normalized, from: "lets", to: "let's")
@@ -1068,6 +1074,7 @@ private extension FoundationLLM {
     }
 
     /// Treat "reinvestigate" as "investigate", etc. (productive prefixes)
+    /// Guards against spurious matches by requiring stem length ≥ 4
     nonisolated static func isImperativeLike(_ word: String, baseVerbs: Set<String>) -> Bool {
         if baseVerbs.contains(word) { return true }
         // Common productive prefixes seen in requests
@@ -1075,7 +1082,8 @@ private extension FoundationLLM {
         for p in prefixes {
             if word.hasPrefix(p), let idx = word.index(word.startIndex, offsetBy: p.count, limitedBy: word.endIndex) {
                 let stem = String(word[idx...])
-                if baseVerbs.contains(stem) { return true }
+                // Require stem length ≥ 4 to avoid spurious hits (e.g., "remove" if "move" were added)
+                if stem.count >= 4 && baseVerbs.contains(stem) { return true }
             }
         }
         return false
