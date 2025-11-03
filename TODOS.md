@@ -183,6 +183,43 @@ When Contextify detects it's now following a different transcript for a project 
 
 ## Recently Completed Work
 
+## Conversation Log Improvements
+
+### Question Preservation in Assistant Summaries (Future Enhancement)
+**Status:** Deferred - needs investigation
+
+**Goal:** Preserve questions at end of assistant messages in timeline summaries.
+
+**Example:**
+```
+Original: "Database cleaned successfully... Would you like me to launch the app?"
+Current:  "Claude cleaned the database."
+Desired:  "Claude cleaned the database and asked if you'd like to launch the app."
+```
+
+**Attempted Implementation:**
+- Hybrid approach: regex detection + LLM integration
+- Fast-path patterns: "would you like", "should i", "shall i", etc.
+- LLM receives TRAILING_QUESTION field for summary formatting
+
+**Issue:**
+- Question extraction logic implemented but not detecting questions in practice
+- Debug logging not appearing (print statements not showing in console)
+- May be related to message preprocessing or truncation before extraction
+- Needs deeper investigation into message flow and LLM prompt handling
+
+**Next Steps:**
+1. Investigate why debug logging doesn't appear
+2. Check if message is truncated/preprocessed before reaching extractTrailingQuestion()
+3. Verify LLM is receiving TRAILING_QUESTION field correctly
+4. Consider alternative approach (post-processing LLM output vs pre-processing input)
+
+**Files to review:**
+- `Contextify/Contextify/FoundationLLM.swift` (extraction logic, LLM prompt)
+- Message preprocessing pipeline (where is text truncated/cleaned?)
+
+---
+
 ### Timeline Summary Intent Classification (2025-11-03)
 - ✅ Eliminated "infer from message" placeholders in timeline summaries
 - ✅ Improved intent classification with 40+ new patterns
