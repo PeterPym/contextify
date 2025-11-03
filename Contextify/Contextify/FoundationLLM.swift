@@ -345,11 +345,16 @@ actor FoundationLLM {
             "did not work", "didn't work", "not working", "does not work", "doesn't work",
             "did not do", "didn't do", "does not do", "doesn't do",
             "not seeing", "not showing", "not displayed", "not appearing",
-            "that did not", "that didn't", "no that did", "nope that",
-            "seems", "appears", "looks like"
+            "that did not", "that didn't", "no that did", "nope that"
         ]
         for indicator in problemIndicators {
             if normalized.contains(indicator) { return .directive }
+        }
+
+        // Observation patterns (only when followed by negative/problem context)
+        if (normalized.hasPrefix("seems ") && !normalized.contains(" good") && !normalized.contains(" fine") && !normalized.contains(" correct")) ||
+           (normalized.hasPrefix("appears ") && !normalized.contains(" good") && !normalized.contains(" fine") && !normalized.contains(" correct")) {
+            return .directive
         }
 
         // Observation interjections (informal problem reports)
@@ -397,10 +402,13 @@ actor FoundationLLM {
         }
 
         // Informal statements (treat as implicit directives)
-        if normalized.hasPrefix("its ") || normalized.hasPrefix("it's ") ||
-           normalized.hasPrefix("we ") || normalized.hasPrefix("we're ") || normalized.hasPrefix("we don't ") ||
-           normalized.hasPrefix("there are ") || normalized.hasPrefix("there is ") ||
-           normalized.hasPrefix("i'm ") || normalized.hasPrefix("i think ") {
+        // Be specific to avoid false positives like "we're working on" (report) vs "we don't need" (directive)
+        if normalized.hasPrefix("its just ") || normalized.hasPrefix("it's just ") ||
+           normalized.hasPrefix("its strange ") || normalized.hasPrefix("it's strange ") ||
+           normalized.hasPrefix("we don't ") || normalized.hasPrefix("we need ") || normalized.hasPrefix("we should ") ||
+           normalized.hasPrefix("there are no ") || normalized.hasPrefix("there is no ") ||
+           normalized.hasPrefix("i'm not seeing") || normalized.hasPrefix("i'm not ") ||
+           normalized.hasPrefix("i think we ") {
             return .directive
         }
 
