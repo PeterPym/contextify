@@ -570,6 +570,50 @@ Add transcript management to the **Transcript Inventory** window with:
 - `scripts/remove_test_transcripts.sh` - Example of manual cleanup (can be used as reference)
 - `scripts/db_manager.sh` - Already has backup/restore, add transcript removal command
 
+### Custom Slash Command Metadata Reading
+**Priority:** Low - Future Enhancement
+
+**Goal:** Read custom slash command definitions from user's agent directories to generate context-aware summaries.
+
+**Current State:**
+- Built-in slash commands (Claude Code and Codex) have hardcoded summaries
+- Custom slash commands use generic fallback: "You performed the following command: [command]"
+
+**Proposed Implementation:**
+1. **Discover command directories:**
+   - Claude Code: `~/.claude/commands/`
+   - Codex: `~/.codex/commands/`
+   - Parse `.md` files to extract command descriptions
+
+2. **Parse command metadata:**
+   - Extract command name from filename (e.g., `review-prep.md` → `/review-prep`)
+   - Parse frontmatter or first paragraph for description
+   - Cache in memory for fast lookup during summarization
+
+3. **Use in LLM summarization:**
+   - Match detected slash command to custom command definition
+   - Generate summary like: "You {description from .md file}"
+   - Example: `/review-prep` → "You generated a comprehensive review package"
+
+4. **Edge cases:**
+   - Handle commands with same name across providers (prefer current provider)
+   - Reload on file system changes (use FSEvents)
+   - Graceful degradation if .md file is malformed
+
+**Files to Create:**
+- `app/Sources/ContextifyCore/SlashCommandRegistry.swift` - Command discovery and parsing
+- `Contextify/Contextify/SlashCommandMetadata.swift` - Models for command metadata
+
+**Files to Modify:**
+- `Contextify/Contextify/FoundationLLM.swift` - Use registry in slash command detection
+
+**Benefits:**
+- Better timeline summaries for custom commands
+- No hardcoding needed for user-specific workflows
+- Automatically adapts to new commands
+
+---
+
 ### Embedding & Semantic Search
 
 **Current State:** Basic embedding generation and semantic search features are implemented but incomplete. Currently hidden behind developer mode flag.
