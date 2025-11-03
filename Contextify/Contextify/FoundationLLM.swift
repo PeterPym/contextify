@@ -1324,7 +1324,36 @@ private extension FoundationLLM {
             return PrefixPolicy(allowed: [assistantName], fallback: assistantName)
         case .user:
             return PrefixPolicy(
-                allowed: ["You made", "You asked", "You requested \(assistantName)"],
+                allowed: [
+                    "You made",
+                    "You asked",
+                    "You requested \(assistantName)",
+                    "You cleared",           // /clear
+                    "You compacted",         // /compact
+                    "You changed",           // /model
+                    "You checked",           // /status, /cost, /usage
+                    "You initialized",       // /init
+                    "You logged",            // /login, /logout
+                    "You managed",           // /mcp, /agents, /permissions
+                    "You added",             // /add-dir
+                    "You reported",          // /bug
+                    "You opened",            // /config
+                    "You ran",               // /doctor
+                    "You switched",          // /login (account switching)
+                    "You edited",            // /memory
+                    "You viewed",            // /pr_comments
+                    "You rewound",           // /rewind
+                    "You enabled",           // /sandbox
+                    "You configured",        // /terminal-setup, /approvals
+                    "You entered",           // /vim
+                    "You started",           // /new
+                    "You undid",             // /undo
+                    "You mentioned",         // /mention
+                    "You exited",            // /quit, /exit
+                    "You sent",              // /feedback
+                    "You performed",         // generic fallback for unknown commands
+                    "You executed"           // alternative generic fallback
+                ],
                 fallback: "You requested \(assistantName)"
             )
         case .system:
