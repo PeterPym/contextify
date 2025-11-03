@@ -298,7 +298,7 @@ actor TimelineCacheMissGenerator {
                     let jitter = Double.random(in: 0...0.3) * baseDelay
                     let delaySeconds = baseDelay + jitter
 
-                    log.warning("Attempt \(attempt)/\(maxAttempts) failed, retrying in \(String(format: "%.1f", delaySeconds))s: \(error.localizedDescription)")
+                    log.warning("Attempt \(attempt, privacy: .public)/\(maxAttempts, privacy: .public) failed, retrying in \(String(format: "%.1f", delaySeconds), privacy: .public)s: \(error.localizedDescription, privacy: .public)")
 
                     try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
                 }
