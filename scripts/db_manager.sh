@@ -1,7 +1,11 @@
 #!/bin/bash
 # Database Management Script for Contextify
 # Handles backup, restore, and safe deletion of transcript database
-# Usage: ./scripts/db_manager.sh [backup|clean|restore|list]
+# Features:
+#   - Automatic discovery of active database location (UserDefaults + default)
+#   - Validates recent writes before cleanup (prevents stale DB accidents)
+#   - Creates automatic backups before destructive operations
+# Usage: ./scripts/db_manager.sh <command> [flags] [db-path]
 
 set -e  # Exit on error
 
@@ -14,13 +18,78 @@ NC='\033[0m' # No Color
 
 # Configuration
 DB_NAME="contextify.db"
-DB_DIR="$HOME/Library/Application Support/Contextify"
-DB_PATH="$DB_DIR/$DB_NAME"
 BACKUP_DIR="$(pwd)/build/db-backups"
 APP_NAME="Contextify"
+FORCE_STALE=false
 
 # Ensure backup directory exists
 mkdir -p "$BACKUP_DIR"
+
+# Discover active database location
+discover_database_path() {
+    # Method 1: Check UserDefaults for custom location
+    local custom_dir=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null)
+    if [ -n "$custom_dir" ]; then
+        echo "$custom_dir/$DB_NAME"
+        return 0
+    fi
+
+    # Method 2: Default location
+    echo "$HOME/Library/Application Support/Contextify/$DB_NAME"
+}
+
+# Validate database has recent writes (within last minute)
+validate_recent_writes() {
+    local db_path="$1"
+
+    if [ ! -f "$db_path" ]; then
+        print_error "Database not found: $db_path"
+        return 1
+    fi
+
+    # Get last modified time (seconds since epoch)
+    local last_modified=$(stat -f "%m" "$db_path" 2>/dev/null)
+    local current_time=$(date +%s)
+    local age_seconds=$((current_time - last_modified))
+
+    # Check if modified within last 60 seconds
+    if [ $age_seconds -gt 60 ]; then
+        local age_minutes=$((age_seconds / 60))
+        print_error "Database has not been written to in the last minute"
+        print_info "Last modified: $age_minutes minutes ago"
+        print_info "Database path: $db_path"
+        echo
+        print_warning "This may not be the active database!"
+        print_info "Possible reasons:"
+        print_info "  1. User has set a custom database location in Settings"
+        print_info "  2. App is using a different database (sandboxed container)"
+        print_info "  3. Database is genuinely inactive"
+        echo
+        print_info "To verify the correct database location:"
+        print_info "  1. Check: defaults read dev.contextify dev.contextify.customDatabaseLocation"
+        print_info "  2. Find all: find ~/Library -name \"contextify.db\" -type f 2>/dev/null"
+        print_info "  3. Use --force to clean this database anyway"
+        echo
+        return 1
+    fi
+
+    print_success "Database has recent writes (last modified: $age_seconds seconds ago)"
+    return 0
+}
+
+# Parse database path argument or discover automatically
+DB_PATH=""
+parse_db_path_arg() {
+    if [ -n "$1" ] && [ -f "$1" ]; then
+        DB_PATH="$1"
+        DB_DIR=$(dirname "$DB_PATH")
+    else
+        DB_PATH=$(discover_database_path)
+        DB_DIR=$(dirname "$DB_PATH")
+    fi
+
+    print_info "Using database: $DB_PATH"
+}
 
 # Helper functions
 print_info() {
@@ -119,6 +188,19 @@ clean_database() {
     if [ ! -f "$DB_PATH" ]; then
         print_info "Database does not exist, nothing to clean"
         return 0
+    fi
+
+    # Validate recent writes (unless --force flag is set)
+    if [ "$FORCE_STALE" != "true" ]; then
+        if ! validate_recent_writes "$DB_PATH"; then
+            print_error "Aborting cleanup due to stale database"
+            print_info "To clean anyway, use: $0 clean --force [db-path]"
+            return 1
+        fi
+        echo
+    else
+        print_warning "Forcing cleanup of potentially stale database"
+        echo
     fi
 
     # Show current database stats
@@ -318,29 +400,50 @@ show_usage() {
 Database Management Script for Contextify
 
 Usage:
-  ./scripts/db_manager.sh <command> [options]
+  ./scripts/db_manager.sh <command> [flags] [db-path]
 
 Commands:
-  backup                  Create a backup of the current database
-  clean                   Delete database (creates backup first, requires confirmation)
+  backup [db-path]        Create a backup of the database
+  clean [db-path]         Delete database (creates backup first, validates recent writes)
   restore <name>          Restore a backup (use 'latest' for most recent)
   reingest <transcript>   Force re-ingestion of a specific transcript
   list                    List all available backups
 
+Flags:
+  --force                 Skip recent write validation (for clean command)
+
+Database Path:
+  If not specified, automatically discovers active database by checking:
+  1. Custom location from UserDefaults (dev.contextify.customDatabaseLocation)
+  2. Default location (~/Library/Application Support/Contextify/contextify.db)
+
 Examples:
+  # Automatic database discovery (recommended)
   ./scripts/db_manager.sh backup
   ./scripts/db_manager.sh clean
+
+  # Explicit database path
+  ./scripts/db_manager.sh clean /path/to/custom/contextify.db
+
+  # Force clean a stale database
+  ./scripts/db_manager.sh clean --force /path/to/old/contextify.db
+
+  # Other operations
   ./scripts/db_manager.sh restore latest
-  ./scripts/db_manager.sh restore transcripts.db-20250119-010203
   ./scripts/db_manager.sh reingest 6D02C1B5-6F6D-40E0-B550-DC69DFB8BCCF
   ./scripts/db_manager.sh list
 
+Safety Features:
+  - Automatic discovery of active database location
+  - Validates database has been written to in the last 60 seconds
+  - Prevents accidental cleanup of stale/inactive databases
+  - Creates automatic backups before destructive operations
+  - App is automatically closed before database operations
+
 Notes:
-  - The app will be automatically closed before any database operations
-  - All cleanup operations create an automatic backup first
-  - Re-ingestion resets transcript checkpoint and deletes existing entries
   - Backups are stored in: build/db-backups/
-  - Database location: ~/Library/Application Support/Contextify/
+  - Users can set custom database locations in Settings > Database tab
+  - Use 'defaults read dev.contextify dev.contextify.customDatabaseLocation' to check
 
 ⚠️  IMPORTANT: Always use this script for database operations. Never delete
     database files manually while the app is running.
@@ -352,6 +455,30 @@ EOF
 main() {
     local command="$1"
     shift || true
+
+    # Parse flags
+    while [[ "$1" == --* ]]; do
+        case "$1" in
+            --force)
+                FORCE_STALE=true
+                shift
+                ;;
+            *)
+                print_error "Unknown flag: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Parse database path (optional, for clean/backup/restore/reingest)
+    local db_path_arg=""
+    case "$command" in
+        clean|backup|restore|reingest)
+            db_path_arg="$1"
+            parse_db_path_arg "$db_path_arg"
+            shift || true
+            ;;
+    esac
 
     case "$command" in
         backup)

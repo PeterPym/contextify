@@ -13,6 +13,7 @@ struct TimelineEntryRow: View {
     @State private var isExpanded = false
     @State private var showCopiedToast = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(ConversationMonitor.self) private var monitor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -60,9 +61,16 @@ struct TimelineEntryRow: View {
             }
         }
         .contextMenu {
-            Button("Copy Markdown Snippet") { copy(entry.markdownPayload()) }
             Button("Copy Summary") { copy(entry.summary) }
             Button("Copy Detail") { copy(entry.detail) }
+            Button("Copy Both as JSON") { copyAsJSON() }
+
+            if entry.contentSha256 != nil && entry.windowSha256 != nil {
+                Divider()
+                Button("Regenerate Summary") {
+                    regenerateSummary()
+                }
+            }
         }
     }
 
@@ -124,12 +132,6 @@ struct TimelineEntryRow: View {
                 .buttonStyle(.plain)
                 .help("Reveal in transcript inventory")
             }
-            Button(action: { copy(entry.markdownPayload()) }) {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .help("Copy markdown snippet")
         }
     }
 
@@ -163,6 +165,32 @@ struct TimelineEntryRow: View {
             withAnimation(.easeInOut(duration: 0.25)) {
                 showCopiedToast = false
             }
+        }
+    }
+
+    private func copyAsJSON() {
+        let json: [String: String] = [
+            "summary": entry.summary,
+            "detail": entry.detail,
+            "timestamp": ISO8601DateFormatter().string(from: entry.timestamp)
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return
+        }
+
+        copy(jsonString)
+    }
+
+    private func regenerateSummary() {
+        guard let contentSha = entry.contentSha256,
+              let windowSha = entry.windowSha256 else {
+            return
+        }
+
+        Task {
+            await monitor.regenerateSummary(contentSha256: contentSha, windowSha256: windowSha)
         }
     }
 

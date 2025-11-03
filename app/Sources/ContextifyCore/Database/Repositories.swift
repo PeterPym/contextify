@@ -568,6 +568,7 @@ public protocol CacheRepository {
   func getManyWithSignature(keys: [CacheKey], generatorSignature: String) throws -> [CacheKey: TimelineCache]
   func upsert(_ cache: TimelineCache) throws
   func upsertMany(_ caches: [TimelineCache]) throws
+  func delete(contentSha256: String, windowSha256: String) throws
 }
 
 public final class CacheRepositoryImpl: CacheRepository {
@@ -722,6 +723,15 @@ public final class CacheRepositoryImpl: CacheRepository {
           cache.duration
         ])
       }
+    }
+  }
+
+  public func delete(contentSha256: String, windowSha256: String) throws {
+    try db.write { db in
+      try db.execute(
+        sql: "DELETE FROM timeline_cache WHERE content_sha256 = ? AND window_sha256 = ?",
+        arguments: [contentSha256, windowSha256]
+      )
     }
   }
 }

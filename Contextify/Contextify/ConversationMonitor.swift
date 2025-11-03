@@ -527,6 +527,32 @@ final class ConversationMonitor {
         }
     }
 
+    /// Regenerate summary for a specific entry by deleting its cache and refreshing
+    ///
+    /// Deletes the timeline cache entry for the given content and window hashes,
+    /// then triggers a refresh. TimelineCacheMissGenerator will automatically
+    /// regenerate the summary on next access.
+    ///
+    /// - Parameters:
+    ///   - contentSha256: SHA256 hash of the entry content
+    ///   - windowSha256: SHA256 hash of the context window
+    nonisolated func regenerateSummary(contentSha256: String, windowSha256: String) async {
+        guard let orchestrator = await MainActor.run(body: { self.orchestrator }) else {
+            return
+        }
+
+        do {
+            // Delete the cache entry
+            try orchestrator.deleteCachedTimeline(contentSha256: contentSha256, windowSha256: windowSha256)
+            log.info("Deleted cache for regeneration: content=\(contentSha256.prefix(8), privacy: .public)... window=\(windowSha256.prefix(8), privacy: .public)...")
+
+            // Trigger a refresh to reload from database (which will show "generating" state)
+            await refresh()
+        } catch {
+            log.error("Failed to regenerate summary: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Load all sessions from database for transcript inventory
     /// This is called when the transcript inventory window opens to ensure sessions are populated
     @MainActor

@@ -332,7 +332,9 @@ actor FoundationLLM {
             "commit", "fix", "run", "update", "add", "create", "test", "build", "deploy",
             "write", "explain", "show", "make", "delete", "remove", "check", "refactor",
             "optimize", "implement", "modify", "debug", "install", "configure", "look",
-            "read", "investigate", "try", "revert", "verify", "analyze", "review"
+            "read", "investigate", "try", "revert", "verify", "analyze", "review",
+            "list", "describe", "summarize", "compare", "find", "search", "identify",
+            "determine", "examine", "inspect", "explore", "document", "outline"
         ]
         if Self.isImperativeLike(firstWord, baseVerbs: imperatives) { return .directive }
 
@@ -474,7 +476,34 @@ actor FoundationLLM {
                 var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
                 result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: false, disposition: "ack")
                 return result
+            } else if kind == .assistant, message == "[Request interrupted by user]" {
+                log.debug("[\(reqNum)] timeline: interruption detected, using fast path")
+                let fp = GuidedTimelineSummary(
+                    summary: "You interrupted \(assistantName).",
+                    isCompletion: false,
+                    disposition: "interrupted",
+                    grounding: "grounded",
+                    confidence: 0.95
+                )
+                var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
+                result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: false, disposition: "interrupted")
+                return result
             } else if kind == .user {
+                // Fast path for slash commands (before intent classification)
+                if let commandSummary = detectSlashCommand(message, assistantName: assistantName) {
+                    log.debug("[\(reqNum)] timeline: slash command detected, using fast path")
+                    let fp = GuidedTimelineSummary(
+                        summary: commandSummary,
+                        isCompletion: false,
+                        disposition: "command",
+                        grounding: "grounded",
+                        confidence: 0.95
+                    )
+                    var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: true, disposition: "command")
+                    return result
+                }
+
                 let intent = classifyUserIntent(message)
 
                 // Fast path for affirmative/negative
@@ -978,6 +1007,131 @@ actor SessionController {
 }
 #endif
 
+// MARK: - Slash Command Detection
+
+private extension FoundationLLM {
+    /// Detect and summarize slash commands from Claude Code and Codex CLI
+    /// Returns a summary string if a command is detected, nil otherwise
+    nonisolated func detectSlashCommand(_ message: String, assistantName: String) -> String? {
+        // Extract command pattern: /command [optional args]
+        // Match messages containing <command-name>/command</command-name> or starting with /command
+        let normalizedMsg = message.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Pattern 1: <command-name>/clear</command-name> ...
+        if let commandNameMatch = normalizedMsg.range(of: #"<command-name>/([a-z_\-]+)</command-name>"#, options: .regularExpression) {
+            let commandName = normalizedMsg[commandNameMatch]
+                .replacingOccurrences(of: "<command-name>/", with: "")
+                .replacingOccurrences(of: "</command-name>", with: "")
+
+            if let summary = knownCommandSummary(commandName) {
+                return summary
+            }
+            // Generic fallback for unknown commands
+            return "You performed the following command: /\(commandName)."
+        }
+
+        // Pattern 2: Message starts with /command
+        if normalizedMsg.hasPrefix("/") {
+            // Extract command and args
+            let parts = normalizedMsg.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            guard let commandPart = parts.first else { return nil }
+            let commandName = String(commandPart.dropFirst()) // Remove leading /
+            let args = parts.count > 1 ? String(parts[1]) : nil
+
+            if let summary = knownCommandSummary(commandName, args: args) {
+                return summary
+            }
+            // Generic fallback with args
+            if let args = args {
+                return "You performed the following command: /\(commandName) \(args)."
+            } else {
+                return "You performed the following command: /\(commandName)."
+            }
+        }
+
+        return nil
+    }
+
+    /// Known command summaries for Claude Code and Codex CLI built-in commands
+    nonisolated func knownCommandSummary(_ command: String, args: String? = nil) -> String? {
+        switch command {
+        // Commands common to both Claude Code and Codex
+        case "clear":
+            return "You cleared the session context using the /clear command."
+        case "compact":
+            if let args = args, !args.isEmpty {
+                return "You compacted the conversation with focus instructions using /compact."
+            }
+            return "You compacted the conversation using the /compact command."
+        case "model":
+            return "You changed the AI model using the /model command."
+        case "review":
+            return "You requested a code review using the /review command."
+        case "init":
+            return "You initialized the project with agent instructions using /init."
+        case "logout":
+            return "You logged out using the /logout command."
+        case "mcp":
+            return "You managed MCP server connections using the /mcp command."
+        case "status":
+            return "You checked the session status using the /status command."
+
+        // Claude Code specific
+        case "add-dir", "add_dir":
+            return "You added working directories using the /add-dir command."
+        case "agents":
+            return "You managed custom AI subagents using the /agents command."
+        case "bug":
+            return "You reported a bug using the /bug command."
+        case "config":
+            return "You opened the Settings interface using /config."
+        case "cost":
+            return "You checked token usage statistics using /cost."
+        case "doctor":
+            return "You ran a health check using /doctor."
+        case "help":
+            return "You requested help using the /help command."
+        case "login":
+            return "You switched Anthropic accounts using /login."
+        case "memory":
+            return "You edited CLAUDE.md memory files using /memory."
+        case "permissions":
+            return "You managed permissions using the /permissions command."
+        case "pr_comments", "pr-comments":
+            return "You viewed pull request comments using /pr_comments."
+        case "rewind":
+            return "You rewound the conversation using /rewind."
+        case "sandbox":
+            return "You enabled sandboxed bash execution using /sandbox."
+        case "terminal-setup", "terminal_setup":
+            return "You configured terminal key bindings using /terminal-setup."
+        case "usage":
+            return "You checked plan usage limits using /usage."
+        case "vim":
+            return "You entered vim mode using the /vim command."
+
+        // Codex specific
+        case "approvals":
+            return "You configured approval settings using /approvals."
+        case "new":
+            return "You started a new chat using the /new command."
+        case "undo":
+            return "You undid the previous turn using /undo."
+        case "diff":
+            return "You viewed the git diff using /diff."
+        case "mention":
+            return "You mentioned a file using the /mention command."
+        case "quit", "exit":
+            return "You exited the session using /\(command)."
+        case "feedback":
+            return "You sent feedback to maintainers using /feedback."
+
+        default:
+            return nil // Unknown command, caller will use generic fallback
+        }
+    }
+}
+
 // MARK: - Word-boundary helpers for intent classification
 
 private extension FoundationLLM {
@@ -1170,7 +1324,39 @@ private extension FoundationLLM {
             return PrefixPolicy(allowed: [assistantName], fallback: assistantName)
         case .user:
             return PrefixPolicy(
-                allowed: ["You made", "You asked", "You requested \(assistantName)"],
+                allowed: [
+                    "You made",
+                    "You asked",
+                    "You requested \(assistantName)",
+                    "You explained",         // UNKNOWN: explanations/clarifications
+                    "You mentioned",         // UNKNOWN: providing info/context (also /mention)
+                    "You noted",             // UNKNOWN: acknowledgments/comments
+                    "You said:",             // UNKNOWN: truly unclear messages
+                    "You cleared",           // /clear
+                    "You compacted",         // /compact
+                    "You changed",           // /model
+                    "You checked",           // /status, /cost, /usage
+                    "You initialized",       // /init
+                    "You logged",            // /login, /logout
+                    "You managed",           // /mcp, /agents, /permissions
+                    "You added",             // /add-dir
+                    "You reported",          // /bug
+                    "You opened",            // /config
+                    "You ran",               // /doctor
+                    "You switched",          // /login (account switching)
+                    "You edited",            // /memory
+                    "You viewed",            // /pr_comments
+                    "You rewound",           // /rewind
+                    "You enabled",           // /sandbox
+                    "You configured",        // /terminal-setup, /approvals
+                    "You entered",           // /vim
+                    "You started",           // /new
+                    "You undid",             // /undo
+                    "You exited",            // /quit, /exit
+                    "You sent",              // /feedback
+                    "You performed",         // generic fallback for unknown commands
+                    "You executed"           // alternative generic fallback
+                ],
                 fallback: "You requested \(assistantName)"
             )
         case .system:
@@ -1235,7 +1421,11 @@ private extension FoundationLLM {
             - REPORT      → "You made [description]"
             - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
             - NEGATIVE    → "You requested \(assistantName) not to proceed."
-            - UNKNOWN     → "You asked about this."
+            - UNKNOWN     → Infer intent from MESSAGE content:
+              * If explaining/clarifying → "You explained [what]"
+              * If providing info/context → "You mentioned [what]"
+              * If acknowledging/commenting → "You noted [what]"
+              * If truly unclear → "You said: [brief excerpt]"
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
@@ -1496,11 +1686,16 @@ private extension FoundationLLM {
                 throw Error.retryExhausted
             }
 
-            // Validate leakage
-            let leaked = introducedTopics(message: message, summary: summary)
-            if leaked.count > 6 {
-                log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
-                throw Error.retryExhausted
+            // Validate leakage (skip for high-confidence fast-path results)
+            // Fast-path summaries (confidence >= 0.9, grounded) are pre-approved and may intentionally
+            // reference command names or specific terms from the input
+            let isFastPath = payload.confidence >= 0.9 && payload.grounding.lowercased() == "grounded"
+            if !isFastPath {
+                let leaked = introducedTopics(message: message, summary: summary)
+                if leaked.count > 6 {
+                    log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
+                    throw Error.retryExhausted
+                }
             }
 
             // Validate confidence/grounding

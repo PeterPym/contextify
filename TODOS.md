@@ -183,6 +183,43 @@ When Contextify detects it's now following a different transcript for a project 
 
 ## Recently Completed Work
 
+## Conversation Log Improvements
+
+### Question Preservation in Assistant Summaries (Future Enhancement)
+**Status:** Deferred - needs investigation
+
+**Goal:** Preserve questions at end of assistant messages in timeline summaries.
+
+**Example:**
+```
+Original: "Database cleaned successfully... Would you like me to launch the app?"
+Current:  "Claude cleaned the database."
+Desired:  "Claude cleaned the database and asked if you'd like to launch the app."
+```
+
+**Attempted Implementation:**
+- Hybrid approach: regex detection + LLM integration
+- Fast-path patterns: "would you like", "should i", "shall i", etc.
+- LLM receives TRAILING_QUESTION field for summary formatting
+
+**Issue:**
+- Question extraction logic implemented but not detecting questions in practice
+- Debug logging not appearing (print statements not showing in console)
+- May be related to message preprocessing or truncation before extraction
+- Needs deeper investigation into message flow and LLM prompt handling
+
+**Next Steps:**
+1. Investigate why debug logging doesn't appear
+2. Check if message is truncated/preprocessed before reaching extractTrailingQuestion()
+3. Verify LLM is receiving TRAILING_QUESTION field correctly
+4. Consider alternative approach (post-processing LLM output vs pre-processing input)
+
+**Files to review:**
+- `Contextify/Contextify/FoundationLLM.swift` (extraction logic, LLM prompt)
+- Message preprocessing pipeline (where is text truncated/cleaned?)
+
+---
+
 ### Timeline Summary Intent Classification (2025-11-03)
 - ✅ Eliminated "infer from message" placeholders in timeline summaries
 - ✅ Improved intent classification with 40+ new patterns
@@ -569,6 +606,50 @@ Add transcript management to the **Transcript Inventory** window with:
 **Related Scripts:**
 - `scripts/remove_test_transcripts.sh` - Example of manual cleanup (can be used as reference)
 - `scripts/db_manager.sh` - Already has backup/restore, add transcript removal command
+
+### Custom Slash Command Metadata Reading
+**Priority:** Low - Future Enhancement
+
+**Goal:** Read custom slash command definitions from user's agent directories to generate context-aware summaries.
+
+**Current State:**
+- Built-in slash commands (Claude Code and Codex) have hardcoded summaries
+- Custom slash commands use generic fallback: "You performed the following command: [command]"
+
+**Proposed Implementation:**
+1. **Discover command directories:**
+   - Claude Code: `~/.claude/commands/`
+   - Codex: `~/.codex/commands/`
+   - Parse `.md` files to extract command descriptions
+
+2. **Parse command metadata:**
+   - Extract command name from filename (e.g., `review-prep.md` → `/review-prep`)
+   - Parse frontmatter or first paragraph for description
+   - Cache in memory for fast lookup during summarization
+
+3. **Use in LLM summarization:**
+   - Match detected slash command to custom command definition
+   - Generate summary like: "You {description from .md file}"
+   - Example: `/review-prep` → "You generated a comprehensive review package"
+
+4. **Edge cases:**
+   - Handle commands with same name across providers (prefer current provider)
+   - Reload on file system changes (use FSEvents)
+   - Graceful degradation if .md file is malformed
+
+**Files to Create:**
+- `app/Sources/ContextifyCore/SlashCommandRegistry.swift` - Command discovery and parsing
+- `Contextify/Contextify/SlashCommandMetadata.swift` - Models for command metadata
+
+**Files to Modify:**
+- `Contextify/Contextify/FoundationLLM.swift` - Use registry in slash command detection
+
+**Benefits:**
+- Better timeline summaries for custom commands
+- No hardcoding needed for user-specific workflows
+- Automatically adapts to new commands
+
+---
 
 ### Embedding & Semantic Search
 

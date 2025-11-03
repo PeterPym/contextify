@@ -121,8 +121,17 @@ nonisolated struct TranscriptParser: Sendable {
       return nil
     }
 
-    // Skip command wrappers
-    if text.contains("<command-name>") || text.contains("<local-command-stdout>") {
+    // Extract slash command from command wrappers (e.g., <command-name>/review-prep</command-name>)
+    // These are user directives and should appear in timeline
+    if let commandMatch = text.range(of: #"<command-name>(/[a-z_\-]+)</command-name>"#, options: .regularExpression) {
+      let command = String(text[commandMatch])
+        .replacingOccurrences(of: "<command-name>", with: "")
+        .replacingOccurrences(of: "</command-name>", with: "")
+      return Exchange(role: .user, text: command, timestamp: timestamp)
+    }
+
+    // Skip system noise (command status messages, stdout, etc.)
+    if text.contains("<command-message>") || text.contains("<local-command-stdout>") {
       return nil
     }
 

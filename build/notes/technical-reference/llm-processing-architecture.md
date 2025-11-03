@@ -194,10 +194,23 @@ Both systems use the shared `FoundationLLM` singleton for LLM calls.
 - **Availability Check:** `LLMHealthCheck.shared.checkHealth()` with 30s TTL
 - **Fallback Behavior:** Heuristic generation on macOS < 26.0 or LLM unavailable
 - **Retry Logic:** Exponential backoff on transient failures
+- **Fast Paths:** Slash command detection, affirmative/negative detection, acknowledgement detection
 
 **Session Keys:**
 - Timeline: Per `(kind, provider)` tuple (e.g., "assistant/claude-code")
 - Metadata: Per transcript ID (isolated context)
+
+### Slash Command Handling
+
+Slash commands (e.g., `/clear`, `/compact`) use a **fast path** that skips LLM calls for instant response.
+
+**Detection** (`FoundationLLM.swift:1013-1053`):
+- `<command-name>/command</command-name>` tags (Claude Code format)
+- Messages starting with `/command`
+- Supports 30+ commands from Claude Code and Codex CLI
+
+**Prefix Policy** (`FoundationLLM.swift:1320-1362`):
+User summaries require allowed prefixes. Command-specific verbs (e.g., "You cleared", "You compacted") prevent fallback prefix prepending that would create malformed summaries like "You requested Claude Code You cleared..."
 
 ### SQL Caching
 
