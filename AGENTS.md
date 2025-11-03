@@ -256,10 +256,48 @@ Configure Xcode console with `TYPE Info` filter to hide debug logs in production
 - Artifacts: `outputs/{timestamp}.md` (file/URL metadata)
 - Checkpoints: `outputs/checkpoints/checkpoint-{session}-{timestamp}.md`
 
+## Database Location Discovery
+
+**IMPORTANT:** Users can customize the database location via Settings > Database tab. ALWAYS check for custom location before querying the database.
+
+**Location precedence:**
+1. **Custom location** (if set by user): Check UserDefaults for custom path, or query the running app
+2. **Default location**: `~/Library/Application Support/Contextify/contextify.db`
+3. **Sandboxed container** (if sandbox enabled): `~/Library/Containers/PeterPym.Contextify*/Data/Library/Application Support/Contextify/contextify.db`
+
+**How to find the active database:**
+```bash
+# Method 1: Check UserDefaults for custom location (RECOMMENDED)
+CUSTOM_DIR=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null)
+if [ -n "$CUSTOM_DIR" ]; then
+  DB_PATH="$CUSTOM_DIR/contextify.db"
+  echo "Custom location: $DB_PATH"
+else
+  echo "Default location: ~/Library/Application Support/Contextify/contextify.db"
+  DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
+fi
+
+# Method 2: Find all databases and use most recently modified
+find ~/Library -name "contextify.db" -type f 2>/dev/null -exec ls -lt {} + | head -1
+
+# Method 3: Check all common locations
+find ~/Library/Application\ Support/Contextify -name "contextify.db" 2>/dev/null
+find ~/Library/Containers -name "contextify.db" 2>/dev/null
+find ~/Library/CloudStorage -name "contextify.db" 2>/dev/null  # Dropbox/iCloud
+```
+
+**Common custom locations:**
+- Dropbox: `~/Library/CloudStorage/Dropbox/*/contextify.db`
+- iCloud Drive: `~/Library/Mobile Documents/com~apple~CloudDocs/*/contextify.db`
+- External drive: `/Volumes/*/contextify.db`
+
+**Note:** When users change database locations, the old database file remains in place (not deleted). Always use the most recently modified database file.
+
 ## Quickstart For Agents
 - Ensure Xcode 16 (or Xcode-beta) is installed and selected by the script (it auto-detects)
 - Build once: `bash scripts/xc.sh build`
 - If CLI fails, verify: `xcodebuild -version` and `xcode-select -p` (set `DEVELOPER_DIR` or use Xcode GUI)
+- **Database location:** Always check for custom database location (see "Database Location Discovery" above)
 - Keep PRs small; rely on CI (macOS build workflow) to validate changes
 - Never run destructive git commands (e.g., `git restore`, `reset --hard`, `clean`) on a teammate's work without first creating a backup branch or patch; preserve in-progress changes at all costs
 - NEVER delete or clean tracked files without a backup branch/patch that has been coordinated with the user
