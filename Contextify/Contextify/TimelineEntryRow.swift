@@ -132,12 +132,6 @@ struct TimelineEntryRow: View {
                 .buttonStyle(.plain)
                 .help("Reveal in transcript inventory")
             }
-            Button(action: { copy(entry.markdownPayload()) }) {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .help("Copy markdown snippet")
         }
     }
 
