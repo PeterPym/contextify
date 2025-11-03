@@ -400,3 +400,61 @@ Add transcript management to the **Transcript Inventory** window with:
 - `scripts/remove_test_transcripts.sh` - Example of manual cleanup (can be used as reference)
 - `scripts/db_manager.sh` - Already has backup/restore, add transcript removal command
 
+### Embedding & Semantic Search
+
+**Current State:** Basic embedding generation and semantic search features are implemented but incomplete. Currently hidden behind developer mode flag.
+
+**What's Implemented:**
+- ✅ Embedding service integration (Apple's EmbeddingService on macOS 26+)
+- ✅ Embedding database storage (SQLite with BLOB storage)
+- ✅ Batch embedding generation UI (basic)
+- ✅ Semantic search UI (basic cosine similarity search)
+- ✅ Test buttons for embedding service and database
+
+**What's Missing:**
+- ❌ Production-ready UX (current UI is developer-focused)
+- ❌ Automatic embedding generation (currently manual batch process)
+- ❌ Search results ranking and display improvements
+- ❌ Embedding cache invalidation strategy
+- ❌ Progress feedback during batch operations
+- ❌ Error handling and retry logic
+- ❌ Integration with timeline (search within current project/transcript)
+- ❌ Performance optimization for large datasets
+
+**Proposed Work:**
+1. **Batch Embedding Improvements:**
+   - Add progress bar with ETA
+   - Implement chunked processing for large transcript sets
+   - Add "Resume" functionality for interrupted operations
+   - Show which transcripts/entries are already embedded
+   - Add "Update embeddings" for modified entries
+
+2. **Semantic Search Enhancements:**
+   - Improve search results display (show context, relevance score)
+   - Add filters (by project, by date range, by transcript)
+   - Integrate with timeline view (click result → jump to entry)
+   - Add "Find similar" action on timeline entries
+   - Implement search history
+
+3. **Automatic Embedding Generation:**
+   - Generate embeddings during transcript ingestion (HooverEngine)
+   - Background queue for embedding generation
+   - Configurable: "Generate embeddings automatically" setting
+   - Batch backfill for existing transcripts on first enable
+
+4. **UX Polish:**
+   - Move from modal sheets to sidebar integration
+   - Add keyboard shortcuts (Cmd+F for semantic search?)
+   - Loading states and empty states
+   - Error messages that explain what to do
+   - Settings panel for embedding preferences
+
+**Files Involved:**
+- `Contextify/Contextify/BatchEmbeddingView.swift` - Batch UI
+- `Contextify/Contextify/SemanticSearchView.swift` - Search UI
+- `Contextify/Contextify/ContentView.swift` - Button visibility (currently dev-mode gated)
+- `app/Sources/ContextifyCore/Embeddings/` - Core embedding logic
+
+**When to Re-enable:**
+Complete at least items 1-2 above before showing these features to general users.
+

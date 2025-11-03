@@ -150,23 +150,23 @@ struct ContentView: View {
                 .frame(minWidth: 28, minHeight: 28)
                 .contentShape(Rectangle())
                 .help("Test Embedding Database")
-            }
 
-            Button(action: { activeSheet = .batchEmbedding }) {
-                Image(systemName: "gearshape.2")
-            }
-            .buttonStyle(.borderless)
-            .frame(minWidth: 28, minHeight: 28)
-            .contentShape(Rectangle())
-            .help("Batch Embedding Generation")
+                Button(action: { activeSheet = .batchEmbedding }) {
+                    Image(systemName: "gearshape.2")
+                }
+                .buttonStyle(.borderless)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
+                .help("Batch Embedding Generation")
 
-            Button(action: { activeSheet = .semanticSearch }) {
-                Image(systemName: "magnifyingglass.circle")
+                Button(action: { activeSheet = .semanticSearch }) {
+                    Image(systemName: "magnifyingglass.circle")
+                }
+                .buttonStyle(.borderless)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
+                .help("Semantic Search")
             }
-            .buttonStyle(.borderless)
-            .frame(minWidth: 28, minHeight: 28)
-            .contentShape(Rectangle())
-            .help("Semantic Search")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
