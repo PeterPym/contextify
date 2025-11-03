@@ -1328,6 +1328,10 @@ private extension FoundationLLM {
                     "You made",
                     "You asked",
                     "You requested \(assistantName)",
+                    "You explained",         // UNKNOWN: explanations/clarifications
+                    "You mentioned",         // UNKNOWN: providing info/context (also /mention)
+                    "You noted",             // UNKNOWN: acknowledgments/comments
+                    "You said:",             // UNKNOWN: truly unclear messages
                     "You cleared",           // /clear
                     "You compacted",         // /compact
                     "You changed",           // /model
@@ -1348,7 +1352,6 @@ private extension FoundationLLM {
                     "You entered",           // /vim
                     "You started",           // /new
                     "You undid",             // /undo
-                    "You mentioned",         // /mention
                     "You exited",            // /quit, /exit
                     "You sent",              // /feedback
                     "You performed",         // generic fallback for unknown commands
@@ -1418,7 +1421,11 @@ private extension FoundationLLM {
             - REPORT      → "You made [description]"
             - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
             - NEGATIVE    → "You requested \(assistantName) not to proceed."
-            - UNKNOWN     → "You asked about this."
+            - UNKNOWN     → Infer intent from MESSAGE content:
+              * If explaining/clarifying → "You explained [what]"
+              * If providing info/context → "You mentioned [what]"
+              * If acknowledging/commenting → "You noted [what]"
+              * If truly unclear → "You said: [brief excerpt]"
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
