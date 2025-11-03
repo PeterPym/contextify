@@ -83,41 +83,43 @@ Compile-time prevention of provider string drift:
 - Legacy string init deprecated with clear message
 - Prevents reintroduction of `"codex"` drift
 
+## Completed Components (cont.)
+
+### 8. ConversationMonitor Lifecycle Updates ✅
+**File:** `Contextify/Contextify/ConversationMonitor.swift`
+
+Implemented full reconciliation logic with all helpers:
+
+- **State variables**: `sessionsLoaded`, `isReadyForUpdates`, `followMode`, `lastActiveKey`, `lastSwitchAt`, `lastSystemEventTs`, `seenSystemEventIds`, `policyEngine`, `activeSession`
+- **reconcilePolicyWithAvailableSessions()**: Checks if pinned session exists, triggers handlePinnedMissing() if not
+- **handlePinnedMissing()**: Zero-session persistence with project-scoped events
+- **setActive(from:to:reason:emit:)**: Session switching with DB writes and typed event publication
+- **computeNewestKey()**: Finds newest session by last activity timestamp
+- **followSummary()**: Human-readable summaries for session switches (matches SwitchReason enum)
+- **publishTypedEvent()**: NotificationCenter bridge for session change events
+- **appendSystemEntry()**: Direct timeline append for system messages
+- **toJSON()**: Dictionary → JSON string helper
+- **Public API**: `unpinToAuto()`, `pinAndSwitch()` for manual control
+- **Fixed**: Duplicate activeSession property (removed one, kept observable one)
+- **Fixed**: SystemEventInsert qualified with TranscriptOrchestrator prefix
+
+### 9. Non-Summarizable Entry Handling ✅
+**File:** `Contextify/Contextify/ConversationMonitor.swift`, `TimelineModels.swift`
+
+Implemented check for entries without window context:
+- Added `.nonSummarizable` action case to TimelineEntryAction enum
+- Updated `toTimelineEntry()` to check `entry.windowSha256 == nil` before setting action
+- Entries without window SHA never enqueue cache generation work
+
+### 10. Cursor Initialization on Restart ✅
+**File:** `Contextify/Contextify/ConversationMonitor.swift`
+
+Implemented tail-based cursor initialization:
+- In `loadFeedFromSQL()`, after loading entries, set `lastCursor` from tail entry
+- Changed from `.first` to `.last` for correct restart-safe incremental updates
+- Ensures cursor tracks the most recent entry position
+
 ## Pending Components
-
-### 8. ConversationMonitor Lifecycle Updates ⏳
-**File:** `Contextify/Contextify/ConversationMonitor.swift` (Not yet modified)
-
-Planned changes:
-- Add `sessionsLoaded` and `isReadyForUpdates` gates
-- Add `lastCursor: EntryCursor?` state
-- Add `lastSystemEventTs: Int64?` and `seenSystemEventIds: Set<String>`
-- Implement `loadPolicyForCurrentProject()` (sync read)
-- Implement `reconcilePolicyWithAvailableSessions()` (async)
-- Implement `handlePinnedMissing()` with zero-session persistence
-- Implement `setActive(from:to:reason:emit:)` with DB writes
-- Implement `publishTypedEvent(to:reason:)` for Combine/NotificationCenter
-- Update `loadFeedFromSQL()` to initialize cursor and load system events
-- Wire policy engine into `processIncrementalUpdate()`
-
-### 9. Non-Summarizable Entry Handling ⏳
-**File:** `Contextify/Contextify/ConversationMonitor.swift` (Not yet modified)
-
-Planned changes:
-- Check `entry.windowSha256 == nil` before enqueuing cache misses
-- Set `TimelineEntry.action = .nonSummarizable` for nil window SHA
-- Update `TimelineEntryRow` to show neutral dash (−) for non-summarizable entries
-
-### 10. Cursor Initialization on Restart ⏳
-**File:** `Contextify/Contextify/ConversationMonitor.swift` (Not yet modified)
-
-Planned changes:
-- In `loadFeedFromSQL()`, after loading entries, set `lastCursor` from tail:
-  ```swift
-  if let tail = entries.last {
-    lastCursor = EntryCursor(from: tail)
-  }
-  ```
 
 ### 11. UI Updates ⏳
 **Files:** (Not yet modified)
@@ -145,8 +147,9 @@ Planned changes:
 
 - ✅ Release build (v22 baseline): Success
 - ✅ Debug build (v23 with all changes): **BUILD SUCCEEDED**
+- ✅ Reconciliation logic (v23 + ConversationMonitor): **BUILD SUCCEEDED**
 
-All core infrastructure compiles cleanly and is ready for integration.
+All core infrastructure compiles cleanly. ConversationMonitor lifecycle integration complete.
 
 ## Migration Path
 
@@ -170,10 +173,10 @@ let transcript = DiscoveredTranscript(
 
 ## Next Steps
 
-1. **ConversationMonitor Updates** - Core lifecycle and policy integration
-2. **Non-Summarizable Handling** - Skip cache generation for entries without window SHA
-3. **Cursor Init** - Restart-safe timeline position
-4. **UI Polish** - Follow chips, badges, actions
+1. ✅ **ConversationMonitor Updates** - Core lifecycle and policy integration (COMPLETED)
+2. ✅ **Non-Summarizable Handling** - Skip cache generation for entries without window SHA (COMPLETED)
+3. ✅ **Cursor Init** - Restart-safe timeline position (COMPLETED)
+4. **UI Polish** - Follow chips, badges, actions (NEXT)
 5. **Testing** - Unit, integration, stress
 6. **Documentation** - Policy docs, migration guide, instrumentation
 
