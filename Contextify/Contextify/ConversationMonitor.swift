@@ -541,7 +541,18 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
-        state.replace(with: new)
+        // Preserve existing system entries to prevent them from being wiped out during SQL refresh
+        // System entries are created in-memory via appendSystemEntry() and would be lost otherwise
+        let systemEntries = state.entries.filter { $0.kind == .system }
+
+        if !systemEntries.isEmpty {
+            log.debug("Preserving \(systemEntries.count) system entries during timeline refresh")
+        }
+
+        // Merge system entries with new SQL-loaded entries, maintaining chronological order
+        let combined = systemEntries + new
+        let sorted = combined.sorted { $0.timestamp < $1.timestamp }
+        state.replace(with: sorted)
     }
 
     @MainActor
@@ -1689,7 +1700,7 @@ final class ConversationMonitor {
 
         lastActiveKey = to
         activeSession = t
-        log.debug("Set active session: \(to.sessionId) (\(to.provider.displayName))")
+        log.info("🔄 Session switch: \(to.provider.displayName) (\(reason.rawValue)) - emit=\(emit)")
 
         if emit {
             let payload: [String: Any] = [
@@ -1706,14 +1717,18 @@ final class ConversationMonitor {
                 content: followSummary(to, reason: reason),
                 metadataJSON: toJSON(payload)
             )
+            // Show system message in timeline immediately
+            appendSystemEntry(summary: ev.content)
+
+            // Persist to database for restart safety
             do {
                 try await orchestrator.insertSystemEvent(ev)
                 seenSystemEventIds.insert(ev.id)  // F: de-dupe safety
                 publishTypedEvent(to: to, reason: reason)
-                log.info("System event persisted for session switch: \(reason.rawValue)")
+                log.info("✅ System event persisted for session switch: \(reason.rawValue)")
             } catch {
-                log.error("Failed to persist system event: \(error.localizedDescription)")
-                // Degrade gracefully: still publish typed event for in-app subscribers
+                log.error("❌ Failed to persist system event: \(error.localizedDescription)")
+                // Degrade gracefully: system message still visible in UI, just not restart-safe
                 publishTypedEvent(to: to, reason: reason)
             }
         }
@@ -1774,7 +1789,7 @@ final class ConversationMonitor {
             action: .none
         )
         state.append(entry)
-        log.debug("Appended system entry: \(summary)")
+        log.info("📢 System message added to timeline: \(summary) (total entries: \(self.state.entries.count))")
     }
 
     /// Convert dictionary to JSON string
