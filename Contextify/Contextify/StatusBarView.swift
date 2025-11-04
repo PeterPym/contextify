@@ -260,7 +260,7 @@ struct StatusBarView: View {
             return """
             Apple Intelligence is available and generating conversation summaries using on-device language models (FoundationLLM).
 
-            All processing happens locally on your Mac for privacy.
+            Summaries are generated locally with no network latency or additional API costs.
             """
         case .unavailable(let reason):
             return """
