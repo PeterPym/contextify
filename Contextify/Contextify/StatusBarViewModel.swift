@@ -31,7 +31,7 @@ final class StatusBarViewModel {
         case unavailable(reason: String)
         case error(message: String)
     }
-    private(set) var aiStatus: AIStatus = .unavailable(reason: "macOS 26+ required")
+    private(set) var aiStatus: AIStatus = .unavailable(reason: "Checking availability...")
 
     // Hoover status
     private(set) var hooverMessage: String? = nil

@@ -91,13 +91,16 @@ actor LLMHealthCheck {
       let status: HealthStatus
       switch reason {
       case .appleIntelligenceNotEnabled:
+        log.info("LLM health check: Apple Intelligence not enabled")
         status = .unavailable(.appleIntelligenceNotEnabled)
       case .deviceNotEligible:
+        log.info("LLM health check: Device not eligible for Apple Intelligence")
         status = .unavailable(.deviceNotEligible)
       case .modelNotReady:
+        log.info("LLM health check: Language model not ready")
         status = .unavailable(.modelNotReady)
       @unknown default:
-        log.warning("Unknown availability reason: \(String(describing: reason))")
+        log.warning("LLM health check: Unknown availability reason: \(String(describing: reason))")
         status = .unavailable(.testCallFailed(details: "Unknown availability: \(reason)"))
       }
       cachedStatus = status
