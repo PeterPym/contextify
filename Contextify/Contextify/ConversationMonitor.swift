@@ -4,6 +4,25 @@ import OSLog
 import ContextifyCore
 import AppKit
 
+// MARK: - P0-3: Cursor Persistence Actor
+
+/// Off-main-thread cursor persistence to avoid UI jank
+private actor CursorPersistence {
+    func load(projectId: String) -> EntryCursor? {
+        let key = "dev.contextify.cursor.\(projectId)"
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(EntryCursor.self, from: data)
+    }
+
+    func save(projectId: String, cursor: EntryCursor) {
+        let key = "dev.contextify.cursor.\(projectId)"
+        guard let data = try? JSONEncoder().encode(cursor) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+}
+
+// MARK: - Timeline State
+
 /// Single-source container for timeline entries and derived cache index
 @MainActor
 @Observable
@@ -158,6 +177,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
 
     // v23: Active session follow state
+    @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
     @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
     @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
     private(set) var followMode: FollowMode = .automatic  // P0-4: Observable for UI
@@ -166,6 +186,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastSystemEventTs: Int64?
     @ObservationIgnored private var seenSystemEventIds = Set<String>()
     @ObservationIgnored private let policyEngine = ActiveSessionPolicyEngine()
+    @ObservationIgnored private let cursorPersistence = CursorPersistence()  // P0-3: Off-main cursor I/O
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     // P0-4: Computed properties for UI binding
@@ -333,6 +354,9 @@ final class ConversationMonitor {
     private func onProjectOrSessionChange() {
         log.debug("onProjectOrSessionChange: projectId=\(self.currentProjectId ?? "nil")")
 
+        // P0-2: Cancel prior startup to prevent cross-project races
+        startupTask?.cancel()
+
         // v23 (P0-2, P1-1): Reset follow state for new project
         isReadyForUpdates = false
         sessionsLoaded = false
@@ -353,29 +377,41 @@ final class ConversationMonitor {
             }
         }
 
-        // v23 (P0-2): Orderly startup sequence
-        Task { @MainActor in
-            // 1. Load policy from DB (C: restore followMode)
-            self.loadPolicyForCurrentProject()
+        // P0-2: Cancellable startup sequence with checkpoints
+        startupTask = Task { @MainActor in
+            do {
+                // 1. Load policy from DB (C: restore followMode)
+                try Task.checkCancellation()
+                await self.loadPolicyForCurrentProject()
 
-            // 2. Load all sessions before reconciliation
-            await self.loadAllSessionsFromDatabase()
-            self.sessionsLoaded = true
+                // 2. Load all sessions before reconciliation
+                try Task.checkCancellation()
+                await self.loadAllSessionsFromDatabase()
+                self.sessionsLoaded = true
 
-            // 3. Reconcile policy with available sessions
-            await self.reconcilePolicyWithAvailableSessions()
+                // 3. Reconcile policy with available sessions
+                try Task.checkCancellation()
+                await self.reconcilePolicyWithAvailableSessions()
 
-            // 4. Load persisted cursor (P1-4: restart safety)
-            self.loadCursor()
+                // 4. Load persisted cursor (P1-4: restart safety)
+                try Task.checkCancellation()
+                await self.loadCursor()
 
-            // 5. Load feed and initialize cursor
-            await self.loadFeedFromSQL()
+                // 5. Load feed and initialize cursor
+                try Task.checkCancellation()
+                await self.loadFeedFromSQL()
 
-            // 6. Replay switch events
-            await self.loadSwitchEventsFromSQL()
+                // 6. Replay switch events
+                try Task.checkCancellation()
+                await self.loadSwitchEventsFromSQL()
 
-            // 7. Enable incremental updates
-            self.isReadyForUpdates = true
+                // 7. Enable incremental updates
+                self.isReadyForUpdates = true
+            } catch is CancellationError {
+                log.debug("Startup cancelled for project switch")
+            } catch {
+                log.error("Startup failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -832,33 +868,33 @@ final class ConversationMonitor {
     // MARK: - Cursor Persistence (P1-4)
 
     /// Load persisted cursor for current project from UserDefaults
-    private func loadCursor() {
+    /// P0-3: Async I/O via cursor persistence actor to avoid main thread jank
+    @MainActor
+    private func loadCursor() async {
         guard let projectId = currentProjectId else { return }
-        let key = "dev.contextify.cursor.\(projectId)"
 
-        if let data = UserDefaults.standard.data(forKey: key),
-           let cursor = try? JSONDecoder().decode(EntryCursor.self, from: data) {
+        if let cursor = await cursorPersistence.load(projectId: projectId) {
             lastSeenCursor = cursor
             log.debug("Loaded persisted cursor for project \(projectId): \(cursor.id)")
         }
     }
 
     /// Save current cursor to UserDefaults for restart safety
+    /// P0-3: Fire-and-forget detached task to avoid blocking main thread
     private func saveCursor() {
         guard let projectId = currentProjectId, let cursor = lastSeenCursor else { return }
-        let key = "dev.contextify.cursor.\(projectId)"
 
-        if let data = try? JSONEncoder().encode(cursor) {
-            UserDefaults.standard.set(data, forKey: key)
-            log.debug("Saved cursor for project \(projectId): \(cursor.id)")
+        Task.detached { [cursor, projectId, cursorPersistence] in
+            await cursorPersistence.save(projectId: projectId, cursor: cursor)
         }
     }
 
     // MARK: - Policy Persistence (C: Follow mode restore)
 
     /// Load follow policy from database for current project
+    /// P0-2: Made async for startup sequence
     @MainActor
-    private func loadPolicyForCurrentProject() {
+    private func loadPolicyForCurrentProject() async {
         guard let pid = currentProjectId else {
             followMode = .automatic
             return
@@ -1390,8 +1426,9 @@ final class ConversationMonitor {
     /// Policy reconciliation - checks if pinned session still exists
     @MainActor
     private func reconcilePolicyWithAvailableSessions() async {
-        guard sessionsLoaded else {
-            log.warning("Skipping policy reconciliation - sessions not yet loaded")
+        // P0-4: Ensure sessions are actually available, not just marked loaded
+        guard sessionsLoaded, (!allSessions.isEmpty || followMode.isAutomatic) else {
+            log.warning("Skipping policy reconciliation - sessions not yet loaded or available")
             return
         }
         guard case .manual(let sid, let prov) = followMode else { return }

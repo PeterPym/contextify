@@ -1044,7 +1044,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
 /// Row representation of project_follow_policy table
 public struct FollowPolicyRow: Codable, FetchableRecord, Sendable {
-  public let projectId: Int64
+  public let projectId: String  // P0-1: TEXT to match projects(id)
   public let mode: Int  // 0=auto, 1=manual
   public let pinnedSessionId: String?
   public let pinnedProvider: String?

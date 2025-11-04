@@ -376,20 +376,21 @@ enum DatabaseSchema {
       """)
 
       // D) Add project_id to system_events for project-scoped events
+      // P0-1: project_id is TEXT to match projects(id) which is TEXT (path-based primary key)
       // Check if column already exists to avoid errors on re-run
       if try !db.columnExists("project_id", in: "system_events") {
         try db.execute(sql: """
-          ALTER TABLE system_events ADD COLUMN project_id INTEGER REFERENCES projects(id)
+          ALTER TABLE system_events ADD COLUMN project_id TEXT REFERENCES projects(id)
         """)
       }
 
-      // Backfill project_id for existing events (P1-2: handle both real and synthetic project:<id> IDs)
+      // Backfill project_id for existing events (handle both real and synthetic project:<id> IDs)
       try db.execute(sql: """
         UPDATE system_events AS se
            SET project_id = COALESCE(
               (SELECT t.project_id FROM transcripts t WHERE t.id = se.transcript_id),
               CASE WHEN se.transcript_id LIKE 'project:%'
-                   THEN CAST(substr(se.transcript_id, 9) AS INTEGER)
+                   THEN substr(se.transcript_id, 9)
                    ELSE NULL END
            )
          WHERE project_id IS NULL
