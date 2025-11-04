@@ -76,19 +76,23 @@ public struct ProjectMetadata: Sendable {
   public let entryCount: Int
   public let lastActivity: Date?
   public let displayOrder: Int?
+  /// Providers observed in the database for this project (distinct over transcripts.provider)
+  public let providers: Set<DiscoveredProject.Provider>
 
   public init(
     projectId: String,
     transcriptCount: Int,
     entryCount: Int,
     lastActivity: Date?,
-    displayOrder: Int? = nil
+    displayOrder: Int? = nil,
+    providers: Set<DiscoveredProject.Provider> = []
   ) {
     self.projectId = projectId
     self.transcriptCount = transcriptCount
     self.entryCount = entryCount
     self.lastActivity = lastActivity
     self.displayOrder = displayOrder
+    self.providers = providers
   }
 }
 

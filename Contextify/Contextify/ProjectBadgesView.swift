@@ -2,9 +2,9 @@ import SwiftUI
 import ContextifyCore
 
 /// Displays provider badges for a project (Claude Code, Codex)
+/// Uses database-backed provider information instead of filesystem detection
 struct ProjectBadgesView: View {
-  let projectPath: String
-  @State private var providers: Set<DiscoveredProject.Provider> = []
+  let providers: Set<DiscoveredProject.Provider>
 
   var body: some View {
     HStack(spacing: 4) {
@@ -15,9 +15,6 @@ struct ProjectBadgesView: View {
           .help(provider.displayName)
       }
     }
-    .task {
-      await detectProviders()
-    }
   }
 
   private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {
@@ -27,44 +24,8 @@ struct ProjectBadgesView: View {
     case .other: return .gray  // T2: Safe fallback for unknown providers
     }
   }
-
-  private func detectProviders() async {
-    // Run file I/O on background thread to avoid blocking main thread
-    let detected = await Task.detached {
-      var result: Set<DiscoveredProject.Provider> = []
-
-      // Check for Claude Code
-      let projectURL = URL(fileURLWithPath: projectPath)
-      let claudeDirName = projectPath.replacingOccurrences(of: "/", with: "-")
-      let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects")
-        .appendingPathComponent(claudeDirName)
-
-      if FileManager.default.fileExists(atPath: claudeDir.path) {
-        result.insert(.claudeCode)
-      }
-
-      // Check for Codex
-      let codexDir = projectURL.appendingPathComponent(".codex/sessions")
-      if FileManager.default.fileExists(atPath: codexDir.path) {
-        let hasFiles = (try? FileManager.default.contentsOfDirectory(
-          at: codexDir,
-          includingPropertiesForKeys: nil,
-          options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "jsonl" }.isEmpty) == false
-
-        if hasFiles {
-          result.insert(.codexCLI)
-        }
-      }
-
-      return result
-    }.value
-
-    providers = detected
-  }
 }
 
 #Preview {
-  ProjectBadgesView(projectPath: "/Users/rob/code/projects/contextify")
+  ProjectBadgesView(providers: [.claudeCode, .codexCLI])
 }

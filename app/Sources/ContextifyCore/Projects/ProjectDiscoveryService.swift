@@ -34,18 +34,21 @@ public actor ProjectDiscoveryService {
 
     var discovered: [DiscoveredProject] = []
 
-    // 2. For each Claude project, check if it also has Codex transcripts
+    // 2. For each Claude project, get metadata and providers from database
     for projectPath in claudeProjects {
-      var providers: Set<DiscoveredProject.Provider> = [.claudeCode]
-
-      if hasCodexTranscripts(at: projectPath) {
-        providers.insert(.codexCLI)
-      }
-
-      // 4. Get metadata from database (if already ingested)
+      // Get metadata from database (includes providers from ingested transcripts)
       let metadata = try await getProjectMetadata(projectId: projectPath.path)
 
-      // 5. Determine display name
+      // Use database-backed providers
+      var providers = metadata.providers
+
+      // Because this project was found under ~/.claude/projects, ensure Claude is shown
+      // even before first ingestion.
+      if providers.isEmpty {
+        providers.insert(.claudeCode)
+      }
+
+      // Determine display name
       let name = deriveProjectName(from: projectPath)
 
       discovered.append(DiscoveredProject(
@@ -244,23 +247,9 @@ public actor ProjectDiscoveryService {
     }
   }
 
-  /// Checks if a project has Codex transcripts
-  private func hasCodexTranscripts(at projectPath: URL) -> Bool {
-    let codexDir = projectPath.appendingPathComponent(".codex/sessions")
-
-    guard FileManager.default.fileExists(atPath: codexDir.path) else {
-      return false
-    }
-
-    // Check if there are any .jsonl files
-    let files = try? FileManager.default.contentsOfDirectory(
-      at: codexDir,
-      includingPropertiesForKeys: nil,
-      options: [.skipsHiddenFiles]
-    ).filter { $0.pathExtension == "jsonl" }
-
-    return !(files?.isEmpty ?? true)
-  }
+  // NOTE: Provider presence is determined from the database (transcripts.provider).
+  //       We no longer scan the filesystem for Codex. The hasCodexTranscripts() method
+  //       has been removed in favor of database-backed detection.
 
   /// Derives a display name for a project
   private func deriveProjectName(from path: URL) -> String {
@@ -325,7 +314,8 @@ public actor ProjectDiscoveryService {
           p.display_order,
           COUNT(DISTINCT t.id) AS transcript_count,
           COUNT(e.id) AS entry_count,
-          MAX(e.timestamp) AS last_activity
+          MAX(e.timestamp) AS last_activity,
+          GROUP_CONCAT(DISTINCT t.provider) AS providers
         FROM projects p
         LEFT JOIN transcripts t ON t.project_id = p.id
         LEFT JOIN transcript_entries e ON e.transcript_id = t.id
@@ -340,23 +330,40 @@ public actor ProjectDiscoveryService {
           transcriptCount: 0,
           entryCount: 0,
           lastActivity: nil,
-          displayOrder: nil
+          displayOrder: nil,
+          providers: []
         )
       }
 
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
       let displayOrder: Int? = row["display_order"]
-      self.logger.notice("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries")
       let timestamp: Int? = row["last_activity"]
       let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
+
+      // Parse provider set from CSV of raw values
+      let providersCSV: String? = row["providers"]
+      var providers: Set<DiscoveredProject.Provider> = []
+      if let csv = providersCSV, !csv.isEmpty {
+        for token in csv.split(separator: ",") {
+          let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
+          if let p = DiscoveredProject.Provider(rawValue: raw) {
+            providers.insert(p)
+          } else {
+            providers.insert(.other)
+          }
+        }
+      }
+
+      self.logger.notice("Metadata for \(projectId, privacy: .public): \(transcriptCount) transcripts, \(entryCount) entries, providers: \(providers.map { $0.rawValue }.joined(separator: ", "))")
 
       return ProjectMetadata(
         projectId: projectId,
         transcriptCount: transcriptCount,
         entryCount: entryCount,
         lastActivity: lastActivity,
-        displayOrder: displayOrder
+        displayOrder: displayOrder,
+        providers: providers
       )
     }
   }

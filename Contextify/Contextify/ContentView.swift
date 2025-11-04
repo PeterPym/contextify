@@ -117,7 +117,7 @@ struct ContentView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
 
-                    ProjectBadgesView(projectPath: projectPath)
+                    ProjectBadgesContainer(projectPath: projectPath)
                 }
                 Label(model.branchDisplay, systemImage: "arrow.branch")
                     .lineLimit(1)
