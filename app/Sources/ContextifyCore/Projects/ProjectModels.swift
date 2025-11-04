@@ -69,6 +69,20 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
   }
 }
 
+public extension DiscoveredProject.Provider {
+  /// Tolerant initializer that handles historical raw values stored in the database.
+  init?(dbRaw: String) {
+    switch dbRaw.lowercased() {
+    case "codex.cli", "codexcli", "codex":
+      self = .codexCLI
+    case "claude.code", "claudecode", "claude", "anthropic.code":
+      self = .claudeCode
+    default:
+      return nil
+    }
+  }
+}
+
 /// Metadata about a project from the database
 public struct ProjectMetadata: Sendable {
   public let projectId: String

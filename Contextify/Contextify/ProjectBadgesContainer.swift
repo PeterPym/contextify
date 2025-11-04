@@ -1,11 +1,13 @@
 import SwiftUI
 import ContextifyCore
 import GRDB
+import OSLog
 
 /// Container view that queries providers from database and displays badges
 struct ProjectBadgesContainer: View {
   let projectPath: String
   @State private var providers: Set<DiscoveredProject.Provider> = []
+  private let log = Logger(subsystem: "dev.contextify", category: "ProjectBadges")
 
   var body: some View {
     ProjectBadgesView(providers: providers)
@@ -16,9 +18,11 @@ struct ProjectBadgesContainer: View {
 
   private func loadProviders() async {
     do {
+      if Task.isCancelled { return }
+
       // Query database for providers
       let db = try DatabaseManager.shared.pool
-      let metadata = try await db.read { db in
+      let set: Set<DiscoveredProject.Provider> = try await db.read { db in
         let sql = """
           SELECT GROUP_CONCAT(DISTINCT t.provider) AS providers
           FROM projects p
@@ -28,7 +32,7 @@ struct ProjectBadgesContainer: View {
           """
 
         guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectPath]) else {
-          return Set<DiscoveredProject.Provider>()
+          return []
         }
 
         // Parse provider set from CSV of raw values
@@ -37,7 +41,8 @@ struct ProjectBadgesContainer: View {
         if let csv = providersCSV, !csv.isEmpty {
           for token in csv.split(separator: ",") {
             let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
-            if let p = DiscoveredProject.Provider(rawValue: raw) {
+            // Tolerant mapping for legacy/variant provider strings
+            if let p = DiscoveredProject.Provider(dbRaw: raw) ?? DiscoveredProject.Provider(rawValue: raw) {
               result.insert(p)
             } else {
               result.insert(.other)
@@ -47,10 +52,11 @@ struct ProjectBadgesContainer: View {
         return result
       }
 
-      providers = metadata
+      if Task.isCancelled { return }
+      await MainActor.run { self.providers = set }
     } catch {
-      // Silently fail - just don't show badges
-      providers = []
+      log.error("Provider badge query failed for \(projectPath, privacy: .public): \(error.localizedDescription)")
+      await MainActor.run { self.providers = [] }
     }
   }
 }

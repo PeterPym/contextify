@@ -304,6 +304,12 @@ public actor ProjectDiscoveryService {
     return TimeInterval(v > 1_000_000_000_000 ? v / 1000 : v)
   }
 
+  private static func parseISO8601(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)
+  }
+
   /// Gets metadata for a single project from database
   /// - Parameter projectId: Either projects.id (UUID) or projects.root_path (absolute path)
   private func getProjectMetadata(projectId: String) async throws -> ProjectMetadata {
@@ -315,7 +321,7 @@ public actor ProjectDiscoveryService {
           COUNT(DISTINCT t.id) AS transcript_count,
           COUNT(e.id) AS entry_count,
           MAX(e.timestamp) AS last_activity,
-          GROUP_CONCAT(DISTINCT t.provider) AS providers
+          GROUP_CONCAT(DISTINCT t.provider ORDER BY t.provider) AS providers
         FROM projects p
         LEFT JOIN transcripts t ON t.project_id = p.id
         LEFT JOIN transcript_entries e ON e.transcript_id = t.id
@@ -338,8 +344,18 @@ public actor ProjectDiscoveryService {
       let transcriptCount: Int = row["transcript_count"] ?? 0
       let entryCount: Int = row["entry_count"] ?? 0
       let displayOrder: Int? = row["display_order"]
-      let timestamp: Int? = row["last_activity"]
-      let lastActivity = Self.normalizeTimestamp(timestamp).map { Date(timeIntervalSince1970: $0) }
+
+      let lastActivity: Date? = {
+        let dbValue: DatabaseValue = row["last_activity"]
+        if let iso = String.fromDatabaseValue(dbValue), !iso.isEmpty,
+           let parsed = Self.parseISO8601(iso) {
+          return parsed
+        }
+        if let seconds = Int.fromDatabaseValue(dbValue) {
+          return Self.normalizeTimestamp(seconds).map { Date(timeIntervalSince1970: $0) }
+        }
+        return nil
+      }()
 
       // Parse provider set from CSV of raw values
       let providersCSV: String? = row["providers"]
@@ -347,7 +363,7 @@ public actor ProjectDiscoveryService {
       if let csv = providersCSV, !csv.isEmpty {
         for token in csv.split(separator: ",") {
           let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
-          if let p = DiscoveredProject.Provider(rawValue: raw) {
+          if let p = DiscoveredProject.Provider(dbRaw: raw) ?? DiscoveredProject.Provider(rawValue: raw) {
             providers.insert(p)
           } else {
             providers.insert(.other)
