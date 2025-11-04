@@ -651,6 +651,62 @@ Add transcript management to the **Transcript Inventory** window with:
 
 ---
 
+### Help/Tooltip System - Advanced Features (Lower Priority)
+
+**Current State:** Core help/tooltip system complete (Phases 1-4). Advanced features deferred for future PRs.
+
+**What's Implemented:**
+- ✅ InfoButton + InfoPopoverContent reusable components
+- ✅ Info popovers for complex features (AI status, error badge, follow modes, database location, empty states)
+- ✅ First-use onboarding hints (project tab reordering)
+- ✅ Timestamp tooltips with absolute time
+- ✅ SF Symbols animations (error bounce, hourglass pulse)
+- ✅ Full accessibility support (labels, hints, reduced motion)
+- ✅ Help menu structure with submenus
+- ✅ Comprehensive help documentation (6500+ words)
+
+**What's Deferred:**
+- ❌ HelpLink integration in Settings (link to online docs)
+- ❌ First-launch onboarding tour (welcome screen, feature highlights)
+- ❌ Context-sensitive help menu (dynamic items based on app state)
+- ❌ In-app help search (⌘K command palette)
+
+**Proposed Future Work:**
+
+1. **HelpLink Integration** (1-2 hours)
+   - Add HelpLink buttons in Settings for complex features
+   - Link to GitHub wiki or hosted documentation
+   - Supplement inline popovers with comprehensive guides
+   - **Files:** SettingsView.swift, help documentation hosting
+   - **Benefits:** Users can access detailed docs without leaving the app
+
+2. **First-Launch Onboarding** (3-4 hours)
+   - Welcome modal on first launch (TipKit or custom)
+   - Show 2-3 key features ("Projects auto-discover", "Timeline shows AI activity", etc.)
+   - Dismissible, shows once per install
+   - **Files:** WelcomeView.swift (new), ContextifyApp.swift (launch detection)
+   - **Benefits:** Reduces initial confusion for new users
+
+3. **Context-Sensitive Help Menu** (2-3 hours)
+   - Help menu items context-aware based on current view
+   - Example: When viewing timeline → "Help > About Timeline" enabled
+   - Dynamic menu item visibility/enabled state
+   - **Files:** ContextifyApp.swift (HelpCommands), ConversationMonitor (state)
+   - **Benefits:** Relevant help always available
+
+4. **In-App Help Search** (4-6 hours)
+   - ⌘K command palette for quick help access
+   - Aggregates all help content (menu items, tooltips, documentation)
+   - Fuzzy search across help topics
+   - Recent help topics
+   - **Files:** HelpSearchView.swift (new), HelpSearchIndex.swift (new)
+   - **Benefits:** Fastest way to find answers
+
+**Branch:** `claude/improve-mouseover-help-ux-011CUoSTV2ErvioRGaMEVySj`
+**Reference:** `build/notes/design-reference/help-tooltip-ux-system.md`
+
+---
+
 ### Embedding & Semantic Search
 
 **Current State:** Basic embedding generation and semantic search features are implemented but incomplete. Currently hidden behind developer mode flag.
