@@ -94,7 +94,7 @@ struct TimelineEntryRow: View {
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
-                    .symbolEffect(.pulse.byLayer, options: .repeating)
+                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isActivelyGenerating)
                     .help("Summary not yet generated")
             }
             if entry.action == .nonSummarizable {
@@ -167,6 +167,18 @@ struct TimelineEntryRow: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
         return formatter.string(from: entry.timestamp)
+    }
+
+    private var isActivelyGenerating: Bool {
+        // Only pulse the FIRST entry that's generating (oldest, being actively processed)
+        guard entry.action == .generating else { return false }
+
+        // Find first generating entry by timestamp (oldest first)
+        let firstGenerating = allEntries
+            .filter { $0.action == .generating }
+            .min(by: { $0.timestamp < $1.timestamp })
+
+        return firstGenerating?.id == entry.id
     }
 
     private func copy(_ text: String) {
