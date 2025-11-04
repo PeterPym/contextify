@@ -180,19 +180,14 @@ public final class ProjectSwitcherState {
     guard let orchestrator = orchestrator else { return }
 
     do {
-      // Find the project in the database by path
-      let projects = try orchestrator.listProjects()
-      if let project = projects.first(where: { $0.rootPath == projectURL.path }) {
-        let projectName = project.name ?? "unknown"
-        let projectId = project.id
-        log.info("ProjectSwitcher: Switching to project \(projectName) (id: \(projectId)) from external change")
-        await switchToProject(project.id)
-      } else {
-        let urlPath = projectURL.path
-        log.warning("ProjectSwitcher: No project found in DB for path: \(urlPath)")
-        // Refresh projects to ensure DB is in sync
-        await refreshProjects()
-      }
+      let canon = projectURL.resolvingSymlinksInPath().path
+      // Create-or-get to guarantee DB identity exists
+      let pid = try orchestrator.getOrCreateProject(
+        name: URL(fileURLWithPath: canon).lastPathComponent,
+        rootPath: canon
+      )
+      log.info("ProjectSwitcher: Activating project id=\(pid, privacy: .public) for path \(canon, privacy: .public)")
+      await switchToProject(pid)
     } catch {
       let errorDesc = error.localizedDescription
       log.error("ProjectSwitcher: Failed to handle project root change: \(errorDesc)")

@@ -11,13 +11,18 @@ final class TimelineIntegration {
 
     private init() {}
 
-    func startMonitoring() {
+    func startMonitoring(projectId: String) {
         guard !isActive else { return }
         log.info("Timeline integration starting")
-        isActive = true
-        ConversationMonitor.shared.startMonitoring()
-        registerNotifications()
-        ConversationMonitor.shared.requestImmediateRefresh(trigger: .manualHotkey)
+        ConversationMonitor.shared.startMonitoring(projectId: projectId)
+        // Flip active only after the monitor reports started (same runloop is fine)
+        if ConversationMonitor.shared.isMonitoring {
+            isActive = true
+            registerNotifications()
+            ConversationMonitor.shared.requestImmediateRefresh(trigger: .manualHotkey)
+        } else {
+            log.warning("TimelineIntegration: monitor did not enter isMonitoring; deferring activation")
+        }
     }
 
     func stopMonitoring() {

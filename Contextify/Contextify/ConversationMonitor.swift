@@ -248,7 +248,26 @@ final class ConversationMonitor {
     }
 
     @MainActor
+    @available(*, deprecated, message: "Use startMonitoring(projectId:) to avoid identity races")
     func startMonitoring() {
+        guard let root = HUDViewModel.shared.projectRootURL else {
+            lastError = "No project root set"
+            log.error("No project root URL available from HUDViewModel")
+            return
+        }
+        // Legacy: resolve id then forward
+        do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let pid = try orchestrator.getOrCreateProject(name: root.lastPathComponent, rootPath: root.path)
+            startMonitoring(projectId: pid)
+        } catch {
+            lastError = "Failed to start monitoring: \(error.localizedDescription)"
+            log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    @MainActor
+    func startMonitoring(projectId: String) {
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
         backgroundTasks = nil
@@ -256,30 +275,16 @@ final class ConversationMonitor {
 
         guard !isMonitoring else { return }
 
-        log.info("⭐️ Timeline integration starting")
-        log.info("Starting SQL-based timeline monitoring")
+        log.info("⭐️ Timeline integration starting for project \(projectId)")
 
         Task { @MainActor [weak self] in
             guard let self else { return }
 
-            // 1. Get project from HUD
-            guard let projectRoot = HUDViewModel.shared.projectRootURL else {
-                self.lastError = "No project root set"
-                self.log.error("No project root URL available from HUDViewModel")
-                return
-            }
-
-            // 2. Initialize shared orchestrator (nonisolated - safe for concurrent access)
+            // 1. Initialize orchestrator and bind known project id
             do {
                 self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-
-                // CRITICAL: Create project on main actor and wait for DB commit
-                // This ensures the project exists before background tasks access it
-                self.currentProjectId = try self.orchestrator.getOrCreateProject(
-                    name: projectRoot.lastPathComponent,
-                    rootPath: projectRoot.path
-                )
-                self.log.info("📁 Project ID set: \(self.currentProjectId ?? "nil")")
+                self.currentProjectId = projectId
+                self.log.info("📁 Project ID set: \(projectId)")
 
                 // Verify project was persisted (forces read from DB, ensures commit)
                 let projectId = self.currentProjectId!
@@ -374,7 +379,7 @@ final class ConversationMonitor {
                 // Project change notifications already set up in init()
 
                 self.isMonitoring = true
-                self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
+                self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
             } catch {
                 self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
                 self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")

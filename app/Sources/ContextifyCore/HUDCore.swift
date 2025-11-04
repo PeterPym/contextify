@@ -508,12 +508,9 @@ public final class HUDViewModel {
       discoveredRoot = canonical
     }
 
-    // Notify observers if we discovered a project root during startup
-    // Defer to next runloop tick to ensure ProjectSwitcherState observer is installed (nit #3)
+    // Notify observers synchronously on MainActor; startup is @MainActor-isolated
     if let root = discoveredRoot {
-      DispatchQueue.main.async { [weak self] in
-        self?.postProjectRootDidChange(root, source: "startup")
-      }
+      postProjectRootDidChange(root, source: "startup")
     }
   }
 
