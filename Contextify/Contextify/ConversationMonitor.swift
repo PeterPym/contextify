@@ -201,6 +201,12 @@ final class ConversationMonitor {
     @ObservationIgnored private let cursorPersistence = CursorPersistence()  // P0-3: Off-main cursor I/O
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
+    // Health monitoring and diagnostics
+    @ObservationIgnored private var healthMonitorTask: Task<Void, Never>?  // Periodic health checks
+    @ObservationIgnored private var lastHealthCheck: Date?
+    @ObservationIgnored private var fallbackPollingTask: Task<Void, Never>?  // Fallback when FSEvents fails
+    @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
+
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
         if case .manual = followMode { return true }
@@ -217,6 +223,10 @@ final class ConversationMonitor {
     deinit {
         // Cancel any pending debounce task
         debounceTask?.cancel()
+
+        // Cancel health monitoring
+        healthMonitorTask?.cancel()
+        fallbackPollingTask?.cancel()
 
         // Clean up observers (only relevant for tests/previews, not for singleton)
         if let observer = projectChangeObserver {
@@ -283,7 +293,10 @@ final class ConversationMonitor {
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
                 self.isCacheGeneratorActive = true
 
-                // 4. Start background work (discovery + debounced updates) in a single parent task
+                // Initialize diagnostics service
+                self.diagnosticsService = TimelineDiagnosticsService(db: try .shared.pool)
+
+                // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = self.orchestrator!
                 self.log.info("🚀 Spawning background tasks for project: \(projectId)")
                 self.backgroundTasks = Task { [weak self] in
@@ -310,6 +323,16 @@ final class ConversationMonitor {
                         // Task 2: Debounced transcript updates
                         group.addTask { [weak self] in
                             await self?.watchForDebouncedTranscriptUpdates()
+                        }
+
+                        // Task 3: Health monitoring with auto-recovery
+                        group.addTask { [weak self] in
+                            await self?.runHealthMonitoring(projectId: projectId, orchestrator: orchestrator)
+                        }
+
+                        // Task 4: Fallback polling (in case FSEvents fails)
+                        group.addTask { [weak self] in
+                            await self?.runFallbackPolling(projectId: projectId, orchestrator: orchestrator)
                         }
                     }
                 }
@@ -1270,43 +1293,83 @@ final class ConversationMonitor {
         // Also discover Codex CLI sessions for this project
         // Codex stores sessions globally in ~/.codex/sessions/YYYY/MM/DD/*.jsonl
         // We need to scan recursively and match by 'cwd' field in session_meta
-        let codexDiscovered = try await Task.detached { () -> [DiscoveredTranscript] in
+        let projectPath = projectRoot.path
+        let codexResult = try await Task.detached(priority: .utility) { () -> (transcripts: [DiscoveredTranscript], parseFailures: Int, missingCwd: Int) in
             let codexRoot = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".codex/sessions")
 
             guard FileManager.default.fileExists(atPath: codexRoot.path) else {
-                return []
+                return ([], 0, 0)
             }
 
             // Find all .jsonl files recursively
             guard let enumerator = FileManager.default.enumerator(
                 at: codexRoot,
-                includingPropertiesForKeys: [.contentModificationDateKey],
+                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
                 options: [.skipsHiddenFiles]
             ) else {
-                return []
-            }
-
-            // Collect all file URLs (non-async enumeration)
-            var allFiles: [URL] = []
-            while let fileURL = enumerator.nextObject() as? URL {
-                if fileURL.pathExtension == "jsonl" {
-                    allFiles.append(fileURL)
-                }
+                return ([], 0, 0)
             }
 
             var matchingFiles: [DiscoveredTranscript] = []
-            let projectPath = projectRoot.path
+            var parseFailures = 0
+            var missingCwd = 0
+            let cutoff = Calendar.current.date(byAdding: .day, value: -45, to: Date()) ?? .distantPast
 
-            for fileURL in allFiles {
+            while !Task.isCancelled, let fileURL = enumerator.nextObject() as? URL {
+                if Task.isCancelled { break }
+                guard fileURL.pathExtension == "jsonl" else { continue }
 
-                // Read first line to get session_meta with cwd
-                guard let firstLine = try? String(contentsOf: fileURL, encoding: .utf8)
-                    .components(separatedBy: .newlines).first,
-                      let data = firstLine.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let payload = json["payload"] as? [String: Any],
-                      let cwd = payload["cwd"] as? String else {
+                guard
+                    let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                    resourceValues.isRegularFile == true
+                else {
+                    continue
+                }
+
+                if let modified = resourceValues.contentModificationDate, modified < cutoff {
+                    continue
+                }
+
+                guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+                    parseFailures += 1
+                    continue
+                }
+                defer { try? handle.close() }
+
+                let chunk: Data
+                do {
+                    guard let data = try handle.read(upToCount: 8192), !data.isEmpty else {
+                        parseFailures += 1
+                        continue
+                    }
+                    chunk = data
+                } catch {
+                    parseFailures += 1
+                    continue
+                }
+
+                if Task.isCancelled { break }
+
+                let newline = chunk.firstIndex(of: 0x0A)
+                let lineData = newline.map { chunk.prefix(upTo: $0) } ?? chunk
+
+                guard
+                    let lineString = String(data: lineData, encoding: .utf8),
+                    !lineString.isEmpty,
+                    let jsonData = lineString.data(using: .utf8),
+                    let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
+                else {
+                    parseFailures += 1
+                    continue
+                }
+
+                guard
+                    let payload = json["payload"] as? [String: Any],
+                    let cwd = payload["cwd"] as? String,
+                    !cwd.isEmpty
+                else {
+                    missingCwd += 1
                     continue
                 }
 
@@ -1321,8 +1384,13 @@ final class ConversationMonitor {
                 }
             }
 
-            return matchingFiles
+            return (matchingFiles, parseFailures, missingCwd)
         }.value
+
+        let codexDiscovered = codexResult.transcripts
+        if codexResult.parseFailures > 0 || codexResult.missingCwd > 0 {
+            log.warning("Codex discovery skipped \(codexResult.parseFailures) malformed session(s) and \(codexResult.missingCwd) session(s) missing cwd for project \(projectRoot.lastPathComponent, privacy: .public)")
+        }
 
         await MainActor.run {
             log.info("🔍 Discovery: Found \(codexDiscovered.count) Codex CLI sessions for project")
@@ -1716,6 +1784,163 @@ final class ConversationMonitor {
             log.info("Pinned to session: \(session.identifier)")
         } catch {
             log.error("Failed to pin: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Diagnostics & Health Monitoring
+
+    /// Public API: Capture full diagnostic snapshot
+    /// Can be called any time for debugging - provides complete state picture without human intervention
+    @MainActor
+    public func captureDiagnostics() async -> TimelineDiagnosticsSnapshot? {
+        guard let diagnostics = diagnosticsService else { return nil }
+
+        let monitorState = MonitorStateSnapshot(
+            isMonitoring: isMonitoring,
+            entryCount: entries.count,
+            visibleEntryCount: visibleEntries.count,
+            lastUpdate: lastUpdate,
+            isProcessing: isProcessing,
+            lastError: lastError,
+            cursorExists: lastSeenCursor != nil
+        )
+
+        return await diagnostics.captureSnapshot(
+            projectId: currentProjectId,
+            orchestrator: orchestrator,
+            monitorState: monitorState
+        )
+    }
+
+    /// Health monitoring loop - runs every 30s
+    /// Detects stalls and attempts auto-recovery
+    private func runHealthMonitoring(projectId: String, orchestrator: TranscriptOrchestrator) async {
+        log.info("🏥 Health monitoring started")
+
+        while !Task.isCancelled {
+            do {
+                // Wait 30s between checks
+                try await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run { [weak self] in
+                    self?.lastHealthCheck = Date()
+                }
+
+                // Capture diagnostic snapshot
+                guard let snapshot = await MainActor.run(body: { self.captureDiagnostics() }) else {
+                    continue
+                }
+
+                // Log heartbeat (debug level - visible during development)
+                log.debug("🏥 Health check: \(snapshot.issues.count) issues")
+
+                // Check for critical issues and attempt recovery
+                for issue in snapshot.issues where issue.severity == .critical {
+                    await MainActor.run { [weak self] in
+                        self?.log.warning("🏥 Critical issue detected: \(issue.message)")
+                    }
+
+                    // Auto-recovery for specific issues
+                    if issue.category == .watcherMissing {
+                        await attemptWatcherRecovery(projectId: projectId, orchestrator: orchestrator)
+                    } else if issue.category == .hooverStall {
+                        await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
+                    }
+                }
+
+            } catch is CancellationError {
+                break
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.log.error("Health monitoring error: \(error.localizedDescription)")
+                }
+            }
+        }
+
+        log.info("🏥 Health monitoring stopped")
+    }
+
+    /// Fallback polling - runs every 10s when FSEvents may not be working
+    /// Manually triggers hoover for transcripts that haven't been updated recently
+    private func runFallbackPolling(projectId: String, orchestrator: TranscriptOrchestrator) async {
+        log.info("🔄 Fallback polling started")
+
+        while !Task.isCancelled {
+            do {
+                // Wait 10s between polls
+                try await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { return }
+
+                // Get all transcripts for this project
+                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+
+                for transcript in transcripts where !Task.isCancelled {
+                    let fileURL = URL(fileURLWithPath: transcript.filePath)
+
+                    // Check if file has been modified since last DB update
+                    guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                          let modDate = attrs[.modificationDate] as? Date else {
+                        continue
+                    }
+
+                    let lastUpdate = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
+                    let age = Date().timeIntervalSince(lastUpdate)
+
+                    // If file modified recently but DB not updated in > 60s, manually trigger hoover
+                    if modDate > lastUpdate && age > 60 {
+                        log.debug("🔄 Fallback polling: triggering hoover for \(transcript.id)")
+                        try orchestrator.manualHoover(transcriptId: transcript.id, fileURL: fileURL)
+                    }
+                }
+
+            } catch is CancellationError {
+                break
+            } catch {
+                // Log errors but continue polling
+                log.debug("Fallback polling error: \(error.localizedDescription)")
+            }
+        }
+
+        log.info("🔄 Fallback polling stopped")
+    }
+
+    /// Attempt to recover stalled watcher
+    private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator) async {
+        do {
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+
+            for transcript in transcripts where !orchestrator.isWatchingTranscript(transcriptId: transcript.id) {
+                log.info("🔧 Attempting to restart watcher for: \(transcript.id)")
+                let fileURL = URL(fileURLWithPath: transcript.filePath)
+                try orchestrator.startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
+            }
+        } catch {
+            log.error("Watcher recovery failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Attempt to recover stalled hoover
+    private func attemptHooverRecovery(projectId: String, orchestrator: TranscriptOrchestrator) async {
+        do {
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+
+            for transcript in transcripts {
+                let fileURL = URL(fileURLWithPath: transcript.filePath)
+
+                // Check if file has unprocessed content
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+                      let fileSize = attrs[.size] as? NSNumber else {
+                    continue
+                }
+
+                if fileSize.intValue > transcript.fileSizeBytes {
+                    log.info("🔧 Attempting manual hoover for stalled transcript: \(transcript.id)")
+                    try orchestrator.manualHoover(transcriptId: transcript.id, fileURL: fileURL)
+                }
+            }
+        } catch {
+            log.error("Hoover recovery failed: \(error.localizedDescription)")
         }
     }
 }
