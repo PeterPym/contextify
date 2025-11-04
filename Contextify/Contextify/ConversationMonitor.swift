@@ -206,7 +206,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastHealthCheck: Date?
     @ObservationIgnored private var fallbackPollingTask: Task<Void, Never>?  // Fallback when FSEvents fails
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
-    @ObservationIgnored private var diagnosticsExporter: DiagnosticsExporter?  // External API
+    @ObservationIgnored private var diagnosticsHTTPServer: DiagnosticsHTTPServer?  // External HTTP API
 
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
@@ -297,12 +297,18 @@ final class ConversationMonitor {
                 // Initialize diagnostics service
                 self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
 
-                // Initialize diagnostics exporter (external API)
-                self.diagnosticsExporter = DiagnosticsExporter()
-                await self.diagnosticsExporter?.startMonitoring { @Sendable [weak self] in
-                    guard let self else { return nil }
-                    return await self.captureDiagnostics()
-                }
+                // Initialize diagnostics HTTP server (external API)
+                self.diagnosticsHTTPServer = DiagnosticsHTTPServer()
+                try await self.diagnosticsHTTPServer?.start(
+                    diagnosticsHandler: { @Sendable [weak self] in
+                        guard let self else { return nil }
+                        return await self.captureDiagnostics()
+                    },
+                    recentEntriesHandler: { @Sendable [weak self] count in
+                        guard let self else { return [] }
+                        return await self.getRecentEntries(count: count)
+                    }
+                )
 
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = self.orchestrator!
@@ -372,12 +378,12 @@ final class ConversationMonitor {
         debounceTask = nil
 
         // Stop diagnostics exporter
-        if let exporter = diagnosticsExporter {
+        if let server = diagnosticsHTTPServer {
             Task {
-                await exporter.stopMonitoring()
+                await server.stop()
             }
         }
-        diagnosticsExporter = nil
+        diagnosticsHTTPServer = nil
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
@@ -1826,6 +1832,29 @@ final class ConversationMonitor {
             orchestrator: orchestrator,
             monitorState: monitorState
         )
+    }
+
+    /// Public API: Get recent timeline entries for external API access
+    /// Returns lightweight snapshots with content for debugging
+    @MainActor
+    public func getRecentEntries(count: Int) -> [TimelineEntrySnapshot] {
+        let recentEntries = Array(entries.suffix(count))
+
+        return recentEntries.map { entry in
+            TimelineEntrySnapshot(
+                entryId: entry.id.uuidString,
+                timestamp: entry.timestamp,
+                disposition: entry.kind.rawValue,
+                role: entry.kind.rawValue,
+                content: entry.detail,
+                provider: entry.sourceContext?.provider.rawValue,
+                presentSummary: entry.summary,
+                pastSummary: nil,  // Could add pastSummary if needed
+                isGenerating: entry.action == .generating,
+                isNonSummarizable: entry.action == .nonSummarizable,
+                isError: entry.isError
+            )
+        }
     }
 
     /// Health monitoring loop - runs every 30s
