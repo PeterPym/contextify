@@ -866,6 +866,9 @@ final class ConversationMonitor {
     }
 
     /// v23: Load and replay system switch events from database (restart-safe)
+    /// T3: Reader is project-scoped and intentionally avoids JOINs,
+    ///     because project-level events use empty transcript_id ("") as a sentinel.
+    ///     See TranscriptOrchestrator.insertSystemEvent for details.
     @MainActor
     private func loadSwitchEventsFromSQL() async {
         guard let pid = currentProjectId else { return }

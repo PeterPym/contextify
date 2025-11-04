@@ -40,11 +40,13 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
   public enum Provider: String, Sendable, Hashable, CaseIterable {
     case claudeCode = "claude.code"
     case codexCLI = "codex.cli"
+    case other  // T2: Safe fallback for unknown providers
 
     public var displayName: String {
       switch self {
       case .claudeCode: return "Claude Code"
       case .codexCLI: return "Codex CLI"
+      case .other: return "Other"  // T2
       }
     }
 
@@ -52,6 +54,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
       switch self {
       case .claudeCode: return "🔵"
       case .codexCLI: return "🟡"
+      case .other: return "🔄"  // T2
       }
     }
 
@@ -60,6 +63,7 @@ public struct DiscoveredProject: Sendable, Identifiable, Equatable {
       switch self {
       case .claudeCode: return "claude-code-icon"
       case .codexCLI: return "codex-icon"
+      case .other: return "sparkles"  // T2: SF Symbol fallback
       }
     }
   }

@@ -24,6 +24,7 @@ struct ProjectBadgesView: View {
     switch provider {
     case .claudeCode: return .orange
     case .codexCLI: return .white
+    case .other: return .gray  // T2: Safe fallback for unknown providers
     }
   }
 
