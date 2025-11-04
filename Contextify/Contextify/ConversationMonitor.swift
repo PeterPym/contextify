@@ -3,19 +3,31 @@ import Observation
 import OSLog
 import ContextifyCore
 import AppKit
+import CryptoKit
+
+// MARK: - R3: String hash extension for stable cursor keys
+
+extension String {
+    /// R3: Normalize project paths to stable short keys for cursor persistence
+    nonisolated func sha1Hex() -> String {
+        let digest = Insecure.SHA1.hash(data: Data(self.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 // MARK: - P0-3: Cursor Persistence Actor
 
 /// Off-main-thread cursor persistence to avoid UI jank
+/// R3: Uses sha1 hash of project path for stable UserDefaults keys
 private actor CursorPersistence {
     func load(projectId: String) -> EntryCursor? {
-        let key = "dev.contextify.cursor.\(projectId)"
+        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(EntryCursor.self, from: data)
     }
 
     func save(projectId: String, cursor: EntryCursor) {
-        let key = "dev.contextify.cursor.\(projectId)"
+        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
         guard let data = try? JSONEncoder().encode(cursor) else { return }
         UserDefaults.standard.set(data, forKey: key)
     }
@@ -864,7 +876,9 @@ final class ConversationMonitor {
                     await appendSystemEntry(summary: content)
                 }
                 seenSystemEventIds.insert(ev.id)
-                lastSystemEventTs = max(lastSystemEventTs ?? 0, Int64(ev.timestamp))
+                // R5: Normalize timestamp to milliseconds (handle legacy seconds-based timestamps)
+                let tsMs: Int64 = (ev.timestamp < 10_000_000_000) ? Int64(ev.timestamp) * 1000 : Int64(ev.timestamp)
+                lastSystemEventTs = max(lastSystemEventTs ?? 0, tsMs)
             }
             if !events.isEmpty {
                 log.info("Loaded \(events.count) system switch events from database")
@@ -1020,7 +1034,8 @@ final class ConversationMonitor {
                 ))
             }
 
-            log.info("Updated \(updates.count) entries with fresh cache summaries")
+            // R8: Drop to debug to reduce noise under heavy cache processing
+            log.debug("Updated \(updates.count) entries with fresh cache summaries")
         } catch {
             log.error("Cache bulk refresh failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -1174,7 +1189,8 @@ final class ConversationMonitor {
                 }
 
                 let elapsed = Date().timeIntervalSince(startTime)
-                log.info("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
+                // R8: Drop to debug to reduce noise under heavy ingestion
+                log.debug("Added \(addedCount) new entries (\(newEntries.count - addedCount) duplicates) in \(Int(elapsed * 1000))ms")
             } catch {
                 lastError = "Failed to fetch new entries: \(error.localizedDescription)"
                 log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")

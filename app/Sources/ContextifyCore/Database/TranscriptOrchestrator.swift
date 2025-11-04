@@ -962,6 +962,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Insert a system switch event (persisted to DB)
+  /// R2: Project-scoped events use empty transcript_id ("") as sentinel value.
+  ///     These rows must be filtered by project_id only - do not JOIN to transcripts table.
   public func insertSystemEvent(_ e: SystemEventInsert) async throws {
     try await writeQueue.write { db in
       try db.execute(sql: """

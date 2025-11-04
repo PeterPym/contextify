@@ -29,6 +29,14 @@ public struct ActiveSessionDidChangeEvent: Sendable {
 
 extension Notification.Name {
   /// Posted when the active session changes
-  /// UserInfo contains ActiveSessionDidChangeEvent as the object
+  /// R4: The event is delivered as the Notification `object` (cast to `ActiveSessionDidChangeEvent`)
   public static let activeSessionDidChange = Notification.Name("ActiveSessionDidChange")
+}
+
+// R4: Convenience accessor for type-safe event access
+extension Notification {
+  /// Safely extract the ActiveSessionDidChangeEvent from the notification object
+  public var activeSessionEvent: ActiveSessionDidChangeEvent? {
+    object as? ActiveSessionDidChangeEvent
+  }
 }

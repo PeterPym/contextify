@@ -377,6 +377,8 @@ enum DatabaseSchema {
 
       // D) Add project_id to system_events for project-scoped events
       // P0-1: project_id is TEXT to match projects(id) which is TEXT (path-based primary key)
+      // R2: system_events.timestamp is MILLISECONDS since epoch (not seconds)
+      // R2: Project-scoped events use empty transcript_id ("") as sentinel - do not JOIN these rows
       // Check if column already exists to avoid errors on re-run
       if try !db.columnExists("project_id", in: "system_events") {
         try db.execute(sql: """

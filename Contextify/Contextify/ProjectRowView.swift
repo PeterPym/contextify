@@ -46,7 +46,8 @@ struct ProjectRowView: View {
                 await monitor.unpinToAuto()
               }
             }
-            if monitor.activeSession != nil {
+            // R6: Only show "Pin Current Session" when in auto mode (avoid redundant action)
+            if !monitor.isPinnedMode, monitor.activeSession != nil {
               Button("Pin Current Session") {
                 Task {
                   if let session = monitor.activeSession {
