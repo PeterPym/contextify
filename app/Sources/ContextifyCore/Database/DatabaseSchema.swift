@@ -344,9 +344,10 @@ enum DatabaseSchema {
     // v23: Active transcript follow - surgical fix for session switching
     migrator.registerMigration("v23_active_transcript_follow") { db in
       // A) Follow policy table
+      // F: project_id is TEXT to match projects(id) which is TEXT (path-based primary key)
       try db.execute(sql: """
         CREATE TABLE IF NOT EXISTS project_follow_policy (
-          project_id        INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+          project_id        TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
           mode              INTEGER NOT NULL,             -- 0=auto, 1=manual
           pinned_session_id TEXT,
           pinned_provider   TEXT,

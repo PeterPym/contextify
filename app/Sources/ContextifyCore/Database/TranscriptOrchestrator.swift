@@ -915,12 +915,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public struct SystemEventInsert: Sendable {
     public let id: String
     public let transcriptId: String
-    public let projectId: Int64
+    public let projectId: String  // F: TEXT to match projects(id)
     public let timestampMs: Int64
     public let content: String
     public let metadataJSON: String
 
-    public init(id: String, transcriptId: String, projectId: Int64, timestampMs: Int64, content: String, metadataJSON: String) {
+    public init(id: String, transcriptId: String, projectId: String, timestampMs: Int64, content: String, metadataJSON: String) {
       self.id = id
       self.transcriptId = transcriptId
       self.projectId = projectId
@@ -931,7 +931,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Set project to automatic follow mode
-  public func setAutomatic(projectId: Int64) async throws {
+  public func setAutomatic(projectId: String) async throws {
     try await writeQueue.write { db in
       try db.execute(sql: """
         INSERT INTO project_follow_policy(project_id, mode, pinned_session_id, pinned_provider, updated_at)
@@ -946,7 +946,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Set project to manual follow mode with pinned session
-  public func setManual(projectId: Int64, sessionId: String, provider: String) async throws {
+  public func setManual(projectId: String, sessionId: String, provider: String) async throws {
     try await writeQueue.write { db in
       try db.execute(sql: """
         INSERT INTO project_follow_policy(project_id, mode, pinned_session_id, pinned_provider, updated_at)
@@ -971,7 +971,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Retrieve recent system switch events for a project (for restart-safe timeline display)
-  public func getRecentSystemSwitchEvents(projectId: Int64, since: Int64?) async throws -> [SystemEvent] {
+  public func getRecentSystemSwitchEvents(projectId: String, since: Int64?) async throws -> [SystemEvent] {
     let pool = try dbManager.pool
     return try await pool.read { db in
       if let since {
@@ -996,7 +996,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Get follow policy for a project
-  public func getFollowPolicy(projectId: Int64) throws -> FollowPolicyRow? {
+  public func getFollowPolicy(projectId: String) throws -> FollowPolicyRow? {
     let pool = try dbManager.pool
     return try pool.read { db in
       try FollowPolicyRow.fetchOne(db, sql: """

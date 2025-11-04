@@ -811,9 +811,9 @@ final class ConversationMonitor {
     /// v23: Load and replay system switch events from database (restart-safe)
     @MainActor
     private func loadSwitchEventsFromSQL() async {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let pid = currentProjectId else { return }
         do {
-            let events = try await orchestrator.getRecentSystemSwitchEvents(projectId: pidInt, since: lastSystemEventTs)
+            let events = try await orchestrator.getRecentSystemSwitchEvents(projectId: pid, since: lastSystemEventTs)
             for ev in events where !seenSystemEventIds.contains(ev.id) {
                 if let content = ev.content {
                     await appendSystemEntry(summary: content)
@@ -859,12 +859,12 @@ final class ConversationMonitor {
     /// Load follow policy from database for current project
     @MainActor
     private func loadPolicyForCurrentProject() {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else {
+        guard let pid = currentProjectId else {
             followMode = .automatic
             return
         }
         do {
-            if let row = try orchestrator.getFollowPolicy(projectId: pidInt) {
+            if let row = try orchestrator.getFollowPolicy(projectId: pid) {
                 if row.mode == 0 {
                     followMode = .automatic
                 } else if let sid = row.pinnedSessionId, let prov = row.pinnedProvider {
@@ -1405,9 +1405,9 @@ final class ConversationMonitor {
     /// Pinned-missing handler with zero-session persistence
     @MainActor
     private func handlePinnedMissing() async {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let pid = currentProjectId else { return }
         do {
-            try await orchestrator.setAutomatic(projectId: pidInt)
+            try await orchestrator.setAutomatic(projectId: pid)
             followMode = .automatic
             log.info("Switched to automatic mode due to pinned session missing")
 
@@ -1418,7 +1418,7 @@ final class ConversationMonitor {
                 let ev = TranscriptOrchestrator.SystemEventInsert(
                     id: UUID().uuidString,
                     transcriptId: "project:\(pid)",  // synthetic id, not joined
-                    projectId: pidInt,
+                    projectId: pid,
                     timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
                     content: "Pinned session unavailable — awaiting new activity",
                     metadataJSON: toJSON(["reason": "pinnedMissing", "noSessions": true, "mode": "automatic"])
@@ -1426,6 +1426,7 @@ final class ConversationMonitor {
                 do {
                     try await orchestrator.insertSystemEvent(ev)
                     appendSystemEntry(summary: ev.content)
+                    seenSystemEventIds.insert(ev.id)  // F: de-dupe safety
                 } catch {
                     log.error("Failed to persist pinned-missing event: \(error.localizedDescription)")
                     appendSystemEntry(summary: ev.content) // graceful: still show UI event
@@ -1441,7 +1442,7 @@ final class ConversationMonitor {
     /// Active session switching with system event emission
     @MainActor
     private func setActive(from: SessionKey?, to: SessionKey, reason: SwitchReason, emit: Bool) async {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let pid = currentProjectId else { return }
         guard let t = allSessions.first(where: { $0.identifier == to.sessionId && $0.provider == to.provider }) else {
             log.warning("Session \(to.sessionId) not found in allSessions - cannot setActive")
             return
@@ -1461,13 +1462,14 @@ final class ConversationMonitor {
             let ev = TranscriptOrchestrator.SystemEventInsert(
                 id: UUID().uuidString,
                 transcriptId: t.identifier,
-                projectId: pidInt,
+                projectId: pid,
                 timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
                 content: followSummary(to, reason: reason),
                 metadataJSON: toJSON(payload)
             )
             do {
                 try await orchestrator.insertSystemEvent(ev)
+                seenSystemEventIds.insert(ev.id)  // F: de-dupe safety
                 publishTypedEvent(to: to, reason: reason)
                 log.info("System event persisted for session switch: \(reason.rawValue)")
             } catch {
@@ -1546,9 +1548,9 @@ final class ConversationMonitor {
     /// Public API: Switch to automatic follow mode
     @MainActor
     func unpinToAuto() async {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let pid = currentProjectId else { return }
         do {
-            try await orchestrator.setAutomatic(projectId: pidInt)
+            try await orchestrator.setAutomatic(projectId: pid)
             followMode = .automatic
             log.info("Switched to automatic follow mode")
         } catch {
@@ -1559,9 +1561,9 @@ final class ConversationMonitor {
     /// Public API: Pin to specific session
     @MainActor
     func pinAndSwitch(_ session: TranscriptSession) async {
-        guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
+        guard let pid = currentProjectId else { return }
         do {
-            try await orchestrator.setManual(projectId: pidInt, sessionId: session.identifier, provider: session.provider.rawValue)
+            try await orchestrator.setManual(projectId: pid, sessionId: session.identifier, provider: session.provider.rawValue)
             followMode = .manual(sessionId: session.identifier, provider: session.provider)
             activeSession = session
             log.info("Pinned to session: \(session.identifier)")
