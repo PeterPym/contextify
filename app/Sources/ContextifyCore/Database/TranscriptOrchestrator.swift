@@ -588,6 +588,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try entryRepo.newByProject(projectId, afterTimestamp: afterTimestamp)
   }
 
+  @available(*, deprecated, message: "Use getEntriesAfterCursor(projectId:after: EntryCursor?)")
   public func getEntriesAfterCursor(forProject projectId: String, after: EntryCursor) throws -> [TranscriptEntry] {
     // Convert EntryCursor to tuple for compatibility with entriesAfterCursor
     let tuple = (timestamp: Int(after.timestamp), createdAt: Int(after.createdAt), id: after.id)

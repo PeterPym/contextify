@@ -178,6 +178,7 @@ final class ConversationMonitor {
 
     // v23: Active session follow state
     @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
+    @ObservationIgnored private var policyEvalTask: Task<Void, Never>?  // P1-2: Debounced policy evaluation
     @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
     @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
     private(set) var followMode: FollowMode = .automatic  // P0-4: Observable for UI
@@ -767,6 +768,11 @@ final class ConversationMonitor {
     private func loadFeedFromSQL() async {
         guard let projectId = currentProjectId, orchestrator != nil else { return }
 
+        // P1-1: Hold isReadyForUpdates=false during initial load to prevent append races
+        let priorReady = isReadyForUpdates
+        isReadyForUpdates = false
+        defer { isReadyForUpdates = priorReady }
+
         isProcessing = true
         defer { isProcessing = false }
 
@@ -818,8 +824,8 @@ final class ConversationMonitor {
                 }
             }
 
-            // v23 (P1-4): Initialize cursor from tail (last entry) for restart-safe incremental updates
-            if let tailEntry = feed.last {
+            // P1-1: Initialize cursor from tail only if not already set (prevent regression)
+            if let tailEntry = feed.last, lastSeenCursor == nil {
                 let e = tailEntry.0
                 lastSeenCursor = EntryCursor(from: e)
                 saveCursor()  // P1-4: Persist cursor for project
@@ -1137,23 +1143,29 @@ final class ConversationMonitor {
 
                 lastUpdate = Date()
 
-                // v23: Evaluate follow decision after feed/apply
+                // P1-2: Debounce policy evaluation to reduce churn during heavy ingestion
                 if isReadyForUpdates {
-                    let newestKey = computeNewestKey()
-                    let now = Date()
-                    let decision = policyEngine.decide(inputs: .init(
-                        followMode: followMode,
-                        lastActiveKey: lastActiveKey,
-                        newestCandidate: newestKey,
-                        now: now,
-                        lastSwitchAt: lastSwitchAt,
-                        cooldown: 5.0
-                    ))
-                    if let target = decision.nextActive {
-                        await setActive(from: lastActiveKey, to: target,
-                                        reason: decision.reason ?? .newerWrite,
-                                        emit: decision.shouldEmitMessage)
-                        lastSwitchAt = now
+                    policyEvalTask?.cancel()
+                    policyEvalTask = Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(200))
+                        guard !Task.isCancelled else { return }
+
+                        let newestKey = computeNewestKey()
+                        let now = Date()
+                        let decision = policyEngine.decide(inputs: .init(
+                            followMode: followMode,
+                            lastActiveKey: lastActiveKey,
+                            newestCandidate: newestKey,
+                            now: now,
+                            lastSwitchAt: lastSwitchAt,
+                            cooldown: 5.0
+                        ))
+                        if let target = decision.nextActive {
+                            await setActive(from: lastActiveKey, to: target,
+                                            reason: decision.reason ?? .newerWrite,
+                                            emit: decision.shouldEmitMessage)
+                            lastSwitchAt = now
+                        }
                     }
                 }
 
@@ -1451,10 +1463,10 @@ final class ConversationMonitor {
             if let nk = computeNewestKey() {
                 await setActive(from: lastActiveKey, to: nk, reason: .pinnedMissing, emit: true)
             } else {
-                // No sessions exist: persist a project-scoped event and show now
+                // P1-3: No sessions exist - persist a project-scoped event (empty transcript_id)
                 let ev = TranscriptOrchestrator.SystemEventInsert(
                     id: UUID().uuidString,
-                    transcriptId: "project:\(pid)",  // synthetic id, not joined
+                    transcriptId: "",  // P1-3: empty = project-scoped, not joined to any transcript
                     projectId: pid,
                     timestampMs: Int64(Date().timeIntervalSince1970 * 1000),
                     content: "Pinned session unavailable — awaiting new activity",
@@ -1542,7 +1554,8 @@ final class ConversationMonitor {
         return "[\(modeStr)] Following \(to.provider.displayName) session — \(reasonStr)"
     }
 
-    /// Publish typed event to Combine and NotificationCenter
+    /// Publish typed event to NotificationCenter
+    /// P2-3: NotificationCenter only (no Combine PassthroughSubject)
     @MainActor
     private func publishTypedEvent(to: SessionKey, reason: SwitchReason) {
         let evt = ActiveSessionDidChangeEvent(

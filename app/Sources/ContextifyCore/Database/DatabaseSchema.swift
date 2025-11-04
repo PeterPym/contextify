@@ -384,18 +384,12 @@ enum DatabaseSchema {
         """)
       }
 
-      // Backfill project_id for existing events (handle both real and synthetic project:<id> IDs)
+      // P1-3: Backfill project_id only from real transcript joins (no synthetic parsing)
       try db.execute(sql: """
         UPDATE system_events AS se
-           SET project_id = COALESCE(
-              (SELECT t.project_id FROM transcripts t WHERE t.id = se.transcript_id),
-              CASE WHEN se.transcript_id LIKE 'project:%'
-                   THEN substr(se.transcript_id, 9)
-                   ELSE NULL END
-           )
+           SET project_id = (SELECT t.project_id FROM transcripts t WHERE t.id = se.transcript_id)
          WHERE project_id IS NULL
-           AND (se.transcript_id IN (SELECT id FROM transcripts)
-                OR se.transcript_id LIKE 'project:%')
+           AND se.transcript_id IN (SELECT id FROM transcripts)
       """)
 
       // Create index for project-scoped queries

@@ -2,7 +2,7 @@ import Foundation
 import Combine
 
 /// Typed event for active session changes
-/// Published via Combine PassthroughSubject and NotificationCenter for broad compatibility
+/// P2-3: Published via NotificationCenter for broad compatibility
 public struct ActiveSessionDidChangeEvent: Sendable {
   public let projectPath: String
   public let sessionId: String

@@ -69,6 +69,7 @@ struct ProjectRowView: View {
             .cornerRadius(4)
           }
           .buttonStyle(.plain)
+          .frame(minHeight: 44)  // P2-2: Accessibility - ensure ≥44pt hit target
           .help("Configure active session following")
         }
 
