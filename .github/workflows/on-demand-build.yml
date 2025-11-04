@@ -1,0 +1,184 @@
+name: On-Demand Build
+
+# This workflow is designed for Claude Code web users (Linux environments)
+# who need to build the macOS project remotely via GitHub Actions.
+#
+# Trigger from Linux:
+#   gh workflow run on-demand-build.yml -f configuration=Debug
+#   gh workflow run on-demand-build.yml -f configuration=Release -f skip_launch=true
+#
+# Or from the GitHub web UI:
+#   Actions tab → "On-Demand Build" → Run workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration (Debug or Release)'
+        required: false
+        default: 'Debug'
+        type: choice
+        options:
+          - Debug
+          - Release
+      skip_launch:
+        description: 'Skip launching the app after build (equivalent to CTX_NO_RUN=1)'
+        required: false
+        default: true
+        type: boolean
+      enable_dev_mode:
+        description: 'Enable developer mode (equivalent to --dev flag)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: on-demand-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache SwiftPM packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            $HOME/Library/Developer/Xcode/DerivedData/**/SourcePackages
+            $HOME/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.*'
+
+      - name: Build Contextify
+        id: build
+        run: |
+          set -euo pipefail
+
+          # Set environment variables based on inputs (robust in POSIX shell)
+          if [ "${{ inputs.skip_launch }}" = "true" ]; then
+            export CTX_NO_RUN=1
+          else
+            export CTX_NO_RUN=0
+          fi
+
+          # Build flags
+          BUILD_FLAGS=""
+          if [ "${{ inputs.enable_dev_mode }}" = "true" ]; then
+            BUILD_FLAGS="--dev"
+          fi
+
+          echo "::group::Building with configuration: ${{ inputs.configuration }}"
+          echo "Configuration: ${{ inputs.configuration }}"
+          echo "Skip launch: ${{ inputs.skip_launch }}"
+          echo "Dev mode: ${{ inputs.enable_dev_mode }}"
+          echo "::endgroup::"
+
+          # Run build script
+          bash scripts/xc.sh $BUILD_FLAGS ${{ inputs.configuration }} build 2>&1 | tee build-output.log
+
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          if [ $BUILD_STATUS -eq 0 ]; then
+            echo "build_status=success" >> $GITHUB_OUTPUT
+            echo "### ✅ Build Succeeded" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Configuration: \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Build artifacts are available for download below." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "build_status=failed" >> $GITHUB_OUTPUT
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Configuration: \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the build logs artifact for details." >> $GITHUB_STEP_SUMMARY
+            exit $BUILD_STATUS
+          fi
+        env:
+          NSUnbufferedIO: "YES"
+
+      - name: Collect build artifacts
+        if: always()
+        run: |
+          # Create artifacts directory
+          mkdir -p artifacts/logs
+          mkdir -p artifacts/xcresult
+
+          # Copy build logs
+          cp -r build/logs/* artifacts/logs/ 2>/dev/null || echo "No build logs found"
+          cp build-output.log artifacts/build-output.log 2>/dev/null || echo "No build output log"
+
+          # Copy xcresult bundles (these can be opened in Xcode for detailed analysis)
+          find build/ResultBundles -name "*.xcresult" -type d -exec cp -r {} artifacts/xcresult/ \; 2>/dev/null || echo "No xcresult bundles found"
+
+          # Create a summary file
+          cat > artifacts/BUILD-SUMMARY.txt <<EOF
+          Build Summary
+          =============
+          Configuration: ${{ inputs.configuration }}
+          Skip Launch: ${{ inputs.skip_launch }}
+          Dev Mode: ${{ inputs.enable_dev_mode }}
+          Status: ${{ steps.build.outputs.build_status }}
+          Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Triggered by: ${{ github.actor }}
+
+          Artifacts in this archive:
+          - build-output.log: Complete build output
+          - logs/: Build logs from scripts/xc.sh
+          - xcresult/: Xcode result bundles (open in Xcode for detailed analysis)
+
+          To view xcresult bundles locally:
+          1. Download and extract this artifact
+          2. Open the .xcresult bundle in Xcode:
+             xed artifacts/xcresult/*.xcresult
+          EOF
+
+          echo "Artifacts collected:"
+          ls -lR artifacts/
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contextify-build-${{ inputs.configuration }}-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Generate job summary
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download build artifacts from the workflow run page:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build logs**: Complete build output and logs" >> $GITHUB_STEP_SUMMARY
+          echo "- **XCResult bundles**: Detailed Xcode result bundles (can be opened in Xcode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [View this run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Download artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 💡 Trigger this workflow again" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "# From Linux/Claude Code web:" >> $GITHUB_STEP_SUMMARY
+          echo "gh workflow run on-demand-build.yml -f configuration=${{ inputs.configuration }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Or from scripts/xc.sh:" >> $GITHUB_STEP_SUMMARY
+          echo "bash scripts/xc.sh build  # Auto-detects Linux and triggers CI" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
