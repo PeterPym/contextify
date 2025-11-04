@@ -32,6 +32,10 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: on-demand-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
@@ -44,24 +48,29 @@ jobs:
       - name: Cache SwiftPM packages
         uses: actions/cache@v4
         with:
-          path: ~/Library/Developer/Xcode/DerivedData/*/SourcePackages
+          path: |
+            $HOME/Library/Developer/Xcode/DerivedData/**/SourcePackages
+            $HOME/Library/Caches/org.swift.swiftpm
           key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-spm-
 
       - name: Select Xcode
-        run: |
-          sudo xcode-select -switch /Applications/Xcode.app || true
-          xcode-select -p
-          xcodebuild -version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.*'
 
       - name: Build Contextify
         id: build
         run: |
           set -euo pipefail
 
-          # Set environment variables based on inputs
-          export CTX_NO_RUN=${{ inputs.skip_launch && '1' || '0' }}
+          # Set environment variables based on inputs (robust in POSIX shell)
+          if [ "${{ inputs.skip_launch }}" = "true" ]; then
+            export CTX_NO_RUN=1
+          else
+            export CTX_NO_RUN=0
+          fi
 
           # Build flags
           BUILD_FLAGS=""
