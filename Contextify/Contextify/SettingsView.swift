@@ -196,14 +196,13 @@ struct SettingsView: View {
     • Best for single-machine use
 
     Custom Location (Advanced):
-    • Choose any folder: Dropbox, iCloud Drive, external drive, etc.
-    • Enables multi-machine sync and centralized backups
-    • Migration preserves all data (copies database + write-ahead log files)
+    • Choose any folder: Dropbox, iCloud Drive, external drive, etc
+    • When you change your database location, the old file is kept as backup. Delete it manually when you're ready.
 
-    ⚠️  Multi-Machine Warning:
-    If using cloud sync (Dropbox, iCloud), do NOT open Contextify on multiple Macs simultaneously. Concurrent writes can corrupt the database. Contextify will warn you if it detects access conflicts.
-
-    The old database file is kept as a backup after migration - you can delete it manually after verifying the new location works.
+    When using Dropbox, iCloud or other cloud sync:
+    • You can keep a single database synced and use it as a centralized backup
+    • You should NOT run the app simultaneously on multiple machines
+    • Contextify will try to warn you if it detects access conflicts, heed this warning.
     """
   }
 

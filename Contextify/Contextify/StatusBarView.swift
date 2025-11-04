@@ -17,6 +17,10 @@ struct StatusBarView: View {
     @State private var showAIInfo = false
     @State private var showErrorInfo = false
 
+    // Animation triggers
+    @State private var lastErrorCount = 0
+    @State private var errorBounceAnimation = false
+
     var body: some View {
         HStack(spacing: 16) {
             // Apple Intelligence indicator
@@ -60,6 +64,13 @@ struct StatusBarView: View {
         .task(id: generatorIdentity) {
             // Automatically recreate ViewModel when generator changes
             updateViewModel()
+        }
+        .onChange(of: viewModel?.recentErrorCount) { _, newCount in
+            // Trigger bounce animation on new errors
+            if let newCount, newCount > lastErrorCount {
+                errorBounceAnimation.toggle()
+            }
+            lastErrorCount = newCount ?? 0
         }
         .contentTransition(.opacity)  // Smooth state transitions
     }
@@ -184,6 +195,7 @@ struct StatusBarView: View {
                     // Use Contextify Yellow for warnings
                     .foregroundStyle(Color(red: 0.831, green: 0.659, blue: 0.306))  // #D4A84E
                     .font(.caption)
+                    .symbolEffect(.bounce, value: errorBounceAnimation)
 
                 Text("\(viewModel.recentErrorCount) error\(viewModel.recentErrorCount == 1 ? "" : "s")")
                     .font(.caption)

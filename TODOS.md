@@ -709,3 +709,63 @@ Add transcript management to the **Transcript Inventory** window with:
 **When to Re-enable:**
 Complete at least items 1-2 above before showing these features to general users.
 
+---
+
+### Multi-Machine Database Sync Protection (Lower Priority)
+
+**Current State:** Contextify detects multi-machine access conflicts but does not prevent concurrent writes. Users receive warnings in Settings → Database tab when another machine has recently accessed the database (< 5 minutes). See `DatabaseAccessMetadata.swift` for implementation.
+
+**Detection System:**
+- ✅ Records machine ID, name, timestamp, and app version on every database open
+- ✅ Warns when another machine accessed within last 5 minutes
+- ✅ Shows informational message for historical multi-machine access
+- ✅ Displays in Settings UI with time-since-access details
+
+**Limitation:** Detection-only, not prevention. SQLite WAL mode + cloud sync (Dropbox, iCloud) don't guarantee atomic syncing of db/wal/shm files, leading to potential corruption if instances run simultaneously.
+
+**Proposed Enhancement Options:**
+
+1. **Block Launch on Recent Conflict** (Easiest - 2-4 hours)
+   - **What:** Show modal alert and refuse to open database if another machine accessed < 5 min ago
+   - **Implementation:**
+     - Check `DatabaseAccessTracker.checkForConflicts()` on launch
+     - If `.recentConflict`, show blocking alert with "Force Open" escape hatch
+     - Update `DatabaseManager.swift` and `ContextifyApp.swift`
+   - **Pros:** Prevents most concurrent access scenarios
+   - **Cons:** False positives if user force-quit on other machine (timestamp not updated)
+   - **Files:** `app/Sources/ContextifyCore/Database/DatabaseManager.swift`, `Contextify/Contextify/ContextifyApp.swift`
+
+2. **Periodic Heartbeat Updates** (Medium - 4-6 hours)
+   - **What:** Update `last_access` timestamp every 30 seconds while app is running
+   - **Implementation:**
+     - Add background Task to `ContextifyApp` that updates timestamp periodically
+     - Makes "is other instance still running?" detection more accurate
+     - Reduces false positive window from "time since launch" to "< 30 seconds"
+   - **Pros:** More accurate conflict detection, better UX with Option 1
+   - **Cons:** Extra writes (one every 30s), more cloud sync traffic
+   - **Trade-off:** Could increase interval to 60-120s to reduce writes
+   - **Files:** `app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift`, `Contextify/Contextify/ContextifyApp.swift`
+
+3. **Separate Sync-Friendly Architecture** (Hard - 40+ hours, major rewrite)
+   - **What:** Replace SQLite with append-only event log + CRDTs for conflict-free replication
+   - **Implementation:**
+     - Design event-sourced architecture
+     - Implement CRDT for project/transcript state
+     - Build sync reconciliation logic
+     - Migration path from current SQLite schema
+   - **Pros:** True multi-machine support, no corruption risk
+   - **Cons:** Major architectural change, significant testing burden, migration complexity
+   - **Status:** Not recommended unless multi-machine sync becomes core feature
+   - **Files:** Entire database layer rewrite
+
+**Recommendation:**
+- **Option 1** (Block Launch) is low-hanging fruit for users who enable custom database locations
+- Combine with **Option 2** (Heartbeat) for best UX (reduced false positives)
+- **Option 3** is overkill unless multi-machine sync becomes a primary use case
+
+**Related Files:**
+- `app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift` - Current detection system
+- `app/Sources/ContextifyCore/Database/DatabaseManager.swift` - Database opening, access recording
+- `Contextify/Contextify/SettingsView.swift` - Conflict warning display
+- `build/notes/design-reference/help-documentation.md` - User-facing multi-machine documentation
+

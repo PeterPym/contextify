@@ -124,6 +124,7 @@ struct TranscriptInventoryView: View {
                 .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
+            .help("Refresh transcript list")
 
             Button {
               showingCleanupConfirmation = true
@@ -374,6 +375,7 @@ struct TranscriptInventoryView: View {
         Text(relativeTime(session.lastActivity))
           .font(.caption)
           .foregroundStyle(.secondary)
+          .help(absoluteTimestamp(session.lastActivity))
 
         // Metadata-only indicator (always show for transcripts with no entries)
         if session.entryCount == 0 {
@@ -770,6 +772,13 @@ struct TranscriptInventoryView: View {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .short
     return formatter.localizedString(for: date, relativeTo: Date())
+  }
+
+  private func absoluteTimestamp(_ date: Date) -> String {
+    // Format: "2:34:15 PM, Tuesday, January 15, 2025"
+    let formatter = DateFormatter()
+    formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
+    return formatter.string(from: date)
   }
 
   // v23 (P0-4): Check if session is pinned in manual follow mode
