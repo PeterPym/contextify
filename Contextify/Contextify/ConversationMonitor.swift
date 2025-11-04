@@ -1859,16 +1859,28 @@ final class ConversationMonitor {
     public func getRecentEntries(count: Int) -> [TimelineEntrySnapshot] {
         let recentEntries = Array(entries.suffix(count))
 
+        func apiDispositionAndRole(for entry: TimelineEntry) -> (disposition: String, role: String?) {
+            // Map entry kind to API disposition and role fields
+            // disposition: entry class/type (e.g., "message", "system")
+            // role: chat role for message entries ("user", "assistant"), nil for non-messages
+            switch entry.kind {
+            case .user:       return ("message", "user")
+            case .assistant:  return ("message", "assistant")
+            case .system:     return ("system",  nil)
+            }
+        }
+
         return recentEntries.map { entry in
-            TimelineEntrySnapshot(
+            let mapped = apiDispositionAndRole(for: entry)
+            return TimelineEntrySnapshot(
                 entryId: entry.id.uuidString,
                 timestamp: entry.timestamp,
-                disposition: entry.kind.rawValue,  // "user", "assistant", "system"
-                role: entry.kind.rawValue,  // "user", "assistant", "system" - matches LLM message role convention
+                disposition: mapped.disposition,
+                role: mapped.role,
                 content: entry.detail,
                 provider: entry.sourceContext?.provider.rawValue,
                 presentSummary: entry.summary,
-                pastSummary: nil,  // Could add pastSummary if needed
+                pastSummary: nil,
                 isGenerating: entry.action == .generating,
                 isNonSummarizable: entry.action == .nonSummarizable,
                 isError: entry.isError
