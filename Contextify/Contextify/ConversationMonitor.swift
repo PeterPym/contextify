@@ -355,8 +355,8 @@ final class ConversationMonitor {
 
         // v23 (P0-2): Orderly startup sequence
         Task { @MainActor in
-            // 1. Load policy from DB (sync read)
-            // TODO: loadPolicyForCurrentProject() - need to implement
+            // 1. Load policy from DB (C: restore followMode)
+            self.loadPolicyForCurrentProject()
 
             // 2. Load all sessions before reconciliation
             await self.loadAllSessionsFromDatabase()
@@ -809,6 +809,7 @@ final class ConversationMonitor {
     }
 
     /// v23: Load and replay system switch events from database (restart-safe)
+    @MainActor
     private func loadSwitchEventsFromSQL() async {
         guard let pid = currentProjectId, let pidInt = Int64(pid) else { return }
         do {
@@ -850,6 +851,35 @@ final class ConversationMonitor {
         if let data = try? JSONEncoder().encode(cursor) {
             UserDefaults.standard.set(data, forKey: key)
             log.debug("Saved cursor for project \(projectId): \(cursor.id)")
+        }
+    }
+
+    // MARK: - Policy Persistence (C: Follow mode restore)
+
+    /// Load follow policy from database for current project
+    @MainActor
+    private func loadPolicyForCurrentProject() {
+        guard let pid = currentProjectId, let pidInt = Int64(pid) else {
+            followMode = .automatic
+            return
+        }
+        do {
+            if let row = try orchestrator.getFollowPolicy(projectId: pidInt) {
+                if row.mode == 0 {
+                    followMode = .automatic
+                } else if let sid = row.pinnedSessionId, let prov = row.pinnedProvider {
+                    let p = TimelineSourceContext.Provider(rawValue: prov) ?? .other
+                    followMode = .manual(sessionId: sid, provider: p)
+                } else {
+                    followMode = .automatic
+                }
+            } else {
+                followMode = .automatic
+            }
+            log.debug("Follow policy loaded: \(self.followMode == .automatic ? "automatic" : "manual")")
+        } catch {
+            log.error("Failed to load follow policy: \(error.localizedDescription)")
+            followMode = .automatic
         }
     }
 
@@ -1358,6 +1388,7 @@ final class ConversationMonitor {
     // MARK: - Active Session Follow (v23)
 
     /// Policy reconciliation - checks if pinned session still exists
+    @MainActor
     private func reconcilePolicyWithAvailableSessions() async {
         guard sessionsLoaded else {
             log.warning("Skipping policy reconciliation - sessions not yet loaded")
@@ -1392,10 +1423,13 @@ final class ConversationMonitor {
                     content: "Pinned session unavailable — awaiting new activity",
                     metadataJSON: toJSON(["reason": "pinnedMissing", "noSessions": true, "mode": "automatic"])
                 )
-                Task {
-                    try? await orchestrator.insertSystemEvent(ev)
+                do {
+                    try await orchestrator.insertSystemEvent(ev)
+                    appendSystemEntry(summary: ev.content)
+                } catch {
+                    log.error("Failed to persist pinned-missing event: \(error.localizedDescription)")
+                    appendSystemEntry(summary: ev.content) // graceful: still show UI event
                 }
-                appendSystemEntry(summary: ev.content)  // also display immediately
                 lastActiveKey = nil
                 log.info("No sessions available - persisted project-scoped event")
             }
@@ -1432,14 +1466,14 @@ final class ConversationMonitor {
                 content: followSummary(to, reason: reason),
                 metadataJSON: toJSON(payload)
             )
-            Task {
-                do {
-                    try await orchestrator.insertSystemEvent(ev)
-                    await MainActor.run { self.publishTypedEvent(to: to, reason: reason) }
-                    log.info("System event persisted for session switch: \(reason.rawValue)")
-                } catch {
-                    log.error("Failed to persist system event: \(error.localizedDescription)")
-                }
+            do {
+                try await orchestrator.insertSystemEvent(ev)
+                publishTypedEvent(to: to, reason: reason)
+                log.info("System event persisted for session switch: \(reason.rawValue)")
+            } catch {
+                log.error("Failed to persist system event: \(error.localizedDescription)")
+                // Degrade gracefully: still publish typed event for in-app subscribers
+                publishTypedEvent(to: to, reason: reason)
             }
         }
     }
