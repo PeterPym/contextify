@@ -58,7 +58,7 @@ struct ContentView: View {
                 ConversationTimelineView()
             }
             .frame(
-                minWidth: timeline.isCollapsed ? Layout.timelineMinCollapsed : Layout.timelineMin,
+                minWidth: Layout.timelineMin,
                 maxWidth: .infinity
             )
             .padding(Layout.containerPadding)

@@ -149,7 +149,6 @@ final class ConversationMonitor {
           : state.entries
     }
 
-    private(set) var isCollapsed = false
     private(set) var isMonitoring = false
     private(set) var isProcessing = false
     private(set) var lastError: String?
@@ -504,11 +503,6 @@ final class ConversationMonitor {
     @MainActor
     private func trimEntries() {
         state.trim(to: config.maxEntries)
-    }
-
-    @MainActor
-    func toggleCollapsed() {
-        isCollapsed.toggle()
     }
 
     @MainActor
