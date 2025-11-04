@@ -5,6 +5,16 @@ import ContextifyCore
 import AppKit
 import CryptoKit
 
+// MARK: - Diagnostics Configuration
+
+enum DiagnosticsConfig {
+    #if DEBUG
+    static let enableHTTPServer = true
+    #else
+    static let enableHTTPServer = false
+    #endif
+}
+
 // MARK: - R3: String hash extension for stable cursor keys
 
 extension String {
@@ -202,9 +212,7 @@ final class ConversationMonitor {
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     // Health monitoring and diagnostics
-    @ObservationIgnored private var healthMonitorTask: Task<Void, Never>?  // Periodic health checks
     @ObservationIgnored private var lastHealthCheck: Date?
-    @ObservationIgnored private var fallbackPollingTask: Task<Void, Never>?  // Fallback when FSEvents fails
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
     @ObservationIgnored private var diagnosticsHTTPServer: DiagnosticsHTTPServer?  // External HTTP API
 
@@ -225,9 +233,8 @@ final class ConversationMonitor {
         // Cancel any pending debounce task
         debounceTask?.cancel()
 
-        // Cancel health monitoring
-        healthMonitorTask?.cancel()
-        fallbackPollingTask?.cancel()
+        // Cancel background task group (health monitoring, polling, etc.)
+        backgroundTasks?.cancel()
 
         // Clean up observers (only relevant for tests/previews, not for singleton)
         if let observer = projectChangeObserver {
@@ -297,18 +304,25 @@ final class ConversationMonitor {
                 // Initialize diagnostics service
                 self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
 
-                // Initialize diagnostics HTTP server (external API)
-                self.diagnosticsHTTPServer = DiagnosticsHTTPServer()
-                try await self.diagnosticsHTTPServer?.start(
-                    diagnosticsHandler: { @Sendable [weak self] in
-                        guard let self else { return nil }
-                        return await self.captureDiagnostics()
-                    },
-                    recentEntriesHandler: { @Sendable [weak self] count in
-                        guard let self else { return [] }
-                        return await self.getRecentEntries(count: count)
+                // Initialize diagnostics HTTP server (external API) - opt-in, non-fatal
+                if DiagnosticsConfig.enableHTTPServer {
+                    self.diagnosticsHTTPServer = DiagnosticsHTTPServer()
+                    do {
+                        try await self.diagnosticsHTTPServer?.start(
+                            diagnosticsHandler: { @Sendable [weak self] in
+                                guard let self else { return nil }
+                                return await self.captureDiagnostics()
+                            },
+                            recentEntriesHandler: { @Sendable [weak self] count in
+                                guard let self else { return [] }
+                                return await self.getRecentEntries(count: count)
+                            }
+                        )
+                    } catch {
+                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription)")
+                        self.diagnosticsHTTPServer = nil
                     }
-                )
+                }
 
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = self.orchestrator!
@@ -1849,8 +1863,8 @@ final class ConversationMonitor {
             TimelineEntrySnapshot(
                 entryId: entry.id.uuidString,
                 timestamp: entry.timestamp,
-                disposition: entry.kind.rawValue,
-                role: entry.kind.rawValue,
+                disposition: entry.kind.rawValue,  // "user", "assistant", "system"
+                role: entry.kind.rawValue,  // "user", "assistant", "system" - matches LLM message role convention
                 content: entry.detail,
                 provider: entry.sourceContext?.provider.rawValue,
                 presentSummary: entry.summary,

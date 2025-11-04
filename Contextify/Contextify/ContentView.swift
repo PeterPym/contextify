@@ -49,41 +49,45 @@ struct ContentView: View {
             return
         }
 
-        // Otherwise wait for notification with 5s timeout
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let box = ObserverBox()
+        // Otherwise wait for notification with 5s timeout (cancellation-aware)
+        await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                let box = ObserverBox()
 
-            // Timeout after 5 seconds
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
-                if !box.isComplete {
-                    box.isComplete = true
-                    if let obs = box.observer {
-                        NotificationCenter.default.removeObserver(obs)
-                    }
-                    uiLog.warning("⏱️ Timeout waiting for project root initialization")
-                    continuation.resume()
-                }
-            }
-
-            // Wait for notification
-            box.observer = NotificationCenter.default.addObserver(
-                forName: .projectRootDidChange,
-                object: nil,
-                queue: .main
-            ) { _ in
+                // Timeout after 5 seconds
                 Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(5))
                     if !box.isComplete {
                         box.isComplete = true
                         if let obs = box.observer {
                             NotificationCenter.default.removeObserver(obs)
                         }
-                        uiLog.info("✅ Project root ready, starting monitoring")
+                        uiLog.warning("⏱️ Timeout waiting for project root initialization")
                         continuation.resume()
                     }
                 }
+
+                // Wait for notification
+                box.observer = NotificationCenter.default.addObserver(
+                    forName: .projectRootDidChange,
+                    object: nil,
+                    queue: .main
+                ) { _ in
+                    Task { @MainActor in
+                        if !box.isComplete {
+                            box.isComplete = true
+                            if let obs = box.observer {
+                                NotificationCenter.default.removeObserver(obs)
+                            }
+                            uiLog.info("✅ Project root ready, starting monitoring")
+                            continuation.resume()
+                        }
+                    }
+                }
             }
-        }
+        }, onCancel: {
+            // Best-effort cleanup; the isComplete guard prevents double-resume
+        })
     }
 
     /// Helper class to safely share mutable state across continuation boundaries

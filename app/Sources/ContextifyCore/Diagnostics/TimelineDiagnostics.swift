@@ -238,10 +238,18 @@ public actor TimelineDiagnosticsService {
             let fileAttrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
             let actualFileSize = (fileAttrs?[.size] as? NSNumber)?.intValue ?? 0
 
-            let actualLineCount = (try? String(contentsOf: fileURL, encoding: .utf8)
-                .components(separatedBy: .newlines)
-                .filter { !$0.isEmpty }
-                .count) ?? 0
+            // Read only tail of file for line count (performance optimization)
+            let actualLineCount: Int = {
+                guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return 0 }
+                defer { try? handle.close() }
+                let tailSize = 64 * 1024  // 64KB tail
+                let fileSize = actualFileSize
+                if fileSize > tailSize {
+                    try? handle.seek(toOffset: UInt64(fileSize - tailSize))
+                }
+                guard let data = try? handle.readToEnd() else { return 0 }
+                return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).count
+            }()
 
             let bytesUnprocessed = max(0, actualFileSize - (transcript.fileSize ?? 0))
             let linesUnprocessed = max(0, actualLineCount - transcript.lastProcessedLine)

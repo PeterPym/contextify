@@ -29,6 +29,7 @@ struct ProjectBadgesContainer: View {
           LEFT JOIN transcripts t ON t.project_id = p.id
           WHERE p.root_path = ?
           GROUP BY p.id
+          LIMIT 1
           """
 
         guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectPath]) else {
