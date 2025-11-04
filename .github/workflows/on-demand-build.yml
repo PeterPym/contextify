@@ -93,85 +93,37 @@ jobs:
             echo "build_status=success" >> $GITHUB_OUTPUT
             echo "### ✅ Build Succeeded" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Configuration: \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Configuration:** \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Build artifacts are available for download below." >> $GITHUB_STEP_SUMMARY
+            echo "View full build logs in the 'Build Contextify' step above." >> $GITHUB_STEP_SUMMARY
           else
             echo "build_status=failed" >> $GITHUB_OUTPUT
             echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Configuration: \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Configuration:** \`${{ inputs.configuration }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Check the build logs artifact for details." >> $GITHUB_STEP_SUMMARY
+            echo "#### Error Details (last 50 lines)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            tail -n 50 build-output.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "View full build logs in the 'Build Contextify' step above." >> $GITHUB_STEP_SUMMARY
             exit $BUILD_STATUS
           fi
         env:
           NSUnbufferedIO: "YES"
 
-      - name: Collect build artifacts
-        if: always()
-        run: |
-          # Create artifacts directory
-          mkdir -p artifacts/logs
-          mkdir -p artifacts/xcresult
-
-          # Copy build logs
-          cp -r build/logs/* artifacts/logs/ 2>/dev/null || echo "No build logs found"
-          cp build-output.log artifacts/build-output.log 2>/dev/null || echo "No build output log"
-
-          # Copy xcresult bundles (these can be opened in Xcode for detailed analysis)
-          find build/ResultBundles -name "*.xcresult" -type d -exec cp -r {} artifacts/xcresult/ \; 2>/dev/null || echo "No xcresult bundles found"
-
-          # Create a summary file
-          cat > artifacts/BUILD-SUMMARY.txt <<EOF
-          Build Summary
-          =============
-          Configuration: ${{ inputs.configuration }}
-          Skip Launch: ${{ inputs.skip_launch }}
-          Dev Mode: ${{ inputs.enable_dev_mode }}
-          Status: ${{ steps.build.outputs.build_status }}
-          Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          Branch: ${{ github.ref_name }}
-          Commit: ${{ github.sha }}
-          Triggered by: ${{ github.actor }}
-
-          Artifacts in this archive:
-          - build-output.log: Complete build output
-          - logs/: Build logs from scripts/xc.sh
-          - xcresult/: Xcode result bundles (open in Xcode for detailed analysis)
-
-          To view xcresult bundles locally:
-          1. Download and extract this artifact
-          2. Open the .xcresult bundle in Xcode:
-             xed artifacts/xcresult/*.xcresult
-          EOF
-
-          echo "Artifacts collected:"
-          ls -lR artifacts/
-
-      - name: Upload build artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: contextify-build-${{ inputs.configuration }}-${{ github.run_number }}
-          path: artifacts/
-          retention-days: 7
-          if-no-files-found: warn
-
       - name: Generate job summary
         if: always()
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download build artifacts from the workflow run page:" >> $GITHUB_STEP_SUMMARY
-          echo "- **Build logs**: Complete build output and logs" >> $GITHUB_STEP_SUMMARY
-          echo "- **XCResult bundles**: Detailed Xcode result bundles (can be opened in Xcode)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- [View this run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          echo "- [Download artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Workflow history](https://github.com/${{ github.repository }}/actions/workflows/on-demand-build.yml)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 💡 Trigger this workflow again" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -179,6 +131,6 @@ jobs:
           echo "# From Linux/Claude Code web:" >> $GITHUB_STEP_SUMMARY
           echo "gh workflow run on-demand-build.yml -f configuration=${{ inputs.configuration }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "# Or from scripts/xc.sh:" >> $GITHUB_STEP_SUMMARY
-          echo "bash scripts/xc.sh build  # Auto-detects Linux and triggers CI" >> $GITHUB_STEP_SUMMARY
+          echo "# Watch build in real-time:" >> $GITHUB_STEP_SUMMARY
+          echo "gh run watch" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
