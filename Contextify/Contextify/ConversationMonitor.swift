@@ -206,6 +206,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastHealthCheck: Date?
     @ObservationIgnored private var fallbackPollingTask: Task<Void, Never>?  // Fallback when FSEvents fails
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
+    @ObservationIgnored private var diagnosticsExporter: DiagnosticsExporter?  // External API
 
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
@@ -296,6 +297,13 @@ final class ConversationMonitor {
                 // Initialize diagnostics service
                 self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
 
+                // Initialize diagnostics exporter (external API)
+                self.diagnosticsExporter = DiagnosticsExporter()
+                await self.diagnosticsExporter?.startMonitoring { @Sendable [weak self] in
+                    guard let self else { return nil }
+                    return await self.captureDiagnostics()
+                }
+
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = self.orchestrator!
                 self.log.info("🚀 Spawning background tasks for project: \(projectId)")
@@ -362,6 +370,14 @@ final class ConversationMonitor {
         backgroundTasks = nil
         debounceTask?.cancel()
         debounceTask = nil
+
+        // Stop diagnostics exporter
+        if let exporter = diagnosticsExporter {
+            Task {
+                await exporter.stopMonitoring()
+            }
+        }
+        diagnosticsExporter = nil
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
