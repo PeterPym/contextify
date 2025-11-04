@@ -651,6 +651,62 @@ Add transcript management to the **Transcript Inventory** window with:
 
 ---
 
+### Help/Tooltip System - Advanced Features (Lower Priority)
+
+**Current State:** Core help/tooltip system complete (Phases 1-4). Advanced features deferred for future PRs.
+
+**What's Implemented:**
+- ✅ InfoButton + InfoPopoverContent reusable components
+- ✅ Info popovers for complex features (AI status, error badge, follow modes, database location, empty states)
+- ✅ First-use onboarding hints (project tab reordering)
+- ✅ Timestamp tooltips with absolute time
+- ✅ SF Symbols animations (error bounce, hourglass pulse)
+- ✅ Full accessibility support (labels, hints, reduced motion)
+- ✅ Help menu structure with submenus
+- ✅ Comprehensive help documentation (6500+ words)
+
+**What's Deferred:**
+- ❌ HelpLink integration in Settings (link to online docs)
+- ❌ First-launch onboarding tour (welcome screen, feature highlights)
+- ❌ Context-sensitive help menu (dynamic items based on app state)
+- ❌ In-app help search (⌘K command palette)
+
+**Proposed Future Work:**
+
+1. **HelpLink Integration** (1-2 hours)
+   - Add HelpLink buttons in Settings for complex features
+   - Link to GitHub wiki or hosted documentation
+   - Supplement inline popovers with comprehensive guides
+   - **Files:** SettingsView.swift, help documentation hosting
+   - **Benefits:** Users can access detailed docs without leaving the app
+
+2. **First-Launch Onboarding** (3-4 hours)
+   - Welcome modal on first launch (TipKit or custom)
+   - Show 2-3 key features ("Projects auto-discover", "Timeline shows AI activity", etc.)
+   - Dismissible, shows once per install
+   - **Files:** WelcomeView.swift (new), ContextifyApp.swift (launch detection)
+   - **Benefits:** Reduces initial confusion for new users
+
+3. **Context-Sensitive Help Menu** (2-3 hours)
+   - Help menu items context-aware based on current view
+   - Example: When viewing timeline → "Help > About Timeline" enabled
+   - Dynamic menu item visibility/enabled state
+   - **Files:** ContextifyApp.swift (HelpCommands), ConversationMonitor (state)
+   - **Benefits:** Relevant help always available
+
+4. **In-App Help Search** (4-6 hours)
+   - ⌘K command palette for quick help access
+   - Aggregates all help content (menu items, tooltips, documentation)
+   - Fuzzy search across help topics
+   - Recent help topics
+   - **Files:** HelpSearchView.swift (new), HelpSearchIndex.swift (new)
+   - **Benefits:** Fastest way to find answers
+
+**Branch:** `claude/improve-mouseover-help-ux-011CUoSTV2ErvioRGaMEVySj`
+**Reference:** `build/notes/design-reference/help-tooltip-ux-system.md`
+
+---
+
 ### Embedding & Semantic Search
 
 **Current State:** Basic embedding generation and semantic search features are implemented but incomplete. Currently hidden behind developer mode flag.
@@ -708,4 +764,64 @@ Add transcript management to the **Transcript Inventory** window with:
 
 **When to Re-enable:**
 Complete at least items 1-2 above before showing these features to general users.
+
+---
+
+### Multi-Machine Database Sync Protection (Lower Priority)
+
+**Current State:** Contextify detects multi-machine access conflicts but does not prevent concurrent writes. Users receive warnings in Settings → Database tab when another machine has recently accessed the database (< 5 minutes). See `DatabaseAccessMetadata.swift` for implementation.
+
+**Detection System:**
+- ✅ Records machine ID, name, timestamp, and app version on every database open
+- ✅ Warns when another machine accessed within last 5 minutes
+- ✅ Shows informational message for historical multi-machine access
+- ✅ Displays in Settings UI with time-since-access details
+
+**Limitation:** Detection-only, not prevention. SQLite WAL mode + cloud sync (Dropbox, iCloud) don't guarantee atomic syncing of db/wal/shm files, leading to potential corruption if instances run simultaneously.
+
+**Proposed Enhancement Options:**
+
+1. **Block Launch on Recent Conflict** (Easiest - 2-4 hours)
+   - **What:** Show modal alert and refuse to open database if another machine accessed < 5 min ago
+   - **Implementation:**
+     - Check `DatabaseAccessTracker.checkForConflicts()` on launch
+     - If `.recentConflict`, show blocking alert with "Force Open" escape hatch
+     - Update `DatabaseManager.swift` and `ContextifyApp.swift`
+   - **Pros:** Prevents most concurrent access scenarios
+   - **Cons:** False positives if user force-quit on other machine (timestamp not updated)
+   - **Files:** `app/Sources/ContextifyCore/Database/DatabaseManager.swift`, `Contextify/Contextify/ContextifyApp.swift`
+
+2. **Periodic Heartbeat Updates** (Medium - 4-6 hours)
+   - **What:** Update `last_access` timestamp every 30 seconds while app is running
+   - **Implementation:**
+     - Add background Task to `ContextifyApp` that updates timestamp periodically
+     - Makes "is other instance still running?" detection more accurate
+     - Reduces false positive window from "time since launch" to "< 30 seconds"
+   - **Pros:** More accurate conflict detection, better UX with Option 1
+   - **Cons:** Extra writes (one every 30s), more cloud sync traffic
+   - **Trade-off:** Could increase interval to 60-120s to reduce writes
+   - **Files:** `app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift`, `Contextify/Contextify/ContextifyApp.swift`
+
+3. **Separate Sync-Friendly Architecture** (Hard - 40+ hours, major rewrite)
+   - **What:** Replace SQLite with append-only event log + CRDTs for conflict-free replication
+   - **Implementation:**
+     - Design event-sourced architecture
+     - Implement CRDT for project/transcript state
+     - Build sync reconciliation logic
+     - Migration path from current SQLite schema
+   - **Pros:** True multi-machine support, no corruption risk
+   - **Cons:** Major architectural change, significant testing burden, migration complexity
+   - **Status:** Not recommended unless multi-machine sync becomes core feature
+   - **Files:** Entire database layer rewrite
+
+**Recommendation:**
+- **Option 1** (Block Launch) is low-hanging fruit for users who enable custom database locations
+- Combine with **Option 2** (Heartbeat) for best UX (reduced false positives)
+- **Option 3** is overkill unless multi-machine sync becomes a primary use case
+
+**Related Files:**
+- `app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift` - Current detection system
+- `app/Sources/ContextifyCore/Database/DatabaseManager.swift` - Database opening, access recording
+- `Contextify/Contextify/SettingsView.swift` - Conflict warning display
+- `build/notes/design-reference/help-documentation.md` - User-facing multi-machine documentation
 

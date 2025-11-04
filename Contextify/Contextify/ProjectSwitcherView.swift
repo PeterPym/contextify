@@ -215,6 +215,11 @@ struct ProjectSwitcherView: View {
   @State private var insertionIndex: Int?
   @State private var tabPositions: [String: CGRect] = [:]
 
+  // Tier 3 onboarding hint (first-use only)
+  @AppStorage("hasSeenProjectTabReorderHint") private var hasSeenHint = false
+  @State private var showReorderHint = false
+  @State private var hoverTask: Task<Void, Never>?
+
   private let baseSpacing: CGFloat = 8
 
   /// Calculate gap width between two adjacent tabs
@@ -320,6 +325,61 @@ struct ProjectSwitcherView: View {
         )
       }
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
+      // Tier 3 onboarding hint: show on hover (first-time only)
+      .onHover { hovering in
+        // Only trigger if user hasn't seen the hint and there are multiple projects
+        guard !hasSeenHint, state.allProjects.count > 1 else { return }
+
+        if hovering {
+          // Start delayed show (1 second hover delay)
+          hoverTask = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+              showReorderHint = true
+            }
+          }
+        } else {
+          // Cancel hover task and hide popover
+          hoverTask?.cancel()
+          hoverTask = nil
+          showReorderHint = false
+        }
+      }
+      .popover(isPresented: $showReorderHint) {
+        VStack(alignment: .leading, spacing: 12) {
+          HStack(alignment: .top) {
+            Image(systemName: "lightbulb.fill")
+              .foregroundStyle(.yellow)
+              .imageScale(.medium)
+            Text("Tip")
+              .font(.headline)
+            Spacer()
+            Button {
+              showReorderHint = false
+              hasSeenHint = true
+            } label: {
+              Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+          }
+
+          Text("Drag and drop project tabs to reorder them. Your preferred order will be saved.")
+            .font(.body)
+            .foregroundStyle(.primary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: 280)
+        .background(.regularMaterial)
+        .presentationSizing(.fitted)
+        .presentationCompactAdaptation(.popover)
+        .onAppear {
+          hasSeenHint = true
+        }
+      }
       .onChange(of: state.activeProjectId) { _, newValue in
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {

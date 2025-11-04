@@ -5,6 +5,9 @@ struct ConversationTimelineView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var scrollTask: Task<Void, Never>?
 
+    // Info popover state
+    @State private var showEmptyStateInfo = false
+
     private let minWidth: CGFloat = 52
     private let scrollAnchorID = "timeline-scroll-anchor"
 
@@ -152,9 +155,20 @@ struct ConversationTimelineView: View {
             Image(systemName: "text.bubble")
                 .font(.title3)
                 .foregroundStyle(.tertiary)
-            Text("No Activity Yet")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+
+            HStack(spacing: 6) {
+                Text("No Activity Yet")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
+                InfoButton(isPresented: $showEmptyStateInfo)
+                    .popover(isPresented: $showEmptyStateInfo) {
+                        InfoPopoverContent(
+                            title: "About the Timeline",
+                            message: emptyStateExplanation
+                        )
+                    }
+            }
 
             // Show different message based on whether transcripts exist
             if monitor.allSessions.isEmpty {
@@ -170,6 +184,24 @@ struct ConversationTimelineView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 160)
+    }
+
+    private var emptyStateExplanation: String {
+        """
+        The Conversation Timeline displays real-time activity from your Claude Code or Codex CLI sessions:
+
+        • User directives (what you ask Claude to do)
+        • Assistant responses (Claude's actions and output)
+        • Tool usage (file operations, commands, searches)
+        • Request/response status and timing
+
+        Getting Started:
+        1. Ensure you have a project set (use "Manage Projects" button)
+        2. Start a Claude Code or Codex session in that project
+        3. Timeline entries will appear automatically as you work
+
+        The timeline updates in real-time and shows summaries of each conversation turn, making it easy to track what's happening in your AI-assisted development session.
+        """
     }
 
     private func errorBanner(_ message: String) -> some View {

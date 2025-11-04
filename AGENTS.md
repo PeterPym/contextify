@@ -155,6 +155,17 @@ Common commands:
 
 **For detailed debugging workflows:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
 
+**Diagnostics HTTP API (DEBUG builds only):**
+- API runs on `http://localhost:17329` when app is running
+- Endpoints:
+  - `GET /health` - Check if API is responding
+  - `GET /diagnostics` - Full diagnostic snapshot (project state, watcher, hoover, timeline, issues)
+  - `GET /timeline/recent?count=N` - Recent N entries (default 10)
+  - `GET /timeline/latest` - Most recent entry
+- Helper script: `./scripts/timeline_api.sh status|latest|recent|watch`
+- Entry fields: `role` (user/assistant), `present_summary`, `content`, `timestamp`, `is_generating`, `is_error`
+- Use for debugging timeline state, hoover lag, LLM generation issues
+
 **Release workflow (macOS only):**
 - Build Release configuration: `make build-release` or `bash scripts/xc.sh Release build`
 - Sign and create DMG: `make sign-dmg` (production) or `make sign-dmg-no-notarize` (testing)

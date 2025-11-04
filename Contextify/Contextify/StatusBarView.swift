@@ -13,6 +13,14 @@ struct StatusBarView: View {
     @State private var viewModel: StatusBarViewModel?
     @State private var lastSeenGenerator: ObjectIdentifier?
 
+    // Info popover state
+    @State private var showAIInfo = false
+    @State private var showErrorInfo = false
+
+    // Animation triggers
+    @State private var lastErrorCount = 0
+    @State private var errorBounceAnimation = false
+
     var body: some View {
         HStack(spacing: 16) {
             // Apple Intelligence indicator
@@ -56,6 +64,13 @@ struct StatusBarView: View {
         .task(id: generatorIdentity) {
             // Automatically recreate ViewModel when generator changes
             updateViewModel()
+        }
+        .onChange(of: viewModel?.recentErrorCount) { _, newCount in
+            // Trigger bounce animation on new errors
+            if let newCount, newCount > lastErrorCount {
+                errorBounceAnimation.toggle()
+            }
+            lastErrorCount = newCount ?? 0
         }
         .contentTransition(.opacity)  // Smooth state transitions
     }
@@ -104,9 +119,20 @@ struct StatusBarView: View {
             Text(aiStatusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            // Info button for detailed help
+            InfoButton(isPresented: $showAIInfo)
+                .popover(isPresented: $showAIInfo) {
+                    InfoPopoverContent(
+                        title: "Apple Intelligence",
+                        message: aiInfoMessage,
+                        actionLabel: aiInfoActionLabel,
+                        action: aiInfoAction
+                    )
+                }
         }
-        .frame(minWidth: 44, minHeight: 44)  // Tappable for accessibility
-        .help(aiStatusTooltip)
+        .frame(minHeight: 44)  // Tappable for accessibility
+        .help(aiStatusText)  // Simplified tooltip - just the status
         .accessibilityLabel(aiStatusAccessibilityLabel)
     }
 
@@ -130,18 +156,6 @@ struct StatusBarView: View {
         case .available: return "Apple Intelligence"
         case .unavailable: return "AI Unavailable"
         case .error: return "AI Error"
-        }
-    }
-
-    private var aiStatusTooltip: String {
-        guard let viewModel else { return "Initializing..." }
-        switch viewModel.aiStatus {
-        case .available:
-            return "Apple Intelligence is available\nUsing FoundationLLM for on-device summaries"
-        case .unavailable(let reason):
-            return "Apple Intelligence unavailable\n\(reason)"
-        case .error(let message):
-            return "Apple Intelligence error\n\(message)\n\nTry toggling AI in System Settings, then restart."
         }
     }
 
@@ -181,12 +195,24 @@ struct StatusBarView: View {
                     // Use Contextify Yellow for warnings
                     .foregroundStyle(Color(red: 0.831, green: 0.659, blue: 0.306))  // #D4A84E
                     .font(.caption)
+                    .symbolEffect(.bounce, value: errorBounceAnimation)
 
                 Text("\(viewModel.recentErrorCount) error\(viewModel.recentErrorCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                // Info button for detailed error help
+                InfoButton(isPresented: $showErrorInfo)
+                    .popover(isPresented: $showErrorInfo) {
+                        InfoPopoverContent(
+                            title: "LLM Generation Errors",
+                            message: errorInfoMessage,
+                            actionLabel: "Check System Settings",
+                            action: openSystemSettings
+                        )
+                    }
             }
-            .help(errorTooltip(count: viewModel.recentErrorCount, reason: viewModel.topErrorReason))
+            .help("LLM generation errors occurred")  // Simplified tooltip
             .accessibilityLabel("\(viewModel.recentErrorCount) generation errors")
 
         } else if let viewModel, viewModel.isProcessing && viewModel.queueDepth > 0 {
@@ -236,23 +262,94 @@ struct StatusBarView: View {
         }
     }
 
-    // MARK: - Helper Functions
+    // MARK: - Info Popover Content
 
-    /// Generate actionable error tooltip
-    private func errorTooltip(count: Int, reason: String?) -> String {
-        var message = "LLM generation failed for \(count) \(count == 1 ? "entry" : "entries")"
+    /// Detailed message for AI status info popover
+    private var aiInfoMessage: String {
+        guard let viewModel else { return "Initializing..." }
+        switch viewModel.aiStatus {
+        case .available:
+            return """
+            Apple Intelligence is available and generating conversation summaries using on-device language models (FoundationLLM).
 
-        if let reason = reason {
-            // Simplify technical error messages
-            let simplified = simplifyErrorReason(reason)
-            message += "\n\nReason: \(simplified)"
+            Summaries are generated locally with no network latency or additional API costs.
+            """
+        case .unavailable(let reason):
+            return """
+            Apple Intelligence is unavailable.
+
+            Reason: \(reason)
+
+            Summaries will be generated using fallback heuristics (less detailed).
+            """
+        case .error(let message):
+            return """
+            Apple Intelligence encountered an error.
+
+            Error: \(message)
+
+            Try these steps:
+            1. Check that Apple Intelligence is enabled in System Settings
+            2. Restart Contextify
+            3. Restart your Mac if the issue persists
+
+            Errors auto-clear after 3 successful generations.
+            """
+        }
+    }
+
+    /// Action button label for AI status popover (nil if no action needed)
+    private var aiInfoActionLabel: String? {
+        guard let viewModel else { return nil }
+        if case .error = viewModel.aiStatus {
+            return "Open System Settings"
+        }
+        return nil
+    }
+
+    /// Action for AI status popover button
+    private var aiInfoAction: (() -> Void)? {
+        guard let viewModel else { return nil }
+        if case .error = viewModel.aiStatus {
+            return openSystemSettings
+        }
+        return nil
+    }
+
+    /// Detailed message for error info popover
+    private var errorInfoMessage: String {
+        guard let viewModel else { return "" }
+        let count = viewModel.recentErrorCount
+        let reason = viewModel.topErrorReason
+
+        var message = """
+        \(count) conversation \(count == 1 ? "entry" : "entries") failed to generate summaries.
+        """
+
+        if let reason {
+            message += "\n\nTop error: \(simplifyErrorReason(reason))"
         }
 
-        message += "\n\nErrors auto-clear after 3 successful generations."
-        message += "\nIf errors persist, check Apple Intelligence in System Settings."
+        message += """
+
+
+        Common causes:
+        • Apple Intelligence is disabled or unavailable
+        • Content quality too low (empty messages, no context)
+        • System resources temporarily unavailable
+
+        What to try:
+        1. Check Apple Intelligence in System Settings
+        2. Ensure sufficient system memory available
+        3. Wait a moment and try refreshing the timeline
+
+        Errors auto-clear after 3 successful generations.
+        """
 
         return message
     }
+
+    // MARK: - Helper Functions
 
     /// Simplify technical error messages for user display
     private func simplifyErrorReason(_ reason: String) -> String {
@@ -268,6 +365,14 @@ struct StatusBarView: View {
             return "Generation timed out"
         } else {
             return reason  // Return as-is if no simplification
+        }
+    }
+
+    /// Open System Settings (Apple Intelligence or Security & Privacy)
+    private func openSystemSettings() {
+        // Try to open Apple Intelligence settings first (macOS 15+)
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
+            NSWorkspace.shared.open(url)
         }
     }
 }
