@@ -104,14 +104,6 @@ struct ConversationTimelineView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
-
-            Button(action: { monitor.toggleCollapsed() }) {
-                Image(systemName: monitor.isCollapsed ? "arrow.left.square" : "arrow.right.square")
-            }
-            .buttonStyle(.plain)
-            .help(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
-            .accessibilityLabel(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
-            .padding(4)
         }
         .padding(.vertical, 8)
     }
