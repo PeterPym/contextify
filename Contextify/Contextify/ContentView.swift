@@ -40,6 +40,58 @@ struct ContentView: View {
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
 
+    /// Wait for project root to be fully initialized before starting monitoring
+    /// Returns when .projectRootDidChange notification fires (signals HUD is ready)
+    @MainActor
+    private func waitForProjectRootReady() async {
+        // If project root is already set, return immediately
+        if model.projectRootURL != nil {
+            return
+        }
+
+        // Otherwise wait for notification with 5s timeout
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let box = ObserverBox()
+
+            // Timeout after 5 seconds
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(5))
+                if !box.isComplete {
+                    box.isComplete = true
+                    if let obs = box.observer {
+                        NotificationCenter.default.removeObserver(obs)
+                    }
+                    uiLog.warning("⏱️ Timeout waiting for project root initialization")
+                    continuation.resume()
+                }
+            }
+
+            // Wait for notification
+            box.observer = NotificationCenter.default.addObserver(
+                forName: .projectRootDidChange,
+                object: nil,
+                queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    if !box.isComplete {
+                        box.isComplete = true
+                        if let obs = box.observer {
+                            NotificationCenter.default.removeObserver(obs)
+                        }
+                        uiLog.info("✅ Project root ready, starting monitoring")
+                        continuation.resume()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Helper class to safely share mutable state across continuation boundaries
+    private class ObserverBox {
+        var observer: NSObjectProtocol?
+        var isComplete = false
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Project switcher (top navigation)
@@ -75,6 +127,12 @@ struct ContentView: View {
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
+
+            // Wait for project root to be fully initialized before starting monitoring
+            // The .projectRootDidChange notification signals that HUD is ready
+            // This avoids race conditions between startup() and monitoring initialization
+            await waitForProjectRootReady()
+
             TimelineIntegration.shared.startMonitoring()
 
             // Note: ProjectSwitcherState.shared.start() is called in ContextifyApp init
