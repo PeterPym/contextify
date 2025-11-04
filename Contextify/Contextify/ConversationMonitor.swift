@@ -1252,7 +1252,7 @@ final class ConversationMonitor {
         }.value
 
         await MainActor.run {
-            log.info("🔍 Discovery: Found \(filesOnDisk.count) .jsonl files in \(expectedDirName)")
+            log.info("🔍 Discovery: Found \(filesOnDisk.count) Claude Code sessions in \(expectedDirName)")
         }
 
         if Task.isCancelled { return }
@@ -1267,7 +1267,71 @@ final class ConversationMonitor {
             )
         }
 
-        let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+        // Also discover Codex CLI sessions for this project
+        // Codex stores sessions globally in ~/.codex/sessions/YYYY/MM/DD/*.jsonl
+        // We need to scan recursively and match by 'cwd' field in session_meta
+        let codexDiscovered = try await Task.detached { () -> [DiscoveredTranscript] in
+            let codexRoot = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex/sessions")
+
+            guard FileManager.default.fileExists(atPath: codexRoot.path) else {
+                return []
+            }
+
+            // Find all .jsonl files recursively
+            guard let enumerator = FileManager.default.enumerator(
+                at: codexRoot,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                return []
+            }
+
+            // Collect all file URLs (non-async enumeration)
+            var allFiles: [URL] = []
+            while let fileURL = enumerator.nextObject() as? URL {
+                if fileURL.pathExtension == "jsonl" {
+                    allFiles.append(fileURL)
+                }
+            }
+
+            var matchingFiles: [DiscoveredTranscript] = []
+            let projectPath = projectRoot.path
+
+            for fileURL in allFiles {
+
+                // Read first line to get session_meta with cwd
+                guard let firstLine = try? String(contentsOf: fileURL, encoding: .utf8)
+                    .components(separatedBy: .newlines).first,
+                      let data = firstLine.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let payload = json["payload"] as? [String: Any],
+                      let cwd = payload["cwd"] as? String else {
+                    continue
+                }
+
+                // Match by project path
+                if cwd == projectPath {
+                    let sessionId = fileURL.deletingPathExtension().lastPathComponent
+                    matchingFiles.append(DiscoveredTranscript(
+                        fileURL: fileURL,
+                        provider: .codexCLI,
+                        sessionId: sessionId
+                    ))
+                }
+            }
+
+            return matchingFiles
+        }.value
+
+        await MainActor.run {
+            log.info("🔍 Discovery: Found \(codexDiscovered.count) Codex CLI sessions for project")
+        }
+
+        // Combine Claude Code and Codex CLI discoveries
+        let allDiscovered = discovered + codexDiscovered
+
+        let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: allDiscovered)
 
         await MainActor.run {
             log.info("✅ Upserted \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new)")

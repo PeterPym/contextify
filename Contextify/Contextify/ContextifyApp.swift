@@ -240,12 +240,12 @@ struct ContextifyApp: App {
   private func startProjectDirectoryMonitoring(viewModel: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
 
-    // Get paths to monitor - Claude Code and Codex CLI project directories
+    // Get paths to monitor - Claude Code project directories and Codex CLI session directories
     let claudeProjectsPath = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
       .path
     let codexProjectsPath = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".codex/projects")
+      .appendingPathComponent(".codex/sessions")
       .path
 
     // Only watch directories that exist
@@ -256,7 +256,7 @@ struct ContextifyApp: App {
     }
     if FileManager.default.fileExists(atPath: codexProjectsPath) {
       pathsToWatch.append(codexProjectsPath)
-      log.info("📁 Monitoring Codex CLI projects: \(codexProjectsPath)")
+      log.info("📁 Monitoring Codex CLI sessions: \(codexProjectsPath)")
     }
 
     guard !pathsToWatch.isEmpty else {
