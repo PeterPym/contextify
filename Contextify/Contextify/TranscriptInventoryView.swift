@@ -866,7 +866,8 @@ struct TranscriptInventoryView: View {
       let discovered = sessions.map { session in
         DiscoveredTranscript(
           fileURL: session.fileURL,
-          providerString: session.provider.rawValue,
+          // P2: Convert TimelineSourceContext.Provider → DiscoveredProject.Provider via rawValue
+          provider: DiscoveredProject.Provider(rawValue: session.provider.rawValue) ?? .claudeCode,
           sessionId: nil  // TranscriptSession doesn't have providerSessionId
         )
       }
