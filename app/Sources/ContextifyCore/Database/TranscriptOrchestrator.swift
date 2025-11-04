@@ -854,6 +854,21 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
   }
 
+  /// Check if a transcript is being watched
+  public func isWatchingTranscript(transcriptId: String) -> Bool {
+    return watcher.isWatching(transcriptId: transcriptId)
+  }
+
+  /// Manually trigger hoover for a transcript (for recovery/debugging)
+  /// Bypasses watcher and directly ingests new content from file
+  @discardableResult
+  public func manualHoover(transcriptId: String, fileURL: URL) throws -> String {
+    guard let transcript = try transcriptRepo.get(transcriptId) else {
+      throw RepositoryError.notFound
+    }
+    return try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: NoOpProgressSink())
+  }
+
   // MARK: - Assistant Usage Reconciliation
 
   /// Reconcile pending assistant_usage records with transcript_entries

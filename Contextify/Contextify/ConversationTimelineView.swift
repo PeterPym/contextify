@@ -12,11 +12,7 @@ struct ConversationTimelineView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if monitor.isCollapsed {
-                collapsedContent
-            } else {
-                timelineContent
-            }
+            timelineContent
         }
         .frame(
             minWidth: minWidth,
@@ -40,12 +36,7 @@ struct ConversationTimelineView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            if monitor.isCollapsed {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
                     Text("Conversation Log")
                         .font(.headline)
                     if let last = monitor.lastUpdate {
@@ -103,31 +94,8 @@ struct ConversationTimelineView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-            }
-
-            Button(action: { monitor.toggleCollapsed() }) {
-                Image(systemName: monitor.isCollapsed ? "arrow.left.square" : "arrow.right.square")
-            }
-            .buttonStyle(.plain)
-            .help(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
-            .accessibilityLabel(monitor.isCollapsed ? "Expand timeline" : "Compact timeline")
-            .padding(4)
         }
         .padding(.vertical, 8)
-    }
-
-    private var collapsedContent: some View {
-        VStack {
-            Spacer()
-            if monitor.isProcessing {
-                ProgressView()
-            } else {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.title)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
     }
 
     private var timelineContent: some View {
