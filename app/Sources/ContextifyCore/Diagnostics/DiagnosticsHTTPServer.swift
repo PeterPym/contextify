@@ -85,10 +85,13 @@ public actor DiagnosticsHTTPServer {
         connections[id] = connection
 
         connection.stateUpdateHandler = { [weak self] state in
-            if case .ready = state {
+            switch state {
+            case .ready:
                 Task { await self?.receiveRequest(connection, id: id) }
-            } else if case .failed = state, case .cancelled = state {
+            case .failed, .cancelled:
                 Task { await self?.removeConnection(id) }
+            default:
+                break
             }
         }
 
@@ -256,11 +259,11 @@ public actor DiagnosticsHTTPServer {
     private func sendResponse(_ connection: NWConnection, status: Int, body: String, contentType: String = "text/plain") async {
         let statusText = HTTPStatus.text(for: status)
         let response = """
-        HTTP/1.1 \(status) \(statusText)\r
-        Content-Type: \(contentType); charset=utf-8\r
-        Content-Length: \(body.utf8.count)\r
-        Connection: close\r
-        \r
+        HTTP/1.1 \(status) \(statusText)\r\n\
+        Content-Type: \(contentType); charset=utf-8\r\n\
+        Content-Length: \(body.utf8.count)\r\n\
+        Connection: close\r\n\
+        \r\n\
         \(body)
         """
 

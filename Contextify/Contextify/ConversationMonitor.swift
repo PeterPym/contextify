@@ -1328,7 +1328,7 @@ final class ConversationMonitor {
             guard let enumerator = FileManager.default.enumerator(
                 at: codexRoot,
                 includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles]
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
             ) else {
                 return ([], 0, 0)
             }
@@ -1340,6 +1340,11 @@ final class ConversationMonitor {
 
             while !Task.isCancelled, let fileURL = enumerator.nextObject() as? URL {
                 if Task.isCancelled { break }
+
+                // Skip overly deep paths (defensive: ~/.codex/sessions/YYYY/MM/DD/<file>.jsonl → depth ~ 5–6)
+                let depth = fileURL.pathComponents.count - codexRoot.pathComponents.count
+                if depth > 8 { continue }
+
                 guard fileURL.pathExtension == "jsonl" else { continue }
 
                 guard

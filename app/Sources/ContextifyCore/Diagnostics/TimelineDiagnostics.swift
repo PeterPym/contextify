@@ -426,12 +426,26 @@ public actor TimelineDiagnosticsService {
     }
 
     /// Extract last timestamp from transcript file (last line with valid timestamp)
+    /// Optimized: reads only last 64KB instead of entire file
     private func extractLastTimestamp(from fileURL: URL) async -> Date? {
-        guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
-        let lines = content.components(separatedBy: .newlines).reversed()
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+
+        let tailSize = 64 * 1024
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?.intValue ?? 0
+
+        // Seek to last 64KB if file is larger
+        if fileSize > tailSize {
+            try? handle.seek(toOffset: UInt64(fileSize - tailSize))
+        }
+
+        let data = (try? handle.readToEnd()) ?? Data()
+        guard let chunk = String(data: data, encoding: .utf8) else { return nil }
+        let lines = chunk.split(separator: "\n").reversed()
 
         for line in lines {
-            guard !line.isEmpty, let data = line.data(using: .utf8) else { continue }
+            guard !line.isEmpty else { continue }
+            let data = Data(line.utf8)
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
 
             if let timestamp = json["timestamp"] as? String {
