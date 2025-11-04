@@ -825,6 +825,78 @@ ProjectTabBar()
 
 ---
 
+#### Phase 4: Help Menu & Documentation (P2)
+**Estimated: 8-12 hours**
+
+1. **Help Menu Structure:**
+   - Configure SwiftUI Help menu with `.commands` modifier
+   - Add contextual menu items:
+     - "Contextify Help" (⌘?)
+     - "Understanding Apple Intelligence"
+     - "Managing Projects & Transcripts"
+     - "Keyboard Shortcuts"
+     - "Troubleshooting Guide"
+   - Add search functionality
+
+2. **Help Content Writing:**
+   - **Getting Started Guide** (for new users)
+     - Setting up your first project
+     - Understanding the timeline
+     - How Apple Intelligence works
+   - **Feature Documentation:**
+     - Projects & Transcripts
+     - Timeline & Conversation Log
+     - Apple Intelligence Integration
+     - Custom Database Locations
+     - Follow Modes (Auto vs Pinned)
+   - **Troubleshooting:**
+     - "Apple Intelligence Not Available"
+     - "Project Directory Not Found"
+     - "Database Access Errors"
+     - "LLM Generation Failures"
+   - **Keyboard Shortcuts Reference**
+
+3. **Help Delivery Method:**
+   - **Option A:** Help Book (bundled HTML, searchable, offline)
+   - **Option B:** Online docs + HelpLink (easier to update)
+   - **Option C:** Hybrid (basic help book + "Learn More" → website)
+   - **Recommendation:** Start with Option B (online docs) for easier iteration
+
+4. **Integration:**
+   - Link info popovers to relevant help topics
+   - Add "Learn More" buttons that open specific help pages
+   - Help menu items open corresponding documentation
+   - Ensure help is searchable from Spotlight (if using Help Book)
+
+---
+
+#### Phase 5: Advanced/Optional Features (P3)
+**Estimated: 4-6 hours**
+
+1. **HelpLink Integration in Settings:**
+   - Add HelpLink buttons for complex settings
+   - Link to detailed online documentation
+   - Supplement inline popovers with comprehensive guides
+
+2. **First-Launch Onboarding:**
+   - Welcome tour using TipKit or custom tips
+   - Show 2-3 key features on first run
+   - "Getting Started" quick tour
+   - Dismissible, shows once per install
+
+3. **Context-Sensitive Help Menu:**
+   - Help menu items context-aware (show relevant to current view)
+   - Example: When viewing timeline → "Help > About Timeline"
+   - Dynamic menu items based on app state
+
+4. **Help Search/Index:**
+   - In-app help search window
+   - Aggregates all help content
+   - Command palette for quick access (⌘K)
+   - Recent help topics
+
+---
+
 ### Technology Decisions
 
 | Component | Technology Choice | Rationale |
@@ -1262,5 +1334,11 @@ SwiftUI 6 (iOS 18 / macOS 15) brings **incremental improvements** to help/toolti
 
 **Document Status:** Comprehensive, ready for implementation
 **Next Steps:** Begin Phase 1 implementation (StatusBarView updates)
-**Estimated Total Effort:** 14-20 hours for all phases
+
+**Estimated Total Effort:**
+- **Phases 1-3** (Core inline help): 14-20 hours
+- **Phase 4** (Help Menu & Documentation): 8-12 hours
+- **Phase 5** (Advanced features): 4-6 hours
+- **Total (All 5 phases)**: 26-38 hours
+- **Recommended MVP** (Phases 1-3 only): 14-20 hours
 
