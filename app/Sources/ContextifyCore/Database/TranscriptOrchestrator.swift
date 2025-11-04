@@ -997,9 +997,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Get follow policy for a project
-  public func getFollowPolicy(projectId: String) throws -> FollowPolicyRow? {
+  /// P1: Made async to avoid blocking main thread during startup
+  public func getFollowPolicy(projectId: String) async throws -> FollowPolicyRow? {
     let pool = try dbManager.pool
-    return try pool.read { db in
+    return try await pool.read { db in
       try FollowPolicyRow.fetchOne(db, sql: """
         SELECT * FROM project_follow_policy WHERE project_id = ?
       """, arguments: [projectId])

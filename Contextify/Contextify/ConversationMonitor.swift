@@ -358,6 +358,9 @@ final class ConversationMonitor {
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
 
+        // P1: Cancel pending policy evaluation from prior project
+        policyEvalTask?.cancel()
+
         // v23 (P0-2, P1-1): Reset follow state for new project
         isReadyForUpdates = false
         sessionsLoaded = false
@@ -899,6 +902,7 @@ final class ConversationMonitor {
 
     /// Load follow policy from database for current project
     /// P0-2: Made async for startup sequence
+    /// P1: Await async getFollowPolicy
     @MainActor
     private func loadPolicyForCurrentProject() async {
         guard let pid = currentProjectId else {
@@ -906,7 +910,7 @@ final class ConversationMonitor {
             return
         }
         do {
-            if let row = try orchestrator.getFollowPolicy(projectId: pid) {
+            if let row = try await orchestrator.getFollowPolicy(projectId: pid) {
                 if row.mode == 0 {
                     followMode = .automatic
                 } else if let sid = row.pinnedSessionId, let prov = row.pinnedProvider {
@@ -1558,8 +1562,9 @@ final class ConversationMonitor {
     /// P2-3: NotificationCenter only (no Combine PassthroughSubject)
     @MainActor
     private func publishTypedEvent(to: SessionKey, reason: SwitchReason) {
+        // P2: Use currentProjectId directly instead of querying HUDViewModel
         let evt = ActiveSessionDidChangeEvent(
-            projectPath: HUDViewModel.shared.projectRootURL?.path ?? "",
+            projectPath: currentProjectId ?? "",
             sessionId: to.sessionId,
             provider: to.provider.rawValue,
             mode: (followMode == .automatic ? "automatic" : "manual"),
@@ -1596,6 +1601,7 @@ final class ConversationMonitor {
     }
 
     /// Public API: Switch to automatic follow mode
+    /// P0: Emits system event and updates cooldown anchor for restart-safe audit trail
     @MainActor
     func unpinToAuto() async {
         guard let pid = currentProjectId else { return }
@@ -1603,19 +1609,33 @@ final class ConversationMonitor {
             try await orchestrator.setAutomatic(projectId: pid)
             followMode = .automatic
             log.info("Switched to automatic follow mode")
+
+            // P0: Switch to newest and emit event (restart-safe), or clear if none
+            if let target = computeNewestKey() {
+                await setActive(from: lastActiveKey, to: target, reason: .unpinToAuto, emit: true)
+                lastSwitchAt = Date()
+            } else {
+                lastActiveKey = nil
+                activeSession = nil
+            }
         } catch {
             log.error("Failed to unpin: \(error.localizedDescription)")
         }
     }
 
     /// Public API: Pin to specific session
+    /// P0: Emits system event and updates cooldown anchor for restart-safe audit trail
     @MainActor
     func pinAndSwitch(_ session: TranscriptSession) async {
         guard let pid = currentProjectId else { return }
         do {
             try await orchestrator.setManual(projectId: pid, sessionId: session.identifier, provider: session.provider.rawValue)
             followMode = .manual(sessionId: session.identifier, provider: session.provider)
-            activeSession = session
+
+            // P0: Persist event + typed event and update cooldown anchor
+            let key = SessionKey(sessionId: session.identifier, provider: session.provider)
+            await setActive(from: lastActiveKey, to: key, reason: .manualSelection, emit: true)
+            lastSwitchAt = Date()
             log.info("Pinned to session: \(session.identifier)")
         } catch {
             log.error("Failed to pin: \(error.localizedDescription)")
