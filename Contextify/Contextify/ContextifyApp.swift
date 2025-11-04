@@ -133,6 +133,7 @@ struct ContextifyApp: App {
       if let viewModel = projectsViewModel {
         ProjectsWindow()
           .environment(viewModel)
+          .environment(ConversationMonitor.shared)
       } else {
         VStack(spacing: 12) {
           ProgressView()
