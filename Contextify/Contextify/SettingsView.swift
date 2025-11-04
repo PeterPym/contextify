@@ -14,6 +14,7 @@ struct SettingsView: View {
   @State private var migrationSuccess: String?
   @State private var showingFilePicker: Bool = false
   @State private var conflictWarning: String?
+  @State private var showLocationInfo: Bool = false
 
   private let devMode = DeveloperMode.shared
 
@@ -72,8 +73,18 @@ struct SettingsView: View {
 
         // Location selection
         VStack(alignment: .leading, spacing: 12) {
-          Text("Storage Location:")
-            .font(.subheadline)
+          HStack(spacing: 6) {
+            Text("Storage Location:")
+              .font(.subheadline)
+
+            InfoButton(isPresented: $showLocationInfo)
+              .popover(isPresented: $showLocationInfo) {
+                InfoPopoverContent(
+                  title: "Custom Database Location",
+                  message: locationExplanation
+                )
+              }
+          }
 
           Picker("", selection: $isCustomLocation) {
             Text("Default Location").tag(false)
@@ -171,6 +182,29 @@ struct SettingsView: View {
         resetToDefaultLocation()
       }
     }
+  }
+
+  // MARK: - Help Content
+
+  private var locationExplanation: String {
+    """
+    Contextify stores all project data, transcripts, and timeline entries in a single database file.
+
+    Default Location:
+    • Stored in ~/Library/Application Support/Contextify/
+    • Isolated to this Mac
+    • Best for single-machine use
+
+    Custom Location (Advanced):
+    • Choose any folder: Dropbox, iCloud Drive, external drive, etc.
+    • Enables multi-machine sync and centralized backups
+    • Migration preserves all data (copies database + write-ahead log files)
+
+    ⚠️  Multi-Machine Warning:
+    If using cloud sync (Dropbox, iCloud), do NOT open Contextify on multiple Macs simultaneously. Concurrent writes can corrupt the database. Contextify will warn you if it detects access conflicts.
+
+    The old database file is kept as a backup after migration - you can delete it manually after verifying the new location works.
+    """
   }
 
   // MARK: - Actions

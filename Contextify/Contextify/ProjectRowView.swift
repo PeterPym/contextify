@@ -10,6 +10,9 @@ struct ProjectRowView: View {
   let onRevealInFinder: () -> Void
   let onShowStats: () -> Void
 
+  // Info popover state
+  @State private var showFollowModeInfo = false
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       // Header: icon + name + current badge + error indicator
@@ -35,43 +38,54 @@ struct ProjectRowView: View {
           Image(systemName: "exclamationmark.triangle.fill")
             .foregroundStyle(.orange)
             .imageScale(.small)
-            .help("Ingestion error: \(project.ingestionError ?? "")")
+            .help("Ingestion error occurred")
         }
 
-        // v23: Follow chip
+        // v23: Follow chip with info button
         if project.isCurrent, monitor.activeSession != nil {
-          Menu {
-            Button("Follow Newest (Auto)") {
-              Task {
-                await monitor.unpinToAuto()
-              }
-            }
-            // R6: Only show "Pin Current Session" when in auto mode (avoid redundant action)
-            if !monitor.isPinnedMode, monitor.activeSession != nil {
-              Button("Pin Current Session") {
+          HStack(spacing: 4) {
+            Menu {
+              Button("Follow Newest (Auto)") {
                 Task {
-                  if let session = monitor.activeSession {
-                    await monitor.pinAndSwitch(session)
+                  await monitor.unpinToAuto()
+                }
+              }
+              // R6: Only show "Pin Current Session" when in auto mode (avoid redundant action)
+              if !monitor.isPinnedMode, monitor.activeSession != nil {
+                Button("Pin Current Session") {
+                  Task {
+                    if let session = monitor.activeSession {
+                      await monitor.pinAndSwitch(session)
+                    }
                   }
                 }
               }
+            } label: {
+              HStack(spacing: 4) {
+                Image(systemName: "paperclip")
+                  .imageScale(.small)
+                Text(monitor.isPinnedMode ? "Follow: Pinned" : "Follow: Auto")  // P0-4: Bound to observable state
+                  .font(.caption2)
+              }
+              .foregroundStyle(.secondary)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(Color.secondary.opacity(0.1))
+              .cornerRadius(4)
             }
-          } label: {
-            HStack(spacing: 4) {
-              Image(systemName: "paperclip")
-                .imageScale(.small)
-              Text(monitor.isPinnedMode ? "Follow: Pinned" : "Follow: Auto")  // P0-4: Bound to observable state
-                .font(.caption2)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Color.secondary.opacity(0.1))
-            .cornerRadius(4)
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)  // P2-2: Accessibility - ensure ≥44pt hit target
+            .help("Configure active session following")
+
+            // Info button for follow mode explanation
+            InfoButton(isPresented: $showFollowModeInfo)
+              .popover(isPresented: $showFollowModeInfo) {
+                InfoPopoverContent(
+                  title: "Follow Modes",
+                  message: followModeExplanation
+                )
+              }
           }
-          .buttonStyle(.plain)
-          .frame(minHeight: 44)  // P2-2: Accessibility - ensure ≥44pt hit target
-          .help("Configure active session following")
         }
 
         Spacer()
@@ -158,6 +172,29 @@ struct ProjectRowView: View {
     .padding()
     .background(Color.secondary.opacity(project.isCurrent ? 0.08 : 0.03))
     .cornerRadius(8)
+  }
+
+  // MARK: - Info Popover Content
+
+  /// Explanation of Auto vs Pinned follow modes
+  private var followModeExplanation: String {
+    """
+    Contextify can follow transcript sessions in two modes:
+
+    Auto Mode (Follow Newest):
+    • Automatically switches to the newest transcript session
+    • Timeline updates when you start a new Claude Code/Codex session
+    • Best for active development with multiple sessions
+
+    Pinned Mode (Follow Specific):
+    • Stays locked to a specific transcript session
+    • Timeline doesn't switch even if newer sessions exist
+    • Best for reviewing or analyzing a particular conversation
+
+    Current mode: \(monitor.isPinnedMode ? "Pinned" : "Auto")
+
+    Change modes using the menu to the left of this info button.
+    """
   }
 
   private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {

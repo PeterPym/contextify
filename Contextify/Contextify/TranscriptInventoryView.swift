@@ -115,7 +115,7 @@ struct TranscriptInventoryView: View {
                 .labelStyle(.iconOnly)
             }
             .buttonStyle(.borderless)
-            .help("Delete cached metadata for \"Developer Chat\" and \"Brief Session\" titles")
+            .help("Clear cached placeholder titles")
 
             Button {
               refreshSessions()
