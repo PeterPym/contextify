@@ -63,14 +63,14 @@ public struct TimelineDiagnosticsSnapshot: Codable, Sendable {
         public let message: String
         public let recommendation: String?
 
-        public enum Severity: String, Codable {
+        public enum Severity: String, Codable, Sendable {
             case critical   // P0 - timeline completely broken
             case high       // P1 - degraded experience
             case medium     // P2 - minor issue
             case info       // Informational
         }
 
-        public enum Category: String, Codable {
+        public enum Category: String, Codable, Sendable {
             case hooverStall
             case watcherMissing
             case fileSystemIssue
@@ -222,7 +222,7 @@ public actor TimelineDiagnosticsService {
         }
 
         // 2. Find most recent transcript for this project
-        let recentTranscript: Transcript? = await db.read { db in
+        let recentTranscript: Transcript? = try? await db.read { db in
             guard let pid = projectId else { return nil }
             return try? Transcript
                 .filter(Column("project_id") == pid)
@@ -243,7 +243,7 @@ public actor TimelineDiagnosticsService {
                 .filter { !$0.isEmpty }
                 .count) ?? 0
 
-            let bytesUnprocessed = max(0, actualFileSize - transcript.fileSizeBytes)
+            let bytesUnprocessed = max(0, actualFileSize - (transcript.fileSize ?? 0))
             let linesUnprocessed = max(0, actualLineCount - transcript.lastProcessedLine)
 
             let lastUpdated = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
@@ -253,7 +253,7 @@ public actor TimelineDiagnosticsService {
             hooverState = .init(
                 transcriptId: transcript.id,
                 lastProcessedLine: transcript.lastProcessedLine,
-                fileSizeBytes: transcript.fileSizeBytes,
+                fileSizeBytes: transcript.fileSize ?? 0,
                 lastUpdated: lastUpdated,
                 bytesUnprocessed: bytesUnprocessed,
                 linesUnprocessed: linesUnprocessed,

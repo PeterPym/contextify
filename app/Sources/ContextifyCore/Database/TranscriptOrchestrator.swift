@@ -862,7 +862,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Manually trigger hoover for a transcript (for recovery/debugging)
   /// Bypasses watcher and directly ingests new content from file
   @discardableResult
-  public func manualHoover(transcriptId: String, fileURL: URL) throws -> HooverResult {
+  public func manualHoover(transcriptId: String, fileURL: URL) throws -> String {
     guard let transcript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
     }

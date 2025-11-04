@@ -294,7 +294,7 @@ final class ConversationMonitor {
                 self.isCacheGeneratorActive = true
 
                 // Initialize diagnostics service
-                self.diagnosticsService = TimelineDiagnosticsService(db: try .shared.pool)
+                self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
 
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = self.orchestrator!
@@ -1828,7 +1828,7 @@ final class ConversationMonitor {
                 }
 
                 // Capture diagnostic snapshot
-                guard let snapshot = await MainActor.run(body: { self.captureDiagnostics() }) else {
+                guard let snapshot = await self.captureDiagnostics() else {
                     continue
                 }
 
@@ -1934,7 +1934,7 @@ final class ConversationMonitor {
                     continue
                 }
 
-                if fileSize.intValue > transcript.fileSizeBytes {
+                if fileSize.intValue > (transcript.fileSize ?? 0) {
                     log.info("🔧 Attempting manual hoover for stalled transcript: \(transcript.id)")
                     try orchestrator.manualHoover(transcriptId: transcript.id, fileURL: fileURL)
                 }
