@@ -122,6 +122,105 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 **Primary build script:** `bash scripts/xc.sh build` (auto-detects Xcode-beta if installed)
 
+### Building on Linux / Non-macOS Environments
+
+**For Claude Code Web users and Linux environments:**
+
+Since Contextify is a macOS-only project requiring Xcode, builds from Linux environments must use **on-demand GitHub Actions** with macOS runners. The build script (`scripts/xc.sh`) automatically detects non-macOS environments and guides you through the process.
+
+**Quick Start:**
+
+1. **Auto-trigger from Linux** (if you have GitHub CLI):
+   ```bash
+   bash scripts/xc.sh build
+   # Follow the interactive prompts to trigger CI
+   ```
+
+2. **Manual trigger with gh CLI**:
+   ```bash
+   # Trigger a Debug build
+   gh workflow run on-demand-build.yml -f configuration=Debug
+
+   # Trigger a Release build
+   gh workflow run on-demand-build.yml -f configuration=Release
+
+   # Trigger and watch in real-time
+   gh workflow run on-demand-build.yml -f configuration=Debug && gh run watch
+   ```
+
+3. **Manual trigger via GitHub web UI**:
+   - Navigate to: Actions → "On-Demand Build" → Run workflow
+   - Select configuration (Debug/Release) and options
+   - Click "Run workflow"
+
+**Viewing Build Results:**
+
+After triggering a build, you can:
+
+1. **Watch in real-time** (gh CLI required):
+   ```bash
+   gh run watch
+   ```
+
+2. **View on GitHub**:
+   ```bash
+   # Open the workflow runs page
+   gh workflow view on-demand-build.yml --web
+   ```
+
+3. **Download build artifacts**:
+   ```bash
+   # List recent runs
+   gh run list --workflow=on-demand-build.yml
+
+   # Download artifacts from the latest run
+   gh run download
+   ```
+
+**Build Artifacts Include:**
+
+- `build-output.log`: Complete build output
+- `logs/`: Detailed build logs from scripts/xc.sh
+- `xcresult/`: Xcode result bundles (can be opened in Xcode on macOS for detailed analysis)
+- `BUILD-SUMMARY.txt`: Summary of build configuration and status
+
+**Workflow Features:**
+
+- **Inputs**: Choose Debug/Release, enable dev mode, skip app launch
+- **Fast caching**: SwiftPM packages cached for faster builds
+- **Readable logs**: Structured output with clear success/failure indicators
+- **Artifacts**: All logs and result bundles uploaded (retained for 7 days)
+- **On-demand only**: Workflow does NOT run on push/PR (use `macos-build.yml` for that)
+
+**Setup Requirements:**
+
+1. **GitHub CLI (recommended)**: Install from https://cli.github.com/
+   ```bash
+   # Authenticate with GitHub
+   gh auth login
+   ```
+
+2. **Repository access**: Ensure you have push access to trigger workflows
+
+**Troubleshooting:**
+
+- **"workflow not found"**: Ensure the workflow file is in the `main` branch (workflow_dispatch requires this)
+- **Authentication errors**: Run `gh auth status` to check your GitHub authentication
+- **Build failures**: Download the `xcresult` bundle and open it in Xcode on macOS for detailed diagnostics
+
+**Technical Details:**
+
+- **Runner**: `macos-15` (macOS Sequoia)
+- **Xcode**: Latest stable version on GitHub runners
+- **Timeout**: 30 minutes per build
+- **Cost**: macOS runners use GitHub Actions minutes (10x multiplier vs Linux)
+
+**Workflow File:** `.github/workflows/on-demand-build.yml`
+
+---
+
+### macOS Build Commands
+
 Common commands:
 - Build and run: `make build` or `bash scripts/xc.sh build`
 - Build and run with developer mode: `bash scripts/xc.sh --dev build` (enables test buttons)
