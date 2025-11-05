@@ -26,12 +26,21 @@ final class TimelineIntegration {
                 }
             }
         } catch {
-            log.warning("TimelineIntegration: monitor did not start within timeout; continuing defensively")
+            log.error("TimelineIntegration: monitor did not start within timeout; aborting activation")
+            // DO NOT set isActive = true on failure - allows retry
+            return
+        }
+
+        // Verify monitor actually started before setting isActive
+        guard ConversationMonitor.shared.isMonitoring else {
+            log.error("TimelineIntegration: monitor reported ready but isMonitoring=false; aborting")
+            return
         }
 
         isActive = true
         registerNotifications()
         ConversationMonitor.shared.requestImmediateRefresh(trigger: .manualHotkey)
+        log.info("Timeline integration activated successfully")
     }
 
     // Helper for timeout-bounded async operations

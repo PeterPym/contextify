@@ -21,4 +21,6 @@ public enum ProjectRootDidChangeKeys {
   public static let path = "path"
   /// Source of the change (e.g., "switchToProject", "setProjectRoot", "startup")
   public static let source = "source"
+  /// Nonce for self-suppression in notification observers (replaces time-window approach)
+  public static let nonce = "nonce"
 }
