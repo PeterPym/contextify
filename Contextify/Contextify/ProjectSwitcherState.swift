@@ -68,8 +68,10 @@ public final class ProjectSwitcherState {
   }
 
   deinit {
-    // Note: projectRootObserver cleanup happens in stop() (MainActor-isolated)
-    // NotificationCenter automatically removes all observers when self is deallocated
+    // Cancel any pending tasks (safety net for tests/non-singleton usage)
+    projectObservationTask?.cancel()
+    coalesceTask?.cancel()
+    // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
   /// Initialize with explicit orchestrator (for testing)
@@ -165,9 +167,6 @@ public final class ProjectSwitcherState {
       }
       log.warning("ProjectSwitcher: event stream ended")
     }
-
-    // Install observer synchronously on the main thread (no async gap).
-    installProjectRootObserver()
   }
 
   /// Stop monitoring
@@ -199,25 +198,6 @@ public final class ProjectSwitcherState {
     await refreshProjects()
 
     log.info("✅ Active project updated to: \(context.id, privacy: .public)")
-  }
-
-  /// Handle project root change notification from HUDViewModel (legacy support)
-  private func handleProjectRootChange(_ projectURL: URL) async {
-    guard let orchestrator = orchestrator else { return }
-
-    do {
-      let canon = projectURL.resolvingSymlinksInPath().path
-      // Create-or-get to guarantee DB identity exists
-      let pid = try orchestrator.getOrCreateProject(
-        name: URL(fileURLWithPath: canon).lastPathComponent,
-        rootPath: canon
-      )
-      log.info("ProjectSwitcher: Activating project id=\(pid, privacy: .public) for path \(canon, privacy: .public)")
-      await switchToProject(pid)
-    } catch {
-      let errorDesc = error.localizedDescription
-      log.error("ProjectSwitcher: Failed to handle project root change: \(errorDesc)")
-    }
   }
 
   // MARK: - Public API
@@ -606,62 +586,6 @@ public final class ProjectSwitcherState {
   /// - Returns: Canonical absolute path
   private func canonicalPath(_ url: URL) -> String {
     url.resolvingSymlinksInPath().standardizedFileURL.path
-  }
-
-  @MainActor
-  private func installProjectRootObserver() {
-    guard projectRootObserver == nil else { return }
-    projectRootObserver = NotificationCenter.default.addObserver(
-      forName: .projectRootDidChange,
-      object: nil,
-      queue: .main
-    ) { [weak self] notification in
-      guard let self else { return }
-
-      // Nonce-based self-suppression to avoid feedback loops
-      if let nonce = notification.userInfo?[ProjectRootDidChangeKeys.nonce] as? String,
-         self.suppressedNonces.contains(nonce) {
-        log.debug("📭 Suppressing self-originated notification (nonce=\(nonce))")
-        return
-      }
-
-      // Prefer URL from userInfo, then object as URL, then String -> URL
-      let now = CFAbsoluteTimeGetCurrent()
-      let userURL = notification.userInfo?[ProjectRootDidChangeKeys.url] as? URL
-      let objURL = notification.object as? URL
-      let strURL = (notification.object as? String).map { URL(fileURLWithPath: $0) }
-
-      guard let projectURL = userURL ?? objURL ?? strURL else {
-        #if DEBUG
-        let objectType = type(of: notification.object)
-        log.warning("📭 projectRootDidChange missing URL (object=\(String(describing: objectType)))")
-        assertionFailure("projectRootDidChange missing URL")
-        #endif
-        return
-      }
-
-      // Canonicalize path to match emitter (nit #1)
-      let path = self.canonicalPath(projectURL)
-
-      // Coalesce identical path within small window
-      if self.lastHandledPath == path && (now - self.lastHandledAt) * 1000 < self.debounceMs {
-        log.debug("📭 Coalescing duplicate notification for: \(path)")
-        return
-      }
-      self.lastHandledPath = path
-      self.lastHandledAt = now
-
-      // Log source for diagnostics
-      if let source = notification.userInfo?[ProjectRootDidChangeKeys.source] as? String {
-        log.info("📬 Received .projectRootDidChange src=\(source) path=\(path)")
-      } else {
-        log.info("📬 Received .projectRootDidChange path=\(path)")
-      }
-
-      Task { @MainActor in
-        await self.handleProjectRootChange(projectURL)
-      }
-    }
   }
 
   @MainActor

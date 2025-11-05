@@ -15,6 +15,7 @@ struct ProjectContext: Hashable, Sendable {
   }
 
   /// Creates ProjectContext from the current HUDViewModel state
+  @available(*, deprecated, message: "Use StartupCoordinator.shared.current instead. This method queries HUDViewModel which may be stale during startup.")
   static func current() -> ProjectContext? {
     guard let projectURL = HUDViewModel.shared.projectRootURL else {
       return nil

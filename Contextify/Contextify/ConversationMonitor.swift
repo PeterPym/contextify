@@ -680,6 +680,9 @@ final class ConversationMonitor {
                 saveCursor()
             }
 
+            // Route through policy engine to update follow state and emit system events
+            await pinAndSwitch(session)
+
             currentSessionId = session.identifier
             lastUpdate = Date()
 
@@ -1145,7 +1148,7 @@ final class ConversationMonitor {
             updateDirty = false
 
             guard let projectId = currentProjectId, orchestrator != nil else {
-                log.warning("⚠️ processIncrementalUpdate: No projectId or orchestrator - aborting")
+                log.debug("processIncrementalUpdate: No projectId or orchestrator yet (normal during startup)")
                 return
             }
 
@@ -1302,10 +1305,16 @@ final class ConversationMonitor {
         if Task.isCancelled { return }
 
         // Find JSONL files on disk for THIS project only
-        // HUDViewModel is @MainActor; hop correctly to read the property
-        guard let projectRoot = await MainActor.run(body: {
-            HUDViewModel.shared.projectRootURL
-        }) else { return }
+        // Use coordinator context as single source of truth
+        guard let context = await MainActor.run(body: {
+            StartupCoordinator.shared.current
+        }) else {
+            await MainActor.run {
+                log.debug("discoverNewTranscripts: no coordinator context available")
+            }
+            return
+        }
+        let projectRoot = URL(fileURLWithPath: context.path)
 
         // Build expected directory name: Claude Code mangles paths like:
         // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
@@ -1771,9 +1780,14 @@ final class ConversationMonitor {
     /// P2-3: NotificationCenter only (no Combine PassthroughSubject)
     @MainActor
     private func publishTypedEvent(to: SessionKey, reason: SwitchReason) {
-        // P2: Use currentProjectId directly instead of querying HUDViewModel
+        // Map project ID to filesystem path using coordinator
+        guard let context = StartupCoordinator.shared.current else {
+            log.warning("Cannot publish event: no coordinator context available")
+            return
+        }
+
         let evt = ActiveSessionDidChangeEvent(
-            projectPath: currentProjectId ?? "",
+            projectPath: context.path,
             sessionId: to.sessionId,
             provider: to.provider.rawValue,
             mode: (followMode == .automatic ? "automatic" : "manual"),

@@ -858,7 +858,7 @@ struct TranscriptInventoryView: View {
 
     // Get project root from HUDViewModel (same pattern as ConversationMonitor)
     guard let projectRoot = HUDViewModel.shared.projectRootURL else {
-      log.warning("Cannot persist sessions: no project root set")
+      log.debug("Cannot persist sessions: coordinator context not yet available (normal during startup)")
       return
     }
 

@@ -25,7 +25,11 @@ final class ProjectsViewModel {
   // Event observation
   @ObservationIgnored private var eventObservationTask: Task<Void, Never>?
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
-  @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
+  @ObservationIgnored private var coordinatorObservationTask: Task<Void, Never>?
+
+  // Canonical active project (from StartupCoordinator)
+  private(set) var currentProjectId: String?
+  private(set) var currentProjectPath: String?
 
   init(discoveryService: ProjectDiscoveryService, hudModel: HUDViewModel) {
     self.discoveryService = discoveryService
@@ -43,18 +47,14 @@ final class ProjectsViewModel {
     // Start observing project events for auto-refresh
     startObservingEvents()
 
-    // Listen for project changes from main window
-    startObservingProjectChanges()
+    // Subscribe to StartupCoordinator as single source of truth
+    startObservingCoordinator()
   }
 
   nonisolated deinit {
     eventObservationTask?.cancel()
     refreshTask?.cancel()
-    MainActor.assumeIsolated {
-      if let token = projectRootObserver {
-        NotificationCenter.default.removeObserver(token)
-      }
-    }
+    coordinatorObservationTask?.cancel()
   }
 
   // MARK: - Actions
@@ -74,41 +74,8 @@ final class ProjectsViewModel {
       // Phase 1: Discovery
       logger.info("Starting project discovery")
 
-      // Get current project path - check multiple sources to handle initialization timing
-      let currentPath: String?
-
-      // First, try ProjectSwitcherState if it's been initialized (MainActor read)
-      if let activeId = await MainActor.run(body: { ProjectSwitcherState.shared.activeProjectId }) {
-        do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-          let projects = try orchestrator.listProjects()
-          currentPath = projects.first(where: { $0.id == activeId })?.rootPath
-          logger.debug("Using active project from ProjectSwitcherState: \(currentPath ?? "nil")")
-        } catch {
-          logger.warning("Failed to get active project path from database: \(error.localizedDescription)")
-          currentPath = hudModel.projectRootURL?.path
-        }
-      } else if let hudPath = hudModel.projectRootURL?.path {
-        // Fall back to HUD model
-        currentPath = hudPath
-        logger.debug("Using project from HUDViewModel: \(hudPath)")
-      } else {
-        // Last resort: check database for most recently viewed project
-        do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-          let projects = try orchestrator.listProjects()
-          // Sort by last_viewed_ts to find the current project
-          let mostRecent = projects
-            .filter { $0.lastViewedTs != nil }
-            .sorted { ($0.lastViewedTs ?? 0) > ($1.lastViewedTs ?? 0) }
-            .first
-          currentPath = mostRecent?.rootPath
-          logger.debug("Using most recently viewed project from database: \(currentPath ?? "nil")")
-        } catch {
-          logger.warning("Failed to get most recent project from database: \(error.localizedDescription)")
-          currentPath = nil
-        }
-      }
+      // Canonical: coordinator context; last resort DB MRU
+      let currentPath = try await resolveCurrentProjectPath()
 
       let discovered = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
 
@@ -127,7 +94,7 @@ final class ProjectsViewModel {
           }
         }
 
-        // Refresh metadata after ingestion
+        // Refresh metadata after ingestion using canonical currentPath
         let refreshed = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
         projects = refreshed
       }
@@ -146,16 +113,18 @@ final class ProjectsViewModel {
 
   /// Sets a project as the current project
   func setAsCurrent(_ project: DiscoveredProject) {
-    logger.info("Setting current project: \(project.name)")
-
-    // Update HUD model
-    _ = hudModel.setProjectRoot(url: project.path)
-
-    // Refresh projects to update isCurrent flag
+    logger.info("Setting current project via coordinator: \(project.name)")
+    let pathString = project.path.path
     Task {
-      let currentPath = hudModel.projectRootURL?.path
-      if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
-        projects = refreshed
+      do {
+        try await StartupCoordinator.shared.switchProject(to: pathString)
+        // isCurrent will update via coordinator subscription; do a lightweight refresh for responsiveness
+        if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: pathString) {
+          projects = refreshed
+        }
+      } catch {
+        logger.error("Coordinator switch failed: \(error.localizedDescription)")
+        errorMessage = "Failed to switch project: \(error.localizedDescription)"
       }
     }
   }
@@ -188,40 +157,21 @@ final class ProjectsViewModel {
     }
   }
 
-  private func startObservingProjectChanges() {
-    projectRootObserver = NotificationCenter.default.addObserver(
-      forName: .projectRootDidChange,
-      object: nil,
-      queue: .main
-    ) { [weak self] _ in
+  private func startObservingCoordinator() {
+    coordinatorObservationTask = Task { @MainActor [weak self] in
       guard let self else { return }
-      logger.debug("ProjectsViewModel: received project change notification, refreshing isCurrent flags")
-
-      // Refresh the project list to update isCurrent flags
-      Task { @MainActor [weak self] in
-        guard let self else { return }
+      logger.info("ProjectsViewModel: subscribing to StartupCoordinator updates")
+      for await context in StartupCoordinator.shared.updates {
+        self.currentProjectId = context.id
+        self.currentProjectPath = context.path
         await self.refreshCurrentProjectFlag()
       }
+      logger.warning("ProjectsViewModel: coordinator update stream ended")
     }
   }
 
   private func refreshCurrentProjectFlag() async {
-    // Lightweight refresh - just re-discover to update isCurrent flags
-    let currentPath: String?
-
-    // Use same logic as discoverProjects to get current path (MainActor read)
-    if let activeId = await MainActor.run(body: { ProjectSwitcherState.shared.activeProjectId }) {
-      do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        let projects = try orchestrator.listProjects()
-        currentPath = projects.first(where: { $0.id == activeId })?.rootPath
-      } catch {
-        currentPath = hudModel.projectRootURL?.path
-      }
-    } else {
-      currentPath = hudModel.projectRootURL?.path
-    }
-
+    let currentPath = try? await resolveCurrentProjectPath()
     if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
       projects = refreshed
       logger.debug("ProjectsViewModel: refreshed isCurrent flags after project change")
@@ -240,13 +190,25 @@ final class ProjectsViewModel {
       try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
       guard let self else { return }
 
-      // Refresh metadata for all projects (lightweight query)
-      let currentPath = self.hudModel.projectRootURL?.path
+      // Refresh metadata for all projects using coordinator-derived path
+      let currentPath = try? await self.resolveCurrentProjectPath()
       if let refreshed = try? await self.discoveryService.discoverAllProjects(currentProjectPath: currentPath) {
         self.projects = refreshed
         let reason = event.kind == .reordered ? "reorder" : "transcript update"
         logger.debug("ProjectsViewModel: refreshed project list after \(reason)")
       }
     }
+  }
+
+  // MARK: - Helpers
+  private func resolveCurrentProjectPath() async throws -> String? {
+    if let path = currentProjectPath { return path }
+    if let ctx = StartupCoordinator.shared.current { return ctx.path }
+    // Last resort: DB MRU (stable and deterministic)
+    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+    let all = try orchestrator.listProjects()
+    return all
+      .sorted { ($0.lastViewedTs ?? 0) > ($1.lastViewedTs ?? 0) }
+      .first?.rootPath
   }
 }
