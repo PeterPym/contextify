@@ -255,6 +255,7 @@ public final class DatabaseManager: @unchecked Sendable {
   }
 
   /// Runs VACUUM if bloat exceeds threshold
+  /// Note: VACUUM cannot run while other transactions are active
   public func vacuumIfNeeded() throws {
     guard let pool = _pool else { return }
 
@@ -273,8 +274,15 @@ public final class DatabaseManager: @unchecked Sendable {
 
     if bloat > 0.25 {
       log.info("VACUUM: \(Int(bloat * 100))% bloat")
-      try pool.write { db in
-        try db.execute(sql: "VACUUM")
+      do {
+        try pool.write { db in
+          try db.execute(sql: "VACUUM")
+        }
+        log.info("VACUUM completed successfully")
+      } catch {
+        // VACUUM fails if there are active transactions - this is normal during discovery
+        // Skip silently and try again later
+        log.debug("VACUUM skipped: \(error.localizedDescription) (will retry later)")
       }
     }
   }

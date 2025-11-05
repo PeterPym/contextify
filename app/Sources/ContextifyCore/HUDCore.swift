@@ -580,7 +580,7 @@ public final class HUDViewModel {
   ///   - nonce: Optional nonce for self-suppression in notification observers
   @MainActor
   public func switchToProject(_ projectPath: String, nonce: String? = nil) {
-    // Update project root URL directly (bypass validation)
+    // Update project root URL immediately (optimistic update for UI responsiveness)
     let url = URL(fileURLWithPath: projectPath)
     let resolved = url.resolvingSymlinksInPath()
     self.projectRootURL = resolved
@@ -588,42 +588,38 @@ public final class HUDViewModel {
     // Clear any previous alerts
     self.alertMessage = nil
 
-    // Detect git info (find .git root if it exists)
-    // TODO: Projects discovered from transcript roots should have git repos - investigate
-    // why some might not have .git directories or are unreadable
-    if let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: resolved) {
-      // Has git - update branch info
-      let info = GitRepositoryResolver.computeGitInfo(
-        environment: ProcessInfo.processInfo.environment,
-        persistedPath: resolved.path,
-        currentRoot: resolved,
-        autoPersist: false
-      )
-      self.branch = info.branch ?? "—"
-      self.projectRootURL = gitRoot
-      HUDPreferences.setPersistedRoot(gitRoot.path)
-    } else {
-      // No git - just use the path as-is
-      self.branch = "—"
-      HUDPreferences.setPersistedRoot(resolved.path)
-    }
+    // Post notification immediately so UI updates (with nonce if provided)
+    postProjectRootDidChange(resolved, source: "switchToProject", nonce: nonce)
 
-    // Update watcher for new git location (or clear if no git)
-    updateHeadWatcher()
+    // Detect git info async to avoid blocking UI (6+ fileExists() calls)
+    Task.detached(priority: .userInitiated) {
+      // Do heavy file I/O off main thread
+      let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: resolved)
+      let env = ProcessInfo.processInfo.environment
 
-    // Notify coordinator of user-initiated project switch
-    Task {
-      let finalPath = (self.projectRootURL ?? resolved).path
-      do {
-        try await StartupCoordinator.shared.switchProject(to: finalPath)
-        lifecycleLog.info("✅ Coordinator notified of project switch to: \(finalPath)")
-      } catch {
-        lifecycleLog.error("❌ Failed to notify coordinator: \(error.localizedDescription)")
+      await MainActor.run { [weak self] in
+        guard let self else { return }
+        // Update UI with git results
+        if let gitRoot = gitRoot {
+          let info = GitRepositoryResolver.computeGitInfo(
+            environment: env,
+            persistedPath: resolved.path,
+            currentRoot: resolved,
+            autoPersist: false
+          )
+          self.branch = info.branch ?? "—"
+          self.projectRootURL = gitRoot
+          HUDPreferences.setPersistedRoot(gitRoot.path)
+        } else {
+          // No git - keep the resolved path
+          self.branch = "—"
+          HUDPreferences.setPersistedRoot(resolved.path)
+        }
+
+        // Update watcher for new git location (or clear if no git)
+        self.updateHeadWatcher()
       }
     }
-
-    // Post notification AFTER state is updated (with nonce if provided) - legacy support
-    postProjectRootDidChange(self.projectRootURL ?? resolved, source: "switchToProject", nonce: nonce)
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {

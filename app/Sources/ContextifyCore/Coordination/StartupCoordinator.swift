@@ -246,18 +246,20 @@ public final class StartupCoordinator {
         }
 
         // Priority 2: Bookmark (sandboxed builds)
-        if let bookmarkURL = await Task.detached {
+        let bookmarkURL = await Task.detached {
             return HUDPreferences.resolveBookmark()
-        }.value {
+        }.value
+        if let bookmarkURL {
             let path = bookmarkURL.resolvingSymlinksInPath().path
             log.debug("📍 Using bookmark: \(path, privacy: .public)")
             return path
         }
 
         // Priority 3: Persisted path (UserDefaults)
-        if let persistedPath = await Task.detached {
+        let persistedPath = await Task.detached {
             return HUDPreferences.getPersistedRoot()
-        }.value, !persistedPath.isEmpty {
+        }.value
+        if let persistedPath, !persistedPath.isEmpty {
             log.debug("📍 Using persisted path: \(persistedPath, privacy: .public)")
             return persistedPath
         }

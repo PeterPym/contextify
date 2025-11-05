@@ -292,8 +292,11 @@ final class ConversationMonitor {
                 self.log.info("✅ Project \(projectId) verified in database")
 
                 // 3. Shutdown old cache miss generator (if exists) before creating new one
+                // Run shutdown in background to avoid blocking UI during project switches (8-10s lag)
                 if let oldGenerator = self.cacheMissGenerator {
-                    await oldGenerator.shutdown()  // Actor-isolated method requires await
+                    Task.detached(priority: .utility) {
+                        await oldGenerator.shutdown()
+                    }
                 }
                 self.cacheMissGenerator = nil  // Clear before creating new
                 self.isCacheGeneratorActive = false
