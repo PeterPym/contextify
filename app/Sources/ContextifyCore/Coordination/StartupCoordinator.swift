@@ -8,6 +8,7 @@
 
 import Foundation
 import OSLog
+import Observation
 
 /// Error types for startup coordination.
 public enum StartupError: Error, Equatable {
@@ -81,8 +82,8 @@ public final class StartupCoordinator {
     /// Whether coordinator has been started.
     @ObservationIgnored private var isStarted = false
 
-    /// Last published context (for deduplication).
-    @ObservationIgnored private var lastPublishedId: String?
+    /// Last published context signature (for deduplication by id + path).
+    @ObservationIgnored private var lastSignature: (id: String, path: String)?
 
     // MARK: - Initialization
 
@@ -119,7 +120,6 @@ public final class StartupCoordinator {
             log.warning("StartupCoordinator.start() called while already started (no-op)")
             return
         }
-        isStarted = true
 
         log.info("🚀 StartupCoordinator starting...")
 
@@ -137,9 +137,10 @@ public final class StartupCoordinator {
             log.debug("🌿 Git branch: \(branch, privacy: .public)")
         }
 
-        // Phase 4: Get bookmark data
+        // Phase 4: Create bookmark from resolved path (not stale prefs)
         let bookmark = await Task.detached {
-            return HUDPreferences.resolveBookmark()?.bookmarkData
+            let url = URL(fileURLWithPath: resolvedPath).resolvingSymlinksInPath()
+            return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         }.value
 
         // Phase 5: Create context
@@ -153,6 +154,9 @@ public final class StartupCoordinator {
 
         // Phase 6: Publish
         await publishContext(context)
+
+        // Mark started only after we have a valid, published context
+        isStarted = true
 
         log.notice("✅ StartupCoordinator ready: \(context.displayName) (id: \(projectId, privacy: .public))")
     }
@@ -215,9 +219,10 @@ public final class StartupCoordinator {
         // Resolve git branch
         let branch = await resolveGitBranch(path: path)
 
-        // Get bookmark data
+        // Create bookmark from switch target path (not stale prefs)
         let bookmark = await Task.detached {
-            return HUDPreferences.resolveBookmark()?.bookmarkData
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         }.value
 
         // Create new context
@@ -341,17 +346,17 @@ public final class StartupCoordinator {
     ///
     /// - Parameter context: New active project context
     private func publishContext(_ context: ActiveProjectContext) async {
-        // Deduplicate by project ID
-        if lastPublishedId == context.id {
+        // Deduplicate by (id, path) tuple - catches both ID and path changes
+        if let sig = lastSignature, sig.id == context.id, sig.path == context.path {
             log.debug("🔇 Skipping duplicate context publish for project: \(context.id, privacy: .public)")
             return
         }
 
-        lastPublishedId = context.id
+        lastSignature = (id: context.id, path: context.path)
         self.current = context
         continuation.yield(context)
 
-        log.info("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public))")
+        log.info("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
     }
 }
 

@@ -55,6 +55,7 @@ public final class ProjectSwitcherState {
   // Coalescing state for batch unread updates
   @ObservationIgnored private var pendingUnread: Set<String> = []
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
+  @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
 
   // Notification coalescing to prevent duplicate/oscillating notifications
   @ObservationIgnored private var lastHandledPath: String?
@@ -71,6 +72,7 @@ public final class ProjectSwitcherState {
     // Cancel any pending tasks (safety net for tests/non-singleton usage)
     projectObservationTask?.cancel()
     coalesceTask?.cancel()
+    coordinatorTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -118,7 +120,7 @@ public final class ProjectSwitcherState {
     }
 
     // Subscribe to coordinator updates for project context changes
-    Task { @MainActor [weak self] in
+    coordinatorTask = Task { @MainActor [weak self] in
       guard let self else { return }
       for await context in StartupCoordinator.shared.updates {
         await self.handleContextUpdate(context)

@@ -200,6 +200,7 @@ final class ConversationMonitor {
     // v23: Active session follow state
     @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
     @ObservationIgnored private var policyEvalTask: Task<Void, Never>?  // P1-2: Debounced policy evaluation
+    @ObservationIgnored private var coordinatorTask: Task<Void, Never>?  // Coordinator subscription task
     @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
     @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
     private(set) var followMode: FollowMode = .automatic  // P0-4: Observable for UI
@@ -235,7 +236,7 @@ final class ConversationMonitor {
     /// Subscribe to coordinator updates for project switching
     @MainActor
     private func subscribeToContextUpdates() {
-        Task { @MainActor [weak self] in
+        coordinatorTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for await context in StartupCoordinator.shared.updates {
                 await self.handleContextUpdate(context)
@@ -246,6 +247,9 @@ final class ConversationMonitor {
     deinit {
         // Cancel any pending debounce task
         debounceTask?.cancel()
+
+        // Cancel coordinator subscription task
+        coordinatorTask?.cancel()
 
         // Cancel background task group (health monitoring, polling, etc.)
         backgroundTasks?.cancel()
