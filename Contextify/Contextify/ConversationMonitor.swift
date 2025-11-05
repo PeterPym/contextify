@@ -601,10 +601,28 @@ final class ConversationMonitor {
         log.debug("handleProjectRootChange: clearing entries")
         clearEntries()
 
-        // Restart monitoring with new project
+        // Restart monitoring with explicit project id to avoid identity races
         log.debug("handleProjectRootChange: restarting monitoring")
-        startMonitoring()
-        log.info("✅ Project root change complete - monitoring restarted")
+        guard let url = HUDViewModel.shared.projectRootURL else {
+            log.error("handleProjectRootChange: no HUD project URL; aborting restart")
+            return
+        }
+        Task { @MainActor in
+            do {
+                let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
+                    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                    return try orchestrator.getOrCreateProject(
+                        name: url.lastPathComponent,
+                        rootPath: url.path
+                    )
+                }.value
+                startMonitoring(projectId: pid)
+                log.info("✅ Project root change complete - monitoring restarted")
+            } catch {
+                lastError = "Failed to resolve project id for restart: \(error.localizedDescription)"
+                log.error("handleProjectRootChange: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     @MainActor
