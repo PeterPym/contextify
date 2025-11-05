@@ -574,12 +574,32 @@ public final class HUDViewModel {
     )
   }
 
-  /// Switch to a different project
+  /// Switch to a different project (fire-and-forget).
+  ///
+  /// **Eventually Consistent:** This method notifies the coordinator asynchronously.
+  /// For deterministic flows, use `switchToProjectAsync(_:nonce:)` instead.
+  ///
   /// - Parameters:
   ///   - projectPath: Absolute path to the new project root
   ///   - nonce: Optional nonce for self-suppression in notification observers
   @MainActor
   public func switchToProject(_ projectPath: String, nonce: String? = nil) {
+    Task {
+      await switchToProjectAsync(projectPath, nonce: nonce)
+    }
+  }
+
+  /// Awaitable variant of switchToProject for deterministic callers (CXT-2).
+  ///
+  /// This method updates HUD state and **awaits** the coordinator switch before returning.
+  /// Ensures `StartupCoordinator.current` reflects the new project ID/path immediately.
+  ///
+  /// - Parameters:
+  ///   - projectPath: Absolute path to the new project root
+  ///   - nonce: Optional nonce for self-suppression in notification observers
+  /// - Note: Preferred for keyboard shortcuts, onboarding, and other deterministic flows
+  @MainActor
+  public func switchToProjectAsync(_ projectPath: String, nonce: String? = nil) async {
     // Update project root URL immediately (optimistic update for UI responsiveness)
     let url = URL(fileURLWithPath: projectPath)
     let resolved = url.resolvingSymlinksInPath()
@@ -592,7 +612,7 @@ public final class HUDViewModel {
     postProjectRootDidChange(resolved, source: "switchToProject", nonce: nonce)
 
     // Detect git info async to avoid blocking UI (6+ fileExists() calls)
-    Task.detached(priority: .userInitiated) {
+    await Task.detached(priority: .userInitiated) {
       // Do heavy file I/O off main thread
       let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: resolved)
       let env = ProcessInfo.processInfo.environment
@@ -618,17 +638,16 @@ public final class HUDViewModel {
 
         // Update watcher for new git location (or clear if no git)
         self.updateHeadWatcher()
-
-        // Notify coordinator with the final path (git root if present)
-        let finalPath = (self.projectRootURL ?? resolved).path
-        Task { @MainActor in
-          do {
-            try await StartupCoordinator.shared.switchProject(to: finalPath)
-          } catch {
-            lifecycleLog.error("Coordinator switch failed: \(error.localizedDescription, privacy: .public)")
-          }
-        }
       }
+    }.value
+
+    // Notify coordinator with the final path (git root if present) - AWAIT for determinism
+    let finalPath = (self.projectRootURL ?? resolved).path
+    do {
+      try await StartupCoordinator.shared.switchProject(to: finalPath)
+      lifecycleLog.info("✅ Coordinator switch complete: \(finalPath)")
+    } catch {
+      lifecycleLog.error("❌ Coordinator switch failed: \(error.localizedDescription, privacy: .public)")
     }
   }
 
