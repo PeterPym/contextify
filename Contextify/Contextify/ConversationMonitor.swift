@@ -201,6 +201,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
     @ObservationIgnored private var policyEvalTask: Task<Void, Never>?  // P1-2: Debounced policy evaluation
     @ObservationIgnored private var coordinatorTask: Task<Void, Never>?  // Coordinator subscription task
+    @ObservationIgnored private var generatorShutdownTask: Task<Void, Never>?  // Exclusive generator handoff
     @ObservationIgnored private var sessionsLoaded = false  // Gate for policy reconciliation
     @ObservationIgnored private var isReadyForUpdates = false  // Gate for incremental updates
     private(set) var followMode: FollowMode = .automatic  // P0-4: Observable for UI
@@ -298,14 +299,20 @@ final class ConversationMonitor {
                 // 3. Shutdown old cache miss generator (if exists) before creating new one
                 // Run shutdown in background to avoid blocking UI during project switches (8-10s lag)
                 if let oldGenerator = self.cacheMissGenerator {
-                    Task.detached(priority: .utility) {
+                    self.generatorShutdownTask = Task(priority: .utility) {
                         await oldGenerator.shutdown()
                     }
                 }
                 self.cacheMissGenerator = nil  // Clear before creating new
                 self.isCacheGeneratorActive = false
 
-                // Initialize new cache miss generator for this project
+                // 4. Await previous generator shutdown (ensure exclusive handoff)
+                if let shutdownTask = self.generatorShutdownTask {
+                    _ = await shutdownTask.value
+                    self.generatorShutdownTask = nil
+                }
+
+                // 5. Initialize new cache miss generator for this project
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
                 self.isCacheGeneratorActive = true
 
@@ -1794,6 +1801,7 @@ final class ConversationMonitor {
         }
 
         let evt = ActiveSessionDidChangeEvent(
+            projectId: context.id,
             projectPath: context.path,
             sessionId: to.sessionId,
             provider: to.provider.rawValue,

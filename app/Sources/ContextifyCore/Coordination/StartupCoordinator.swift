@@ -289,8 +289,13 @@ public final class StartupCoordinator {
     /// - Returns: Stable project ID from database
     /// - Throws: `StartupError.projectCreationFailed` if DB operation fails
     private func ensureProjectInDatabase(path: String) async throws -> String {
-        // Run database operation on background thread
-        let result = await Task.detached(priority: .userInitiated) { () -> Result<String, Error> in
+        // Run database operation on background thread (inherits cancellation)
+        let result = await Task(priority: .userInitiated) { () -> Result<String, Error> in
+            // Check early cancellation
+            if Task.isCancelled {
+                return .failure(CancellationError())
+            }
+
             do {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
                 let url = URL(fileURLWithPath: path)

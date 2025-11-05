@@ -618,6 +618,16 @@ public final class HUDViewModel {
 
         // Update watcher for new git location (or clear if no git)
         self.updateHeadWatcher()
+
+        // Notify coordinator with the final path (git root if present)
+        let finalPath = (self.projectRootURL ?? resolved).path
+        Task { @MainActor in
+          do {
+            try await StartupCoordinator.shared.switchProject(to: finalPath)
+          } catch {
+            lifecycleLog.error("Coordinator switch failed: \(error.localizedDescription, privacy: .public)")
+          }
+        }
       }
     }
   }

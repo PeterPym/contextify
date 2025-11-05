@@ -3,7 +3,8 @@ import Foundation
 /// Typed event for active session changes
 /// P2: Published via NotificationCenter (no Combine dependency)
 public struct ActiveSessionDidChangeEvent: Sendable {
-  public let projectPath: String
+  public let projectId: String     // Stable DB primary key
+  public let projectPath: String   // Filesystem path (for display)
   public let sessionId: String
   public let provider: String
   public let mode: String       // "automatic" | "manual"
@@ -11,6 +12,7 @@ public struct ActiveSessionDidChangeEvent: Sendable {
   public let timestamp: Date
 
   public init(
+    projectId: String,
     projectPath: String,
     sessionId: String,
     provider: String,
@@ -18,6 +20,7 @@ public struct ActiveSessionDidChangeEvent: Sendable {
     reason: String,
     timestamp: Date
   ) {
+    self.projectId = projectId
     self.projectPath = projectPath
     self.sessionId = sessionId
     self.provider = provider
