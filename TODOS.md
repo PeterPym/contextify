@@ -1,5 +1,41 @@
 # TODO: Project Switcher & Multi-Project Mode
 
+## P0 Architecture Improvements
+
+### 0. Startup Coordinator Refactor
+**Status:** Planned - Tactical fixes merged, architectural refactor pending
+**Spec:** `build/notes/feature-specs/startup-coordinator/`
+**Effort:** 20-28 hours (2.5-3.5 dev days)
+
+**Why This Matters:**
+The current startup pipeline has **three unsynchronized async paths** managing project identity (HUD, ProjectSwitcher, ConversationMonitor), leading to race conditions. While the `fix/timeline-startup-races` branch eliminated critical crashes and deadlocks with tactical fixes, the underlying architecture remains fragile.
+
+**Current State (After Tactical Fixes):**
+- ✅ No more startup crashes or deadlocks
+- ✅ Stable projectId passing eliminates identity races
+- ✅ Thread safety in TranscriptWatcher
+- ✅ Nonce-based feedback loop prevention
+- ⚠️ Still using NotificationCenter for coordination (timing-dependent)
+- ⚠️ Multiple sources of truth for project identity
+- ⚠️ No explicit startup ordering guarantees
+
+**What the Refactor Provides:**
+- **Single source of truth**: `StartupCoordinator.shared.current: ActiveProjectContext`
+- **Explicit dependencies**: AsyncStream replaces NotificationCenter guesswork
+- **Testability**: Mock coordinator, unit test startup sequences
+- **Foundation for features**: Multi-window, project templates, etc.
+- **Reduced complexity**: Eliminates timing suppression, deduplication logic
+
+**Next Steps:**
+1. Monitor tactical fixes in production (1-2 weeks)
+2. Create `feat/startup-coordinator` branch
+3. Implement 5-phase plan from spec
+4. Full test coverage (unit + integration + manual runbook)
+
+**Detailed Plan:** See `implementation-plan.md` in spec directory
+
+---
+
 ## P0 Bug Fixes
 
 ### 0. App Sandbox for App Store Submission
