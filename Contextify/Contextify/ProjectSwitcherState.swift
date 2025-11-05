@@ -191,7 +191,7 @@ public final class ProjectSwitcherState {
   /// Handle project context update from StartupCoordinator
   @MainActor
   private func handleContextUpdate(_ context: ActiveProjectContext) async {
-    log.info("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
+    log.debug("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
 
     // Coordinator guarantees project exists in DB, so just set activeProjectId directly
     activeProjectId = context.id
@@ -199,7 +199,7 @@ public final class ProjectSwitcherState {
     // Refresh project list to update UI
     await refreshProjects()
 
-    log.info("✅ Active project updated to: \(context.id, privacy: .public)")
+    log.debug("✅ Active project updated to: \(context.id, privacy: .public)")
   }
 
   // MARK: - Public API

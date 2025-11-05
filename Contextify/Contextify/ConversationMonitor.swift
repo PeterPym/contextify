@@ -591,7 +591,7 @@ final class ConversationMonitor {
     /// Handle project context update from StartupCoordinator
     @MainActor
     private func handleContextUpdate(_ context: ActiveProjectContext) async {
-        log.info("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
+        log.debug("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
 
         // Stop current monitoring
         log.debug("handleContextUpdate: stopping monitoring")

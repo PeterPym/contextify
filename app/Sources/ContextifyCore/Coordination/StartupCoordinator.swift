@@ -204,7 +204,7 @@ public final class StartupCoordinator {
     /// - Parameter path: Absolute path to new project root
     /// - Throws: `StartupError` if project creation fails
     public func switchProject(to path: String) async throws {
-        log.info("🔄 Switching to project: \(path, privacy: .public)")
+        log.notice("🔄 User-initiated switch to project: \(path, privacy: .public)")
 
         // Validate path exists
         var isDir: ObjCBool = false
@@ -361,7 +361,7 @@ public final class StartupCoordinator {
         self.current = context
         continuation.yield(context)
 
-        log.info("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
+        log.debug("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
     }
 }
 
