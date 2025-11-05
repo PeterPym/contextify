@@ -296,21 +296,26 @@ final class ConversationMonitor {
                 }
                 self.log.info("✅ Project \(projectId) verified in database")
 
-                // 3. Shutdown old cache miss generator (if exists) before creating new one
-                // Run shutdown in background to avoid blocking UI during project switches (8-10s lag)
+                // 3. Shutdown old cache miss generator with chained shutdown (CXT-1)
+                // CRITICAL: Capture previous shutdown task BEFORE creating new one to chain them
+                // On rapid A→B→C switches, this ensures A shuts down, THEN B, THEN C (serialized)
+                // Without chaining: A and B shutdown concurrently → SQLITE_BUSY
+                let previousShutdownTask = self.generatorShutdownTask
+
                 if let oldGenerator = self.cacheMissGenerator {
                     self.generatorShutdownTask = Task(priority: .utility) {
+                        // First await previous shutdown (if any)
+                        await previousShutdownTask?.value
+                        // Then shutdown this generator
                         await oldGenerator.shutdown()
                     }
                 }
                 self.cacheMissGenerator = nil  // Clear before creating new
                 self.isCacheGeneratorActive = false
 
-                // 4. Await previous generator shutdown (ensure exclusive handoff)
-                if let shutdownTask = self.generatorShutdownTask {
-                    _ = await shutdownTask.value
-                    self.generatorShutdownTask = nil
-                }
+                // 4. Await chained shutdown task (ensure exclusive handoff)
+                await self.generatorShutdownTask?.value
+                self.generatorShutdownTask = nil
 
                 // 5. Initialize new cache miss generator for this project
                 self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
