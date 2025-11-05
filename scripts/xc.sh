@@ -102,8 +102,18 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+# Check for build output formatters (prefer xcbeautify > xcpretty > raw)
+have_xcbeautify=0
 have_xcpretty=0
-if command -v xcpretty >/dev/null 2>&1; then
+xcbeautify_renderer=""
+
+if command -v xcbeautify >/dev/null 2>&1; then
+  have_xcbeautify=1
+  # Detect if running in GitHub Actions
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    xcbeautify_renderer="--renderer github-actions"
+  fi
+elif command -v xcpretty >/dev/null 2>&1; then
   have_xcpretty=1
 fi
 
@@ -113,8 +123,15 @@ quit_running_app() {
 }
 
 run_xcodebuild() {
-  if [[ $have_xcpretty -eq 1 ]]; then
+  # Use xcbeautify if available (best option, especially for CI)
+  if [[ $have_xcbeautify -eq 1 ]]; then
+    set -o pipefail
+    xcodebuild "$@" | xcbeautify $xcbeautify_renderer
+  # Fall back to xcpretty if available
+  elif [[ $have_xcpretty -eq 1 ]]; then
+    set -o pipefail
     xcodebuild "$@" | xcpretty
+  # No formatter available, use raw output
   else
     xcodebuild "$@"
   fi
@@ -125,6 +142,12 @@ case "$action" in
     rm -rf "$dd"
     ;;
   build|test)
+    if [[ ! -x dist/PythonVenv/bin/python3 ]]; then
+      echo "❌ Missing bundled Python venv at dist/PythonVenv" >&2
+      echo "   Run: python3 -m venv dist/PythonVenv && dist/PythonVenv/bin/python -m pip install --upgrade pip" >&2
+      echo "   Then: dist/PythonVenv/bin/python -m pip install 'iterm2==2.7'" >&2
+      exit 1
+    fi
     quit_running_app
     run_xcodebuild -project "$proj" -scheme "$scheme" \
       -configuration "$config" -destination "platform=macOS" \
