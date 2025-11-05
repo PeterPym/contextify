@@ -34,7 +34,9 @@ public final class TranscriptWatcher {
 
   /// Check if a transcript is being watched
   public func isWatching(transcriptId: String) -> Bool {
-    return watchers[transcriptId] != nil
+    return watcherQueue.sync {
+      watchers[transcriptId] != nil
+    }
   }
 
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
@@ -61,13 +63,13 @@ public final class TranscriptWatcher {
       )
       log.info("Initial ingestion complete for: \(transcriptId)")
     } catch {
-      log.error("Initial ingestion failed for \(transcriptId): \(error)")
+      log.error("Initial ingestion failed for \(transcriptId, privacy: .public): \(error, privacy: .public)")
       // Continue to set up watcher even if initial ingest fails
     }
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
-      log.error("Failed to open file for watching: \(fileURL.path)")
+      log.error("Failed to open file for watching: \(fileURL.path, privacy: .public)")
       return
     }
 
@@ -86,21 +88,27 @@ public final class TranscriptWatcher {
     }
 
     source.resume()
-    watchers[transcriptId] = source
+
+    // Thread-safe dictionary mutation
+    watcherQueue.sync {
+      watchers[transcriptId] = source
+    }
 
     log.debug("Started watching transcript: \(transcriptId)")
   }
 
   /// Stop watching a transcript
   public func stopWatching(transcriptId: String) {
-    if let source = watchers[transcriptId] {
-      source.cancel()
-      watchers.removeValue(forKey: transcriptId)
-    }
+    watcherQueue.sync {
+      if let source = watchers[transcriptId] {
+        source.cancel()
+        watchers.removeValue(forKey: transcriptId)
+      }
 
-    if let timer = debounceTimers[transcriptId] {
-      timer.invalidate()
-      debounceTimers.removeValue(forKey: transcriptId)
+      if let timer = debounceTimers[transcriptId] {
+        timer.invalidate()
+        debounceTimers.removeValue(forKey: transcriptId)
+      }
     }
 
     log.debug("Stopped watching transcript: \(transcriptId)")
@@ -108,22 +116,25 @@ public final class TranscriptWatcher {
 
   /// Stop all watchers
   public func stopAll() {
-    for transcriptId in Array(watchers.keys) {
+    let allKeys = watcherQueue.sync { Array(watchers.keys) }
+    for transcriptId in allKeys {
       stopWatching(transcriptId: transcriptId)
     }
   }
 
   /// Handle file change event (debounced)
   private func handleFileChange(transcriptId: String, fileURL: URL) {
-    // Cancel existing timer
-    debounceTimers[transcriptId]?.invalidate()
+    watcherQueue.sync {
+      // Cancel existing timer
+      debounceTimers[transcriptId]?.invalidate()
 
-    // Create new debounce timer
-    let timer = Timer.scheduledTimer(withTimeInterval: MonitorConfig.fileWatcherDebounce, repeats: false) { [weak self] _ in
-      self?.processFileChange(transcriptId: transcriptId, fileURL: fileURL)
+      // Create new debounce timer
+      let timer = Timer.scheduledTimer(withTimeInterval: MonitorConfig.fileWatcherDebounce, repeats: false) { [weak self] _ in
+        self?.processFileChange(transcriptId: transcriptId, fileURL: fileURL)
+      }
+
+      debounceTimers[transcriptId] = timer
     }
-
-    debounceTimers[transcriptId] = timer
   }
 
   /// Process file change after debounce (runs off main thread)

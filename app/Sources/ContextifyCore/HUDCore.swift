@@ -508,12 +508,9 @@ public final class HUDViewModel {
       discoveredRoot = canonical
     }
 
-    // Notify observers if we discovered a project root during startup
-    // Defer to next runloop tick to ensure ProjectSwitcherState observer is installed (nit #3)
+    // Notify observers synchronously on MainActor; startup is @MainActor-isolated
     if let root = discoveredRoot {
-      DispatchQueue.main.async { [weak self] in
-        self?.postProjectRootDidChange(root, source: "startup")
-      }
+      postProjectRootDidChange(root, source: "startup")
     }
   }
 
@@ -542,8 +539,9 @@ public final class HUDViewModel {
   /// - Parameters:
   ///   - url: Project root URL
   ///   - source: Source of the change (for diagnostics)
+  ///   - nonce: Optional nonce for self-suppression in notification observers
   @MainActor
-  private func postProjectRootDidChange(_ url: URL, source: String) {
+  private func postProjectRootDidChange(_ url: URL, source: String, nonce: String? = nil) {
     // Canonicalize path to avoid symlink flutter (nit #1)
     let path = canonicalPath(url)
 
@@ -560,22 +558,28 @@ public final class HUDViewModel {
     assert(path.hasPrefix("/"), "postProjectRootDidChange: path is not absolute")
     #endif
 
-    lifecycleLog.info("📢 HUDViewModel: .projectRootDidChange src=\(source) path=\(path)")
+    lifecycleLog.info("📢 HUDViewModel: .projectRootDidChange src=\(source) path=\(path) nonce=\(nonce ?? "nil")")
+    var userInfo: [String: Any] = [
+      ProjectRootDidChangeKeys.url: URL(fileURLWithPath: path),  // Use canonical path
+      ProjectRootDidChangeKeys.path: path,
+      ProjectRootDidChangeKeys.source: source
+    ]
+    if let nonce = nonce {
+      userInfo[ProjectRootDidChangeKeys.nonce] = nonce
+    }
     NotificationCenter.default.post(
       name: .projectRootDidChange,
       object: path,  // Keep String for backward compatibility
-      userInfo: [
-        ProjectRootDidChangeKeys.url: URL(fileURLWithPath: path),  // Use canonical path
-        ProjectRootDidChangeKeys.path: path,
-        ProjectRootDidChangeKeys.source: source
-      ]
+      userInfo: userInfo
     )
   }
 
   /// Switch to a different project
-  /// - Parameter projectPath: Absolute path to the new project root
+  /// - Parameters:
+  ///   - projectPath: Absolute path to the new project root
+  ///   - nonce: Optional nonce for self-suppression in notification observers
   @MainActor
-  public func switchToProject(_ projectPath: String) {
+  public func switchToProject(_ projectPath: String, nonce: String? = nil) {
     // Update project root URL directly (bypass validation)
     let url = URL(fileURLWithPath: projectPath)
     let resolved = url.resolvingSymlinksInPath()
@@ -607,8 +611,8 @@ public final class HUDViewModel {
     // Update watcher for new git location (or clear if no git)
     updateHeadWatcher()
 
-    // Post notification AFTER state is updated
-    postProjectRootDidChange(self.projectRootURL ?? resolved, source: "switchToProject")
+    // Post notification AFTER state is updated (with nonce if provided)
+    postProjectRootDidChange(self.projectRootURL ?? resolved, source: "switchToProject", nonce: nonce)
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {

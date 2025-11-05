@@ -3,7 +3,7 @@ import GRDB
 
 // MARK: - Project
 
-public struct Project: Codable, FetchableRecord, PersistableRecord {
+public struct Project: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var id: String
   public var name: String?
   public var rootPath: String
@@ -35,7 +35,7 @@ public struct Project: Codable, FetchableRecord, PersistableRecord {
 
 // MARK: - Transcript
 
-public struct Transcript: Codable, FetchableRecord, PersistableRecord {
+public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var id: String
   public var projectId: String
   public var filePath: String
@@ -99,7 +99,7 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord {
 /// ```
 ///
 /// See: `build/notes/technical-reference/sql-backend-architecture.md` (Schema Evolution section)
-public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord {
+public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var id: String
   public var transcriptId: String
   public var projectId: String  // ONLY denormalized field (performance optimization)
@@ -380,7 +380,7 @@ public struct TranscriptMetadataRecord: Codable, FetchableRecord, PersistableRec
 
 // MARK: - Parse Error
 
-public struct ParseError: Codable, FetchableRecord, PersistableRecord {
+public struct ParseError: Codable, FetchableRecord, PersistableRecord, Sendable {
   public var id: String
   public var transcriptId: String
   public var lineNumber: Int

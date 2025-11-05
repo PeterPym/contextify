@@ -59,7 +59,7 @@ public final class ProjectSwitcherState {
   // Notification coalescing to prevent duplicate/oscillating notifications
   @ObservationIgnored private var lastHandledPath: String?
   @ObservationIgnored private var lastHandledAt: CFAbsoluteTime = 0
-  @ObservationIgnored private var suppressExternalNotificationsUntil: CFAbsoluteTime = 0
+  @ObservationIgnored private var suppressedNonces: Set<String> = []  // Nonce-based self-suppression (replaces time window)
   private let debounceMs: Double = 150  // Coalesce identical notifications within 150ms
 
   private init() {
@@ -180,19 +180,14 @@ public final class ProjectSwitcherState {
     guard let orchestrator = orchestrator else { return }
 
     do {
-      // Find the project in the database by path
-      let projects = try orchestrator.listProjects()
-      if let project = projects.first(where: { $0.rootPath == projectURL.path }) {
-        let projectName = project.name ?? "unknown"
-        let projectId = project.id
-        log.info("ProjectSwitcher: Switching to project \(projectName) (id: \(projectId)) from external change")
-        await switchToProject(project.id)
-      } else {
-        let urlPath = projectURL.path
-        log.warning("ProjectSwitcher: No project found in DB for path: \(urlPath)")
-        // Refresh projects to ensure DB is in sync
-        await refreshProjects()
-      }
+      let canon = projectURL.resolvingSymlinksInPath().path
+      // Create-or-get to guarantee DB identity exists
+      let pid = try orchestrator.getOrCreateProject(
+        name: URL(fileURLWithPath: canon).lastPathComponent,
+        rootPath: canon
+      )
+      log.info("ProjectSwitcher: Activating project id=\(pid, privacy: .public) for path \(canon, privacy: .public)")
+      await switchToProject(pid)
     } catch {
       let errorDesc = error.localizedDescription
       log.error("ProjectSwitcher: Failed to handle project root change: \(errorDesc)")
@@ -339,14 +334,14 @@ public final class ProjectSwitcherState {
 
       // Get project root path and update HUDViewModel
       if let project = try orchestrator.getProject(id: projectId) {
-        // Suppress feedback on MainActor to avoid data races
-        await MainActor.run {
-          self.suppressExternalNotifications(for: 300)
+        // Generate nonce for self-suppression (replaces time-window approach)
+        let nonce = await MainActor.run {
+          self.generateSuppressNonce()
         }
 
         // Call HUDViewModel to switch project (updates git info, watchers, etc.)
         await MainActor.run {
-          HUDViewModel.shared.switchToProject(project.rootPath)
+          HUDViewModel.shared.switchToProject(project.rootPath, nonce: nonce)
         }
 
         log.info("Switched to project: \(project.rootPath)")
@@ -567,10 +562,17 @@ public final class ProjectSwitcherState {
   // MARK: - Observer lifecycle (MainActor)
 
   /// Suppress external notifications for a brief window to prevent feedback loops
-  /// Call this before programmatically triggering HUDViewModel changes
+  /// Generate a nonce for self-originated notifications
+  /// Returns the nonce to attach to the notification userInfo
   @MainActor
-  private func suppressExternalNotifications(for milliseconds: Double) {
-    suppressExternalNotificationsUntil = CFAbsoluteTimeGetCurrent() + milliseconds / 1000.0
+  private func generateSuppressNonce() -> String {
+    let nonce = UUID().uuidString
+    suppressedNonces.insert(nonce)
+    // Prune old nonces (keep last 10) to prevent unbounded growth
+    if suppressedNonces.count > 10 {
+      suppressedNonces = Set(suppressedNonces.suffix(10))
+    }
+    return nonce
   }
 
   /// Canonicalize URL path (resolve symlinks, standardize)
@@ -590,14 +592,15 @@ public final class ProjectSwitcherState {
     ) { [weak self] notification in
       guard let self else { return }
 
-      // Simple self-suppression window to avoid feedback loops
-      let now = CFAbsoluteTimeGetCurrent()
-      if now < self.suppressExternalNotificationsUntil {
-        log.debug("📭 Suppressing external notification (self-triggered)")
+      // Nonce-based self-suppression to avoid feedback loops
+      if let nonce = notification.userInfo?[ProjectRootDidChangeKeys.nonce] as? String,
+         self.suppressedNonces.contains(nonce) {
+        log.debug("📭 Suppressing self-originated notification (nonce=\(nonce))")
         return
       }
 
       // Prefer URL from userInfo, then object as URL, then String -> URL
+      let now = CFAbsoluteTimeGetCurrent()
       let userURL = notification.userInfo?[ProjectRootDidChangeKeys.url] as? URL
       let objURL = notification.object as? URL
       let strURL = (notification.object as? String).map { URL(fileURLWithPath: $0) }

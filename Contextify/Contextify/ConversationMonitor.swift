@@ -189,8 +189,8 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
-    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: AnyObject?  // For cache update notifications
-    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: AnyObject?  // For project root change notifications
+    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
@@ -248,7 +248,7 @@ final class ConversationMonitor {
     }
 
     @MainActor
-    func startMonitoring() {
+    func startMonitoring(projectId: String) {
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
         backgroundTasks = nil
@@ -256,34 +256,21 @@ final class ConversationMonitor {
 
         guard !isMonitoring else { return }
 
-        log.info("⭐️ Timeline integration starting")
-        log.info("Starting SQL-based timeline monitoring")
+        log.info("⭐️ Timeline integration starting for project \(projectId)")
 
         Task { @MainActor [weak self] in
             guard let self else { return }
 
-            // 1. Get project from HUD
-            guard let projectRoot = HUDViewModel.shared.projectRootURL else {
-                self.lastError = "No project root set"
-                self.log.error("No project root URL available from HUDViewModel")
-                return
-            }
-
-            // 2. Initialize shared orchestrator (nonisolated - safe for concurrent access)
+            // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
-                self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-
-                // CRITICAL: Create project on main actor and wait for DB commit
-                // This ensures the project exists before background tasks access it
-                self.currentProjectId = try self.orchestrator.getOrCreateProject(
-                    name: projectRoot.lastPathComponent,
-                    rootPath: projectRoot.path
-                )
-                self.log.info("📁 Project ID set: \(self.currentProjectId ?? "nil")")
+                let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
+                self.orchestrator = orch
+                self.currentProjectId = projectId
+                self.log.info("📁 Project ID set: \(projectId)")
 
                 // Verify project was persisted (forces read from DB, ensures commit)
                 let projectId = self.currentProjectId!
-                guard let _ = try self.orchestrator.getProject(id: projectId) else {
+                guard let _ = try orch.getProject(id: projectId) else {
                     self.lastError = "Failed to verify project creation"
                     self.log.error("❌ Project \(projectId) not found after creation")
                     return
@@ -319,7 +306,7 @@ final class ConversationMonitor {
                             }
                         )
                     } catch {
-                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription)")
+                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription, privacy: .public)")
                         self.diagnosticsHTTPServer = nil
                     }
                 }
@@ -374,7 +361,8 @@ final class ConversationMonitor {
                 // Project change notifications already set up in init()
 
                 self.isMonitoring = true
-                self.log.info("SQL-based timeline monitoring started for project: \(projectRoot.lastPathComponent)")
+                self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
             } catch {
                 self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
                 self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
@@ -541,18 +529,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
-        // Preserve existing system entries to prevent them from being wiped out during SQL refresh
-        // System entries are created in-memory via appendSystemEntry() and would be lost otherwise
-        let systemEntries = state.entries.filter { $0.kind == .system }
-
-        if !systemEntries.isEmpty {
-            log.debug("Preserving \(systemEntries.count) system entries during timeline refresh")
-        }
-
-        // Merge system entries with new SQL-loaded entries, maintaining chronological order
-        let combined = systemEntries + new
-        let sorted = combined.sorted { $0.timestamp < $1.timestamp }
-        state.replace(with: sorted)
+        state.replace(with: new)
     }
 
     @MainActor
@@ -595,10 +572,28 @@ final class ConversationMonitor {
         log.debug("handleProjectRootChange: clearing entries")
         clearEntries()
 
-        // Restart monitoring with new project
+        // Restart monitoring with explicit project id to avoid identity races
         log.debug("handleProjectRootChange: restarting monitoring")
-        startMonitoring()
-        log.info("✅ Project root change complete - monitoring restarted")
+        guard let url = HUDViewModel.shared.projectRootURL else {
+            log.error("handleProjectRootChange: no HUD project URL; aborting restart")
+            return
+        }
+        Task { @MainActor in
+            do {
+                let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
+                    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                    return try orchestrator.getOrCreateProject(
+                        name: url.lastPathComponent,
+                        rootPath: url.path
+                    )
+                }.value
+                startMonitoring(projectId: pid)
+                log.info("✅ Project root change complete - monitoring restarted")
+            } catch {
+                lastError = "Failed to resolve project id for restart: \(error.localizedDescription)"
+                log.error("handleProjectRootChange: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     @MainActor
@@ -723,7 +718,7 @@ final class ConversationMonitor {
     @MainActor
     func loadAllSessionsFromDatabase() async {
         guard let projectId = currentProjectId, orchestrator != nil else {
-            log.warning("Cannot load sessions: no project or orchestrator")
+            log.debug("Cannot load sessions: no project or orchestrator (likely shutting down)")
             return
         }
 
@@ -859,13 +854,14 @@ final class ConversationMonitor {
             let startTime = Date()
 
             // Single query gets entries + cache
+            // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
             let feed = try orchestrator.getRecentFeed(
                 forProject: projectId,
                 limit: config.maxEntries,
                 generatorSignature: generatorSignature()
             )
 
-            log.info("📊 Feed loaded: \(feed.count) entries from DB")
+            log.debug("📊 Feed loaded: \(feed.count) entries from DB")
 
             // Map to UI entries and track seen IDs + collect cache misses
             seenEntryIDs.removeAll(keepingCapacity: true)
@@ -1274,7 +1270,7 @@ final class ConversationMonitor {
 
     nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
         await MainActor.run {
-            log.info("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
+            log.debug("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
         }
 
         if Task.isCancelled { return }
@@ -1287,13 +1283,16 @@ final class ConversationMonitor {
             throw RepositoryError.notFound
         }
         await MainActor.run {
-            log.info("✅ discoverNewTranscripts: verified project \(projectId) exists")
+            log.debug("✅ discoverNewTranscripts: verified project \(projectId) exists")
         }
 
         if Task.isCancelled { return }
 
         // Find JSONL files on disk for THIS project only
-        guard let projectRoot = await HUDViewModel.shared.projectRootURL else { return }
+        // HUDViewModel is @MainActor; hop correctly to read the property
+        guard let projectRoot = await MainActor.run(body: {
+            HUDViewModel.shared.projectRootURL
+        }) else { return }
 
         // Build expected directory name: Claude Code mangles paths like:
         // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
@@ -1700,7 +1699,7 @@ final class ConversationMonitor {
 
         lastActiveKey = to
         activeSession = t
-        log.info("🔄 Session switch: \(to.provider.displayName) (\(reason.rawValue)) - emit=\(emit)")
+        log.debug("Set active session: \(to.sessionId) (\(to.provider.displayName))")
 
         if emit {
             let payload: [String: Any] = [
@@ -1717,18 +1716,14 @@ final class ConversationMonitor {
                 content: followSummary(to, reason: reason),
                 metadataJSON: toJSON(payload)
             )
-            // Show system message in timeline immediately
-            appendSystemEntry(summary: ev.content)
-
-            // Persist to database for restart safety
             do {
                 try await orchestrator.insertSystemEvent(ev)
                 seenSystemEventIds.insert(ev.id)  // F: de-dupe safety
                 publishTypedEvent(to: to, reason: reason)
-                log.info("✅ System event persisted for session switch: \(reason.rawValue)")
+                log.info("System event persisted for session switch: \(reason.rawValue)")
             } catch {
-                log.error("❌ Failed to persist system event: \(error.localizedDescription)")
-                // Degrade gracefully: system message still visible in UI, just not restart-safe
+                log.error("Failed to persist system event: \(error.localizedDescription, privacy: .public)")
+                // Degrade gracefully: still publish typed event for in-app subscribers
                 publishTypedEvent(to: to, reason: reason)
             }
         }
@@ -1789,7 +1784,7 @@ final class ConversationMonitor {
             action: .none
         )
         state.append(entry)
-        log.info("📢 System message added to timeline: \(summary) (total entries: \(self.state.entries.count))")
+        log.debug("Appended system entry: \(summary)")
     }
 
     /// Convert dictionary to JSON string
@@ -1929,7 +1924,7 @@ final class ConversationMonitor {
                 // Check for critical issues and attempt recovery
                 for issue in snapshot.issues where issue.severity == .critical {
                     await MainActor.run { [weak self] in
-                        self?.log.warning("🏥 Critical issue detected: \(issue.message)")
+                        self?.log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
                     }
 
                     // Auto-recovery for specific issues
