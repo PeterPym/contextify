@@ -14,12 +14,14 @@ final class TimelineIntegration {
     func startMonitoring(projectId: String) async {
         guard !isActive else { return }
         log.info("Timeline integration starting")
+
+        let notificationName = Notification.Name.conversationMonitoringDidStart
         ConversationMonitor.shared.startMonitoring(projectId: projectId)
 
         // Await monitor start (with timeout to avoid hangs)
         do {
             try await withTimeout(seconds: 3) {
-                for await _ in NotificationCenter.default.notifications(named: .conversationMonitoringDidStart) {
+                for await _ in NotificationCenter.default.notifications(named: notificationName) {
                     break
                 }
             }
@@ -33,7 +35,7 @@ final class TimelineIntegration {
     }
 
     // Helper for timeout-bounded async operations
-    private func withTimeout(seconds: Double, operation: @escaping () async -> Void) async throws {
+    private func withTimeout(seconds: Double, operation: @escaping @Sendable () async -> Void) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { await operation() }
             group.addTask {
