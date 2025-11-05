@@ -144,10 +144,10 @@ case "$action" in
   build|test)
     quit_running_app
 
-    # Disable code signing in CI environments
+    # Use ad-hoc code signing in CI environments (required for asset catalog compilation)
     extra_flags=()
     if [[ -n "${GITHUB_ACTIONS:-}" ]] || [[ -n "${CI:-}" ]]; then
-      extra_flags+=(CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO)
+      extra_flags+=(CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO)
     fi
 
     run_xcodebuild -project "$proj" -scheme "$scheme" \
