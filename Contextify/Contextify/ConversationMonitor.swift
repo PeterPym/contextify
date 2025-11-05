@@ -189,8 +189,8 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
-    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: AnyObject?  // For cache update notifications
-    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: AnyObject?  // For project root change notifications
+    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
