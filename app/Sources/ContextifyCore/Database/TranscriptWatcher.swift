@@ -63,13 +63,13 @@ public final class TranscriptWatcher {
       )
       log.info("Initial ingestion complete for: \(transcriptId)")
     } catch {
-      log.error("Initial ingestion failed for \(transcriptId): \(error)")
+      log.error("Initial ingestion failed for \(transcriptId, privacy: .public): \(error, privacy: .public)")
       // Continue to set up watcher even if initial ingest fails
     }
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
-      log.error("Failed to open file for watching: \(fileURL.path)")
+      log.error("Failed to open file for watching: \(fileURL.path, privacy: .public)")
       return
     }
 

@@ -306,7 +306,7 @@ final class ConversationMonitor {
                             }
                         )
                     } catch {
-                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription)")
+                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription, privacy: .public)")
                         self.diagnosticsHTTPServer = nil
                     }
                 }
@@ -729,7 +729,7 @@ final class ConversationMonitor {
     @MainActor
     func loadAllSessionsFromDatabase() async {
         guard let projectId = currentProjectId, orchestrator != nil else {
-            log.warning("Cannot load sessions: no project or orchestrator")
+            log.debug("Cannot load sessions: no project or orchestrator (likely shutting down)")
             return
         }
 
@@ -1737,7 +1737,7 @@ final class ConversationMonitor {
                 publishTypedEvent(to: to, reason: reason)
                 log.info("✅ System event persisted for session switch: \(reason.rawValue)")
             } catch {
-                log.error("❌ Failed to persist system event: \(error.localizedDescription)")
+                log.error("❌ Failed to persist system event: \(error.localizedDescription, privacy: .public)")
                 // Degrade gracefully: system message still visible in UI, just not restart-safe
                 publishTypedEvent(to: to, reason: reason)
             }
@@ -1939,7 +1939,7 @@ final class ConversationMonitor {
                 // Check for critical issues and attempt recovery
                 for issue in snapshot.issues where issue.severity == .critical {
                     await MainActor.run { [weak self] in
-                        self?.log.warning("🏥 Critical issue detected: \(issue.message)")
+                        self?.log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
                     }
 
                     // Auto-recovery for specific issues

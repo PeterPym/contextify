@@ -825,3 +825,110 @@ Complete at least items 1-2 above before showing these features to general users
 - `Contextify/Contextify/SettingsView.swift` - Conflict warning display
 - `build/notes/design-reference/help-documentation.md` - User-facing multi-machine documentation
 
+---
+
+# Production Error Analysis (2025-11-04)
+
+Issues identified from production error logs that are NOT related to the timeline startup race fixes branch.
+
+## P1: HTTP Diagnostics Port Conflict
+
+**Error Pattern:** `nw_path_evaluator_evaluate NECP_CLIENT_ACTION_ADD error [48: Address already in use]` / `HTTP listener failed`
+
+**Count:** 8 occurrences
+
+**Root Cause:** DiagnosticsHTTPServer trying to bind to port 17329 repeatedly. Port already bound from previous instance. Happens on every project switch because server restarts.
+
+**Impact:** Diagnostics HTTP API fails to start on project switches
+
+**Proposed Fix:**
+- Add port availability check before binding
+- Reuse existing listener if port already bound
+- OR: Only start HTTP server once at app launch, not per-project
+
+**File:** `Contextify/Contextify/ConversationMonitor.swift` (diagnostics HTTP server initialization)
+
+---
+
+## P1: File Watching Cleanup
+
+**Error Pattern:** `Initial ingestion failed for <id>: Code=2 "No such file or directory"` / `Failed to open file for watching`
+
+**Count:** 9 occurrences
+
+**Root Cause:** TranscriptWatcher trying to watch files that were deleted. Database has stale transcript records pointing to missing files.
+
+**Impact:** Failed watch attempts on every project switch, clutters logs
+
+**Proposed Fix:**
+- Add cleanup/pruning logic to remove stale transcript records
+- Validate file existence before starting watcher
+- Add periodic cleanup job to remove orphaned transcripts
+
+**Files:**
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` (watch validation)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (cleanup logic)
+
+---
+
+## P2: Codex Discovery Data Quality
+
+**Error Pattern:** `Codex discovery skipped 4 malformed session(s) and 3 session(s) missing cwd for project <name>`
+
+**Count:** 7 occurrences
+
+**Root Cause:** Consistent pattern (4 malformed + 3 missing cwd) across all projects. Suggests old/corrupted Codex session files on disk.
+
+**Impact:** Some Codex sessions not available in UI
+
+**Proposed Fix:**
+- Improve Codex session parser robustness
+- Add repair/migration logic for old session formats
+- Provide user-facing report of skipped sessions
+
+**File:** `Contextify/Contextify/ConversationSources.swift` (Codex discovery)
+
+---
+
+## P2: LLM Language Detection Guardrail
+
+**Error Pattern:** `Unsupported language <lang> detected` / `timeline summarize guardrail triggered: unsupportedLanguageOrLocale`
+
+**Count:** 3 occurrences (1 entry, 3 retry attempts)
+
+**Root Cause:** FoundationLLM detecting non-English content. Retry logic working correctly (3 attempts), but eventually fails.
+
+**Impact:** Some timeline entries fail to get LLM summaries
+
+**Note:** The "Unsupported language" log appears to come from FoundationLLM framework (Apple's code), not our codebase. Cannot add public privacy directly.
+
+**Proposed Fix:**
+- Add fallback heuristic summarization for non-English content
+- OR: Document English-only limitation in UI
+- OR: Pre-filter content language before sending to LLM
+
+**Files:**
+- `Contextify/Contextify/FoundationLLM.swift` (LLM integration)
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (summary generation)
+
+---
+
+## Privacy Fixes Applied (Timeline Startup Race Branch)
+
+These were fixed as part of the timeline startup race fixes:
+
+- ✅ ConversationMonitor.swift:732 - "Cannot load sessions" demoted to .debug
+- ✅ ConversationMonitor.swift:1942 - "Critical issue detected" → privacy: .public
+- ✅ ConversationMonitor.swift:309 - "HTTP listener failed" → privacy: .public
+- ✅ ConversationMonitor.swift:1740 - "Failed to persist system event" → privacy: .public
+- ✅ TranscriptWatcher.swift:66 - "Initial ingestion failed" → privacy: .public
+- ✅ TranscriptWatcher.swift:72 - "Failed to open file for watching" → privacy: .public
+
+---
+
+## Notes
+
+- All counts and patterns from production error logs captured 2025-11-04
+- See `/tmp/error-analysis.md` for detailed breakdown and triage
+- Privacy fixes make errors actionable for debugging without exposing sensitive data
+
