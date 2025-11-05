@@ -146,30 +146,9 @@ jobs:
 
           if [ -n "$XCRESULT" ]; then
             echo "Found xcresult bundle: $XCRESULT"
-
-            # Extract error summary using xcresulttool
             echo "Extracting errors from xcresult..."
             xcrun xcresulttool get --format json --path "$XCRESULT" > xcresult.json 2>/dev/null || true
-
-            # Try to extract readable error messages
-            if [ -f xcresult.json ]; then
-              # Look for issues in the JSON
-              echo "Parsing xcresult for errors..."
-              python3 -c "
-import json, sys
-try:
-    with open('xcresult.json', 'r') as f:
-        data = json.load(f)
-    # Navigate to issues if they exist
-    issues = data.get('issues', {}).get('testFailureSummaries', [])
-    if issues:
-        print('Build/Test Issues Found:')
-        for issue in issues[:10]:  # First 10 issues
-            print(f\"- {issue.get('message', 'Unknown error')}\")
-except Exception as e:
-    print(f'Error parsing xcresult: {e}')
-" || true
-            fi
+            echo "xcresult extracted to xcresult.json (available in artifacts)"
           else
             echo "No xcresult bundle found in .derived/"
           fi
