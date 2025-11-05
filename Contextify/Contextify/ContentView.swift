@@ -115,8 +115,10 @@ struct ContentView: View {
             if let projectPath = model.projectRootURL?.path {
                 HStack(spacing: 4) {
                     Button {
-                        let ok = pickProjectRoot()
-                        uiLog.info("Open project result=\(ok, privacy: .public)")
+                        Task {
+                            let ok = await pickProjectRoot()
+                            uiLog.info("Open project result=\(ok, privacy: .public)")
+                        }
                     } label: {
                         Image(systemName: "folder")
                     }
@@ -137,8 +139,10 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             } else {
                 Button("Open project...") {
-                    let ok = pickProjectRoot()
-                    uiLog.info("Open project result=\(ok, privacy: .public)")
+                    Task {
+                        let ok = await pickProjectRoot()
+                        uiLog.info("Open project result=\(ok, privacy: .public)")
+                    }
                 }
                 .buttonStyle(.link)
                 .accessibilityIdentifier("set-project-root")
@@ -289,14 +293,15 @@ private struct Layout {
 private extension ContentView {
     @discardableResult
     @MainActor
-    func pickProjectRoot() -> Bool {
+    func pickProjectRoot() async -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         if panel.runModal() == .OK, let url = panel.urls.first {
-            let result = model.setProjectRoot(url: url)
+            // Use async variant for deterministic coordinator update (C5)
+            let result = await model.setProjectRootAsync(url: url)
             switch result {
             case .success(let root):
                 #if DEBUG
