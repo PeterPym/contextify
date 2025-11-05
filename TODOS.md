@@ -97,10 +97,26 @@ TranscriptConverter.swift exists (33KB, last modified Oct 25) but conversion beh
 ---
 
 ### 3. QA Mixed-Mode Transcript Following & System Messages
-**Status:** High Priority - Need to test/restore system message behavior
+**Status:** High Priority - Implementation ready for testing and merge
+**Branch:** `fix/system-messages-display` (commit: ee33ca7)
 
 **Issue:**
-When Contextify detects it's now following a different transcript for a project (e.g., user switched from Claude Code to Codex CLI, or started a new session), the app should show a system message in the timeline indicating the switch. This behavior may not be working correctly or may have regressed.
+When Contextify detects it's now following a different transcript for a project (e.g., user switched from Claude Code to Codex CLI, or started a new session), the app should show a system message in the timeline indicating the switch.
+
+**Implementation Status:**
+System messages functionality was fully implemented in commit ee33ca7 and temporarily reverted from the `fix/timeline-startup-races` branch (commit eeeb78a) to allow separate testing and merging. The implementation includes:
+- ✅ `setEntries()` preserves system entries during SQL refresh
+- ✅ `setActive()` calls `appendSystemEntry()` to show messages immediately
+- ✅ Enhanced logging for debugging
+- ✅ Graceful degradation if database persistence fails
+- ✅ System messages visible in timeline UI and HTTP API
+- ⚠️ System messages not yet restart-safe (lost on app relaunch)
+
+**Next Steps:**
+1. Checkout `fix/system-messages-display` branch
+2. Test all scenarios below
+3. Merge to main after verification
+4. Address restart-safety in Phase 2 if needed
 
 **Expected Behavior:**
 - User is viewing project A in Contextify, following transcript session X
