@@ -1299,7 +1299,10 @@ final class ConversationMonitor {
         if Task.isCancelled { return }
 
         // Find JSONL files on disk for THIS project only
-        guard let projectRoot = await HUDViewModel.shared.projectRootURL else { return }
+        // HUDViewModel is @MainActor; hop correctly to read the property
+        guard let projectRoot = await MainActor.run(body: {
+            HUDViewModel.shared.projectRootURL
+        }) else { return }
 
         // Build expected directory name: Claude Code mangles paths like:
         // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
