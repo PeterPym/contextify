@@ -74,10 +74,9 @@ public final class StartupCoordinator {
     /// - Initial startup completes (`start()`)
     /// - User switches project (`switchProject()`)
     /// - External project change detected
+    ///
+    /// **Multicast:** Uses NotificationCenter internally to support multiple concurrent subscribers.
     public let updates: AsyncStream<ActiveProjectContext>
-
-    /// Continuation for publishing context updates.
-    private let continuation: AsyncStream<ActiveProjectContext>.Continuation
 
     /// Whether coordinator has been started.
     @ObservationIgnored private var isStarted = false
@@ -88,15 +87,13 @@ public final class StartupCoordinator {
     // MARK: - Initialization
 
     private init() {
-        var cont: AsyncStream<ActiveProjectContext>.Continuation!
-        self.updates = AsyncStream { cont = $0 }
-        self.continuation = cont
+        self.updates = Self.createMulticastStream()
 
         log.info("StartupCoordinator initialized")
     }
 
     deinit {
-        continuation.finish()
+        // No cleanup needed - stream observers manage their own lifecycle
     }
 
     // MARK: - Public API
@@ -161,10 +158,10 @@ public final class StartupCoordinator {
         log.notice("✅ StartupCoordinator ready: \(context.displayName) (id: \(projectId, privacy: .public))")
     }
 
-    /// Wait for initial context (blocking).
+    /// Wait for initial context (blocking with timeout).
     ///
     /// If context is already available, returns immediately.
-    /// Otherwise, blocks until `start()` publishes the first context.
+    /// Otherwise, blocks until `start()` publishes the first context or timeout expires.
     ///
     /// **Usage Pattern:**
     /// ```swift
@@ -174,20 +171,34 @@ public final class StartupCoordinator {
     /// ```
     ///
     /// - Returns: The active project context
-    /// - Throws: `StartupError.contextNeverPublished` if stream ends without yielding
+    /// - Throws: `StartupError.contextNeverPublished` if timeout expires or stream ends without yielding
     public func ready() async throws -> ActiveProjectContext {
         // Fast path: context already available
         if let current = current {
             return current
         }
 
-        // Block until first context arrives
-        for await context in updates {
-            return context
-        }
+        // Bounded wait with timeout to prevent startup deadlock
+        return try await withThrowingTaskGroup(of: ActiveProjectContext.self) { group in
+            // Task 1: Timeout guard (5 seconds)
+            group.addTask {
+                try await Task.sleep(for: .seconds(5))
+                throw StartupError.contextNeverPublished
+            }
 
-        // Stream ended without yielding (should never happen)
-        throw StartupError.contextNeverPublished
+            // Task 2: Wait for first context
+            group.addTask {
+                for await ctx in self.updates {
+                    return ctx
+                }
+                throw StartupError.contextNeverPublished
+            }
+
+            // Return first result (either context or timeout error)
+            let first = try await group.next()!
+            group.cancelAll()
+            return first
+        }
     }
 
     /// Switch to a new project (user action).
@@ -359,10 +370,41 @@ public final class StartupCoordinator {
 
         lastSignature = (id: context.id, path: context.path)
         self.current = context
-        continuation.yield(context)
+        NotificationCenter.default.post(name: .activeProjectContextDidChange, object: context)
 
         log.debug("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
     }
+
+    /// Create a multicast AsyncStream backed by NotificationCenter.
+    ///
+    /// This ensures all subscribers receive every update, unlike a single AsyncStream
+    /// which has unicast semantics when multiple iterators are created.
+    private static func createMulticastStream() -> AsyncStream<ActiveProjectContext> {
+        AsyncStream { continuation in
+            // Use nonisolated(unsafe) to avoid Sendable requirement on NSObjectProtocol
+            nonisolated(unsafe) let token = NotificationCenter.default.addObserver(
+                forName: .activeProjectContextDidChange,
+                object: nil,
+                queue: .main
+            ) { note in
+                if let ctx = note.object as? ActiveProjectContext {
+                    continuation.yield(ctx)
+                }
+            }
+            continuation.onTermination = { _ in
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
+    }
+}
+
+// MARK: - Notification Names
+
+extension Notification.Name {
+    /// Posted when the active project context changes.
+    ///
+    /// The notification object is the new `ActiveProjectContext`.
+    static let activeProjectContextDidChange = Notification.Name("dev.contextify.activeProjectContextDidChange")
 }
 
 // MARK: - URL Extension for Bookmark Data

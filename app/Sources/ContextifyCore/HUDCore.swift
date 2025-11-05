@@ -769,6 +769,9 @@ public final class HUDViewModel {
   /// - Parameter url: The project directory URL
   /// - Returns: Result with the resolved project root URL
   /// - Note: Git repositories use the .git root; non-Git projects use the provided path
+  ///
+  /// **Eventually Consistent:** This method notifies the coordinator asynchronously (fire-and-forget).
+  /// For deterministic flows, use `setProjectRootAsync(url:)` instead.
   @MainActor
   public func setProjectRoot(url: URL) -> Result<URL, ProjectRootError> {
     let canonical = url.resolvingSymlinksInPath()
@@ -794,7 +797,7 @@ public final class HUDViewModel {
 
     updateGitInfo()
 
-    // Notify coordinator of user-initiated project switch
+    // Notify coordinator of user-initiated project switch (fire-and-forget)
     Task {
       do {
         try await StartupCoordinator.shared.switchProject(to: finalRoot.path)
@@ -808,6 +811,33 @@ public final class HUDViewModel {
     postProjectRootDidChange(finalRoot, source: "setProjectRoot")
 
     return .success(finalRoot)
+  }
+
+  /// Awaitable variant of setProjectRoot for deterministic callers.
+  ///
+  /// This method validates and updates HUD state synchronously, then **awaits** the coordinator
+  /// switch before returning. This ensures that `StartupCoordinator.current` matches the chosen
+  /// path/id immediately after this call completes.
+  ///
+  /// - Parameter url: The project directory URL
+  /// - Returns: Result with the resolved project root URL
+  /// - Note: Preferred for onboarding flows and other cases requiring deterministic ordering
+  @MainActor
+  public func setProjectRootAsync(url: URL) async -> Result<URL, ProjectRootError> {
+    // First call sync variant to validate and update HUD state + post legacy notification
+    let result = setProjectRoot(url: url)
+
+    // Then await coordinator switch for deterministic ordering
+    if case .success(let finalRoot) = result {
+      do {
+        try await StartupCoordinator.shared.switchProject(to: finalRoot.path)
+        lifecycleLog.info("✅ Coordinator switch complete: \(finalRoot.path)")
+      } catch {
+        lifecycleLog.error("❌ Coordinator switch failed: \(error.localizedDescription)")
+      }
+    }
+
+    return result
   }
 
   // MARK: - Compose Methods

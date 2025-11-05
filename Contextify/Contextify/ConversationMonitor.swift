@@ -406,6 +406,8 @@ final class ConversationMonitor {
         backgroundTasks = nil
         debounceTask?.cancel()
         debounceTask = nil
+        coordinatorTask?.cancel()   // C2 (P0): Cancel coordinator subscription to prevent stale consumers
+        coordinatorTask = nil
 
         // Stop diagnostics exporter
         if let server = diagnosticsHTTPServer {
