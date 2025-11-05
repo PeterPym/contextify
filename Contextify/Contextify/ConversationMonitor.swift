@@ -891,7 +891,7 @@ final class ConversationMonitor {
                 generatorSignature: generatorSignature()
             )
 
-            log.info("📊 Feed loaded: \(feed.count) entries from DB")
+            log.debug("📊 Feed loaded: \(feed.count) entries from DB")
 
             // Map to UI entries and track seen IDs + collect cache misses
             seenEntryIDs.removeAll(keepingCapacity: true)
@@ -1300,7 +1300,7 @@ final class ConversationMonitor {
 
     nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
         await MainActor.run {
-            log.info("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
+            log.debug("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
         }
 
         if Task.isCancelled { return }
@@ -1313,7 +1313,7 @@ final class ConversationMonitor {
             throw RepositoryError.notFound
         }
         await MainActor.run {
-            log.info("✅ discoverNewTranscripts: verified project \(projectId) exists")
+            log.debug("✅ discoverNewTranscripts: verified project \(projectId) exists")
         }
 
         if Task.isCancelled { return }
