@@ -258,3 +258,4 @@ except Exception as e:
           echo "# Or from scripts/xc.sh:" >> $GITHUB_STEP_SUMMARY
           echo "bash scripts/xc.sh build  # Auto-detects Linux and triggers CI" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
