@@ -144,15 +144,9 @@ case "$action" in
   build|test)
     quit_running_app
 
-    # Use ad-hoc code signing in CI environments (required for asset catalog compilation)
-    extra_flags=()
-    if [[ -n "${GITHUB_ACTIONS:-}" ]] || [[ -n "${CI:-}" ]]; then
-      extra_flags+=(CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO)
-    fi
-
     run_xcodebuild -project "$proj" -scheme "$scheme" \
       -configuration "$config" -destination "platform=macOS" \
-      -derivedDataPath "$dd" ${extra_flags[@]+"${extra_flags[@]}"} "$action"
+      -derivedDataPath "$dd" "$action"
     app_path="$dd/Build/Products/$config/Contextify.app"
     echo "Built: $app_path"
     if [[ "$action" == "build" && -z "${CTX_NO_RUN:-}" ]]; then
