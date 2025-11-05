@@ -248,25 +248,6 @@ final class ConversationMonitor {
     }
 
     @MainActor
-    @available(*, deprecated, message: "Use startMonitoring(projectId:) to avoid identity races")
-    func startMonitoring() {
-        guard let root = HUDViewModel.shared.projectRootURL else {
-            lastError = "No project root set"
-            log.error("No project root URL available from HUDViewModel")
-            return
-        }
-        // Legacy: resolve id then forward
-        do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let pid = try orchestrator.getOrCreateProject(name: root.lastPathComponent, rootPath: root.path)
-            startMonitoring(projectId: pid)
-        } catch {
-            lastError = "Failed to start monitoring: \(error.localizedDescription)"
-            log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    @MainActor
     func startMonitoring(projectId: String) {
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
