@@ -222,7 +222,7 @@ public actor TimelineDiagnosticsService {
         }
 
         // 2. Find most recent transcript for this project
-        let recentTranscript: Transcript? = try? await db.read { db in
+        let recentTranscript: Transcript? = try? await db.read { (db: Database) -> Transcript? in
             guard let pid = projectId else { return nil }
             return try? Transcript
                 .filter(Column("project_id") == pid)
