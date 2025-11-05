@@ -280,15 +280,16 @@ final class ConversationMonitor {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
-            // 1. Initialize orchestrator and bind known project id
+            // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
-                self.orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
+                self.orchestrator = orch
                 self.currentProjectId = projectId
                 self.log.info("📁 Project ID set: \(projectId)")
 
                 // Verify project was persisted (forces read from DB, ensures commit)
                 let projectId = self.currentProjectId!
-                guard let _ = try self.orchestrator.getProject(id: projectId) else {
+                guard let _ = try orch.getProject(id: projectId) else {
                     self.lastError = "Failed to verify project creation"
                     self.log.error("❌ Project \(projectId) not found after creation")
                     return
@@ -883,6 +884,7 @@ final class ConversationMonitor {
             let startTime = Date()
 
             // Single query gets entries + cache
+            // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
             let feed = try orchestrator.getRecentFeed(
                 forProject: projectId,
                 limit: config.maxEntries,
