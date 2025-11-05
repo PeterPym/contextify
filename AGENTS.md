@@ -92,6 +92,53 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 - **HUDPreferences** (`app/Sources/ContextifyCore/HUDCore.swift:13-126`): Manages UserDefaults with suite fallback. Stores project root path and security-scoped bookmarks.
 
+### Startup Coordination (as of 2025-11-05)
+
+**IMPORTANT:** All project identity flows through `StartupCoordinator.shared` for deterministic startup sequencing.
+
+- **StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`): Orchestrates deterministic startup sequencing for project identity pipeline. Provides single source of truth via `ActiveProjectContext` and ensures project exists in database before monitoring starts.
+
+- **ActiveProjectContext** (`app/Sources/ContextifyCore/Models/ActiveProjectContext.swift`): Immutable value type representing active project identity. Contains stable project ID (primary key), filesystem path (metadata), display name, git branch, and security-scoped bookmark.
+
+**Key Principles:**
+- `ActiveProjectContext.id` is the **stable primary identity** - use for all database queries
+- `ActiveProjectContext.path` is **metadata only** - do not use for lookups
+- Coordinator owns `getOrCreateProject()` database calls
+- All subsystems receive context via typed `AsyncStream` (not NotificationCenter)
+
+**DO:**
+```swift
+// Subscribe to coordinator updates
+for await context in StartupCoordinator.shared.updates {
+    self.activeProjectId = context.id
+    await refreshData()
+}
+
+// Wait for initial context
+let context = try await StartupCoordinator.shared.ready()
+await monitor.startMonitoring(projectId: context.id)
+
+// User-initiated switch
+try await StartupCoordinator.shared.switchProject(to: newPath)
+```
+
+**DON'T:**
+```swift
+// Query HUDViewModel for path (stale, race-prone)
+let path = HUDViewModel.shared.projectRootURL
+
+// Call getOrCreateProject directly (coordinator owns this)
+let projectId = try orchestrator.getOrCreateProject(...)
+
+// Use NotificationCenter for startup (timing-dependent)
+NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
+```
+
+**Architecture:**
+- **Startup Order:** `ContextifyApp.init()` starts coordinator → `ProjectSwitcherState.start()` subscribes to updates → `ContentView.task` waits for `ready()` → Timeline starts with stable project ID
+- **Documentation:** `build/notes/technical-reference/startup-coordinator-architecture.md`
+- **Implementation Plan:** `build/notes/feature-specs/startup-coordinator/implementation-plan.md`
+
 ### UI Layer
 - **ContentView** (`Contextify/Contextify/ContentView.swift`): Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications.
 - **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`): Timeline display UI with session filtering and real-time updates.

@@ -227,6 +227,20 @@ final class ConversationMonitor {
         // Set up project change notifications early, so we can react to project selection
         // even if monitoring hasn't started yet
         setupProjectChangeNotifications()
+
+        // Subscribe to coordinator updates for project context changes
+        subscribeToContextUpdates()
+    }
+
+    /// Subscribe to coordinator updates for project switching
+    @MainActor
+    private func subscribeToContextUpdates() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for await context in StartupCoordinator.shared.updates {
+                await self.handleContextUpdate(context)
+            }
+        }
     }
 
     deinit {
@@ -560,39 +574,38 @@ final class ConversationMonitor {
         seenEntryIDs.removeAll(keepingCapacity: false)
     }
 
+    /// Handle project context update from StartupCoordinator
     @MainActor
-    func handleProjectRootChange() {
-        log.info("🔄 Project root changed - reloading conversation timeline")
+    private func handleContextUpdate(_ context: ActiveProjectContext) async {
+        log.info("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
 
         // Stop current monitoring
-        log.debug("handleProjectRootChange: stopping monitoring")
+        log.debug("handleContextUpdate: stopping monitoring")
         stopMonitoring()
 
         // Clear all entries
-        log.debug("handleProjectRootChange: clearing entries")
+        log.debug("handleContextUpdate: clearing entries")
         clearEntries()
 
-        // Restart monitoring with explicit project id to avoid identity races
-        log.debug("handleProjectRootChange: restarting monitoring")
-        guard let url = HUDViewModel.shared.projectRootURL else {
-            log.error("handleProjectRootChange: no HUD project URL; aborting restart")
+        // Start monitoring with new project ID from coordinator
+        log.debug("handleContextUpdate: starting monitoring for project: \(context.id, privacy: .public)")
+        startMonitoring(projectId: context.id)
+
+        log.info("✅ Project context change complete - monitoring restarted for: \(context.id, privacy: .public)")
+    }
+
+    @MainActor
+    func handleProjectRootChange() {
+        log.info("🔄 Project root changed (legacy notification) - reloading conversation timeline")
+
+        // Use coordinator context instead of querying database
+        guard let context = StartupCoordinator.shared.current else {
+            log.error("handleProjectRootChange: no coordinator context available; aborting restart")
             return
         }
+
         Task { @MainActor in
-            do {
-                let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
-                    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                    return try orchestrator.getOrCreateProject(
-                        name: url.lastPathComponent,
-                        rootPath: url.path
-                    )
-                }.value
-                startMonitoring(projectId: pid)
-                log.info("✅ Project root change complete - monitoring restarted")
-            } catch {
-                lastError = "Failed to resolve project id for restart: \(error.localizedDescription)"
-                log.error("handleProjectRootChange: \(error.localizedDescription, privacy: .public)")
-            }
+            await handleContextUpdate(context)
         }
     }
 

@@ -186,9 +186,20 @@ struct ContextifyApp: App {
       #endif
     }
 
-    // Start ProjectSwitcherState from app init for deterministic startup
+    // Start coordinator and ProjectSwitcherState from app init for deterministic startup
     Task { @MainActor in
+      // PHASE 1: Start coordinator FIRST (establishes project identity)
+      do {
+        try await StartupCoordinator.shared.start()
+        startupLog.info("✅ StartupCoordinator started successfully")
+      } catch {
+        startupLog.error("❌ StartupCoordinator failed: \(error.localizedDescription)")
+        // Continue anyway - ProjectSwitcherState will handle missing context gracefully
+      }
+
+      // PHASE 2: Start dependent systems (now safe - coordinator has published context)
       ProjectSwitcherState.shared.start()
+      startupLog.info("✅ ProjectSwitcherState started")
     }
   }
 

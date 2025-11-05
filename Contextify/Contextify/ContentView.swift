@@ -76,24 +76,18 @@ struct ContentView: View {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
 
-            // Resolve stable project id once, then start monitoring with that id
-            if let root = HUDViewModel.shared.projectRootURL {
-                do {
-                    let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
-                        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                        return try orchestrator.getOrCreateProject(
-                            name: root.lastPathComponent,
-                            rootPath: root.path
-                        )
-                    }.value
-                    await TimelineIntegration.shared.startMonitoring(projectId: pid)
-                } catch {
-                    uiLog.error("Failed to start monitoring: \(error.localizedDescription, privacy: .public)")
-                    presentToast("Could not initialize project monitoring")
-                }
+            // Wait for coordinator to publish stable project context
+            do {
+                let context = try await StartupCoordinator.shared.ready()
+                uiLog.info("📍 Got startup context: \(context.displayName) (id: \(context.id, privacy: .public))")
+
+                // Start monitoring with stable project ID from coordinator
+                await TimelineIntegration.shared.startMonitoring(projectId: context.id)
+                uiLog.info("✅ Timeline monitoring started for project: \(context.id, privacy: .public)")
+            } catch {
+                uiLog.error("Failed to get startup context: \(error.localizedDescription, privacy: .public)")
+                presentToast("Could not initialize project monitoring")
             }
-            // Note: P0-3 ensures projectRootURL is set synchronously during startup,
-            // so the else branch should never execute in normal operation
 
             // Note: ProjectSwitcherState.shared.start() is called in ContextifyApp init
             // for deterministic startup order. Do not call it here.

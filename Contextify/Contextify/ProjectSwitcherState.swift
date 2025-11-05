@@ -115,22 +115,34 @@ public final class ProjectSwitcherState {
       log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
+    // Subscribe to coordinator updates for project context changes
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      for await context in StartupCoordinator.shared.updates {
+        await self.handleContextUpdate(context)
+      }
+    }
+
     // Initial discovery & full unread pass based on current DB
     Task {
-      // Ensure current project is in database (waits for HUD startup)
-      await ensureCurrentProjectInDatabase()
+      // Get initial context from coordinator (guaranteed to be available)
+      if let context = StartupCoordinator.shared.current {
+        await handleContextUpdate(context)
+      } else {
+        // Wait for coordinator to publish first context
+        do {
+          let context = try await StartupCoordinator.shared.ready()
+          await handleContextUpdate(context)
+        } catch {
+          log.error("Failed to get startup context: \(error.localizedDescription)")
+        }
+      }
 
       await refreshProjects()
       await refreshUnreadCounts()
 
-      // Auto-select first project if none is selected (leftmost tab)
-      if activeProjectId == nil && !allProjects.isEmpty {
-        log.info("🎯 No project selected on startup, auto-selecting first project: \(self.allProjects[0].name)")
-        await switchToProject(self.allProjects[0].id)
-        log.info("✅ After switchToProject: activeProjectId=\(self.activeProjectId ?? "nil")")
-      } else {
-        log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
-      }
+      // activeProjectId is now set by handleContextUpdate, no need to auto-select
+      log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
 
       // Start global monitoring if consent given
       if ConsentManager.shared.isMultiProjectModeEnabled {
@@ -175,7 +187,21 @@ public final class ProjectSwitcherState {
     log.info("ProjectSwitcherState stopped")
   }
 
-  /// Handle project root change notification from HUDViewModel
+  /// Handle project context update from StartupCoordinator
+  @MainActor
+  private func handleContextUpdate(_ context: ActiveProjectContext) async {
+    log.info("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
+
+    // Coordinator guarantees project exists in DB, so just set activeProjectId directly
+    activeProjectId = context.id
+
+    // Refresh project list to update UI
+    await refreshProjects()
+
+    log.info("✅ Active project updated to: \(context.id, privacy: .public)")
+  }
+
+  /// Handle project root change notification from HUDViewModel (legacy support)
   private func handleProjectRootChange(_ projectURL: URL) async {
     guard let orchestrator = orchestrator else { return }
 

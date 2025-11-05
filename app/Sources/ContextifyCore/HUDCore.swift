@@ -611,7 +611,18 @@ public final class HUDViewModel {
     // Update watcher for new git location (or clear if no git)
     updateHeadWatcher()
 
-    // Post notification AFTER state is updated (with nonce if provided)
+    // Notify coordinator of user-initiated project switch
+    Task {
+      let finalPath = (self.projectRootURL ?? resolved).path
+      do {
+        try await StartupCoordinator.shared.switchProject(to: finalPath)
+        lifecycleLog.info("✅ Coordinator notified of project switch to: \(finalPath)")
+      } catch {
+        lifecycleLog.error("❌ Failed to notify coordinator: \(error.localizedDescription)")
+      }
+    }
+
+    // Post notification AFTER state is updated (with nonce if provided) - legacy support
     postProjectRootDidChange(self.projectRootURL ?? resolved, source: "switchToProject", nonce: nonce)
   }
 
@@ -777,7 +788,17 @@ public final class HUDViewModel {
 
     updateGitInfo()
 
-    // Notify observers that project root has changed
+    // Notify coordinator of user-initiated project switch
+    Task {
+      do {
+        try await StartupCoordinator.shared.switchProject(to: finalRoot.path)
+        lifecycleLog.info("✅ Coordinator notified of project switch to: \(finalRoot.path)")
+      } catch {
+        lifecycleLog.error("❌ Failed to notify coordinator: \(error.localizedDescription)")
+      }
+    }
+
+    // Notify observers that project root has changed (legacy support)
     postProjectRootDidChange(finalRoot, source: "setProjectRoot")
 
     return .success(finalRoot)
