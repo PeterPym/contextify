@@ -313,13 +313,21 @@ final class ConversationMonitor {
                 self.cacheMissGenerator = nil  // Clear before creating new
                 self.isCacheGeneratorActive = false
 
-                // 4. Await chained shutdown task (ensure exclusive handoff)
-                await self.generatorShutdownTask?.value
-                self.generatorShutdownTask = nil
+                // 4. Create new generator in background after shutdown completes (CXT-3)
+                // Don't block UI - spawn background task that awaits shutdown then creates generator
+                // UI returns immediately, generator initializes when safe
+                let orchestratorForGenerator = self.orchestrator!
+                Task { @MainActor [weak self] in
+                    // Wait for chained shutdown to complete (happens in background)
+                    await self?.generatorShutdownTask?.value
 
-                // 5. Initialize new cache miss generator for this project
-                self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: self.orchestrator)
-                self.isCacheGeneratorActive = true
+                    // Now safe to create new generator (old one fully shut down)
+                    guard let self else { return }
+                    self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: orchestratorForGenerator)
+                    self.isCacheGeneratorActive = true
+                    self.generatorShutdownTask = nil
+                    self.log.info("✅ Cache miss generator initialized for new project")
+                }
 
                 // Initialize diagnostics service
                 self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
