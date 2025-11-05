@@ -14,7 +14,7 @@ public actor DatabaseWriteQueue {
 
   /// Execute a database write operation with serialization guarantee
   /// P1-4: Retries transient SQLITE_BUSY with exponential backoff
-  public func write<T>(_ block: @Sendable @escaping (Database) throws -> T) async throws -> T {
+  public func write<T: Sendable>(_ block: @Sendable @escaping (Database) throws -> T) async throws -> T {
     var attempt = 0
     while true {
       do {
