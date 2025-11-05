@@ -380,6 +380,7 @@ final class ConversationMonitor {
 
                 self.isMonitoring = true
                 self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
             } catch {
                 self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
                 self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")

@@ -79,15 +79,50 @@ struct ContentView: View {
             // Resolve stable project id once, then start monitoring with that id
             if let root = HUDViewModel.shared.projectRootURL {
                 do {
-                    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                    let pid = try orchestrator.getOrCreateProject(
-                        name: root.lastPathComponent,
-                        rootPath: root.path
-                    )
-                    TimelineIntegration.shared.startMonitoring(projectId: pid)
+                    let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
+                        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                        return try orchestrator.getOrCreateProject(
+                            name: root.lastPathComponent,
+                            rootPath: root.path
+                        )
+                    }.value
+                    await TimelineIntegration.shared.startMonitoring(projectId: pid)
                 } catch {
                     uiLog.error("Failed to start monitoring: \(error.localizedDescription, privacy: .public)")
                     presentToast("Could not initialize project monitoring")
+                }
+            } else {
+                // Fallback: wait for .projectRootDidChange with 2s timeout
+                uiLog.info("No project root after startup, installing fallback observer")
+                let token = NotificationCenter.default.addObserver(
+                    forName: .projectRootDidChange,
+                    object: nil,
+                    queue: .main
+                ) { note in
+                    NotificationCenter.default.removeObserver(token)
+                    if let url = note.userInfo?[ProjectRootDidChangeKeys.url] as? URL {
+                        Task { @MainActor in
+                            do {
+                                let pid = try await Task.detached(priority: .userInitiated) { () throws -> String in
+                                    let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                                    return try orchestrator.getOrCreateProject(
+                                        name: url.lastPathComponent,
+                                        rootPath: url.path
+                                    )
+                                }.value
+                                await TimelineIntegration.shared.startMonitoring(projectId: pid)
+                            } catch {
+                                uiLog.error("Failed to start monitoring after root change: \(error.localizedDescription, privacy: .public)")
+                                presentToast("Could not initialize project monitoring")
+                            }
+                        }
+                    }
+                }
+                // Timeout after 2s
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    NotificationCenter.default.removeObserver(token)
+                    uiLog.warning("Fallback observer timeout - no project root received")
                 }
             }
 

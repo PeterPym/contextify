@@ -11,17 +11,37 @@ final class TimelineIntegration {
 
     private init() {}
 
-    func startMonitoring(projectId: String) {
+    func startMonitoring(projectId: String) async {
         guard !isActive else { return }
         log.info("Timeline integration starting")
         ConversationMonitor.shared.startMonitoring(projectId: projectId)
-        // Flip active only after the monitor reports started (same runloop is fine)
-        if ConversationMonitor.shared.isMonitoring {
-            isActive = true
-            registerNotifications()
-            ConversationMonitor.shared.requestImmediateRefresh(trigger: .manualHotkey)
-        } else {
-            log.warning("TimelineIntegration: monitor did not enter isMonitoring; deferring activation")
+
+        // Await monitor start (with timeout to avoid hangs)
+        do {
+            try await withTimeout(seconds: 3) {
+                for await _ in NotificationCenter.default.notifications(named: .conversationMonitoringDidStart) {
+                    break
+                }
+            }
+        } catch {
+            log.warning("TimelineIntegration: monitor did not start within timeout; continuing defensively")
+        }
+
+        isActive = true
+        registerNotifications()
+        ConversationMonitor.shared.requestImmediateRefresh(trigger: .manualHotkey)
+    }
+
+    // Helper for timeout-bounded async operations
+    private func withTimeout(seconds: Double, operation: @escaping () async -> Void) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { await operation() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw CancellationError()
+            }
+            try await group.next()
+            group.cancelAll()
         }
     }
 
