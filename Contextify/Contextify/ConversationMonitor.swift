@@ -239,7 +239,7 @@ final class ConversationMonitor {
     private func subscribeToContextUpdates() {
         coordinatorTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            for await context in StartupCoordinator.shared.updates {
+            for await context in StartupCoordinator.shared.updates() {
                 await self.handleContextUpdate(context)
             }
         }

@@ -68,16 +68,6 @@ public final class StartupCoordinator {
     /// UI can bind to this directly or subscribe to `updates` stream.
     public private(set) var current: ActiveProjectContext?
 
-    /// Stream of context updates for subscribers.
-    ///
-    /// Yields new context whenever:
-    /// - Initial startup completes (`start()`)
-    /// - User switches project (`switchProject()`)
-    /// - External project change detected
-    ///
-    /// **Multicast:** Uses NotificationCenter internally to support multiple concurrent subscribers.
-    public let updates: AsyncStream<ActiveProjectContext>
-
     /// Whether coordinator has been started.
     @ObservationIgnored private var isStarted = false
 
@@ -87,13 +77,45 @@ public final class StartupCoordinator {
     // MARK: - Initialization
 
     private init() {
-        self.updates = Self.createMulticastStream()
-
         log.info("StartupCoordinator initialized")
     }
 
     deinit {
-        // No cleanup needed - stream observers manage their own lifecycle
+        // No cleanup needed
+    }
+
+    // MARK: - Public API (Multicast Updates)
+
+    /// Create a fresh update stream for each subscriber.
+    ///
+    /// **IMPORTANT:** Do NOT use a single shared `AsyncStream` property - that creates unicast
+    /// semantics where multiple subscribers compete for elements. Instead, call this method
+    /// to get a fresh stream backed by its own NotificationCenter observer.
+    ///
+    /// Yields new context whenever:
+    /// - Initial startup completes (`start()`)
+    /// - User switches project (`switchProject()`)
+    /// - External project change detected
+    ///
+    /// **Multicast:** Each call returns an independent stream; all streams receive all updates.
+    /// Late subscribers will miss updates that occurred before subscription.
+    nonisolated public func updates() -> AsyncStream<ActiveProjectContext> {
+        AsyncStream { continuation in
+            // Fresh NotificationCenter observer per stream
+            nonisolated(unsafe) let token = NotificationCenter.default.addObserver(
+                forName: .activeProjectContextDidChange,
+                object: nil,
+                queue: .main
+            ) { note in
+                if let ctx = note.object as? ActiveProjectContext {
+                    continuation.yield(ctx)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
     }
 
     // MARK: - Public API
@@ -188,7 +210,7 @@ public final class StartupCoordinator {
 
             // Task 2: Wait for first context
             group.addTask {
-                for await ctx in self.updates {
+                for await ctx in self.updates() {
                     return ctx
                 }
                 throw StartupError.contextNeverPublished
@@ -375,27 +397,6 @@ public final class StartupCoordinator {
         log.debug("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
     }
 
-    /// Create a multicast AsyncStream backed by NotificationCenter.
-    ///
-    /// This ensures all subscribers receive every update, unlike a single AsyncStream
-    /// which has unicast semantics when multiple iterators are created.
-    private static func createMulticastStream() -> AsyncStream<ActiveProjectContext> {
-        AsyncStream { continuation in
-            // Use nonisolated(unsafe) to avoid Sendable requirement on NSObjectProtocol
-            nonisolated(unsafe) let token = NotificationCenter.default.addObserver(
-                forName: .activeProjectContextDidChange,
-                object: nil,
-                queue: .main
-            ) { note in
-                if let ctx = note.object as? ActiveProjectContext {
-                    continuation.yield(ctx)
-                }
-            }
-            continuation.onTermination = { _ in
-                NotificationCenter.default.removeObserver(token)
-            }
-        }
-    }
 }
 
 // MARK: - Notification Names

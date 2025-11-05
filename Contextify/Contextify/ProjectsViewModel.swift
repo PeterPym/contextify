@@ -161,7 +161,7 @@ final class ProjectsViewModel {
     coordinatorObservationTask = Task { @MainActor [weak self] in
       guard let self else { return }
       logger.info("ProjectsViewModel: subscribing to StartupCoordinator updates")
-      for await context in StartupCoordinator.shared.updates {
+      for await context in StartupCoordinator.shared.updates() {
         self.currentProjectId = context.id
         self.currentProjectPath = context.path
         await self.refreshCurrentProjectFlag()
