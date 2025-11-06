@@ -251,12 +251,20 @@ final class ConversationMonitor {
     deinit {
         // Cancel any pending debounce task
         debounceTask?.cancel()
+        cacheDebounceTask?.cancel()
 
         // Cancel coordinator subscription task
         coordinatorTask?.cancel()
 
         // Cancel background task group (health monitoring, polling, etc.)
         backgroundTasks?.cancel()
+
+        // Stop diagnostics HTTP server
+        if let server = diagnosticsHTTPServer {
+            Task {
+                await server.stop()
+            }
+        }
 
         // Clean up observers (only relevant for tests/previews, not for singleton)
         if let observer = projectChangeObserver {
@@ -266,7 +274,7 @@ final class ConversationMonitor {
             NotificationCenter.default.removeObserver(observer)
         }
 
-        log.info("ConversationMonitor deinit: cancelled debounceTask and removed observers")
+        log.info("ConversationMonitor deinit: cancelled tasks, stopped HTTP server, removed observers")
     }
 
     @MainActor
@@ -355,7 +363,9 @@ final class ConversationMonitor {
                 }
 
                 // Initialize diagnostics HTTP server (external API) - opt-in, non-fatal
-                if DiagnosticsConfig.enableHTTPServer {
+                // CXT-13: Only create if not already running (persists across project switches)
+                let serverAlreadyRunning = await MainActor.run { self.diagnosticsHTTPServer != nil }
+                if DiagnosticsConfig.enableHTTPServer && !serverAlreadyRunning {
                     let server = DiagnosticsHTTPServer()
                     do {
                         try await server.start(
@@ -461,13 +471,8 @@ final class ConversationMonitor {
         // CXT-13: Do NOT cancel coordinatorTask here! It must persist across project switches
         // to continue receiving updates. It's only canceled in deinit.
 
-        // Stop diagnostics exporter
-        if let server = diagnosticsHTTPServer {
-            Task {
-                await server.stop()
-            }
-        }
-        diagnosticsHTTPServer = nil
+        // CXT-13: Do NOT stop diagnosticsHTTPServer here! It persists across project switches
+        // like coordinatorTask. Only stopped in deinit.
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
