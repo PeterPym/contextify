@@ -23,14 +23,32 @@ import OSLog
 private let log = Logger(subsystem: "dev.contextify", category: "YourFeature")
 
 // In your code:
-log.info("[FEATURE-START] Starting operation: \(context)")
-log.info("[FEATURE-STEP] Processing \(count) items")
-log.info("[FEATURE-DONE] Completed in \(elapsed)s")
+log.info("[FEATURE-START] Starting operation: \(context, privacy: .public)", privacy: .public)
+log.info("[FEATURE-STEP] Processing \(count) items", privacy: .public)
+log.info("[FEATURE-DONE] Completed in \(elapsed)s", privacy: .public)
 ```
 
 **Tag naming convention:** `[FEATURE-EVENT]` where:
 - `FEATURE` = your feature area (e.g., SUMM, BATCH, COORD)
 - `EVENT` = specific event (e.g., START, DONE, ERROR)
+
+**IMPORTANT - Privacy:** Always use `privacy: .public` for logs with interpolated values (timing, counts, names).
+Without `.public`, macOS redacts values as `<private>`, breaking performance analysis.
+
+**Examples:**
+```swift
+// WRONG - timing will show as <private>ms
+log.info("[PERF] Completed in \(elapsed)ms")
+
+// RIGHT - timing visible in logs
+log.info("[PERF] Completed in \(elapsed)ms", privacy: .public)
+
+// RIGHT - project name visible
+log.info("[PERF] Switched to \(name, privacy: .public)", privacy: .public)
+
+// OK - no values to redact
+log.info("[PERF] Operation started")
+```
 
 ### 2. Create Monitor Script
 

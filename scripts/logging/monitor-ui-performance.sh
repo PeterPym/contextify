@@ -3,6 +3,9 @@
 # Monitor UI performance from user input (hotkey/click) to timeline render
 # Tracks: Input → Switch → DB → Feed → Map → UI Update → Status Ready
 # See README.md for how to create custom monitoring scripts
+#
+# IMPORTANT: All logged values must use privacy: .public to be visible
+# Example: log.info("[TAG] Timing: \(ms)ms", privacy: .public)
 
 # Step 1: Create timestamped log file for session capture
 LOGFILE="/tmp/ui-performance-$(date +%Y%m%d-%H%M%S).log"

@@ -2,6 +2,9 @@
 
 # Example: Monitor summarization flow from project selection through LLM queue
 # See README.md for how to create custom monitoring scripts
+#
+# IMPORTANT: All logged values must use privacy: .public to be visible
+# Example: log.info("[TAG] Count: \(count)", privacy: .public)
 
 # Step 1: Create timestamped log file for session capture
 LOGFILE="/tmp/summarization-flow-$(date +%Y%m%d-%H%M%S).log"
