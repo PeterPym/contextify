@@ -211,8 +211,8 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
-    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
-    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
+    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?   // For cache update notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol? // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
@@ -246,7 +246,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
-    @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol?  // App become active notifications
+    @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
 
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
@@ -574,6 +574,9 @@ final class ConversationMonitor {
         sessionsLoaded = false
         seenSystemEventIds.removeAll()
         lastSystemEventTs = nil
+
+        // CXT-104: Clear viewport tracking for OLD project
+        viewedEntryIDs.removeAll(keepingCapacity: false)
 
         // Cancel any pending debounced updates (they're for the OLD project)
         if debounceTask != nil {
@@ -1301,7 +1304,21 @@ final class ConversationMonitor {
     func markEntryVisible(_ entryId: UUID) {
         guard !viewedEntryIDs.contains(entryId) else { return }
         viewedEntryIDs.insert(entryId)
+        #if DEBUG
         log.debug("Marked entry \(entryId.uuidString) as viewed (total viewed: \(self.viewedEntryIDs.count))")
+        #endif
+        pruneViewedIDsIfNeeded()
+    }
+
+    /// CXT-104: Prune viewedEntryIDs to prevent unbounded growth
+    @MainActor
+    private func pruneViewedIDsIfNeeded() {
+        // Keep modest multiple of feed size; avoids growth over long sessions
+        let cap = config.maxEntries * 4
+        guard viewedEntryIDs.count > cap else { return }
+        let currentIDs = Set(state.entries.map { $0.id })
+        viewedEntryIDs.formIntersection(currentIDs)
+        log.debug("Pruned viewedEntryIDs to \(self.viewedEntryIDs.count)")
     }
 
     /// Handle app resigning active - start background summarization for unseen entries
