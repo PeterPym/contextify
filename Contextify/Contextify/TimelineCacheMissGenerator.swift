@@ -30,7 +30,9 @@ struct CacheMiss: Sendable {
 actor TimelineCacheMissGenerator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
     private let orchestrator: TranscriptOrchestrator
-    private var pendingMisses: [CacheKey: CacheMiss] = [:]  // Keyed by CacheKey for de-duplication
+    // Ordered queue (FIFO) with deduplication set for fast lookups
+    private var pendingMisses: [CacheMiss] = []  // Ordered queue (newest at front for FIFO processing)
+    private var pendingKeys: Set<CacheKey> = []  // Fast deduplication lookup
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
 
@@ -71,6 +73,7 @@ actor TimelineCacheMissGenerator {
         generationTask?.cancel()
         generationTask = nil
         pendingMisses.removeAll()
+        pendingKeys.removeAll()
         isProcessing = false
         inFlightCount = 0
 
@@ -95,10 +98,14 @@ actor TimelineCacheMissGenerator {
         let beforeCount = pendingMisses.count
 
         // Remove misses that don't match the active project
-        pendingMisses = pendingMisses.filter { _, miss in
+        let keptMisses = pendingMisses.filter { miss in
             guard let activeId = activeProjectId else { return false }
             return miss.projectId == activeId
         }
+
+        // Rebuild deduplication set from kept misses
+        pendingKeys = Set(keptMisses.map { $0.cacheKey })
+        pendingMisses = keptMisses
 
         let removed = beforeCount - pendingMisses.count
         if removed > 0 {
@@ -115,7 +122,7 @@ actor TimelineCacheMissGenerator {
         var skippedDuplicates = 0
         var skippedCapacity = 0
 
-        // Add to dictionary (automatic de-dup by cacheKey)
+        // Add to ordered queue with deduplication
         for miss in misses {
             // Skip if queue at capacity
             if pendingMisses.count >= maxQueueSize {
@@ -125,10 +132,11 @@ actor TimelineCacheMissGenerator {
 
             // Use cached composite key for deduplication
             let key = miss.cacheKey
-            if pendingMisses[key] != nil {
+            if pendingKeys.contains(key) {
                 skippedDuplicates += 1
             } else {
-                pendingMisses[key] = miss
+                pendingMisses.append(miss)  // Add to end (FIFO: first added = first processed)
+                pendingKeys.insert(key)
             }
         }
 
@@ -159,13 +167,14 @@ actor TimelineCacheMissGenerator {
             isProcessing = true
             notifyQueueChanged()  // Notify that processing started
 
-            // Take a batch from dictionary
-            let keys = Array(pendingMisses.keys.prefix(maxBatchSize))
-            var batch: [CacheMiss] = []
-            for key in keys {
-                if let miss = pendingMisses.removeValue(forKey: key) {
-                    batch.append(miss)
-                }
+            // Take a batch from the front of the queue (FIFO)
+            let batchSize = min(maxBatchSize, pendingMisses.count)
+            let batch = Array(pendingMisses.prefix(batchSize))
+            pendingMisses.removeFirst(batchSize)
+
+            // Remove from deduplication set
+            for miss in batch {
+                pendingKeys.remove(miss.cacheKey)
             }
             inFlightCount = batch.count
 
@@ -215,7 +224,7 @@ actor TimelineCacheMissGenerator {
             // Update active entry ID to next in queue (or nil if empty)
             // Convert String ID to UUID for timeline comparison
             let nextEntryID: UUID? = {
-                guard let entryId = pendingMisses.values.first?.entryId else { return nil }
+                guard let entryId = pendingMisses.first?.entryId else { return nil }
                 return UUID(uuidString: entryId)
             }()
             await MainActor.run {
