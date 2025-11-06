@@ -107,7 +107,7 @@ struct ConversationTimelineView: View {
     private var timelineContent: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 6) {
+                LazyVStack(alignment: .leading, spacing: 6) {
                     if let error = monitor.lastError {
                         errorBanner(error)
                     }
@@ -128,6 +128,11 @@ struct ConversationTimelineView: View {
                             // PERF: Removed transition to reduce animation costs during bulk loads
                             // .transition(.move(edge: .trailing).combined(with: .opacity))
                             .id(entry.id)
+                            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
+                                if isVisible {
+                                    monitor.markEntryVisible(entry.id)
+                                }
+                            }
                         }
                         Color.clear
                             .frame(height: 1)
