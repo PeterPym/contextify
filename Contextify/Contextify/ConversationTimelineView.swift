@@ -139,6 +139,15 @@ struct ConversationTimelineView: View {
                             .id(scrollAnchorID)
                     }
                 }
+                .onAppear {
+                    // Initial scroll to bottom when timeline first appears
+                    if monitor.autoScroll, !monitor.visibleEntries.isEmpty {
+                        // Small delay to ensure LazyVStack has laid out
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            proxy.scrollTo(scrollAnchorID, anchor: .bottom)
+                        }
+                    }
+                }
             }
             .scrollContentBackground(.hidden)
             .onChange(of: monitor.visibleEntries.count) { _, newCount in
