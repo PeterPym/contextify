@@ -12,6 +12,9 @@ set -euo pipefail
 MIN_GAP_MS=${2:-1000}  # Default 1 second
 LOGFILE=${1:-}
 
+# Output file (strip colors for saved version)
+OUTPUT_FILE="/tmp/gap-analysis-$(date +%Y%m%d-%H%M%S).txt"
+
 # Colors for output
 RED='\033[1;31m'
 YELLOW='\033[1;33m'
@@ -90,6 +93,8 @@ get_milliseconds() {
   echo "$ms" | sed 's/^0*//' | grep -E '^[0-9]+$' || echo "0"
 }
 
+# Wrapper function to send all output to both stdout and file
+{
 echo -e "${CYAN}=== Analyzing UIOPT Log Gaps ===${RESET}"
 echo "Log file: $LOGFILE"
 echo "Minimum gap: ${MIN_GAP_MS}ms"
@@ -164,11 +169,26 @@ for ((i=1; i<total_lines; i++)); do
     echo -e "${color}Gap #${gap_count}: ${gap_ms}ms (${severity})${RESET}"
     echo -e "${color}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo ""
-    echo -e "${CYAN}Before (line ${line_numbers[$((i-1))]]}):${RESET}"
+
+    # Extract thread IDs from log lines
+    prev_thread=$(echo "${messages[$((i-1))]}" | grep -oE '\[[0-9a-f]+:[0-9a-f]+\]' | tail -1 | tr -d '[]' | cut -d: -f2)
+    curr_thread=$(echo "${messages[$i]}" | grep -oE '\[[0-9a-f]+:[0-9a-f]+\]' | tail -1 | tr -d '[]' | cut -d: -f2)
+
+    # Extract timestamps
+    prev_time=$(echo "$prev_ts" | awk '{print $2}')
+    curr_time=$(echo "$curr_ts" | awk '{print $2}')
+
+    echo -e "${CYAN}Before (line ${line_numbers[$((i-1))]]} @ ${prev_time}):${RESET}"
     echo "  ${messages[$((i-1))]}"
+    if [[ -n "$prev_thread" ]]; then
+      echo -e "  ${CYAN}Thread: ${prev_thread}${RESET}"
+    fi
     echo ""
-    echo -e "${CYAN}After (line ${line_numbers[$i]}):${RESET}"
+    echo -e "${CYAN}After (line ${line_numbers[$i]} @ ${curr_time}):${RESET}"
     echo "  ${messages[$i]}"
+    if [[ -n "$curr_thread" ]]; then
+      echo -e "  ${CYAN}Thread: ${curr_thread}${RESET}"
+    fi
     echo ""
 
     # Extract tags for analysis
@@ -178,7 +198,13 @@ for ((i=1; i<total_lines; i++)); do
     echo -e "${CYAN}Analysis:${RESET}"
     echo "  Previous tag: $prev_tag"
     echo "  Next tag:     $curr_tag"
+    if [[ -n "$prev_thread" && -n "$curr_thread" && "$prev_thread" != "$curr_thread" ]]; then
+      echo -e "  ${YELLOW}⚠ Thread switch: ${prev_thread} → ${curr_thread}${RESET}"
+    fi
     echo "  Gap location: Between these operations"
+    echo ""
+    echo -e "${CYAN}Context:${RESET}"
+    echo "  View full context: sed -n '${line_numbers[$((i-1))]},${line_numbers[$i]}p' $LOGFILE"
     echo ""
   fi
 done
@@ -187,12 +213,58 @@ done
 echo -e "${CYAN}=== Summary ===${RESET}"
 echo "Total UIOPT entries: $total_lines"
 echo "Gaps >= ${MIN_GAP_MS}ms: $gap_count"
+echo ""
 
 if [[ $gap_count -eq 0 ]]; then
   echo -e "${GREEN}✓ No significant gaps found${RESET}"
 else
   echo -e "${YELLOW}⚠ Found $gap_count significant gap(s)${RESET}"
   echo ""
+
+  # Quick reference table
+  echo -e "${CYAN}Quick Reference:${RESET}"
+  echo "┌──────┬────────────┬─────────────────────────────────────────────────────────────┐"
+  echo "│ Gap# │ Duration   │ Between                                                     │"
+  echo "├──────┼────────────┼─────────────────────────────────────────────────────────────┤"
+
+  gap_num=0
+  for ((i=1; i<total_lines; i++)); do
+    prev_ts="${timestamps[$((i-1))]}"
+    curr_ts="${timestamps[$i]}"
+    prev_s=$(timestamp_to_seconds "$prev_ts")
+    curr_s=$(timestamp_to_seconds "$curr_ts")
+    prev_ms=$(get_milliseconds "$prev_ts")
+    curr_ms=$(get_milliseconds "$curr_ts")
+    prev_total=$(add_milliseconds "$prev_s" "$prev_ms")
+    curr_total=$(add_milliseconds "$curr_s" "$curr_ms")
+    gap_ms=$((curr_total - prev_total))
+
+    if [[ $gap_ms -ge $MIN_GAP_MS ]]; then
+      gap_num=$((gap_num + 1))
+      prev_tag=$(echo "${messages[$((i-1))]}" | grep -oE "\[UIOPT-[^]]+\]" | head -1 | tr -d '[]')
+      curr_tag=$(echo "${messages[$i]}" | grep -oE "\[UIOPT-[^]]+\]" | head -1 | tr -d '[]')
+
+      # Format duration with color
+      if [[ $gap_ms -ge 10000 ]]; then
+        duration_str=$(printf "%-10s" "${gap_ms}ms 🔴")
+      elif [[ $gap_ms -ge 5000 ]]; then
+        duration_str=$(printf "%-10s" "${gap_ms}ms 🟡")
+      else
+        duration_str=$(printf "%-10s" "${gap_ms}ms")
+      fi
+
+      printf "│ %-4s │ %-10s │ %-30s → %-25s │\n" "#$gap_num" "$duration_str" "${prev_tag:0:30}" "${curr_tag:0:25}"
+    fi
+  done
+
+  echo "└──────┴────────────┴─────────────────────────────────────────────────────────────┘"
+  echo ""
   echo "Tip: Use lower min-gap-ms to find smaller delays:"
   echo "  $0 $LOGFILE 500"
 fi
+
+# Report where output was saved
+echo ""
+echo -e "${CYAN}Analysis saved to: ${OUTPUT_FILE}${RESET}"
+
+} | tee >(sed 's/\x1b\[[0-9;]*m//g' > "$OUTPUT_FILE")
