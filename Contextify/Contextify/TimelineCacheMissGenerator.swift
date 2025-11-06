@@ -34,6 +34,9 @@ actor TimelineCacheMissGenerator {
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
 
+    /// The entry ID currently being processed (for pulse animation)
+    @MainActor private(set) var activeEntryID: String?
+
     // Queue management
     private let maxQueueSize = 5000
     private let maxBatchSize = 1  // Process one at a time for instant responsiveness
@@ -69,6 +72,11 @@ actor TimelineCacheMissGenerator {
         pendingMisses.removeAll()
         isProcessing = false
         inFlightCount = 0
+
+        // Clear active entry ID
+        Task { @MainActor in
+            activeEntryID = nil
+        }
 
         // Notify observers of shutdown
         notifyQueueChanged()
@@ -160,6 +168,13 @@ actor TimelineCacheMissGenerator {
             }
             inFlightCount = batch.count
 
+            // Set active entry ID for pulse animation (first item in batch)
+            if let firstMiss = batch.first {
+                await MainActor.run {
+                    activeEntryID = firstMiss.entryId
+                }
+            }
+
             // Reset sessions for the specific kinds and providers in this batch
             // Use struct-based set to deduplicate kind+provider pairs (no delimiter collisions)
             struct KindProviderPair: Hashable {
@@ -194,6 +209,12 @@ actor TimelineCacheMissGenerator {
             trackBatchLatency(latency)
             inFlightCount = 0
 
+            // Update active entry ID to next in queue (or nil if empty)
+            let nextEntryID = pendingMisses.values.first?.entryId
+            await MainActor.run {
+                activeEntryID = nextEntryID
+            }
+
             // Rate limit: wait between batches
             if !pendingMisses.isEmpty {
                 try? await Task.sleep(nanoseconds: batchDelayNs)
@@ -201,6 +222,12 @@ actor TimelineCacheMissGenerator {
         }
 
         isProcessing = false
+
+        // Clear active entry ID when queue is empty
+        await MainActor.run {
+            activeEntryID = nil
+        }
+
         notifyQueueChanged()  // Notify that processing finished
         generationTask = nil
         log.info("Cache miss generation queue empty")

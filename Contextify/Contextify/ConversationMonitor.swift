@@ -3,6 +3,7 @@ import Observation
 import OSLog
 import ContextifyCore
 import AppKit
+import SwiftUI
 import CryptoKit
 
 // MARK: - Diagnostics Configuration
@@ -55,9 +56,15 @@ final class TimelineState {
     // Cached index map - rebuilt only when entries change (performance optimization)
     // Uses uniquingKeysWith to handle duplicate cache keys (keeps latest index)
     @ObservationIgnored private var _indexByCacheKey: [CacheKey: Int] = [:]
+    @ObservationIgnored private var _byID: [UUID: TimelineEntry] = [:]
 
     var indexByCacheKey: [CacheKey: Int] {
         _indexByCacheKey
+    }
+
+    /// O(1) lookup of entry by ID
+    func lookup(_ id: UUID) -> TimelineEntry? {
+        _byID[id]
     }
 
     private func rebuildCacheIndex() {
@@ -67,6 +74,7 @@ final class TimelineState {
             },
             uniquingKeysWith: { _, new in new }  // Keep latest index on collision
         )
+        _byID = Dictionary(uniqueKeysWithValues: entries.lazy.map { ($0.id, $0) })
     }
 
     func replace(with entries: [TimelineEntry]) {
@@ -82,6 +90,7 @@ final class TimelineState {
         if let key = e.cacheKey {
             _indexByCacheKey[key] = entries.count - 1
         }
+        _byID[e.id] = e
     }
 
     func update(at index: Int, to newValue: TimelineEntry) {
@@ -89,6 +98,7 @@ final class TimelineState {
 
         // Atomic cache index update: remove old key, then add new key
         let oldKey = entries[index].cacheKey
+        let oldID = entries[index].id
         entries[index] = newValue
         revision &+= 1
 
@@ -101,6 +111,12 @@ final class TimelineState {
         if let newKey = newValue.cacheKey {
             _indexByCacheKey[newKey] = index
         }
+
+        // Update ID index
+        if oldID != newValue.id {
+            _byID.removeValue(forKey: oldID)
+        }
+        _byID[newValue.id] = newValue
     }
 
     func sortChronologically() {
@@ -157,6 +173,11 @@ final class ConversationMonitor {
         return state.entries.count > n
           ? Array(state.entries.suffix(n))
           : state.entries
+    }
+
+    /// O(1) lookup of any entry in current timeline by ID
+    func lookup(_ id: UUID) -> TimelineEntry? {
+        state.lookup(id)
     }
 
     private(set) var isMonitoring = false
@@ -991,6 +1012,9 @@ final class ConversationMonitor {
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
 
+            // Get active entry ID from generator (if any)
+            let activeGeneratingID = await cacheMissGenerator?.activeEntryID
+
             let newEntries = feed.map { entry, cache in
                 seenEntryIDs.insert(entry.id)
 
@@ -1009,15 +1033,30 @@ final class ConversationMonitor {
                     misses.append(miss)
                 }
 
-                return toTimelineEntry(entry, cached: cache)
+                // Create timeline entry with active state check
+                var timelineEntry = toTimelineEntry(entry, cached: cache)
+
+                // Override action if this is the actively processing entry
+                if timelineEntry.action == .generating,
+                   let activeID = activeGeneratingID,
+                   entry.id == activeID {
+                    timelineEntry = timelineEntry.copyWith(action: .generatingActive)
+                }
+
+                return timelineEntry
             }
             log.info("[UIOPT-MAP-DONE] Mapping complete in \(String(format: "%.0f", Date().timeIntervalSince(mapStart) * 1000), privacy: .public)ms")
 
             let uiUpdateStart = Date()
             log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count, privacy: .public) entries...")
-            setEntries(newEntries)
-            sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
-            pruneSeenIDsIfNeeded()
+
+            // Disable animations during bulk feed replace to reduce layout/animation costs
+            withAnimation(nil) {
+                setEntries(newEntries)
+                sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
+                pruneSeenIDsIfNeeded()
+            }
+
             log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000), privacy: .public)ms")
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")

@@ -118,14 +118,14 @@ struct ConversationTimelineView: View {
                         ForEach(monitor.visibleEntries) { entry in
                             TimelineEntryRow(
                                 entry: entry,
-                                allEntries: monitor.visibleEntries,
                                 onScrollToEntry: { entryId in
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         proxy.scrollTo(entryId, anchor: .center)
                                     }
                                 }
                             )
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            // PERF: Removed transition to reduce animation costs during bulk loads
+                            // .transition(.move(edge: .trailing).combined(with: .opacity))
                             .id(entry.id)
                         }
                         Color.clear
