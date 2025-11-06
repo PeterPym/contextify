@@ -88,13 +88,15 @@ struct TimelineEntryRow: View {
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-                .help(absoluteTimestampTooltip)
+                // PERF TEST: Temporarily disabled - DateFormatter allocation on every render
+                // .help(absoluteTimestampTooltip)
             if entry.action == .generating {
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
-                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isActivelyGenerating)
+                    // PERF TEST: Temporarily disabled - O(n) filter/min on every render
+                    // .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isActivelyGenerating)
                     .help("Summary not yet generated")
             }
             if entry.action == .nonSummarizable {
@@ -116,20 +118,22 @@ struct TimelineEntryRow: View {
                     .foregroundStyle(Color.contextifyGreen)
                     .accessibilityLabel("Task completed")
 
-                if let duration = calculateDuration() {
-                    Text(duration)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                }
+                // PERF TEST: Temporarily disabled - O(n²) linear search bottleneck
+                // if let duration = calculateDuration() {
+                //     Text(duration)
+                //         .font(.caption2.monospaced())
+                //         .foregroundStyle(.secondary)
+                // }
 
-                if let requestId = entry.requestId {
-                    Button(action: { onScrollToEntry(requestId) }) {
-                        Image(systemName: "arrow.up.circle")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Jump to original request")
-                }
+                // PERF TEST: Temporarily disabled - linear search on every render
+                // if let requestId = entry.requestId {
+                //     Button(action: { onScrollToEntry(requestId) }) {
+                //         Image(systemName: "arrow.up.circle")
+                //             .font(.caption)
+                //     }
+                //     .buttonStyle(.plain)
+                //     .help("Jump to original request")
+                // }
             }
             Spacer()
             if case .revealInInventory = entry.action {
