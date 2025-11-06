@@ -325,22 +325,27 @@ public final class ProjectSwitcherState {
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
 
-    // Update active project ID
+    // Update active project ID (CXT-11: immediate UI update, DB writes deferred)
     activeProjectId = projectId
+    unreadCounts[projectId] = 0
     log.info("🔀 Set activeProjectId to: \(self.activeProjectId ?? "nil", privacy: .public)")
 
-    // Mark project as selected
+    // CXT-11: Run database operations in background to avoid blocking UI
+    Task.detached(priority: .userInitiated) {
+      let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+      do {
+        // Mark project as selected and viewed
+        try orchestrator.markProjectSelected(projectId: projectId)
+        let timestamp = ISO8601Z.string(from: Date())
+        try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
+        logger.debug("✅ Project metadata updated in database: \(projectId)")
+      } catch {
+        logger.error("Failed to update project metadata: \(error.localizedDescription)")
+      }
+    }
+
+    // Get project root path and update HUDViewModel
     do {
-      try orchestrator.markProjectSelected(projectId: projectId)
-
-      // Mark as viewed with current timestamp (using centralized formatter)
-      let timestamp = ISO8601Z.string(from: Date())
-      try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-
-      // Reset unread count
-      unreadCounts[projectId] = 0
-
-      // Get project root path and update HUDViewModel
       if let project = try orchestrator.getProject(id: projectId) {
         // Generate nonce for self-suppression (replaces time-window approach)
         let nonce = await MainActor.run {

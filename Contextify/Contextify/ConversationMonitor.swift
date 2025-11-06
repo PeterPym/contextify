@@ -313,20 +313,23 @@ final class ConversationMonitor {
                 self.cacheMissGenerator = nil  // Clear before creating new
                 self.isCacheGeneratorActive = false
 
-                // 4. Create new generator in background after shutdown completes (CXT-3)
+                // 4. Create new generator in background after shutdown completes (CXT-3, CXT-9)
                 // Don't block UI - spawn background task that awaits shutdown then creates generator
                 // UI returns immediately, generator initializes when safe
+                // CXT-9: Removed @MainActor to prevent blocking UI on second switch
                 let orchestratorForGenerator = self.orchestrator!
-                Task { @MainActor [weak self] in
-                    // Wait for chained shutdown to complete (happens in background)
+                Task { [weak self] in
+                    // Wait for chained shutdown to complete (happens in background, off main actor)
                     await self?.generatorShutdownTask?.value
 
                     // Now safe to create new generator (old one fully shut down)
                     guard let self else { return }
-                    self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: orchestratorForGenerator)
-                    self.isCacheGeneratorActive = true
-                    self.generatorShutdownTask = nil
-                    self.log.info("✅ Cache miss generator initialized for new project")
+                    await MainActor.run {
+                        self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: orchestratorForGenerator)
+                        self.isCacheGeneratorActive = true
+                        self.generatorShutdownTask = nil
+                        self.log.info("✅ Cache miss generator initialized for new project")
+                    }
                 }
 
                 // Initialize diagnostics service
@@ -483,7 +486,8 @@ final class ConversationMonitor {
         }
 
         // P0-2: Cancellable startup sequence with checkpoints
-        startupTask = Task { @MainActor in
+        // CXT-10: Removed @MainActor to prevent blocking UI during database operations
+        startupTask = Task {
             do {
                 // 1. Load policy from DB (C: restore followMode)
                 try Task.checkCancellation()
@@ -492,7 +496,7 @@ final class ConversationMonitor {
                 // 2. Load all sessions before reconciliation
                 try Task.checkCancellation()
                 await self.loadAllSessionsFromDatabase()
-                self.sessionsLoaded = true
+                await MainActor.run { self.sessionsLoaded = true }
 
                 // 3. Reconcile policy with available sessions
                 try Task.checkCancellation()
@@ -511,7 +515,7 @@ final class ConversationMonitor {
                 await self.loadSwitchEventsFromSQL()
 
                 // 7. Enable incremental updates
-                self.isReadyForUpdates = true
+                await MainActor.run { self.isReadyForUpdates = true }
             } catch is CancellationError {
                 log.debug("Startup cancelled for project switch")
             } catch {
@@ -1534,11 +1538,21 @@ final class ConversationMonitor {
                 try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
             }
 
-            // Run maintenance after bulk ingest
-            try orchestrator.performMaintenance()
+            // Run maintenance asynchronously in background (non-blocking)
+            // Defer to avoid blocking project switch UI
+            let orchestratorForMaintenance = orchestrator
+            Task.detached(priority: .utility) {
+                let logger = Logger(subsystem: "dev.contextify", category: "Timeline")
+                do {
+                    try orchestratorForMaintenance.performMaintenance()
+                    logger.info("✅ Background database maintenance completed")
+                } catch {
+                    logger.error("❌ Background maintenance failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
 
             await MainActor.run {
-                log.info("✅ Discovery complete - all transcripts watching")
+                log.info("✅ Discovery complete - all transcripts watching (maintenance deferred to background)")
             }
         } else {
             await MainActor.run {
