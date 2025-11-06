@@ -1097,11 +1097,17 @@ final class ConversationMonitor {
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // Queue cache misses for background generation
+            // Queue only initially visible entries (last ~12 entries will be in viewport)
+            // Off-screen entries will be processed when scrolled into view or when app is idle
             if !misses.isEmpty, let generator = cacheMissGenerator {
-                log.info("[SUMM-QUEUE] Queueing \(misses.count) entries for summarization")
+                let visibleCount = min(12, misses.count)  // Estimate viewport capacity
+                let visibleMisses = Array(misses.suffix(visibleCount))  // Most recent entries
+
+                log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries for summarization")
+                log.info("[SUMM-QUEUE] Deferring \(misses.count - visibleMisses.count) off-screen entries (will process on scroll or idle)")
+
                 Task {
-                    await generator.queueMisses(misses)
+                    await generator.queueMisses(visibleMisses)
                 }
             } else if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
@@ -1314,6 +1320,42 @@ final class ConversationMonitor {
         log.debug("Marked entry \(entryId.uuidString) as viewed (total viewed: \(self.viewedEntryIDs.count))")
         #endif
         pruneViewedIDsIfNeeded()
+
+        // Queue entry for summarization if it needs one (scrolled into view)
+        queueEntryIfNeeded(entryId)
+    }
+
+    /// Queue a single entry for summarization if it has a cache miss
+    @MainActor
+    private func queueEntryIfNeeded(_ entryId: UUID) {
+        guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
+        guard entry.action == .generating else { return }  // Already has summary or processing
+
+        // Create cache miss for this entry
+        guard let content = entry.contentSha256,
+              let window = entry.windowSha256,
+              let sourceContent = entry.sourceContent,
+              let projectId = currentProjectId else {
+            return
+        }
+
+        let miss = CacheMiss(
+            entryId: entry.id.uuidString,
+            projectId: projectId,
+            contentSha256: content,
+            windowSha256: window,
+            content: sourceContent,
+            context: entry.detail,
+            kind: entry.kind.rawValue,
+            provider: entry.sourceContext?.provider.rawValue ?? "other"
+        )
+
+        // Queue immediately (user is looking at it)
+        guard let generator = cacheMissGenerator else { return }
+        Task {
+            log.info("[SUMM-SCROLL] Entry scrolled into view, queueing for summarization: \(entryId.uuidString.prefix(8))")
+            await generator.queueMisses([miss])
+        }
     }
 
     /// CXT-104: Prune viewedEntryIDs to prevent unbounded growth
