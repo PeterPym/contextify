@@ -211,6 +211,11 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
+    // IMPORTANT: nonisolated(unsafe) is REQUIRED for observer tokens.
+    // NSObjectProtocol is not Sendable, so removing nonisolated(unsafe) causes:
+    // "cannot access property 'X' with a non-Sendable type from nonisolated deinit"
+    // These tokens must be accessed in deinit to removeObserver(), which is nonisolated.
+    // This pattern has been suggested for removal multiple times but MUST be kept.
     @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?   // For cache update notifications
     @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol? // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
@@ -245,6 +250,7 @@ final class ConversationMonitor {
     // Viewport tracking and background summarization (Phase 2-3)
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
+    // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
 
