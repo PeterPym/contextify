@@ -641,13 +641,18 @@ public final class HUDViewModel {
       }
     }.value
 
-    // Notify coordinator with the final path (git root if present) - AWAIT for determinism
+    // Notify coordinator with the final path (git root if present)
+    // IMPORTANT: Do NOT await - this would block the main thread during project switch
+    // The coordinator will handle database operations on background thread and publish updates
     let finalPath = (self.projectRootURL ?? resolved).path
-    do {
-      try await StartupCoordinator.shared.switchProject(to: finalPath)
-      lifecycleLog.info("✅ Coordinator switch complete: \(finalPath)")
-    } catch {
-      lifecycleLog.error("❌ Coordinator switch failed: \(error.localizedDescription, privacy: .public)")
+    Task.detached(priority: .userInitiated) {
+      let logger = Logger(subsystem: "dev.contextify", category: "Lifecycle")
+      do {
+        try await StartupCoordinator.shared.switchProject(to: finalPath)
+        logger.info("✅ Coordinator switch complete: \(finalPath)")
+      } catch {
+        logger.error("❌ Coordinator switch failed: \(error.localizedDescription, privacy: .public)")
+      }
     }
   }
 
