@@ -196,6 +196,9 @@ public final class ProjectSwitcherState {
     // Coordinator guarantees project exists in DB, so just set activeProjectId directly
     activeProjectId = context.id
 
+    // Clear unread count for newly active project (CXT-13)
+    unreadCounts[context.id] = 0
+
     // Refresh project list to update UI
     await refreshProjects()
 
@@ -325,40 +328,41 @@ public final class ProjectSwitcherState {
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
 
-    // Update active project ID (CXT-11: immediate UI update, DB writes deferred)
-    activeProjectId = projectId
-    unreadCounts[projectId] = 0
-    log.info("🔀 Set activeProjectId to: \(self.activeProjectId ?? "nil", privacy: .public)")
+    // CXT-13: Use StartupCoordinator for atomic project switching
+    // This ensures ProjectSwitcherState and ConversationMonitor receive updates simultaneously
+    // via their respective update streams, eliminating the race condition where UI shows
+    // one project but timeline shows data from another.
 
-    // CXT-11: Run database operations in background to avoid blocking UI
-    Task.detached(priority: .userInitiated) {
-      let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
-      do {
-        // Mark project as selected and viewed
-        try orchestrator.markProjectSelected(projectId: projectId)
-        let timestamp = ISO8601Z.string(from: Date())
-        try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-        logger.debug("✅ Project metadata updated in database: \(projectId)")
-      } catch {
-        logger.error("Failed to update project metadata: \(error.localizedDescription)")
-      }
-    }
-
-    // Get project root path and update HUDViewModel
+    // Get project root path
     do {
-      if let project = try orchestrator.getProject(id: projectId) {
-        // Generate nonce for self-suppression (replaces time-window approach)
-        let nonce = await MainActor.run {
-          self.generateSuppressNonce()
-        }
-
-        // Call HUDViewModel to switch project (updates git info, watchers, etc.)
-        await MainActor.run {
-          HUDViewModel.shared.switchToProject(project.rootPath, nonce: nonce)
-        }
-
-        log.info("Switched to project: \(project.rootPath)")
+      guard let project = try orchestrator.getProject(id: projectId) else {
+        log.error("Project not found: \(projectId)")
+        return
       }
+
+      // Call coordinator to switch project (publishes to all subscribers atomically)
+      try await StartupCoordinator.shared.switchProject(to: project.rootPath)
+
+      // StartupCoordinator will publish update, which triggers:
+      // 1. handleContextUpdate() in ProjectSwitcherState (sets activeProjectId)
+      // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
+      // This ensures UI and data stay in sync with no race condition
+
+      // CXT-11: Update metadata in background (non-blocking)
+      Task.detached(priority: .userInitiated) {
+        let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+        do {
+          // Mark project as selected and viewed
+          try orchestrator.markProjectSelected(projectId: projectId)
+          let timestamp = ISO8601Z.string(from: Date())
+          try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
+          logger.debug("✅ Project metadata updated in database: \(projectId)")
+        } catch {
+          logger.error("Failed to update project metadata: \(error.localizedDescription)")
+        }
+      }
+
+      log.info("✅ Switched to project: \(project.rootPath)")
     } catch {
       log.error("Failed to switch project: \(error.localizedDescription)")
     }

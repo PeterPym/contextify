@@ -458,6 +458,7 @@ public final class HUDViewModel {
   private var hasLoggedMissingGit = false
   private var securityScopedURL: URL? = nil
   private var headWatcherArms: Int = 0
+  private var coordinatorSubscription: Task<Void, Never>? = nil
 
   public var branchDisplay: String {
     if branch.isEmpty || branch == "—" { return "—" }
@@ -512,12 +513,38 @@ public final class HUDViewModel {
     if let root = discoveredRoot {
       postProjectRootDidChange(root, source: "startup")
     }
+
+    // CXT-13: Subscribe to coordinator updates to keep git info in sync
+    coordinatorSubscription = Task { @MainActor [weak self] in
+      guard let self else { return }
+      for await context in StartupCoordinator.shared.updates() {
+        await self.handleCoordinatorUpdate(context)
+      }
+    }
+  }
+
+  /// Handle project context update from StartupCoordinator (CXT-13)
+  @MainActor
+  private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
+    lifecycleLog.debug("📍 HUDViewModel: Received coordinator update: \(context.displayName) (path: \(context.path, privacy: .public))")
+
+    // Update project root URL and branch from coordinator context
+    let url = URL(fileURLWithPath: context.path)
+    projectRootURL = url
+    branch = context.branch ?? "—"
+
+    // Update file watchers for new project
+    updateHeadWatcher()
+
+    lifecycleLog.info("✅ HUDViewModel: Updated to project: \(context.displayName) (branch: \(self.branch))")
   }
 
   deinit {
     MainActor.assumeIsolated {
       branchTimer?.invalidate()
       branchTimer = nil
+      coordinatorSubscription?.cancel()
+      coordinatorSubscription = nil
       cancelHeadAndRefWatchers()
       #if os(macOS)
       securityScopedURL?.stopAccessingSecurityScopedResource()

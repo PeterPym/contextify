@@ -58,10 +58,42 @@ actor LLMHealthCheck {
 
   // Cache status for 30 seconds to avoid hammering the system
   private var cachedStatus: HealthStatus?
+  private var previousStatus: HealthStatus?  // Track for change detection
   private var lastCheckTime: Date?
   private let cacheInterval: TimeInterval = 30
 
   private init() {}
+
+  /// Log status change if it differs from previous status
+  private func logStatusChange(_ newStatus: HealthStatus) {
+    // Check if status changed
+    let changed: Bool
+    switch (previousStatus, newStatus) {
+    case (.none, _):
+      changed = true  // First check
+    case (.some(.healthy), .unavailable):
+      changed = true
+    case (.some(.unavailable), .healthy):
+      changed = true
+    case (.some(.unavailable(let oldReason)), .unavailable(let newReason)):
+      // Compare reasons (simplified - just check if same enum case)
+      changed = String(describing: oldReason) != String(describing: newReason)
+    default:
+      changed = false
+    }
+
+    guard changed else { return }
+
+    // Log the change
+    switch newStatus {
+    case .healthy:
+      log.warning("⚠️ Apple Intelligence BECAME AVAILABLE")
+    case .unavailable(let reason):
+      log.error("❌ Apple Intelligence BECAME UNAVAILABLE: \(reason.userFacingMessage, privacy: .public)")
+    }
+
+    previousStatus = newStatus
+  }
 
   /// Check LLM health using both official API and actual test call
   /// - Parameter forceRefresh: Skip cache and perform fresh check
@@ -83,6 +115,7 @@ actor LLMHealthCheck {
     case .available:
       // Suspenders: Perform actual test call
       let status = await performTestCall()
+      logStatusChange(status)
       cachedStatus = status
       lastCheckTime = Date()
       return status
@@ -103,12 +136,14 @@ actor LLMHealthCheck {
         log.warning("LLM health check: Unknown availability reason: \(String(describing: reason))")
         status = .unavailable(.testCallFailed(details: "Unknown availability: \(reason)"))
       }
+      logStatusChange(status)
       cachedStatus = status
       lastCheckTime = Date()
       return status
     }
     #else
     let status: HealthStatus = .unavailable(.foundationModelsNotImported)
+    logStatusChange(status)
     cachedStatus = status
     lastCheckTime = Date()
     return status

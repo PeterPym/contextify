@@ -160,6 +160,7 @@ final class ConversationMonitor {
     }
 
     private(set) var isMonitoring = false
+    private var isSwitchingProjects = false  // CXT-13: Suppress health monitoring during project switch
     private(set) var isProcessing = false
     private(set) var lastError: String?
     private(set) var lastUpdate: Date?
@@ -196,6 +197,8 @@ final class ConversationMonitor {
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
+    @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
+    @ObservationIgnored private var pendingCacheKeys: Set<CacheKey> = []  // CXT-13: Accumulated cache keys
 
     // v23: Active session follow state
     @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
@@ -277,47 +280,60 @@ final class ConversationMonitor {
 
         log.info("⭐️ Timeline integration starting for project \(projectId)")
 
-        Task { @MainActor [weak self] in
+        // CXT-13: Remove @MainActor to prevent blocking UI on project switch
+        Task { [weak self] in
             guard let self else { return }
 
             // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
                 let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
-                self.orchestrator = orch
-                self.currentProjectId = projectId
-                self.log.info("📁 Project ID set: \(projectId)")
+                await MainActor.run {
+                    self.orchestrator = orch
+                    self.currentProjectId = projectId
+                    self.log.info("📁 Project ID set: \(projectId)")
+                }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
-                let projectId = self.currentProjectId!
+                // Use projectId parameter directly (already have it from function arg)
                 guard let _ = try orch.getProject(id: projectId) else {
-                    self.lastError = "Failed to verify project creation"
-                    self.log.error("❌ Project \(projectId) not found after creation")
+                    await MainActor.run {
+                        self.lastError = "Failed to verify project creation"
+                        self.log.error("❌ Project \(projectId) not found after creation")
+                    }
                     return
                 }
-                self.log.info("✅ Project \(projectId) verified in database")
+                await MainActor.run {
+                    self.log.info("✅ Project \(projectId) verified in database")
+                }
 
                 // 3. Shutdown old cache miss generator with chained shutdown (CXT-1)
                 // CRITICAL: Capture previous shutdown task BEFORE creating new one to chain them
                 // On rapid A→B→C switches, this ensures A shuts down, THEN B, THEN C (serialized)
                 // Without chaining: A and B shutdown concurrently → SQLITE_BUSY
-                let previousShutdownTask = self.generatorShutdownTask
+                let (previousShutdownTask, oldGenerator, orchestratorForGenerator) = await MainActor.run {
+                    (self.generatorShutdownTask, self.cacheMissGenerator, self.orchestrator!)
+                }
 
-                if let oldGenerator = self.cacheMissGenerator {
-                    self.generatorShutdownTask = Task(priority: .utility) {
+                if let oldGenerator = oldGenerator {
+                    let shutdownTask = Task(priority: .utility) {
                         // First await previous shutdown (if any)
                         await previousShutdownTask?.value
                         // Then shutdown this generator
                         await oldGenerator.shutdown()
                     }
+                    await MainActor.run {
+                        self.generatorShutdownTask = shutdownTask
+                    }
                 }
-                self.cacheMissGenerator = nil  // Clear before creating new
-                self.isCacheGeneratorActive = false
+                await MainActor.run {
+                    self.cacheMissGenerator = nil  // Clear before creating new
+                    self.isCacheGeneratorActive = false
+                }
 
                 // 4. Create new generator in background after shutdown completes (CXT-3, CXT-9)
                 // Don't block UI - spawn background task that awaits shutdown then creates generator
                 // UI returns immediately, generator initializes when safe
                 // CXT-9: Removed @MainActor to prevent blocking UI on second switch
-                let orchestratorForGenerator = self.orchestrator!
                 Task { [weak self] in
                     // Wait for chained shutdown to complete (happens in background, off main actor)
                     await self?.generatorShutdownTask?.value
@@ -333,13 +349,16 @@ final class ConversationMonitor {
                 }
 
                 // Initialize diagnostics service
-                self.diagnosticsService = TimelineDiagnosticsService(db: try DatabaseManager.shared.pool)
+                let diagnosticsService = try TimelineDiagnosticsService(db: DatabaseManager.shared.pool)
+                await MainActor.run {
+                    self.diagnosticsService = diagnosticsService
+                }
 
                 // Initialize diagnostics HTTP server (external API) - opt-in, non-fatal
                 if DiagnosticsConfig.enableHTTPServer {
-                    self.diagnosticsHTTPServer = DiagnosticsHTTPServer()
+                    let server = DiagnosticsHTTPServer()
                     do {
-                        try await self.diagnosticsHTTPServer?.start(
+                        try await server.start(
                             diagnosticsHandler: { @Sendable [weak self] in
                                 guard let self else { return nil }
                                 return await self.captureDiagnostics()
@@ -349,16 +368,23 @@ final class ConversationMonitor {
                                 return await self.getRecentEntries(count: count)
                             }
                         )
+                        await MainActor.run {
+                            self.diagnosticsHTTPServer = server
+                        }
                     } catch {
-                        self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription, privacy: .public)")
-                        self.diagnosticsHTTPServer = nil
+                        await MainActor.run {
+                            self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription, privacy: .public)")
+                            self.diagnosticsHTTPServer = nil
+                        }
                     }
                 }
 
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
-                let orchestrator = self.orchestrator!
-                self.log.info("🚀 Spawning background tasks for project: \(projectId)")
-                self.backgroundTasks = Task { [weak self] in
+                let orchestrator = orchestratorForGenerator
+                await MainActor.run {
+                    self.log.info("🚀 Spawning background tasks for project: \(projectId)")
+                }
+                let backgroundTasks = Task { [weak self] in
                     guard let self else { return }
 
                     // Initialize metadata orchestrator with SQL backend (await before use)
@@ -395,21 +421,28 @@ final class ConversationMonitor {
                         }
                     }
                 }
+                await MainActor.run {
+                    self.backgroundTasks = backgroundTasks
+                }
 
                 // 5. Load initial feed (fast - single query)
                 await self.loadFeedFromSQL()
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
-                self.setupCacheUpdateNotifications()
-                // Project change notifications already set up in init()
+                await MainActor.run {
+                    self.setupCacheUpdateNotifications()
+                    // Project change notifications already set up in init()
 
-                self.isMonitoring = true
-                self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                    self.isMonitoring = true
+                    self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                }
                 NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
             } catch {
-                self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
-                self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
+                    self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
     }
@@ -422,8 +455,11 @@ final class ConversationMonitor {
         backgroundTasks = nil
         debounceTask?.cancel()
         debounceTask = nil
-        coordinatorTask?.cancel()   // C2 (P0): Cancel coordinator subscription to prevent stale consumers
-        coordinatorTask = nil
+        cacheDebounceTask?.cancel()  // CXT-13: Cancel cache update debounce
+        cacheDebounceTask = nil
+        pendingCacheKeys.removeAll()
+        // CXT-13: Do NOT cancel coordinatorTask here! It must persist across project switches
+        // to continue receiving updates. It's only canceled in deinit.
 
         // Stop diagnostics exporter
         if let server = diagnosticsHTTPServer {
@@ -604,6 +640,10 @@ final class ConversationMonitor {
     @MainActor
     private func handleContextUpdate(_ context: ActiveProjectContext) async {
         log.debug("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
+
+        // CXT-13: Set flag to suppress health monitoring during switch
+        await MainActor.run { isSwitchingProjects = true }
+        defer { Task { @MainActor in isSwitchingProjects = false } }
 
         // Stop current monitoring
         log.debug("handleContextUpdate: stopping monitoring")
@@ -1059,8 +1099,28 @@ final class ConversationMonitor {
         ) { [weak self] note in
             guard let self else { return }
             let keys = (note.userInfo?["keys"] as? [CacheKey]) ?? []
+
+            // CXT-13: Debounce cache updates (batch size = 1 causes flood)
             Task { @MainActor [weak self] in
-                await self?.refreshCachedEntries(keys: keys)
+                guard let self else { return }
+
+                // Accumulate keys
+                self.pendingCacheKeys.formUnion(keys)
+
+                // Cancel existing debounce and start new one
+                self.cacheDebounceTask?.cancel()
+                self.cacheDebounceTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms debounce
+                    guard let self = self, !Task.isCancelled else { return }
+
+                    let keysToRefresh = await MainActor.run {
+                        let keys = Array(self.pendingCacheKeys)
+                        self.pendingCacheKeys.removeAll()
+                        return keys
+                    }
+
+                    await self.refreshCachedEntries(keys: keysToRefresh)
+                }
             }
         }
     }
@@ -1984,6 +2044,13 @@ final class ConversationMonitor {
 
                 // Log heartbeat (debug level - visible during development)
                 log.debug("🏥 Health check: \(snapshot.issues.count) issues")
+
+                // CXT-13: Skip health check during project switch to avoid spurious recovery attempts
+                let switching = await MainActor.run { self.isSwitchingProjects }
+                guard !switching else {
+                    log.debug("🏥 Skipping health check during project switch")
+                    continue
+                }
 
                 // Check for critical issues and attempt recovery
                 for issue in snapshot.issues where issue.severity == .critical {

@@ -268,6 +268,11 @@ struct ProjectSwitcherView: View {
             .clipped()  // Clip content when frame is 0x0
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
+              // Skip if already active (CXT-13: avoid coordinator deduplication blocking refresh)
+              guard state.activeProjectId != project.id else {
+                log.debug("ProjectTab: already active, skipping switch")
+                return
+              }
               Task {
                 await state.switchToProject(project.id)
               }
