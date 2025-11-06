@@ -1553,7 +1553,8 @@ final class ConversationMonitor {
 
         let codexDiscovered = codexResult.transcripts
         if codexResult.parseFailures > 0 || codexResult.missingCwd > 0 {
-            log.warning("Codex discovery skipped \(codexResult.parseFailures) malformed session(s) and \(codexResult.missingCwd) session(s) missing cwd for project \(projectRoot.lastPathComponent, privacy: .public)")
+            // Demoted to .debug: These are typically from conversion scripts or incomplete sessions (benign)
+            log.debug("Codex discovery skipped \(codexResult.parseFailures) malformed session(s) and \(codexResult.missingCwd) session(s) missing cwd for project \(projectRoot.lastPathComponent, privacy: .public)")
         }
 
         await MainActor.run {
