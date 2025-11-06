@@ -32,13 +32,42 @@ public enum DatabaseAccessTracker {
     case recentConflict(otherMachine: String, timeSince: TimeInterval)
   }
 
+  // MARK: - Static caching to avoid expensive operations on every write
+
+  /// Cached machine ID (never changes for a given machine)
+  /// Safe because it's only written once on first database access
+  private nonisolated(unsafe) static var cachedMachineId: String?
+
+  /// Cached machine name (rarely changes, persists for app lifetime)
+  /// Safe because it's only written once on first database access
+  private nonisolated(unsafe) static var cachedMachineName: String?
+
+  /// Cached app version (constant per app launch)
+  /// Safe because it's only written once on first database access
+  private nonisolated(unsafe) static var cachedAppVersion: String?
+
   /// Updates access metadata for current machine
   public static func recordAccess(db: Database) throws {
+    // Cache expensive lookups on first call
+    if cachedMachineId == nil {
+      cachedMachineId = getMachineId()
+      log.debug("Cached machine ID for session")
+    }
+
+    if cachedMachineName == nil {
+      cachedMachineName = Host.current().localizedName ?? "Unknown"
+      log.debug("Cached machine name: \(cachedMachineName ?? "Unknown")")
+    }
+
+    if cachedAppVersion == nil {
+      cachedAppVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+    }
+
     let metadata = DatabaseAccessMetadata(
-      machineId: getMachineId(),
-      machineName: Host.current().localizedName ?? "Unknown",
+      machineId: cachedMachineId!,
+      machineName: cachedMachineName!,
       lastAccess: Date(),
-      appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown"
+      appVersion: cachedAppVersion!
     )
 
     try metadata.insert(db, onConflict: .replace)
@@ -47,7 +76,12 @@ public enum DatabaseAccessTracker {
 
   /// Checks for potential access conflicts
   public static func checkForConflicts(db: Database) throws -> ConflictType? {
-    let currentMachineId = getMachineId()
+    // Use cached value if available, otherwise fetch (and cache for next time)
+    let currentMachineId = cachedMachineId ?? {
+      let id = getMachineId()
+      cachedMachineId = id
+      return id
+    }()
     let allAccess = try DatabaseAccessMetadata.fetchAll(db)
 
     // Filter out current machine
