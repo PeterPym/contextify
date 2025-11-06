@@ -281,7 +281,7 @@ final class ConversationMonitor {
     func startMonitoring(projectId: String) {
         let taskStart = Date()
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
-        log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId)")
+        log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
@@ -305,7 +305,7 @@ final class ConversationMonitor {
                 let dbStart = Date()
                 log.info("[UIOPT-DB-INIT] Creating TranscriptOrchestrator...")
                 let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
-                log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000))ms")
+                log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
                 await MainActor.run {
                     self.orchestrator = orch
                     self.currentProjectId = projectId
@@ -451,7 +451,7 @@ final class ConversationMonitor {
                 let feedStart = Date()
                 log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
                 await self.loadFeedFromSQL()
-                log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000))ms")
+                log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000), privacy: .public)ms")
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
@@ -983,11 +983,11 @@ final class ConversationMonitor {
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
-            log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000))ms")
+            log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count, privacy: .public) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
 
             // Map to UI entries and track seen IDs + collect cache misses
             let mapStart = Date()
-            log.info("[UIOPT-MAP-START] Mapping \(feed.count) entries to timeline UI models...")
+            log.info("[UIOPT-MAP-START] Mapping \(feed.count, privacy: .public) entries to timeline UI models...")
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
 
@@ -1011,14 +1011,14 @@ final class ConversationMonitor {
 
                 return toTimelineEntry(entry, cached: cache)
             }
-            log.info("[UIOPT-MAP-DONE] Mapping complete in \(String(format: "%.0f", Date().timeIntervalSince(mapStart) * 1000))ms")
+            log.info("[UIOPT-MAP-DONE] Mapping complete in \(String(format: "%.0f", Date().timeIntervalSince(mapStart) * 1000), privacy: .public)ms")
 
             let uiUpdateStart = Date()
-            log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count) entries...")
+            log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count, privacy: .public) entries...")
             setEntries(newEntries)
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
-            log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000))ms")
+            log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000), privacy: .public)ms")
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
