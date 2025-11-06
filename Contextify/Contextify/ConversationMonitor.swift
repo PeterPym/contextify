@@ -1022,13 +1022,12 @@ final class ConversationMonitor {
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // TEMPORARY: Disable summarization for performance testing
             // Queue cache misses for background generation
             if !misses.isEmpty, let generator = cacheMissGenerator {
-                log.info("[SUMM-SKIP] ⚠️ Summarization disabled - skipping queueMisses() call for \(misses.count) entries")
-                // DISABLED: Task {
-                // DISABLED:     await generator.queueMisses(misses)
-                // DISABLED: }
+                log.info("[SUMM-QUEUE] Queueing \(misses.count) entries for summarization")
+                Task {
+                    await generator.queueMisses(misses)
+                }
             } else if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
