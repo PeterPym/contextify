@@ -69,27 +69,61 @@ actor LLMHealthCheck {
     // Check if status changed
     let changed: Bool
     switch (previousStatus, newStatus) {
-    case (.none, _):
-      changed = true  // First check
+    case (.none, .healthy):
+      // First check and healthy - don't log (normal startup)
+      changed = false
+    case (.none, .unavailable):
+      // First check and unavailable - log it
+      changed = true
+    case (.some(.healthy), .healthy):
+      // Still healthy - no change
+      changed = false
     case (.some(.healthy), .unavailable):
+      // Became unavailable - log it
       changed = true
     case (.some(.unavailable), .healthy):
+      // Became available again - log it
       changed = true
     case (.some(.unavailable(let oldReason)), .unavailable(let newReason)):
-      // Compare reasons (simplified - just check if same enum case)
+      // Compare reasons - log if reason changed
       changed = String(describing: oldReason) != String(describing: newReason)
-    default:
-      changed = false
     }
 
-    guard changed else { return }
+    guard changed else {
+      // Always update previousStatus even if not logging
+      previousStatus = newStatus
+      return
+    }
 
     // Log the change
-    switch newStatus {
-    case .healthy:
-      log.warning("⚠️ Apple Intelligence BECAME AVAILABLE")
-    case .unavailable(let reason):
-      log.error("❌ Apple Intelligence BECAME UNAVAILABLE: \(reason.userFacingMessage, privacy: .public)")
+    switch (previousStatus, newStatus) {
+    case (_, .healthy):
+      // Only log "became available" if was previously unavailable
+      if case .some(.unavailable) = previousStatus {
+        log.warning("⚠️ Apple Intelligence RECOVERED - Now available")
+      }
+    case (_, .unavailable(let reason)):
+      // Log what specifically is unavailable
+      let indicator: String
+      switch reason {
+      case .appleIntelligenceNotEnabled:
+        indicator = "Apple Intelligence not enabled in System Settings"
+      case .deviceNotEligible:
+        indicator = "Device not eligible for Apple Intelligence"
+      case .modelNotReady:
+        indicator = "Language model not ready"
+      case .guardrailSystemError:
+        indicator = "Guardrail system error (metadata.json missing)"
+      case .sessionCreationFailed:
+        indicator = "Session creation failed"
+      case .testCallFailed:
+        indicator = "LLM test call failed"
+      case .macOSVersionTooOld:
+        indicator = "macOS version too old (requires 26+)"
+      case .foundationModelsNotImported:
+        indicator = "FoundationModels framework not available"
+      }
+      log.error("❌ Apple Intelligence BECAME UNAVAILABLE - \(indicator, privacy: .public)")
     }
 
     previousStatus = newStatus

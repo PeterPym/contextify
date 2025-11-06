@@ -330,6 +330,13 @@ actor TimelineCacheMissGenerator {
             throw TimelineError.llmUnavailable(reason: "FoundationModels requires macOS 26.0+")
         }
 
+        // CXT-13: Fail-fast if Apple Intelligence is unavailable
+        // Prevents project switch lag from waiting through retries when AI is down
+        let healthStatus = await LLMHealthCheck.shared.checkHealth()
+        if case .unavailable(let reason) = healthStatus {
+            throw TimelineError.llmUnavailable(reason: "Apple Intelligence unavailable: \(reason.userFacingMessage)")
+        }
+
         let llm = FoundationLLM.shared
         let result = try await llm.summarizeTimelineWithForms(
             kind: kind,
