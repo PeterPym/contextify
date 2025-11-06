@@ -653,6 +653,7 @@ final class ConversationMonitor {
     private func handleContextUpdate(_ context: ActiveProjectContext) async {
         let startTime = Date()
         log.info("🔄 [SWITCH-START] Project switch to \(context.displayName) (id: \(context.id, privacy: .public))")
+        log.info("[SUMM-MONITOR] ConversationMonitor received context update for: \(context.displayName) (id: \(context.id))")
 
         // CXT-13: Set flag to suppress health monitoring during switch
         await MainActor.run { isSwitchingProjects = true }
@@ -679,6 +680,7 @@ final class ConversationMonitor {
         // Start monitoring with new project ID from coordinator
         let monitorStart = Date()
         log.info("🚀 [SWITCH-MONITOR] Starting monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
+        log.info("[SUMM-MONITOR] Calling startMonitoring(projectId: \(context.id))")
         startMonitoring(projectId: context.id)
         log.info("🚀 [SWITCH-MONITOR-DONE] Monitor start triggered in \(String(format: "%.2f", Date().timeIntervalSince(monitorStart)))s")
 
@@ -959,6 +961,7 @@ final class ConversationMonitor {
 
         do {
             let startTime = Date()
+            log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId)")
 
             // Single query gets entries + cache
             // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
@@ -969,6 +972,7 @@ final class ConversationMonitor {
             )
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
+            log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
 
             // Map to UI entries and track seen IDs + collect cache misses
             seenEntryIDs.removeAll(keepingCapacity: true)
@@ -999,11 +1003,17 @@ final class ConversationMonitor {
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
+            log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
+
+            // TEMPORARY: Disable summarization for performance testing
             // Queue cache misses for background generation
             if !misses.isEmpty, let generator = cacheMissGenerator {
-                Task {
-                    await generator.queueMisses(misses)
-                }
+                log.info("[SUMM-SKIP] ⚠️ Summarization disabled - skipping queueMisses() call for \(misses.count) entries")
+                // DISABLED: Task {
+                // DISABLED:     await generator.queueMisses(misses)
+                // DISABLED: }
+            } else if misses.isEmpty {
+                log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
 
             // P1-1: Initialize cursor from tail only if not already set (prevent regression)

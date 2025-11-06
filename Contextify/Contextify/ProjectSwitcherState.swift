@@ -337,6 +337,7 @@ public final class ProjectSwitcherState {
     }
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
+    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId)")
 
     // Cancel any previous switch task (only one switch at a time)
     switchTask?.cancel()
@@ -373,6 +374,8 @@ public final class ProjectSwitcherState {
         }
 
         // Call coordinator to switch (will publish updates to all subscribers)
+        Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+          .info("[SUMM-SWITCH] Calling StartupCoordinator.switchProject(to: \(project.rootPath))")
         try await StartupCoordinator.shared.switchProject(to: project.rootPath)
       } catch {
         Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
