@@ -2,6 +2,9 @@ import SwiftUI
 import AppKit
 import ContextifyCore
 import OSLog
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 struct WindowCommands: Commands {
   @Environment(\.openWindow) private var openWindow
@@ -192,6 +195,15 @@ struct ContextifyApp: App {
 
     // Start coordinator and ProjectSwitcherState from app init for deterministic startup
     Task { @MainActor in
+      // PHASE 0: Pre-warm LLM health check (makes first StatusBarViewModel instant)
+      #if canImport(FoundationModels)
+      if #available(macOS 26.0, *) {
+        startupLog.info("🔍 Pre-warming LLM health check...")
+        _ = await LLMHealthCheck.shared.checkHealth()
+        startupLog.info("✅ LLM health check cached")
+      }
+      #endif
+
       // PHASE 1: Start coordinator FIRST (establishes project identity)
       do {
         try await StartupCoordinator.shared.start()

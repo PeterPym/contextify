@@ -102,8 +102,13 @@ struct StatusBarView: View {
 
         // Create new view model with all providers
         let newViewModel = StatusBarViewModel(queueProviders: providers)
-        viewModel = newViewModel
-        newViewModel.start()
+
+        // Load cached AI status BEFORE assigning to viewModel to avoid flicker
+        Task { @MainActor in
+            await newViewModel.loadCachedAIStatusSync()
+            viewModel = newViewModel  // Assign after cache is loaded
+            newViewModel.start()
+        }
     }
 
     // MARK: - Apple Intelligence Indicator
@@ -139,6 +144,8 @@ struct StatusBarView: View {
     private var aiStatusColor: Color {
         guard let viewModel else { return .secondary }
         switch viewModel.aiStatus {
+        case .checking:
+            return .secondary
         case .available:
             // Use Contextify Green from color scheme
             return Color(red: 0.318, green: 0.659, blue: 0.420)  // #51A86B
@@ -153,6 +160,7 @@ struct StatusBarView: View {
     private var aiStatusText: String {
         guard let viewModel else { return "AI Unavailable" }
         switch viewModel.aiStatus {
+        case .checking: return "Checking AI..."
         case .available: return "Apple Intelligence"
         case .unavailable: return "AI Unavailable"
         case .error: return "AI Error"
@@ -162,6 +170,8 @@ struct StatusBarView: View {
     private var aiStatusAccessibilityLabel: String {
         guard let viewModel else { return "Initializing" }
         switch viewModel.aiStatus {
+        case .checking:
+            return "Checking Apple Intelligence availability"
         case .available:
             return "Apple Intelligence available"
         case .unavailable(let reason):
@@ -268,6 +278,12 @@ struct StatusBarView: View {
     private var aiInfoMessage: String {
         guard let viewModel else { return "Initializing..." }
         switch viewModel.aiStatus {
+        case .checking:
+            return """
+            Checking Apple Intelligence availability...
+
+            This typically takes a few seconds during app startup.
+            """
         case .available:
             return """
             Apple Intelligence is available and generating conversation summaries using on-device language models (FoundationLLM).

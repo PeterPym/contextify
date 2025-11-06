@@ -27,11 +27,12 @@ final class StatusBarViewModel {
 
     // Apple Intelligence status
     enum AIStatus: Sendable, Equatable {
+        case checking  // Initial state before first health check completes
         case available
         case unavailable(reason: String)
         case error(message: String)
     }
-    private(set) var aiStatus: AIStatus = .unavailable(reason: "Checking availability...")
+    private(set) var aiStatus: AIStatus = .checking
 
     // Hoover status
     private(set) var hooverMessage: String? = nil
@@ -46,6 +47,10 @@ final class StatusBarViewModel {
 
     init(queueProviders: [any QueueStatsProvider]) {
         self.queueProviders = queueProviders
+
+        // Initialize with last known AI status to avoid flicker on project switches
+        // We'll load this in start() via loadCachedAIStatus(), which runs immediately
+        // The key is that loadCachedAIStatus() is very fast (just reads cached value)
     }
 
     // MARK: - Lifecycle (called by View)
@@ -96,7 +101,10 @@ final class StatusBarViewModel {
         aiHealthCheckTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
-            // Initial check
+            // Load cached status immediately to avoid flicker on project switches
+            await self.loadCachedAIStatus()
+
+            // Then perform full health check (will use cache if recent)
             await self.checkAppleIntelligenceHealth()
 
             // Periodic refresh (every 30s)
@@ -165,6 +173,36 @@ final class StatusBarViewModel {
     }
 
     // MARK: - Apple Intelligence Health
+
+    /// Load cached AI status immediately BEFORE viewModel assignment (prevents flicker)
+    /// This is called from StatusBarView before assigning the new viewModel to @State
+    func loadCachedAIStatusSync() async {
+        await loadCachedAIStatus()
+    }
+
+    /// Load cached AI status immediately (no health check)
+    /// This avoids flicker when creating new StatusBarViewModel during project switches
+    private func loadCachedAIStatus() async {
+        guard #available(macOS 26.0, *) else {
+            aiStatus = .unavailable(reason: "Requires macOS 26+")
+            return
+        }
+
+        // Get last known status from health checker
+        if let cachedHealth = await LLMHealthCheck.shared.getLastKnownStatus() {
+            switch cachedHealth {
+            case .healthy:
+                aiStatus = .available
+                log.debug("Loaded cached AI status: available")
+            case .unavailable(let reason):
+                aiStatus = .unavailable(reason: reason.userFacingMessage)
+                log.debug("Loaded cached AI status: unavailable (\(reason.userFacingMessage))")
+            }
+        } else {
+            // No cached status available - keep .checking
+            log.debug("No cached AI status available, will check shortly")
+        }
+    }
 
     /// Check AI availability using existing LLMHealthCheck
     private func checkAppleIntelligenceHealth() async {
