@@ -246,6 +246,12 @@ public final class StartupCoordinator {
             throw StartupError.invalidProjectRoot(path)
         }
 
+        // Early exit if already at this path (deduplicate concurrent switches)
+        if let last = lastSignature, last.path == path {
+            log.debug("🔄 [COORD-DEDUPE] Already switched to \(path), skipping duplicate")
+            return
+        }
+
         // Ensure project exists in database
         let dbStart = Date()
         log.info("💾 [COORD-DB-START] Looking up/creating project in database (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s)")
