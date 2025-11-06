@@ -110,6 +110,70 @@ Use `--level info` to capture `.info()` and above. Using `--level debug` works b
 [SUMM-SKIP] ⚠️ Summarization disabled - skipping 50 entries
 ```
 
+## Analyzing Captured Logs
+
+After capturing logs with a monitor script, use `analyze-gaps.sh` to find performance bottlenecks by identifying multi-second gaps between consecutive log entries.
+
+### Usage
+
+```bash
+# Find all gaps >= 1 second (default)
+./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log
+
+# Find critical gaps >= 5 seconds
+./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log 5000
+
+# Fine-grained analysis >= 500ms
+./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log 500
+```
+
+### Output
+
+Color-coded by severity:
+- 🔴 **RED (CRITICAL)**: >= 10 seconds
+- 🟡 **YELLOW (WARNING)**: >= 5 seconds
+- 🟢 **GREEN (INFO)**: >= threshold
+
+For each gap, shows:
+- Gap duration in milliseconds
+- Log entry **before** the gap
+- Log entry **after** the gap
+- Line numbers in the original log file
+- Tag analysis (what operations were involved)
+
+### Example
+
+```
+Gap #1: 8101ms (WARNING)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before (line 718):
+  [UIOPT-COORD-GIT-TASK-DONE] Task complete in 0ms
+
+After (line 719):
+  [UIOPT-COORD-GIT-TASK-AWAIT] Task.value returned
+
+Analysis:
+  Previous tag: [UIOPT-COORD-GIT-TASK-DONE]
+  Next tag:     [UIOPT-COORD-GIT-TASK-AWAIT]
+  Gap location: Between these operations
+```
+
+### Interpreting Gaps
+
+Common gap patterns:
+- **Between TASK-DONE and TASK-AWAIT**: Background task completed but took time to return to main thread
+- **Between SPAWN and TASK-START**: Task.detached took too long to schedule
+- **Between INPUT and TABS-UPDATE**: UI event handling delay
+
+### Tips
+
+- Start with **5000ms** to find critical issues only
+- Use **1000ms** to see all multi-second delays
+- Use **500ms** for fine-grained analysis
+- Check **line numbers** to see full context in original log
+- Gaps reveal **uninstrumented code** between logged operations
+
 ## Related
 
 - **Logging preferences:** `build/notes/technical-reference/logging-preferences.md`
