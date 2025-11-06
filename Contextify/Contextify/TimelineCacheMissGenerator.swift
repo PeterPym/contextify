@@ -36,8 +36,8 @@ actor TimelineCacheMissGenerator {
 
     // Queue management
     private let maxQueueSize = 5000
-    private let maxBatchSize = 10
-    private let batchDelayNs: UInt64 = 2_000_000_000  // 2 seconds
+    private let maxBatchSize = 1  // Process one at a time for instant responsiveness
+    private let batchDelayNs: UInt64 = 0  // No artificial delay (FoundationLLM has no rate limits)
 
     // MARK: - Observer Infrastructure (Status Bar Support)
 
