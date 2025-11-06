@@ -215,7 +215,7 @@ struct ConversationExchange: Sendable {
 
 struct MonitorConfig: Sendable {
     var pollInterval: TimeInterval = 10
-    var maxEntries: Int = 50
+    var maxEntries: Int = 25  // Reduced from 50 to match display limit
     var timelineMaxEntriesPerSession: Int = 800  // Per-session retention limit
     var previewCharacterLimit: Int = 1400
     var userSummaryPrefix = "You"
