@@ -167,6 +167,10 @@ struct ContextifyApp: App {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
     startupLog.notice("🚀 Contextify launched")
 
+    // Pre-warm expensive framework initialization off main thread
+    // (Unified logging, Security.framework, CoreFoundation, Bundle parsing)
+    StartupWarmup.run()
+
     // Check for existing instance
     if isAnotherInstanceRunning() {
       // In development, kill the old instance and proceed
