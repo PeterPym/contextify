@@ -250,6 +250,7 @@ final class ConversationMonitor {
     // Viewport tracking and background summarization (Phase 2-3)
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
+    @ObservationIgnored private var enableScrollQueueing = false  // Prevent queueing during initial scroll
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
@@ -1108,6 +1109,14 @@ final class ConversationMonitor {
 
                 Task {
                     await generator.queueMisses(visibleMisses)
+
+                    // Enable scroll-triggered queueing after initial load completes
+                    // (gives time for initial scroll animation to finish)
+                    try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
+                    await MainActor.run { [weak self] in
+                        self?.enableScrollQueueing = true
+                        self?.log.debug("[SUMM-SCROLL] Scroll-triggered queueing enabled")
+                    }
                 }
             } else if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
@@ -1328,6 +1337,9 @@ final class ConversationMonitor {
     /// Queue a single entry for summarization if it has a cache miss
     @MainActor
     private func queueEntryIfNeeded(_ entryId: UUID) {
+        // Don't queue during initial scroll (prevents all 25 from queueing)
+        guard enableScrollQueueing else { return }
+
         guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
         guard entry.action == .generating else { return }  // Already has summary or processing
 
