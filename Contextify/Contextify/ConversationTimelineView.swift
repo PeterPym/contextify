@@ -1,4 +1,5 @@
 import SwiftUI
+import OSLog
 
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
@@ -10,6 +11,8 @@ struct ConversationTimelineView: View {
 
     private let minWidth: CGFloat = 52
     private let scrollAnchorID = "timeline-scroll-anchor"
+
+    private let log = Logger(subsystem: "dev.contextify", category: "UIRender")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,14 +118,15 @@ struct ConversationTimelineView: View {
                         ForEach(monitor.visibleEntries) { entry in
                             TimelineEntryRow(
                                 entry: entry,
-                                allEntries: monitor.visibleEntries,
                                 onScrollToEntry: { entryId in
                                     withAnimation(.easeInOut(duration: 0.3)) {
                                         proxy.scrollTo(entryId, anchor: .center)
                                     }
                                 }
                             )
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
+                            // PERF: Removed transition to reduce animation costs during bulk loads
+                            // .transition(.move(edge: .trailing).combined(with: .opacity))
                             .id(entry.id)
                         }
                         Color.clear
@@ -132,7 +136,9 @@ struct ConversationTimelineView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .onChange(of: monitor.visibleEntries.count) { _, _ in
+            .onChange(of: monitor.visibleEntries.count) { _, newCount in
+                log.info("[UIOPT-RENDER-ENTRIES] Timeline entry count changed to \(newCount, privacy: .public)")
+
                 // Cancel any pending scroll task
                 scrollTask?.cancel()
 

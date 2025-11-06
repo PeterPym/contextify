@@ -965,6 +965,76 @@ Issues identified from production error logs that are NOT related to the timelin
 
 ---
 
+## P2: LLM Content Moderation - Expletive Pre-filtering
+
+**Issue:** Conversation entries containing expletives trigger LLM content violations, causing summarization failures and rejected requests.
+
+**Root Cause:** Raw conversation content sent directly to LLM without sanitization. Apple's FoundationLLM enforces content moderation policies that reject text containing profanity.
+
+**Impact:**
+- Timeline entries with expletives fail to get LLM summaries
+- Errors appear in logs: "content policy violation" or similar
+- User sees "Summary not yet generated" hourglass indefinitely
+- Affects both TimelineCacheMissGenerator (timeline summaries) and TranscriptMetadataOrchestrator (transcript metadata)
+
+**Proposed Fix:**
+Add pre-filtering step that detects and replaces expletives before submitting to LLM:
+1. Create expletive detection regex (common profanity patterns)
+2. Replace matches with `[expletive]` or `[strong language]` placeholder
+3. Apply filter in both summarization pipelines
+4. Keep original content in database, only filter LLM input
+5. Consider making replacement configurable (user preference for placeholder text)
+
+**Implementation Notes:**
+- Filter should be case-insensitive
+- Consider partial matches (e.g., "f***ing" variants)
+- Use word boundaries to avoid false positives (e.g., "class" contains "ass")
+- Apply BEFORE sending to LLM, not in stored content
+- Document that LLM receives sanitized input for compliance
+
+**Files to Modify:**
+- `Contextify/Contextify/FoundationLLM.swift` - Add `sanitizeForLLM(_ text: String) -> String` helper
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` - Apply filter before calling LLM
+- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift` - Apply filter before calling LLM
+
+**Example Implementation:**
+```swift
+private func sanitizeForLLM(_ text: String) -> String {
+    let expletivePatterns = [
+        "\\bf[u*]+ck(ing|ed|er)?\\b",
+        "\\bsh[i*]+t\\b",
+        "\\bd[a*]+mn\\b",
+        "\\ba[s*]+hole\\b",
+        "\\bb[i*]+tch\\b",
+        // Add more patterns as needed
+    ]
+
+    var sanitized = text
+    for pattern in expletivePatterns {
+        let regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        sanitized = regex.stringByReplacingMatches(
+            in: sanitized,
+            range: NSRange(sanitized.startIndex..., in: sanitized),
+            withTemplate: "[expletive]"
+        )
+    }
+    return sanitized
+}
+```
+
+**Testing:**
+- Test entries with common expletives generate summaries successfully
+- Verify placeholder appears in LLM input, not in stored content
+- Check logs show no more content policy violations
+- Ensure false positives avoided (e.g., "class", "assume")
+
+**Success Criteria:**
+- All conversation entries get summaries regardless of language used
+- No content policy violations in logs
+- Timeline shows summaries for previously failed entries after cache regeneration
+
+---
+
 ## Privacy Fixes Applied (Timeline Startup Race Branch)
 
 These were fixed as part of the timeline startup race fixes:

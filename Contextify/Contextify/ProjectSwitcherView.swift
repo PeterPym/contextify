@@ -268,6 +268,8 @@ struct ProjectSwitcherView: View {
             .clipped()  // Clip content when frame is 0x0
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
+              log.info("[SUMM-TAP] User tapped project: \(project.name) id=\(project.id)")
+              log.info("[UIOPT-INPUT] 🖱️ Mouse click: Project tab '\(project.name, privacy: .public)'")
               // Skip if already active (CXT-13: avoid coordinator deduplication blocking refresh)
               guard state.activeProjectId != project.id else {
                 log.debug("ProjectTab: already active, skipping switch")
@@ -385,7 +387,9 @@ struct ProjectSwitcherView: View {
           hasSeenHint = true
         }
       }
-      .onChange(of: state.activeProjectId) { _, newValue in
+      .onChange(of: state.activeProjectId) { oldValue, newValue in
+        log.info("[UIOPT-TABS-UPDATE] Active project changed from \(oldValue ?? "nil", privacy: .public) to \(newValue ?? "nil", privacy: .public)")
+
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {

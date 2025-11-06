@@ -3,6 +3,7 @@ import Observation
 import OSLog
 import ContextifyCore
 import AppKit
+import SwiftUI
 import CryptoKit
 
 // MARK: - Diagnostics Configuration
@@ -55,9 +56,15 @@ final class TimelineState {
     // Cached index map - rebuilt only when entries change (performance optimization)
     // Uses uniquingKeysWith to handle duplicate cache keys (keeps latest index)
     @ObservationIgnored private var _indexByCacheKey: [CacheKey: Int] = [:]
+    @ObservationIgnored private var _byID: [UUID: TimelineEntry] = [:]
 
     var indexByCacheKey: [CacheKey: Int] {
         _indexByCacheKey
+    }
+
+    /// O(1) lookup of entry by ID (internal - use ConversationMonitor.lookup for external access)
+    fileprivate func lookup(_ id: UUID) -> TimelineEntry? {
+        _byID[id]
     }
 
     private func rebuildCacheIndex() {
@@ -67,6 +74,7 @@ final class TimelineState {
             },
             uniquingKeysWith: { _, new in new }  // Keep latest index on collision
         )
+        _byID = Dictionary(uniqueKeysWithValues: entries.lazy.map { ($0.id, $0) })
     }
 
     func replace(with entries: [TimelineEntry]) {
@@ -82,6 +90,7 @@ final class TimelineState {
         if let key = e.cacheKey {
             _indexByCacheKey[key] = entries.count - 1
         }
+        _byID[e.id] = e
     }
 
     func update(at index: Int, to newValue: TimelineEntry) {
@@ -89,6 +98,7 @@ final class TimelineState {
 
         // Atomic cache index update: remove old key, then add new key
         let oldKey = entries[index].cacheKey
+        let oldID = entries[index].id
         entries[index] = newValue
         revision &+= 1
 
@@ -101,6 +111,12 @@ final class TimelineState {
         if let newKey = newValue.cacheKey {
             _indexByCacheKey[newKey] = index
         }
+
+        // Update ID index
+        if oldID != newValue.id {
+            _byID.removeValue(forKey: oldID)
+        }
+        _byID[newValue.id] = newValue
     }
 
     func sortChronologically() {
@@ -157,6 +173,11 @@ final class ConversationMonitor {
         return state.entries.count > n
           ? Array(state.entries.suffix(n))
           : state.entries
+    }
+
+    /// O(1) lookup of any entry in current timeline by ID
+    func lookup(_ id: UUID) -> TimelineEntry? {
+        state.lookup(id)
     }
 
     private(set) var isMonitoring = false
@@ -281,6 +302,7 @@ final class ConversationMonitor {
     func startMonitoring(projectId: String) {
         let taskStart = Date()
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
+        log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
@@ -301,11 +323,15 @@ final class ConversationMonitor {
 
             // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
+                let dbStart = Date()
+                log.info("[UIOPT-DB-INIT] Creating TranscriptOrchestrator...")
                 let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
+                log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
                 await MainActor.run {
                     self.orchestrator = orch
                     self.currentProjectId = projectId
                     self.log.info("📁 Project ID set: \(projectId)")
+                    self.log.info("[UIOPT-DB-INIT] Project ID set on main actor")
                 }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
@@ -443,7 +469,10 @@ final class ConversationMonitor {
                 }
 
                 // 5. Load initial feed (fast - single query)
+                let feedStart = Date()
+                log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
                 await self.loadFeedFromSQL()
+                log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000), privacy: .public)ms")
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
@@ -453,6 +482,7 @@ final class ConversationMonitor {
 
                     self.isMonitoring = true
                     self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                    self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
                 NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
             } catch {
@@ -653,6 +683,7 @@ final class ConversationMonitor {
     private func handleContextUpdate(_ context: ActiveProjectContext) async {
         let startTime = Date()
         log.info("🔄 [SWITCH-START] Project switch to \(context.displayName) (id: \(context.id, privacy: .public))")
+        log.info("[SUMM-MONITOR] ConversationMonitor received context update for: \(context.displayName) (id: \(context.id))")
 
         // CXT-13: Set flag to suppress health monitoring during switch
         await MainActor.run { isSwitchingProjects = true }
@@ -679,6 +710,7 @@ final class ConversationMonitor {
         // Start monitoring with new project ID from coordinator
         let monitorStart = Date()
         log.info("🚀 [SWITCH-MONITOR] Starting monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
+        log.info("[SUMM-MONITOR] Calling startMonitoring(projectId: \(context.id))")
         startMonitoring(projectId: context.id)
         log.info("🚀 [SWITCH-MONITOR-DONE] Monitor start triggered in \(String(format: "%.2f", Date().timeIntervalSince(monitorStart)))s")
 
@@ -959,6 +991,8 @@ final class ConversationMonitor {
 
         do {
             let startTime = Date()
+            log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId)")
+            log.info("[UIOPT-SQL-QUERY] Executing getRecentFeed query...")
 
             // Single query gets entries + cache
             // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
@@ -969,10 +1003,17 @@ final class ConversationMonitor {
             )
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
+            log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
+            log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count, privacy: .public) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
 
             // Map to UI entries and track seen IDs + collect cache misses
+            let mapStart = Date()
+            log.info("[UIOPT-MAP-START] Mapping \(feed.count, privacy: .public) entries to timeline UI models...")
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
+
+            // Get active entry ID from generator (if any)
+            let activeGeneratingID = await cacheMissGenerator?.activeEntryID
 
             let newEntries = feed.map { entry, cache in
                 seenEntryIDs.insert(entry.id)
@@ -992,18 +1033,43 @@ final class ConversationMonitor {
                     misses.append(miss)
                 }
 
-                return toTimelineEntry(entry, cached: cache)
+                // Create timeline entry with active state check
+                var timelineEntry = toTimelineEntry(entry, cached: cache)
+
+                // Override action if this is the actively processing entry
+                // Compare using the timeline's UUID (already converted in toTimelineEntry)
+                if timelineEntry.action == .generating,
+                   let activeID = activeGeneratingID,
+                   timelineEntry.id == activeID {
+                    timelineEntry = timelineEntry.copyWith(action: .generatingActive)
+                }
+
+                return timelineEntry
+            }
+            log.info("[UIOPT-MAP-DONE] Mapping complete in \(String(format: "%.0f", Date().timeIntervalSince(mapStart) * 1000), privacy: .public)ms")
+
+            let uiUpdateStart = Date()
+            log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count, privacy: .public) entries...")
+
+            // Disable animations during bulk feed replace to reduce layout/animation costs
+            withAnimation(nil) {
+                setEntries(newEntries)
+                sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
+                pruneSeenIDsIfNeeded()
             }
 
-            setEntries(newEntries)
-            sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
-            pruneSeenIDsIfNeeded()
+            log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000), privacy: .public)ms")
+
+            log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
             // Queue cache misses for background generation
             if !misses.isEmpty, let generator = cacheMissGenerator {
+                log.info("[SUMM-QUEUE] Queueing \(misses.count) entries for summarization")
                 Task {
                     await generator.queueMisses(misses)
                 }
+            } else if misses.isEmpty {
+                log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
 
             // P1-1: Initialize cursor from tail only if not already set (prevent regression)

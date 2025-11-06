@@ -5,15 +5,33 @@ extension Notification.Name {
     static let revealTranscript = Notification.Name("revealTranscript")
 }
 
-struct TimelineEntryRow: View {
+// MARK: - Static Format Styles
+fileprivate extension Date.FormatStyle {
+    /// Static format style for timeline tooltips - avoids allocation on every render
+    static let timelineTooltip: Date.FormatStyle =
+        .dateTime
+            .hour(.defaultDigits(amPM: .abbreviated))
+            .minute()
+            .second()
+            .weekday(.wide)
+            .month(.wide)
+            .day()
+            .year()
+}
+
+struct TimelineEntryRow: View, Equatable {
     let entry: TimelineEntry
-    let allEntries: [TimelineEntry]
     let onScrollToEntry: (UUID) -> Void
 
     @State private var isExpanded = false
     @State private var showCopiedToast = false
     @Environment(\.openWindow) private var openWindow
     @Environment(ConversationMonitor.self) private var monitor
+
+    // SwiftUI will use TimelineEntry.hash for equality (onScrollToEntry closure ignored)
+    static func ==(lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -88,14 +106,20 @@ struct TimelineEntryRow: View {
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-                .help(absoluteTimestampTooltip)
-            if entry.action == .generating {
+                .help(entry.timestamp.formatted(Date.FormatStyle.timelineTooltip))  // Re-enabled with static style
+            if case .generatingActive = entry.action {
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
-                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: isActivelyGenerating)
-                    .help("Summary not yet generated")
+                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)  // Always pulse when active
+                    .help("Summary being generated (active)")
+            } else if case .generating = entry.action {
+                Image(systemName: "hourglass")
+                    .font(.caption2)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.tertiary)
+                    .help("Summary queued for generation")
             }
             if entry.action == .nonSummarizable {
                 Text("—")
@@ -116,13 +140,16 @@ struct TimelineEntryRow: View {
                     .foregroundStyle(Color.contextifyGreen)
                     .accessibilityLabel("Task completed")
 
-                if let duration = calculateDuration() {
+                // Re-enabled with O(1) lookup API
+                if let duration = durationText {
                     Text(duration)
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 }
 
-                if let requestId = entry.requestId {
+                // Re-enabled with O(1) lookup validation
+                if let requestId = entry.requestId,
+                   monitor.lookup(requestId) != nil {
                     Button(action: { onScrollToEntry(requestId) }) {
                         Image(systemName: "arrow.up.circle")
                             .font(.caption)
@@ -143,42 +170,20 @@ struct TimelineEntryRow: View {
         }
     }
 
-    private func calculateDuration() -> String? {
+    /// Calculate duration using O(1) lookup API
+    private var durationText: String? {
         guard let requestId = entry.requestId,
-              let requestEntry = allEntries.first(where: { $0.id == requestId }) else {
+              let requestEntry = monitor.lookup(requestId) else {
             return nil
         }
 
         let duration = entry.timestamp.timeIntervalSince(requestEntry.timestamp)
         guard duration > 0 else { return nil }
 
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-
-        if minutes > 0 {
-            return "(\(minutes)m \(seconds)s)"
-        } else {
-            return "(\(seconds)s)"
-        }
-    }
-
-    private var absoluteTimestampTooltip: String {
-        // Format: "2:34:15 PM, Tuesday, January 15, 2025"
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
-        return formatter.string(from: entry.timestamp)
-    }
-
-    private var isActivelyGenerating: Bool {
-        // Only pulse the FIRST entry that's generating (oldest, being actively processed)
-        guard entry.action == .generating else { return false }
-
-        // Find first generating entry by timestamp (oldest first)
-        let firstGenerating = allEntries
-            .filter { $0.action == .generating }
-            .min(by: { $0.timestamp < $1.timestamp })
-
-        return firstGenerating?.id == entry.id
+        let seconds = Int(duration)
+        return Duration.seconds(seconds).formatted(
+            .units(allowed: [.minutes, .seconds], maximumUnitCount: 2)
+        )
     }
 
     private func copy(_ text: String) {

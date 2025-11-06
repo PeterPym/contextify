@@ -14,6 +14,9 @@ actor LLMHealthCheck {
 
   private let log = Logger(subsystem: "dev.contextify", category: "LLMHealthCheck")
 
+  /// Internal error type for timeout detection
+  private struct TimeoutError: Error {}
+
   enum HealthStatus: Sendable {
     case healthy
     case unavailable(Reason)
@@ -28,6 +31,7 @@ actor LLMHealthCheck {
       case guardrailSystemError(details: String)  // Missing metadata.json file issue
       case sessionCreationFailed(details: String)
       case testCallFailed(details: String)
+      case overloaded  // LLM is overwhelmed and timing out
 
       // Environment reasons
       case macOSVersionTooOld
@@ -47,6 +51,8 @@ actor LLMHealthCheck {
           return "Failed to create LLM session: \(details)"
         case .testCallFailed(let details):
           return "LLM test call failed: \(details)"
+        case .overloaded:
+          return "Apple Intelligence is overloaded and not responding. Summarization queue may be too large. Wait for pending requests to complete."
         case .macOSVersionTooOld:
           return "Requires macOS 26 (Tahoe) or later."
         case .foundationModelsNotImported:
@@ -118,6 +124,8 @@ actor LLMHealthCheck {
         indicator = "Session creation failed"
       case .testCallFailed:
         indicator = "LLM test call failed"
+      case .overloaded:
+        indicator = "Apple Intelligence overloaded (health check timed out)"
       case .macOSVersionTooOld:
         indicator = "macOS version too old (requires 26+)"
       case .foundationModelsNotImported:
@@ -197,16 +205,49 @@ actor LLMHealthCheck {
         maximumResponseTokens: 10
       )
 
-      log.debug("Performing LLM health check test call")
+      log.debug("Performing LLM health check test call (with 10s timeout)")
 
-      // Simple test prompt that should always work if LLM is functional
-      let response = try await session.respond(
-        to: "Say 'OK'",
-        options: options
-      )
+      // Wrapper to make response Sendable for TaskGroup (unsafe but controlled)
+      struct ResponseBox: @unchecked Sendable {
+        let response: LanguageModelSession.Response<String>
+      }
 
-      log.info("LLM health check: PASSED (response: '\(response.content, privacy: .public)')")
+      // Race between LLM call and timeout
+      let box = try await withThrowingTaskGroup(of: ResponseBox.self) { group in
+        // Task 1: LLM call
+        group.addTask {
+          let r = try await session.respond(to: "Say 'OK'", options: options)
+          return ResponseBox(response: r)
+        }
+
+        // Task 2: Timeout
+        group.addTask {
+          try await Task.sleep(nanoseconds: 10_000_000_000) // 10 seconds
+          throw TimeoutError()
+        }
+
+        // Return first result
+        guard let result = try await group.next() else {
+          throw TimeoutError()
+        }
+
+        group.cancelAll()
+        return result
+      }
+
+      log.info("LLM health check: PASSED (response: '\(box.response.content, privacy: .public)')")
       return .healthy
+
+    } catch is TimeoutError {
+      log.error("LLM health check: TIMEOUT - Apple Intelligence is not responding (overloaded)")
+      return .unavailable(.overloaded)
+
+    } catch is CancellationError {
+      // Cancellation can happen when:
+      // 1. The timeout fires and cancels the LLM task
+      // 2. External cancellation (e.g., app shutdown, health check canceled)
+      log.warning("LLM health check: CANCELLED - Task was cancelled (likely due to timeout or external cancellation)")
+      return .unavailable(.overloaded)
 
     } catch let error as LanguageModelSession.GenerationError {
       // Detect specific error patterns
@@ -222,6 +263,10 @@ actor LLMHealthCheck {
           log.error("LLM health check: FAILED - Guardrail violation: \(context.debugDescription)")
           return .unavailable(.testCallFailed(details: "Guardrail violation: \(context.debugDescription)"))
         }
+      } else if case .rateLimited = error {
+        // Session is rate-limited - too many concurrent requests
+        log.error("LLM health check: RATE LIMITED - Session already processing a request")
+        return .unavailable(.overloaded)
       } else {
         log.error("LLM health check: FAILED - Generation error: \(String(describing: error))")
         return .unavailable(.testCallFailed(details: "Generation error: \(error.localizedDescription)"))
@@ -238,5 +283,11 @@ actor LLMHealthCheck {
   func invalidateCache() {
     cachedStatus = nil
     lastCheckTime = nil
+  }
+
+  /// Get the last known status without triggering a new check
+  /// Returns cached status if available, otherwise nil (caller should use .checking as default)
+  func getLastKnownStatus() -> HealthStatus? {
+    return cachedStatus
   }
 }

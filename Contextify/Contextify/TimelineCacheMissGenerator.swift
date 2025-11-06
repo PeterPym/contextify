@@ -34,6 +34,10 @@ actor TimelineCacheMissGenerator {
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
 
+    /// The entry ID currently being processed (for pulse animation)
+    /// Note: Database uses String IDs, but timeline uses UUIDs - convert at boundary
+    @MainActor private(set) var activeEntryID: UUID?
+
     // Queue management
     private let maxQueueSize = 5000
     private let maxBatchSize = 1  // Process one at a time for instant responsiveness
@@ -69,6 +73,11 @@ actor TimelineCacheMissGenerator {
         pendingMisses.removeAll()
         isProcessing = false
         inFlightCount = 0
+
+        // Clear active entry ID
+        Task { @MainActor in
+            activeEntryID = nil
+        }
 
         // Notify observers of shutdown
         notifyQueueChanged()
@@ -160,6 +169,15 @@ actor TimelineCacheMissGenerator {
             }
             inFlightCount = batch.count
 
+            // Set active entry ID for pulse animation (first item in batch)
+            // Convert String ID from database to UUID for timeline comparison
+            if let firstMiss = batch.first,
+               let uuid = UUID(uuidString: firstMiss.entryId) {
+                await MainActor.run {
+                    activeEntryID = uuid
+                }
+            }
+
             // Reset sessions for the specific kinds and providers in this batch
             // Use struct-based set to deduplicate kind+provider pairs (no delimiter collisions)
             struct KindProviderPair: Hashable {
@@ -194,6 +212,16 @@ actor TimelineCacheMissGenerator {
             trackBatchLatency(latency)
             inFlightCount = 0
 
+            // Update active entry ID to next in queue (or nil if empty)
+            // Convert String ID to UUID for timeline comparison
+            let nextEntryID: UUID? = {
+                guard let entryId = pendingMisses.values.first?.entryId else { return nil }
+                return UUID(uuidString: entryId)
+            }()
+            await MainActor.run {
+                activeEntryID = nextEntryID
+            }
+
             // Rate limit: wait between batches
             if !pendingMisses.isEmpty {
                 try? await Task.sleep(nanoseconds: batchDelayNs)
@@ -201,6 +229,12 @@ actor TimelineCacheMissGenerator {
         }
 
         isProcessing = false
+
+        // Clear active entry ID when queue is empty
+        await MainActor.run {
+            activeEntryID = nil
+        }
+
         notifyQueueChanged()  // Notify that processing finished
         generationTask = nil
         log.info("Cache miss generation queue empty")

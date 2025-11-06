@@ -1,7 +1,23 @@
 # Repository Guidelines
 
-DO NOT attribute work to Claude or Codex in commit messages, or as a co-author.
- 
+## ⚠️ CRITICAL RULES (Read First)
+
+### Attribution
+**NEVER** attribute work to AI/Claude/Codex in commits, co-authors, or comments.
+
+### Commit Strategy
+**ALWAYS** create atomic commits - one logical change per commit.
+- Multiple related features? → Multiple commits
+- Implementation plan has phases/PRs? → Separate commit per phase
+- Before committing, ask: "Could this be split into smaller logical units?"
+
+### Destructive Operations
+**NEVER** run `git restore`, `git reset --hard`, `git clean`, or delete tracked files without:
+1. Creating a backup branch first
+2. Getting explicit user approval
+
+---
+
 ## Project Overview
 
 Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It ingests dropped files or URLs, creates timestamped Markdown artifacts, provides checkpoints, and monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries. Built with Swift 6 + SwiftUI on Xcode 16 (macOS 26 SDK, minimum deployment macOS 14/15).

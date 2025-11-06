@@ -296,6 +296,8 @@ public final class ProjectSwitcherState {
 
   /// Cycle to previous project (for keyboard shortcut)
   public func cycleToPreviousProject() async {
+    let startTime = Date()
+    log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Previous Project (Cmd+Shift+[)")
     guard !allProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
@@ -303,6 +305,7 @@ public final class ProjectSwitcherState {
       // Move to previous, wrapping around to end
       let previousIndex = currentIndex > 0 ? currentIndex - 1 : allProjects.count - 1
       let previousProject = allProjects[previousIndex]
+      log.info("[UIOPT-INPUT] Previous project selected: \(previousProject.name, privacy: .public) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms)")
       await switchToProject(previousProject.id)
     } else if let first = allProjects.first {
       // No active project, select first
@@ -312,6 +315,8 @@ public final class ProjectSwitcherState {
 
   /// Cycle to next project (for keyboard shortcut)
   public func cycleToNextProject() async {
+    let startTime = Date()
+    log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Next Project (Cmd+Shift+])")
     guard !allProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
@@ -319,6 +324,7 @@ public final class ProjectSwitcherState {
       // Move to next, wrapping around to start
       let nextIndex = currentIndex < allProjects.count - 1 ? currentIndex + 1 : 0
       let nextProject = allProjects[nextIndex]
+      log.info("[UIOPT-INPUT] Next project selected: \(nextProject.name, privacy: .public) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms)")
       await switchToProject(nextProject.id)
     } else if let first = allProjects.first {
       // No active project, select first
@@ -328,25 +334,35 @@ public final class ProjectSwitcherState {
 
   /// Switch to a different project
   public func switchToProject(_ projectId: String) async {
-    guard let orchestrator = orchestrator else { return }
+    let switchStart = Date()
+    log.info("[UIOPT-SWITCH-START] switchToProject() called for: \(projectId, privacy: .public)")
+
+    guard let orchestrator = orchestrator else {
+      log.error("[UIOPT-SWITCH-ERROR] No orchestrator available")
+      return
+    }
 
     // Deduplicate: if already switching to this project, skip
     if switchInProgress == projectId {
       log.debug("🔀 ProjectSwitcher: Switch to \(projectId) already in progress, skipping duplicate")
+      log.info("[UIOPT-SWITCH-SKIP] Already switching to \(projectId, privacy: .public), skipped")
       return
     }
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
+    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId)")
 
     // Cancel any previous switch task (only one switch at a time)
     switchTask?.cancel()
 
     // Mark switch in progress
     switchInProgress = projectId
+    log.info("[UIOPT-SWITCH-MARKED] Switch marked in progress (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(switchStart) * 1000), privacy: .public)ms)")
 
     // IMMEDIATE UI UPDATE: Set activeProjectId now for instant visual feedback
     // (Coordinator will confirm/correct this when it publishes, ensuring consistency)
     activeProjectId = projectId
+    log.info("[UIOPT-SWITCH-UI] activeProjectId updated immediately for instant feedback (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(switchStart) * 1000), privacy: .public)ms)")
 
     // CXT-13: Use StartupCoordinator for atomic project switching
     // This ensures ProjectSwitcherState and ConversationMonitor receive updates simultaneously
@@ -359,24 +375,49 @@ public final class ProjectSwitcherState {
       self?.switchInProgress = nil
     }
 
+    log.info("[UIOPT-SWITCH-SPAWN] Spawning detached task for DB lookup and coordinator call (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(switchStart) * 1000), privacy: .public)ms)")
+    let spawnTime = Date()
+
     switchTask = Task.detached(priority: .userInitiated) { [orchestrator] in
+      let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+      let taskStart = Date()
+      let spawnDelay = Date().timeIntervalSince(spawnTime)
+      logger.info("[UIOPT-SWITCH-TASK-SPAWN-DELAY] Task.detached started executing after \(String(format: "%.0f", spawnDelay * 1000), privacy: .public)ms delay")
+      logger.info("[UIOPT-SWITCH-TASK-START] Detached task started (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(switchStart) * 1000), privacy: .public)ms)")
+
       defer {
         Task(priority: .userInitiated, operation: clearInProgress)
       }
 
       do {
         // Get project root path (off main thread to avoid blocking on DB lock)
+        let dbStart = Date()
+        logger.info("[UIOPT-SWITCH-DB-START] Looking up project in database...")
+
         guard let project = try orchestrator.getProject(id: projectId) else {
-          Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
-            .error("Project not found: \(projectId)")
+          logger.error("Project not found: \(projectId)")
+          logger.error("[UIOPT-SWITCH-ERROR] Project \(projectId, privacy: .public) not found in database")
           return
         }
 
+        let dbElapsed = Date().timeIntervalSince(dbStart)
+        logger.info("[UIOPT-SWITCH-DB-DONE] Database lookup completed in \(String(format: "%.0f", dbElapsed * 1000), privacy: .public)ms")
+
         // Call coordinator to switch (will publish updates to all subscribers)
+        let coordStart = Date()
+        logger.info("[SUMM-SWITCH] Calling StartupCoordinator.switchProject(to: \(project.rootPath))")
+        logger.info("[UIOPT-SWITCH-COORD-START] Calling StartupCoordinator.switchProject()...")
+
         try await StartupCoordinator.shared.switchProject(to: project.rootPath)
+
+        let coordElapsed = Date().timeIntervalSince(coordStart)
+        logger.info("[UIOPT-SWITCH-COORD-DONE] StartupCoordinator.switchProject() completed in \(String(format: "%.0f", coordElapsed * 1000), privacy: .public)ms")
+
+        let totalElapsed = Date().timeIntervalSince(taskStart)
+        logger.info("[UIOPT-SWITCH-TASK-DONE] Detached task completed in \(String(format: "%.0f", totalElapsed * 1000), privacy: .public)ms")
       } catch {
-        Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
-          .error("Failed to switch project via coordinator: \(error.localizedDescription)")
+        logger.error("Failed to switch project via coordinator: \(error.localizedDescription)")
+        logger.error("[UIOPT-SWITCH-ERROR] Coordinator error: \(error.localizedDescription, privacy: .public)")
       }
     }
 
