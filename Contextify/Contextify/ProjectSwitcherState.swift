@@ -344,6 +344,10 @@ public final class ProjectSwitcherState {
     // Mark switch in progress
     switchInProgress = projectId
 
+    // IMMEDIATE UI UPDATE: Set activeProjectId now for instant visual feedback
+    // (Coordinator will confirm/correct this when it publishes, ensuring consistency)
+    activeProjectId = projectId
+
     // CXT-13: Use StartupCoordinator for atomic project switching
     // This ensures ProjectSwitcherState and ConversationMonitor receive updates simultaneously
     // via their respective update streams, eliminating the race condition where UI shows
