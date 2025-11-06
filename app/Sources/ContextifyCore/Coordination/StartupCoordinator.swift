@@ -240,35 +240,50 @@ public final class StartupCoordinator {
         let startTime = Date()
         log.notice("🔄 [COORD-START] User-initiated switch to project: \(path, privacy: .public)")
         log.info("[SUMM-COORD] StartupCoordinator.switchProject() called for: \(path)")
+        log.info("[UIOPT-COORD-START] switchProject() called for: \(path, privacy: .public)")
 
         // Validate path exists
+        let validateStart = Date()
+        log.info("[UIOPT-COORD-VALIDATE] Checking if path exists...")
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
             throw StartupError.invalidProjectRoot(path)
         }
+        log.info("[UIOPT-COORD-VALIDATE] Path validation complete in \(String(format: "%.0f", Date().timeIntervalSince(validateStart) * 1000), privacy: .public)ms")
 
         // Early exit if already at this path (deduplicate concurrent switches)
         if let last = lastSignature, last.path == path {
             log.debug("🔄 [COORD-DEDUPE] Already switched to \(path), skipping duplicate")
+            log.info("[UIOPT-COORD-DONE] Skipped duplicate switch in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
             return
         }
 
         // Ensure project exists in database
         let dbStart = Date()
         log.info("💾 [COORD-DB-START] Looking up/creating project in database (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s)")
+        log.info("[UIOPT-COORD-DB-START] Starting database lookup/creation...")
         let projectId = try await ensureProjectInDatabase(path: path)
         log.info("💾 [COORD-DB-DONE] Database lookup complete in \(String(format: "%.3f", Date().timeIntervalSince(dbStart)))s | Total: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
+        log.info("[UIOPT-COORD-DB-DONE] Database operation complete in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
 
         // Resolve git branch
+        let gitStart = Date()
+        log.info("[UIOPT-COORD-GIT-START] Resolving git branch...")
         let branch = await resolveGitBranch(path: path)
+        log.info("[UIOPT-COORD-GIT-DONE] Git resolution complete in \(String(format: "%.0f", Date().timeIntervalSince(gitStart) * 1000), privacy: .public)ms")
 
         // Create bookmark from switch target path (not stale prefs)
+        let bookmarkStart = Date()
+        log.info("[UIOPT-COORD-BOOKMARK-START] Creating security-scoped bookmark...")
         let bookmark = await Task.detached {
             let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
             return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         }.value
+        log.info("[UIOPT-COORD-BOOKMARK-DONE] Bookmark creation complete in \(String(format: "%.0f", Date().timeIntervalSince(bookmarkStart) * 1000), privacy: .public)ms")
 
         // Create new context
+        let contextStart = Date()
+        log.info("[UIOPT-COORD-CONTEXT-START] Creating ActiveProjectContext object...")
         let context = ActiveProjectContext(
             id: projectId,
             path: path,
@@ -276,16 +291,20 @@ public final class StartupCoordinator {
             branch: branch,
             bookmark: bookmark
         )
+        log.info("[UIOPT-COORD-CONTEXT-DONE] Context creation complete in \(String(format: "%.0f", Date().timeIntervalSince(contextStart) * 1000), privacy: .public)ms")
 
         // Publish
         let publishStart = Date()
         log.info("📢 [COORD-PUBLISH-START] Publishing context (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s)")
         log.info("[SUMM-COORD] Publishing ActiveProjectContext (id: \(projectId), path: \(path))")
+        log.info("[UIOPT-COORD-PUBLISH-START] Publishing context to subscribers...")
         await publishContext(context)
         log.info("📢 [COORD-PUBLISH-DONE] Publish complete in \(String(format: "%.3f", Date().timeIntervalSince(publishStart)))s | Total: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
         log.info("[SUMM-COORD] ActiveProjectContext published, subscribers should receive update")
+        log.info("[UIOPT-COORD-PUBLISH-DONE] Publish complete in \(String(format: "%.0f", Date().timeIntervalSince(publishStart) * 1000), privacy: .public)ms")
 
         log.notice("✅ [COORD-END] Switched to: \(context.displayName) (id: \(projectId, privacy: .public)) in \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
+        log.info("[UIOPT-COORD-DONE] Total switchProject() time: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
     }
 
     // MARK: - Private Helpers
@@ -337,31 +356,53 @@ public final class StartupCoordinator {
     /// - Returns: Stable project ID from database
     /// - Throws: `StartupError.projectCreationFailed` if DB operation fails
     private func ensureProjectInDatabase(path: String) async throws -> String {
+        let funcStart = Date()
+        log.info("[UIOPT-COORD-DB-FUNC-START] ensureProjectInDatabase() called")
+
         // Run database operation on background thread (inherits cancellation)
+        log.info("[UIOPT-COORD-DB-TASK-START] Spawning background Task...")
         let result = await Task(priority: .userInitiated) { () -> Result<String, Error> in
+            let taskStart = Date()
+            self.log.info("[UIOPT-COORD-DB-TASK-EXEC] Task executing on background thread")
+
             // Check early cancellation
             if Task.isCancelled {
+                self.log.info("[UIOPT-COORD-DB-TASK-CANCEL] Task was cancelled")
                 return .failure(CancellationError())
             }
 
             do {
+                let orchStart = Date()
+                self.log.info("[UIOPT-COORD-DB-ORCH-START] Creating TranscriptOrchestrator...")
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                self.log.info("[UIOPT-COORD-DB-ORCH-DONE] Orchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(orchStart) * 1000), privacy: .public)ms")
+
                 let url = URL(fileURLWithPath: path)
                 let name = url.lastPathComponent
 
+                let projStart = Date()
+                self.log.info("[UIOPT-COORD-DB-PROJ-START] Calling getOrCreateProject...")
                 let projectId = try orchestrator.getOrCreateProject(
                     name: name,
                     rootPath: path
                 )
+                self.log.info("[UIOPT-COORD-DB-PROJ-DONE] getOrCreateProject returned in \(String(format: "%.0f", Date().timeIntervalSince(projStart) * 1000), privacy: .public)ms")
 
+                let taskElapsed = Date().timeIntervalSince(taskStart)
+                self.log.info("[UIOPT-COORD-DB-TASK-DONE] Task complete in \(String(format: "%.0f", taskElapsed * 1000), privacy: .public)ms")
                 return .success(projectId)
             } catch {
+                self.log.error("[UIOPT-COORD-DB-TASK-ERROR] Task failed: \(error.localizedDescription, privacy: .public)")
                 return .failure(error)
             }
         }.value
 
+        log.info("[UIOPT-COORD-DB-TASK-AWAIT] Task.value returned")
+
         switch result {
         case .success(let projectId):
+            let funcElapsed = Date().timeIntervalSince(funcStart)
+            log.info("[UIOPT-COORD-DB-FUNC-DONE] ensureProjectInDatabase() complete in \(String(format: "%.0f", funcElapsed * 1000), privacy: .public)ms")
             return projectId
         case .failure(let error):
             let message = error.localizedDescription
@@ -375,22 +416,45 @@ public final class StartupCoordinator {
     /// - Parameter path: Absolute path to project root
     /// - Returns: Branch name, or nil if not a git repository
     private func resolveGitBranch(path: String) async -> String? {
+        let funcStart = Date()
+        log.info("[UIOPT-COORD-GIT-FUNC-START] resolveGitBranch() called")
+
         // Run git detection on background thread (file I/O)
-        return await Task.detached(priority: .utility) { () -> String? in
+        log.info("[UIOPT-COORD-GIT-TASK-START] Spawning detached Task...")
+        let result = await Task.detached(priority: .utility) { () -> String? in
+            let taskStart = Date()
+            self.log.info("[UIOPT-COORD-GIT-TASK-EXEC] Task executing on background thread")
+
             let url = URL(fileURLWithPath: path)
+
+            let findStart = Date()
+            self.log.info("[UIOPT-COORD-GIT-FIND-START] Calling GitRepositoryResolver.findGitRoot...")
             guard let gitRoot = GitRepositoryResolver.findGitRoot(startingAt: url) else {
+                self.log.info("[UIOPT-COORD-GIT-FIND-NONE] No git root found in \(String(format: "%.0f", Date().timeIntervalSince(findStart) * 1000), privacy: .public)ms")
                 return nil
             }
+            self.log.info("[UIOPT-COORD-GIT-FIND-DONE] Git root found in \(String(format: "%.0f", Date().timeIntervalSince(findStart) * 1000), privacy: .public)ms")
 
+            let infoStart = Date()
+            self.log.info("[UIOPT-COORD-GIT-INFO-START] Calling GitRepositoryResolver.computeGitInfo...")
             let info = GitRepositoryResolver.computeGitInfo(
                 environment: ProcessInfo.processInfo.environment,
                 persistedPath: path,
                 currentRoot: gitRoot,
                 autoPersist: false  // Don't persist during resolution
             )
+            self.log.info("[UIOPT-COORD-GIT-INFO-DONE] computeGitInfo returned in \(String(format: "%.0f", Date().timeIntervalSince(infoStart) * 1000), privacy: .public)ms")
 
+            let taskElapsed = Date().timeIntervalSince(taskStart)
+            self.log.info("[UIOPT-COORD-GIT-TASK-DONE] Task complete in \(String(format: "%.0f", taskElapsed * 1000), privacy: .public)ms")
             return info.branch
         }.value
+
+        log.info("[UIOPT-COORD-GIT-TASK-AWAIT] Task.value returned")
+
+        let funcElapsed = Date().timeIntervalSince(funcStart)
+        log.info("[UIOPT-COORD-GIT-FUNC-DONE] resolveGitBranch() complete in \(String(format: "%.0f", funcElapsed * 1000), privacy: .public)ms")
+        return result
     }
 
     /// Publish context to subscribers.
@@ -399,17 +463,37 @@ public final class StartupCoordinator {
     ///
     /// - Parameter context: New active project context
     private func publishContext(_ context: ActiveProjectContext) async {
+        let funcStart = Date()
+        log.info("[UIOPT-COORD-PUBLISH-FUNC-START] publishContext() called")
+
         // Deduplicate by (id, path) tuple - catches both ID and path changes
+        log.info("[UIOPT-COORD-PUBLISH-DEDUPE] Checking for duplicate...")
         if let sig = lastSignature, sig.id == context.id, sig.path == context.path {
             log.debug("🔇 Skipping duplicate context publish for project: \(context.id, privacy: .public)")
+            log.info("[UIOPT-COORD-PUBLISH-FUNC-SKIP] Skipped duplicate publish in \(String(format: "%.0f", Date().timeIntervalSince(funcStart) * 1000), privacy: .public)ms")
             return
         }
+        log.info("[UIOPT-COORD-PUBLISH-DEDUPE] Not a duplicate, continuing...")
 
+        let sigStart = Date()
+        log.info("[UIOPT-COORD-PUBLISH-SIG] Updating lastSignature...")
         lastSignature = (id: context.id, path: context.path)
+        log.info("[UIOPT-COORD-PUBLISH-SIG] Signature updated in \(String(format: "%.0f", Date().timeIntervalSince(sigStart) * 1000), privacy: .public)ms")
+
+        let currentStart = Date()
+        log.info("[UIOPT-COORD-PUBLISH-CURRENT] Setting self.current...")
         self.current = context
+        log.info("[UIOPT-COORD-PUBLISH-CURRENT] Current set in \(String(format: "%.0f", Date().timeIntervalSince(currentStart) * 1000), privacy: .public)ms")
+
+        let notifStart = Date()
+        log.info("[UIOPT-COORD-PUBLISH-NOTIF] Posting NotificationCenter notification...")
         NotificationCenter.default.post(name: .activeProjectContextDidChange, object: context)
+        log.info("[UIOPT-COORD-PUBLISH-NOTIF] Notification posted in \(String(format: "%.0f", Date().timeIntervalSince(notifStart) * 1000), privacy: .public)ms")
 
         log.debug("📢 Published context: \(context.displayName) (id: \(context.id, privacy: .public), path: \(context.path, privacy: .public))")
+
+        let funcElapsed = Date().timeIntervalSince(funcStart)
+        log.info("[UIOPT-COORD-PUBLISH-FUNC-DONE] publishContext() complete in \(String(format: "%.0f", funcElapsed * 1000), privacy: .public)ms")
     }
 
 }

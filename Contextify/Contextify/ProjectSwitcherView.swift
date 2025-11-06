@@ -387,7 +387,9 @@ struct ProjectSwitcherView: View {
           hasSeenHint = true
         }
       }
-      .onChange(of: state.activeProjectId) { _, newValue in
+      .onChange(of: state.activeProjectId) { oldValue, newValue in
+        log.info("[UIOPT-TABS-UPDATE] Active project changed from \(oldValue ?? "nil", privacy: .public) to \(newValue ?? "nil", privacy: .public)")
+
         // Auto-scroll to active project when it changes (especially for keyboard nav)
         if let newValue {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
