@@ -124,6 +124,7 @@ struct ConversationTimelineView: View {
                                     }
                                 }
                             )
+                            .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
                             // PERF: Removed transition to reduce animation costs during bulk loads
                             // .transition(.move(edge: .trailing).combined(with: .opacity))
                             .id(entry.id)

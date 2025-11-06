@@ -35,7 +35,8 @@ actor TimelineCacheMissGenerator {
     private var isProcessing = false
 
     /// The entry ID currently being processed (for pulse animation)
-    @MainActor private(set) var activeEntryID: String?
+    /// Note: Database uses String IDs, but timeline uses UUIDs - convert at boundary
+    @MainActor private(set) var activeEntryID: UUID?
 
     // Queue management
     private let maxQueueSize = 5000
@@ -169,9 +170,11 @@ actor TimelineCacheMissGenerator {
             inFlightCount = batch.count
 
             // Set active entry ID for pulse animation (first item in batch)
-            if let firstMiss = batch.first {
+            // Convert String ID from database to UUID for timeline comparison
+            if let firstMiss = batch.first,
+               let uuid = UUID(uuidString: firstMiss.entryId) {
                 await MainActor.run {
-                    activeEntryID = firstMiss.entryId
+                    activeEntryID = uuid
                 }
             }
 
@@ -210,7 +213,11 @@ actor TimelineCacheMissGenerator {
             inFlightCount = 0
 
             // Update active entry ID to next in queue (or nil if empty)
-            let nextEntryID = pendingMisses.values.first?.entryId
+            // Convert String ID to UUID for timeline comparison
+            let nextEntryID: UUID? = {
+                guard let entryId = pendingMisses.values.first?.entryId else { return nil }
+                return UUID(uuidString: entryId)
+            }()
             await MainActor.run {
                 activeEntryID = nextEntryID
             }

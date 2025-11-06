@@ -62,8 +62,8 @@ final class TimelineState {
         _indexByCacheKey
     }
 
-    /// O(1) lookup of entry by ID
-    func lookup(_ id: UUID) -> TimelineEntry? {
+    /// O(1) lookup of entry by ID (internal - use ConversationMonitor.lookup for external access)
+    fileprivate func lookup(_ id: UUID) -> TimelineEntry? {
         _byID[id]
     }
 
@@ -1037,9 +1037,10 @@ final class ConversationMonitor {
                 var timelineEntry = toTimelineEntry(entry, cached: cache)
 
                 // Override action if this is the actively processing entry
+                // Compare using the timeline's UUID (already converted in toTimelineEntry)
                 if timelineEntry.action == .generating,
                    let activeID = activeGeneratingID,
-                   entry.id == activeID {
+                   timelineEntry.id == activeID {
                     timelineEntry = timelineEntry.copyWith(action: .generatingActive)
                 }
 
