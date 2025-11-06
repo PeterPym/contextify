@@ -59,6 +59,7 @@ public final class ProjectSwitcherState {
 
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
+  @ObservationIgnored private var switchTask: Task<Void, Never>?
 
   // Notification coalescing to prevent duplicate/oscillating notifications
   @ObservationIgnored private var lastHandledPath: String?
@@ -337,9 +338,11 @@ public final class ProjectSwitcherState {
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
 
+    // Cancel any previous switch task (only one switch at a time)
+    switchTask?.cancel()
+
     // Mark switch in progress
     switchInProgress = projectId
-    defer { switchInProgress = nil }
 
     // CXT-13: Use StartupCoordinator for atomic project switching
     // This ensures ProjectSwitcherState and ConversationMonitor receive updates simultaneously
@@ -348,7 +351,15 @@ public final class ProjectSwitcherState {
 
     // CXT-14: Move database lookup AND coordinator switch into background task
     // to avoid blocking UI on database waits (especially during active LLM generation)
-    Task.detached(priority: .userInitiated) { [orchestrator] in
+    let clearInProgress = { @MainActor [weak self] in
+      self?.switchInProgress = nil
+    }
+
+    switchTask = Task.detached(priority: .userInitiated) { [orchestrator] in
+      defer {
+        Task(priority: .userInitiated, operation: clearInProgress)
+      }
+
       do {
         // Get project root path (off main thread to avoid blocking on DB lock)
         guard let project = try orchestrator.getProject(id: projectId) else {
