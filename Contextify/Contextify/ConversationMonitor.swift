@@ -516,8 +516,16 @@ final class ConversationMonitor {
     func stopMonitoring() {
         isMonitoring = false
         activeSession = nil
-        backgroundTasks?.cancel()   // NEW: cancels the whole background task group
+        // Cancel background task group
+        backgroundTasks?.cancel()
         backgroundTasks = nil
+
+        // CXT-101: Cancel viewport/background-fill work (atomic capture-nil-cancel)
+        let bfTask = backgroundFillTask
+        backgroundFillTask = nil
+        bfTask?.cancel()
+        viewedEntryIDs.removeAll(keepingCapacity: false)
+
         debounceTask?.cancel()
         debounceTask = nil
         cacheDebounceTask?.cancel()  // CXT-13: Cancel cache update debounce
@@ -1299,10 +1307,17 @@ final class ConversationMonitor {
     /// Handle app resigning active - start background summarization for unseen entries
     @MainActor
     private func handleAppResignActive() async {
-        log.info("App resigned active - starting background fill for unseen entries")
+        // CXT-102: Guard against torn state
+        guard isMonitoring, let projectId = currentProjectId else {
+            log.debug("App resigned active while not monitoring - skip background fill")
+            return
+        }
+        log.info("App resigned active - starting background fill for unseen entries (project: \(projectId))")
 
-        // Cancel any existing background fill task
-        backgroundFillTask?.cancel()
+        // CXT-103: Atomically clear and cancel any existing background fill task
+        let oldTask = backgroundFillTask
+        backgroundFillTask = nil
+        oldTask?.cancel()
 
         // Find entries in current visible set that user hasn't seen yet
         let unseenEntries = visibleEntries.filter { entry in
@@ -1321,8 +1336,7 @@ final class ConversationMonitor {
         let misses = unseenEntries.compactMap { entry -> CacheMiss? in
             guard let content = entry.contentSha256,
                   let window = entry.windowSha256,
-                  let sourceContent = entry.sourceContent,
-                  let projectId = currentProjectId else {
+                  let sourceContent = entry.sourceContent else {
                 return nil
             }
 
@@ -1344,8 +1358,17 @@ final class ConversationMonitor {
         backgroundFillTask = Task { [weak self] in
             guard let self, let generator = await self.cacheMissGenerator else { return }
 
-            // Small delay to ensure app is fully backgrounded
-            try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
+            // CXT-103: Explicit cancellation handling
+            do {
+                try await Task.sleep(nanoseconds: 500_000_000)  // 500ms
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.log.warning("Background fill sleep failed: \(error.localizedDescription, privacy: .public)")
+                }
+                return
+            }
 
             guard !Task.isCancelled else { return }
 
@@ -1360,9 +1383,13 @@ final class ConversationMonitor {
     /// Handle app becoming active - cancel background tasks to prioritize visible entries
     @MainActor
     private func handleAppBecomeActive() {
+        // CXT-102: Guard against torn state
+        guard isMonitoring else { return }
         log.info("App became active - cancelling background fill task")
-        backgroundFillTask?.cancel()
+        // CXT-103: Atomic capture-nil-cancel
+        let task = backgroundFillTask
         backgroundFillTask = nil
+        task?.cancel()
     }
 
     /// Keyed bulk refresh: Update specific entries when their caches are ready
