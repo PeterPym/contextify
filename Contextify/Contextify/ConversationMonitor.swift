@@ -242,6 +242,12 @@ final class ConversationMonitor {
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
     @ObservationIgnored private var diagnosticsHTTPServer: DiagnosticsHTTPServer?  // External HTTP API
 
+    // Viewport tracking and background summarization (Phase 2-3)
+    @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
+    @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
+    @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
+    @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol?  // App become active notifications
+
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
         if case .manual = followMode { return true }
@@ -256,6 +262,9 @@ final class ConversationMonitor {
 
         // Subscribe to coordinator updates for project context changes
         subscribeToContextUpdates()
+
+        // Set up app lifecycle notifications for background summarization
+        setupAppLifecycleNotifications()
     }
 
     /// Subscribe to coordinator updates for project switching
@@ -280,6 +289,9 @@ final class ConversationMonitor {
         // Cancel background task group (health monitoring, polling, etc.)
         backgroundTasks?.cancel()
 
+        // Cancel background fill task
+        backgroundFillTask?.cancel()
+
         // Stop diagnostics HTTP server
         if let server = diagnosticsHTTPServer {
             Task {
@@ -292,6 +304,12 @@ final class ConversationMonitor {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = cacheUpdateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = appLifecycleObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = appBecomeActiveObserver {
             NotificationCenter.default.removeObserver(observer)
         }
 
@@ -1235,6 +1253,116 @@ final class ConversationMonitor {
             }
         }
         log.debug("Project change observer registered")
+    }
+
+    // MARK: - Viewport Tracking & Background Summarization (Phase 2-3)
+
+    /// Set up app lifecycle notifications for background summarization
+    private func setupAppLifecycleNotifications() {
+        guard appLifecycleObserver == nil else {
+            log.debug("App lifecycle observer already registered, skipping duplicate setup")
+            return
+        }
+
+        appLifecycleObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.handleAppResignActive()
+            }
+        }
+
+        // Also set up notification for app becoming active to cancel background tasks
+        appBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleAppBecomeActive()
+            }
+        }
+
+        log.debug("App lifecycle observers registered for background summarization")
+    }
+
+    /// Mark an entry as visible in the viewport (called by UI)
+    @MainActor
+    func markEntryVisible(_ entryId: UUID) {
+        guard !viewedEntryIDs.contains(entryId) else { return }
+        viewedEntryIDs.insert(entryId)
+        log.debug("Marked entry \(entryId.uuidString) as viewed (total viewed: \(self.viewedEntryIDs.count))")
+    }
+
+    /// Handle app resigning active - start background summarization for unseen entries
+    @MainActor
+    private func handleAppResignActive() async {
+        log.info("App resigned active - starting background fill for unseen entries")
+
+        // Cancel any existing background fill task
+        backgroundFillTask?.cancel()
+
+        // Find entries in current visible set that user hasn't seen yet
+        let unseenEntries = visibleEntries.filter { entry in
+            entry.action == .generating &&  // Has cache miss
+            !viewedEntryIDs.contains(entry.id)  // Never scrolled into view
+        }
+
+        guard !unseenEntries.isEmpty else {
+            log.info("No unseen entries to summarize in background")
+            return
+        }
+
+        log.info("Found \(unseenEntries.count) unseen entries for background summarization")
+
+        // Create cache misses for unseen entries
+        let misses = unseenEntries.compactMap { entry -> CacheMiss? in
+            guard let content = entry.contentSha256,
+                  let window = entry.windowSha256,
+                  let sourceContent = entry.sourceContent,
+                  let projectId = currentProjectId else {
+                return nil
+            }
+
+            return CacheMiss(
+                entryId: entry.id.uuidString,
+                projectId: projectId,
+                contentSha256: content,
+                windowSha256: window,
+                content: sourceContent,
+                context: entry.detail,  // Use detail as context
+                kind: entry.kind.rawValue,
+                provider: entry.sourceContext?.provider.rawValue ?? "other"
+            )
+        }
+
+        guard !misses.isEmpty else { return }
+
+        // Queue for background processing (low priority - not visible to user)
+        backgroundFillTask = Task { [weak self] in
+            guard let self, let generator = await self.cacheMissGenerator else { return }
+
+            // Small delay to ensure app is fully backgrounded
+            try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
+
+            guard !Task.isCancelled else { return }
+
+            await generator.queueMisses(misses)
+
+            await MainActor.run { [weak self] in
+                self?.log.info("Background fill task queued \(misses.count) misses")
+            }
+        }
+    }
+
+    /// Handle app becoming active - cancel background tasks to prioritize visible entries
+    @MainActor
+    private func handleAppBecomeActive() {
+        log.info("App became active - cancelling background fill task")
+        backgroundFillTask?.cancel()
+        backgroundFillTask = nil
     }
 
     /// Keyed bulk refresh: Update specific entries when their caches are ready
