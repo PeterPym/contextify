@@ -57,6 +57,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
   @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
 
+  // Deduplication: track target project ID for in-flight switch
+  @ObservationIgnored private var switchInProgress: String?
+
   // Notification coalescing to prevent duplicate/oscillating notifications
   @ObservationIgnored private var lastHandledPath: String?
   @ObservationIgnored private var lastHandledAt: CFAbsoluteTime = 0
@@ -326,7 +329,17 @@ public final class ProjectSwitcherState {
   public func switchToProject(_ projectId: String) async {
     guard let orchestrator = orchestrator else { return }
 
+    // Deduplicate: if already switching to this project, skip
+    if switchInProgress == projectId {
+      log.debug("🔀 ProjectSwitcher: Switch to \(projectId) already in progress, skipping duplicate")
+      return
+    }
+
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
+
+    // Mark switch in progress
+    switchInProgress = projectId
+    defer { switchInProgress = nil }
 
     // CXT-13: Use StartupCoordinator for atomic project switching
     // This ensures ProjectSwitcherState and ConversationMonitor receive updates simultaneously
