@@ -1102,9 +1102,9 @@ final class ConversationMonitor {
             // Off-screen entries will be processed when scrolled into view or when app is idle
             if !misses.isEmpty, let generator = cacheMissGenerator {
                 let visibleCount = min(12, misses.count)  // Estimate viewport capacity
-                let visibleMisses = Array(misses.suffix(visibleCount))  // Most recent entries
+                let visibleMisses = Array(misses.suffix(visibleCount).reversed())  // Newest first
 
-                log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries for summarization")
+                log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries (newest→oldest)")
                 log.info("[SUMM-QUEUE] Deferring \(misses.count - visibleMisses.count) off-screen entries (will process on scroll or idle)")
 
                 Task {
