@@ -281,6 +281,7 @@ final class ConversationMonitor {
     func startMonitoring(projectId: String) {
         let taskStart = Date()
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
+        log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId)")
 
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
@@ -301,11 +302,15 @@ final class ConversationMonitor {
 
             // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
+                let dbStart = Date()
+                log.info("[UIOPT-DB-INIT] Creating TranscriptOrchestrator...")
                 let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
+                log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000))ms")
                 await MainActor.run {
                     self.orchestrator = orch
                     self.currentProjectId = projectId
                     self.log.info("📁 Project ID set: \(projectId)")
+                    self.log.info("[UIOPT-DB-INIT] Project ID set on main actor")
                 }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
@@ -443,7 +448,10 @@ final class ConversationMonitor {
                 }
 
                 // 5. Load initial feed (fast - single query)
+                let feedStart = Date()
+                log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
                 await self.loadFeedFromSQL()
+                log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000))ms")
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
@@ -453,6 +461,7 @@ final class ConversationMonitor {
 
                     self.isMonitoring = true
                     self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                    self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
                 NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
             } catch {
@@ -962,6 +971,7 @@ final class ConversationMonitor {
         do {
             let startTime = Date()
             log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId)")
+            log.info("[UIOPT-SQL-QUERY] Executing getRecentFeed query...")
 
             // Single query gets entries + cache
             // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
@@ -973,8 +983,11 @@ final class ConversationMonitor {
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
+            log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000))ms")
 
             // Map to UI entries and track seen IDs + collect cache misses
+            let mapStart = Date()
+            log.info("[UIOPT-MAP-START] Mapping \(feed.count) entries to timeline UI models...")
             seenEntryIDs.removeAll(keepingCapacity: true)
             var misses: [CacheMiss] = []
 
@@ -998,10 +1011,14 @@ final class ConversationMonitor {
 
                 return toTimelineEntry(entry, cached: cache)
             }
+            log.info("[UIOPT-MAP-DONE] Mapping complete in \(String(format: "%.0f", Date().timeIntervalSince(mapStart) * 1000))ms")
 
+            let uiUpdateStart = Date()
+            log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count) entries...")
             setEntries(newEntries)
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
+            log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000))ms")
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 

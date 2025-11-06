@@ -269,6 +269,7 @@ struct ProjectSwitcherView: View {
             .onTapGesture {
               log.info("ProjectTab: user tapped project tab: \(project.name) id=\(project.id)")
               log.info("[SUMM-TAP] User tapped project: \(project.name) id=\(project.id)")
+              log.info("[UIOPT-INPUT] 🖱️ Mouse click: Project tab '\(project.name)'")
               // Skip if already active (CXT-13: avoid coordinator deduplication blocking refresh)
               guard state.activeProjectId != project.id else {
                 log.debug("ProjectTab: already active, skipping switch")

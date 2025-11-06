@@ -296,6 +296,8 @@ public final class ProjectSwitcherState {
 
   /// Cycle to previous project (for keyboard shortcut)
   public func cycleToPreviousProject() async {
+    let startTime = Date()
+    log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Previous Project (Cmd+Shift+[)")
     guard !allProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
@@ -303,6 +305,7 @@ public final class ProjectSwitcherState {
       // Move to previous, wrapping around to end
       let previousIndex = currentIndex > 0 ? currentIndex - 1 : allProjects.count - 1
       let previousProject = allProjects[previousIndex]
+      log.info("[UIOPT-INPUT] Previous project selected: \(previousProject.name) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000))ms)")
       await switchToProject(previousProject.id)
     } else if let first = allProjects.first {
       // No active project, select first
@@ -312,6 +315,8 @@ public final class ProjectSwitcherState {
 
   /// Cycle to next project (for keyboard shortcut)
   public func cycleToNextProject() async {
+    let startTime = Date()
+    log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Next Project (Cmd+Shift+])")
     guard !allProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
@@ -319,6 +324,7 @@ public final class ProjectSwitcherState {
       // Move to next, wrapping around to start
       let nextIndex = currentIndex < allProjects.count - 1 ? currentIndex + 1 : 0
       let nextProject = allProjects[nextIndex]
+      log.info("[UIOPT-INPUT] Next project selected: \(nextProject.name) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000))ms)")
       await switchToProject(nextProject.id)
     } else if let first = allProjects.first {
       // No active project, select first

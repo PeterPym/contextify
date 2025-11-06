@@ -161,6 +161,11 @@ final class StatusBarViewModel {
             estimatedSecondsRemaining = uiProcessing ? stats.estimatedSecondsRemaining : 0
             recentErrorCount = stats.recentErrorCount
             topErrorReason = stats.topErrorReason
+
+            // Log when status transitions to "Up to date"
+            if stats.pending == 0 && !uiProcessing && stats.recentErrorCount == 0 {
+                log.info("[UIOPT-STATUS-READY] ✅ Status bar shows 'Up to date' (queue empty, not processing, no errors)")
+            }
         }
     }
 
