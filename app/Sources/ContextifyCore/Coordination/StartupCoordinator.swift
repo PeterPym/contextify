@@ -237,7 +237,8 @@ public final class StartupCoordinator {
     /// - Parameter path: Absolute path to new project root
     /// - Throws: `StartupError` if project creation fails
     public func switchProject(to path: String) async throws {
-        log.notice("🔄 User-initiated switch to project: \(path, privacy: .public)")
+        let startTime = Date()
+        log.notice("🔄 [COORD-START] User-initiated switch to project: \(path, privacy: .public)")
 
         // Validate path exists
         var isDir: ObjCBool = false
@@ -246,8 +247,10 @@ public final class StartupCoordinator {
         }
 
         // Ensure project exists in database
+        let dbStart = Date()
+        log.info("💾 [COORD-DB-START] Looking up/creating project in database (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s)")
         let projectId = try await ensureProjectInDatabase(path: path)
-        log.info("✅ Switch target project ID: \(projectId, privacy: .public)")
+        log.info("💾 [COORD-DB-DONE] Database lookup complete in \(String(format: "%.3f", Date().timeIntervalSince(dbStart)))s | Total: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
 
         // Resolve git branch
         let branch = await resolveGitBranch(path: path)
@@ -268,9 +271,12 @@ public final class StartupCoordinator {
         )
 
         // Publish
+        let publishStart = Date()
+        log.info("📢 [COORD-PUBLISH-START] Publishing context (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s)")
         await publishContext(context)
+        log.info("📢 [COORD-PUBLISH-DONE] Publish complete in \(String(format: "%.3f", Date().timeIntervalSince(publishStart)))s | Total: \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
 
-        log.notice("✅ Switched to: \(context.displayName) (id: \(projectId, privacy: .public))")
+        log.notice("✅ [COORD-END] Switched to: \(context.displayName) (id: \(projectId, privacy: .public)) in \(String(format: "%.3f", Date().timeIntervalSince(startTime)))s")
     }
 
     // MARK: - Private Helpers

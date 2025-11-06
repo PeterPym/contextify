@@ -279,18 +279,25 @@ final class ConversationMonitor {
 
     @MainActor
     func startMonitoring(projectId: String) {
+        let taskStart = Date()
+        log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
+
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
         backgroundTasks = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
 
-        guard !isMonitoring else { return }
+        guard !isMonitoring else {
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring, skipping")
+            return
+        }
 
-        log.info("⭐️ Timeline integration starting for project \(projectId)")
+        log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId)")
 
         // CXT-13: Remove @MainActor to prevent blocking UI on project switch
         Task { [weak self] in
             guard let self else { return }
+            log.info("🔧 [MONITOR-TASK] Background task started (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(taskStart)))s)")
 
             // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
             do {
@@ -644,23 +651,36 @@ final class ConversationMonitor {
     /// Handle project context update from StartupCoordinator
     @MainActor
     private func handleContextUpdate(_ context: ActiveProjectContext) async {
-        log.debug("📍 Received context update: \(context.displayName) (id: \(context.id, privacy: .public))")
+        let startTime = Date()
+        log.info("🔄 [SWITCH-START] Project switch to \(context.displayName) (id: \(context.id, privacy: .public))")
 
         // CXT-13: Set flag to suppress health monitoring during switch
         await MainActor.run { isSwitchingProjects = true }
-        defer { Task { @MainActor in isSwitchingProjects = false } }
+        defer {
+            Task { @MainActor in
+                isSwitchingProjects = false
+                let elapsed = Date().timeIntervalSince(startTime)
+                self.log.info("✅ [SWITCH-END] Project switch completed in \(String(format: "%.2f", elapsed))s")
+            }
+        }
 
         // Stop current monitoring
-        log.debug("handleContextUpdate: stopping monitoring")
+        let stopStart = Date()
+        log.info("🛑 [SWITCH-STOP] Stopping monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
         stopMonitoring()
+        log.info("🛑 [SWITCH-STOP-DONE] Stop complete in \(String(format: "%.2f", Date().timeIntervalSince(stopStart)))s")
 
         // Clear all entries
-        log.debug("handleContextUpdate: clearing entries")
+        let clearStart = Date()
+        log.info("🧹 [SWITCH-CLEAR] Clearing entries (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
         clearEntries()
+        log.info("🧹 [SWITCH-CLEAR-DONE] Clear complete in \(String(format: "%.2f", Date().timeIntervalSince(clearStart)))s")
 
         // Start monitoring with new project ID from coordinator
-        log.debug("handleContextUpdate: starting monitoring for project: \(context.id, privacy: .public)")
+        let monitorStart = Date()
+        log.info("🚀 [SWITCH-MONITOR] Starting monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
         startMonitoring(projectId: context.id)
+        log.info("🚀 [SWITCH-MONITOR-DONE] Monitor start triggered in \(String(format: "%.2f", Date().timeIntervalSince(monitorStart)))s")
 
         log.info("✅ Project context change complete - monitoring restarted for: \(context.id, privacy: .public)")
     }

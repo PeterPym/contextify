@@ -333,38 +333,42 @@ public final class ProjectSwitcherState {
     // via their respective update streams, eliminating the race condition where UI shows
     // one project but timeline shows data from another.
 
-    // Get project root path
-    do {
-      guard let project = try orchestrator.getProject(id: projectId) else {
-        log.error("Project not found: \(projectId)")
-        return
-      }
-
-      // Call coordinator to switch project (publishes to all subscribers atomically)
-      try await StartupCoordinator.shared.switchProject(to: project.rootPath)
-
-      // StartupCoordinator will publish update, which triggers:
-      // 1. handleContextUpdate() in ProjectSwitcherState (sets activeProjectId)
-      // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
-      // This ensures UI and data stay in sync with no race condition
-
-      // CXT-11: Update metadata in background (non-blocking)
-      Task.detached(priority: .userInitiated) {
-        let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
-        do {
-          // Mark project as selected and viewed
-          try orchestrator.markProjectSelected(projectId: projectId)
-          let timestamp = ISO8601Z.string(from: Date())
-          try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-          logger.debug("✅ Project metadata updated in database: \(projectId)")
-        } catch {
-          logger.error("Failed to update project metadata: \(error.localizedDescription)")
+    // CXT-14: Move database lookup AND coordinator switch into background task
+    // to avoid blocking UI on database waits (especially during active LLM generation)
+    Task.detached(priority: .userInitiated) { [orchestrator] in
+      do {
+        // Get project root path (off main thread to avoid blocking on DB lock)
+        guard let project = try orchestrator.getProject(id: projectId) else {
+          Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+            .error("Project not found: \(projectId)")
+          return
         }
-      }
 
-      log.info("✅ Switched to project: \(project.rootPath)")
-    } catch {
-      log.error("Failed to switch project: \(error.localizedDescription)")
+        // Call coordinator to switch (will publish updates to all subscribers)
+        try await StartupCoordinator.shared.switchProject(to: project.rootPath)
+      } catch {
+        Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+          .error("Failed to switch project via coordinator: \(error.localizedDescription)")
+      }
+    }
+
+    // StartupCoordinator will publish update, which triggers:
+    // 1. handleContextUpdate() in ProjectSwitcherState (sets activeProjectId)
+    // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
+    // This ensures UI and data stay in sync with no race condition
+
+    // CXT-11: Update metadata in background (non-blocking)
+    Task.detached(priority: .userInitiated) { [orchestrator] in
+      let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
+      do {
+        // Mark project as selected and viewed
+        try orchestrator.markProjectSelected(projectId: projectId)
+        let timestamp = ISO8601Z.string(from: Date())
+        try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
+        logger.debug("✅ Project metadata updated in database: \(projectId)")
+      } catch {
+        logger.error("Failed to update project metadata: \(error.localizedDescription)")
+      }
     }
   }
 
