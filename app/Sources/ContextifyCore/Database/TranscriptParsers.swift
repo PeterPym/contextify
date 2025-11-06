@@ -1,5 +1,20 @@
 import Foundation
 
+// MARK: - Shared ISO8601 Date Formatters (Performance)
+
+/// Cached ISO8601 formatters to avoid expensive re-initialization on every parse.
+/// Creating formatters is ~500x slower than reusing them due to ICU locale/pattern loading.
+///
+/// Thread safety: These formatters are immutable after initialization (read-only usage).
+/// ISO8601DateFormatter.date(from:) is thread-safe for concurrent reads.
+nonisolated(unsafe) private let iso8601FormatterWithFractional: ISO8601DateFormatter = {
+  let formatter = ISO8601DateFormatter()
+  formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  return formatter
+}()
+
+nonisolated(unsafe) private let iso8601FormatterStandard = ISO8601DateFormatter()
+
 // MARK: - Multi-Provider Parser
 
 /// Parser that delegates to provider-specific implementations
@@ -172,9 +187,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
   }
 
   private func parseISO8601(_ str: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: str) ?? ISO8601DateFormatter().date(from: str)
+    // Use cached formatters to avoid expensive ICU initialization on every call
+    return iso8601FormatterWithFractional.date(from: str) ?? iso8601FormatterStandard.date(from: str)
   }
 }
 
@@ -264,9 +278,8 @@ public struct CodexLineParser: TranscriptLineParser {
   }
 
   private func parseISO8601(_ str: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: str) ?? ISO8601DateFormatter().date(from: str)
+    // Use cached formatters to avoid expensive ICU initialization on every call
+    return iso8601FormatterWithFractional.date(from: str) ?? iso8601FormatterStandard.date(from: str)
   }
 }
 
@@ -484,9 +497,8 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
   }
 
   private func parseISO8601(_ str: String) -> Date? {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: str) ?? ISO8601DateFormatter().date(from: str)
+    // Use cached formatters to avoid expensive ICU initialization on every call
+    return iso8601FormatterWithFractional.date(from: str) ?? iso8601FormatterStandard.date(from: str)
   }
 }
 
