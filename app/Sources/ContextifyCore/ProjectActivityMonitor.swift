@@ -37,7 +37,7 @@ public struct WatchHandle: Sendable, Hashable {
 public actor ProjectActivityMonitor {
   private let orchestrator: TranscriptOrchestrator
   private var activeWatchers: [String: WatchHandle] = [:]  // projectId -> WatchHandle
-  private let eventStream: (stream: AsyncStream<ProjectEvent>, continuation: AsyncStream<ProjectEvent>.Continuation)
+  private var eventObservers: [UUID: AsyncStream<ProjectEvent>.Continuation] = [:]
   private var isMonitoring = false
 
   private var fsEventsMonitor: FSEventsMonitor?
@@ -45,20 +45,13 @@ public actor ProjectActivityMonitor {
 
   public init(orchestrator: TranscriptOrchestrator) {
     self.orchestrator = orchestrator
-    self.eventStream = AsyncStream<ProjectEvent>.makeStream()
     let monitorId = "\(ObjectIdentifier(self))"
-    self.eventStream.continuation.onTermination = { @Sendable [monitorId] _ in
-      Task {
-        // Termination hook for cleanup if needed
-        log.warning("⚠️ ProjectActivity: stream terminated for monitor \(monitorId)")
-      }
-    }
-    log.info("✅ ProjectActivity: monitor initialized (id: \(monitorId))")
+    log.info("ProjectActivity: monitor initialized (id: \(monitorId))")
   }
 
   deinit {
     let monitorId = "\(ObjectIdentifier(self))"
-    log.warning("🗑️ ProjectActivity: monitor deallocated (id: \(monitorId))")
+    log.debug("ProjectActivity: monitor deallocated (id: \(monitorId))")
   }
 
   /// Start global monitoring (FSEvents + fallback polling)
@@ -160,9 +153,22 @@ public actor ProjectActivityMonitor {
     emitEvent(ProjectEvent(projectId: projectId, kind: .removed))
   }
 
-  /// Event stream for UI (debounced per-project)
+  /// Event stream for UI (multicast - each subscriber receives all events)
   public nonisolated func observeProjectEvents() -> AsyncStream<ProjectEvent> {
-    eventStream.stream
+    let observerId = UUID()
+
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      // Register observer (need to access actor-isolated state)
+      Task { [weak self] in
+        guard let self else { return }
+        await self.registerObserver(id: observerId, continuation: continuation)
+      }
+
+      // Cleanup on termination
+      continuation.onTermination = { @Sendable [weak self] _ in
+        Task { await self?.removeObserver(id: observerId) }
+      }
+    }
   }
 
   /// Active watcher count (for testing)
@@ -177,9 +183,25 @@ public actor ProjectActivityMonitor {
 
   // MARK: - Private
 
+  /// Register observer (actor-isolated helper)
+  private func registerObserver(id: UUID, continuation: AsyncStream<ProjectEvent>.Continuation) {
+    eventObservers[id] = continuation
+    log.debug("ProjectActivity: registered observer \(id) (total: \(self.eventObservers.count))")
+  }
+
+  /// Remove observer by UUID (called on stream termination)
+  private func removeObserver(id: UUID) {
+    eventObservers.removeValue(forKey: id)
+    log.debug("ProjectActivity: removed observer \(id) (total: \(self.eventObservers.count))")
+  }
+
   private func emitEvent(_ event: ProjectEvent) {
-    eventStream.continuation.yield(event)
-    log.debug("ProjectActivity: emitted \(event.kind.rawValue) project=\(event.projectId)")
+    log.debug("ProjectActivity: emitting \(event.kind.rawValue) project=\(event.projectId) to \(self.eventObservers.count) observers")
+
+    // Fan out to all observers
+    for (_, continuation) in eventObservers {
+      continuation.yield(event)
+    }
   }
 
   private func discoverAllProjects() async throws {

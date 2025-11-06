@@ -533,24 +533,17 @@ final class ConversationMonitor {
             await MainActor.run { [weak self] in
                 guard let self else { return }
 
-                log.debug("📬 TranscriptUpdated notification received: projectId=\(pid ?? "nil"), currentProjectId=\(self.currentProjectId ?? "nil")")
-
                 // Branch 1: Current project - refresh timeline
                 if pid == self.currentProjectId || pid == nil {
-                    log.debug("📬 ✅ Matches current project - scheduling debounced refresh")
                     // Cancel existing debounce task and start new one
                     self.debounceTask?.cancel()
                     self.debounceTask = Task { [weak self] in
                         try? await Task.sleep(nanoseconds: 150_000_000)  // 150ms
                         guard let self, !Task.isCancelled else {
-                            self?.log.debug("📬 Debounce task cancelled or self deallocated")
                             return
                         }
-                        self.log.debug("📬 Debounce complete - calling processIncrementalUpdate")
                         await self.processIncrementalUpdate()
                     }
-                } else {
-                    log.debug("📬 ❌ Notification for different project (pid=\(pid ?? "nil") != current=\(self.currentProjectId ?? "nil")) - ignoring")
                 }
 
                 // Branch 2: Other project - unread count is DB-derived (no action needed here)
