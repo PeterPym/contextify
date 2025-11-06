@@ -216,6 +216,13 @@ actor TimelineCacheMissGenerator {
         var consecutiveFailures = 0
 
         for miss in batch {
+            // Check for cancellation INSIDE the batch loop (CXT-7)
+            // This allows rapid cancellation during project switches without waiting for entire batch
+            if Task.isCancelled {
+                log.info("Batch processing cancelled mid-batch (processed \(successCount)/\(batch.count))")
+                break
+            }
+
             do {
                 try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
                 successCount += 1
