@@ -118,14 +118,24 @@ actor TimelineCacheMissGenerator {
     /// - Parameter visibleIDs: Set of entry IDs currently visible to user
     func pruneQueue(keepOnly visibleIDs: Set<String>) async {
         let beforeCount = pendingMisses.count
-        guard beforeCount > 0 else { return }
+        log.debug("[PRUNE] Checking queue: \(beforeCount) pending, \(visibleIDs.count) visible IDs")
+        guard beforeCount > 0 else {
+            log.debug("[PRUNE] Queue empty, nothing to prune")
+            return
+        }
 
         // Remove entries not in visible set (keep actively processing entry via activeEntryID check)
         let activeID = await MainActor.run { activeEntryID }
+        log.debug("[PRUNE] Active entry ID: \(activeID?.uuidString.prefix(8) ?? "none")")
+
         pendingMisses.removeAll { miss in
             let isVisible = visibleIDs.contains(miss.entryId)
             let isActive = UUID(uuidString: miss.entryId) == activeID
-            return !isVisible && !isActive
+            let shouldKeep = isVisible || isActive
+            if !shouldKeep {
+                log.debug("[PRUNE] Removing entry \(miss.entryId.prefix(8)): visible=\(isVisible), active=\(isActive)")
+            }
+            return !shouldKeep
         }
 
         // Update pendingKeys to match
@@ -135,6 +145,8 @@ actor TimelineCacheMissGenerator {
         if prunedCount > 0 {
             log.info("[PRUNE] Removed \(prunedCount) entries no longer visible (kept \(self.pendingMisses.count))")
             notifyQueueChanged()
+        } else {
+            log.debug("[PRUNE] No entries removed (all \(beforeCount) still visible or active)")
         }
     }
 
