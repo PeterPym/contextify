@@ -20,19 +20,23 @@ Add structured log tags to trace your feature:
 ```swift
 import OSLog
 
-private let log = Logger(subsystem: "dev.contextify", category: "YourFeature")
+// Choose subsystem based on feature area:
+// - "dev.contextify.timeline" for timeline/summarization features
+// - "dev.contextify.metadata" for transcript metadata processing
+// - "dev.contextify" for general app logging
+private let log = Logger(subsystem: "dev.contextify.timeline", category: "YourFeature")
 
 // In your code:
-log.info("[FEATURE-START] Starting operation: \(context, privacy: .public)", privacy: .public)
-log.info("[FEATURE-STEP] Processing \(count) items", privacy: .public)
-log.info("[FEATURE-DONE] Completed in \(elapsed)s", privacy: .public)
+log.info("[FEATURE-START] Starting operation: \(context, privacy: .public)")
+log.debug("[FEATURE-STEP] Processing \(count, privacy: .public) items")
+log.info("[FEATURE-DONE] Completed in \(elapsed, privacy: .public)s")
 ```
 
 **Tag naming convention:** `[FEATURE-EVENT]` where:
 - `FEATURE` = your feature area (e.g., SUMM, BATCH, COORD)
 - `EVENT` = specific event (e.g., START, DONE, ERROR)
 
-**IMPORTANT - Privacy:** Always use `privacy: .public` for logs with interpolated values (timing, counts, names).
+**IMPORTANT - Privacy:** Always use `privacy: .public` for interpolated values (timing, counts, names).
 Without `.public`, macOS redacts values as `<private>`, breaking performance analysis.
 
 **Examples:**
@@ -41,10 +45,13 @@ Without `.public`, macOS redacts values as `<private>`, breaking performance ana
 log.info("[PERF] Completed in \(elapsed)ms")
 
 // RIGHT - timing visible in logs
-log.info("[PERF] Completed in \(elapsed)ms", privacy: .public)
+log.info("[PERF] Completed in \(elapsed, privacy: .public)ms")
 
-// RIGHT - project name visible
+// WRONG - applying privacy to whole string literal
 log.info("[PERF] Switched to \(name, privacy: .public)", privacy: .public)
+
+// RIGHT - privacy on interpolated value only
+log.info("[PERF] Switched to \(name, privacy: .public)")
 
 // OK - no values to redact
 log.info("[PERF] Operation started")
@@ -60,10 +67,11 @@ chmod +x scripts/logging/monitor-yourfeature.sh
 ```
 
 Edit the script:
-1. Change `LOGFILE` prefix (line 6)
-2. Update help text with your tags (lines 17-26)
-3. Update grep pattern for your tags (line 44): `grep --line-buffered -E "\[FEATURE-"`
-4. Update color coding cases (lines 53-61)
+1. Change `LOGFILE` prefix (line 10)
+2. Update help text with your tags (lines 23-33)
+3. **CRITICAL**: Update `log stream` predicate (line 43-44) to match your Logger's subsystem and category
+4. Update grep pattern for your tags (line 47): `grep --line-buffered -E "PATTERN1|PATTERN2|..."`
+5. Update color coding cases (lines 55-86)
 
 ### 3. Run and Debug
 
@@ -75,11 +83,39 @@ Edit the script:
 
 ## Critical Gotchas
 
-### macOS Log Stream Predicate
-**WRONG:** `--predicate 'subsystem == "dev.contextify"'`
-**RIGHT:** `--predicate 'subsystem BEGINSWITH "dev.contextify"'`
+### Logger Subsystem/Category Must Match Script Predicate
 
-macOS requires `BEGINSWITH` operator for subsystem matching.
+**The predicate in your script MUST exactly match the Logger in your code.**
+
+Example - monitor-cache-generation.sh:
+```bash
+# Script predicate (line 43-44):
+log stream \
+  --predicate 'subsystem == "dev.contextify.timeline" AND (category == "CacheMissGenerator" OR category == "ConversationMonitor")'
+```
+
+Must match code:
+```swift
+// ConversationMonitor.swift line 145:
+private let log = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
+
+// TimelineCacheMissGenerator.swift line 31:
+private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
+```
+
+**If subsystem or category doesn't match, you'll see NO logs** - this is the #1 debugging issue.
+
+### macOS Log Stream Predicate Operators
+Both `==` and `BEGINSWITH` work:
+```bash
+# Exact match (recommended):
+--predicate 'subsystem == "dev.contextify.timeline"'
+
+# Prefix match (captures multiple subsystems):
+--predicate 'subsystem BEGINSWITH "dev.contextify"'
+```
+
+Use `==` when targeting a specific subsystem, `BEGINSWITH` when you want multiple.
 
 ### Buffering Issues
 **WRONG:** `log stream | grep "\[TAG-" | tee file`
@@ -93,7 +129,11 @@ Without `--line-buffered`, grep buffers output and you see nothing in real-time.
 Preserves whitespace and special characters in log lines.
 
 ### Log Levels
-Use `--level info` to capture `.info()` and above. Using `--level debug` works but includes noise.
+- `--level debug` captures `.debug()` and above (recommended for development)
+- `--level info` captures `.info()` and above (less noise, might miss details)
+
+**IMPORTANT:** The log level in the script must be <= the log level in code.
+If your code uses `log.debug()` but script uses `--level info`, you won't see those logs.
 
 ### stdbuf Not Available
 `stdbuf` doesn't exist on macOS - use `grep --line-buffered` instead.
