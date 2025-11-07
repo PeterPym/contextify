@@ -1417,7 +1417,7 @@ final class ConversationMonitor {
         // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
         let visibleCount = current.count
         let generatingCount = visibleEntries.filter { current.contains($0.id) && $0.action == .generating }.count
-        log.debug("[SUMM-DEBOUNCE] Viewport changed: \(visibleCount) visible, \(generatingCount) need summaries - starting 1250ms debounce timer")
+        log.debug("[SUMM-DEBOUNCE] Viewport changed: \(visibleCount, privacy: .public) visible, \(generatingCount, privacy: .public) need summaries - starting 1250ms debounce timer")
 
         coalesceTask?.cancel()
         coalesceTask = Task { [weak self] in
@@ -1466,10 +1466,10 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("[SUMM-QUEUE] Queueing \(misses.count) visible generating entries:")
+        log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible generating entries:")
         for miss in misses {
             let contentPreview = String(miss.content.prefix(15))
-            log.info("  - Entry \(miss.entryId.prefix(8)): \(miss.kind) | \"\(contentPreview)...\"")
+            log.info("  - Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
 
         Task(priority: .userInitiated) {
