@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Generic Log Monitor Template
+# Generic OSLog Monitor Template for Swift/macOS Projects
 # Usage: ./monitor-template.sh [tag1] [tag2] [tag3] ...
 # Examples:
 #   ./monitor-template.sh FEATURE-START FEATURE-DONE
@@ -59,7 +59,7 @@ else
 fi
 
 # Step 5: Display monitoring context
-echo "=== Generic Log Monitor ==="
+echo "=== OSLog Monitor ==="
 echo "Process:    $PROCESS"
 echo "Subsystem:  $SUBSYSTEM"
 echo "Categories: $CATEGORIES"
@@ -79,14 +79,13 @@ log stream \
   tee -a "$LOGFILE" | \
   while IFS= read -r line; do
     # Step 7: Parse and simplify output
-    # Input:  2025-11-07 10:12:10.633  I Contextify[67502:4b2540] [dev.contextify.timeline:Category] Message
+    # Input:  2025-11-07 10:12:10.633  I YourApp[67502:4b2540] [com.yourapp.yourfeature:Category] Message
     # Output: 10:12:10.633 Message
 
     time=$(echo "$line" | awk '{print $2}')
     msg=$(echo "$line" | sed 's/^.*\] //')
 
     # Step 8: Basic color-coding (customize as needed)
-    # Add your own color schemes based on tags/patterns
     case "$msg" in
       *INIT*)
         echo -e "\033[1;36m🚀 $time\033[0m $msg"  # Cyan - initialization
