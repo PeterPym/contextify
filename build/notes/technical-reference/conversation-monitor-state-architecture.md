@@ -1,8 +1,225 @@
 # ConversationMonitor State Management Architecture
 
-**Status:** Production
+**Status:** Production (with known initialization issues - see Phase 2/3 refactor)
 **Concurrency:** @MainActor (UI layer)
 **Pattern:** Observable + Cached Derived State
+**Known Issues:** Duplicate initialization paths, race conditions during startup
+
+---
+
+## ⚠️ Known Initialization Issues (Phase 2/3 Refactor Needed)
+
+**Date Discovered:** 2025-11-07
+**Status:** Phase 1 tactical fix applied, architectural refactor pending
+
+### Problem Summary
+
+ConversationMonitor has evolved **two overlapping initialization paths** that cause duplicate work and race conditions:
+
+1. **Legacy Path** (`startMonitoring()` lines 355-542):
+   - Initializes orchestrator, diagnostics, background tasks
+   - Calls `loadFeedFromSQL()` at line 509
+
+2. **Coordinator Path** (`onProjectOrSessionChange()` lines 602-695):
+   - Loads policy, sessions, cursor, events
+   - Calls `loadFeedFromSQL()` at line 644
+
+### Root Causes Identified
+
+#### Issue 1: didSet Observer Cascade (FIXED in Phase 1)
+- `startMonitoring()` sets `currentProjectId` inside async Task
+- Triggers `didSet` observer → calls `onProjectOrSessionChange()`
+- Both paths call `loadFeedFromSQL()` → duplicate database queries
+
+**Fix Applied:** `isInitializing` flag (line 360) blocks `onProjectOrSessionChange()` during `startMonitoring()`
+
+#### Issue 2: Double startMonitoring() Calls (ATTEMPTED FIX FAILED)
+- **ContentView.task** (ContentView.swift:85) calls `startMonitoring()` on initial startup
+- **Coordinator subscription** (ConversationMonitor.swift:293) receives same initial context
+- Both receive same project ID → call `startMonitoring()` twice
+
+**Attempted Fix:** Synchronously set `isMonitoring`/`currentProjectId` before async Task
+**Result:** CRASH - violated Swift actor isolation (these are `@MainActor` properties)
+**Lesson:** Cannot set `@MainActor` properties synchronously from `@MainActor` context before async Task spawns
+
+#### Issue 3: Actor Isolation Violation
+```swift
+@MainActor
+func startMonitoring(projectId: String) {
+    isMonitoring = true        // This is @MainActor
+    currentProjectId = projectId  // This is @MainActor
+
+    Task { [weak self] in      // Task NOT isolated to MainActor
+        // Properties set above but Task can spawn before didSet completes
+        // External observers see torn state
+    }
+}
+```
+
+**Problem:** Properties are set on MainActor, but the Task is NOT MainActor-isolated (CXT-13: removed to prevent UI blocking). This creates a race window where:
+- Properties appear set to guards checking them
+- But async Task spawns and may access them before isolation completes
+- External calls to `onProjectOrSessionChange()` see inconsistent state
+
+### Implications of Double startMonitoring() Calls
+
+**Impact on Application Behavior:**
+
+1. **Database Queries Duplicated**
+   - `loadFeedFromSQL()` runs twice for same project
+   - ~50ms penalty per duplicate (100ms total wasted)
+   - Not catastrophic but inefficient
+
+2. **Background Tasks May Spawn Twice**
+   - Discovery loops, file watchers, health monitoring
+   - Second call hits `isMonitoring=true` guard and skips (line 354)
+   - **BUT** there's a race window before guard activates
+
+3. **Generator Shutdown/Creation Churn**
+   - First call shuts down old generator, creates new one
+   - Second call (if it passes guard) repeats shutdown
+   - Can cause generator to be in inconsistent state during transition
+
+4. **Notification Spam**
+   - `conversationMonitoringDidStart` notification fired twice
+   - Subscribers may react twice to same event
+   - Could cause UI flashing or double-loading
+
+5. **Resource Leaks (Potential)**
+   - If second call spawns Task before first completes
+   - Both Tasks create orchestrators, diagnostics servers
+   - Second one replaces first, but first's cleanup may not finish
+   - Diagnostic HTTP server might bind to port twice (should fail gracefully)
+
+6. **User-Visible Issues**
+   - Timeline may flash/reload unnecessarily
+   - Status bar shows "Starting..." twice
+   - Slightly slower startup (~100ms penalty)
+
+**Why It's Bad:**
+- **Not immediately breaking** but wastes resources
+- **Creates unpredictable timing** - race conditions
+- **Makes debugging harder** - which call succeeded?
+- **Violates single responsibility** - two systems trying to initialize same thing
+
+**Why It Hasn't Been Caught:**
+- Guard at line 354 catches most duplicate calls
+- Race window is small (~10ms)
+- Database queries are idempotent
+- Background tasks handle restart gracefully
+
+### Current Workarounds & Limitations
+
+**What Works:**
+- ✅ Single project startup (first call usually succeeds)
+- ✅ `isInitializing` flag prevents didSet cascade
+- ✅ App doesn't crash on startup
+- ✅ Guard at line 354 blocks most duplicates
+
+**What's Broken:**
+- ❌ Duplicate `startMonitoring()` calls still happen (logged at TIMELINE-START)
+- ❌ Small race window exists before guard activates
+- ❌ `onProjectOrSessionChange()` can be called from external sources (project discovery) with torn state
+- ❌ Resource waste and unpredictable timing
+
+### Architectural Debt
+
+The code has **six boolean flags** managing state transitions, creating a complex implicit state machine:
+
+```swift
+isMonitoring: Bool              // Actively monitoring project
+isInitializing: Bool            // Inside startMonitoring() Task
+isSwitchingProjects: Bool       // Suppress health monitoring
+isReadyForUpdates: Bool         // Gate incremental updates
+sessionsLoaded: Bool            // Gate policy reconciliation
+isCacheGeneratorActive: Bool    // Generator ready
+```
+
+**Problems:**
+1. **Implicit dependencies:** `isMonitoring=false` required before `loadFeed` succeeds
+2. **No formal invariants:** Can have `isMonitoring=true` but `currentProjectId=nil`
+3. **didSet side effects:** Setting one property triggers cascades
+4. **Race conditions:** Flags checked off MainActor, set on MainActor
+5. **2,634 line file:** God Object anti-pattern
+
+### Recommended Fix Approach (Phase 2/3)
+
+**Phase 2: Split Project vs Session Changes** (4-8 hours)
+```swift
+// Remove didSet observers entirely
+private var currentProjectId: String?  // No didSet
+private var currentSessionId: String?  // No didSet
+
+// Explicit methods instead
+func onProjectChange() {
+    // Full reset: policy, sessions, cursor, feed, events
+    Task {
+        await loadPolicyForCurrentProject()
+        await loadAllSessionsFromDatabase()
+        await reconcilePolicy()
+        await loadCursor()
+        await loadFeedFromSQL()
+        await replayEvents()
+        isReadyForUpdates = true
+    }
+}
+
+func onSessionChange() {
+    // Minimal reset: just reload feed for new session
+    Task {
+        await loadFeedFromSQL()
+    }
+}
+```
+
+**Benefits:**
+- No implicit cascades via didSet
+- Clear separation of concerns
+- Easier to test (call methods directly)
+- Predictable execution order
+
+**Phase 3: Extract Initialization Module** (2-3 days)
+```swift
+actor ConversationMonitorBootstrap {
+    func initialize(projectId: String) async throws -> MonitoringSession {
+        // All initialization logic here
+        // Returns immutable session descriptor
+    }
+}
+
+@MainActor @Observable
+class ConversationMonitor {
+    private var session: MonitoringSession?
+
+    func startMonitoring(projectId: String) async {
+        guard session?.projectId != projectId else { return }
+
+        do {
+            let newSession = try await bootstrap.initialize(projectId: projectId)
+            self.session = newSession
+            // Setup complete, start background tasks
+        } catch {
+            // Handle error
+        }
+    }
+}
+```
+
+**Benefits:**
+- Single initialization path (no legacy/coordinator split)
+- Actor isolation prevents concurrent initialization
+- Formal state machine (MonitoringSession type)
+- Testable in isolation
+- Foundation for multi-window support
+
+**Alternative: Remove ContentView's Direct Call**
+```swift
+// ContentView.swift line 85 - DELETE THIS:
+await TimelineIntegration.shared.startMonitoring(projectId: context.id)
+
+// Let ONLY the coordinator subscription handle initialization
+// This is the quickest fix but doesn't solve architectural issues
+```
 
 ---
 

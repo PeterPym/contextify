@@ -36,6 +36,56 @@ The current startup pipeline has **three unsynchronized async paths** managing p
 
 ---
 
+## Technical Debt
+
+### ConversationMonitor Initialization Architecture
+**Status:** Phase 1 complete (duplicate loadFeedFromSQL fixed), Phase 2/3 pending
+**Priority:** P1 (medium priority - works but fragile)
+**Effort:** Phase 2: 4-8 hours, Phase 3: 2-3 days
+
+**Context:**
+ConversationMonitor has evolved two overlapping initialization paths that cause duplicate work:
+
+1. **Legacy Path** (`startMonitoring()` lines 355-529):
+   - Initializes orchestrator, diagnostics, background tasks
+   - Calls `loadFeedFromSQL()` at line 509
+
+2. **Coordinator Path** (`onProjectOrSessionChange()` lines 623-657):
+   - Loads policy, sessions, cursor, events
+   - Calls `loadFeedFromSQL()` at line 644
+
+**Problem:** Legacy path sets `currentProjectId` which triggers `didSet` observer, launching coordinator path. Both call `loadFeedFromSQL()` causing duplicate database queries and cache miss queueing.
+
+**Phase 1 (DONE):** Added `isInitializing` flag to prevent duplicate calls during startup
+- ✅ Minimal risk fix
+- ✅ Preserves all existing race condition fixes (CXT-1, CXT-3, CXT-10, CXT-13, CXT-101-103)
+- ✅ No threading changes
+
+**Phase 2 (TODO):**
+- Split `onProjectOrSessionChange()` into separate `onProjectChange()` / `onSessionChange()`
+- Remove `didSet` observers, use explicit method calls
+- Add tests for project/session switching
+- Risk: Medium - touches observers but preserves logic
+- Benefit: Clearer separation of concerns, easier to reason about
+
+**Phase 3 (TODO):**
+- Extract initialization into separate module (`ConversationMonitorBootstrap`?)
+- Consolidate initialization paths (merge legacy + coordinator operations)
+- Comprehensive test coverage (unit tests for rapid switching, state machine transitions)
+- Consider formal state machine (enum) to replace boolean flags
+- Risk: High - major structural change to 2,634-line file
+- Benefit: Long-term maintainability, testability, foundation for multi-window support
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (2,634 lines)
+- Analysis: See conversation log from 2025-11-07 for detailed risk assessment
+
+**Dependencies:**
+- Phase 2 should complete before startup coordinator refactor (item #0 above)
+- Phase 3 could be combined with startup coordinator work
+
+---
+
 ## P0 Bug Fixes
 
 ### 0. App Sandbox for App Store Submission
