@@ -128,28 +128,34 @@ struct ConversationTimelineView: View {
                             // PERF: Removed transition to reduce animation costs during bulk loads
                             // .transition(.move(edge: .trailing).combined(with: .opacity))
                             .id(entry.id)
-                            .onScrollVisibilityChange(threshold: 0.5) { isVisible in
-                                if isVisible {
-                                    monitor.markEntryVisible(entry.id)
-                                }
-                            }
                         }
                         Color.clear
                             .frame(height: 1)
                             .id(scrollAnchorID)
                     }
                 }
+                .scrollTargetLayout()  // Required for aggregate visibility tracking (macOS 15+)
                 .onAppear {
                     // Initial scroll to bottom when timeline first appears
-                    if monitor.autoScroll, !monitor.visibleEntries.isEmpty {
-                        // Small delay to ensure LazyVStack has laid out
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    guard monitor.autoScroll, !monitor.visibleEntries.isEmpty else { return }
+                    monitor.beginProgrammaticScroll()
+                    // Jump without animation to avoid "briefly visible" churn during programmatic scroll
+                    DispatchQueue.main.async {
+                        withAnimation(nil) {
                             proxy.scrollTo(scrollAnchorID, anchor: .bottom)
                         }
                     }
                 }
             }
             .scrollContentBackground(.hidden)
+            // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks
+            .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
+                monitor.replaceVisibleSnapshot(ids)
+            }
+            // Scroll phase gating to prevent queueing during programmatic jumps
+            .onScrollPhaseChange { oldPhase, newPhase in
+                monitor.handleScrollPhaseChange(newPhase)
+            }
             .onChange(of: monitor.visibleEntries.count) { _, newCount in
                 log.info("[UIOPT-RENDER-ENTRIES] Timeline entry count changed to \(newCount, privacy: .public)")
 

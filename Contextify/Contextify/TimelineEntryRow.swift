@@ -53,7 +53,7 @@ struct TimelineEntryRow: View, Equatable {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(monitor.debugVisibleIDs.contains(entry.id) ? Color.yellow.opacity(0.15) : Color(nsColor: .windowBackgroundColor))
         )
         .overlay(alignment: .leading) {
             Capsule()

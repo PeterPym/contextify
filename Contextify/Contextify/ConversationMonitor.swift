@@ -250,7 +250,12 @@ final class ConversationMonitor {
     // Viewport tracking and background summarization (Phase 2-3)
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
-    @ObservationIgnored private var enableScrollQueueing = false  // Prevent queueing during initial scroll
+    // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
+    @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
+    @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
+    @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
+    @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
+    var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
@@ -532,6 +537,13 @@ final class ConversationMonitor {
         backgroundFillTask = nil
         bfTask?.cancel()
         viewedEntryIDs.removeAll(keepingCapacity: false)
+
+        // Reset aggregate visibility tracking state for new project
+        doingProgrammaticScroll = false
+        needsInitialVisibilitySnapshot = true
+        lastVisibleIDs.removeAll()
+        coalesceTask?.cancel()
+        coalesceTask = nil
 
         debounceTask?.cancel()
         debounceTask = nil
@@ -1098,27 +1110,9 @@ final class ConversationMonitor {
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // Queue only initially visible entries (last ~12 entries will be in viewport)
-            // Off-screen entries will be processed when scrolled into view or when app is idle
-            if !misses.isEmpty, let generator = cacheMissGenerator {
-                let visibleCount = min(12, misses.count)  // Estimate viewport capacity
-                let visibleMisses = Array(misses.suffix(visibleCount).reversed())  // Newest first
-
-                log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries (newest→oldest)")
-                log.info("[SUMM-QUEUE] Deferring \(misses.count - visibleMisses.count) off-screen entries (will process on scroll or idle)")
-
-                Task {
-                    await generator.queueMisses(visibleMisses)
-
-                    // Enable scroll-triggered queueing after initial load completes
-                    // (gives time for initial scroll animation to finish)
-                    try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-                    await MainActor.run { [weak self] in
-                        self?.enableScrollQueueing = true
-                        self?.log.debug("[SUMM-SCROLL] Scroll-triggered queueing enabled")
-                    }
-                }
-            } else if misses.isEmpty {
+            // NOTE: Initial queueing now handled by aggregate visibility tracking (onScrollTargetVisibilityChange)
+            // The first settled visibility snapshot will queue exactly what's on screen, no guessing.
+            if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
 
@@ -1335,10 +1329,9 @@ final class ConversationMonitor {
     }
 
     /// Queue a single entry for summarization if it has a cache miss
+    /// NOTE: This method is deprecated in favor of aggregate visibility tracking (replaceVisibleSnapshot)
     @MainActor
     private func queueEntryIfNeeded(_ entryId: UUID) {
-        // Don't queue during initial scroll (prevents all 25 from queueing)
-        guard enableScrollQueueing else { return }
 
         guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
         guard entry.action == .generating else { return }  // Already has summary or processing
@@ -1379,6 +1372,91 @@ final class ConversationMonitor {
         let currentIDs = Set(state.entries.map { $0.id })
         viewedEntryIDs.formIntersection(currentIDs)
         log.debug("Pruned viewedEntryIDs to \(self.viewedEntryIDs.count)")
+    }
+
+    // MARK: - Aggregate Visibility Tracking (macOS 15+)
+
+    /// Called by view before programmatic scrollTo to suppress transient visibility events
+    @MainActor
+    func beginProgrammaticScroll() {
+        doingProgrammaticScroll = true
+        log.debug("[SUMM-SCROLL] Programmatic scroll started, gating visibility updates")
+    }
+
+    /// Called by view when scroll phase changes - enables queueing once scroll is idle
+    @MainActor
+    func handleScrollPhaseChange(_ phase: ScrollPhase) {
+        if case .idle = phase, doingProgrammaticScroll {
+            doingProgrammaticScroll = false
+            log.debug("[SUMM-SCROLL] Scroll became idle, enabling visibility tracking")
+        }
+    }
+
+    /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
+    @MainActor
+    func replaceVisibleSnapshot(_ ids: [UUID]) {
+        guard !doingProgrammaticScroll else {
+            log.debug("[SUMM-SCROLL] Ignoring visibility update during programmatic scroll")
+            return
+        }
+
+        let current = Set(ids)
+        lastVisibleIDs = current
+        debugVisibleIDs = current  // Update observable for debug visualization
+
+        // First settled snapshot after project switch: queue exactly what's on screen
+        if needsInitialVisibilitySnapshot {
+            needsInitialVisibilitySnapshot = false
+            log.info("[SUMM-QUEUE] Initial visibility snapshot: \(ids.count) entries visible")
+            queueVisibleGeneratingEntries(current)
+            viewedEntryIDs.formUnion(current)
+            return
+        }
+
+        // Coalesce rapid updates while user scrolls (50ms debounce)
+        coalesceTask?.cancel()
+        coalesceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            } catch {
+                return
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
+                self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
+                self.pruneViewedIDsIfNeeded()
+            }
+        }
+    }
+
+    /// Queue entries that are both visible and generating summaries
+    @MainActor
+    private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) {
+        guard let projectId = currentProjectId, let generator = cacheMissGenerator else { return }
+
+        let misses: [CacheMiss] = visibleEntries
+            .filter { ids.contains($0.id) && $0.action == .generating }
+            .compactMap { e in
+                guard let c = e.contentSha256, let w = e.windowSha256, let s = e.sourceContent else { return nil }
+                return CacheMiss(
+                    entryId: e.id.uuidString,
+                    projectId: projectId,
+                    contentSha256: c,
+                    windowSha256: w,
+                    content: s,
+                    context: e.detail,
+                    kind: e.kind.rawValue,
+                    provider: e.sourceContext?.provider.rawValue ?? "other"
+                )
+            }
+
+        guard !misses.isEmpty else { return }
+
+        log.info("[SUMM-QUEUE] Queueing \(misses.count) visible generating entries")
+        Task {
+            await generator.queueMisses(misses)
+        }
     }
 
     /// Handle app resigning active - start background summarization for unseen entries
