@@ -487,6 +487,10 @@ actor TimelineCacheMissGenerator {
             throw TimelineError.llmUnavailable(reason: "Apple Intelligence unavailable: \(reason.userFacingMessage)")
         }
 
+        // Check cancellation RIGHT BEFORE calling LLM to avoid wasted compute
+        // The stabilization delay above gives pruning time to cancel obsolete requests
+        try Task.checkCancellation()
+
         let llm = FoundationLLM.shared
         let result = try await llm.summarizeTimelineWithForms(
             kind: kind,
