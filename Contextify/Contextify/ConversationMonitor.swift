@@ -1462,7 +1462,7 @@ final class ConversationMonitor {
         log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible generating entries:")
         for miss in misses {
             let contentPreview = String(miss.content.prefix(15))
-            log.info("  - Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
+            log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
 
         Task(priority: .userInitiated) {
