@@ -46,8 +46,8 @@ actor TimelineCacheMissGenerator {
     private let batchDelayNs: UInt64 = 0  // No artificial delay (FoundationLLM has no rate limits)
 
     // Stabilization delay to prevent flooding LLM with requests that get cancelled
-    // Set to 0 to disable (for testing cancellation behavior)
-    private let stabilizationDelayMs: Int = 0  // TEMP: disabled for testing, normally 750
+    // Gives pruning mechanism time to cancel entries before they reach LLM
+    private let stabilizationDelayMs: Int = 750
 
     // MARK: - Observer Infrastructure (Status Bar Support)
 
@@ -405,7 +405,13 @@ actor TimelineCacheMissGenerator {
                 consecutiveFailures += 1
 
                 // Circuit breaker: stop batch on sustained failures
-                if consecutiveFailures >= 5 {
+                // NOTE: With maxBatchSize=1, this only breaks out of the current single-entry batch,
+                // then processQueue() immediately grabs the next entry. The circuit breaker is
+                // effectively disabled. It would only be useful with maxBatchSize > 1 to skip the
+                // remaining entries in a multi-entry batch.
+                // TODO: If batch size stays at 1, consider removing this logic or making it stop
+                // the entire processQueue() loop instead of just the batch loop.
+                if maxBatchSize > 1 && consecutiveFailures >= 5 {
                     log.error("Circuit breaker: stopping batch after \(consecutiveFailures) consecutive failures")
                     break
                 }
