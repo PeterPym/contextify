@@ -268,6 +268,8 @@ final class ConversationMonitor {
     var pinnedKey: SessionKey? { followMode.pinnedKey }
 
     private init() {
+        log.info("[TIMELINE-INIT] ConversationMonitor initializing")
+
         // Set up project change notifications early, so we can react to project selection
         // even if monitoring hasn't started yet
         setupProjectChangeNotifications()
@@ -277,6 +279,8 @@ final class ConversationMonitor {
 
         // Set up app lifecycle notifications for background summarization
         setupAppLifecycleNotifications()
+
+        log.info("[TIMELINE-INIT] ConversationMonitor ready")
     }
 
     /// Subscribe to coordinator updates for project switching
@@ -331,6 +335,7 @@ final class ConversationMonitor {
     @MainActor
     func startMonitoring(projectId: String) {
         let taskStart = Date()
+        log.info("[TIMELINE-START] Starting timeline monitoring for project: \(projectId, privacy: .public)")
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
@@ -526,6 +531,7 @@ final class ConversationMonitor {
 
     @MainActor
     func stopMonitoring() {
+        log.info("[TIMELINE-STOP] Stopping timeline monitoring")
         isMonitoring = false
         activeSession = nil
         // Cancel background task group
