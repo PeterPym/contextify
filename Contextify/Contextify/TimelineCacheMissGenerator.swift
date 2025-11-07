@@ -119,9 +119,13 @@ actor TimelineCacheMissGenerator {
         guard !misses.isEmpty else { return }
 
         // 1) Enforce referential integrity: keep only misses whose entry_id exists
+        log.debug("[FK-CHECK] Checking \(misses.count, privacy: .public) misses for FK safety...")
         let safeMisses = await filterFKSafe(misses)
+        if safeMisses.count != misses.count {
+            log.info("[FK-CHECK] Filtered: \(misses.count, privacy: .public) → \(safeMisses.count, privacy: .public) (dropped \(misses.count - safeMisses.count, privacy: .public) without entry_id in DB)")
+        }
         guard !safeMisses.isEmpty else {
-            log.debug("queueMisses: all \(misses.count) misses skipped (no FK-safe entry_id yet)")
+            log.info("[FK-CHECK] ALL \(misses.count, privacy: .public) misses skipped - no entry_id exists in transcript_entries yet")
             return
         }
 
