@@ -603,14 +603,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try entryRepo.latestTimestampsByTranscript(projectId: projectId)
   }
 
-  /// Check which entry IDs exist in timeline_entries table (FK preflight for cache misses)
+  /// Check which entry IDs exist in transcript_entries table (FK preflight for cache misses)
   /// Returns set of entry IDs that exist in the database
   public func existingEntryIds(_ ids: [String]) throws -> Set<String> {
     guard !ids.isEmpty else { return [] }
 
     return try dbManager.pool.read { db in
       let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
-      let sql = "SELECT id FROM timeline_entries WHERE id IN (\(placeholders))"
+      let sql = "SELECT id FROM transcript_entries WHERE id IN (\(placeholders))"
       let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(ids))
       return Set(rows.compactMap { $0["id"] as String? })
     }
