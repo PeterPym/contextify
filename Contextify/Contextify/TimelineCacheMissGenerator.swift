@@ -45,6 +45,10 @@ actor TimelineCacheMissGenerator {
     private let maxBatchSize = 1  // Process one at a time for instant responsiveness
     private let batchDelayNs: UInt64 = 0  // No artificial delay (FoundationLLM has no rate limits)
 
+    // Stabilization delay to prevent flooding LLM with requests that get cancelled
+    // Set to 0 to disable (for testing cancellation behavior)
+    private let stabilizationDelayMs: Int = 0  // TEMP: disabled for testing, normally 750
+
     // MARK: - Observer Infrastructure (Status Bar Support)
 
     // UUID-keyed dictionary for proper cleanup (continuations are structs!)
@@ -363,14 +367,20 @@ actor TimelineCacheMissGenerator {
                 break
             }
 
-            // Delay before sending to LLM to allow pruning to catch scroll-aways
+            // Stabilization delay before sending to LLM to allow pruning to catch scroll-aways
             // This prevents flooding Apple Intelligence with requests that will be cancelled
-            try? await Task.sleep(nanoseconds: 750_000_000)  // 750ms stabilization delay
+            if self.stabilizationDelayMs > 0 {
+                log.debug("[STAB-DELAY] Waiting \(self.stabilizationDelayMs)ms before sending to LLM...")
+                try? await Task.sleep(nanoseconds: UInt64(self.stabilizationDelayMs) * 1_000_000)
 
-            // Check cancellation again after delay (user may have scrolled away)
-            if Task.isCancelled {
-                log.info("Batch processing cancelled during stabilization delay (processed \(successCount)/\(batch.count))")
-                break
+                // Check cancellation again after delay (user may have scrolled away)
+                if Task.isCancelled {
+                    log.info("[STAB-DELAY] Cancelled during \(self.stabilizationDelayMs)ms delay (processed \(successCount)/\(batch.count))")
+                    break
+                }
+                log.debug("[STAB-DELAY] Delay complete, proceeding to processing")
+            } else {
+                log.debug("[STAB-DELAY] Stabilization delay disabled (would wait \(750)ms if enabled)")
             }
 
             do {
@@ -489,7 +499,14 @@ actor TimelineCacheMissGenerator {
 
         // Check cancellation RIGHT BEFORE calling LLM to avoid wasted compute
         // The stabilization delay above gives pruning time to cancel obsolete requests
-        try Task.checkCancellation()
+        log.debug("[CANCEL-CHECK] About to send entry \(miss.entryId.prefix(8)) to LLM, checking cancellation...")
+        do {
+            try Task.checkCancellation()
+            log.debug("[CANCEL-CHECK] Not cancelled, proceeding to LLM")
+        } catch {
+            log.info("[CANCEL-CHECK] Task cancelled before LLM call for entry \(miss.entryId.prefix(8)) - saved compute!")
+            throw error
+        }
 
         let llm = FoundationLLM.shared
         let result = try await llm.summarizeTimelineWithForms(

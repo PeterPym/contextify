@@ -39,6 +39,8 @@ echo "  [SUMM-DEBOUNCE]   Viewport settled, queueing entries"
 echo "  [SUMM-VIEWPORT]   Viewport entries with status"
 echo "  [SUMM-QUEUE]      Entries being added to queue"
 echo "  [PRUNE]           Queue pruned (invisible entries removed)"
+echo "  [STAB-DELAY]      Stabilization delay before LLM call"
+echo "  [CANCEL-CHECK]    Checking/handling task cancellation"
 echo "  Spawning task     Generator processing begins"
 echo "  Batch complete    LLM generation finished"
 echo ""
@@ -53,7 +55,7 @@ log stream \
   --predicate "subsystem == \"$SUBSYSTEM\" AND (category == \"CacheMissGenerator\" OR category == \"ConversationMonitor\")" \
   --level "$LEVEL" \
   --style compact 2>&1 | \
-  grep --line-buffered -E "TIMELINE-INIT|TIMELINE-START|TIMELINE-LOAD|TIMELINE-STOP|SUMM-DEBOUNCE|SUMM-VIEWPORT|SUMM-QUEUE|PRUNE|Spawning processing task|processQueue: start|Processing batch|Batch complete" | \
+  grep --line-buffered -E "TIMELINE-INIT|TIMELINE-START|TIMELINE-LOAD|TIMELINE-STOP|SUMM-DEBOUNCE|SUMM-VIEWPORT|SUMM-QUEUE|PRUNE|CANCEL-CHECK|STAB-DELAY|Spawning processing task|processQueue: start|Processing batch|Batch complete" | \
   tee -a "$LOGFILE" | \
   while IFS= read -r line; do
     # Step 5: Parse log line components and simplify output
@@ -100,6 +102,21 @@ log stream \
         ;;
       *"PRUNE"*)
         echo -e "\033[1;31m🗑️  $time\033[0m $msg"  # Red - queue pruned
+        ;;
+      *"STAB-DELAY"*"disabled"*)
+        echo -e "\033[0;36m⏭️  $time\033[0m $msg"  # Cyan - delay disabled
+        ;;
+      *"STAB-DELAY"*"Waiting"*)
+        echo -e "\033[0;35m⏸️  $time\033[0m $msg"  # Magenta - waiting
+        ;;
+      *"STAB-DELAY"*"Cancelled"*)
+        echo -e "\033[1;31m⛔ $time\033[0m $msg"  # Red - cancelled during delay
+        ;;
+      *"CANCEL-CHECK"*"cancelled"*)
+        echo -e "\033[1;33m⛔ $time\033[0m $msg"  # Yellow - cancelled before LLM
+        ;;
+      *"CANCEL-CHECK"*"proceeding"*)
+        echo -e "\033[0;37m✓  $time\033[0m $msg"  # Gray - not cancelled, continuing
         ;;
       *"Spawning processing task"*)
         echo -e "\033[1;32m🟢 $time\033[0m $msg"  # Bright green - task spawn
