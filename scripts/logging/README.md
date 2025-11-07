@@ -36,6 +36,20 @@ log.info("[FEATURE-DONE] Completed in \(elapsed, privacy: .public)s")
 - `FEATURE` = your feature area (e.g., SUMM, BATCH, COORD)
 - `EVENT` = specific event (e.g., START, DONE, ERROR)
 
+**CRITICAL - Tag on Every Line:** The grep filter in monitoring scripts matches log lines by tag. If you have multi-line output, **every line must contain the tag** or it will be filtered out.
+
+```swift
+// WRONG - detail lines have no tag, won't be captured
+log.info("[SUMM-QUEUE] Queueing \(count) entries:")
+log.info("  - Entry 1...")  // ❌ Filtered out by grep
+log.info("  - Entry 2...")  // ❌ Filtered out by grep
+
+// RIGHT - every line has the tag
+log.info("[SUMM-QUEUE] Queueing \(count) entries:")
+log.info("  [SUMM-QUEUE] Entry 1...")  // ✅ Captured by grep
+log.info("  [SUMM-QUEUE] Entry 2...")  // ✅ Captured by grep
+```
+
 **IMPORTANT - Privacy:** Always use `privacy: .public` for interpolated values (timing, counts, names).
 Without `.public`, macOS redacts values as `<private>`, breaking performance analysis.
 
