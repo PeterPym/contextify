@@ -1414,16 +1414,25 @@ final class ConversationMonitor {
             return
         }
 
-        // Coalesce rapid updates while user scrolls (50ms debounce)
+        // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
+        let visibleCount = current.count
+        let generatingCount = visibleEntries.filter { current.contains($0.id) && $0.action == .generating }.count
+        log.debug("[SUMM-DEBOUNCE] Viewport changed: \(visibleCount) visible, \(generatingCount) need summaries - starting 1250ms debounce timer")
+
         coalesceTask?.cancel()
         coalesceTask = Task { [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 50_000_000)
+                try await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
             } catch {
+                // Task was cancelled - user is still scrolling
+                await MainActor.run {
+                    self?.log.debug("[SUMM-DEBOUNCE] Timer cancelled - viewport changed again before timeout")
+                }
                 return
             }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                log.info("[SUMM-DEBOUNCE] Timer completed - viewport settled, queueing visible entries")
                 self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
                 self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
                 self.pruneViewedIDsIfNeeded()
@@ -1452,9 +1461,17 @@ final class ConversationMonitor {
                 )
             }
 
-        guard !misses.isEmpty else { return }
+        guard !misses.isEmpty else {
+            log.debug("[SUMM-QUEUE] No entries need queueing (all visible entries have summaries)")
+            return
+        }
 
-        log.info("[SUMM-QUEUE] Queueing \(misses.count) visible generating entries")
+        log.info("[SUMM-QUEUE] Queueing \(misses.count) visible generating entries:")
+        for miss in misses {
+            let contentPreview = String(miss.content.prefix(15))
+            log.info("  - Entry \(miss.entryId.prefix(8)): \(miss.kind) | \"\(contentPreview)...\"")
+        }
+
         Task(priority: .userInitiated) {
             await generator.queueMisses(misses)
         }
