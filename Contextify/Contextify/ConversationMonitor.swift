@@ -142,7 +142,7 @@ final class TimelineState {
 final class ConversationMonitor {
     static let shared = ConversationMonitor()
 
-    private let log = Logger(subsystem: "dev.contextify", category: "Timeline")
+    private let log = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
     private let config = MonitorConfig()
     // conversationResolver removed - now using database-backed session discovery
     private let affirmativeLexicon: Set<String> = [
@@ -2026,7 +2026,7 @@ final class ConversationMonitor {
             // Defer to avoid blocking project switch UI
             let orchestratorForMaintenance = orchestrator
             Task.detached(priority: .utility) {
-                let logger = Logger(subsystem: "dev.contextify", category: "Timeline")
+                let logger = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
                 do {
                     try orchestratorForMaintenance.performMaintenance()
                     logger.info("✅ Background database maintenance completed")
