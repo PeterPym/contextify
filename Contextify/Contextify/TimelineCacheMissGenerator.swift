@@ -116,10 +116,14 @@ actor TimelineCacheMissGenerator {
 
     /// Queue cache misses for background generation with de-duplication and cap
     func queueMisses(_ misses: [CacheMiss]) async {
-        guard !misses.isEmpty else { return }
+        log.info("[GENERATOR] queueMisses() called with \(misses.count) entries")
+        guard !misses.isEmpty else {
+            log.info("[GENERATOR] Empty misses array, returning")
+            return
+        }
 
         // 1) Enforce referential integrity: keep only misses whose entry_id exists
-        log.debug("[FK-CHECK] Checking \(misses.count, privacy: .public) misses for FK safety...")
+        log.info("[FK-CHECK] Checking \(misses.count, privacy: .public) misses for FK safety...")
         let safeMisses = await filterFKSafe(misses)
         if safeMisses.count != misses.count {
             log.info("[FK-CHECK] Filtered: \(misses.count, privacy: .public) → \(safeMisses.count, privacy: .public) (dropped \(misses.count - safeMisses.count, privacy: .public) without entry_id in DB)")
@@ -128,6 +132,7 @@ actor TimelineCacheMissGenerator {
             log.info("[FK-CHECK] ALL \(misses.count, privacy: .public) misses skipped - no entry_id exists in transcript_entries yet")
             return
         }
+        log.info("[FK-CHECK] \(safeMisses.count) entries passed FK check")
 
         let beforeCount = pendingMisses.count
         var skippedDuplicates = 0
@@ -504,6 +509,11 @@ actor TimelineCacheMissGenerator {
     /// Get current queue status
     func getStatus() -> (pending: Int, isProcessing: Bool) {
         return (pendingMisses.count, isProcessing)
+    }
+
+    /// Check if an entry is queued for generation
+    func isEntryQueued(_ entryId: String) -> Bool {
+        return pendingMisses.contains(where: { $0.entryId == entryId })
     }
 
     // MARK: - Public Observation API
