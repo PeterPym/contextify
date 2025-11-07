@@ -22,11 +22,15 @@ trap cleanup SIGINT SIGTERM
 # Step 3: Display help text showing which events are being monitored
 echo "=== Timeline Cache Miss Generator Monitor ==="
 echo "Watching for:"
-echo "  Spawning processing task - Task creation"
-echo "  processQueue: start      - Processing begins"
-echo "  Queued cache misses      - Items added to queue"
-echo "  Processing batch         - Batch execution"
-echo "  Batch complete           - Batch finished"
+echo "  [SUMM-DEBOUNCE] Viewport changed        - Viewport change detected (1250ms timer starts)"
+echo "  [SUMM-DEBOUNCE] Timer cancelled         - User still scrolling (timer restarted)"
+echo "  [SUMM-DEBOUNCE] Timer completed         - Viewport settled, queueing entries"
+echo "  [SUMM-QUEUE] Queueing N entries         - Entries being added to queue"
+echo "  [SUMM-QUEUE] Entry details              - Per-entry info (ID, kind, content preview)"
+echo "  Spawning processing task                - Generator task creation"
+echo "  processQueue: start                     - Generator processing begins"
+echo "  Processing batch                        - LLM batch execution"
+echo "  Batch complete                          - LLM batch finished"
 echo ""
 echo "Logs will be saved to: $LOGFILE"
 echo "Press Ctrl+C to stop and save..."
@@ -37,10 +41,10 @@ echo ""
 # GOTCHA: Use --line-buffered on grep to prevent buffering delays
 # GOTCHA: Use "IFS= read -r" to preserve line formatting
 log stream \
-  --predicate 'subsystem == "dev.contextify.timeline" AND category == "CacheMissGenerator"' \
+  --predicate 'subsystem == "dev.contextify.timeline" AND (category == "CacheMissGenerator" OR category == "ConversationMonitor")' \
   --level debug \
   --style compact 2>&1 | \
-  grep --line-buffered -E "Spawning processing task|processQueue: start|Queued.*cache misses|Processing batch|Batch complete" | \
+  grep --line-buffered -E "SUMM-DEBOUNCE|SUMM-QUEUE|Spawning processing task|processQueue: start|Processing batch|Batch complete" | \
   tee -a "$LOGFILE" | \
   while IFS= read -r line; do
     # Step 5: Parse log line components
@@ -49,14 +53,26 @@ log stream \
 
     # Step 6: Color-code output by event type for visual debugging
     case "$line" in
+      *"SUMM-DEBOUNCE"*"Viewport changed"*)
+        echo -e "\033[1;90m⏱️  $ts\033[0m$rest"  # Gray - viewport change (timer start)
+        ;;
+      *"SUMM-DEBOUNCE"*"Timer cancelled"*)
+        echo -e "\033[1;90m❌ $ts\033[0m$rest"  # Gray - timer cancelled
+        ;;
+      *"SUMM-DEBOUNCE"*"Timer completed"*)
+        echo -e "\033[1;32m✅ $ts\033[0m$rest"  # Green - timer completed (viewport settled)
+        ;;
+      *"SUMM-QUEUE"*"Queueing"*)
+        echo -e "\033[1;33m📥 $ts\033[0m$rest"  # Yellow - queueing entries
+        ;;
+      *"SUMM-QUEUE"*"Entry"*)
+        echo -e "\033[0;33m   $ts\033[0m$rest"  # Dim yellow - entry details (indented)
+        ;;
       *"Spawning processing task"*)
-        echo -e "\033[1;32m🟢 $ts\033[0m$rest"  # Green - task spawn
+        echo -e "\033[1;32m🟢 $ts\033[0m$rest"  # Bright green - task spawn
         ;;
       *"processQueue: start"*)
         echo -e "\033[1;34m🔵 $ts\033[0m$rest"  # Blue - processing starts
-        ;;
-      *"Queued"*)
-        echo -e "\033[1;33m🟡 $ts\033[0m$rest"  # Yellow - queue event
         ;;
       *"Processing batch"*)
         echo -e "\033[1;36m🔷 $ts\033[0m$rest"  # Cyan - batch processing
