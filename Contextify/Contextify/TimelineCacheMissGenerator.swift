@@ -114,6 +114,30 @@ actor TimelineCacheMissGenerator {
         }
     }
 
+    /// Prune pending queue to keep only entries visible in viewport
+    /// - Parameter visibleIDs: Set of entry IDs currently visible to user
+    func pruneQueue(keepOnly visibleIDs: Set<String>) async {
+        let beforeCount = pendingMisses.count
+        guard beforeCount > 0 else { return }
+
+        // Remove entries not in visible set (keep actively processing entry via activeEntryID check)
+        let activeID = await MainActor.run { activeEntryID }
+        pendingMisses.removeAll { miss in
+            let isVisible = visibleIDs.contains(miss.entryId)
+            let isActive = UUID(uuidString: miss.entryId) == activeID
+            return !isVisible && !isActive
+        }
+
+        // Update pendingKeys to match
+        pendingKeys = Set(pendingMisses.map { CacheKey(content: $0.contentSha256, window: $0.windowSha256) })
+
+        let prunedCount = beforeCount - pendingMisses.count
+        if prunedCount > 0 {
+            log.info("[PRUNE] Removed \(prunedCount) entries no longer visible (kept \(self.pendingMisses.count))")
+            notifyQueueChanged()
+        }
+    }
+
     /// Queue cache misses for background generation with de-duplication and cap
     func queueMisses(_ misses: [CacheMiss]) async {
         log.info("[GENERATOR] queueMisses() called with \(misses.count) entries")

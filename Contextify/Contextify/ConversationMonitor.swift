@@ -1441,7 +1441,10 @@ final class ConversationMonitor {
         if needsInitialVisibilitySnapshot {
             needsInitialVisibilitySnapshot = false
             log.info("[SUMM-QUEUE] Initial visibility snapshot: \(ids.count) entries visible")
-            queueVisibleGeneratingEntries(current)
+            Task {
+                await self.pruneQueueToVisible(current)
+                await self.queueVisibleGeneratingEntries(current)
+            }
             viewedEntryIDs.formUnion(current)
             return
         }
@@ -1470,16 +1473,33 @@ final class ConversationMonitor {
                     }
                 }
 
-                self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
+                // Prune queue first, then add new entries (ensures clean slate)
+                Task {
+                    await self.pruneQueueToVisible(self.lastVisibleIDs)
+                    await self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
+                }
                 self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
                 self.pruneViewedIDsIfNeeded()
             }
         }
     }
 
+    /// Prune generator queue to keep only visible entries
+    @MainActor
+    private func pruneQueueToVisible(_ ids: Set<UUID>) async {
+        guard let generator = cacheMissGenerator else { return }
+
+        // Convert UUID set to entry ID strings (sourceIdentifier)
+        let visibleEntryIDs = Set(visibleEntries
+            .filter { ids.contains($0.id) }
+            .map { $0.sourceIdentifier })
+
+        await generator.pruneQueue(keepOnly: visibleEntryIDs)
+    }
+
     /// Queue entries that are both visible and generating summaries
     @MainActor
-    private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) {
+    private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) async {
         guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
             let pidStr = self.currentProjectId?.prefix(8) ?? "nil"
             let genStr = self.cacheMissGenerator != nil ? "exists" : "nil"
@@ -1523,11 +1543,9 @@ final class ConversationMonitor {
             log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
 
-        Task(priority: .userInitiated) {
-            log.info("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
-            await generator.queueMisses(misses)
-            log.info("[SUMM-QUEUE] generator.queueMisses() completed")
-        }
+        log.info("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
+        await generator.queueMisses(misses)
+        log.info("[SUMM-QUEUE] generator.queueMisses() completed")
     }
 
     /// Derive entry status for logging (cached/queued/generating/not_queued/error)
