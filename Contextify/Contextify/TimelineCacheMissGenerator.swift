@@ -31,7 +31,7 @@ actor TimelineCacheMissGenerator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
     private let orchestrator: TranscriptOrchestrator
     // Ordered queue (FIFO) with deduplication set for fast lookups
-    private var pendingMisses: [CacheMiss] = []  // Ordered queue (newest at front for FIFO processing)
+    private var pendingMisses: [CacheMiss] = []  // Ordered queue (oldest first: append + removeFirst = FIFO)
     private var pendingKeys: Set<CacheKey> = []  // Fast deduplication lookup
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
@@ -163,11 +163,24 @@ actor TimelineCacheMissGenerator {
         // Notify observers of queue change
         notifyQueueChanged()
 
-        // Start processing if not already running
+        // Ensure processing task is running
+        await ensureProcessing()
+    }
+
+    /// Ensure a processing task is running (idempotent; restarts a stuck handle)
+    private func ensureProcessing() async {
+        // Spawn if missing
         if generationTask == nil {
-            generationTask = Task { [weak self] in
-                await self?.processQueue()
-            }
+            let count = pendingMisses.count
+            log.debug("Spawning processing task (pending: \(count))")
+            generationTask = Task { await self.processQueue() }  // Strong capture by design
+            return
+        }
+        // Defensive: if we have work queued but not processing, restart
+        if !isProcessing && !pendingMisses.isEmpty {
+            log.warning("Processing handle exists but not active; restarting worker (pending: \(self.pendingMisses.count))")
+            generationTask?.cancel()
+            generationTask = Task { await self.processQueue() }
         }
     }
 
@@ -204,6 +217,7 @@ actor TimelineCacheMissGenerator {
 
     /// Background processing loop
     private func processQueue() async {
+        log.debug("processQueue: start (pending: \(self.pendingMisses.count))")
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }
             isProcessing = true

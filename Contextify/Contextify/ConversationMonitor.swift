@@ -1358,7 +1358,7 @@ final class ConversationMonitor {
 
         // Queue immediately (user is looking at it)
         guard let generator = cacheMissGenerator else { return }
-        Task {
+        Task(priority: .userInitiated) {
             log.info("[SUMM-SCROLL] Entry scrolled into view, queueing for summarization: \(entryId.uuidString.prefix(8))")
             await generator.queueMisses([miss])
         }
@@ -1455,7 +1455,7 @@ final class ConversationMonitor {
         guard !misses.isEmpty else { return }
 
         log.info("[SUMM-QUEUE] Queueing \(misses.count) visible generating entries")
-        Task {
+        Task(priority: .userInitiated) {
             await generator.queueMisses(misses)
         }
     }
