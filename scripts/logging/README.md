@@ -73,19 +73,29 @@ log.info("[PERF] Operation started")
 
 ### 2. Create Monitor Script
 
-Copy the example and modify for your tags:
+**Quick Start (Recommended):** Use the parameterized template for one-off debugging:
 
 ```bash
-cp scripts/logging/monitor-summarization-flow.sh scripts/logging/monitor-yourfeature.sh
+# Monitor specific tags (pass as arguments)
+./scripts/logging/monitor-template.sh FEATURE-START FEATURE-DONE
+
+# Monitor all logs from configured subsystem/categories
+./scripts/logging/monitor-template.sh
+```
+
+The template (`scripts/logging/monitor-template.sh`) accepts tags as command-line arguments and works immediately. Edit the CONFIGURATION section at the top to change subsystem/categories/level if needed.
+
+**Permanent Monitor:** For frequently-used monitoring, copy and customize:
+
+```bash
+cp scripts/logging/monitor-template.sh scripts/logging/monitor-yourfeature.sh
 chmod +x scripts/logging/monitor-yourfeature.sh
 ```
 
 Edit the script:
-1. Change `LOGFILE` prefix (line 10)
-2. Update help text with your tags (lines 23-33)
-3. **CRITICAL**: Update `log stream` predicate (line 43-44) to match your Logger's subsystem and category
-4. Update grep pattern for your tags (line 47): `grep --line-buffered -E "PATTERN1|PATTERN2|..."`
-5. Update color coding cases (lines 55-86)
+1. Update CONFIGURATION section (subsystem, categories, level)
+2. Hard-code specific tags in GREP_PATTERN if desired
+3. Customize color-coding in Step 8 case statement
 
 ### 3. Run and Debug
 
