@@ -182,6 +182,7 @@ final class ConversationMonitor {
 
     private(set) var isMonitoring = false
     private var isSwitchingProjects = false  // CXT-13: Suppress health monitoring during project switch
+    private var isInitializing = false  // Prevent duplicate loadFeedFromSQL during startMonitoring
     private(set) var isProcessing = false
     private(set) var lastError: String?
     private(set) var lastUpdate: Date?
@@ -339,15 +340,24 @@ final class ConversationMonitor {
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
+        // Skip if already monitoring this exact project (prevents duplicate calls during startup)
+        if isMonitoring && currentProjectId == projectId {
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId), skipping")
+            return
+        }
+
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
         backgroundTasks = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
 
         guard !isMonitoring else {
-            log.info("⚠️ [MONITOR-SKIP] Already monitoring, skipping")
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring different project, need to stop first")
             return
         }
+
+        // Set flag to prevent onProjectOrSessionChange from running during initialization
+        isInitializing = true
 
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId)")
 
@@ -416,11 +426,13 @@ final class ConversationMonitor {
 
                     // Now safe to create new generator (old one fully shut down)
                     guard let self else { return }
+                    log.info("[GENERATOR-INIT] About to create generator...")
                     await MainActor.run {
+                        self.log.info("[GENERATOR-INIT] Creating TimelineCacheMissGenerator...")
                         self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: orchestratorForGenerator)
                         self.isCacheGeneratorActive = true
                         self.generatorShutdownTask = nil
-                        self.log.info("✅ Cache miss generator initialized for new project")
+                        self.log.info("✅ [GENERATOR-INIT] Cache miss generator initialized for new project")
                     }
                 }
 
@@ -516,6 +528,7 @@ final class ConversationMonitor {
                     // Project change notifications already set up in init()
 
                     self.isMonitoring = true
+                    self.isInitializing = false  // Clear flag after successful initialization
                     self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
                     self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
@@ -523,6 +536,7 @@ final class ConversationMonitor {
             } catch {
                 await MainActor.run {
                     self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
+                    self.isInitializing = false  // Clear flag on error
                     self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -587,6 +601,14 @@ final class ConversationMonitor {
     @MainActor
     private func onProjectOrSessionChange() {
         log.debug("onProjectOrSessionChange: projectId=\(self.currentProjectId ?? "nil")")
+
+        // Skip if we're in the middle of startMonitoring() initialization
+        // This prevents duplicate loadFeedFromSQL() calls when startMonitoring sets currentProjectId
+        // TODO: See TODOS.md - Phase 2/3 refactor to split project vs session change handling
+        if isInitializing {
+            log.debug("onProjectOrSessionChange: skipping, initialization in progress")
+            return
+        }
 
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
@@ -1412,6 +1434,10 @@ final class ConversationMonitor {
         debugVisibleIDs = current  // Update observable for debug visualization
 
         // First settled snapshot after project switch: queue exactly what's on screen
+        // IMPORTANT: This often fires BEFORE currentProjectId/cacheMissGenerator are ready
+        // (race between visibility callback and async Task initialization). The debounce
+        // timer below acts as a fallback that retries after initialization completes.
+        // TODO: Fix race condition properly in Phase 2/3 refactor (see TODOS.md)
         if needsInitialVisibilitySnapshot {
             needsInitialVisibilitySnapshot = false
             log.info("[SUMM-QUEUE] Initial visibility snapshot: \(ids.count) entries visible")
@@ -1432,6 +1458,18 @@ final class ConversationMonitor {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 log.info("[SUMM-DEBOUNCE] Timer completed - viewport settled, queueing visible entries")
+
+                // Log viewport entries with detailed status
+                Task { @MainActor in
+                    let visibleEntries = self.visibleEntries.filter { self.lastVisibleIDs.contains($0.id) }
+                    log.info("[SUMM-VIEWPORT] Viewport settled, \(visibleEntries.count, privacy: .public) entries visible:")
+                    for entry in visibleEntries {
+                        let status = await self.getEntryStatus(entry)
+                        let contentPreview = entry.sourceContent.map { String($0.prefix(15)) } ?? "(no content)"
+                        log.info("  [SUMM-VIEWPORT] Entry \(entry.id.uuidString.prefix(8), privacy: .public): \(status, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
+                    }
+                }
+
                 self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
                 self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
                 self.pruneViewedIDsIfNeeded()
@@ -1442,14 +1480,28 @@ final class ConversationMonitor {
     /// Queue entries that are both visible and generating summaries
     @MainActor
     private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) {
-        guard let projectId = currentProjectId, let generator = cacheMissGenerator else { return }
+        guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
+            let pidStr = self.currentProjectId?.prefix(8) ?? "nil"
+            let genStr = self.cacheMissGenerator != nil ? "exists" : "nil"
+            log.debug("[SUMM-QUEUE] Cannot queue - projectId=\(pidStr, privacy: .public), generator=\(genStr, privacy: .public)")
+            return
+        }
+
+        // Debug: check what's available
+        let allVisibleIDs = Set(self.visibleEntries.map { $0.id })
+        let requestedIDs = ids
+        let matchingIDs = allVisibleIDs.intersection(requestedIDs)
+        let generatingEntries = self.visibleEntries.filter { $0.action == .generating }
+
+        log.debug("[SUMM-QUEUE] Checking \(ids.count) requested IDs against \(self.visibleEntries.count) visible entries")
+        log.debug("[SUMM-QUEUE] Matching IDs: \(matchingIDs.count), Generating entries: \(generatingEntries.count)")
 
         let misses: [CacheMiss] = visibleEntries
             .filter { ids.contains($0.id) && $0.action == .generating }
             .compactMap { e in
                 guard let c = e.contentSha256, let w = e.windowSha256, let s = e.sourceContent else { return nil }
                 return CacheMiss(
-                    entryId: e.id.uuidString,
+                    entryId: e.sourceIdentifier,  // Use original DB ID, not UUID
                     projectId: projectId,
                     contentSha256: c,
                     windowSha256: w,
@@ -1472,8 +1524,24 @@ final class ConversationMonitor {
         }
 
         Task(priority: .userInitiated) {
+            log.info("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
             await generator.queueMisses(misses)
+            log.info("[SUMM-QUEUE] generator.queueMisses() completed")
         }
+    }
+
+    /// Derive entry status for logging (cached/queued/generating/not_queued/error)
+    @MainActor
+    private func getEntryStatus(_ entry: TimelineEntry) async -> String {
+        if entry.isError { return "error" }
+        if entry.action != .generating { return "cached" }
+        if let generator = cacheMissGenerator {
+            if generator.activeEntryID == entry.id { return "generating" }
+            if await generator.isEntryQueued(entry.id.uuidString) {
+                return "queued"
+            }
+        }
+        return "not_queued"
     }
 
     /// Handle app resigning active - DISABLED to prevent background processing
