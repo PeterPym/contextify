@@ -58,9 +58,10 @@ log stream \
     # Input:  2025-11-07 10:12:10.633  I Contextify[67502:4b2540] [dev.contextify.timeline:ConversationMonitor] [TAG] Message
     # Output: 10:12:10.633 [TAG] Message
 
-    # Extract time (HH:MM:SS.mmm) and everything after the closing bracket of subsystem
+    # Extract time (HH:MM:SS.mmm) and everything after the subsystem bracket
     time=$(echo "$line" | awk '{print $2}')
-    msg=$(echo "$line" | sed 's/^.*\] //')
+    # Remove everything up to and including [subsystem:category] bracket (non-greedy)
+    msg=$(echo "$line" | sed 's/^.*\[dev\.contextify[^]]*\] //')
 
     # Step 6: Color-code output by event type for visual debugging
     case "$msg" in
