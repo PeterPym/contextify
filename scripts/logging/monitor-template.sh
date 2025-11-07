@@ -83,7 +83,9 @@ log stream \
     # Output: 10:12:10.633 Message
 
     time=$(echo "$line" | awk '{print $2}')
-    msg=$(echo "$line" | sed 's/^.*\] //')
+    # Remove everything up to and including the subsystem:category bracket
+    # Note: This assumes subsystem format - customize if needed
+    msg=$(echo "$line" | sed 's/^.*\[[^]]*:[^]]*\] //')
 
     # Step 8: Basic color-coding (customize as needed)
     case "$msg" in
