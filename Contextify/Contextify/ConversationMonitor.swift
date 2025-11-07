@@ -1460,9 +1460,13 @@ final class ConversationMonitor {
         }
     }
 
-    /// Handle app resigning active - start background summarization for unseen entries
+    /// Handle app resigning active - DISABLED to prevent background processing
     @MainActor
     private func handleAppResignActive() async {
+        // DISABLED: Only process visible entries via scroll tracking
+        log.info("App resigned active - background processing DISABLED")
+        return
+
         // CXT-102: Guard against torn state
         guard isMonitoring, let projectId = currentProjectId else {
             log.debug("App resigned active while not monitoring - skip background fill")
