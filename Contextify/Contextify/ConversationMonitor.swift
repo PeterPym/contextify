@@ -1014,7 +1014,7 @@ final class ConversationMonitor {
                 summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
             }
             // v23: Non-summarizable entries (nil windowSha256) should not show spinner
-            action = entry.windowSha256 == nil ? .nonSummarizable : .generating
+            action = entry.windowSha256 == nil ? .nonSummarizable : .unsummarized
         }
 
         // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
@@ -1115,7 +1115,7 @@ final class ConversationMonitor {
 
                 // Override action if this is the actively processing entry
                 // Compare using the timeline's UUID (already converted in toTimelineEntry)
-                if timelineEntry.action == .generating,
+                if timelineEntry.action == .unsummarized,
                    let activeID = activeGeneratingID,
                    timelineEntry.id == activeID {
                     timelineEntry = timelineEntry.copyWith(action: .generatingActive)
@@ -1363,7 +1363,7 @@ final class ConversationMonitor {
     private func queueEntryIfNeeded(_ entryId: UUID) {
 
         guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
-        guard entry.action == .generating else { return }  // Already has summary or processing
+        guard entry.action == .unsummarized else { return }  // Already has summary or processing
 
         // Create cache miss for this entry
         guard let content = entry.contentSha256,
@@ -1511,13 +1511,13 @@ final class ConversationMonitor {
         let allVisibleIDs = Set(self.visibleEntries.map { $0.id })
         let requestedIDs = ids
         let matchingIDs = allVisibleIDs.intersection(requestedIDs)
-        let generatingEntries = self.visibleEntries.filter { $0.action == .generating }
+        let unsummarizedEntries = self.visibleEntries.filter { $0.action == .unsummarized }
 
         log.debug("[SUMM-QUEUE] Checking \(ids.count) requested IDs against \(self.visibleEntries.count) visible entries")
-        log.debug("[SUMM-QUEUE] Matching IDs: \(matchingIDs.count), Generating entries: \(generatingEntries.count)")
+        log.debug("[SUMM-QUEUE] Matching IDs: \(matchingIDs.count), Unsummarized entries: \(unsummarizedEntries.count)")
 
         let misses: [CacheMiss] = visibleEntries
-            .filter { ids.contains($0.id) && $0.action == .generating }
+            .filter { ids.contains($0.id) && $0.action == .unsummarized }
             .compactMap { e in
                 guard let c = e.contentSha256, let w = e.windowSha256, let s = e.sourceContent else { return nil }
                 return CacheMiss(
@@ -1552,7 +1552,7 @@ final class ConversationMonitor {
     @MainActor
     private func getEntryStatus(_ entry: TimelineEntry) async -> String {
         if entry.isError { return "error" }
-        if entry.action != .generating { return "cached" }
+        if entry.action != .unsummarized { return "cached" }
         if let generator = cacheMissGenerator {
             if generator.activeEntryID == entry.id { return "generating" }
             if await generator.isEntryQueued(entry.id.uuidString) {
@@ -1583,7 +1583,7 @@ final class ConversationMonitor {
 
         // Find entries in current visible set that user hasn't seen yet
         let unseenEntries = visibleEntries.filter { entry in
-            entry.action == .generating &&  // Has cache miss
+            entry.action == .unsummarized &&  // Has cache miss
             !viewedEntryIDs.contains(entry.id)  // Never scrolled into view
         }
 
@@ -1703,7 +1703,7 @@ final class ConversationMonitor {
 
                 updateEntry(at: index, with: old.copyWith(
                     summary: summary,
-                    action: old.action == .generating ? .none : old.action
+                    action: old.action == .unsummarized ? .none : old.action
                 ))
             }
 
@@ -2524,7 +2524,7 @@ final class ConversationMonitor {
                 provider: entry.sourceContext?.provider.rawValue,
                 presentSummary: entry.summary,
                 pastSummary: nil,
-                isGenerating: entry.action == .generating,
+                isGenerating: entry.action == .unsummarized || entry.action == .generatingActive,
                 isNonSummarizable: entry.action == .nonSummarizable,
                 isError: entry.isError
             )

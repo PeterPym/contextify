@@ -114,12 +114,12 @@ struct TimelineEntryRow: View, Equatable {
                     .foregroundStyle(.tertiary)
                     .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)  // Always pulse when active
                     .help("Summary being generated (active)")
-            } else if case .generating = entry.action {
+            } else if case .unsummarized = entry.action {
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
-                    .help("Summary queued for generation")
+                    .help("Unsummarized (will generate when scrolled into view)")
             }
             if entry.action == .nonSummarizable {
                 Text("—")

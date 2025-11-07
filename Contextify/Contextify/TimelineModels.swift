@@ -18,7 +18,7 @@ enum TimelineEntryKind: String, Codable, Sendable {
 enum TimelineEntryAction: Hashable, Sendable {
     case none
     case revealInInventory(transcriptPath: String)
-    case generating           // Background LLM generation queued/in progress
+    case unsummarized         // No summary cached yet (will generate when scrolled into view)
     case generatingActive     // THIS entry is actively being processed by LLM
     case nonSummarizable      // Entry cannot be summarized (no window context)
 }
