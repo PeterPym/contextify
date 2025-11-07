@@ -1415,19 +1415,12 @@ final class ConversationMonitor {
         }
 
         // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
-        let visibleCount = current.count
-        let generatingCount = visibleEntries.filter { current.contains($0.id) && $0.action == .generating }.count
-        log.debug("[SUMM-DEBOUNCE] Viewport changed: \(visibleCount, privacy: .public) visible, \(generatingCount, privacy: .public) need summaries - starting 1250ms debounce timer")
-
         coalesceTask?.cancel()
         coalesceTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
             } catch {
                 // Task was cancelled - user is still scrolling
-                await MainActor.run {
-                    self?.log.debug("[SUMM-DEBOUNCE] Timer cancelled - viewport changed again before timeout")
-                }
                 return
             }
             await MainActor.run { [weak self] in
