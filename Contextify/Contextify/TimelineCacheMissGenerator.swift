@@ -363,6 +363,16 @@ actor TimelineCacheMissGenerator {
                 break
             }
 
+            // Delay before sending to LLM to allow pruning to catch scroll-aways
+            // This prevents flooding Apple Intelligence with requests that will be cancelled
+            try? await Task.sleep(nanoseconds: 750_000_000)  // 750ms stabilization delay
+
+            // Check cancellation again after delay (user may have scrolled away)
+            if Task.isCancelled {
+                log.info("Batch processing cancelled during stabilization delay (processed \(successCount)/\(batch.count))")
+                break
+            }
+
             do {
                 try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
                 successCount += 1
