@@ -33,8 +33,10 @@ echo ""
 echo "Watching for:"
 echo "  [TIMELINE-INIT]   App/monitor initialization"
 echo "  [TIMELINE-START]  Timeline monitoring started"
+echo "  [TIMELINE-LOAD]   Project load with entry details"
 echo "  [TIMELINE-STOP]   Timeline monitoring stopped"
 echo "  [SUMM-DEBOUNCE]   Viewport settled, queueing entries"
+echo "  [SUMM-VIEWPORT]   Viewport entries with status"
 echo "  [SUMM-QUEUE]      Entries being added to queue"
 echo "  Spawning task     Generator processing begins"
 echo "  Batch complete    LLM generation finished"
@@ -50,7 +52,7 @@ log stream \
   --predicate "subsystem == \"$SUBSYSTEM\" AND (category == \"CacheMissGenerator\" OR category == \"ConversationMonitor\")" \
   --level "$LEVEL" \
   --style compact 2>&1 | \
-  grep --line-buffered -E "TIMELINE-INIT|TIMELINE-START|TIMELINE-STOP|SUMM-DEBOUNCE|SUMM-QUEUE|Spawning processing task|processQueue: start|Processing batch|Batch complete" | \
+  grep --line-buffered -E "TIMELINE-INIT|TIMELINE-START|TIMELINE-LOAD|TIMELINE-STOP|SUMM-DEBOUNCE|SUMM-VIEWPORT|SUMM-QUEUE|Spawning processing task|processQueue: start|Processing batch|Batch complete" | \
   tee -a "$LOGFILE" | \
   while IFS= read -r line; do
     # Step 5: Parse log line components and simplify output
@@ -71,11 +73,23 @@ log stream \
       *"TIMELINE-START"*)
         echo -e "\033[1;32m▶️  $time\033[0m $msg"  # Green - start
         ;;
+      *"TIMELINE-LOAD"*"Loaded"*)
+        echo -e "\033[1;34m📋 $time\033[0m $msg"  # Blue - project load summary
+        ;;
+      *"TIMELINE-LOAD"*"Entry"*)
+        echo -e "\033[0;34m   $time\033[0m $msg"  # Dim blue - entry details (indented)
+        ;;
       *"TIMELINE-STOP"*)
         echo -e "\033[1;31m⏸️  $time\033[0m $msg"  # Red - stop
         ;;
       *"SUMM-DEBOUNCE"*"Timer completed"*)
         echo -e "\033[1;32m✅ $time\033[0m $msg"  # Green - timer completed (viewport settled)
+        ;;
+      *"SUMM-VIEWPORT"*"Viewport settled"*)
+        echo -e "\033[1;35m📋 $time\033[0m $msg"  # Magenta - viewport summary
+        ;;
+      *"SUMM-VIEWPORT"*"Entry"*)
+        echo -e "\033[0;35m   $time\033[0m $msg"  # Dim magenta - entry details (indented)
         ;;
       *"SUMM-QUEUE"*"Queueing"*)
         echo -e "\033[1;33m📥 $time\033[0m $msg"  # Yellow - queueing entries
