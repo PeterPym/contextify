@@ -115,15 +115,22 @@ actor TimelineCacheMissGenerator {
     }
 
     /// Queue cache misses for background generation with de-duplication and cap
-    func queueMisses(_ misses: [CacheMiss]) {
+    func queueMisses(_ misses: [CacheMiss]) async {
         guard !misses.isEmpty else { return }
+
+        // 1) Enforce referential integrity: keep only misses whose entry_id exists
+        let safeMisses = await filterFKSafe(misses)
+        guard !safeMisses.isEmpty else {
+            log.debug("queueMisses: all \(misses.count) misses skipped (no FK-safe entry_id yet)")
+            return
+        }
 
         let beforeCount = pendingMisses.count
         var skippedDuplicates = 0
         var skippedCapacity = 0
 
         // Add to ordered queue with deduplication
-        for miss in misses {
+        for miss in safeMisses {
             // Skip if queue at capacity
             if pendingMisses.count >= maxQueueSize {
                 skippedCapacity += 1
@@ -157,6 +164,37 @@ actor TimelineCacheMissGenerator {
             generationTask = Task { [weak self] in
                 await self?.processQueue()
             }
+        }
+    }
+
+    // MARK: - FK preflight
+
+    /// Drop misses that would violate `timeline_cache(entry_id) → timeline_entries(id)`.
+    /// Returns only misses whose entry_id already exists in timeline_entries table.
+    private func filterFKSafe(_ misses: [CacheMiss]) async -> [CacheMiss] {
+        guard !misses.isEmpty else { return [] }
+
+        // Collect unique entry IDs to check
+        let ids = Array(Set(misses.map { $0.entryId }))
+
+        do {
+            // Query which IDs exist in timeline_entries using orchestrator
+            let existing = try orchestrator.existingEntryIds(ids)
+
+            // Fast path: all IDs exist
+            if existing.count == ids.count { return misses }
+
+            // Filter to only misses with existing entry_id
+            let filtered = misses.filter { existing.contains($0.entryId) }
+            if filtered.count != misses.count {
+                let dropped = misses.count - filtered.count
+                log.debug("filterFKSafe: dropped \(dropped) misses without timeline_entries row (kept \(filtered.count))")
+            }
+            return filtered
+        } catch {
+            log.error("filterFKSafe read failed: \(String(describing: error), privacy: .public)")
+            // On failure, be conservative: skip to avoid FK exceptions
+            return []
         }
     }
 
