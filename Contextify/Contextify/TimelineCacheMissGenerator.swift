@@ -151,7 +151,7 @@ actor TimelineCacheMissGenerator {
             if pendingKeys.contains(key) {
                 skippedDuplicates += 1
             } else {
-                pendingMisses.append(miss)  // Add to end (FIFO: first added = first processed)
+                pendingMisses.insert(miss, at: 0)  // Add to front (LIFO: newest entries processed first)
                 pendingKeys.insert(key)
             }
         }
