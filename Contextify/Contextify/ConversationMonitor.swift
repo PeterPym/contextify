@@ -604,10 +604,11 @@ final class ConversationMonitor {
             debounceTask = nil
         }
 
-        // Clear pending LLM requests for non-active projects to prevent resource waste
+        // Clear ALL pending LLM requests on project/session change
+        // Visibility tracking will re-queue only the ~25 visible entries
         if let generator = cacheMissGenerator {
             Task {
-                await generator.clearPendingMisses(exceptProjectId: currentProjectId)
+                await generator.clearPendingMisses(exceptProjectId: nil)
             }
         }
 
