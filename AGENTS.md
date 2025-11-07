@@ -45,6 +45,11 @@ assets/ icons/
 
 ## Architecture & Key Modules
 
+**For high-level system overview:** See `build/notes/technical-reference/system-architecture-overview.md`
+- Explains component roles (Coordinator vs Orchestrator vs Monitor)
+- Data model hierarchy (Projects → Transcripts → Entries → Summaries)
+- Initialization flow and common confusion points
+
 ### Database Layer (SQL Backend)
 - **Current Schema Version: v21** (see DatabaseSchema.swift for migration history)
 - **Recent Migrations:**
