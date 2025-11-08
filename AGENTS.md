@@ -46,7 +46,7 @@ assets/ icons/
 ## Architecture & Key Modules
 
 ### Database Layer (SQL Backend)
-- **Current Schema Version: v21** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v23** (see DatabaseSchema.swift for migration history)
 - **Recent Migrations:**
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts)
   - **v14**: Request ID normalization (empty → entry_id fallback)
@@ -54,6 +54,8 @@ assets/ icons/
   - **v16**: GROUP BY index for unread queries (idx_entries_unread_join)
   - **v17-v20**: Schema fixes, file migration, orphaned project tracking
   - **v21**: Database access metadata for multi-machine conflict detection
+  - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
+  - **v23**: Active transcript follow (project_follow_policy table)
 - **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
 - **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, WAL mode, and custom database locations. Supports bookmark-based access for sandboxed builds.
 - **DatabaseMigration** (`app/Sources/ContextifyCore/Database/DatabaseMigration.swift`): Safe database file migration between locations. Handles disk space checks, atomic copies, and validation.
