@@ -1442,7 +1442,7 @@ final class ConversationMonitor {
             log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible entries")
             for id in newlyVisible.prefix(5) {  // Log first 5
                 if let entry = lookup(id) {
-                    log.info("[VIEWPORT-ENTRY] Now visible: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) action: \(entry.action, privacy: .public)")
+                    log.info("[VIEWPORT-ENTRY] Now visible: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public)")
                 }
             }
             if newlyVisible.count > 5 {
@@ -1750,7 +1750,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
-        log.info("[INCR-UPDATE-START] Processing incremental update for project: \(currentProjectId ?? "none", privacy: .public)")
+        log.info("[INCR-UPDATE-START] Processing incremental update for project: \(self.currentProjectId ?? "none", privacy: .public)")
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer {
@@ -1860,9 +1860,7 @@ final class ConversationMonitor {
                 }
 
                 lastUpdate = Date()
-
-                let elapsed = Date().timeIntervalSince(startTime)
-                log.info("[INCR-UPDATE-APPENDED] ✅ Appended \(addedCount, privacy: .public) new entries to timeline in \(Int(elapsed * 1000), privacy: .public)ms")
+                log.info("[INCR-UPDATE-APPENDED] ✅ Appended \(addedCount, privacy: .public) new entries to timeline")
 
                 // P1-2: Debounce policy evaluation to reduce churn during heavy ingestion
                 if isReadyForUpdates {
@@ -2188,7 +2186,7 @@ final class ConversationMonitor {
 
             // Log session details for debugging
             for session in self.allSessions.prefix(10) {  // Log first 10 to avoid spam
-                self.log.info("[SESSION-LIST] Session: \(session.identifier, privacy: .public) provider: \(session.provider, privacy: .public) entries: \(session.entryCount, privacy: .public)")
+                self.log.info("[SESSION-LIST] Session: \(session.identifier, privacy: .public) provider: \(session.provider.rawValue, privacy: .public) entries: \(session.entryCount, privacy: .public)")
             }
             if self.allSessions.count > 10 {
                 self.log.info("[SESSION-LIST] ... and \(self.allSessions.count - 10, privacy: .public) more sessions")
