@@ -1,8 +1,8 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v20 current)
+**Status:** Post-Implementation (v23 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 20 (v18-v20: project visibility, display order, orphan tracking)
+**Schema Version:** 23 (v21-v23: access metadata, strategy constraint fix, active transcript follow)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
 ---
@@ -485,7 +485,7 @@ generator.queueMisses([miss])  // Async processing
 
 ---
 
-## Recent Migrations (v18-v20)
+## Recent Migrations (v18-v23)
 
 **v18: Project Visibility**
 - Add `hidden` column (default 0)
@@ -503,11 +503,29 @@ generator.queueMisses([miss])  // Async processing
 - Detect missing directories at discovery time
 - UI: Show warning badge, allow cleanup
 
+**v21: Database Access Metadata**
+- Add `database_access_metadata` table for multi-machine conflict detection
+- Columns: `machine_id` (PK), `machine_name`, `last_access`, `app_version`
+- Purpose: Warn users when database is accessed from multiple machines (Dropbox/iCloud scenarios)
+- Feature: Custom database location support (Settings > Database tab)
+
+**v22: Strategy Constraint Fix**
+- Fix CHECK constraint in `transcript_metadata` table to include all GenerationStrategy enum values
+- Add missing strategies: 'adaptive', 'bookends', 'signalFirst', 'heuristic'
+- Migration recreates table (SQLite doesn't support ALTER TABLE for CHECK constraints)
+- Preserves all data and indexes
+
+**v23: Active Transcript Follow**
+- Add `project_follow_policy` table for session switching behavior
+- Columns: `project_id`, `mode` (0=auto, 1=manual), `pinned_session_id`, `pinned_provider`, `updated_at`
+- Purpose: Control whether timeline automatically follows active transcript or stays pinned to selected session
+- Default: Auto mode for all existing projects
+
 ---
 
 ## Cross-References
 
 - **Usage Guide:** `app/Sources/ContextifyCore/Database/README.md`
-- **Timeline Integration:** `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-- **State Management:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
-- **Planning Docs (Archive):** `build/notes/archive/technical-brief-sql-migration-architecture.md`
+- **Timeline Integration:** `build/docs/components/timeline-cache.md`
+- **State Management:** `build/docs/architecture/conversation-monitor-state.md`
+- **Planning Docs (Archive):** `build/docs/archive/completed-work/technical-brief-sql-migration-architecture.md`
