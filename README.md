@@ -190,7 +190,7 @@ Real-world test with 723-line Claude Code transcript:
 ### Documentation
 
 - **Usage guide:** `scripts/TRANSCRIPT_CONVERTER_README.md`
-- **Format comparison:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- **Format comparison:** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
 - **Parsers:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
 **Roadmap:**

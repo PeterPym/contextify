@@ -10,7 +10,7 @@
 ### 1. App Sandbox Implementation
 **Status:** Reverted - Requires proper implementation before App Store submission
 **Blocker:** Cannot ship to App Store without sandbox enabled
-**Spec:** `build/notes/app-store/sandbox-implementation-plan.md`
+**Spec:** `build/docs/operations/app-store/sandbox-implementation-plan.md`
 
 **Why it was reverted:**
 - ❌ Cannot access `~/.claude/projects` and `~/.codex/projects` for project discovery

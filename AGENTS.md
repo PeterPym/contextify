@@ -171,7 +171,7 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 ### Transcript Parsing & Metadata
 - **TranscriptParsers** (`app/Sources/ContextifyCore/Database/TranscriptParsers.swift`): JSONL parsers for Claude Code and Codex CLI formats. Used by HooverEngine during ingestion (JSONL → DB).
 - **ConversationMonitor**: Consumes parsed entries from SQL; **does not parse JSONL**.
-- **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
   - Documents Claude Code vs Codex JSONL format differences (lines 118-131)
   - Record type taxonomy and field shapes (lines 47-115)
   - Parsing strategies for both formats (lines 177-192)
