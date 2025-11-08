@@ -62,7 +62,7 @@ assets/ icons/
 - **DatabaseAccessMetadata** (`app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift`): Multi-machine access tracking and conflict detection. Warns users of concurrent access issues.
 - **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. CTE-based FK-safe assistant_usage inserts with O(N+M) JOIN reconciliation.
 - **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository).
-- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v21).
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v23).
   - **v8-v9**: project_visits table, unread query indices
   - **v10-v11**: assistant_usage_pending staging, FK hardening
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -70,6 +70,8 @@ assets/ icons/
   - **v16**: GROUP BY index for unread queries
   - **v17-v20**: Schema fixes, file migration, orphaned project tracking
   - **v21**: database_access_metadata table
+  - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
+  - **v23**: Active transcript follow (project_follow_policy table)
 - **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
 - **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.).
 - **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.

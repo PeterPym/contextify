@@ -10,7 +10,7 @@
 
 **Context:** StartupCoordinator refactor introduced regression where first launch fails with cryptic error. Users see no projects until they manually select one, despite automatic discovery running in background.
 
-**Reference:** `build/notes/feature-specs/welcome-modal-first-launch.md`
+**Reference:** Detailed specification inline below (phases 1-8)
 
 **Target:** 100% passing acceptance criteria before merge to main
 
@@ -251,7 +251,7 @@
 ### Tasks
 
 - [ ] **[C5.1]** Add loading overlay to `ContentView`
-  - **File:** `Contentify/Contentify/ContentView.swift`
+  - **File:** `Contextify/Contextify/ContentView.swift`
   - **Lines:** 43-68 (body)
   - **Changes:**
     - Wrap existing VStack in ZStack
@@ -261,7 +261,7 @@
   - **Acceptance:** Loading state visible until completion
 
 - [ ] **[C5.2]** Style overlay with material background
-  - **File:** `Contentify/Contentify/ContentView.swift`
+  - **File:** `Contextify/Contextify/ContentView.swift`
   - **Changes:**
     ```swift
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -570,10 +570,9 @@
 
 ## References
 
-- **Feature Spec:** `build/notes/feature-specs/welcome-modal-first-launch.md`
+- **Feature Spec:** Inline in this document (phases 1-8 above)
 - **Coordinator Architecture:** `build/docs/architecture/startup-coordinator.md`
 - **Discovery Implementation:** `build/docs/components/project-discovery.md`
-- **Original Refactor Summary:** `/tmp/fix-coordinator-integration-issues-summary.md`
 
 ---
 
