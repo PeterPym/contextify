@@ -1,8 +1,22 @@
 # Window Architectures: Contextify
 
 **Last Updated**: 2025-10-22
-**Status**: Comprehensive Reference
+**Status**: ⚠️ **PARTIALLY OUTDATED** - Contains iTerm2 references (removed 2025-11-01)
 **Audience**: Developers, UI Engineers
+
+---
+
+## ⚠️ Important Note: iTerm2 Integration Removed
+
+**As of 2025-11-01** (commit `35ce380`), all iTerm2/terminal integration was removed for App Store compliance. This includes:
+- ITerm2Bridge, ITerm2DaemonClient, TerminalContentReader
+- GlobalHotkeyManager (Cmd+Shift+K+K system)
+- ComposeWindowManager, ComposeURLRouter
+- Compose panel UI in Main HUD
+
+**Current Reality**: Main HUD window shows only the timeline (no compose panel).
+
+**This document contains historical references to iTerm2 functionality.** For re-implementation guidance if needed, see `build/notes/future-features.md` "Removed Features" section.
 
 ---
 
@@ -10,7 +24,7 @@
 
 Contextify consists of **four primary windows**, each with distinct purposes, data sources, and architectural patterns:
 
-1. **Main HUD Window** - Real-time timeline + iTerm2 compose panel
+1. **Main HUD Window** - Real-time conversation timeline ~~+ iTerm2 compose panel~~ (removed 2025-11-01)
 2. **Transcript Inventory Window** - Session browser with metadata
 3. **Projects Window** - Multi-project discovery and switching
 4. **Settings Window** - User preferences (standard macOS Settings)
@@ -110,7 +124,7 @@ func showInventory() {
 
 The Main HUD window serves as the **primary interface** for:
 - Real-time conversation timeline display
-- iTerm2 integration (compose panel)
+- ~~iTerm2 integration (compose panel)~~ **(removed 2025-11-01)**
 - Project and git branch display
 - Session filtering and navigation
 
@@ -120,8 +134,8 @@ The Main HUD window serves as the **primary interface** for:
 Window("Contextify", id: "main")
   ├─ ContentView
   │   ├─ header (project info, branch, folder picker)
-  │   ├─ composeSection (iTerm2 integration)
-  │   └─ ConversationTimelineView (RIGHT SIDE)
+  │   ├─ ~~composeSection (iTerm2 integration)~~ [REMOVED 2025-11-01]
+  │   └─ ConversationTimelineView
   │       ├─ Session filter controls
   │       ├─ VirtualizedScrollView
   │       │   └─ ForEach(monitor.visibleEntries)
@@ -142,8 +156,8 @@ Window("Contextify", id: "main")
   // 1. Update git info (branch, commit, worktree)
   model.updateGitInfo()
 
-  // 2. Refresh iTerm2 session
-  Task { await refreshSession() }
+  // 2. ~~Refresh iTerm2 session~~ [REMOVED 2025-11-01]
+  // Task { await refreshSession() }
 
   // 3. Start timeline monitoring
   TimelineIntegration.shared.startMonitoring()
@@ -189,7 +203,7 @@ SQL Query:
 
 **Secondary Data Sources**:
 - **Git Information**: HUDViewModel.branchDisplay (from filesystem)
-- **iTerm2 Session**: ITerm2Bridge.getCurrentSessionName() (AppleScript)
+- **~~iTerm2 Session~~**: ~~ITerm2Bridge.getCurrentSessionName()~~ **(removed 2025-11-01)**
 - **Project Root**: HUDViewModel.projectRootURL (from UserDefaults + bookmarks)
 
 ### State Management
@@ -323,11 +337,11 @@ var visibleEntries: [TimelineEntry] {
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| **ContentView.swift** | 1-260 | Main window layout, header, compose panel |
+| **ContentView.swift** | 1-260 | Main window layout, header ~~, compose panel~~ (removed 2025-11-01) |
 | **ConversationTimelineView.swift** | All | Timeline display UI, session filtering |
 | **TimelineEntryRow.swift** | All | Individual entry rendering |
 | **ConversationMonitor.swift** | 130-1050 | Timeline state management, data loading |
-| **HUDViewModel.swift** | app/Sources/ContextifyCore/HUDCore.swift:370-1032 | Project root, git info, iTerm2 integration |
+| **HUDViewModel.swift** | app/Sources/ContextifyCore/HUDCore.swift:370-1032 | Project root, git info ~~, iTerm2 integration~~ (removed 2025-11-01) |
 
 ### Known Issues
 
