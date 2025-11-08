@@ -872,7 +872,7 @@ final class ConversationMonitor {
                 seenEntryIDs.insert(entry.id)
                 let cacheKey = entry.windowSha256.map { CacheKey(content: entry.contentSha256, window: $0) }
                 let cache = cacheKey.flatMap { cacheMap[$0] }
-                return toTimelineEntry(entry, cached: cache)
+                return toTimelineEntry(entry, cached: cache, transcriptPath: transcript.filePath)
             }
 
             setEntries(transcriptTimelineEntries)
@@ -998,7 +998,7 @@ final class ConversationMonitor {
 
     // MARK: - SQL-based Processing
 
-    private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?) -> TimelineEntry {
+    private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?, transcriptPath: String?) -> TimelineEntry {
         // Use cached summary if available, otherwise fallback
         let summary: String
         let action: TimelineEntryAction
@@ -1042,7 +1042,7 @@ final class ConversationMonitor {
             sourceContext: TimelineSourceContext(
                 provider: TimelineSourceContext.Provider(rawValue: entry.provider) ?? .other,
                 identifier: entry.id,
-                filePath: nil,
+                filePath: transcriptPath,
                 line: nil
             ),
             sourceIdentifier: entry.id,
@@ -1088,6 +1088,10 @@ final class ConversationMonitor {
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
             log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count, privacy: .public) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
 
+            // Build transcript ID → file path lookup map
+            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+            let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
+
             // Map to UI entries and track seen IDs + collect cache misses
             let mapStart = Date()
             log.info("[UIOPT-MAP-START] Mapping \(feed.count, privacy: .public) entries to timeline UI models...")
@@ -1116,7 +1120,8 @@ final class ConversationMonitor {
                 }
 
                 // Create timeline entry with active state check
-                var timelineEntry = toTimelineEntry(entry, cached: cache)
+                let transcriptPath = transcriptPaths[entry.transcriptId]
+                var timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
 
                 // Override action if this is the actively processing entry
                 // Compare using the timeline's UUID (already converted in toTimelineEntry)
@@ -1796,6 +1801,11 @@ final class ConversationMonitor {
                     log.info("[INCR-UPDATE-ENTRY] ... and \(newEntries.count - 5, privacy: .public) more entries")
                 }
 
+                // Build transcript path lookup for new entries
+                let transcriptIds = Set(newEntries.map { $0.transcriptId })
+                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+                let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
+
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
                 var addedCount = 0
@@ -1829,7 +1839,8 @@ final class ConversationMonitor {
                         misses.append(miss)
                     }
 
-                    let timelineEntry = toTimelineEntry(entry, cached: cache)
+                    let transcriptPath = transcriptPaths[entry.transcriptId]
+                    let timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
                     appendEntry(timelineEntry)
                     addedCount += 1
                 }
