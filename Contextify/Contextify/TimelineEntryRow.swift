@@ -108,6 +108,9 @@ struct TimelineEntryRow: View, Equatable {
                 .foregroundStyle(.secondary)
                 .help(entry.timestamp.formatted(Date.FormatStyle.timelineTooltip))  // Re-enabled with static style
             if case .generatingActive = entry.action {
+                // NOTE: Pulsing animation is not working as of 2025-11-07
+                // The .symbolEffect(.pulse) modifier is applied but visual pulsing doesn't appear
+                // TODO: Investigate why symbol effects aren't animating (possibly SwiftUI/macOS version issue)
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
