@@ -788,3 +788,216 @@ When analyzing a transcript:
    - `metadata-only` → Read §3-5 only
    - `empty` → No further analysis needed
 3. **Reference parser:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` for implementation details
+
+---
+
+## Claude Code Web Transcript Corruption
+
+**Status:** Observed and documented (2025-11-08)
+**Affects:** Claude Code Web "teleport" feature (session transfer from web to CLI)
+**Impact:** Some teleported transcripts contain structural corruption that can cause API 400 errors
+
+### Background
+
+Claude Code Web (launched 2025) includes a "Send to CLI" teleport feature that allows users to transfer frozen/hung web sessions to the local CLI. When a web session freezes, users can click "Send to CLI" which copies a command like `claude --teleport session_011C...` to the clipboard. Running this command downloads the web transcript to the local `~/.claude/projects/` directory and opens the session in CLI.
+
+However, the teleport process frequently creates **corrupted transcript files** where the web session's frozen/hung state results in malformed JSONL records.
+
+### Corruption Patterns Observed
+
+Analysis of 355 local transcripts revealed 8 corrupted files (2.3%), with teleported sessions having significantly higher corruption rates.
+
+#### Pattern 1: Orphaned tool_result Blocks
+
+**Description:** User messages contain `tool_result` blocks that reference non-existent `tool_use_id` values from preceding assistant messages.
+
+**Example:**
+```json
+// Line 1746: Assistant message with stop_reason="tool_use" but NO tool_use blocks
+{
+  "type": "assistant",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {"type": "thinking", "thinking": "I need to check the file..."}
+    ],
+    "stop_reason": "tool_use"  // Claims tool_use but content has none!
+  }
+}
+
+// Line 1747: User message with orphaned tool_result
+{
+  "type": "user",
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_018qN95KtDr14JxyYbwYssxo",  // References missing tool_use
+        "content": "..."
+      }
+    ]
+  }
+}
+```
+
+**Impact:** Causes API 400 error when the corrupted message is within the conversation window sent to the Anthropic Messages API.
+
+**API Error Message:**
+```
+API Error: 400 {"type":"error","error":{"type":"invalid_request_error",
+"message":"messages.72.content.0: unexpected `tool_use_id` found in
+`tool_result` blocks: toolu_018qN95KtDr14JxyYbwYssxo. Each `tool_result`
+block must have a corresponding `tool_use` block in the previous message."}}
+```
+
+#### Pattern 2: stop_reason Mismatch
+
+**Description:** Assistant messages have `stop_reason: "tool_use"` but contain no `tool_use` content blocks (only `text` or `thinking` blocks).
+
+**Example:**
+```json
+{
+  "type": "assistant",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {"type": "text", "text": "Let me analyze that..."}
+    ],
+    "stop_reason": "tool_use"  // Mismatch: no tool_use in content!
+  }
+}
+```
+
+**Impact:** Does NOT cause API errors. Claude Code CLI handles this gracefully. Only affects metadata accuracy.
+
+### Corruption Statistics
+
+**Sample Analysis (Nov 7-8, 2025):**
+
+| Transcript | Date | Type | Issues | orphaned_tool_result | stop_reason_mismatch |
+|------------|------|------|--------|---------------------|---------------------|
+| 42d110d2 | Nov 7 | Teleport | 41 | 17 | 24 |
+| e0703ed4 | Nov 7 | Teleport | 36 | Unknown | Unknown |
+| 04b40bae | Nov 7 | Teleport | 12 | Unknown | Unknown |
+| 93673e11 | Nov 7 | Teleport | 1 | 0 | 1 |
+| d71598f2 | Nov 8 | Teleport | 7 | 2 | 5 |
+| 47eff2ef | Nov 8 | Teleport | 4 | 0 | 4 |
+
+**Key Observations:**
+- Teleported sessions: 4-41 corruption issues per transcript
+- Normal CLI sessions: 0-1 issues (97.7% clean)
+- `stop_reason_mismatch` is more common than `orphaned_tool_result`
+- Severity varies widely (1-41 issues)
+
+### The Sliding Window Hypothesis
+
+**Observation:** Not all corrupted transcripts fail to continue in CLI. Whether continuation succeeds depends on the **position of corruption relative to where the user tries to continue**.
+
+#### Example 1: Corruption BEFORE Active Window (Success)
+
+**Transcript d71598f2:**
+- Total lines: 546
+- Corruption at lines: 209 (orphaned), 277 (orphaned), 403-530 (stop_reason)
+- Session resumed at: line 541 (teleport point)
+- User sent "testing" at: ~line 542
+- Result: ✅ **Continued successfully**
+
+**Hypothesis:** The Anthropic Messages API receives a **sliding window** of recent messages (estimated ~50-100 messages). The orphaned_tool_result at line 277 was 265 lines before the continuation point, placing it outside the API window.
+
+#### Example 2: Corruption WITHIN Active Window (Failure)
+
+**Transcript 42d110d2:**
+- Total lines: 1990
+- Last orphaned_tool_result at: line 1464
+- Session resumed at: line 1889 (teleport point)
+- User sent message at: ~line 1890
+- Result: ❌ **API 400 error on first new message**
+
+**Hypothesis:** The orphaned_tool_result at line 1464 was only 425 lines before continuation, likely still within the API's conversation window (estimated ~500-1000 messages for longer sessions).
+
+#### API Window Estimation
+
+Based on observations:
+- **Estimated window size:** 50-1000 messages (context-dependent)
+- **Likely mechanism:** Claude Code CLI sends recent conversation history to API
+- **Critical factor:** Distance between last `orphaned_tool_result` and continuation point
+
+**Rule of thumb:** If last corruption is <100 messages from where you continue, expect API errors. If >300 messages away, likely safe.
+
+### Detection and Repair
+
+**Detection Tools:**
+
+1. **During ingestion:** Contextify's HooverEngine validates messages (as of 2025-11-08)
+2. **Manual analysis:** `scripts/transcript-repair/repair_transcript.py --dry-run <path>`
+
+**Repair Workflow:**
+
+```bash
+# Analyze transcript for corruption
+python3 scripts/transcript-repair/repair_transcript.py <transcript-path> --dry-run
+
+# Repair (creates automatic backup)
+python3 scripts/transcript-repair/repair_transcript.py <transcript-path>
+
+# Result: Removes orphaned_tool_result records, fixes stop_reason mismatches
+```
+
+**Repair Actions:**
+- **orphaned_tool_result:** Remove entire message record, update parent chains
+- **stop_reason_mismatch:** Change `stop_reason` from `"tool_use"` to `"end_turn"`
+
+**See:** `build/docs/operations/transcript-corruption-detection.md` for comprehensive guide.
+
+### Impact on Contextify
+
+**Contextify Database Ingestion:**
+- HooverEngine **skips** corrupted records during ingestion
+- Transcript status: `corruption_detected = 1` (future v24 schema)
+- Timeline displays clean entries only
+- User sees: "⚠️ 33 corruption issues detected"
+
+**User Experience:**
+- ✅ **Timeline works:** Contextify displays all clean messages
+- ❌ **CLI broken:** Cannot continue conversation in Claude Code without repair
+- 💡 **Solution:** Repair file → enables CLI continuation
+
+### Future Considerations
+
+**If Claude Code Web fixes corruption:**
+- This documentation serves as historical record
+- Repair tools remain useful for legacy transcripts
+- Detection logic can be deprecated once corruption rate drops to 0%
+
+**Potential Anthropic API Enhancement:**
+- Looser validation: Warn instead of reject for orphaned_tool_result
+- Client-side filtering: Claude Code could strip corrupted messages before sending
+- Recovery mode: API could attempt to continue despite structural issues
+
+**Database Schema (Proposed v24):**
+```sql
+-- Track corruption in transcripts table
+ALTER TABLE transcripts ADD COLUMN corruption_detected INTEGER DEFAULT 0;
+ALTER TABLE transcripts ADD COLUMN corruption_count INTEGER DEFAULT 0;
+ALTER TABLE transcripts ADD COLUMN corruption_types TEXT; -- JSON array
+
+-- Detailed corruption tracking
+CREATE TABLE transcript_corruption (
+  id TEXT PRIMARY KEY,
+  transcript_id TEXT NOT NULL,
+  line_number INTEGER NOT NULL,
+  entry_uuid TEXT,
+  corruption_type TEXT NOT NULL,  -- orphaned_tool_result, stop_reason_mismatch
+  details TEXT NOT NULL,
+  detected_at INTEGER NOT NULL,
+  FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
+);
+```
+
+### References
+
+- **Repair utility:** `scripts/transcript-repair/repair_transcript.py`
+- **Operations guide:** `build/docs/operations/transcript-corruption-detection.md`
+- **Detection implementation:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` (validateMessageIntegrity)
+- **Sample corrupted transcripts:** Nov 7-8, 2025 teleport sessions
