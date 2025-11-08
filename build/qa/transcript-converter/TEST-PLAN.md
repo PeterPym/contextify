@@ -45,7 +45,7 @@ build/qa/transcript-converter/
    ```bash
    head -1 build/qa/transcript-converter/fixtures/test-claude-*.jsonl | python3 -m json.tool
    ```
-3. Check required fields match spec (see `build/notes/technical-reference/claude-code-transcript-format.md`):
+3. Check required fields match spec (see `build/docs/specifications/claude-code-format.md`):
    - User message: `type`, `uuid`, `timestamp`, `parentUuid`, `sessionId`, `version`, `userType`, `cwd`, `gitBranch`, `isSidechain`, `isMeta`, `message`
    - Assistant message: `type`, `uuid`, `timestamp`, `parentUuid`, `sessionId`, `version`, `userType`, `cwd`, `gitBranch`, `isSidechain`, `requestId`, `message` (with `id`, `type`, `role`, `model`, `content[]`, `stop_reason`, `stop_sequence`, `usage`)
 
@@ -360,7 +360,7 @@ Before claiming QA complete, verify:
 After testing, update:
 1. **`RESULTS.md`** - Test execution results with pass/fail for each test
 2. **`scripts/TRANSCRIPT_CONVERTER_README.md`** - Update with any findings
-3. **`build/notes/technical-reference/transcript-resumption-guide.md`** - Clarify any resume issues discovered
+3. **`build/docs/guides/transcript-resumption.md`** - Clarify any resume issues discovered
 4. **Commit all findings to feature branch**
 
 ---

@@ -1,10 +1,10 @@
 # SQLite Backend - Usage Guide
 
-**Architecture Reference:** See `build/notes/technical-reference/sql-backend-architecture.md` for schema design, performance characteristics, and migration details.
+**Architecture Reference:** See `build/docs/architecture/sql-backend.md` for schema design, performance characteristics, and migration details.
 
 **Related Technical Briefs:**
-- Cache + LLM Integration: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-- State Management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+- Cache + LLM Integration: `build/docs/components/timeline-cache.md`
+- State Management: `build/docs/architecture/conversation-monitor-state.md`
 
 ---
 

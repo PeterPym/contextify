@@ -190,7 +190,7 @@ Real-world test with 723-line Claude Code transcript:
 ### Documentation
 
 - **Usage guide:** `scripts/TRANSCRIPT_CONVERTER_README.md`
-- **Format comparison:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- **Format comparison:** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
 - **Parsers:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
 **Roadmap:**
@@ -214,7 +214,7 @@ Real-world test with 723-line Claude Code transcript:
   - `Repositories`: Type-safe GRDB repositories (Projects, Transcripts, Entries)
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
-  - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
+  - Architecture: `build/docs/architecture/sql-backend.md`
 
 ### Timeline & Conversation Monitoring
 - **ConversationMonitor**: Main UI-facing component for timeline display
@@ -224,8 +224,8 @@ Real-world test with 723-line Claude Code transcript:
 - **Provider support**: Claude Code and Codex CLI formats
 - **Apple Intelligence requirement:** Timeline summaries require macOS 26.0+. On older macOS versions, basic (non-LLM) summaries are shown.
 - **Documentation**:
-  - Cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-  - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+  - Cache + LLM: `build/docs/components/timeline-cache.md`
+  - State management: `build/docs/architecture/conversation-monitor-state.md`
 
 ### Terminal Content Capture
 - **Primary method**: iTerm2 Python API via daemon (`ITerm2DaemonClient.swift`)
@@ -309,9 +309,9 @@ Real-world test with 723-line Claude Code transcript:
 ## Documentation
 
 ### Technical Architecture References
-- **SQL Backend:** `build/notes/technical-reference/sql-backend-architecture.md`
-- **Timeline Cache + LLM:** `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-- **State Management:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
+- **Timeline Cache + LLM:** `build/docs/components/timeline-cache.md`
+- **State Management:** `build/docs/architecture/conversation-monitor-state.md`
 - **Database Usage Guide:** `app/Sources/ContextifyCore/Database/README.md`
 
 ### Project Documentation

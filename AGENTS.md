@@ -51,7 +51,7 @@ assets/ icons/
 - Initialization flow and common confusion points
 
 ### Database Layer (SQL Backend)
-- **Current Schema Version: v21** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v23** (see DatabaseSchema.swift for migration history)
 - **Recent Migrations:**
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts)
   - **v14**: Request ID normalization (empty → entry_id fallback)
@@ -59,13 +59,15 @@ assets/ icons/
   - **v16**: GROUP BY index for unread queries (idx_entries_unread_join)
   - **v17-v20**: Schema fixes, file migration, orphaned project tracking
   - **v21**: Database access metadata for multi-machine conflict detection
+  - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
+  - **v23**: Active transcript follow (project_follow_policy table)
 - **TranscriptOrchestrator** (`app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`): High-level coordinator for all database operations. Provides async API for projects, transcripts, entries, timeline cache, and assistant usage reconciliation.
 - **DatabaseManager** (`app/Sources/ContextifyCore/Database/DatabaseManager.swift`): Singleton managing GRDB connection pool, migrations, WAL mode, and custom database locations. Supports bookmark-based access for sandboxed builds.
 - **DatabaseMigration** (`app/Sources/ContextifyCore/Database/DatabaseMigration.swift`): Safe database file migration between locations. Handles disk space checks, atomic copies, and validation.
 - **DatabaseAccessMetadata** (`app/Sources/ContextifyCore/Database/DatabaseAccessMetadata.swift`): Multi-machine access tracking and conflict detection. Warns users of concurrent access issues.
 - **HooverEngine** (`app/Sources/ContextifyCore/Database/HooverEngine.swift`): Streaming transcript ingestion engine. Processes JSONL files incrementally with crash-safe checkpointing. CTE-based FK-safe assistant_usage inserts with O(N+M) JOIN reconciliation.
 - **Repositories** (`app/Sources/ContextifyCore/Database/Repositories.swift`): Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository).
-- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v21).
+- **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`): SQL schema definitions and versioned migrations (v1-v23).
   - **v8-v9**: project_visits table, unread query indices
   - **v10-v11**: assistant_usage_pending staging, FK hardening
   - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -73,13 +75,16 @@ assets/ icons/
   - **v16**: GROUP BY index for unread queries
   - **v17-v20**: Schema fixes, file migration, orphaned project tracking
   - **v21**: database_access_metadata table
+  - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
+  - **v23**: Active transcript follow (project_follow_policy table)
 - **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`): File system monitoring for real-time transcript updates.
 - **Models** (`app/Sources/ContextifyCore/Database/Models.swift`): Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.).
 - **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
-  - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
-  - Custom location feature: `build/notes/feature-specs/custom-database-location/spec.md`
+  - Architecture: `build/docs/architecture/sql-backend.md`
+  - Database migration: `build/docs/components/database-migration.md`
+  - Custom location feature: Shipped (see Settings > Database tab)
 
 ### LLM Processing & Timeline Integration
 Contextify uses **two independent LLM processing queues** for content generation (both using Apple Intelligence/FoundationLLM on macOS 26+):
@@ -96,16 +101,10 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **TimelineModels** (`Contextify/Contextify/TimelineModels.swift`): Timeline-specific data models (TimelineEntry, CacheKey, Disposition).
 - **TimelineState** (`ConversationMonitor.swift`): Observable state container for timeline entries, derived cache index, and revision tracking.
 - **Documentation**:
-  - **⭐ LLM Architecture Overview:** `build/notes/technical-reference/llm-processing-architecture.md` (start here)
-  - **⭐ LLM Overload Prevention:** `build/notes/technical-reference/llm-overload-prevention.md` - Multi-layered protection against Apple Intelligence overload:
-    - 6 protection layers (viewport debounce, pruning, stabilization delay, cancellation checks, LIFO queue, sequential processing)
-    - Viewport-based queue management integrated with SwiftUI scroll events
-    - 750ms stabilization delay before LLM calls
-    - Automatic pruning of entries that scroll out of view
-    - Test results: 88% prevention rate during aggressive scrolling
-  - Timeline cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-  - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
-  - Status bar spec: `build/notes/feature-specs/status-bar/spec-final.md`
+  - **⭐ LLM Architecture Overview:** `build/docs/architecture/llm-processing.md` (start here)
+  - Timeline cache + LLM: `build/docs/components/timeline-cache.md`
+  - State management: `build/docs/architecture/conversation-monitor-state.md`
+  - Status bar: Shipped (see original design in `build/docs/archive/feature-specs/status-bar.md`)
 
 ### Core Components (Project Context)
 - **HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`): Main `@Observable` `@MainActor` view model. Manages:
@@ -163,15 +162,20 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 
 **Architecture:**
 - **Startup Order:** `ContextifyApp.init()` starts coordinator → `ProjectSwitcherState.start()` subscribes to updates → `ContentView.task` waits for `ready()` → Timeline starts with stable project ID
-- **Documentation:** `build/notes/technical-reference/startup-coordinator-architecture.md`
-- **Implementation Plan:** `build/notes/feature-specs/startup-coordinator/implementation-plan.md`
+- **Documentation:** `build/docs/architecture/startup-coordinator.md`
+- **Implementation:** Shipped in commit 531ac70 (see original plan in `build/docs/archive/feature-specs/startup-coordinator.md`)
 
 ### UI Layer
 - **ContentView** (`Contextify/Contextify/ContentView.swift`): Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications.
 - **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`): Timeline display UI with session filtering and real-time updates.
 - **TimelineEntryRow** (`Contextify/Contextify/TimelineEntryRow.swift`): Individual timeline entry row component.
 - **TranscriptInventoryView** (`Contextify/Contextify/TranscriptInventoryView.swift`): UI for browsing and switching between transcript sessions.
+- **ProjectSwitcherView** (`Contextify/Contextify/ProjectSwitcherView.swift`): Multi-project tab navigation bar with drag-drop reordering, unread badges, and keyboard shortcuts.
+- **ProjectSwitcherState** (`Contextify/Contextify/ProjectSwitcherState.swift`): `@Observable` state management for project list, active project, and unread counts.
 - **IngestDropZone** (`Contextify/Contextify/IngestDropZone.swift`): Drag-and-drop target for files, uses SwiftUI `onDrop` with completion handlers and main actor marshaling.
+- **Documentation**:
+  - Project switcher architecture: `build/docs/architecture/project-switcher.md`
+  - Active session policy: `build/docs/components/active-session-policy.md`
 
 ### Supporting Components
 - **WindowTitleWriter** (`Contextify/Contextify/WindowTitleWriter.swift`): Updates window title to show current project name.
@@ -182,7 +186,7 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 ### Transcript Parsing & Metadata
 - **TranscriptParsers** (`app/Sources/ContextifyCore/Database/TranscriptParsers.swift`): JSONL parsers for Claude Code and Codex CLI formats. Used by HooverEngine during ingestion (JSONL → DB).
 - **ConversationMonitor**: Consumes parsed entries from SQL; **does not parse JSONL**.
-- **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
+- **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
   - Documents Claude Code vs Codex JSONL format differences (lines 118-131)
   - Record type taxonomy and field shapes (lines 47-115)
   - Parsing strategies for both formats (lines 177-192)
@@ -368,8 +372,8 @@ Common commands:
 
 ## UI/UX Design Guidelines
 
-**Design specs:** `build/notes/design-reference/` (color scheme, typography, patterns)
-**Color scheme:** `build/notes/design-reference/color-scheme.md` | Implementation: `TimelineEntryRow.swift:192-206`
+**Design specs:** `build/docs/design/` (color scheme, typography, patterns)
+**Color scheme:** `build/docs/design/color-scheme.md` | Implementation: `TimelineEntryRow.swift:192-206`
 
 ## Logging Guidelines
 
@@ -393,7 +397,7 @@ Common commands:
 
 Configure Xcode console with `TYPE Info` filter to hide debug logs in production.
 
-**Detailed reference:** See `build/notes/technical-reference/logging-preferences.md` for comprehensive guidelines, code examples, and anti-patterns.
+**Detailed reference:** See `build/docs/guides/logging-best-practices.md` for comprehensive guidelines, code examples, and anti-patterns.
 
 ## Testing Guidelines
 - **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
@@ -536,7 +540,7 @@ Returns: Primary classification + 4 dimensional axes (conversation, metadata, co
 - Parser: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 - Database: `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 
-**Key Document:** `build/notes/technical-reference/claude-code-transcript-format.md` contains:
+**Key Document:** `build/docs/specifications/claude-code-format.md` contains:
 - Complete field specifications for all record types
 - Transcript Classification Guide (§ at end)
 - Field Reference by Classification table

@@ -10,7 +10,7 @@
 
 **Context:** StartupCoordinator refactor introduced regression where first launch fails with cryptic error. Users see no projects until they manually select one, despite automatic discovery running in background.
 
-**Reference:** `build/notes/feature-specs/welcome-modal-first-launch.md`
+**Reference:** Detailed specification inline below (phases 1-8)
 
 **Target:** 100% passing acceptance criteria before merge to main
 
@@ -251,7 +251,7 @@
 ### Tasks
 
 - [ ] **[C5.1]** Add loading overlay to `ContentView`
-  - **File:** `Contentify/Contentify/ContentView.swift`
+  - **File:** `Contextify/Contextify/ContentView.swift`
   - **Lines:** 43-68 (body)
   - **Changes:**
     - Wrap existing VStack in ZStack
@@ -261,7 +261,7 @@
   - **Acceptance:** Loading state visible until completion
 
 - [ ] **[C5.2]** Style overlay with material background
-  - **File:** `Contentify/Contentify/ContentView.swift`
+  - **File:** `Contextify/Contextify/ContentView.swift`
   - **Changes:**
     ```swift
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -570,10 +570,9 @@
 
 ## References
 
-- **Feature Spec:** `build/notes/feature-specs/welcome-modal-first-launch.md`
-- **Coordinator Architecture:** `build/notes/technical-reference/startup-coordinator-architecture.md`
-- **Discovery Implementation:** `build/notes/technical-reference/project-discovery-implementation.md`
-- **Original Refactor Summary:** `/tmp/fix-coordinator-integration-issues-summary.md`
+- **Feature Spec:** Inline in this document (phases 1-8 above)
+- **Coordinator Architecture:** `build/docs/architecture/startup-coordinator.md`
+- **Discovery Implementation:** `build/docs/components/project-discovery.md`
 
 ---
 
@@ -607,3 +606,794 @@
 **Assignee:** TBD
 **Target Completion:** TBD
 **Priority:** P0 (Blocks release)
+
+---
+---
+
+# P0 Critical: Codex Transcript Real-Time Updates (REGRESSION)
+
+**Status:** Not Started
+**Priority:** P0 (Regression - previously worked, now broken)
+**Severity:** High (core functionality)
+**Assignee:** TBD
+**Target Completion:** Immediate (2-3 hours)
+
+## Problem
+
+When user switches from active Claude Code session to Codex session **in the same project**, Codex transcript updates don't appear in real-time. User must manually refresh or restart app to see new Codex messages.
+
+**User Impact:** Severe - Codex sessions appear "frozen" after switching, breaking core monitoring functionality.
+
+## Root Cause
+
+- `startWatchingTranscript()` is only called during initial project discovery (`ConversationMonitor.swift:1690`)
+- Active session follow policy switches sessions via `setActiveSession()` but **doesn't verify watcher is running**
+- Missing: hook in `setActiveSession()` to ensure watcher active for newly selected session
+
+**Regression Date:** Likely introduced during active session follow policy implementation (schema v23)
+
+## Solution
+
+Add watcher verification to session activation path. `TranscriptWatcher.watch()` is already idempotent (line 44), so safe to call multiple times.
+
+## Implementation
+
+```swift
+// In ConversationMonitor.swift:1905, modify setActiveSession()
+
+private func setActiveSession(to: SessionKey) async {
+    guard let t = allSessions.first(where: { $0.identifier == to.sessionId && $0.provider == to.provider }) else {
+        log.warning("Session \(to.sessionId) not found in allSessions - cannot setActive")
+        return
+    }
+
+    // Existing code: update activeSession, emit notification, persist policy
+    activeSession = t
+    NotificationCenter.default.post(name: .activeSessionDidChange, object: t)
+    Task { await persistFollowPolicy() }
+
+    // NEW: Ensure watcher is running for newly active session
+    // TranscriptWatcher.watch() is idempotent, safe to call multiple times
+    do {
+        try orchestrator.startWatchingTranscript(transcriptId: t.identifier, fileURL: t.fileURL)
+        log.info("✅ Ensured watcher active for session: \(t.identifier, privacy: .public)")
+    } catch {
+        log.error("Failed to start watcher for \(t.identifier, privacy: .public): \(error, privacy: .public)")
+    }
+}
+```
+
+## Tasks
+
+- [ ] **[CXT-1.1]** Add watcher verification to `setActiveSession()` in `Contextify/Contextify/ConversationMonitor.swift:1905`
+- [ ] **[CXT-1.2]** Verify `TranscriptWatcher.watch()` idempotence (check line 44: "if isWatching, skip")
+- [ ] **[CXT-1.3]** Add integration test: switch Claude Code → Codex, verify updates appear within 2s
+- [ ] **[CXT-1.4]** Test with multiple Codex sessions in same project
+- [ ] **[CXT-1.5]** Verify no duplicate watcher warnings in logs
+- [ ] **[CXT-1.6]** Test session switching doesn't leak file descriptors
+
+## Files
+
+- **Primary:** `Contextify/Contextify/ConversationMonitor.swift` (line 1905, `setActiveSession()`)
+- **Verify:** `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` (line 44, idempotence check)
+
+## Acceptance Criteria
+
+- [ ] Switch from active Claude Code session to Codex session in same project
+- [ ] Add new message in Codex CLI terminal
+- [ ] Message appears in Contextify timeline within 2 seconds (no manual refresh)
+- [ ] Switch back to Claude Code session, verify updates still work
+- [ ] Switch to different Codex session, verify updates work
+- [ ] Logs show: "✅ Ensured watcher active for session: <id>" (not "Already watching")
+- [ ] No duplicate watcher errors
+- [ ] No file descriptor leaks (check with `lsof` after 20+ session switches)
+
+## Estimated Effort
+
+**2-3 hours** (simple fix, but needs thorough testing)
+
+## Risk
+
+**Low** - Idempotent watcher call, defensive programming, no breaking changes.
+
+---
+---
+
+# P0 Critical: App Sandbox Implementation
+
+**Status:** Reverted, Needs Re-implementation
+**Priority:** P0 (Blocks App Store submission)
+**Severity:** Critical (cannot ship to App Store without this)
+**Assignee:** TBD
+**Target Completion:** Before App Store submission
+
+## Problem
+
+App Store requires sandboxing for all macOS apps. Previous sandbox attempt (commit `b4b4762`) was reverted (`b1fe869`) because it broke core functionality:
+
+- ❌ Cannot access `~/.claude/projects` and `~/.codex/projects` for project discovery
+- ❌ FSEvents monitoring blocked (cannot watch project directories)
+- ❌ Projects window shows 0 projects
+- ❌ Database location changed to sandbox container, breaking existing users
+
+## Solution
+
+**Detailed implementation plan exists:** `build/docs/operations/app-store/sandbox-implementation-plan.md`
+
+**Four-Phase Approach:**
+1. **Phase 1:** First-launch file picker for project directory access (4 hours)
+2. **Phase 2:** Security-scoped bookmark persistence (3 hours)
+3. **Phase 3:** Database migration to sandbox container (4 hours)
+4. **Phase 4:** Entitlements configuration (30 minutes)
+
+**Total Effort:** 8-12 hours
+
+## Tasks
+
+**See detailed plan in:** `build/docs/operations/app-store/sandbox-implementation-plan.md`
+
+**High-level checklist:**
+- [ ] Implement first-launch file picker flow
+- [ ] Add security-scoped bookmark storage
+- [ ] Create database migration to sandbox container
+- [ ] Update entitlements file
+- [ ] Test with sandboxed build
+- [ ] Verify FSEvents work with bookmarks
+- [ ] Test migration from non-sandboxed → sandboxed
+
+## Acceptance Criteria
+
+- [ ] Sandboxed build discovers projects via file picker
+- [ ] Security-scoped bookmarks persist across launches
+- [ ] Database migrates cleanly from non-sandboxed location
+- [ ] FSEvents watching works for bookmarked directories
+- [ ] No data loss during migration
+- [ ] App Store review guidelines met
+
+## Reference
+
+- **Detailed Plan:** `build/docs/operations/app-store/sandbox-implementation-plan.md`
+- **Reverted Commit:** `b4b4762` (enable sandbox)
+- **Revert Commit:** `b1fe869` (revert sandbox)
+
+---
+---
+
+# Technical Debt & Bug Fixes
+
+## ConversationMonitor Initialization Architecture
+
+**Status:** Phase 1 Complete, Phase 2/3 Deferred
+**Priority:** P3 (Technical Debt)
+**Assignee:** TBD
+**Target Completion:** Deferred
+
+### Problem
+
+ConversationMonitor has multiple initialization paths and timing dependencies that make it fragile:
+- Multiple entry points: `start()`, `startMonitoring()`, `startIfReady()`
+- Implicit dependencies on HUDViewModel and database
+- Potential timing races with ProjectSwitcherState
+- Unclear error recovery paths
+
+### Phase 1 Complete
+
+✅ Mapped all initialization code paths
+✅ Documented dependencies on StartupCoordinator
+✅ Identified race conditions (resolved in CXT-13)
+✅ Created architecture documentation
+
+### Phase 2/3 Deferred (P3)
+
+**Phase 2: Dependency Injection**
+- Make dependencies explicit
+- Remove singleton pattern
+- Require TranscriptOrchestrator in init
+- Make `start()` idempotent
+
+**Phase 3: Startup Sequencing**
+- Full integration with StartupCoordinator lifecycle
+- Remove manual notification handling
+- Add explicit error states
+
+### Why Deferred
+
+- Current implementation is stable in production
+- No active bugs related to initialization
+- CXT-13 resolved major race conditions
+- Higher priority work (Welcome Modal, P1 bugs)
+
+### When to Revisit
+
+- Multi-window support requires multiple ConversationMonitor instances
+- Initialization bugs surface in production
+- Testing becomes too complex with current design
+
+**Detailed Spec:** `/tmp/conversation-monitor-init-architecture.md`
+
+---
+
+## Transcript Metadata Generation - Circuit Breaker UX (P1)
+
+**Status:** Not Started
+**Priority:** P1 (Critical feature appears broken)
+**Severity:** High (no user-facing feedback)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+LLM metadata generation in Transcripts window silently fails after circuit breaker opens. Users see:
+- Endless loading spinners with no error indication
+- No way to retry failed generations
+- No indication which transcripts succeeded vs failed
+- Tasks cancelled when window closes (no progress persistence)
+
+**User Impact:** High - metadata generation appears broken, no actionable feedback.
+
+### Root Causes
+
+**Issue 1: Circuit Breaker Blocks Silently**
+- Location: `TranscriptMetadataOrchestrator.swift:189-194`
+- Threshold: 60% failure rate over 5 minutes (5+ requests)
+- Once open, ALL generation attempts fail
+- No UI indication that circuit breaker is open
+
+**Issue 2: Task Cancellation on Window Close**
+- Location: `TranscriptInventoryView.swift:253`
+- All metadata tasks cancelled when window dismissed
+- No persistence of partial progress
+- User must keep window open for completion
+
+**Issue 3: Silent Failure Mode**
+- Location: `TranscriptInventoryView.swift:936`
+- Errors logged but not shown to user
+- No retry mechanism
+- No visual difference between "generating" and "failed"
+
+### Solution - Three-Phase Fix
+
+**Phase 1: User Feedback (4 hours)** - PRIORITY
+- Add failed transcript tracking
+- Show error states in session rows
+- Add manual retry button
+- Persist failed set across restarts
+
+**Phase 2: Circuit Breaker Observability (2 hours)**
+- Expose circuit breaker status to UI
+- Show banner when breaker is open
+- Add "Retry All Failed" button
+
+**Phase 3: Graceful Degradation (2 hours)**
+- Allow partial results (title without description)
+- Heuristic title fallback when LLM fails
+- Exponential backoff for auto-retry
+
+### Tasks (Phase 1 - Priority)
+
+- [ ] **[M1.1]** Add `failedTranscripts: Set<String>` state to `TranscriptInventoryView.swift`
+- [ ] **[M1.2]** Modify `loadMetadataForSessions()` to catch errors and add to failed set (line 899)
+- [ ] **[M1.3]** Add error indicator (orange warning icon) in `sessionRow()`
+- [ ] **[M1.4]** Add "Retry Metadata Generation" button in `TranscriptDetailView`
+- [ ] **[M1.5]** Implement `retryMetadataGeneration()` with `forceRegenerate: true`
+- [ ] **[M1.6]** Persist `failedTranscripts` to UserDefaults
+- [ ] **[M1.7]** Load failed set on window open
+- [ ] **[M1.8]** Show count in header: "3 failed" badge when non-empty
+
+### Files
+
+- **Primary:** `Contextify/Contextify/TranscriptInventoryView.swift` (lines 899-938)
+- **Secondary:** `Contextify/Contextify/TranscriptMetadataOrchestrator.swift` (Phase 2/3)
+
+### Acceptance Criteria (Phase 1)
+
+- [ ] Failed generations show orange warning icon in session row
+- [ ] Click failed transcript → detail view shows "Retry" button
+- [ ] Click retry → clears error, re-attempts generation with force flag
+- [ ] Success removes transcript from failed set
+- [ ] Failed transcripts persist across app restarts
+- [ ] Header shows "X failed" count when failedTranscripts not empty
+- [ ] Loading spinner distinct from error state (different icons)
+
+### Estimated Effort
+
+- **Phase 1:** 4 hours (immediate priority)
+- **Phase 2:** 2 hours (can defer)
+- **Phase 3:** 2 hours (can defer)
+- **Total:** 8 hours for complete fix
+
+### Implementation Reference
+
+See `/tmp/comprehensive-todos-update.md` for:
+- Detailed code snippets for all 3 phases
+- Circuit breaker observer implementation
+- Partial results and backoff logic
+
+---
+
+## Transcript Window UI Refactoring (P1)
+
+**Status:** Not Started
+**Priority:** P1 (Code health + UX polish)
+**Severity:** Medium (works but feels unfinished)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+`TranscriptInventoryView.swift` is 1516 lines with complex state management:
+- 15+ `@State` properties with interdependencies
+- Mixed concerns: UI, metadata loading, export, cleanup
+- No clear loading states during metadata generation
+- Hard to maintain and test
+
+**Comparison:** `ProjectsWindow.swift` is only 216 lines (7x smaller)
+
+### Solution - Three-Phase Refactoring
+
+**Phase 1: Extract Components (4 hours)**
+- Extract `SessionListView` (sidebar, 200 lines)
+- Extract `SessionRowView` (row component, 80 lines)
+- Extract `MetadataLoadingView` (loading states, 100 lines)
+- Reduce main file to ~300 lines (coordinator only)
+
+**Phase 2: Simplify State (3 hours)**
+- Create `@Observable class TranscriptInventoryState`
+- Move metadata loading to state object
+- Use Combine for debouncing (remove manual Task management)
+
+**Phase 3: Loading States (2 hours)**
+- Add skeleton loaders during metadata generation
+- Show progress: "Generating metadata: 3 of 15"
+- Animate appearance of generated metadata
+
+### Tasks (Phase 1 - Priority)
+
+- [ ] **[UI1.1]** Create `Views/SessionListView.swift` (extract sidebar, lines 200-268)
+- [ ] **[UI1.2]** Create `Views/SessionRowView.swift` (extract row rendering)
+- [ ] **[UI1.3]** Create `Views/MetadataLoadingView.swift` (extract loading UI)
+- [ ] **[UI1.4]** Reduce `TranscriptInventoryView.swift` to < 400 lines (coordinator only)
+- [ ] **[UI1.5]** Verify no visual regressions (side-by-side comparison)
+
+### Files
+
+- **Reduce:** `Contextify/Contextify/TranscriptInventoryView.swift` (1516 → ~300 lines)
+- **Create:** `Contextify/Contextify/Views/SessionListView.swift` (NEW, 200 lines)
+- **Create:** `Contextify/Contextify/Views/SessionRowView.swift` (NEW, 80 lines)
+- **Create:** `Contextify/Contextify/Views/MetadataLoadingView.swift` (NEW, 100 lines)
+- **Create:** `Contextify/Contextify/State/TranscriptInventoryState.swift` (NEW, Phase 2)
+
+### Acceptance Criteria (Phase 1)
+
+- [ ] Main file < 400 lines
+- [ ] Each extracted component < 250 lines
+- [ ] No visual regressions (pixel-perfect comparison)
+- [ ] All functionality preserved
+- [ ] Search, filtering, sorting still work
+- [ ] Context menus still work
+
+### Estimated Effort
+
+- **Phase 1:** 4 hours (component extraction)
+- **Phase 2:** 3 hours (state management)
+- **Phase 3:** 2 hours (loading UI polish)
+- **Total:** 9 hours for complete refactor
+
+---
+
+## HTTP Diagnostics Port Conflict (P1 Bug)
+
+**Status:** Confirmed, Not Started
+**Priority:** P1 (Production Error)
+**Severity:** Medium (Non-blocking)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+DiagnosticsHTTPServer fails to bind to port 17329 when address already in use:
+
+```
+Address already in use (errno: 48)
+Failed to start diagnostics HTTP server
+```
+
+**Frequency:** 8 occurrences in logs
+**Impact:** Diagnostics API unavailable, helper scripts fail
+
+### Root Cause
+
+1. Previous app instance didn't release port (crash/force-quit)
+2. Port collision with another process
+
+### Solution
+
+**Recommended:** Port fallback (17329 → 17330 → 17331, etc.)
+
+**Implementation:**
+```swift
+// Try ports 17329-17339 in sequence
+for port in 17329...17339 {
+  do {
+    try bindToPort(port)
+    log.info("Diagnostics server on port \(port)")
+    return
+  } catch { continue }
+}
+```
+
+**Tasks:**
+- [ ] Implement port fallback in DiagnosticsHTTPServer.swift
+- [ ] Log actual bound port
+- [ ] Update `scripts/timeline_api.sh` to auto-detect port
+- [ ] Add port info to `/health` endpoint
+
+**Estimated Effort:** 2-3 hours
+
+**Files:**
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`
+- `scripts/timeline_api.sh`
+
+**Detailed Spec:** `/tmp/http-diagnostics-port-conflict.md`
+
+---
+
+## Codex Discovery Data Quality Issues (P2)
+
+**Status:** Confirmed, Not Started
+**Priority:** P2 (Data Quality)
+**Severity:** Low (Metadata only)
+**Assignee:** TBD
+**Target Completion:** Future sprint
+
+### Problem
+
+Codex-discovered projects have poor metadata quality:
+
+1. **Missing names:** 7+ projects show path as name (`/Users/rob/code/project`)
+2. **Incorrect session IDs:** Some use file path hash instead of workspace ID
+3. **No git branch:** Codex projects don't populate `git_branch` field
+4. **Orphaned projects:** Deleted projects remain in database
+
+**Affected:** ~7+ Codex projects
+
+### Impact
+
+- Confusing project names in switcher tabs
+- Inconsistent metadata vs Claude Code projects
+- Harder to identify projects
+
+### Solution (Phased)
+
+**Phase 1: Project Name Improvement (P2)**
+- Parse Codex workspace metadata for project names
+- Fallback to parent directory name (better than hash)
+- Estimated: 3-4 hours
+
+**Phase 2: Session ID Normalization (P2)**
+- Use Codex workspace ID consistently
+- One-time migration for existing entries
+- Estimated: 4-5 hours
+
+**Phase 3: Git Branch Detection (P3)**
+- Run git detection during discovery
+- Cache in database
+- Estimated: 2-3 hours
+
+**Phase 4: Orphan Cleanup (P3)**
+- Periodic check for missing directories
+- Auto-hide orphaned projects
+- Estimated: 2-3 hours
+
+### Recommended Approach
+
+Start with **Phase 1** only (highest user-visible impact, lowest risk).
+
+**Tasks (Phase 1):**
+- [ ] Add Codex manifest parser
+- [ ] Update ProjectDiscoveryService.discoverFromCodex()
+- [ ] Test with real Codex sessions
+- [ ] Verify names in switcher UI
+
+**Files:**
+- `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+**Workaround:** Users can manually rename projects in Projects window (Cmd+Shift+P)
+
+**Detailed Spec:** `/tmp/codex-discovery-data-quality.md`
+
+---
+
+# Additional P1/P2 Items (From Codebase Analysis)
+
+## Re-enable Disabled Integration Tests (P1)
+
+**Status:** Not Started
+**Priority:** P1 (Test Coverage)
+**Severity:** Medium (No automated testing for core features)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+3 critical integration tests are disabled with `skip_` prefix and never run:
+
+```swift
+// IntegrationTests.swift
+skip_testInitialHooverWorkflow()        // Line 25: "HooverEngine signature changed"
+skip_testOrchestratorWorkflow()         // Line 126: "Needs update for new API"
+skip_testCrashRecovery()                // Line 168: "HooverEngine signature changed"
+```
+
+**Impact:** No automated testing for:
+- Hoover crash recovery
+- Orchestrator workflow
+- Core ingestion pipeline
+
+### Tasks
+
+- [ ] Update `skip_testInitialHooverWorkflow()` for new HooverEngine API
+- [ ] Update `skip_testOrchestratorWorkflow()` for new TranscriptOrchestrator API
+- [ ] Update `skip_testCrashRecovery()` for checkpoint changes
+- [ ] Re-enable all 3 tests (remove `skip_` prefix)
+- [ ] Add to CI pipeline
+- [ ] Verify tests pass on clean database
+
+### Files
+
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+
+### Acceptance Criteria
+
+- [ ] All 3 tests pass with updated APIs
+- [ ] Tests run in CI on every commit
+- [ ] No flaky failures (run 10x in a row)
+
+### Estimated Effort
+
+**3-4 hours**
+
+---
+
+## Project Exclusion Manager (P1 - Unfinished Feature)
+
+**Status:** Not Started (3 tests skipped)
+**Priority:** P1 (Half-built feature)
+**Severity:** Low (Workaround exists)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+3 skipped tests indicate incomplete implementation:
+
+```swift
+// ProjectDiscoveryTests.swift
+skip_testExclusionManager_AddAndRetrieve()    // Line 74
+skip_testExclusionManager_RemoveExclusion()   // Line 78
+skip_testExclusionManager_Persistence()       // Line 82
+```
+
+**User Impact:** Cannot hide unwanted projects from discovery (test/tmp/archive projects clutter switcher)
+
+### Solution
+
+Implement `ProjectExclusionManager` with database persistence.
+
+### Tasks
+
+- [ ] Create `ProjectExclusionManager.swift` (database-backed storage)
+- [ ] Add UI to Projects window: right-click → "Hide Project"
+- [ ] Add exclusions table to database schema (new migration)
+- [ ] Filter excluded projects from discovery results
+- [ ] Add "Show Hidden Projects" toggle in Projects window
+- [ ] Re-enable all 3 tests
+
+### Files
+
+- `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` (NEW)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` (add exclusions table)
+- `Contextify/Contextify/ProjectsWindow.swift` (add UI)
+
+### Acceptance Criteria
+
+- [ ] Right-click project → "Hide Project" → removed from list
+- [ ] Hidden projects persist across app restarts
+- [ ] "Show Hidden Projects" toggle reveals hidden with "Unhide" option
+- [ ] All 3 tests pass
+
+### Estimated Effort
+
+**4-6 hours**
+
+---
+
+## macOS 14/15 Fallback Testing (P1)
+
+**Status:** Not Started
+**Priority:** P1 (Deployment target compliance)
+**Severity:** Medium (Untested code paths)
+**Assignee:** TBD
+**Target Completion:** Before release
+
+### Problem
+
+Code has 18 `@available(macOS 26.0, *)` guards but no documented testing for macOS 14/15:
+
+- LLM features fall back to heuristics (never tested)
+- No CI testing on macOS 14/15
+- Minimum deployment target is macOS 14, but only tested on 26
+
+**Risk:** App may crash or have degraded UX on stated minimum OS.
+
+### Tasks
+
+- [ ] Test all `@available(macOS 26, *)` fallback paths on macOS 14
+- [ ] Document degraded experience (timeline summaries = heuristics, no LLM)
+- [ ] Add CI job for macOS 14 compatibility
+- [ ] Test on macOS 15 (one version before current)
+- [ ] Update README with feature availability matrix
+
+### Files
+
+Key files with availability guards:
+- `Contextify/Contextify/FoundationLLM.swift` (14 guards)
+- `Contextify/Contextify/LLMHealthCheck.swift`
+- `Contextify/Contextify/SynthesisService.swift`
+- `Contextify/Contextify/TranscriptMetadataPostProcessor.swift`
+
+### Acceptance Criteria
+
+- [ ] App launches successfully on macOS 14
+- [ ] Timeline displays with heuristic summaries (no LLM)
+- [ ] No crashes when LLM APIs unavailable
+- [ ] README documents: "LLM features require macOS 26+"
+- [ ] CI runs tests on macOS 14 runner
+
+### Estimated Effort
+
+**4-6 hours**
+
+---
+
+## Projects vs Transcripts Window UX Review (P2 - Design Question)
+
+**Status:** Not Started
+**Priority:** P2 (User experience question)
+**Severity:** Low (Works, but could be clearer)
+**Assignee:** TBD
+**Target Completion:** Deferred until user feedback
+
+### Question
+
+Should `ProjectsWindow` and `TranscriptInventoryView` be unified into single interface?
+
+**Current State:**
+- `Cmd+Shift+P` → ProjectsWindow (project discovery, ingestion progress)
+- Window menu → Transcripts (session browsing, metadata)
+
+**Options:**
+
+**Option A: Keep Separate (Current)**
+- Pros: Clear separation of concerns
+- Cons: Two windows for related concepts, confusing for new users
+
+**Option B: Unified "Sessions" Window**
+- Left sidebar: Projects (expandable)
+  - When expanded: Shows sessions for that project
+- Right detail: Session detail with metadata
+- Pros: Single mental model, better discoverability
+- Cons: More complex UI, harder to scan all projects
+
+**Option C: Hybrid**
+- Keep ProjectsWindow for discovery/management
+- Enhance Timeline window with session switcher (dropdown)
+- Deprecate separate Transcripts window
+- Pros: Simplifies to 2 windows (Timeline + Projects)
+- Cons: Timeline becomes more complex
+
+### Recommendation
+
+**Defer until user feedback:**
+- Current separation works
+- Focus on fixing bugs first (P0/P1 items)
+- Revisit after App Store launch with telemetry
+
+### Tasks (If Pursuing)
+
+- [ ] Gather user feedback on current UX (survey/interviews)
+- [ ] Create mockups for Option B and C
+- [ ] User test with 3-5 people
+- [ ] Make decision based on data
+- [ ] Implement chosen option
+
+### Estimated Effort
+
+- **Research:** 2 hours
+- **Implementation:** 8-12 hours (if unifying)
+
+---
+
+## Test Coverage Expansion (P2)
+
+**Status:** Not Started
+**Priority:** P2 (Code quality)
+**Severity:** Low (Coverage gaps)
+**Assignee:** TBD
+**Target Completion:** Ongoing
+
+### Problem
+
+Only 12 test files for ~100 Swift files. Major gaps:
+
+**Untested Components:**
+- `ProjectSwitcherView.swift` (563 lines, no tests)
+- `ActiveSessionPolicyEngine.swift` (policy logic untested)
+- `TranscriptWatcher.swift` (file monitoring untested)
+- `DatabaseMigration.swift` (v1-v23 migrations untested)
+
+**Current Coverage:** ~15%
+**Target:** 60%+ for core logic
+
+### Tasks
+
+- [ ] Add tests for ProjectSwitcherView (drag-drop, keyboard shortcuts)
+- [ ] Add tests for ActiveSessionPolicyEngine (policy decision logic)
+- [ ] Add tests for TranscriptWatcher (file watching, debouncing)
+- [ ] Add tests for DatabaseMigration (all 23 migrations)
+- [ ] Add tests for HooverEngine edge cases
+- [ ] Set up code coverage reporting in CI
+
+### Estimated Effort
+
+**12-16 hours** (prioritize core logic first)
+
+---
+
+## Additional P2 Items (Brief)
+
+### Performance Benchmarking (P2)
+- Benchmark discovery time (10, 50, 100 projects)
+- Benchmark LLM summary generation (batch sizes)
+- Add XCTest performance tests
+- Document P95 targets
+- **Effort:** 3-4 hours
+
+### Build Parity Verification (P1)
+- Verify `bash scripts/xc.sh build` == Xcode Run
+- Document any differences
+- **Effort:** 1-2 hours
+
+### Status Bar Indicator (P1)
+- Implement NSStatusBar menubar icon
+- Show processing status, errors
+- Always-on access when window closed
+- **Effort:** 6-8 hours
+- **Reference:** AppDelegate.swift:83 TODO comment
+
+### Git Status Display (P2)
+- Show ahead/behind main
+- Show staged/unstaged counts
+- Display next to branch name
+- **Effort:** 4-6 hours
+
+### Release Automation (P2)
+- Port FileKitty's `tools/release.py`
+- Automate: build → sign → notarize → DMG → GitHub release
+- **Effort:** 4-6 hours
+
+### LLM Content Moderation (P2)
+- Pre-filter expletives from summaries
+- Simple regex-based filter
+- **Effort:** 2-3 hours
+
+### Context Window Enhancement (P2)
+- Add prev1/prev2 context to LLM prompts
+- Improve summary quality with surrounding entries
+- **Effort:** 3-4 hours
+- **Reference:** Multiple TODO comments in code
+
+---
+
+**Last Updated:** 2025-11-08

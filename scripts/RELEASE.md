@@ -353,7 +353,7 @@ spctl --assess --type install dist/Contextify.dmg
 
 **Current Workaround:** Using `strict=False` mode (see line 173 in sign_and_notarize.py)
 
-**Long-term Fix:** Phase 1 from `build/notes/release-readiness.md` (venv auto-repair implemented)
+**Long-term Fix:** Phase 1 from `build/docs/operations/release/release-readiness.md` (venv auto-repair implemented)
 
 ## Reference
 
@@ -383,8 +383,8 @@ Contextify's release infrastructure is adapted from FileKitty but differs:
 
 ### Documentation
 
-- Release readiness: `build/notes/release-readiness.md`
-- Distribution strategy: `build/notes/marketing/distribution-strategy.md`
+- Release readiness: `build/docs/operations/release/release-readiness.md`
+- Distribution strategy: `build/docs/operations/marketing/distribution-strategy.md`
 - Build scripts: `scripts/QUICK-REFERENCE.md`
 
 ## Advanced Usage

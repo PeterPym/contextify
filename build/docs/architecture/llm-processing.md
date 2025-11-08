@@ -1,0 +1,383 @@
+# LLM Processing Architecture
+
+**Status:** Production (macOS 26+ Apple Intelligence)
+**Platform:** FoundationLLM (on-device)
+**Minimum:** macOS 26.0 (Tahoe) for LLM features; older systems use fallbacks
+
+---
+
+## Executive Summary
+
+Contextify uses **two independent LLM processing queues** for different content generation tasks:
+
+1. **Timeline Summary Generation** (TimelineCacheMissGenerator)
+   - Generates present/past form summaries for conversation entries
+   - Triggered: When displaying timeline entries without cached summaries
+   - Queue: Batched FIFO processing (10 items/batch, 2s delays)
+
+2. **Transcript Metadata Generation** (TranscriptMetadataOrchestrator)
+   - Generates titles, descriptions, and topics for entire transcripts
+   - Triggered: When viewing transcript inventory
+   - Queue: Concurrent task-per-transcript processing
+
+Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
+
+---
+
+## System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Contextify Application                      │
+└─────────────────────────────────────────────────────────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+          ┌─────────▼────────┐     ┌─────────▼────────────┐
+          │  Timeline View   │     │ Inventory View       │
+          │  (Main Window)   │     │ (Transcript Browser) │
+          └─────────┬────────┘     └─────────┬────────────┘
+                    │                        │
+        ┌───────────▼──────────┐  ┌─────────▼────────────────┐
+        │ ConversationMonitor  │  │ TranscriptInventoryView  │
+        │  - Loads feed        │  │  - Loads sessions        │
+        │  - Detects misses    │  │  - Requests metadata     │
+        └───────────┬──────────┘  └─────────┬────────────────┘
+                    │                       │
+        ┌───────────▼──────────────┐ ┌─────▼────────────────────┐
+        │ TimelineCacheMissGenerator│ │TranscriptMetadataOrchestrator│
+        │                           │ │                          │
+        │ • Queue: FIFO batch       │ │ • Queue: Concurrent tasks│
+        │ • Batch: 10 items         │ │ • Limit: Circuit breaker │
+        │ • Delay: 2s between       │ │ • Dedup: Active tasks    │
+        │ • Cache: SQL keyed by     │ │ • Cache: SQL by hash     │
+        │   content+window hash     │ │                          │
+        └───────────┬──────────────┘ └─────┬────────────────────┘
+                    │                       │
+                    └───────────┬───────────┘
+                                │
+                    ┌───────────▼──────────┐
+                    │    FoundationLLM     │
+                    │  (Apple Intelligence)│
+                    │                      │
+                    │ • On-device          │
+                    │ • Session-based      │
+                    │ • macOS 26+ only     │
+                    └──────────────────────┘
+```
+
+---
+
+## LLM Queue #1: Timeline Summary Generation
+
+**Purpose:** Generate human-readable summaries for timeline entries (e.g., "Claude proposes to implement...", "User asks about...").
+
+**Location:** `Contextify/Contextify/TimelineCacheMissGenerator.swift`
+
+**Triggered By:**
+- Timeline entry display in ConversationMonitor
+- Cache miss detected (no cached summary for content+window hash)
+- Real-time during conversation monitoring
+
+**Processing Model:**
+- **Queue Type:** FIFO with batching
+- **Batch Size:** 10 items per batch
+- **Rate Limit:** 2-second delay between batches
+- **Deduplication:** Content+window hash key
+- **Error Handling:** Per-item retry (3 attempts), circuit breaker on 5 consecutive failures
+- **Cache:** SQL `timeline_cache` table
+
+**Output:**
+- `presentForm`: "Claude proposes to implement..."
+- `pastForm`: "Claude proposed to implement..."
+- `selectedForm`: Which form to display
+- `disposition`: "directive" | "question" | "response"
+
+**Detailed Documentation:** [`../components/timeline-cache.md`](../components/timeline-cache.md)
+
+---
+
+## LLM Queue #2: Transcript Metadata Generation
+
+**Purpose:** Generate titles, descriptions, and topic tags for entire transcripts.
+
+**Location:** `Contextify/Contextify/TranscriptMetadataOrchestrator.swift`
+
+**Triggered By:**
+- Opening transcript inventory view
+- Viewing transcript details
+- Manual refresh/regeneration
+
+**Processing Model:**
+- **Queue Type:** Concurrent tasks (one per transcript)
+- **Concurrency:** Unlimited concurrent generation
+- **Deduplication:** Active task tracking by transcript URL
+- **Error Handling:** Circuit breaker (60% failure threshold, 5-minute window)
+- **Cache:** SQL `transcript_metadata` table with hash verification
+
+**Output:**
+- `title`: "Implement Dark Mode Toggle" (1-8 words)
+- `description`: Brief summary (1-2 sentences)
+- `topics`: ["SwiftUI", "Settings", "UI/UX"] (3-7 tags)
+- `confidence`: "high" | "medium" | "low"
+
+**Context Strategy:**
+- **Full Strategy:** Transcripts ≤150 exchanges (all content)
+- **Adaptive Strategy:** Transcripts >150 exchanges (smart sampling)
+
+**Detailed Documentation:** *(To be created: `transcript-metadata-llm-architecture.md`)*
+
+---
+
+## Status Bar Integration
+
+The status bar (bottom of main window) **aggregates both queues** to show unified LLM processing status.
+
+**Implementation:** `Contextify/Contextify/StatusBarView.swift`, `StatusBarViewModel.swift`
+
+**Observed Queues:**
+1. `timeline.cacheMissGenerator` (TimelineCacheMissGenerator)
+2. `TranscriptMetadataOrchestrator.shared` (singleton)
+
+**Protocol:** Both conform to `QueueStatsProvider` protocol:
+```swift
+protocol QueueStatsProvider: Sendable {
+    func observeQueue() -> AsyncStream<QueueStats>
+}
+```
+
+**Aggregation Strategy:**
+- StatusBarViewModel monitors multiple providers concurrently
+- Each provider yields `QueueStats` updates via AsyncStream
+- ViewModel applies latest stats from any provider (last-write-wins)
+- UI shows combined state: pending count, processing status, ETA, errors
+
+**Display States:**
+- **Not monitoring:** No providers available (before timeline starts)
+- **Processing N items:** Active LLM generation (shows count + ETA)
+- **N pending:** Items queued but not yet processing
+- **Up to date:** All queues empty, no errors
+- **N errors:** Recent failures (shows error count + tooltip)
+
+**Event Flow:**
+```
+TimelineCacheMissGenerator                TranscriptMetadataOrchestrator
+         │                                            │
+         ├─ notifyQueueChanged() ────────────┐       │
+         │                                   │       │
+         │                        ┌──────────▼───────▼──────┐
+         │                        │   StatusBarViewModel     │
+         │                        │   aggregateStats()       │
+         │                        └──────────┬───────────────┘
+         │                                   │
+         ├─ observeQueue() ──────────────────┤
+         │   AsyncStream                     │
+         │                                   ▼
+         │                        ┌──────────────────────────┐
+         │                        │     StatusBarView        │
+         │                        │  (UI updates on change)  │
+         │                        └──────────────────────────┘
+```
+
+---
+
+## Common Infrastructure
+
+### FoundationLLM Integration
+
+Both systems use the shared `FoundationLLM` singleton for LLM calls.
+
+**Location:** `Contextify/Contextify/FoundationLLM.swift`
+
+**Key Features:**
+- **Session Management:** Isolated sessions per kind/provider/transcript
+- **Availability Check:** `LLMHealthCheck.shared.checkHealth()` with 30s TTL
+- **Fallback Behavior:** Heuristic generation on macOS < 26.0 or LLM unavailable
+- **Retry Logic:** Exponential backoff on transient failures
+- **Fast Paths:** Slash command detection, affirmative/negative detection, acknowledgement detection
+
+**Session Keys:**
+- Timeline: Per `(kind, provider)` tuple (e.g., "assistant/claude-code")
+- Metadata: Per transcript ID (isolated context)
+
+### Slash Command Handling
+
+Slash commands (e.g., `/clear`, `/compact`) use a **fast path** that skips LLM calls for instant response.
+
+**Detection** (`FoundationLLM.swift:1013-1053`):
+- `<command-name>/command</command-name>` tags (Claude Code format)
+- Messages starting with `/command`
+- Supports 30+ commands from Claude Code and Codex CLI
+
+**Prefix Policy** (`FoundationLLM.swift:1320-1362`):
+User summaries require allowed prefixes. Command-specific verbs (e.g., "You cleared", "You compacted") prevent fallback prefix prepending that would create malformed summaries like "You requested Claude Code You cleared..."
+
+### SQL Caching
+
+Both systems cache results in SQL to avoid duplicate LLM calls:
+
+**Timeline Cache:**
+- Table: `timeline_cache`
+- Key: `SHA256(content + window)`
+- Fields: `present_form`, `past_form`, `selected_form`, `disposition`
+
+**Metadata Cache:**
+- Table: `transcript_metadata`
+- Key: `transcript_id`
+- Freshness: Verified by `SHA256(transcript_content)` and version numbers
+- Fields: `title`, `description`, `topics` (JSON), `confidence`, etc.
+
+### Error Handling Patterns
+
+**Timeline (Per-Item Retry):**
+```swift
+retry: for attempt in 1...3 {
+    do {
+        return try await generateSummary()
+    } catch {
+        if attempt < 3 { continue retry }
+        trackError(reason)  // Status bar sees this
+        throw error
+    }
+}
+```
+
+**Metadata (Circuit Breaker):**
+```swift
+guard await circuitBreaker.allow() else {
+    return HeuristicMetadata.generate()  // Fallback
+}
+do {
+    return try await generateWithLLM()
+} catch {
+    await circuitBreaker.recordFailure()
+    throw error
+}
+```
+
+---
+
+## Performance Characteristics
+
+### Timeline Summary Generation
+
+- **Latency:** ~200ms per item (on-device LLM)
+- **Throughput:** ~5 items/second (10-item batches with 2s delays)
+- **Peak Queue:** Unbounded (capped at 5,000 items)
+- **Memory:** ~50KB per pending item (content + window)
+
+### Transcript Metadata Generation
+
+- **Latency:** 2-8 seconds per transcript (depends on size)
+- **Throughput:** Concurrent (limited by circuit breaker)
+- **Context Building:** 100-500ms (sampling for large transcripts)
+- **Memory:** ~1MB per active task (full transcript content)
+
+---
+
+## Monitoring & Observability
+
+### Logs
+
+Both systems use OSLog with subsystem `dev.contextify`:
+
+**Timeline:**
+- Category: `Timeline.CacheMissGenerator`
+- Key events: Batch processing, cache hits/misses, errors
+
+**Metadata:**
+- Category: `dev.contextify.metadata`
+- Key events: Generation start/complete, circuit breaker state
+
+**Status Bar:**
+- Category: `StatusBar`
+- Key events: Provider changes, aggregation updates
+
+### Status Bar Real-Time Monitoring
+
+The status bar provides **unified visibility** into both LLM queues:
+
+```
+[●] Apple Intelligence  |  Processing 12 items (~6s)
+```
+
+- Green dot: FoundationLLM available
+- Gray dot: LLM unavailable (macOS < 26 or disabled)
+- Red dot: LLM error (need to toggle in System Settings)
+
+**Developer Logs:**
+```bash
+# Watch status bar activity
+log stream --predicate 'subsystem == "dev.contextify" AND category == "StatusBar"' --level info
+
+# Watch timeline generation
+log stream --predicate 'subsystem == "dev.contextify" AND category CONTAINS "Timeline"' --level info
+
+# Watch metadata generation
+log stream --predicate 'subsystem == "dev.contextify.metadata"' --level info
+```
+
+---
+
+## Fallback Behavior (macOS < 26.0)
+
+When FoundationLLM is unavailable:
+
+**Timeline:**
+- Falls back to basic text: "Claude sent a message", "User asked a question"
+- No LLM calls, no cache writes
+- Instant display (no latency)
+
+**Metadata:**
+- Uses heuristic generation based on message patterns
+- Title: "Brief Session" or "Developer Chat"
+- Description: Extracted from first/last user messages
+- Topics: Empty array
+- Confidence: "low"
+
+---
+
+## Future Considerations
+
+### Potential Enhancements
+
+1. **True Aggregation:** Sum pending counts from both queues instead of last-write-wins
+2. **Queue Priority:** Allow urgent metadata generation to preempt timeline generation
+3. **Batch Metadata:** Group multiple transcript metadata requests into batches
+4. **ETA Calculation:** Add ETA support for metadata generation (currently 0)
+5. **Error Details:** Surface specific error types in status bar tooltip
+6. **Offline Mode:** Cache-only operation when LLM unavailable
+
+### Scalability Notes
+
+- Timeline queue can handle thousands of pending items
+- Metadata circuit breaker prevents runaway failures
+- Both systems designed for single-user desktop use (not server-scale)
+
+---
+
+## Related Documentation
+
+- **Timeline Cache + LLM:** [`../components/timeline-cache.md`](../components/timeline-cache.md)
+- **Conversation Monitor State:** [`conversation-monitor-state.md`](./conversation-monitor-state.md)
+- **Status Bar Implementation:** `build/docs/archive/feature-specs/status-bar.md` (original spec)
+- **SQL Backend:** [`sql-backend.md`](./sql-backend.md)
+- **Logging Guidelines:** [`../guides/logging-best-practices.md`](../guides/logging-best-practices.md)
+
+---
+
+## Quick Reference
+
+| Aspect | Timeline Summaries | Transcript Metadata |
+|--------|-------------------|---------------------|
+| **Purpose** | Entry-level summaries | Document-level titles/topics |
+| **Trigger** | Timeline display | Inventory view |
+| **Queue** | FIFO batched | Concurrent tasks |
+| **Batch** | 10 items | N/A (concurrent) |
+| **Rate Limit** | 2s between batches | Circuit breaker |
+| **Latency** | ~200ms/item | 2-8s/transcript |
+| **Cache Key** | content+window hash | transcript_id + SHA256 |
+| **Error Strategy** | Per-item retry | Circuit breaker |
+| **Fallback** | Basic text | Heuristic generation |
+| **Observability** | `Timeline.CacheMissGenerator` | `dev.contextify.metadata` |
+| **Implementation** | TimelineCacheMissGenerator.swift | TranscriptMetadataOrchestrator.swift |

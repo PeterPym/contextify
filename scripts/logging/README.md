@@ -227,5 +227,5 @@ Common gap patterns:
 
 ## Related
 
-- **Logging preferences:** `build/notes/technical-reference/logging-preferences.md`
+- **Logging best practices:** `build/docs/guides/logging-best-practices.md`
 - **Log capture:** `scripts/LOG-CAPTURE-README.md`
