@@ -55,25 +55,9 @@ public final class TranscriptWatcher {
       return
     }
 
-    // Perform initial ingestion of existing content before starting watcher
-    do {
-      log.info("[WATCHER-INGEST-START] Performing initial ingestion for: \(transcriptId, privacy: .public)")
-      guard let transcript = try transcriptRepo.get(transcriptId) else {
-        log.error("[WATCHER-INGEST-ERROR] Transcript not found during initial ingest: \(transcriptId, privacy: .public)")
-        throw TranscriptWatcherError.transcriptNotFound
-      }
-
-      // Ingest existing content (HooverEngine resumes from last checkpoint, so safe for existing ingestions)
-      _ = try hooverEngine.hooverTranscript(
-        transcript,
-        fileURL: fileURL,
-        progress: NoOpProgressSink()
-      )
-      log.info("[WATCHER-INGEST-DONE] Initial ingestion complete for: \(transcriptId, privacy: .public)")
-    } catch {
-      log.error("[WATCHER-INGEST-ERROR] Initial ingestion failed for \(transcriptId, privacy: .public): \(error, privacy: .public)")
-      // Continue to set up watcher even if initial ingest fails
-    }
+    // NOTE: Initial ingestion removed - orchestrator always hoovers during discovery
+    // before starting watchers, so this was 100% redundant (causing 50% wasted work).
+    // Watcher now only monitors FUTURE file changes, not existing content.
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
