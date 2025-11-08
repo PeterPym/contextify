@@ -41,7 +41,7 @@ enum TimelineError: Swift.Error {
         case .cancelled:
             return "Operation was cancelled."
         case .llmUnavailable(let reason):
-            return reason
+            return "\(reason) This typically recovers after a minute or two. If it happens frequently or persists, consider contacting support via Help menu."
         }
     }
 }
