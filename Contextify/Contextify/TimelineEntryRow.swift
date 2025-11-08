@@ -1,5 +1,8 @@
 import SwiftUI
 import AppKit
+import OSLog
+
+private let log = Logger(subsystem: "dev.contextify.timeline", category: "EntryRow")
 
 extension Notification.Name {
     static let revealTranscript = Notification.Name("revealTranscript")
@@ -89,6 +92,9 @@ struct TimelineEntryRow: View, Equatable {
                     regenerateSummary()
                 }
             }
+        }
+        .onAppear {
+            log.info("[ROW-APPEAR] Entry rendered: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) summary: \(String(entry.summary.prefix(40)), privacy: .public)...")
         }
     }
 

@@ -38,6 +38,18 @@ struct ConversationTimelineView: View {
                 .help("Timeline fetch failed. Retry now.")
             }
         }
+        .onChange(of: monitor.entries.count) { oldCount, newCount in
+            if newCount > oldCount {
+                let delta = newCount - oldCount
+                log.info("[VIEW-UPDATE] Timeline entries changed: \(oldCount, privacy: .public)→\(newCount, privacy: .public) (+\(delta, privacy: .public))")
+            }
+        }
+        .onChange(of: monitor.visibleEntries.count) { oldCount, newCount in
+            if newCount > oldCount {
+                let delta = newCount - oldCount
+                log.info("[VIEW-VISIBLE] Visible entries changed: \(oldCount, privacy: .public)→\(newCount, privacy: .public) (+\(delta, privacy: .public))")
+            }
+        }
     }
 
     private var header: some View {

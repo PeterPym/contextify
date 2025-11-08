@@ -729,7 +729,12 @@ final class ConversationMonitor {
 
     @MainActor
     private func appendEntry(_ e: TimelineEntry) {
+        let beforeCount = state.entries.count
         state.append(e)
+        let afterCount = state.entries.count
+
+        log.info("[TIMELINE-APPEND] Entry appended: \(e.id, privacy: .public) kind: \(e.kind.rawValue, privacy: .public) timestamp: \(e.timestamp, privacy: .public) timeline_count: \(beforeCount, privacy: .public)→\(afterCount, privacy: .public)")
+        log.debug("[TIMELINE-APPEND] Summary: \(e.summary.prefix(60), privacy: .public)...")
     }
 
     @MainActor
@@ -1424,12 +1429,27 @@ final class ConversationMonitor {
     /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
     @MainActor
     func replaceVisibleSnapshot(_ ids: [UUID]) {
+        log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) entries in viewport")
+
         guard !doingProgrammaticScroll else {
             log.debug("[SUMM-SCROLL] Ignoring visibility update during programmatic scroll")
             return
         }
 
         let current = Set(ids)
+        let newlyVisible = current.subtracting(lastVisibleIDs)
+        if !newlyVisible.isEmpty {
+            log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible entries")
+            for id in newlyVisible.prefix(5) {  // Log first 5
+                if let entry = lookup(id) {
+                    log.info("[VIEWPORT-ENTRY] Now visible: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) action: \(entry.action, privacy: .public)")
+                }
+            }
+            if newlyVisible.count > 5 {
+                log.info("[VIEWPORT-ENTRY] ... and \(newlyVisible.count - 5, privacy: .public) more newly visible entries")
+            }
+        }
+
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
 
@@ -1730,7 +1750,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func processIncrementalUpdate() async {
-        log.debug("🔄 processIncrementalUpdate called - updateInFlight=\(self.updateInFlight)")
+        log.info("[INCR-UPDATE-START] Processing incremental update for project: \(currentProjectId ?? "none", privacy: .public)")
         if updateInFlight { updateDirty = true; return }
         updateInFlight = true
         defer {
@@ -1742,13 +1762,13 @@ final class ConversationMonitor {
             updateDirty = false
 
             guard let projectId = currentProjectId, orchestrator != nil else {
-                log.debug("processIncrementalUpdate: No projectId or orchestrator yet (normal during startup)")
+                log.debug("[INCR-UPDATE-SKIP] No projectId or orchestrator yet (normal during startup)")
                 return
             }
 
             // If no cursor, do full reload instead
             guard let cursor = lastSeenCursor else {
-                log.debug("🔄 No cursor available, doing full reload")
+                log.debug("[INCR-UPDATE-RELOAD] No cursor available, doing full reload")
                 await loadFeedFromSQL()
                 return
             }
@@ -1756,7 +1776,7 @@ final class ConversationMonitor {
             do {
                 let startTime = Date()
 
-                log.debug("🔄 Fetching new entries after cursor for projectId=\(projectId)")
+                log.info("[INCR-UPDATE-FETCH] Fetching new entries after cursor for projectId: \(projectId, privacy: .public)")
                 // Get new entries using keyset pagination (prevents duplicates/skips)
                 let newEntries = try orchestrator.getEntriesAfterCursor(
                     forProject: projectId,
@@ -1764,11 +1784,17 @@ final class ConversationMonitor {
                 )
 
                 guard !newEntries.isEmpty else {
-                    log.debug("🔄 No new entries in incremental update")
+                    log.debug("[INCR-UPDATE-EMPTY] No new entries in incremental update")
                     break  // No more entries, exit the drain loop
                 }
 
-                log.debug("🔄 Found \(newEntries.count) new entries to process")
+                log.info("[INCR-UPDATE-ENTRIES] ✅ Found \(newEntries.count, privacy: .public) new entries to process")
+                for (index, entry) in newEntries.prefix(5).enumerated() {  // Log first 5
+                    log.info("[INCR-UPDATE-ENTRY] Entry \(index + 1, privacy: .public): \(entry.id, privacy: .public) kind: \(entry.kind, privacy: .public) timestamp: \(entry.timestamp, privacy: .public)")
+                }
+                if newEntries.count > 5 {
+                    log.info("[INCR-UPDATE-ENTRY] ... and \(newEntries.count - 5, privacy: .public) more entries")
+                }
 
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
@@ -1834,6 +1860,9 @@ final class ConversationMonitor {
                 }
 
                 lastUpdate = Date()
+
+                let elapsed = Date().timeIntervalSince(startTime)
+                log.info("[INCR-UPDATE-APPENDED] ✅ Appended \(addedCount, privacy: .public) new entries to timeline in \(Int(elapsed * 1000), privacy: .public)ms")
 
                 // P1-2: Debounce policy evaluation to reduce churn during heavy ingestion
                 if isReadyForUpdates {
@@ -2096,15 +2125,21 @@ final class ConversationMonitor {
             }
 
             await MainActor.run {
-                log.info("🔄 Starting/verifying watchers for \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new, \(orphaned.count) pending)")
+                log.info("[SESSION-REBUILD-START] Starting/verifying watchers for \(resolved.count, privacy: .public) transcripts (\(resolved.filter(\.wasCreated).count, privacy: .public) new, \(orphaned.count, privacy: .public) pending)")
             }
 
             // Start watchers for ALL transcripts
             for tr in resolved {
                 if Task.isCancelled { return }
+                await MainActor.run {
+                    log.info("[SESSION-WATCHER-START] Starting watcher for transcript: \(tr.transcriptId, privacy: .public) provider: \(tr.provider, privacy: .public)")
+                }
                 // watch() is idempotent: checks isWatching() and skips if already active
                 // It also performs initial hoovering, ensuring orphaned transcripts get processed
                 try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
+                await MainActor.run {
+                    log.info("[SESSION-WATCHER-DONE] ✅ Watcher started for: \(tr.transcriptId, privacy: .public)")
+                }
             }
 
             // Run maintenance asynchronously in background (non-blocking)
@@ -2147,9 +2182,18 @@ final class ConversationMonitor {
             entryCounts: entryCounts
         )
         await MainActor.run {
-            self.log.info("📝 Mapped \(updatedTranscripts.count) transcripts to sessions")
+            self.log.info("[SESSION-REBUILD-MAP] Mapped \(updatedTranscripts.count, privacy: .public) transcripts to sessions")
             self.allSessions = sessions
-            self.log.info("✅ allSessions updated with \(self.allSessions.count) sessions")
+            self.log.info("[SESSION-REBUILD-DONE] ✅ allSessions updated with \(self.allSessions.count, privacy: .public) sessions")
+
+            // Log session details for debugging
+            for session in self.allSessions.prefix(10) {  // Log first 10 to avoid spam
+                self.log.info("[SESSION-LIST] Session: \(session.identifier, privacy: .public) provider: \(session.provider, privacy: .public) entries: \(session.entryCount, privacy: .public)")
+            }
+            if self.allSessions.count > 10 {
+                self.log.info("[SESSION-LIST] ... and \(self.allSessions.count - 10, privacy: .public) more sessions")
+            }
+
             Task { await self.loadFeedFromSQL() }
         }
     }
@@ -2318,15 +2362,30 @@ final class ConversationMonitor {
     /// Active session switching with system event emission
     @MainActor
     private func setActive(from: SessionKey?, to: SessionKey, reason: SwitchReason, emit: Bool) async {
-        guard let pid = currentProjectId else { return }
+        log.info("[SESSION-SWITCH-START] Switching to session: \(to.sessionId, privacy: .public) provider: \(to.provider.rawValue, privacy: .public) reason: \(reason.rawValue, privacy: .public)")
+
+        guard let pid = currentProjectId else {
+            log.warning("[SESSION-SWITCH-ERROR] No current project ID")
+            return
+        }
         guard let t = allSessions.first(where: { $0.identifier == to.sessionId && $0.provider == to.provider }) else {
-            log.warning("Session \(to.sessionId) not found in allSessions - cannot setActive")
+            log.warning("[SESSION-SWITCH-ERROR] Session \(to.sessionId, privacy: .public) not found in allSessions - cannot setActive")
             return
         }
 
         lastActiveKey = to
         activeSession = t
-        log.debug("Set active session: \(to.sessionId) (\(to.provider.displayName))")
+        log.info("[SESSION-SWITCH-ACTIVE] ✅ Active session set to: \(to.sessionId, privacy: .public) (\(to.provider.displayName, privacy: .public))")
+
+        // CRITICAL FIX: Ensure watcher is running for newly active session
+        // TranscriptWatcher.watch() is idempotent, safe to call multiple times
+        do {
+            log.info("[SESSION-SWITCH-WATCH-VERIFY] Verifying watcher for: \(t.identifier, privacy: .public)")
+            try orchestrator.startWatchingTranscript(transcriptId: t.identifier, fileURL: t.fileURL)
+            log.info("[SESSION-SWITCH-WATCH-OK] ✅ Watcher active for: \(t.identifier, privacy: .public)")
+        } catch {
+            log.error("[SESSION-SWITCH-WATCH-ERROR] ❌ Failed to start watcher: \(error.localizedDescription, privacy: .public)")
+        }
 
         if emit {
             let payload: [String: Any] = [
@@ -2347,13 +2406,15 @@ final class ConversationMonitor {
                 try await orchestrator.insertSystemEvent(ev)
                 seenSystemEventIds.insert(ev.id)  // F: de-dupe safety
                 publishTypedEvent(to: to, reason: reason)
-                log.info("System event persisted for session switch: \(reason.rawValue)")
+                log.info("[SESSION-SWITCH-EVENT] System event persisted for session switch: \(reason.rawValue, privacy: .public)")
             } catch {
-                log.error("Failed to persist system event: \(error.localizedDescription, privacy: .public)")
+                log.error("[SESSION-SWITCH-ERROR] Failed to persist system event: \(error.localizedDescription, privacy: .public)")
                 // Degrade gracefully: still publish typed event for in-app subscribers
                 publishTypedEvent(to: to, reason: reason)
             }
         }
+
+        log.info("[SESSION-SWITCH-DONE] ✅ Switch complete for: \(to.sessionId, privacy: .public)")
     }
 
     /// Compute the newest session based on last activity
