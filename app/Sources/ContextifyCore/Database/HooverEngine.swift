@@ -186,8 +186,18 @@ public final class HooverEngine {
   ) throws -> String {
     log.info("[HOOVER-START] Starting hoover for transcript: \(transcript.id, privacy: .public) from checkpoint: \(transcript.lastProcessedLine, privacy: .public)")
     let startTime = Date()
+
+    // Verify file size before opening handle
+    let fileSize = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64 ?? 0
+    log.debug("[HOOVER-FILE-SIZE] File size: \(fileSize) bytes for transcript: \(transcript.id, privacy: .public)")
+
     let handle = try FileHandle(forReadingFrom: fileURL)
     defer { try? handle.close() }
+
+    // Verify FileHandle can see the file content
+    let endOffset = handle.seekToEndOfFile()
+    handle.seek(toFileOffset: 0) // Reset to beginning
+    log.debug("[HOOVER-FILE-VERIFY] File handle opened, size: \(endOffset) bytes for transcript: \(transcript.id, privacy: .public)")
 
     progress.didStartTranscript(name: fileURL.lastPathComponent, totalLines: transcript.lineCount)
 
@@ -258,7 +268,10 @@ public final class HooverEngine {
 
     // Process remaining lines
     while true {
-      guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else { break }
+      guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
+        log.debug("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public) for transcript: \(transcript.id, privacy: .public)")
+        break
+      }
       buffer.append(chunk)
 
       while let i = buffer.firstIndex(of: nl) {
@@ -377,6 +390,14 @@ public final class HooverEngine {
         lineCount: lineNo,
         previousEntries: &previousEntries
       )
+    }
+
+    // Verify checkpoint was updated correctly
+    if let updatedTranscript = try? db.read({ db in try Transcript.fetchOne(db, key: transcript.id) }) {
+      log.debug("[HOOVER-CHECKPOINT-VERIFY] Checkpoint updated: \(transcript.lastProcessedLine, privacy: .public) → \(updatedTranscript.lastProcessedLine, privacy: .public)")
+      if updatedTranscript.lastProcessedLine != lineNo {
+        log.error("[HOOVER-CHECKPOINT-MISMATCH] ⚠️ Expected checkpoint \(lineNo, privacy: .public), but database has \(updatedTranscript.lastProcessedLine, privacy: .public)")
+      }
     }
 
     let duration = Date().timeIntervalSince(startTime)
