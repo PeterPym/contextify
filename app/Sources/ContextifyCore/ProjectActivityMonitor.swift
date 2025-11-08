@@ -205,6 +205,7 @@ public actor ProjectActivityMonitor {
   }
 
   private func discoverAllProjects() async throws {
+    let startTime = Date()
     log.info("[DISC-SCAN-START] Starting discovery scan for all projects")
 
     // Discover projects from Claude Code and Codex CLI transcript roots
@@ -213,10 +214,16 @@ public actor ProjectActivityMonitor {
     let codexRoot = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".codex/sessions")
 
+    var claudeCount = 0
+    var codexCount = 0
+
     // Discover Claude Code projects
     if FileManager.default.fileExists(atPath: claudeRoot.path) {
       log.info("[DISC-SCAN-ROOT] Scanning Claude Code root: \(claudeRoot.path, privacy: .public)")
-      try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
+      let providerStartTime = Date()
+      claudeCount = try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
+      let duration = Date().timeIntervalSince(providerStartTime)
+      log.info("[DISC-SCAN-ROOT-DONE] Claude Code discovery complete: \(claudeCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
       log.debug("[DISC-SCAN-ROOT] Claude Code root not found: \(claudeRoot.path, privacy: .public)")
     }
@@ -224,20 +231,36 @@ public actor ProjectActivityMonitor {
     // Discover Codex CLI projects
     if FileManager.default.fileExists(atPath: codexRoot.path) {
       log.info("[DISC-SCAN-ROOT] Scanning Codex CLI root: \(codexRoot.path, privacy: .public)")
-      try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
+      let providerStartTime = Date()
+      codexCount = try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
+      let duration = Date().timeIntervalSince(providerStartTime)
+      log.info("[DISC-SCAN-ROOT-DONE] Codex CLI discovery complete: \(codexCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
       log.debug("[DISC-SCAN-ROOT] Codex CLI root not found: \(codexRoot.path, privacy: .public)")
     }
 
-    log.info("[DISC-SCAN-DONE] Discovery scan complete")
+    let totalDuration = Date().timeIntervalSince(startTime)
+    log.info("[DISC-SCAN-DONE] Discovery complete in \(Int(totalDuration * 1000), privacy: .public)ms: Claude=\(claudeCount, privacy: .public) Codex=\(codexCount, privacy: .public)")
+
+    if totalDuration > 60.0 {
+      log.warning("[DISC-SCAN-SLOW] Discovery took \(Int(totalDuration), privacy: .public)s - expected < 60s")
+    }
   }
 
-  private func discoverProjectsInRoot(_ root: URL, provider: String) async throws {
+  private func discoverProjectsInRoot(_ root: URL, provider: String) async throws -> Int {
+    // Codex uses nested YYYY/MM/DD structure - requires recursive discovery
+    if provider == "codex.cli" {
+      return try await discoverCodexSessionsRecursively(root: root)
+    }
+
+    // Claude Code uses flat structure - scan immediate children
     let contents = try FileManager.default.contentsOfDirectory(
       at: root,
       includingPropertiesForKeys: [.isDirectoryKey],
       options: [.skipsHiddenFiles]
     )
+
+    var totalTranscripts = 0
 
     for directory in contents {
       var isDir: ObjCBool = false
@@ -285,6 +308,7 @@ public actor ProjectActivityMonitor {
           )
 
           log.info("[DISC-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
+          totalTranscripts += transcripts.count
         }
 
         // Ensure watcher for this project (for project-level events)
@@ -336,6 +360,88 @@ public actor ProjectActivityMonitor {
         log.error("Failed to process project directory \(projectPathForLogging, privacy: .public) [mangled: \(directory.lastPathComponent, privacy: .public)]: \(error.localizedDescription, privacy: .public)")
       }
     }
+
+    return totalTranscripts
+  }
+
+  /// Recursively discover Codex sessions (nested YYYY/MM/DD structure)
+  private func discoverCodexSessionsRecursively(root: URL) async throws -> Int {
+    let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsHiddenFiles]
+    )
+
+    guard let enumerator = enumerator else {
+      log.warning("[DISC-CODEX] Failed to create enumerator for: \(root.path, privacy: .public)")
+      return 0
+    }
+
+    var transcriptCount = 0
+    // Group transcripts by project path for batch processing
+    var transcriptsByProject: [String: [(url: URL, sessionId: String)]] = [:]
+
+    // Collect all files first (enumerator isn't async-compatible)
+    var allFiles: [URL] = []
+    while let item = enumerator.nextObject() as? URL {
+      allFiles.append(item)
+    }
+
+    // Now process files (can be async)
+    for fileURL in allFiles {
+      guard fileURL.pathExtension == "jsonl" else { continue }
+
+      do {
+        // Extract project path from transcript CWD field
+        guard let projectPath = try ProjectIdentity.extractCwdFromTranscriptForOrphaned(fileURL) else {
+          log.debug("[DISC-CODEX] No CWD found in transcript: \(fileURL.lastPathComponent, privacy: .public)")
+          continue
+        }
+
+        // Extract session ID from filename
+        let sessionId = fileURL.deletingPathExtension().lastPathComponent
+
+        // Group by project path
+        transcriptsByProject[projectPath, default: []].append((url: fileURL, sessionId: sessionId))
+        transcriptCount += 1
+
+        log.debug("[DISC-CODEX-FILE] Found transcript: \(fileURL.lastPathComponent, privacy: .public) project: \(projectPath, privacy: .public)")
+      } catch {
+        log.warning("[DISC-CODEX] Failed to extract project path from: \(fileURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      }
+    }
+
+    // Process each project's transcripts in batch
+    for (projectPath, transcripts) in transcriptsByProject {
+      do {
+        log.info("[DISC-CODEX-PROJECT] Discovering \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
+
+        // Create/upsert project in database
+        let dbProjectId = try orchestrator.getOrCreateProject(
+          name: URL(fileURLWithPath: projectPath).lastPathComponent,
+          rootPath: projectPath
+        )
+
+        // Batch discover transcripts
+        let transcriptFiles = transcripts.map { (url: $0.url, provider: "codex.cli", sessionId: $0.sessionId) }
+        try orchestrator.discoverTranscripts(
+          projectId: dbProjectId,
+          transcriptFiles: transcriptFiles,
+          progress: nil
+        )
+
+        log.info("[DISC-CODEX-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
+
+        // Ensure watcher for this project
+        let projectId = ProjectIdentity.computeProjectID(provider: "codex.cli", path: projectPath)
+        let _ = try await ensureWatcher(projectId: projectId)
+      } catch {
+        log.error("[DISC-CODEX] Failed to discover project \(projectPath, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      }
+    }
+
+    log.info("[DISC-CODEX-COMPLETE] Discovered \(transcriptCount, privacy: .public) Codex transcripts across \(transcriptsByProject.count, privacy: .public) projects")
+    return transcriptCount
   }
 
   /// Handle file system change from FSEvents

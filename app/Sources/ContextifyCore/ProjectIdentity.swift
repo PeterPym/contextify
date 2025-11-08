@@ -103,20 +103,34 @@ public enum ProjectIdentity {
     }
 
     // Parse each line until we find one with a CWD field
+    // Supports both Claude Code (top-level cwd) and Codex (payload.cwd)
     struct RecordWithCwd: Codable {
       let cwd: String?
+    }
+    struct CodexPayload: Codable {
+      let cwd: String?
+    }
+    struct CodexRecord: Codable {
+      let payload: CodexPayload?
     }
 
     let lines = content.components(separatedBy: .newlines)
     for line in lines where !line.isEmpty {
-      guard let jsonData = line.data(using: .utf8),
-            let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
-            let cwd = record.cwd else {
+      guard let jsonData = line.data(using: .utf8) else {
         continue
       }
 
-      // Return raw CWD without canonicalization (directory may not exist for orphaned projects)
-      return cwd
+      // Try Claude Code format (top-level cwd)
+      if let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
+         let cwd = record.cwd {
+        return cwd
+      }
+
+      // Try Codex format (payload.cwd)
+      if let record = try? JSONDecoder().decode(CodexRecord.self, from: jsonData),
+         let cwd = record.payload?.cwd {
+        return cwd
+      }
     }
 
     return nil
