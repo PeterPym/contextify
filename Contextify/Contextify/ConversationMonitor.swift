@@ -142,7 +142,7 @@ final class TimelineState {
 final class ConversationMonitor {
     static let shared = ConversationMonitor()
 
-    private let log = Logger(subsystem: "dev.contextify", category: "Timeline")
+    private let log = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
     private let config = MonitorConfig()
     // conversationResolver removed - now using database-backed session discovery
     private let affirmativeLexicon: Set<String> = [
@@ -182,6 +182,7 @@ final class ConversationMonitor {
 
     private(set) var isMonitoring = false
     private var isSwitchingProjects = false  // CXT-13: Suppress health monitoring during project switch
+    private var isInitializing = false  // Prevent duplicate loadFeedFromSQL during startMonitoring
     private(set) var isProcessing = false
     private(set) var lastError: String?
     private(set) var lastUpdate: Date?
@@ -211,8 +212,13 @@ final class ConversationMonitor {
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
     private(set) var isCacheGeneratorActive = false
-    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?  // For cache update notifications
-    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol?  // For project root change notifications
+    // IMPORTANT: nonisolated(unsafe) is REQUIRED for observer tokens.
+    // NSObjectProtocol is not Sendable, so removing nonisolated(unsafe) causes:
+    // "cannot access property 'X' with a non-Sendable type from nonisolated deinit"
+    // These tokens must be accessed in deinit to removeObserver(), which is nonisolated.
+    // This pattern has been suggested for removal multiple times but MUST be kept.
+    @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?   // For cache update notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol? // For project root change notifications
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
@@ -242,6 +248,19 @@ final class ConversationMonitor {
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
     @ObservationIgnored private var diagnosticsHTTPServer: DiagnosticsHTTPServer?  // External HTTP API
 
+    // Viewport tracking and background summarization (Phase 2-3)
+    @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
+    @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
+    // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
+    @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
+    @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
+    @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
+    @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
+    var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
+    // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
+    @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
+    @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
+
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
         if case .manual = followMode { return true }
@@ -250,12 +269,19 @@ final class ConversationMonitor {
     var pinnedKey: SessionKey? { followMode.pinnedKey }
 
     private init() {
+        log.info("[TIMELINE-INIT] ConversationMonitor initializing")
+
         // Set up project change notifications early, so we can react to project selection
         // even if monitoring hasn't started yet
         setupProjectChangeNotifications()
 
         // Subscribe to coordinator updates for project context changes
         subscribeToContextUpdates()
+
+        // Set up app lifecycle notifications for background summarization
+        setupAppLifecycleNotifications()
+
+        log.info("[TIMELINE-INIT] ConversationMonitor ready")
     }
 
     /// Subscribe to coordinator updates for project switching
@@ -280,6 +306,9 @@ final class ConversationMonitor {
         // Cancel background task group (health monitoring, polling, etc.)
         backgroundTasks?.cancel()
 
+        // Cancel background fill task
+        backgroundFillTask?.cancel()
+
         // Stop diagnostics HTTP server
         if let server = diagnosticsHTTPServer {
             Task {
@@ -294,6 +323,12 @@ final class ConversationMonitor {
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = appLifecycleObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = appBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
 
         log.info("ConversationMonitor deinit: cancelled tasks, stopped HTTP server, removed observers")
     }
@@ -301,8 +336,15 @@ final class ConversationMonitor {
     @MainActor
     func startMonitoring(projectId: String) {
         let taskStart = Date()
+        log.info("[TIMELINE-START] Starting timeline monitoring for project: \(projectId, privacy: .public)")
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
+
+        // Skip if already monitoring this exact project (prevents duplicate calls during startup)
+        if isMonitoring && currentProjectId == projectId {
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId), skipping")
+            return
+        }
 
         // Cancel residual background work before starting new group
         backgroundTasks?.cancel()
@@ -310,9 +352,12 @@ final class ConversationMonitor {
         seenEntryIDs.removeAll(keepingCapacity: false)
 
         guard !isMonitoring else {
-            log.info("⚠️ [MONITOR-SKIP] Already monitoring, skipping")
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring different project, need to stop first")
             return
         }
+
+        // Set flag to prevent onProjectOrSessionChange from running during initialization
+        isInitializing = true
 
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId)")
 
@@ -381,11 +426,13 @@ final class ConversationMonitor {
 
                     // Now safe to create new generator (old one fully shut down)
                     guard let self else { return }
+                    log.info("[GENERATOR-INIT] About to create generator...")
                     await MainActor.run {
+                        self.log.info("[GENERATOR-INIT] Creating TimelineCacheMissGenerator...")
                         self.cacheMissGenerator = TimelineCacheMissGenerator(orchestrator: orchestratorForGenerator)
                         self.isCacheGeneratorActive = true
                         self.generatorShutdownTask = nil
-                        self.log.info("✅ Cache miss generator initialized for new project")
+                        self.log.info("✅ [GENERATOR-INIT] Cache miss generator initialized for new project")
                     }
                 }
 
@@ -481,6 +528,7 @@ final class ConversationMonitor {
                     // Project change notifications already set up in init()
 
                     self.isMonitoring = true
+                    self.isInitializing = false  // Clear flag after successful initialization
                     self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
                     self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
@@ -488,6 +536,7 @@ final class ConversationMonitor {
             } catch {
                 await MainActor.run {
                     self.lastError = "Failed to start monitoring: \(error.localizedDescription)"
+                    self.isInitializing = false  // Clear flag on error
                     self.log.error("Monitoring startup failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -496,10 +545,26 @@ final class ConversationMonitor {
 
     @MainActor
     func stopMonitoring() {
+        log.info("[TIMELINE-STOP] Stopping timeline monitoring")
         isMonitoring = false
         activeSession = nil
-        backgroundTasks?.cancel()   // NEW: cancels the whole background task group
+        // Cancel background task group
+        backgroundTasks?.cancel()
         backgroundTasks = nil
+
+        // CXT-101: Cancel viewport/background-fill work (atomic capture-nil-cancel)
+        let bfTask = backgroundFillTask
+        backgroundFillTask = nil
+        bfTask?.cancel()
+        viewedEntryIDs.removeAll(keepingCapacity: false)
+
+        // Reset aggregate visibility tracking state for new project
+        doingProgrammaticScroll = false
+        needsInitialVisibilitySnapshot = true
+        lastVisibleIDs.removeAll()
+        coalesceTask?.cancel()
+        coalesceTask = nil
+
         debounceTask?.cancel()
         debounceTask = nil
         cacheDebounceTask?.cancel()  // CXT-13: Cancel cache update debounce
@@ -537,6 +602,14 @@ final class ConversationMonitor {
     private func onProjectOrSessionChange() {
         log.debug("onProjectOrSessionChange: projectId=\(self.currentProjectId ?? "nil")")
 
+        // Skip if we're in the middle of startMonitoring() initialization
+        // This prevents duplicate loadFeedFromSQL() calls when startMonitoring sets currentProjectId
+        // TODO: See TODOS.md - Phase 2/3 refactor to split project vs session change handling
+        if isInitializing {
+            log.debug("onProjectOrSessionChange: skipping, initialization in progress")
+            return
+        }
+
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
 
@@ -549,6 +622,9 @@ final class ConversationMonitor {
         seenSystemEventIds.removeAll()
         lastSystemEventTs = nil
 
+        // CXT-104: Clear viewport tracking for OLD project
+        viewedEntryIDs.removeAll(keepingCapacity: false)
+
         // Cancel any pending debounced updates (they're for the OLD project)
         if debounceTask != nil {
             log.debug("onProjectOrSessionChange: cancelling pending debounce task")
@@ -556,10 +632,11 @@ final class ConversationMonitor {
             debounceTask = nil
         }
 
-        // Clear pending LLM requests for non-active projects to prevent resource waste
+        // Clear ALL pending LLM requests on project/session change
+        // Visibility tracking will re-queue only the ~25 visible entries
         if let generator = cacheMissGenerator {
             Task {
-                await generator.clearPendingMisses(exceptProjectId: currentProjectId)
+                await generator.clearPendingMisses(exceptProjectId: nil)
             }
         }
 
@@ -937,7 +1014,7 @@ final class ConversationMonitor {
                 summary = String(entry.content.prefix(100)) + (entry.content.count > 100 ? "…" : "")
             }
             // v23: Non-summarizable entries (nil windowSha256) should not show spinner
-            action = entry.windowSha256 == nil ? .nonSummarizable : .generating
+            action = entry.windowSha256 == nil ? .nonSummarizable : .unsummarized
         }
 
         // Use stable UUID from entry.id (prefer parsing as UUID, fallback to UUIDv5)
@@ -1038,7 +1115,7 @@ final class ConversationMonitor {
 
                 // Override action if this is the actively processing entry
                 // Compare using the timeline's UUID (already converted in toTimelineEntry)
-                if timelineEntry.action == .generating,
+                if timelineEntry.action == .unsummarized,
                    let activeID = activeGeneratingID,
                    timelineEntry.id == activeID {
                     timelineEntry = timelineEntry.copyWith(action: .generatingActive)
@@ -1062,13 +1139,9 @@ final class ConversationMonitor {
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // Queue cache misses for background generation
-            if !misses.isEmpty, let generator = cacheMissGenerator {
-                log.info("[SUMM-QUEUE] Queueing \(misses.count) entries for summarization")
-                Task {
-                    await generator.queueMisses(misses)
-                }
-            } else if misses.isEmpty {
+            // NOTE: Initial queueing now handled by aggregate visibility tracking (onScrollTargetVisibilityChange)
+            // The first settled visibility snapshot will queue exactly what's on screen, no guessing.
+            if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
 
@@ -1237,6 +1310,350 @@ final class ConversationMonitor {
         log.debug("Project change observer registered")
     }
 
+    // MARK: - Viewport Tracking & Background Summarization (Phase 2-3)
+
+    /// Set up app lifecycle notifications for background summarization
+    private func setupAppLifecycleNotifications() {
+        guard appLifecycleObserver == nil else {
+            log.debug("App lifecycle observer already registered, skipping duplicate setup")
+            return
+        }
+
+        appLifecycleObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.handleAppResignActive()
+            }
+        }
+
+        // Also set up notification for app becoming active to cancel background tasks
+        appBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleAppBecomeActive()
+            }
+        }
+
+        log.debug("App lifecycle observers registered for background summarization")
+    }
+
+    /// Mark an entry as visible in the viewport (called by UI)
+    @MainActor
+    func markEntryVisible(_ entryId: UUID) {
+        guard !viewedEntryIDs.contains(entryId) else { return }
+        viewedEntryIDs.insert(entryId)
+        #if DEBUG
+        log.debug("Marked entry \(entryId.uuidString) as viewed (total viewed: \(self.viewedEntryIDs.count))")
+        #endif
+        pruneViewedIDsIfNeeded()
+
+        // Queue entry for summarization if it needs one (scrolled into view)
+        queueEntryIfNeeded(entryId)
+    }
+
+    /// Queue a single entry for summarization if it has a cache miss
+    /// NOTE: This method is deprecated in favor of aggregate visibility tracking (replaceVisibleSnapshot)
+    @MainActor
+    private func queueEntryIfNeeded(_ entryId: UUID) {
+
+        guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
+        guard entry.action == .unsummarized else { return }  // Already has summary or processing
+
+        // Create cache miss for this entry
+        guard let content = entry.contentSha256,
+              let window = entry.windowSha256,
+              let sourceContent = entry.sourceContent,
+              let projectId = currentProjectId else {
+            return
+        }
+
+        let miss = CacheMiss(
+            entryId: entry.id.uuidString,
+            projectId: projectId,
+            contentSha256: content,
+            windowSha256: window,
+            content: sourceContent,
+            context: entry.detail,
+            kind: entry.kind.rawValue,
+            provider: entry.sourceContext?.provider.rawValue ?? "other"
+        )
+
+        // Queue immediately (user is looking at it)
+        guard let generator = cacheMissGenerator else { return }
+        Task(priority: .userInitiated) {
+            log.info("[SUMM-SCROLL] Entry scrolled into view, queueing for summarization: \(entryId.uuidString.prefix(8))")
+            await generator.queueMisses([miss])
+        }
+    }
+
+    /// CXT-104: Prune viewedEntryIDs to prevent unbounded growth
+    @MainActor
+    private func pruneViewedIDsIfNeeded() {
+        // Keep modest multiple of feed size; avoids growth over long sessions
+        let cap = config.maxEntries * 4
+        guard viewedEntryIDs.count > cap else { return }
+        let currentIDs = Set(state.entries.map { $0.id })
+        viewedEntryIDs.formIntersection(currentIDs)
+        log.debug("Pruned viewedEntryIDs to \(self.viewedEntryIDs.count)")
+    }
+
+    // MARK: - Aggregate Visibility Tracking (macOS 15+)
+
+    /// Called by view before programmatic scrollTo to suppress transient visibility events
+    @MainActor
+    func beginProgrammaticScroll() {
+        doingProgrammaticScroll = true
+        log.debug("[SUMM-SCROLL] Programmatic scroll started, gating visibility updates")
+    }
+
+    /// Called by view when scroll phase changes - enables queueing once scroll is idle
+    @MainActor
+    func handleScrollPhaseChange(_ phase: ScrollPhase) {
+        if case .idle = phase, doingProgrammaticScroll {
+            doingProgrammaticScroll = false
+            log.debug("[SUMM-SCROLL] Scroll became idle, enabling visibility tracking")
+        }
+    }
+
+    /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
+    @MainActor
+    func replaceVisibleSnapshot(_ ids: [UUID]) {
+        guard !doingProgrammaticScroll else {
+            log.debug("[SUMM-SCROLL] Ignoring visibility update during programmatic scroll")
+            return
+        }
+
+        let current = Set(ids)
+        lastVisibleIDs = current
+        debugVisibleIDs = current  // Update observable for debug visualization
+
+        // First settled snapshot after project switch: queue exactly what's on screen
+        // IMPORTANT: This often fires BEFORE currentProjectId/cacheMissGenerator are ready
+        // (race between visibility callback and async Task initialization). The debounce
+        // timer below acts as a fallback that retries after initialization completes.
+        // TODO: Fix race condition properly in Phase 2/3 refactor (see TODOS.md)
+        if needsInitialVisibilitySnapshot {
+            needsInitialVisibilitySnapshot = false
+            log.info("[SUMM-QUEUE] Initial visibility snapshot: \(ids.count) entries visible")
+            Task {
+                await self.pruneQueueToVisible(current)
+                await self.queueVisibleGeneratingEntries(current)
+            }
+            viewedEntryIDs.formUnion(current)
+            return
+        }
+
+        // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
+        coalesceTask?.cancel()
+        coalesceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
+            } catch {
+                // Task was cancelled - user is still scrolling
+                return
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                log.info("[SUMM-DEBOUNCE] Timer completed - viewport settled, queueing visible entries")
+
+                // Log viewport entries with detailed status
+                Task { @MainActor in
+                    let visibleEntries = self.visibleEntries.filter { self.lastVisibleIDs.contains($0.id) }
+                    log.info("[SUMM-VIEWPORT] Viewport settled, \(visibleEntries.count, privacy: .public) entries visible:")
+                    for entry in visibleEntries {
+                        let status = await self.getEntryStatus(entry)
+                        let contentPreview = entry.sourceContent.map { String($0.prefix(15)) } ?? "(no content)"
+                        log.info("  [SUMM-VIEWPORT] Entry \(entry.id.uuidString.prefix(8), privacy: .public): \(status, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
+                    }
+                }
+
+                // Prune queue first, then add new entries (ensures clean slate)
+                Task {
+                    await self.pruneQueueToVisible(self.lastVisibleIDs)
+                    await self.queueVisibleGeneratingEntries(self.lastVisibleIDs)
+                }
+                self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
+                self.pruneViewedIDsIfNeeded()
+            }
+        }
+    }
+
+    /// Prune generator queue to keep only visible entries
+    @MainActor
+    private func pruneQueueToVisible(_ ids: Set<UUID>) async {
+        guard let generator = cacheMissGenerator else { return }
+
+        // Convert UUID set to entry ID strings (sourceIdentifier)
+        let visibleEntryIDs = Set(visibleEntries
+            .filter { ids.contains($0.id) }
+            .map { $0.sourceIdentifier })
+
+        await generator.pruneQueue(keepOnly: visibleEntryIDs)
+    }
+
+    /// Queue entries that are both visible and generating summaries
+    @MainActor
+    private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) async {
+        guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
+            let pidStr = self.currentProjectId?.prefix(8) ?? "nil"
+            let genStr = self.cacheMissGenerator != nil ? "exists" : "nil"
+            log.debug("[SUMM-QUEUE] Cannot queue - projectId=\(pidStr, privacy: .public), generator=\(genStr, privacy: .public)")
+            return
+        }
+
+        // Debug: check what's available
+        let allVisibleIDs = Set(self.visibleEntries.map { $0.id })
+        let requestedIDs = ids
+        let matchingIDs = allVisibleIDs.intersection(requestedIDs)
+        let unsummarizedEntries = self.visibleEntries.filter { $0.action == .unsummarized }
+
+        log.debug("[SUMM-QUEUE] Checking \(ids.count) requested IDs against \(self.visibleEntries.count) visible entries")
+        log.debug("[SUMM-QUEUE] Matching IDs: \(matchingIDs.count), Unsummarized entries: \(unsummarizedEntries.count)")
+
+        let misses: [CacheMiss] = visibleEntries
+            .filter { ids.contains($0.id) && $0.action == .unsummarized }
+            .compactMap { e in
+                guard let c = e.contentSha256, let w = e.windowSha256, let s = e.sourceContent else { return nil }
+                return CacheMiss(
+                    entryId: e.sourceIdentifier,  // Use original DB ID, not UUID
+                    projectId: projectId,
+                    contentSha256: c,
+                    windowSha256: w,
+                    content: s,
+                    context: e.detail,
+                    kind: e.kind.rawValue,
+                    provider: e.sourceContext?.provider.rawValue ?? "other"
+                )
+            }
+
+        guard !misses.isEmpty else {
+            log.debug("[SUMM-QUEUE] No entries need queueing (all visible entries have summaries)")
+            return
+        }
+
+        log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible unsummarized entries:")
+        for miss in misses {
+            let contentPreview = String(miss.content.prefix(15))
+            log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
+        }
+
+        log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
+        await generator.queueMisses(misses)
+        log.debug("[SUMM-QUEUE] generator.queueMisses() completed")
+    }
+
+    /// Derive entry status for logging (cached/queued/generating/not_queued/error)
+    @MainActor
+    private func getEntryStatus(_ entry: TimelineEntry) async -> String {
+        if entry.isError { return "error" }
+        if entry.action != .unsummarized { return "cached" }
+        if let generator = cacheMissGenerator {
+            if generator.activeEntryID == entry.id { return "generating" }
+            if await generator.isEntryQueued(entry.id.uuidString) {
+                return "queued"
+            }
+        }
+        return "not_queued"
+    }
+
+    /// Handle app resigning active - DISABLED to prevent background processing
+    @MainActor
+    private func handleAppResignActive() async {
+        // DISABLED: Only process visible entries via scroll tracking
+        log.info("App resigned active - background processing DISABLED")
+        return
+
+        // CXT-102: Guard against torn state
+        guard isMonitoring, let projectId = currentProjectId else {
+            log.debug("App resigned active while not monitoring - skip background fill")
+            return
+        }
+        log.info("App resigned active - starting background fill for unseen entries (project: \(projectId))")
+
+        // CXT-103: Atomically clear and cancel any existing background fill task
+        let oldTask = backgroundFillTask
+        backgroundFillTask = nil
+        oldTask?.cancel()
+
+        // Find entries in current visible set that user hasn't seen yet
+        let unseenEntries = visibleEntries.filter { entry in
+            entry.action == .unsummarized &&  // Has cache miss
+            !viewedEntryIDs.contains(entry.id)  // Never scrolled into view
+        }
+
+        guard !unseenEntries.isEmpty else {
+            log.info("No unseen entries to summarize in background")
+            return
+        }
+
+        log.info("Found \(unseenEntries.count) unseen entries for background summarization")
+
+        // Create cache misses for unseen entries
+        let misses = unseenEntries.compactMap { entry -> CacheMiss? in
+            guard let content = entry.contentSha256,
+                  let window = entry.windowSha256,
+                  let sourceContent = entry.sourceContent else {
+                return nil
+            }
+
+            return CacheMiss(
+                entryId: entry.id.uuidString,
+                projectId: projectId,
+                contentSha256: content,
+                windowSha256: window,
+                content: sourceContent,
+                context: entry.detail,  // Use detail as context
+                kind: entry.kind.rawValue,
+                provider: entry.sourceContext?.provider.rawValue ?? "other"
+            )
+        }
+
+        guard !misses.isEmpty else { return }
+
+        // Queue for background processing (low priority - not visible to user)
+        backgroundFillTask = Task { [weak self] in
+            guard let self, let generator = await self.cacheMissGenerator else { return }
+
+            // CXT-103: Explicit cancellation handling
+            do {
+                try await Task.sleep(nanoseconds: 500_000_000)  // 500ms
+            } catch is CancellationError {
+                return
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.log.warning("Background fill sleep failed: \(error.localizedDescription, privacy: .public)")
+                }
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+
+            await generator.queueMisses(misses)
+
+            await MainActor.run { [weak self] in
+                self?.log.info("Background fill task queued \(misses.count) misses")
+            }
+        }
+    }
+
+    /// Handle app becoming active - cancel background tasks to prioritize visible entries
+    @MainActor
+    private func handleAppBecomeActive() {
+        // CXT-102: Guard against torn state
+        guard isMonitoring else { return }
+        log.info("App became active - cancelling background fill task")
+        // CXT-103: Atomic capture-nil-cancel
+        let task = backgroundFillTask
+        backgroundFillTask = nil
+        task?.cancel()
+    }
+
     /// Keyed bulk refresh: Update specific entries when their caches are ready
     @MainActor
     private func refreshCachedEntries(keys: [CacheKey]) async {
@@ -1286,7 +1703,7 @@ final class ConversationMonitor {
 
                 updateEntry(at: index, with: old.copyWith(
                     summary: summary,
-                    action: old.action == .generating ? .none : old.action
+                    action: old.action == .unsummarized ? .none : old.action
                 ))
             }
 
@@ -1694,7 +2111,7 @@ final class ConversationMonitor {
             // Defer to avoid blocking project switch UI
             let orchestratorForMaintenance = orchestrator
             Task.detached(priority: .utility) {
-                let logger = Logger(subsystem: "dev.contextify", category: "Timeline")
+                let logger = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
                 do {
                     try orchestratorForMaintenance.performMaintenance()
                     logger.info("✅ Background database maintenance completed")
@@ -2107,7 +2524,7 @@ final class ConversationMonitor {
                 provider: entry.sourceContext?.provider.rawValue,
                 presentSummary: entry.summary,
                 pastSummary: nil,
-                isGenerating: entry.action == .generating,
+                isGenerating: entry.action == .unsummarized || entry.action == .generatingActive,
                 isNonSummarizable: entry.action == .nonSummarizable,
                 isError: entry.isError
             )

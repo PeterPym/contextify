@@ -45,6 +45,11 @@ assets/ icons/
 
 ## Architecture & Key Modules
 
+**For high-level system overview:** See `build/notes/technical-reference/system-architecture-overview.md`
+- Explains component roles (Coordinator vs Orchestrator vs Monitor)
+- Data model hierarchy (Projects → Transcripts → Entries → Summaries)
+- Initialization flow and common confusion points
+
 ### Database Layer (SQL Backend)
 - **Current Schema Version: v21** (see DatabaseSchema.swift for migration history)
 - **Recent Migrations:**
@@ -84,7 +89,7 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 **Key Components:**
 - **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`): Main `@Observable` `@MainActor` component for timeline display. Manages TimelineState, visible entries, and session filtering. Integrates with SQL backend via TranscriptOrchestrator.
-- **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): Queue #1 - Batched FIFO processing for timeline entry summaries. Generates present/past forms with batching and rate limiting.
+- **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): Queue #1 - LIFO processing for timeline entry summaries. Generates present/past forms with viewport-based pruning and overload protection.
 - **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Queue #2 - Concurrent task processing for transcript titles/descriptions/topics. Includes circuit breaker and SQL caching.
 - **FoundationLLM** (`Contextify/Contextify/FoundationLLM.swift`): Shared integration with Apple's LanguageModel/FoundationModels. **Requires macOS 26.0+**. On older macOS, systems fall back to heuristics (no LLM).
 - **StatusBar** (`Contextify/Contextify/StatusBarView.swift`, `StatusBarViewModel.swift`): Aggregates both LLM queues for unified monitoring. Shows processing status, pending counts, ETAs, and errors.
@@ -92,6 +97,12 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **TimelineState** (`ConversationMonitor.swift`): Observable state container for timeline entries, derived cache index, and revision tracking.
 - **Documentation**:
   - **⭐ LLM Architecture Overview:** `build/notes/technical-reference/llm-processing-architecture.md` (start here)
+  - **⭐ LLM Overload Prevention:** `build/notes/technical-reference/llm-overload-prevention.md` - Multi-layered protection against Apple Intelligence overload:
+    - 6 protection layers (viewport debounce, pruning, stabilization delay, cancellation checks, LIFO queue, sequential processing)
+    - Viewport-based queue management integrated with SwiftUI scroll events
+    - 750ms stabilization delay before LLM calls
+    - Automatic pruning of entries that scroll out of view
+    - Test results: 88% prevention rate during aggressive scrolling
   - Timeline cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
   - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
   - Status bar spec: `build/notes/feature-specs/status-bar/spec-final.md`

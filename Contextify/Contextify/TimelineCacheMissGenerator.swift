@@ -30,7 +30,9 @@ struct CacheMiss: Sendable {
 actor TimelineCacheMissGenerator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
     private let orchestrator: TranscriptOrchestrator
-    private var pendingMisses: [CacheKey: CacheMiss] = [:]  // Keyed by CacheKey for de-duplication
+    // Ordered queue (FIFO) with deduplication set for fast lookups
+    private var pendingMisses: [CacheMiss] = []  // Ordered queue (oldest first: append + removeFirst = FIFO)
+    private var pendingKeys: Set<CacheKey> = []  // Fast deduplication lookup
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
 
@@ -42,6 +44,10 @@ actor TimelineCacheMissGenerator {
     private let maxQueueSize = 5000
     private let maxBatchSize = 1  // Process one at a time for instant responsiveness
     private let batchDelayNs: UInt64 = 0  // No artificial delay (FoundationLLM has no rate limits)
+
+    // Stabilization delay to prevent flooding LLM with requests that get cancelled
+    // Gives pruning mechanism time to cancel entries before they reach LLM
+    private let stabilizationDelayMs: Int = 750
 
     // MARK: - Observer Infrastructure (Status Bar Support)
 
@@ -71,6 +77,7 @@ actor TimelineCacheMissGenerator {
         generationTask?.cancel()
         generationTask = nil
         pendingMisses.removeAll()
+        pendingKeys.removeAll()
         isProcessing = false
         inFlightCount = 0
 
@@ -95,10 +102,14 @@ actor TimelineCacheMissGenerator {
         let beforeCount = pendingMisses.count
 
         // Remove misses that don't match the active project
-        pendingMisses = pendingMisses.filter { _, miss in
+        let keptMisses = pendingMisses.filter { miss in
             guard let activeId = activeProjectId else { return false }
             return miss.projectId == activeId
         }
+
+        // Rebuild deduplication set from kept misses
+        pendingKeys = Set(keptMisses.map { $0.cacheKey })
+        pendingMisses = keptMisses
 
         let removed = beforeCount - pendingMisses.count
         if removed > 0 {
@@ -107,16 +118,68 @@ actor TimelineCacheMissGenerator {
         }
     }
 
+    /// Prune pending queue to keep only entries visible in viewport
+    /// - Parameter visibleIDs: Set of entry IDs currently visible to user
+    func pruneQueue(keepOnly visibleIDs: Set<String>) async {
+        let beforeCount = pendingMisses.count
+        log.debug("[PRUNE] Checking queue: \(beforeCount) pending, \(visibleIDs.count) visible IDs")
+        guard beforeCount > 0 else {
+            log.debug("[PRUNE] Queue empty, nothing to prune")
+            return
+        }
+
+        // Remove entries not in visible set (keep actively processing entry via activeEntryID check)
+        let activeID = await MainActor.run { activeEntryID }
+        log.debug("[PRUNE] Active entry ID: \(activeID?.uuidString.prefix(8) ?? "none")")
+
+        pendingMisses.removeAll { miss in
+            let isVisible = visibleIDs.contains(miss.entryId)
+            let isActive = UUID(uuidString: miss.entryId) == activeID
+            let shouldKeep = isVisible || isActive
+            if !shouldKeep {
+                log.debug("[PRUNE] Removing entry \(miss.entryId.prefix(8)): visible=\(isVisible), active=\(isActive)")
+            }
+            return !shouldKeep
+        }
+
+        // Update pendingKeys to match
+        pendingKeys = Set(pendingMisses.map { CacheKey(content: $0.contentSha256, window: $0.windowSha256) })
+
+        let prunedCount = beforeCount - pendingMisses.count
+        if prunedCount > 0 {
+            log.info("[PRUNE] Removed \(prunedCount) entries no longer visible (kept \(self.pendingMisses.count))")
+            notifyQueueChanged()
+        } else {
+            log.debug("[PRUNE] No entries removed (all \(beforeCount) still visible or active)")
+        }
+    }
+
     /// Queue cache misses for background generation with de-duplication and cap
-    func queueMisses(_ misses: [CacheMiss]) {
-        guard !misses.isEmpty else { return }
+    func queueMisses(_ misses: [CacheMiss]) async {
+        log.info("[GENERATOR] queueMisses() called with \(misses.count) entries")
+        guard !misses.isEmpty else {
+            log.info("[GENERATOR] Empty misses array, returning")
+            return
+        }
+
+        // 1) Enforce referential integrity: keep only misses whose entry_id exists
+        log.info("[FK-CHECK] Checking \(misses.count, privacy: .public) misses for FK safety...")
+        let safeMisses = await filterFKSafe(misses)
+        if safeMisses.count != misses.count {
+            log.info("[FK-CHECK] Filtered: \(misses.count, privacy: .public) → \(safeMisses.count, privacy: .public) (dropped \(misses.count - safeMisses.count, privacy: .public) without entry_id in DB)")
+        }
+        guard !safeMisses.isEmpty else {
+            log.info("[FK-CHECK] ALL \(misses.count, privacy: .public) misses skipped - no entry_id exists in transcript_entries yet")
+            return
+        }
+        log.debug("[FK-CHECK] \(safeMisses.count) entries passed FK check")
 
         let beforeCount = pendingMisses.count
         var skippedDuplicates = 0
         var skippedCapacity = 0
 
-        // Add to dictionary (automatic de-dup by cacheKey)
-        for miss in misses {
+        // Add to ordered queue with deduplication
+        for miss in safeMisses {
             // Skip if queue at capacity
             if pendingMisses.count >= maxQueueSize {
                 skippedCapacity += 1
@@ -125,10 +188,11 @@ actor TimelineCacheMissGenerator {
 
             // Use cached composite key for deduplication
             let key = miss.cacheKey
-            if pendingMisses[key] != nil {
+            if pendingKeys.contains(key) {
                 skippedDuplicates += 1
             } else {
-                pendingMisses[key] = miss
+                pendingMisses.insert(miss, at: 0)  // Add to front (LIFO: newest entries processed first)
+                pendingKeys.insert(key)
             }
         }
 
@@ -144,28 +208,74 @@ actor TimelineCacheMissGenerator {
         // Notify observers of queue change
         notifyQueueChanged()
 
-        // Start processing if not already running
+        // Ensure processing task is running
+        await ensureProcessing()
+    }
+
+    /// Ensure a processing task is running (idempotent; restarts a stuck handle)
+    private func ensureProcessing() async {
+        // Spawn if missing
         if generationTask == nil {
-            generationTask = Task { [weak self] in
-                await self?.processQueue()
+            let count = pendingMisses.count
+            log.debug("Spawning processing task (pending: \(count))")
+            generationTask = Task { await self.processQueue() }  // Strong capture by design
+            return
+        }
+        // Defensive: if we have work queued but not processing, restart
+        if !isProcessing && !pendingMisses.isEmpty {
+            log.warning("Processing handle exists but not active; restarting worker (pending: \(self.pendingMisses.count))")
+            generationTask?.cancel()
+            generationTask = Task { await self.processQueue() }
+        }
+    }
+
+    // MARK: - FK preflight
+
+    /// Drop misses that would violate `timeline_cache(entry_id) → timeline_entries(id)`.
+    /// Returns only misses whose entry_id already exists in timeline_entries table.
+    private func filterFKSafe(_ misses: [CacheMiss]) async -> [CacheMiss] {
+        guard !misses.isEmpty else { return [] }
+
+        // Collect unique entry IDs to check
+        let ids = Array(Set(misses.map { $0.entryId }))
+
+        do {
+            // Query which IDs exist in timeline_entries using orchestrator
+            let existing = try orchestrator.existingEntryIds(ids)
+
+            // Fast path: all IDs exist
+            if existing.count == ids.count { return misses }
+
+            // Filter to only misses with existing entry_id
+            let filtered = misses.filter { existing.contains($0.entryId) }
+            if filtered.count != misses.count {
+                let dropped = misses.count - filtered.count
+                log.debug("filterFKSafe: dropped \(dropped) misses without timeline_entries row (kept \(filtered.count))")
             }
+            return filtered
+        } catch {
+            log.error("filterFKSafe read failed: \(String(describing: error), privacy: .public)")
+            // On failure, be conservative: skip to avoid FK exceptions
+            return []
         }
     }
 
     /// Background processing loop
     private func processQueue() async {
+        log.debug("processQueue: start (pending: \(self.pendingMisses.count))")
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }
             isProcessing = true
             notifyQueueChanged()  // Notify that processing started
 
-            // Take a batch from dictionary
-            let keys = Array(pendingMisses.keys.prefix(maxBatchSize))
-            var batch: [CacheMiss] = []
-            for key in keys {
-                if let miss = pendingMisses.removeValue(forKey: key) {
-                    batch.append(miss)
-                }
+            // Take a batch from the front of the queue (FIFO)
+            let batchSize = min(maxBatchSize, pendingMisses.count)
+            let batch = Array(pendingMisses.prefix(batchSize))
+            pendingMisses.removeFirst(batchSize)
+
+            // Remove from deduplication set
+            for miss in batch {
+                pendingKeys.remove(miss.cacheKey)
             }
             inFlightCount = batch.count
 
@@ -215,7 +325,7 @@ actor TimelineCacheMissGenerator {
             // Update active entry ID to next in queue (or nil if empty)
             // Convert String ID to UUID for timeline comparison
             let nextEntryID: UUID? = {
-                guard let entryId = pendingMisses.values.first?.entryId else { return nil }
+                guard let entryId = pendingMisses.first?.entryId else { return nil }
                 return UUID(uuidString: entryId)
             }()
             await MainActor.run {
@@ -257,6 +367,22 @@ actor TimelineCacheMissGenerator {
                 break
             }
 
+            // Stabilization delay before sending to LLM to allow pruning to catch scroll-aways
+            // This prevents flooding Apple Intelligence with requests that will be cancelled
+            if self.stabilizationDelayMs > 0 {
+                log.debug("[STAB-DELAY] Waiting \(self.stabilizationDelayMs)ms before sending to LLM...")
+                try? await Task.sleep(nanoseconds: UInt64(self.stabilizationDelayMs) * 1_000_000)
+
+                // Check cancellation again after delay (user may have scrolled away)
+                if Task.isCancelled {
+                    log.info("[STAB-DELAY] Cancelled during \(self.stabilizationDelayMs)ms delay (processed \(successCount)/\(batch.count))")
+                    break
+                }
+                log.debug("[STAB-DELAY] Delay complete, proceeding to processing")
+            } else {
+                log.debug("[STAB-DELAY] Stabilization delay disabled (would wait \(750)ms if enabled)")
+            }
+
             do {
                 try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
                 successCount += 1
@@ -279,7 +405,13 @@ actor TimelineCacheMissGenerator {
                 consecutiveFailures += 1
 
                 // Circuit breaker: stop batch on sustained failures
-                if consecutiveFailures >= 5 {
+                // NOTE: With maxBatchSize=1, this only breaks out of the current single-entry batch,
+                // then processQueue() immediately grabs the next entry. The circuit breaker is
+                // effectively disabled. It would only be useful with maxBatchSize > 1 to skip the
+                // remaining entries in a multi-entry batch.
+                // TODO: If batch size stays at 1, consider removing this logic or making it stop
+                // the entire processQueue() loop instead of just the batch loop.
+                if maxBatchSize > 1 && consecutiveFailures >= 5 {
                     log.error("Circuit breaker: stopping batch after \(consecutiveFailures) consecutive failures")
                     break
                 }
@@ -371,6 +503,17 @@ actor TimelineCacheMissGenerator {
             throw TimelineError.llmUnavailable(reason: "Apple Intelligence unavailable: \(reason.userFacingMessage)")
         }
 
+        // Check cancellation RIGHT BEFORE calling LLM to avoid wasted compute
+        // The stabilization delay above gives pruning time to cancel obsolete requests
+        log.debug("[CANCEL-CHECK] About to send entry \(miss.entryId.prefix(8)) to LLM, checking cancellation...")
+        do {
+            try Task.checkCancellation()
+            log.debug("[CANCEL-CHECK] Not cancelled, proceeding to LLM")
+        } catch {
+            log.info("[CANCEL-CHECK] Task cancelled before LLM call for entry \(miss.entryId.prefix(8)) - saved compute!")
+            throw error
+        }
+
         let llm = FoundationLLM.shared
         let result = try await llm.summarizeTimelineWithForms(
             kind: kind,
@@ -439,6 +582,11 @@ actor TimelineCacheMissGenerator {
     /// Get current queue status
     func getStatus() -> (pending: Int, isProcessing: Bool) {
         return (pendingMisses.count, isProcessing)
+    }
+
+    /// Check if an entry is queued for generation
+    func isEntryQueued(_ entryId: String) -> Bool {
+        return pendingMisses.contains(where: { $0.entryId == entryId })
     }
 
     // MARK: - Public Observation API

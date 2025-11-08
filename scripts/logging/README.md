@@ -1,21 +1,35 @@
 # Log Monitoring Scripts
 
-Scripts for debugging Contextify by monitoring tagged log output in real-time.
+**Instructions for AI assistants** debugging issues by monitoring tagged log output in real-time.
 
-## Quick Start
+## Debugging Workflow
+
+This is the process for diagnosing issues through logging:
+
+### 1. Use the Template to Monitor (Tier 1: Transient)
+
+Start debugging by monitoring existing logs with the parameterized template:
 
 ```bash
-./scripts/logging/monitor-summarization-flow.sh
-# Perform actions in the app (e.g., switch projects)
-# Press Ctrl+C to stop
-# Logs saved to /tmp/summarization-flow-YYYYMMDD-HHMMSS.log
+# Monitor specific tags
+./scripts/logging/monitor-template.sh FEATURE-START FEATURE-DONE
+
+# Monitor all logs from configured subsystem
+./scripts/logging/monitor-template.sh
 ```
 
-## Creating a Custom Monitor
+**No file creation required.** The template accepts tags as arguments and runs immediately.
 
-### 1. Add Tagged Logs to Source Code
+**Configure if needed:** Edit the CONFIGURATION section at the top of `monitor-template.sh`:
+```bash
+SUBSYSTEM="dev.contextify.timeline"     # Which subsystem to monitor
+CATEGORIES="ConversationMonitor Hoover" # Which categories (space-separated)
+LEVEL="debug"                           # debug | info | error
+```
 
-Add structured log tags to trace your feature:
+### 2. Add Tagged Logs to Source Code
+
+If monitoring reveals missing instrumentation, add tagged logs:
 
 ```swift
 import OSLog
@@ -26,13 +40,13 @@ import OSLog
 // - "dev.contextify" for general app logging
 private let log = Logger(subsystem: "dev.contextify.timeline", category: "YourFeature")
 
-// In your code:
+// Add logs with [TAG] prefixes
 log.info("[FEATURE-START] Starting operation: \(context, privacy: .public)")
 log.debug("[FEATURE-STEP] Processing \(count, privacy: .public) items")
 log.info("[FEATURE-DONE] Completed in \(elapsed, privacy: .public)s")
 ```
 
-**Tag naming convention:** `[FEATURE-EVENT]` where:
+**Tag naming:** `[FEATURE-EVENT]` where:
 - `FEATURE` = your feature area (e.g., SUMM, BATCH, COORD)
 - `EVENT` = specific event (e.g., START, DONE, ERROR)
 
@@ -53,9 +67,8 @@ log.info("  [SUMM-QUEUE] Entry 2...")  // ✅ Captured by grep
 **IMPORTANT - Privacy:** Always use `privacy: .public` for interpolated values (timing, counts, names).
 Without `.public`, macOS redacts values as `<private>`, breaking performance analysis.
 
-**Examples:**
 ```swift
-// WRONG - timing will show as <private>ms
+// WRONG - value redacted as <private>
 log.info("[PERF] Completed in \(elapsed)ms")
 
 // RIGHT - timing visible in logs
@@ -71,55 +84,66 @@ log.info("[PERF] Switched to \(name, privacy: .public)")
 log.info("[PERF] Operation started")
 ```
 
-### 2. Create Monitor Script
+### 3. Iterate: Monitor → Add Logs → Rebuild → Monitor
 
-Copy the example and modify for your tags:
-
-```bash
-cp scripts/logging/monitor-summarization-flow.sh scripts/logging/monitor-yourfeature.sh
-chmod +x scripts/logging/monitor-yourfeature.sh
-```
-
-Edit the script:
-1. Change `LOGFILE` prefix (line 10)
-2. Update help text with your tags (lines 23-33)
-3. **CRITICAL**: Update `log stream` predicate (line 43-44) to match your Logger's subsystem and category
-4. Update grep pattern for your tags (line 47): `grep --line-buffered -E "PATTERN1|PATTERN2|..."`
-5. Update color coding cases (lines 55-86)
-
-### 3. Run and Debug
+Rebuild the app after adding logs, then run the template again:
 
 ```bash
-./scripts/logging/monitor-yourfeature.sh
-# Trigger your feature in the app
-# Watch color-coded output in real-time
+bash scripts/xc.sh build
+./scripts/logging/monitor-template.sh YOUR-NEW-TAG
+# Test the feature, observe logs, refine
 ```
+
+### 4. Save Custom Monitors (Tier 2/3)
+
+**Tier 2 - Temporary (/tmp/):** For multi-day debugging, save template-based script to `/tmp/`:
+
+```bash
+cp scripts/logging/monitor-template.sh /tmp/monitor-my-debug.sh
+# Edit /tmp/monitor-my-debug.sh CONFIGURATION section
+chmod +x /tmp/monitor-my-debug.sh
+/tmp/monitor-my-debug.sh
+```
+
+Scripts in `/tmp/` are session-local, not committed, and auto-cleaned by the OS.
+
+**Tier 3 - Permanent (scripts/logging/):** Only for frequently-used, important monitors:
+
+```bash
+cp scripts/logging/monitor-template.sh scripts/logging/monitor-important-feature.sh
+# Edit CONFIGURATION section and customize color-coding
+chmod +x scripts/logging/monitor-important-feature.sh
+git add scripts/logging/monitor-important-feature.sh
+```
+
+**Keep scripts/logging/ uncluttered.** Most debugging should use Tier 1 (template) or Tier 2 (/tmp/).
 
 ## Critical Gotchas
 
-### Logger Subsystem/Category Must Match Script Predicate
+### Logger Subsystem/Category Must Match Script
 
-**The predicate in your script MUST exactly match the Logger in your code.**
+**The predicate in your monitor script MUST exactly match the Logger in your code.**
 
-Example - monitor-cache-generation.sh:
+Example:
 ```bash
-# Script predicate (line 43-44):
-log stream \
-  --predicate 'subsystem == "dev.contextify.timeline" AND (category == "CacheMissGenerator" OR category == "ConversationMonitor")'
+# monitor-template.sh CONFIGURATION:
+SUBSYSTEM="dev.contextify.timeline"
+CATEGORIES="ConversationMonitor CacheMissGenerator"
 ```
 
 Must match code:
 ```swift
-// ConversationMonitor.swift line 145:
+// ConversationMonitor.swift:
 private let log = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
 
-// TimelineCacheMissGenerator.swift line 31:
+// TimelineCacheMissGenerator.swift:
 private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
 ```
 
 **If subsystem or category doesn't match, you'll see NO logs** - this is the #1 debugging issue.
 
 ### macOS Log Stream Predicate Operators
+
 Both `==` and `BEGINSWITH` work:
 ```bash
 # Exact match (recommended):
@@ -132,6 +156,7 @@ Both `==` and `BEGINSWITH` work:
 Use `==` when targeting a specific subsystem, `BEGINSWITH` when you want multiple.
 
 ### Buffering Issues
+
 **WRONG:** `log stream | grep "\[TAG-" | tee file`
 **RIGHT:** `log stream | grep --line-buffered "\[TAG-" | tee file`
 
@@ -143,6 +168,7 @@ Without `--line-buffered`, grep buffers output and you see nothing in real-time.
 Preserves whitespace and special characters in log lines.
 
 ### Log Levels
+
 - `--level debug` captures `.debug()` and above (recommended for development)
 - `--level info` captures `.info()` and above (less noise, might miss details)
 
@@ -150,35 +176,24 @@ Preserves whitespace and special characters in log lines.
 If your code uses `log.debug()` but script uses `--level info`, you won't see those logs.
 
 ### stdbuf Not Available
+
 `stdbuf` doesn't exist on macOS - use `grep --line-buffered` instead.
-
-## Example Output
-
-```
-[SUMM-TAP] User tapped project: contextify id=ABC123
-[SUMM-SWITCH] ProjectSwitcherState initiating switch to: ABC123
-[SUMM-COORD] Publishing ActiveProjectContext (id: XYZ789)
-[SUMM-MONITOR] ConversationMonitor received context update
-[SUMM-LOAD] Feed loaded: 50 entries from database
-[SUMM-MISSES] Detected 50 cache misses
-[SUMM-SKIP] ⚠️ Summarization disabled - skipping 50 entries
-```
 
 ## Analyzing Captured Logs
 
-After capturing logs with a monitor script, use `analyze-gaps.sh` to find performance bottlenecks by identifying multi-second gaps between consecutive log entries.
+After capturing logs, use `analyze-gaps.sh` to find performance bottlenecks by identifying multi-second gaps between consecutive log entries.
 
 ### Usage
 
 ```bash
 # Find all gaps >= 1 second (default)
-./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log
+./scripts/logging/analyze-gaps.sh /tmp/monitor-*.log
 
 # Find critical gaps >= 5 seconds
-./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log 5000
+./scripts/logging/analyze-gaps.sh /tmp/monitor-*.log 5000
 
 # Fine-grained analysis >= 500ms
-./scripts/logging/analyze-gaps.sh /tmp/ui-performance-*.log 500
+./scripts/logging/analyze-gaps.sh /tmp/monitor-*.log 500
 ```
 
 ### Output
@@ -194,24 +209,6 @@ For each gap, shows:
 - Log entry **after** the gap
 - Line numbers in the original log file
 - Tag analysis (what operations were involved)
-
-### Example
-
-```
-Gap #1: 8101ms (WARNING)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Before (line 718):
-  [UIOPT-COORD-GIT-TASK-DONE] Task complete in 0ms
-
-After (line 719):
-  [UIOPT-COORD-GIT-TASK-AWAIT] Task.value returned
-
-Analysis:
-  Previous tag: [UIOPT-COORD-GIT-TASK-DONE]
-  Next tag:     [UIOPT-COORD-GIT-TASK-AWAIT]
-  Gap location: Between these operations
-```
 
 ### Interpreting Gaps
 

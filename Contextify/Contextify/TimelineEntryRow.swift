@@ -108,18 +108,21 @@ struct TimelineEntryRow: View, Equatable {
                 .foregroundStyle(.secondary)
                 .help(entry.timestamp.formatted(Date.FormatStyle.timelineTooltip))  // Re-enabled with static style
             if case .generatingActive = entry.action {
+                // NOTE: Pulsing animation is not working as of 2025-11-07
+                // The .symbolEffect(.pulse) modifier is applied but visual pulsing doesn't appear
+                // TODO: Investigate why symbol effects aren't animating (possibly SwiftUI/macOS version issue)
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
                     .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)  // Always pulse when active
                     .help("Summary being generated (active)")
-            } else if case .generating = entry.action {
+            } else if case .unsummarized = entry.action {
                 Image(systemName: "hourglass")
                     .font(.caption2)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
-                    .help("Summary queued for generation")
+                    .help("Unsummarized (will generate when scrolled into view)")
             }
             if entry.action == .nonSummarizable {
                 Text("—")

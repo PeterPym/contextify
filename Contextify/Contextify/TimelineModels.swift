@@ -18,7 +18,7 @@ enum TimelineEntryKind: String, Codable, Sendable {
 enum TimelineEntryAction: Hashable, Sendable {
     case none
     case revealInInventory(transcriptPath: String)
-    case generating           // Background LLM generation queued/in progress
+    case unsummarized         // No summary cached yet (will generate when scrolled into view)
     case generatingActive     // THIS entry is actively being processed by LLM
     case nonSummarizable      // Entry cannot be summarized (no window context)
 }
@@ -215,7 +215,7 @@ struct ConversationExchange: Sendable {
 
 struct MonitorConfig: Sendable {
     var pollInterval: TimeInterval = 10
-    var maxEntries: Int = 50
+    var maxEntries: Int = 25  // Reduced from 50 to match display limit
     var timelineMaxEntriesPerSession: Int = 800  // Per-session retention limit
     var previewCharacterLimit: Int = 1400
     var userSummaryPrefix = "You"
