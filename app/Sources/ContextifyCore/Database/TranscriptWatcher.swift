@@ -41,17 +41,19 @@ public final class TranscriptWatcher {
 
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL) throws {
+    log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
+
     // Idempotence: skip if already watching
     if isWatching(transcriptId: transcriptId) {
-      log.debug("Already watching transcript: \(transcriptId), skipping")
+      log.info("[WATCHER-WATCH-SKIP] Already watching transcript: \(transcriptId, privacy: .public) - skipping")
       return
     }
 
     // Perform initial ingestion of existing content before starting watcher
     do {
-      log.info("Performing initial ingestion for: \(transcriptId)")
+      log.info("[WATCHER-INGEST-START] Performing initial ingestion for: \(transcriptId, privacy: .public)")
       guard let transcript = try transcriptRepo.get(transcriptId) else {
-        log.error("Transcript not found during initial ingest: \(transcriptId)")
+        log.error("[WATCHER-INGEST-ERROR] Transcript not found during initial ingest: \(transcriptId, privacy: .public)")
         throw TranscriptWatcherError.transcriptNotFound
       }
 
@@ -61,9 +63,9 @@ public final class TranscriptWatcher {
         fileURL: fileURL,
         progress: NoOpProgressSink()
       )
-      log.info("Initial ingestion complete for: \(transcriptId)")
+      log.info("[WATCHER-INGEST-DONE] Initial ingestion complete for: \(transcriptId, privacy: .public)")
     } catch {
-      log.error("Initial ingestion failed for \(transcriptId, privacy: .public): \(error, privacy: .public)")
+      log.error("[WATCHER-INGEST-ERROR] Initial ingestion failed for \(transcriptId, privacy: .public): \(error, privacy: .public)")
       // Continue to set up watcher even if initial ingest fails
     }
 
@@ -94,7 +96,7 @@ public final class TranscriptWatcher {
       watchers[transcriptId] = source
     }
 
-    log.debug("Started watching transcript: \(transcriptId)")
+    log.info("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
   }
 
   /// Stop watching a transcript
@@ -124,11 +126,14 @@ public final class TranscriptWatcher {
 
   /// Handle file change event (debounced)
   private func handleFileChange(transcriptId: String, fileURL: URL) {
+    log.info("[WATCHER-EVENT] File change detected for transcript: \(transcriptId, privacy: .public) path: \(fileURL.path, privacy: .public)")
+
     watcherQueue.sync {
       // Cancel existing timer
       debounceTimers[transcriptId]?.invalidate()
 
       // Create new debounce timer
+      log.debug("[WATCHER-DEBOUNCE] Starting debounce timer (\(MonitorConfig.fileWatcherDebounce, privacy: .public)s) for: \(transcriptId, privacy: .public)")
       let timer = Timer.scheduledTimer(withTimeInterval: MonitorConfig.fileWatcherDebounce, repeats: false) { [weak self] _ in
         self?.processFileChange(transcriptId: transcriptId, fileURL: fileURL)
       }
@@ -139,16 +144,18 @@ public final class TranscriptWatcher {
 
   /// Process file change after debounce (runs off main thread)
   private func processFileChange(transcriptId: String, fileURL: URL) {
+    log.info("[WATCHER-PROCESS-START] Processing file change after debounce for: \(transcriptId, privacy: .public)")
+
     // Use background queue to avoid blocking UI
     watcherQueue.async { [weak self] in
       guard let self else { return }
       do {
         guard let transcript = try self.transcriptRepo.get(transcriptId) else {
-          log.error("Transcript not found: \(transcriptId)")
+          log.error("[WATCHER-PROCESS-ERROR] Transcript not found: \(transcriptId, privacy: .public)")
           return
         }
 
-        log.debug("Processing file change for transcript: \(transcriptId)")
+        log.info("[WATCHER-HOOVER-TRIGGER] Triggering incremental hoover for: \(transcriptId, privacy: .public)")
 
         // Invalidate cached metadata (file changed, so metadata may be stale)
         try? self.metadataInvalidator?(transcriptId)
@@ -160,6 +167,8 @@ public final class TranscriptWatcher {
           progress: NoOpProgressSink()
         )
 
+        log.info("[WATCHER-NOTIFY] Posting TranscriptUpdated notification for: \(transcriptId, privacy: .public)")
+
         // Notify observers on main thread
         DispatchQueue.main.async {
           NotificationCenter.default.post(
@@ -169,9 +178,9 @@ public final class TranscriptWatcher {
           )
         }
 
-        log.debug("Streamed new content for transcript: \(transcriptId)")
+        log.info("[WATCHER-PROCESS-DONE] ✅ Streamed new content for transcript: \(transcriptId, privacy: .public)")
       } catch {
-        log.error("Failed to stream transcript changes: \(error.localizedDescription)")
+        log.error("[WATCHER-PROCESS-ERROR] Failed to stream transcript changes: \(error.localizedDescription, privacy: .public)")
       }
     }
   }

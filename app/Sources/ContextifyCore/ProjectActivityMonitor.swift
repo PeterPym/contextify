@@ -205,6 +205,8 @@ public actor ProjectActivityMonitor {
   }
 
   private func discoverAllProjects() async throws {
+    log.info("[DISC-SCAN-START] Starting discovery scan for all projects")
+
     // Discover projects from Claude Code and Codex CLI transcript roots
     let claudeRoot = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
@@ -213,13 +215,21 @@ public actor ProjectActivityMonitor {
 
     // Discover Claude Code projects
     if FileManager.default.fileExists(atPath: claudeRoot.path) {
+      log.info("[DISC-SCAN-ROOT] Scanning Claude Code root: \(claudeRoot.path, privacy: .public)")
       try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
+    } else {
+      log.debug("[DISC-SCAN-ROOT] Claude Code root not found: \(claudeRoot.path, privacy: .public)")
     }
 
     // Discover Codex CLI projects
     if FileManager.default.fileExists(atPath: codexRoot.path) {
+      log.info("[DISC-SCAN-ROOT] Scanning Codex CLI root: \(codexRoot.path, privacy: .public)")
       try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
+    } else {
+      log.debug("[DISC-SCAN-ROOT] Codex CLI root not found: \(codexRoot.path, privacy: .public)")
     }
+
+    log.info("[DISC-SCAN-DONE] Discovery scan complete")
   }
 
   private func discoverProjectsInRoot(_ root: URL, provider: String) async throws {
@@ -257,20 +267,24 @@ public actor ProjectActivityMonitor {
         ).filter { $0.pathExtension == "jsonl" }
 
         if !transcriptFiles.isEmpty {
+          log.info("[DISC-PROJECT-START] Found \(transcriptFiles.count, privacy: .public) transcript files for project: \(projectPath, privacy: .public)")
+
           let transcripts = transcriptFiles.compactMap { url -> (url: URL, provider: String, sessionId: String?)? in
             // Extract session ID from filename (e.g., "767f2c90-6979-406b-9644-38cbbfcf8187.jsonl")
             let sessionId = url.deletingPathExtension().lastPathComponent
+            log.debug("[DISC-PROJECT-FILE] Transcript: \(url.lastPathComponent, privacy: .public) session: \(sessionId, privacy: .public)")
             return (url: url, provider: provider, sessionId: sessionId)
           }
 
           // Batch discover and hoover transcripts
+          log.info("[DISC-PROJECT-BATCH] Starting batch discovery for \(transcripts.count, privacy: .public) transcripts")
           try orchestrator.discoverTranscripts(
             projectId: dbProjectId,
             transcriptFiles: transcripts,
             progress: nil
           )
 
-          log.info("Discovered \(transcripts.count) transcripts for project: \(projectPath)")
+          log.info("[DISC-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
         }
 
         // Ensure watcher for this project (for project-level events)
@@ -329,10 +343,15 @@ public actor ProjectActivityMonitor {
   private func handleFileSystemChange(_ change: FSEventChange) {
     #if os(macOS)
     let path = change.path
-    log.debug("FSEvents: path=\(path)")
+    log.info("[FSEVENTS-CHANGE] File system change detected: \(path, privacy: .public)")
 
     // Only process .jsonl files
-    guard path.hasSuffix(".jsonl") else { return }
+    guard path.hasSuffix(".jsonl") else {
+      log.debug("[FSEVENTS-SKIP] Non-JSONL file ignored: \(path, privacy: .public)")
+      return
+    }
+
+    log.info("[FSEVENTS-TRANSCRIPT] Transcript file changed: \(path, privacy: .public)")
 
     let url = URL(fileURLWithPath: path)
     let comps = url.pathComponents

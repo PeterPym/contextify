@@ -184,6 +184,7 @@ public final class HooverEngine {
     fileURL: URL,
     progress: IngestProgressSink
   ) throws -> String {
+    log.info("[HOOVER-START] Starting hoover for transcript: \(transcript.id, privacy: .public) from checkpoint: \(transcript.lastProcessedLine, privacy: .public)")
     let startTime = Date()
     let handle = try FileHandle(forReadingFrom: fileURL)
     defer { try? handle.close() }
@@ -383,7 +384,8 @@ public final class HooverEngine {
 
     let transcriptSHA256 = transcriptHasher.finalize()
     let linesPerSec = duration > 0 ? Int(Double(lineNo) / duration) : 0
-    log.info("Hoovered transcript \(transcript.id): \(lineNo) lines in \(Int(duration * 1000))ms (\(linesPerSec)/s)")
+    let newLines = lineNo - transcript.lastProcessedLine
+    log.info("[HOOVER-DONE] Hoovered transcript \(transcript.id, privacy: .public): \(newLines, privacy: .public) new lines (total: \(lineNo, privacy: .public)) in \(Int(duration * 1000), privacy: .public)ms (\(linesPerSec, privacy: .public)/s)")
 
     return transcriptSHA256
   }

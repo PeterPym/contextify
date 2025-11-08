@@ -227,12 +227,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     startWatching: Bool = true,
     progress: IngestProgressSink? = nil
   ) throws {
+    log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public) provider: \(provider, privacy: .public) project: \(projectId, privacy: .public)")
+
     // Diagnostic: Verify project exists before proceeding
     guard let project = try projectRepo.get(id: projectId) else {
-      log.error("❌ FK validation failed: project \(projectId) does not exist")
+      log.error("[TRANS-DISC-ERROR] ❌ FK validation failed: project \(projectId, privacy: .public) does not exist")
       throw RepositoryError.notFound
     }
-    log.debug("✅ FK validation: project \(projectId) exists")
+    log.debug("[TRANS-DISC-VALID] ✅ FK validation: project \(projectId, privacy: .public) exists")
 
     // Validate transcript integrity before hoovering
     let validationResult = validator.validate(
@@ -242,14 +244,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     )
 
     guard validationResult.isValid else {
-      log.error("❌ Transcript validation failed for \(fileURL.lastPathComponent, privacy: .public)")
+      log.error("[TRANS-DISC-ERROR] ❌ Transcript validation failed for \(fileURL.lastPathComponent, privacy: .public)")
       for error in validationResult.errors {
-        log.error("   \(error.description, privacy: .public)")
+        log.error("[TRANS-DISC-ERROR]    \(error.description, privacy: .public)")
       }
       throw validationResult.errors.first ?? RepositoryError.invalidData
     }
 
-    log.debug("✅ Transcript validation passed: \(fileURL.lastPathComponent)")
+    log.info("[TRANS-DISC-VALID] ✅ Transcript validation passed: \(fileURL.lastPathComponent, privacy: .public)")
 
     // Get file metadata
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -257,7 +259,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let fileSize = attrs[.size] as? Int
 
     // Upsert transcript record
-    log.debug("Upserting transcript for project \(projectId), file: \(fileURL.lastPathComponent)")
+    log.info("[TRANS-DISC-UPSERT] Upserting transcript record for: \(fileURL.lastPathComponent, privacy: .public)")
     let transcriptId = try transcriptRepo.upsert(
       projectId: projectId,
       fileURL: fileURL,
@@ -266,24 +268,26 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       lastModified: lastModified,
       fileSize: fileSize
     )
-    log.debug("✅ Transcript upserted: \(transcriptId)")
+    log.info("[TRANS-DISC-UPSERT] ✅ Transcript upserted with ID: \(transcriptId, privacy: .public)")
 
     // Get transcript
     guard let transcript = try transcriptRepo.get(transcriptId) else {
-      log.error("❌ Transcript \(transcriptId) not found after upsert")
+      log.error("[TRANS-DISC-ERROR] ❌ Transcript \(transcriptId, privacy: .public) not found after upsert")
       throw RepositoryError.notFound
     }
 
     // Verify transcript has correct project ID
     guard transcript.projectId == projectId else {
-      log.error("❌ Transcript projectId mismatch: expected \(projectId, privacy: .public), got \(transcript.projectId, privacy: .public)")
+      log.error("[TRANS-DISC-ERROR] ❌ Transcript projectId mismatch: expected \(projectId, privacy: .public), got \(transcript.projectId, privacy: .public)")
       throw RepositoryError.invalidData
     }
 
     // Hoover the transcript
-    log.debug("Hoovering transcript: \(transcriptId)")
+    log.info("[TRANS-DISC-HOOVER-START] Starting hoover for transcript: \(transcriptId, privacy: .public)")
     let progressSink = progress ?? NoOpProgressSink()
     let transcriptSHA256 = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
+    log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) SHA256: \(String(transcriptSHA256.prefix(8)), privacy: .public)")
+
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 
     // Reconcile pending assistant_usage records after hoover completes
@@ -291,10 +295,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Start watching if requested
     if startWatching {
+      log.info("[TRANS-DISC-WATCH-START] Starting watcher for transcript: \(transcriptId, privacy: .public)")
       try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+      log.info("[TRANS-DISC-WATCH-DONE] ✅ Watcher started for transcript: \(transcriptId, privacy: .public)")
     }
 
-    log.info("Discovered and hoovered transcript: \(transcriptId)")
+    log.info("[TRANS-DISC-COMPLETE] ✅ Discovery complete for transcript: \(transcriptId, privacy: .public)")
   }
 
   /// Batch discover transcripts for a project
@@ -303,14 +309,18 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     transcriptFiles: [(url: URL, provider: String, sessionId: String?)],
     progress: IngestProgressSink? = nil
   ) throws {
+    log.info("[BATCH-DISC-START] Starting batch discovery for \(transcriptFiles.count, privacy: .public) transcripts in project: \(projectId, privacy: .public)")
+
     guard let project = try projectRepo.get(id: projectId) else {
+      log.error("[BATCH-DISC-ERROR] Project not found: \(projectId, privacy: .public)")
       throw RepositoryError.notFound
     }
 
     let progressSink = progress ?? NoOpProgressSink()
     progressSink.didStartProject(name: project.name ?? projectId, transcriptCount: transcriptFiles.count)
 
-    for file in transcriptFiles {
+    for (index, file) in transcriptFiles.enumerated() {
+      log.info("[BATCH-DISC-FILE] Processing \(index + 1, privacy: .public)/\(transcriptFiles.count, privacy: .public): \(file.url.lastPathComponent, privacy: .public) provider: \(file.provider, privacy: .public)")
       try discoverTranscript(
         projectId: projectId,
         fileURL: file.url,
@@ -319,9 +329,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         startWatching: true,
         progress: progressSink
       )
+      log.info("[BATCH-DISC-COMPLETE-FILE] Completed \(index + 1, privacy: .public)/\(transcriptFiles.count, privacy: .public): \(file.url.lastPathComponent, privacy: .public)")
     }
 
     progressSink.didCompleteProject(name: project.name ?? projectId)
+    log.info("[BATCH-DISC-DONE] Batch discovery complete for project: \(projectId, privacy: .public) (\(transcriptFiles.count, privacy: .public) transcripts)")
   }
 
   // MARK: - Private Helpers
