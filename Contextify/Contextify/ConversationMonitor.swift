@@ -1543,9 +1543,9 @@ final class ConversationMonitor {
             log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
 
-        log.info("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
+        log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
         await generator.queueMisses(misses)
-        log.info("[SUMM-QUEUE] generator.queueMisses() completed")
+        log.debug("[SUMM-QUEUE] generator.queueMisses() completed")
     }
 
     /// Derive entry status for logging (cached/queued/generating/not_queued/error)

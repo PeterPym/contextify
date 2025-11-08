@@ -172,7 +172,7 @@ actor TimelineCacheMissGenerator {
             log.info("[FK-CHECK] ALL \(misses.count, privacy: .public) misses skipped - no entry_id exists in transcript_entries yet")
             return
         }
-        log.info("[FK-CHECK] \(safeMisses.count) entries passed FK check")
+        log.debug("[FK-CHECK] \(safeMisses.count) entries passed FK check")
 
         let beforeCount = pendingMisses.count
         var skippedDuplicates = 0
