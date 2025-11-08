@@ -176,6 +176,49 @@ public final class HooverEngine {
     self.metadataParser = metadataParser
   }
 
+  /// Update transcript checkpoint in database
+  /// Always call this after processing a transcript to persist the checkpoint
+  private func updateCheckpoint(
+    transcriptId: String,
+    lastProcessedLine: Int,
+    lastProcessedEntryId: String?,
+    lineCount: Int
+  ) throws {
+    try db.write { db in
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET last_processed_line = ?,
+            last_processed_entry_id = COALESCE(?, last_processed_entry_id),
+            line_count = ?,
+            parser_version = ?,
+            status = 'active',
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+      """, arguments: [
+        lastProcessedLine,
+        lastProcessedEntryId,
+        lineCount,
+        1,
+        Int(Date().timeIntervalSince1970),
+        transcriptId
+      ])
+
+      // Validate UPDATE succeeded
+      let rowsAffected = db.changesCount
+      log.info("[HOOVER-UPDATE-ROWS] UPDATE affected \(rowsAffected, privacy: .public) rows for transcript: \(transcriptId, privacy: .public), checkpoint: \(lastProcessedLine, privacy: .public)")
+
+      if rowsAffected == 0 {
+        log.error("[HOOVER-UPDATE-FAILED] UPDATE affected 0 rows! Transcript ID: \(transcriptId, privacy: .public)")
+        if let existing = try? Transcript.fetchOne(db, key: transcriptId) {
+          log.error("[HOOVER-UPDATE-FAILED] Transcript EXISTS in database with checkpoint: \(existing.lastProcessedLine, privacy: .public)")
+        } else {
+          log.error("[HOOVER-UPDATE-FAILED] Transcript NOT FOUND in database (ID mismatch?)")
+        }
+      }
+    }
+  }
+
   /// Hoover a transcript with streaming parser
   /// Returns the SHA256 hash of the entire transcript content
   @discardableResult
@@ -207,6 +250,7 @@ public final class HooverEngine {
     var metadataBatch = MetadataBatch()  // v7: accumulate metadata
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
+    var lastEntryId: String? = nil  // Track last entry ID for checkpoint
 
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
@@ -297,6 +341,7 @@ public final class HooverEngine {
           )
           batch.append(entry)
           entryId = entry.id
+          lastEntryId = entry.id  // Track for checkpoint
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
@@ -354,6 +399,7 @@ public final class HooverEngine {
           )
           batch.append(entry)
           entryId = entry.id
+          lastEntryId = entry.id  // Track for checkpoint
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
@@ -391,6 +437,15 @@ public final class HooverEngine {
         previousEntries: &previousEntries
       )
     }
+
+    // ALWAYS update checkpoint, regardless of whether there were new entries
+    // This ensures checkpoint is persisted even for already-processed transcripts
+    try updateCheckpoint(
+      transcriptId: transcript.id,
+      lastProcessedLine: lineNo,
+      lastProcessedEntryId: lastEntryId,
+      lineCount: lineNo
+    )
 
     // Verify checkpoint was updated correctly
     if let updatedTranscript = try? db.read({ db in try Transcript.fetchOne(db, key: transcript.id) }) {
@@ -600,27 +655,8 @@ public final class HooverEngine {
         )
       """)
 
-      // Update transcript checkpoint with last processed entry ID
-      // Use COALESCE to preserve existing ID if this batch had only errors
-      let lastEntryId = entries.last?.id
-      try db.execute(sql: """
-        UPDATE transcripts
-        SET last_processed_line = ?,
-            last_processed_entry_id = COALESCE(?, last_processed_entry_id),
-            line_count = ?,
-            parser_version = ?,
-            status = 'active',
-            last_error = NULL,
-            updated_at = ?
-        WHERE id = ?
-      """, arguments: [
-        lastProcessedLine,
-        lastEntryId,
-        lineCount,
-        1,
-        Int(Date().timeIntervalSince1970),
-        transcriptId
-      ])
+      // NOTE: Checkpoint UPDATE removed - now handled unconditionally in hooverTranscript()
+      // This ensures checkpoint is persisted even when batch is empty (already-processed transcripts)
     }
   }
 }
