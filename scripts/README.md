@@ -59,7 +59,7 @@ Survey database for timeline summaries with "infer from message" placeholder.
 
 **Related:**
 - Follow-up script: `generate_intent_improvements.py`
-- Documentation: `build/notes/technical-reference/intent-classification-analysis.md`
+- Documentation: `build/docs/archive/investigations/2025-11-03-intent-classification.md`
 - Issue: `TODOS.md` #1 (Timeline Summaries Placeholder)
 
 ---

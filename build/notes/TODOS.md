@@ -571,8 +571,8 @@
 ## References
 
 - **Feature Spec:** `build/notes/feature-specs/welcome-modal-first-launch.md`
-- **Coordinator Architecture:** `build/notes/technical-reference/startup-coordinator-architecture.md`
-- **Discovery Implementation:** `build/notes/technical-reference/project-discovery-implementation.md`
+- **Coordinator Architecture:** `build/docs/architecture/startup-coordinator.md`
+- **Discovery Implementation:** `build/docs/components/project-discovery.md`
 - **Original Refactor Summary:** `/tmp/fix-coordinator-integration-issues-summary.md`
 
 ---
