@@ -83,6 +83,13 @@ struct TimelineEntryRow: View, Equatable {
             Button("Copy Detail") { copy(entry.detail) }
             Button("Copy Both as JSON") { copyAsJSON() }
 
+            if let transcriptPath = entry.sourceContext?.filePath {
+                Divider()
+                Button("Reveal Source Transcript in Finder") {
+                    revealTranscriptInFinder(path: transcriptPath)
+                }
+            }
+
             if entry.contentSha256 != nil && entry.windowSha256 != nil {
                 Divider()
                 Button("Regenerate Summary") {
@@ -204,13 +211,19 @@ struct TimelineEntryRow: View, Equatable {
     }
 
     private func copyAsJSON() {
-        let json: [String: String] = [
+        var json: [String: Any] = [
             "summary": entry.summary,
             "detail": entry.detail,
-            "timestamp": ISO8601DateFormatter().string(from: entry.timestamp)
+            "timestamp": ISO8601DateFormatter().string(from: entry.timestamp),
+            "entry_id": entry.sourceIdentifier
         ]
 
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+        // Add transcript filepath if available
+        if let transcriptPath = entry.sourceContext?.filePath {
+            json["transcript_path"] = transcriptPath
+        }
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             return
         }
@@ -227,6 +240,11 @@ struct TimelineEntryRow: View, Equatable {
         Task {
             await monitor.regenerateSummary(contentSha256: contentSha, windowSha256: windowSha)
         }
+    }
+
+    private func revealTranscriptInFinder(path: String) {
+        let url = URL(fileURLWithPath: path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     private func revealInInventory() {
