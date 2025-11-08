@@ -358,11 +358,11 @@ When FoundationLLM is unavailable:
 
 ## Related Documentation
 
-- **Timeline Cache + LLM:** [`timeline-cache-llm-architecture.md`](./timeline-cache-llm-architecture.md)
-- **Conversation Monitor State:** [`conversation-monitor-state-architecture.md`](./conversation-monitor-state-architecture.md)
-- **Status Bar Implementation:** `build/notes/feature-specs/status-bar/spec-final.md`
-- **SQL Backend:** [`sql-backend-architecture.md`](./sql-backend-architecture.md)
-- **Logging Guidelines:** [`logging-preferences.md`](./logging-preferences.md)
+- **Timeline Cache + LLM:** [`../components/timeline-cache.md`](../components/timeline-cache.md)
+- **Conversation Monitor State:** [`conversation-monitor-state.md`](./conversation-monitor-state.md)
+- **Status Bar Implementation:** `build/docs/archive/feature-specs/status-bar.md` (original spec)
+- **SQL Backend:** [`sql-backend.md`](./sql-backend.md)
+- **Logging Guidelines:** [`../guides/logging-best-practices.md`](../guides/logging-best-practices.md)
 
 ---
 

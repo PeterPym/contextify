@@ -762,11 +762,11 @@ try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)  // 30 seconds instead of
 
 ## Related Documentation
 
-- **SQL Backend:** `build/notes/technical-reference/sql-backend-architecture.md`
-- **Conversation Monitor State:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
-- **LLM Processing:** `build/notes/technical-reference/llm-processing-architecture.md`
-- **Transcript Format:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
-- **Logging Guidelines:** `build/notes/technical-reference/logging-preferences.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
+- **Conversation Monitor State:** `build/docs/architecture/conversation-monitor-state.md`
+- **LLM Processing:** `build/docs/architecture/llm-processing.md`
+- **Transcript Format:** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
+- **Logging Guidelines:** `build/docs/guides/logging-best-practices.md`
 
 ---
 

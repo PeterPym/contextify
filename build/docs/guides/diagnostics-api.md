@@ -323,7 +323,7 @@ if __name__ == '__main__':
 - **Internal API:** `ConversationMonitor.captureDiagnostics()`
 - **Service:** `TimelineDiagnosticsService`
 - **Exporter:** `DiagnosticsExporter`
-- **Documentation:** `build/notes/technical-reference/timeline-diagnostics-framework.md`
+- **Framework Documentation:** `build/docs/guides/timeline-diagnostics.md`
 
 ---
 

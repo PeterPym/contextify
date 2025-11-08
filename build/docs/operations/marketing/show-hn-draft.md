@@ -121,7 +121,7 @@ Full app build requires Xcode 16 (beta) and macOS 26 SDK. Detailed build instruc
 
 - **GitHub**: https://github.com/banagale/contextify
 - **Converter branch**: https://github.com/banagale/contextify/tree/feature/transcript-converter
-- **Format docs**: `build/notes/technical-reference/claude-code-transcript-format.md`
+- **Format docs**: `build/docs/specifications/claude-code-format.md`
 
 ---
 

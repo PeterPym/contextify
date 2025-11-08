@@ -216,8 +216,8 @@ xcrun stapler staple dist/Contextify.dmg
 - `build/logs/notarization-test.log` - Full notarization output
 
 **Documentation:**
-- `build/notes/notarization-setup.md` - Setup guide
-- `build/notes/notarization-success.md` - This file
+- `build/docs/operations/release/notarization-setup.md` - Setup guide
+- `build/docs/operations/release/notarization-success.md` - This file
 
 ---
 

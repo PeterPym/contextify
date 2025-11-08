@@ -560,7 +560,7 @@ Use Contextify's established color palette:
 - **WWDC 2022:** "What's new in UIKit"
 
 ### Internal Documentation
-- **Color Scheme:** `/build/notes/design-reference/color-scheme.md`
+- **Color Scheme:** `build/docs/design/color-scheme.md`
 - **Component Library:** (TBD)
 
 ---

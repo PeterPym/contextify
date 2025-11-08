@@ -392,8 +392,8 @@ date
 - **Hoover Engine:** `app/Sources/ContextifyCore/Database/HooverEngine.swift`
 - **Transcript Watcher:** `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
 - **Conversation Monitor:** `Contextify/Contextify/ConversationMonitor.swift`
-- **Ingestion Pipeline:** `build/notes/technical-reference/transcript-ingestion-pipeline.md`
-- **Data Flow:** `build/notes/technical-reference/data-flow-complete.md`
+- **Ingestion Pipeline:** `build/docs/components/transcript-ingestion.md`
+- **Data Flow:** `build/docs/architecture/data-flow.md`
 
 ## API Reference
 

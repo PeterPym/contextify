@@ -648,8 +648,8 @@ NotificationCenter.default.addObserver(
 
 ## Cross-References
 
-- **SQL Backend:** `build/notes/technical-reference/sql-backend-architecture.md`
-- **State Management:** `build/notes/technical-reference/conversation-monitor-state-architecture.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
+- **State Management:** `build/docs/architecture/conversation-monitor-state.md`
 - **Database Schema:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 - **LLM Implementation:** `Contextify/Contextify/FoundationLLM.swift`
 - **LLM Health Check:** `Contextify/Contextify/LLMHealthCheck.swift`

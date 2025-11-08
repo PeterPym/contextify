@@ -569,7 +569,7 @@ seenEntryIDs.removeAll(keepingCapacity: false)
 
 ## Cross-References
 
-- **SQL Backend:** `build/notes/technical-reference/sql-backend-architecture.md`
-- **Cache + LLM:** `build/notes/technical-reference/timeline-cache-llm-architecture.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
+- **Cache + LLM:** `build/docs/components/timeline-cache.md`
 - **Implementation:** `Contextify/Contextify/ConversationMonitor.swift`
 - **Models:** `Contextify/Contextify/TimelineModels.swift`

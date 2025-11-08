@@ -185,7 +185,7 @@ assistant_usage (NEW)
 - Optional backfill for existing transcripts
 - Incremental UI rollout
 
-See comprehensive spec in `build/notes/technical-reference/claude-code-transcript-format.md`.
+See comprehensive spec in `build/docs/specifications/claude-code-format.md`.
 
 ### Critical Indexes
 

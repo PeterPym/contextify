@@ -481,8 +481,8 @@ For bugs, feature requests, or questions:
 ### Developer Documentation
 
 For contributing or advanced use:
-- **Architecture Docs:** `build/notes/technical-reference/`
-- **Design System:** `build/notes/design-reference/`
+- **Architecture Docs:** `build/docs/architecture/`
+- **Design System:** `build/docs/design/`
 - **Database Schema:** `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 
 ### Version & System Info

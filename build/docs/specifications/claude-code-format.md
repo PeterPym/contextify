@@ -609,9 +609,9 @@ Most Used Commands:
 - [ClaudeCodeJSONLParser](https://github.com/amac0/ClaudeCodeJSONLParser) - HTML log viewer
 
 **Related Docs:**
-- `build/notes/archive/technical-briefing-local-history-claude-code-codex.md` - Claude Code vs Codex comparison
+- `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md` - Claude Code vs Codex comparison
 - `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - Current parser implementation
-- `build/notes/technical-reference/sql-backend-architecture.md` - Database architecture
+- `build/docs/architecture/sql-backend.md` - Database architecture
 
 **Analysis Data:**
 - 43 transcript files analyzed

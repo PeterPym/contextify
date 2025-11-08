@@ -265,7 +265,7 @@ Two options:
      dist/Contextify.dmg \
      dist/Contextify.dmg.sha256 \
      --title "Contextify v{version}" \
-     --notes-file build/notes/release-notes-{version}.md
+     --notes-file /tmp/contextify-release/release-notes-{version}.md
    ```
 
 **Acceptance Criteria:**
@@ -276,7 +276,7 @@ Two options:
 
 #### 3.2 Create Release Checklist
 
-**New file:** `build/notes/release-checklist.md`
+**New file:** `/tmp/contextify-release/release-checklist.md` (transient planning doc)
 
 **Contents:**
 - [ ] All P0 blockers from `future-features.md` resolved
