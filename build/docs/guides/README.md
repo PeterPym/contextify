@@ -12,6 +12,14 @@ This directory contains practical guides for:
 
 ## Documents
 
+### Debugging Toolkit
+**Primary resource:** [`../../scripts/logging/README.md`](../../scripts/logging/README.md)
+- Automated test harnesses with pass/fail validation
+- Pipeline completeness checking
+- Gap analysis for performance issues
+- Interactive monitoring with color-coded output
+- LLM-optimized dispatch table
+
 ### [Diagnostics API](diagnostics-api.md)
 **Topics:** HTTP API for debugging (DEBUG builds only)
 - Endpoints: `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`

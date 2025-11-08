@@ -330,7 +330,7 @@ Common commands:
 - Backups stored in: `build/db-backups/`
 - **Agent rule:** ALWAYS ask user for approval before cleaning database
 
-**For detailed debugging workflows:** See `scripts/QUICK-REFERENCE.md` and `scripts/LOG-CAPTURE-README.md`
+**For detailed debugging workflows:** See `scripts/logging/README.md` (primary debugging toolkit) and `scripts/QUICK-REFERENCE.md`
 
 **Diagnostics HTTP API (DEBUG builds only):**
 - API runs on `http://localhost:17329` when app is running
@@ -398,6 +398,31 @@ Common commands:
 Configure Xcode console with `TYPE Info` filter to hide debug logs in production.
 
 **Detailed reference:** See `build/docs/guides/logging-best-practices.md` for comprehensive guidelines, code examples, and anti-patterns.
+
+## Debugging Workflows
+
+**Primary resource:** `scripts/logging/README.md` - Complete debugging toolkit with automated test harnesses
+
+When encountering bugs or issues:
+
+1. **Choose debugging pattern** based on symptom:
+   - **Feature not appearing in UI** → Pipeline Completeness Check (`scripts/logging/monitor-pipeline-check.sh`)
+   - **Need to verify bug fix** → Automated Test Harness (`scripts/logging/monitor-automated-test.sh`)
+   - **App slow/laggy** → Gap Analysis (`scripts/logging/monitor-interactive.sh` + `analyze-gaps.sh`)
+   - **Exploring unknown issue** → Interactive Monitoring (`scripts/logging/monitor-interactive.sh`)
+
+2. **Prefer automated approaches** that generate pass/fail reports without human interpretation
+
+3. **See full documentation:** `scripts/logging/README.md` contains:
+   - Quick dispatch table (symptom → script)
+   - 5 debugging patterns with usage examples
+   - Self-validating test harness templates
+   - LLM-optimized workflow guidance
+
+**Additional debugging resources:**
+- Log capture: `scripts/QUICK-REFERENCE.md`, `scripts/LOG-CAPTURE-README.md`
+- Logging conventions: `build/docs/guides/logging-best-practices.md`
+- Debugging case study: `build/notes/research/debugging-setup-2025-11-08.md`
 
 ## Testing Guidelines
 - **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
