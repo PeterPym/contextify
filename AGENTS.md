@@ -73,8 +73,8 @@ assets/ icons/
 - **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`): Unread tracking and visit timestamps per project.
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
-  - Architecture: `build/notes/technical-reference/sql-backend-architecture.md`
-  - Custom location feature: `build/notes/feature-specs/custom-database-location/spec.md`
+  - Architecture: `build/docs/architecture/sql-backend.md`
+  - Custom location feature: Shipped (see Settings > Database tab)
 
 ### LLM Processing & Timeline Integration
 Contextify uses **two independent LLM processing queues** for content generation (both using Apple Intelligence/FoundationLLM on macOS 26+):
@@ -91,10 +91,10 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **TimelineModels** (`Contextify/Contextify/TimelineModels.swift`): Timeline-specific data models (TimelineEntry, CacheKey, Disposition).
 - **TimelineState** (`ConversationMonitor.swift`): Observable state container for timeline entries, derived cache index, and revision tracking.
 - **Documentation**:
-  - **⭐ LLM Architecture Overview:** `build/notes/technical-reference/llm-processing-architecture.md` (start here)
-  - Timeline cache + LLM: `build/notes/technical-reference/timeline-cache-llm-architecture.md`
-  - State management: `build/notes/technical-reference/conversation-monitor-state-architecture.md`
-  - Status bar spec: `build/notes/feature-specs/status-bar/spec-final.md`
+  - **⭐ LLM Architecture Overview:** `build/docs/architecture/llm-processing.md` (start here)
+  - Timeline cache + LLM: `build/docs/components/timeline-cache.md`
+  - State management: `build/docs/architecture/conversation-monitor-state.md`
+  - Status bar: Shipped (see original design in `build/docs/archive/feature-specs/status-bar.md`)
 
 ### Core Components (Project Context)
 - **HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`): Main `@Observable` `@MainActor` view model. Manages:
@@ -152,8 +152,8 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 
 **Architecture:**
 - **Startup Order:** `ContextifyApp.init()` starts coordinator → `ProjectSwitcherState.start()` subscribes to updates → `ContentView.task` waits for `ready()` → Timeline starts with stable project ID
-- **Documentation:** `build/notes/technical-reference/startup-coordinator-architecture.md`
-- **Implementation Plan:** `build/notes/feature-specs/startup-coordinator/implementation-plan.md`
+- **Documentation:** `build/docs/architecture/startup-coordinator.md`
+- **Implementation:** Shipped in commit 531ac70 (see original plan in `build/docs/archive/feature-specs/startup-coordinator.md`)
 
 ### UI Layer
 - **ContentView** (`Contextify/Contextify/ContentView.swift`): Main UI with header (project/branch display, "Set Project Root" button), URL entry field, drop zone, controls (New Session, Checkpoint, Reveal Outputs), and toast notifications.
@@ -357,8 +357,8 @@ Common commands:
 
 ## UI/UX Design Guidelines
 
-**Design specs:** `build/notes/design-reference/` (color scheme, typography, patterns)
-**Color scheme:** `build/notes/design-reference/color-scheme.md` | Implementation: `TimelineEntryRow.swift:192-206`
+**Design specs:** `build/docs/design/` (color scheme, typography, patterns)
+**Color scheme:** `build/docs/design/color-scheme.md` | Implementation: `TimelineEntryRow.swift:192-206`
 
 ## Logging Guidelines
 
@@ -382,7 +382,7 @@ Common commands:
 
 Configure Xcode console with `TYPE Info` filter to hide debug logs in production.
 
-**Detailed reference:** See `build/notes/technical-reference/logging-preferences.md` for comprehensive guidelines, code examples, and anti-patterns.
+**Detailed reference:** See `build/docs/guides/logging-best-practices.md` for comprehensive guidelines, code examples, and anti-patterns.
 
 ## Testing Guidelines
 - **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
@@ -525,7 +525,7 @@ Returns: Primary classification + 4 dimensional axes (conversation, metadata, co
 - Parser: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 - Database: `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
 
-**Key Document:** `build/notes/technical-reference/claude-code-transcript-format.md` contains:
+**Key Document:** `build/docs/specifications/claude-code-format.md` contains:
 - Complete field specifications for all record types
 - Transcript Classification Guide (§ at end)
 - Field Reference by Classification table

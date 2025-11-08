@@ -110,8 +110,8 @@ Failed to open file for watching
 
 **Current State:**
 - ✅ `app/Sources/ContextifyCore/TranscriptConverter.swift` (33KB)
-- ✅ Documentation in `build/notes/archive/implementation-docs/transcript-tool-conversion/`
-- ✅ Format specs in `build/notes/technical-reference/claude-code-transcript-format.md`
+- ✅ Documentation in `build/docs/archive/completed-work/` (transcript-tool-conversion docs)
+- ✅ Format specs in `build/docs/specifications/claude-code-format.md`
 
 **What Needs Completion:**
 - [ ] Audit current conversion implementation for correctness
@@ -338,7 +338,7 @@ Core system complete (Phases 1-4). Advanced features deferred:
 - Context-sensitive help menu (dynamic based on app state)
 - In-app help search (⌘K command palette)
 
-**Reference:** `build/notes/design-reference/help-tooltip-ux-system.md`
+**Reference:** `build/docs/design/help-tooltip-ux-system.md`
 
 ### Embedding & Semantic Search
 **Status:** Implemented but hidden behind dev mode flag
