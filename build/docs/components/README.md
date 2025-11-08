@@ -12,12 +12,28 @@ This directory contains focused documentation on specific components:
 
 ## Documents
 
-### [Transcript Ingestion](transcript-ingestion.md)
-**Component:** HooverEngine
-**Topics:** Streaming JSONL parser for transcript files
-- Batch processing and checkpointing
-- Window tracking
-- Crash-safe ingestion with resume support
+### [Active Session Policy](active-session-policy.md)
+**Component:** ActiveSessionPolicyEngine
+**Topics:** Timeline follow behavior (automatic vs manual pin)
+- Policy engine decision logic
+- Follow mode persistence (schema v23)
+- Switch reasons and notifications
+- User-visible pin/unpin behavior
+
+### [Database Migration](database-migration.md)
+**Component:** DatabaseMigration
+**Topics:** Custom database location and migration system
+- Atomic migration with validation
+- Security-scoped bookmarks for sandbox
+- Multi-machine conflict detection
+- Dropbox/iCloud sync support
+
+### [Project Discovery](project-discovery.md)
+**Component:** ConversationSources + ProjectDiscoveryService
+**Topics:** Multi-project detection and monitoring
+- Provider-specific scanners (Claude Code, Codex CLI)
+- FSEvents-based file watching
+- Worktree support
 
 ### [Timeline Cache](timeline-cache.md)
 **Component:** TimelineCacheMissGenerator + TranscriptMetadataOrchestrator
@@ -26,12 +42,12 @@ This directory contains focused documentation on specific components:
 - Miss detection and batch generation
 - Integration with FoundationLLM
 
-### [Project Discovery](project-discovery.md)
-**Component:** ConversationSources + ProjectDiscoveryService
-**Topics:** Multi-project detection and monitoring
-- Provider-specific scanners (Claude Code, Codex CLI)
-- FSEvents-based file watching
-- Worktree support
+### [Transcript Ingestion](transcript-ingestion.md)
+**Component:** HooverEngine
+**Topics:** Streaming JSONL parser for transcript files
+- Batch processing and checkpointing
+- Window tracking
+- Crash-safe ingestion with resume support
 
 ---
 

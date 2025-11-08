@@ -12,24 +12,37 @@ This directory contains high-level architectural documentation that explains:
 
 ## Documents
 
+### [Conversation Monitor State](conversation-monitor-state.md)
+**Topics:** Timeline state management and real-time updates
+- TimelineState observable model
+- Entry filtering and session management
+- System message handling
+
 ### [Data Flow](data-flow.md)
 **Topics:** End-to-end data pipeline from filesystem → database → UI
 - 5-stage pipeline: Discovery, Persistence, Streaming, Monitoring, Rendering
 - Component interactions and data transformations
 - Current state as of 2025-10-22
 
-### [SQL Backend](sql-backend.md)
-**Topics:** SQLite database architecture and schema design
-- Tables, migrations (v1-v21), repositories
-- GRDB integration
-- Current schema: v21 (database_access_metadata)
-- **Note:** Needs update with v12-v21 migrations (see TODOS.md)
-
 ### [LLM Processing](llm-processing.md)
 **Topics:** Dual-queue LLM architecture (FoundationLLM)
 - TimelineCacheMissGenerator (queue #1: entry summaries)
 - TranscriptMetadataOrchestrator (queue #2: document metadata)
 - Status aggregation and monitoring
+
+### [Project Switcher](project-switcher.md)
+**Topics:** Multi-project tab navigation and state management
+- Tab-based UI with drag-drop reordering
+- Unread badge calculation and display
+- Keyboard shortcuts and navigation
+- Event-driven discovery and updates
+- **Implementation:** Shipped (ProjectSwitcherState + ProjectSwitcherView)
+
+### [SQL Backend](sql-backend.md)
+**Topics:** SQLite database architecture and schema design
+- Tables, migrations (v1-v23), repositories
+- GRDB integration
+- Current schema: v23 (active transcript follow)
 
 ### [Startup Coordinator](startup-coordinator.md)
 **Topics:** Deterministic project identity pipeline
@@ -43,12 +56,6 @@ This directory contains high-level architectural documentation that explains:
 - Main HUD, Transcript Inventory, Projects, Settings
 - Window management patterns
 - **Note:** iTerm2 integration removed in commit 35ce380
-
-### [Conversation Monitor State](conversation-monitor-state.md)
-**Topics:** Timeline state management and real-time updates
-- TimelineState observable model
-- Entry filtering and session management
-- System message handling
 
 ---
 
