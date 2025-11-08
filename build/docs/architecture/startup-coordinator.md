@@ -404,10 +404,11 @@ func testFullStartupSequence() async throws {
 
 ## Related Documentation
 
-- **Implementation Plan:** `feature-specs/startup-coordinator/implementation-plan.md`
-- **Status:** `feature-specs/startup-coordinator/STATUS.md`
-- **SQL Backend:** `technical-reference/sql-backend-architecture.md`
-- **State Management:** `technical-reference/conversation-monitor-state-architecture.md`
+- **Original design spec:** `build/docs/archive/feature-specs/startup-coordinator.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
+- **State Management:** `build/docs/architecture/conversation-monitor-state.md`
+- **ProjectSwitcher integration:** `build/docs/architecture/project-switcher.md`
+- **Implementation:** `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`
 
 ---
 
