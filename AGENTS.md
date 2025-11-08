@@ -74,6 +74,7 @@ assets/ icons/
 - **Documentation**:
   - Usage guide: `app/Sources/ContextifyCore/Database/README.md`
   - Architecture: `build/docs/architecture/sql-backend.md`
+  - Database migration: `build/docs/components/database-migration.md`
   - Custom location feature: Shipped (see Settings > Database tab)
 
 ### LLM Processing & Timeline Integration
@@ -160,7 +161,12 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 - **ConversationTimelineView** (`Contextify/Contextify/ConversationTimelineView.swift`): Timeline display UI with session filtering and real-time updates.
 - **TimelineEntryRow** (`Contextify/Contextify/TimelineEntryRow.swift`): Individual timeline entry row component.
 - **TranscriptInventoryView** (`Contextify/Contextify/TranscriptInventoryView.swift`): UI for browsing and switching between transcript sessions.
+- **ProjectSwitcherView** (`Contextify/Contextify/ProjectSwitcherView.swift`): Multi-project tab navigation bar with drag-drop reordering, unread badges, and keyboard shortcuts.
+- **ProjectSwitcherState** (`Contextify/Contextify/ProjectSwitcherState.swift`): `@Observable` state management for project list, active project, and unread counts.
 - **IngestDropZone** (`Contextify/Contextify/IngestDropZone.swift`): Drag-and-drop target for files, uses SwiftUI `onDrop` with completion handlers and main actor marshaling.
+- **Documentation**:
+  - Project switcher architecture: `build/docs/architecture/project-switcher.md`
+  - Active session policy: `build/docs/components/active-session-policy.md`
 
 ### Supporting Components
 - **WindowTitleWriter** (`Contextify/Contextify/WindowTitleWriter.swift`): Updates window title to show current project name.
