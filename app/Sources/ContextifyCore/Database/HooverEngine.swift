@@ -307,7 +307,8 @@ public final class HooverEngine {
           if skippedLines >= lineNo { break }
         }
       }
-      buffer.removeAll()
+      // DO NOT clear buffer here - it contains the start of the next unprocessed line
+      // buffer.removeAll()
     }
 
     // Process remaining lines
