@@ -93,7 +93,7 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - `selectedForm`: Which form to display
 - `disposition`: "directive" | "question" | "response"
 
-**Detailed Documentation:** [`timeline-cache-llm-architecture.md`](./timeline-cache-llm-architecture.md)
+**Detailed Documentation:** [`../components/timeline-cache.md`](../components/timeline-cache.md)
 
 ---
 
