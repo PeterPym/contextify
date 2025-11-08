@@ -607,3 +607,186 @@
 **Assignee:** TBD
 **Target Completion:** TBD
 **Priority:** P0 (Blocks release)
+
+---
+---
+
+# Technical Debt & Bug Fixes
+
+## ConversationMonitor Initialization Architecture
+
+**Status:** Phase 1 Complete, Phase 2/3 Deferred
+**Priority:** P3 (Technical Debt)
+**Assignee:** TBD
+**Target Completion:** Deferred
+
+### Problem
+
+ConversationMonitor has multiple initialization paths and timing dependencies that make it fragile:
+- Multiple entry points: `start()`, `startMonitoring()`, `startIfReady()`
+- Implicit dependencies on HUDViewModel and database
+- Potential timing races with ProjectSwitcherState
+- Unclear error recovery paths
+
+### Phase 1 Complete
+
+✅ Mapped all initialization code paths
+✅ Documented dependencies on StartupCoordinator
+✅ Identified race conditions (resolved in CXT-13)
+✅ Created architecture documentation
+
+### Phase 2/3 Deferred (P3)
+
+**Phase 2: Dependency Injection**
+- Make dependencies explicit
+- Remove singleton pattern
+- Require TranscriptOrchestrator in init
+- Make `start()` idempotent
+
+**Phase 3: Startup Sequencing**
+- Full integration with StartupCoordinator lifecycle
+- Remove manual notification handling
+- Add explicit error states
+
+### Why Deferred
+
+- Current implementation is stable in production
+- No active bugs related to initialization
+- CXT-13 resolved major race conditions
+- Higher priority work (Welcome Modal, P1 bugs)
+
+### When to Revisit
+
+- Multi-window support requires multiple ConversationMonitor instances
+- Initialization bugs surface in production
+- Testing becomes too complex with current design
+
+**Detailed Spec:** `/tmp/conversation-monitor-init-architecture.md`
+
+---
+
+## HTTP Diagnostics Port Conflict (P1 Bug)
+
+**Status:** Confirmed, Not Started
+**Priority:** P1 (Production Error)
+**Severity:** Medium (Non-blocking)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+DiagnosticsHTTPServer fails to bind to port 17329 when address already in use:
+
+```
+Address already in use (errno: 48)
+Failed to start diagnostics HTTP server
+```
+
+**Frequency:** 8 occurrences in logs
+**Impact:** Diagnostics API unavailable, helper scripts fail
+
+### Root Cause
+
+1. Previous app instance didn't release port (crash/force-quit)
+2. Port collision with another process
+
+### Solution
+
+**Recommended:** Port fallback (17329 → 17330 → 17331, etc.)
+
+**Implementation:**
+```swift
+// Try ports 17329-17339 in sequence
+for port in 17329...17339 {
+  do {
+    try bindToPort(port)
+    log.info("Diagnostics server on port \(port)")
+    return
+  } catch { continue }
+}
+```
+
+**Tasks:**
+- [ ] Implement port fallback in DiagnosticsHTTPServer.swift
+- [ ] Log actual bound port
+- [ ] Update `scripts/timeline_api.sh` to auto-detect port
+- [ ] Add port info to `/health` endpoint
+
+**Estimated Effort:** 2-3 hours
+
+**Files:**
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`
+- `scripts/timeline_api.sh`
+
+**Detailed Spec:** `/tmp/http-diagnostics-port-conflict.md`
+
+---
+
+## Codex Discovery Data Quality Issues (P2)
+
+**Status:** Confirmed, Not Started
+**Priority:** P2 (Data Quality)
+**Severity:** Low (Metadata only)
+**Assignee:** TBD
+**Target Completion:** Future sprint
+
+### Problem
+
+Codex-discovered projects have poor metadata quality:
+
+1. **Missing names:** 7+ projects show path as name (`/Users/rob/code/project`)
+2. **Incorrect session IDs:** Some use file path hash instead of workspace ID
+3. **No git branch:** Codex projects don't populate `git_branch` field
+4. **Orphaned projects:** Deleted projects remain in database
+
+**Affected:** ~7+ Codex projects
+
+### Impact
+
+- Confusing project names in switcher tabs
+- Inconsistent metadata vs Claude Code projects
+- Harder to identify projects
+
+### Solution (Phased)
+
+**Phase 1: Project Name Improvement (P2)**
+- Parse Codex workspace metadata for project names
+- Fallback to parent directory name (better than hash)
+- Estimated: 3-4 hours
+
+**Phase 2: Session ID Normalization (P2)**
+- Use Codex workspace ID consistently
+- One-time migration for existing entries
+- Estimated: 4-5 hours
+
+**Phase 3: Git Branch Detection (P3)**
+- Run git detection during discovery
+- Cache in database
+- Estimated: 2-3 hours
+
+**Phase 4: Orphan Cleanup (P3)**
+- Periodic check for missing directories
+- Auto-hide orphaned projects
+- Estimated: 2-3 hours
+
+### Recommended Approach
+
+Start with **Phase 1** only (highest user-visible impact, lowest risk).
+
+**Tasks (Phase 1):**
+- [ ] Add Codex manifest parser
+- [ ] Update ProjectDiscoveryService.discoverFromCodex()
+- [ ] Test with real Codex sessions
+- [ ] Verify names in switcher UI
+
+**Files:**
+- `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+**Workaround:** Users can manually rename projects in Projects window (Cmd+Shift+P)
+
+**Detailed Spec:** `/tmp/codex-discovery-data-quality.md`
+
+---
+
+**Last Updated:** 2025-11-08
