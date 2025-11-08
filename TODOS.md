@@ -29,7 +29,7 @@
 - `Contextify/Contextify.entitlements` - Enable sandbox + required entitlements
 - `Contextify/Contextify/FirstLaunchProjectSetup.swift` (NEW) - Project access UI
 - `app/Sources/ContextifyCore/Database/DatabaseManager.swift` - Sandbox-aware DB location
-- `Contextify/Contextify/ProjectDiscoveryService.swift` - Security-scoped access
+- `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift` - Security-scoped access
 
 **Related Commits:**
 - `35ce380` - Removed iTerm2/terminal integration (entitlements cleanup)
@@ -65,9 +65,9 @@ Failed to open file for watching
 ---
 
 ### 2. System Messages for Transcript Switches (QA Ready)
-**Status:** Implementation complete - Ready for testing and merge
-**Branch:** `fix/system-messages-display` (commit: ee33ca7)
-**Effort:** 1-2 hours testing + merge
+**Status:** Implementation complete - Ready for cherry-pick and testing
+**Commit:** `ee33ca7` (was implemented then reverted in `b554563`)
+**Effort:** 1-2 hours to cherry-pick, test, and merge
 
 **What's Implemented:**
 - ✅ `setEntries()` preserves system entries during SQL refresh
@@ -93,10 +93,14 @@ Failed to open file for watching
    - Verify system message appears in timeline
 
 **Next Steps:**
-1. Checkout `fix/system-messages-display` branch
+1. Cherry-pick commit `ee33ca7` onto main or create new branch
 2. Run all test scenarios above
 3. Merge to main after verification
 4. Phase 2 (optional): Make system messages restart-safe
+
+**Files Modified:**
+- `Contextify/Contextify/ConversationMonitor.swift` - System message logic (see line ~1992: `appendSystemEntry()`)
+- `Contextify/Contextify/TimelineModels.swift` - `.system` kind defined (line 7)
 
 ---
 
@@ -145,21 +149,28 @@ Failed to open file for watching
 - Affects both timeline summaries and transcript metadata
 
 **Proposed Fix:**
-Add pre-filtering step before LLM submission:
+Add pre-filtering step before LLM submission. **Note:** The existing `sanitize()` function in `FoundationLLM.swift` (line ~1284) is for whitespace normalization, NOT expletive filtering.
 
 ```swift
+/// Sanitize text by replacing expletives with placeholders before LLM submission.
+/// Original content remains unchanged in database.
 private func sanitizeForLLM(_ text: String) -> String {
+    // Common profanity patterns with word boundaries to avoid false positives
     let expletivePatterns = [
-        "\\bf[u*]+ck(ing|ed|er)?\\b",
-        "\\bsh[i*]+t\\b",
-        "\\bd[a*]+mn\\b",
-        "\\ba[s*]+hole\\b",
-        "\\bb[i*]+tch\\b",
+        "\\bf[u*]+ck(ing|ed|er|s)?\\b",  // f-word variants
+        "\\bsh[i*]+t(ty|s)?\\b",         // s-word variants
+        "\\bd[a*]+mn(ed)?\\b",            // d-word variants
+        "\\ba[s*]+hole(s)?\\b",           // a-word variants
+        "\\bb[i*]+tch(y|es)?\\b",         // b-word variants
     ]
 
     var sanitized = text
     for pattern in expletivePatterns {
-        let regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive]
+        ) else { continue }
+
         sanitized = regex.stringByReplacingMatches(
             in: sanitized,
             range: NSRange(sanitized.startIndex..., in: sanitized),
@@ -170,11 +181,12 @@ private func sanitizeForLLM(_ text: String) -> String {
 }
 ```
 
-**Implementation:**
+**Implementation Notes:**
 - Filter only LLM input, keep original content in database
-- Use word boundaries to avoid false positives ("class" contains "ass")
-- Case-insensitive matching
-- Document LLM receives sanitized input for compliance
+- Use word boundaries (`\b`) to avoid false positives (e.g., "class" contains "ass")
+- Case-insensitive matching with `[.caseInsensitive]`
+- Use `try?` for regex compilation (fail gracefully if pattern invalid)
+- Document that LLM receives sanitized input for Apple's content policy compliance
 
 **Files:**
 - `Contextify/Contextify/FoundationLLM.swift` - Add sanitization helper
@@ -268,8 +280,8 @@ Desired:  "Claude cleaned the database and asked if you'd like to launch the app
 ## Documentation & Maintenance
 
 ### Technical Documentation Updates
-- [ ] Update `CLAUDE.md` with database schema v21 (current: shows v11)
-- [ ] Document `StartupCoordinator` architecture (already implemented but spec says "Planned")
+- [x] ~~Update `CLAUDE.md` with database schema v21~~ (already updated - line 49 shows v21)
+- [ ] Document `StartupCoordinator` architecture in technical reference (already implemented but not documented)
 - [ ] Update `sql-backend-architecture.md` with v12-v21 migrations
 - [ ] Document reconciliation process for `assistant_usage`
 - [ ] Add troubleshooting guide for timeline/badge issues
