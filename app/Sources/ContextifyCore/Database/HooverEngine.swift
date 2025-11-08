@@ -703,4 +703,13 @@ public enum ParserError: Error {
   case unsupportedProvider(String)
   case invalidFormat(String)
   case skipEntry  // Indicates entry should be skipped (meta messages, empty content, etc.)
+  case corruptedRecord(CorruptionType, details: String)
+}
+
+/// Types of transcript corruption we can detect and potentially recover from
+public enum CorruptionType: String {
+  case orphanedToolResult = "orphaned_tool_result"
+  case stopReasonMismatch = "stop_reason_mismatch"
+  case missingParent = "missing_parent"
+  case invalidContentBlock = "invalid_content_block"
 }
