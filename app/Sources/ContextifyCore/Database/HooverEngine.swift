@@ -312,16 +312,20 @@ public final class HooverEngine {
     }
 
     // Process remaining lines
+    var outerLoopCount = 0
     while true {
-      guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
-        log.debug("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public) for transcript: \(transcript.id, privacy: .public)")
-        break
-      }
-      buffer.append(chunk)
+      outerLoopCount += 1
+      log.info("[HOOVER-OUTER-LOOP] Iteration \(outerLoopCount): lineNo=\(lineNo), bufferSize=\(buffer.count) bytes")
 
+      // DRAIN BUFFER FIRST - process all complete lines already in buffer
+      var innerLoopCount = 0
       while let i = buffer.firstIndex(of: nl) {
+        innerLoopCount += 1
+        log.info("[HOOVER-INNER-LOOP] Iteration \(innerLoopCount): found newline at position \(i), bufferSize=\(buffer.count)")
+
         let lineData = buffer[..<i]
         buffer.removeSubrange(..<buffer.index(after: i))
+        log.info("[HOOVER-PROCESS-LINE] After removing line: bufferSize=\(buffer.count)")
         lineNo += 1
         transcriptHasher.update(lineData: lineData)
 
@@ -329,6 +333,10 @@ public final class HooverEngine {
           errors.append((lineNo, "<invalid UTF-8>", "Line is not valid UTF-8"))
           continue
         }
+
+        // Log line preview for debugging
+        let linePreview = String(lineString.prefix(80)).replacingOccurrences(of: "\n", with: "\\n")
+        log.info("[HOOVER-PARSE-START] Line \(lineNo): \(linePreview)...")
 
         var entryId: String? = nil
         do {
@@ -343,11 +351,14 @@ public final class HooverEngine {
           batch.append(entry)
           entryId = entry.id
           lastEntryId = entry.id  // Track for checkpoint
+          log.info("[HOOVER-PARSE-SUCCESS] Line \(lineNo) added to batch")
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
+          log.info("[HOOVER-PARSE-SKIP] Line \(lineNo) skipped (meta/empty)")
           // Don't add to batch, don't record as error
         } catch {
           let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
+          log.info("[HOOVER-PARSE-ERROR] Line \(lineNo): \(error.localizedDescription)")
           errors.append((lineNo, truncated, error.localizedDescription))
         }
 
@@ -365,6 +376,7 @@ public final class HooverEngine {
 
         // Checkpoint every N lines
         if batch.count >= MonitorConfig.batchLines {
+          log.info("[HOOVER-BATCH-COMMIT] Committing batch of \(batch.count) entries")
           try commitBatch(
             transcriptId: transcript.id,
             entries: batch,
@@ -380,6 +392,15 @@ public final class HooverEngine {
           progress.didAdvance(linesProcessed: lineNo, totalLines: nil)
         }
       }
+      log.info("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
+
+      // READ MORE DATA - only after draining existing buffer
+      guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
+        log.info("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public), outerLoops=\(outerLoopCount) for transcript: \(transcript.id, privacy: .public)")
+        break
+      }
+      log.info("[HOOVER-READ-CHUNK] Read \(chunk.count) bytes, buffer now \(buffer.count + chunk.count) bytes")
+      buffer.append(chunk)
     }
 
     // Handle final partial line (no trailing newline)
