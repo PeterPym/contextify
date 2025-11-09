@@ -32,6 +32,7 @@ actor LLMHealthCheck {
       case sessionCreationFailed(details: String)
       case testCallFailed(details: String)
       case overloaded  // LLM is overwhelmed and timing out
+      case healthCheckCancelled  // Health check was cancelled externally (not a real failure)
 
       // Environment reasons
       case macOSVersionTooOld
@@ -53,6 +54,8 @@ actor LLMHealthCheck {
           return "LLM test call failed: \(details)"
         case .overloaded:
           return "Apple Intelligence is overloaded and not responding. Summarization queue may be too large. Wait for pending requests to complete."
+        case .healthCheckCancelled:
+          return "Health check was cancelled during startup. Retrying..."
         case .macOSVersionTooOld:
           return "Requires macOS 26 (Tahoe) or later."
         case .foundationModelsNotImported:
@@ -62,13 +65,38 @@ actor LLMHealthCheck {
     }
   }
 
-  // Cache status for 30 seconds to avoid hammering the system
+  // Dynamic cache interval with exponential backoff
   private var cachedStatus: HealthStatus?
   private var previousStatus: HealthStatus?  // Track for change detection
   private var lastCheckTime: Date?
-  private let cacheInterval: TimeInterval = 30
+  private var cacheInterval: TimeInterval = 5  // Start with 5s, back off on repeated failures
+  private var consecutiveFailures = 0
+  private let maxCacheInterval: TimeInterval = 30
 
   private init() {}
+
+  /// Update cache interval based on health check result (exponential backoff on failures)
+  private func updateCacheInterval(for status: HealthStatus) {
+    switch status {
+    case .healthy:
+      // Reset on success
+      consecutiveFailures = 0
+      cacheInterval = 5
+
+    case .unavailable(let reason):
+      // Don't penalize cancellation (not a real failure)
+      if case .healthCheckCancelled = reason {
+        // Keep current interval, don't increment failures
+        log.debug("Health check cancelled - not treating as failure (interval stays \(Int(self.cacheInterval))s)")
+      } else {
+        // Real failure - increment and back off
+        consecutiveFailures += 1
+        // Exponential backoff: 5s → 10s → 20s → 30s (cap)
+        cacheInterval = min(5 * pow(2.0, Double(consecutiveFailures - 1)), maxCacheInterval)
+        log.info("Health check failed \(self.consecutiveFailures) consecutive times, cache interval now \(Int(self.cacheInterval))s")
+      }
+    }
+  }
 
   /// Log status change if it differs from previous status
   private func logStatusChange(_ newStatus: HealthStatus) {
@@ -109,29 +137,43 @@ actor LLMHealthCheck {
         log.warning("⚠️ Apple Intelligence RECOVERED - Now available")
       }
     case (_, .unavailable(let reason)):
-      // Log what specifically is unavailable
+      // Log what specifically is unavailable with detailed reason
       let indicator: String
+      let reasonDetail: String
       switch reason {
       case .appleIntelligenceNotEnabled:
         indicator = "Apple Intelligence not enabled in System Settings"
+        reasonDetail = "appleIntelligenceNotEnabled"
       case .deviceNotEligible:
         indicator = "Device not eligible for Apple Intelligence"
+        reasonDetail = "deviceNotEligible"
       case .modelNotReady:
         indicator = "Language model not ready"
-      case .guardrailSystemError:
+        reasonDetail = "modelNotReady"
+      case .guardrailSystemError(let details):
         indicator = "Guardrail system error (metadata.json missing)"
-      case .sessionCreationFailed:
+        reasonDetail = "guardrailSystemError(\(details))"
+      case .sessionCreationFailed(let details):
         indicator = "Session creation failed"
-      case .testCallFailed:
+        reasonDetail = "sessionCreationFailed(\(details))"
+      case .testCallFailed(let details):
         indicator = "LLM test call failed"
+        reasonDetail = "testCallFailed(\(details))"
       case .overloaded:
         indicator = "Apple Intelligence overloaded (health check timed out)"
+        reasonDetail = "overloaded"
+      case .healthCheckCancelled:
+        indicator = "Health check cancelled (external cancellation, not a real failure)"
+        reasonDetail = "healthCheckCancelled"
       case .macOSVersionTooOld:
         indicator = "macOS version too old (requires 26+)"
+        reasonDetail = "macOSVersionTooOld"
       case .foundationModelsNotImported:
         indicator = "FoundationModels framework not available"
+        reasonDetail = "foundationModelsNotImported"
       }
       log.error("❌ Apple Intelligence BECAME UNAVAILABLE - \(indicator, privacy: .public)")
+      log.error("   Reason: .\(reasonDetail, privacy: .public)")
     }
 
     previousStatus = newStatus
@@ -158,6 +200,7 @@ actor LLMHealthCheck {
       // Suspenders: Perform actual test call
       let status = await performTestCall()
       logStatusChange(status)
+      updateCacheInterval(for: status)
       cachedStatus = status
       lastCheckTime = Date()
       return status
@@ -166,19 +209,28 @@ actor LLMHealthCheck {
       let status: HealthStatus
       switch reason {
       case .appleIntelligenceNotEnabled:
-        log.info("LLM health check: Apple Intelligence not enabled")
+        log.error("LLM health check: FAILED - Apple Intelligence not enabled in System Settings")
+        log.error("   Source: SystemLanguageModel.default.availability")
+        log.error("   Reason: .unavailable(.appleIntelligenceNotEnabled)")
         status = .unavailable(.appleIntelligenceNotEnabled)
       case .deviceNotEligible:
-        log.info("LLM health check: Device not eligible for Apple Intelligence")
+        log.error("LLM health check: FAILED - Device not eligible for Apple Intelligence")
+        log.error("   Source: SystemLanguageModel.default.availability")
+        log.error("   Reason: .unavailable(.deviceNotEligible)")
         status = .unavailable(.deviceNotEligible)
       case .modelNotReady:
-        log.info("LLM health check: Language model not ready")
+        log.warning("LLM health check: Language model not ready (may be downloading/initializing)")
+        log.warning("   Source: SystemLanguageModel.default.availability")
+        log.warning("   Reason: .unavailable(.modelNotReady)")
         status = .unavailable(.modelNotReady)
       @unknown default:
-        log.warning("LLM health check: Unknown availability reason: \(String(describing: reason))")
+        log.error("LLM health check: FAILED - Unknown availability reason from Apple")
+        log.error("   Source: SystemLanguageModel.default.availability")
+        log.error("   Reason: .unavailable(\(String(describing: reason)))")
         status = .unavailable(.testCallFailed(details: "Unknown availability: \(reason)"))
       }
       logStatusChange(status)
+      updateCacheInterval(for: status)
       cachedStatus = status
       lastCheckTime = Date()
       return status
@@ -186,6 +238,7 @@ actor LLMHealthCheck {
     #else
     let status: HealthStatus = .unavailable(.foundationModelsNotImported)
     logStatusChange(status)
+    updateCacheInterval(for: status)
     cachedStatus = status
     lastCheckTime = Date()
     return status
@@ -239,15 +292,18 @@ actor LLMHealthCheck {
       return .healthy
 
     } catch is TimeoutError {
-      log.error("LLM health check: TIMEOUT - Apple Intelligence is not responding (overloaded)")
+      log.error("LLM health check: TIMEOUT - Apple Intelligence took >10s to respond")
+      log.error("   Error type: TimeoutError (internal timeout, NOT external cancellation)")
       return .unavailable(.overloaded)
 
     } catch is CancellationError {
       // Cancellation can happen when:
-      // 1. The timeout fires and cancels the LLM task
-      // 2. External cancellation (e.g., app shutdown, health check canceled)
-      log.warning("LLM health check: CANCELLED - Task was cancelled (likely due to timeout or external cancellation)")
-      return .unavailable(.overloaded)
+      // 1. The timeout fires and cancels the LLM task (but timeout would be caught first)
+      // 2. External cancellation (e.g., app shutdown, project switch, parent task cancelled)
+      log.info("LLM health check: CANCELLED - Task was cancelled by external cancellation")
+      log.info("   Error type: CancellationError (parent task cancelled, likely app lifecycle event)")
+      log.info("   This is NOT a real Apple Intelligence failure - treating as transient")
+      return .unavailable(.healthCheckCancelled)
 
     } catch let error as LanguageModelSession.GenerationError {
       // Detect specific error patterns
@@ -256,24 +312,31 @@ actor LLMHealthCheck {
         let errorDesc = String(describing: context)
         if errorDesc.contains("metadata.json") && errorDesc.contains("No such file or directory") {
           log.error("LLM health check: FAILED - Guardrail system error (missing metadata.json)")
+          log.error("   Error type: GenerationError.guardrailViolation (system file missing)")
+          log.error("   Details: \(errorDesc, privacy: .public)")
           return .unavailable(.guardrailSystemError(
             details: "System file missing: metadata.json. This is a known macOS 26 beta issue."
           ))
         } else {
           log.error("LLM health check: FAILED - Guardrail violation: \(context.debugDescription)")
+          log.error("   Error type: GenerationError.guardrailViolation (content filtered)")
           return .unavailable(.testCallFailed(details: "Guardrail violation: \(context.debugDescription)"))
         }
       } else if case .rateLimited = error {
         // Session is rate-limited - too many concurrent requests
-        log.error("LLM health check: RATE LIMITED - Session already processing a request")
+        log.error("LLM health check: RATE LIMITED - Too many concurrent requests")
+        log.error("   Error type: GenerationError.rateLimited (Apple Intelligence overloaded)")
         return .unavailable(.overloaded)
       } else {
         log.error("LLM health check: FAILED - Generation error: \(String(describing: error))")
+        log.error("   Error type: GenerationError.\(String(describing: error).components(separatedBy: "(").first ?? "unknown")")
         return .unavailable(.testCallFailed(details: "Generation error: \(error.localizedDescription)"))
       }
 
     } catch {
       log.error("LLM health check: FAILED - Session creation failed: \(error.localizedDescription)")
+      log.error("   Error type: \(type(of: error))")
+      log.error("   Details: \(String(describing: error), privacy: .public)")
       return .unavailable(.sessionCreationFailed(details: error.localizedDescription))
     }
   }

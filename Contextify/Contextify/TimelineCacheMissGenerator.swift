@@ -551,7 +551,15 @@ actor TimelineCacheMissGenerator {
         // Prevents project switch lag from waiting through retries when AI is down
         let healthStatus = await LLMHealthCheck.shared.checkHealth()
         if case .unavailable(let reason) = healthStatus {
-            throw TimelineError.llmUnavailable(reason: "Apple Intelligence unavailable: \(reason.userFacingMessage)")
+            // Don't block on external cancellation - it's not a real failure
+            if case .healthCheckCancelled = reason {
+                // Health check was cancelled externally (app lifecycle) - allow LLM call to proceed
+                // The actual LLM call will fail if Apple Intelligence is truly unavailable
+                log.debug("[HEALTH-CHECK] Health check cancelled, allowing LLM call to proceed (not a real failure)")
+            } else {
+                // Real failure - block the call
+                throw TimelineError.llmUnavailable(reason: "Apple Intelligence unavailable: \(reason.userFacingMessage)")
+            }
         }
 
         // Check cancellation RIGHT BEFORE calling LLM to avoid wasted compute
