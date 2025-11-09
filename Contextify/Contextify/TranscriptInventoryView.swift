@@ -233,9 +233,13 @@ struct TranscriptInventoryView: View {
           await persistDiscoveredSessions(newSessions)
         }
 
-        // PHASE 2: Load metadata for new sessions (centralized, not per-row)
+        // PHASE 2: Load metadata ONLY for visible sessions (viewport-aware)
+        // This prevents overwhelming Apple Intelligence with hundreds of concurrent requests
         Task {
-          await loadMetadataForSessions(newSessions)
+          let visibleSessionLimit = 10  // Only load first 10 sessions
+          let visibleSessions = Array(filteredSessions.prefix(visibleSessionLimit))
+          log.debug("[META-VISIBLE] Loading metadata for \(visibleSessions.count, privacy: .public) visible sessions (total: \(newSessions.count, privacy: .public))")
+          await loadMetadataForSessions(visibleSessions)
         }
       }
       .task {
@@ -432,6 +436,18 @@ struct TranscriptInventoryView: View {
                 .clipShape(Capsule())
             }
           }
+        }
+      }
+    }
+    .onAppear {
+      // VIEWPORT-AWARE LOADING: Load metadata when row becomes visible (scroll-to-load)
+      // Only load if not already loaded, loading, or errored
+      if metadata[session.identifier] == nil &&
+         !loadingMetadata.contains(session.identifier) &&
+         metadataErrors[session.identifier] == nil {
+        log.debug("[META-ONAPPEAR] Row appeared, loading metadata for: \(session.identifier, privacy: .public)")
+        Task {
+          await loadMetadataForSessions([session])
         }
       }
     }
