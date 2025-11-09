@@ -929,8 +929,65 @@ final class ConversationMonitor {
 
             // Trigger a refresh to reload from database (which will show "generating" state)
             await refresh()
+
+            // Immediately queue the entry for generation (bypass viewport/debounce)
+            // Without this, the user would have to scroll the entry out of view and back in
+            // to trigger regeneration due to viewport-based queueing with 1.25s debounce
+            await MainActor.run {
+                queueRegeneratedEntry(contentSha256: contentSha256, windowSha256: windowSha256)
+            }
         } catch {
             log.error("Failed to regenerate summary: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Queue a regenerated entry immediately for summarization
+    ///
+    /// This bypasses the normal viewport tracking and debounce mechanism to provide
+    /// immediate feedback when user explicitly requests regeneration via right-click menu.
+    /// Without this, user would need to scroll the entry out of view and back in to
+    /// trigger the viewport-based queueing (with 1.25s settling time).
+    @MainActor
+    private func queueRegeneratedEntry(contentSha256: String, windowSha256: String) {
+        guard let projectId = currentProjectId, let generator = cacheMissGenerator else {
+            log.warning("[REGEN] Cannot queue - projectId or generator not available")
+            return
+        }
+
+        // Find the entry that matches these hashes
+        guard let entry = visibleEntries.first(where: {
+            $0.contentSha256 == contentSha256 && $0.windowSha256 == windowSha256
+        }) else {
+            log.warning("[REGEN] Entry not found for regeneration (may not be in visible entries)")
+            return
+        }
+
+        guard entry.action == .unsummarized else {
+            log.debug("[REGEN] Entry already has summary or is processing")
+            return
+        }
+
+        guard let content = entry.sourceContent else {
+            log.warning("[REGEN] Entry missing source content")
+            return
+        }
+
+        // Create cache miss
+        let miss = CacheMiss(
+            entryId: entry.sourceIdentifier,
+            projectId: projectId,
+            contentSha256: contentSha256,
+            windowSha256: windowSha256,
+            content: content,
+            context: entry.detail,
+            kind: entry.kind.rawValue,
+            provider: entry.sourceContext?.provider.rawValue ?? "other"
+        )
+
+        // Queue with high priority (user explicitly requested it)
+        Task(priority: .userInitiated) {
+            log.info("[REGEN] Immediately queueing entry for regeneration: \(entry.id.uuidString.prefix(8), privacy: .public)")
+            await generator.queueMisses([miss])
         }
     }
 
