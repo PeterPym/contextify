@@ -115,9 +115,9 @@ struct ContentView: View {
             if let projectPath = model.projectRootURL?.path {
                 HStack(spacing: 4) {
                     Button {
-                        Task {
-                            let ok = await pickProjectRoot()
-                            uiLog.info("Open project result=\(ok, privacy: .public)")
+                        // Reveal project root directory in Finder
+                        if let projectURL = model.projectRootURL {
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: projectURL.path)
                         }
                     } label: {
                         Image(systemName: "folder")
@@ -125,7 +125,7 @@ struct ContentView: View {
                     .buttonStyle(.borderless)
                     .frame(minWidth: 28, minHeight: 28)
                     .contentShape(Rectangle())
-                    .help("Open project...")
+                    .help("Reveal project folder in Finder")
 
                     Text(model.projectDisplayName)
                         .lineLimit(1)
