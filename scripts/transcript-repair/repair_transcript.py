@@ -71,6 +71,10 @@ class TranscriptAnalyzer:
                     record = json.loads(line)
                     self._analyze_record(record, line_num)
                 except json.JSONDecodeError as e:
+                    # Check if this is concatenated JSON (common corruption pattern)
+                    if self._try_split_concatenated_json(line, line_num):
+                        continue
+
                     self.issues.append(CorruptionIssue(
                         line_number=line_num,
                         uuid="unknown",
@@ -80,6 +84,45 @@ class TranscriptAnalyzer:
                     ))
 
         return self.issues
+
+    def _try_split_concatenated_json(self, line: str, line_num: int) -> bool:
+        """
+        Try to split concatenated JSON records on a single line.
+        Returns True if successfully split and analyzed, False otherwise.
+        """
+        # Try to find where the first JSON object ends
+        decoder = json.JSONDecoder()
+        records = []
+        pos = 0
+
+        while pos < len(line):
+            try:
+                record, idx = decoder.raw_decode(line, pos)
+                records.append(record)
+                pos = idx
+                # Skip whitespace
+                while pos < len(line) and line[pos].isspace():
+                    pos += 1
+            except json.JSONDecodeError:
+                return False  # Can't split this line
+
+        if len(records) > 1:
+            # Successfully split concatenated JSON
+            self.issues.append(CorruptionIssue(
+                line_number=line_num,
+                uuid="unknown",
+                type="concatenated_json",
+                details=f"Found {len(records)} JSON records on one line (teleport corruption)",
+                recoverable=True
+            ))
+
+            # Analyze each record
+            for record in records:
+                self._analyze_record(record, line_num)
+
+            return True
+
+        return False
 
     def _analyze_record(self, record: Dict[str, Any], line_num: int):
         """Analyze a single record"""
@@ -230,6 +273,14 @@ class TranscriptRepairer:
                     details=f"Change stop_reason from 'tool_use' to 'end_turn' (uuid={issue.uuid})"
                 ))
 
+            elif issue.type == "concatenated_json":
+                # Split concatenated records
+                self.actions.append(RepairAction(
+                    line_number=issue.line_number,
+                    action="split",
+                    details=issue.details
+                ))
+
         # Build parent update map for skipped messages
         if uuids_to_skip:
             # Need to update parent references
@@ -255,9 +306,35 @@ class TranscriptRepairer:
         lines_kept = 0
         lines_removed = 0
         lines_modified = 0
+        lines_split = 0
 
         with open(input_path, 'r') as fin, open(output_path, 'w') as fout:
             for line_num, line in enumerate(fin, 1):
+                action = action_map.get(line_num)
+
+                # Handle concatenated JSON splitting
+                if action and action.action == "split":
+                    decoder = json.JSONDecoder()
+                    records = []
+                    pos = 0
+
+                    while pos < len(line):
+                        try:
+                            record, idx = decoder.raw_decode(line, pos)
+                            records.append(record)
+                            pos = idx
+                            while pos < len(line) and line[pos].isspace():
+                                pos += 1
+                        except json.JSONDecodeError:
+                            break
+
+                    print(f"Line {line_num}: Splitting {len(records)} concatenated records")
+                    for record in records:
+                        fout.write(json.dumps(record, separators=(',', ':')) + '\n')
+                        lines_kept += 1
+                    lines_split += 1
+                    continue
+
                 try:
                     record = json.loads(line)
                     uuid = record.get('uuid')
@@ -265,9 +342,6 @@ class TranscriptRepairer:
                     # Track parent relationships
                     if uuid:
                         uuid_to_parent[uuid] = record.get('parentUuid')
-
-                    # Check if this line has a repair action
-                    action = action_map.get(line_num)
 
                     if action and action.action == "skip":
                         # Skip this line
@@ -305,6 +379,7 @@ class TranscriptRepairer:
         print(f"   Lines kept: {lines_kept}")
         print(f"   Lines removed: {lines_removed}")
         print(f"   Lines modified: {lines_modified}")
+        print(f"   Lines split: {lines_split}")
         print(f"   Output: {output_path}")
 
 
