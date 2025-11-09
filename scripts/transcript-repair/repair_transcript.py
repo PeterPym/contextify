@@ -65,14 +65,33 @@ class TranscriptAnalyzer:
         self.last_assistant_uuid = None
         self.all_uuids = set()
 
+        # First pass: collect all UUIDs and records
+        all_records = []
         with open(path, 'r') as f:
             for line_num, line in enumerate(f, 1):
                 try:
                     record = json.loads(line)
-                    self._analyze_record(record, line_num)
+                    uuid = record.get('uuid')
+                    if uuid:
+                        self.all_uuids.add(uuid)
+                    all_records.append((line_num, record))
                 except json.JSONDecodeError as e:
                     # Check if this is concatenated JSON (common corruption pattern)
                     if self._try_split_concatenated_json(line, line_num):
+                        # Still add to all_records for second pass
+                        decoder = json.JSONDecoder()
+                        pos = 0
+                        while pos < len(line):
+                            try:
+                                rec, idx = decoder.raw_decode(line, pos)
+                                if uuid := rec.get('uuid'):
+                                    self.all_uuids.add(uuid)
+                                all_records.append((line_num, rec))
+                                pos = idx
+                                while pos < len(line) and line[pos].isspace():
+                                    pos += 1
+                            except:
+                                break
                         continue
 
                     self.issues.append(CorruptionIssue(
@@ -82,6 +101,25 @@ class TranscriptAnalyzer:
                         details=f"JSON parse error: {e}",
                         recoverable=False
                     ))
+
+        # Second pass: check for broken parent chains
+        for line_num, record in all_records:
+            parent_uuid = record.get('parentUuid')
+            msg_type = record.get('type')
+            if parent_uuid and msg_type in ('user', 'assistant', 'system'):
+                if parent_uuid not in self.all_uuids:
+                    uuid = record.get('uuid', 'unknown')
+                    self.issues.append(CorruptionIssue(
+                        line_number=line_num,
+                        uuid=uuid,
+                        type="broken_parent_chain",
+                        details=f"Parent UUID {parent_uuid[:8]}... does not exist (teleport deletion)",
+                        recoverable=True
+                    ))
+
+        # Third pass: analyze content
+        for line_num, record in all_records:
+            self._analyze_record(record, line_num)
 
         return self.issues
 
@@ -281,6 +319,15 @@ class TranscriptRepairer:
                     details=issue.details
                 ))
 
+            elif issue.type == "broken_parent_chain":
+                # Fix broken parent reference
+                self.actions.append(RepairAction(
+                    line_number=issue.line_number,
+                    action="update_parent",
+                    details=f"Fix broken parent chain for uuid={issue.uuid[:8]}",
+                    original_uuid=issue.uuid
+                ))
+
         # Build parent update map for skipped messages
         if uuids_to_skip:
             # Need to update parent references
@@ -301,6 +348,21 @@ class TranscriptRepairer:
         """Execute planned repairs"""
         action_map = {a.line_number: a for a in self.actions}
         uuids_to_skip = {a.original_uuid for a in self.actions if a.action == "skip"}
+
+        # Build map of all message UUIDs and their parents (for fixing broken chains)
+        uuid_to_line = {}
+        line_to_record = {}
+        with open(input_path, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                try:
+                    record = json.loads(line)
+                    uuid = record.get('uuid')
+                    if uuid:
+                        uuid_to_line[uuid] = line_num
+                    line_to_record[line_num] = record
+                except:
+                    pass
+
         uuid_to_parent = {}  # Track parent for each UUID
 
         lines_kept = 0
@@ -348,6 +410,22 @@ class TranscriptRepairer:
                         print(f"Line {line_num}: Skipping {uuid}")
                         lines_removed += 1
                         continue
+
+                    # Check for broken parent chain (update_parent action)
+                    if action and action.action == "update_parent":
+                        # Find the last valid message before this one
+                        parent_uuid = record.get('parentUuid')
+                        if parent_uuid:
+                            # Search backwards for valid parent
+                            for prev_line in range(line_num - 1, 0, -1):
+                                if prev_rec := line_to_record.get(prev_line):
+                                    prev_uuid = prev_rec.get('uuid')
+                                    if prev_uuid and prev_uuid in uuid_to_line:
+                                        old_parent = parent_uuid[:8]
+                                        record['parentUuid'] = prev_uuid
+                                        print(f"Line {line_num}: Fixed broken parent chain from {old_parent}... to {prev_uuid[:8]}...")
+                                        lines_modified += 1
+                                        break
 
                     # Check if parent was removed
                     if parent_uuid := record.get('parentUuid'):
