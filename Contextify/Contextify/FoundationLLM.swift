@@ -1561,7 +1561,7 @@ private extension FoundationLLM {
 
 #if canImport(FoundationModels)
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
-private extension FoundationLLM {
+extension FoundationLLM {
     // Controllers now moved to actor state (see top of FoundationLLM actor)
 
     func getController(for instructions: String, sessionId: String? = nil) async -> SessionController {
