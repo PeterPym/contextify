@@ -1503,6 +1503,92 @@ Only 12 test files for ~100 Swift files. Major gaps:
 - **Effort:** 1-2 hours
 - **Status:** Not Started (API built but may be broken, needs verification)
 
+### Git Activity Timeline & Work Story Visualization (P2)
+
+**Vision:** Transform transcripts from chat logs into a narrative of work accomplished. Show users "what you did where" at a glance across their Claude Code/Codex history.
+
+**Problem:** Currently no way to know what was accomplished in a session without reading every message. Can't easily see:
+- Which branches were worked on
+- What commits were made (and to which branches)
+- What was merged (especially to main)
+- The concrete impact of a session on the project
+
+**Solution:** Parse transcripts to extract and visualize git activity.
+
+**Phase 1: Git Activity Extraction (4-6 hours)**
+- Parse transcript entries for git commands (commits, checkouts, merges, pushes)
+- Extract branch names, commit SHAs, commit messages
+- Detect merge operations (especially merges to main/master)
+- Store as structured metadata (extend `transcript_metadata` or new table)
+
+**Phase 2: Transcripts Window Integration (3-4 hours)**
+- Add git activity summary to each transcript row
+- Show badges/indicators: "3 commits to feature/x, merged to main ✓"
+- Display branch names worked on
+- Visual distinction for sessions with merges to main
+
+**Phase 3: Timeline Story View (6-8 hours)**
+- Timeline visualization showing work progression
+- Group sessions by feature/branch
+- Show commit sequence across sessions
+- Help users understand "where am I in this feature?"
+- Resume work context: "Last session: 3 commits, not merged yet"
+
+**Implementation Details:**
+- Pattern matching for git commands in assistant/user messages
+- Parse: `git commit`, `git push`, `git merge`, `git checkout`
+- Retroactive parsing of existing transcripts (migration script)
+- Could also hook into actual git operations for real-time tracking
+
+**Data Model:**
+```sql
+CREATE TABLE git_activity (
+  id INTEGER PRIMARY KEY,
+  transcript_id TEXT NOT NULL,
+  activity_type TEXT NOT NULL, -- 'commit', 'merge', 'checkout', 'push'
+  branch_name TEXT,
+  commit_sha TEXT,
+  commit_message TEXT,
+  target_branch TEXT, -- for merges
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (transcript_id) REFERENCES transcripts(id)
+);
+```
+
+**UI Mockup (Transcript Row):**
+```
+📊 Transcript Title
+⏱️  2 hours ago  •  🔀 feature/new-ui  •  ✅ 3 commits  •  ⬆️ merged to main
+```
+
+**Benefits:**
+- Understand work impact at a glance
+- Find "that session where I worked on feature X"
+- Resume work with full context
+- See project evolution story
+- Identify incomplete work (commits not merged)
+
+**Future Extensions:**
+- Main window timeline showing all work across sessions
+- "Work story" narrative: auto-generated summary of session accomplishments
+- Integration with GitHub/GitLab to show PR status
+- Visualize feature development across multiple sessions
+
+**Effort:**
+- Phase 1: 4-6 hours (extraction & storage)
+- Phase 2: 3-4 hours (UI integration)
+- Phase 3: 6-8 hours (timeline view)
+- **Total:** 13-18 hours
+
+**Priority:** P2 (High value for UX, not blocking core functionality)
+
+**Status:** Not Started
+
+**References:**
+- Transcript parsing: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- Metadata storage: `app/Sources/ContextifyCore/Database/Models.swift`
+- Transcripts UI: `Contextify/Contextify/TranscriptInventoryView.swift`
+
 ---
 
-**Last Updated:** 2025-11-08
+**Last Updated:** 2025-11-09
