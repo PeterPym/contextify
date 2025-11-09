@@ -491,6 +491,9 @@ actor TimelineCacheMissGenerator {
 
                     try orchestrator.saveCachedTimeline(filteredCache)
 
+                    // Post immediate UI update notification
+                    await postCacheUpdateNotification(for: [miss])
+
                     // Treat as success - no retry needed
                     return
                 } else {
