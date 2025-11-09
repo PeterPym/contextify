@@ -623,22 +623,26 @@ actor FoundationLLM {
                 // Already exhausted from postProcess - just propagate
                 throw Error.retryExhausted
             } catch let guarded as LanguageModelSession.GenerationError {
-                metrics.total += 1
-                metrics.failed += 1
-                log.error("[\(reqNum)] timeline summarize guardrail triggered: \(String(describing: guarded), privacy: .public)")
-
                 // Map FoundationModels errors to TimelineError
                 switch guarded {
                 case .exceededContextWindowSize(let context):
+                    metrics.total += 1
+                    metrics.failed += 1
+                    log.error("[\(reqNum)] context overflow: \(String(describing: guarded), privacy: .public)")
                     let info = Self.parseOverflow(from: context.debugDescription) ?? (tokens: 4097, limit: 4096)
                     await controller.reset()
                     throw TimelineError.contextOverflow(tokens: info.tokens, limit: info.limit)
 
                 case .guardrailViolation(let context):
+                    // Don't count as failure - handled gracefully by TimelineCacheMissGenerator
+                    metrics.total += 1
+                    log.info("[\(reqNum)] Apple Intelligence filtered content (guardrail triggered)")
                     await controller.reset()
                     throw TimelineError.guardrailViolation(reason: context.debugDescription)
 
                 case .decodingFailure(let context):
+                    metrics.total += 1
+                    metrics.failed += 1
                     log.error("[\(reqNum)] DECODING FAILURE: \(context.debugDescription, privacy: .public)")
                     log.error("[\(reqNum)] We sent this input: \(payloadInput, privacy: .public)")
                     log.error("[\(reqNum)] Expected schema: {summary: String, isCompletion: Bool, disposition: String, grounding: String, confidence: Double}")
@@ -657,6 +661,8 @@ actor FoundationLLM {
                     throw TimelineError.decodingFailure(reason: context.debugDescription)
 
                 default:
+                    metrics.total += 1
+                    metrics.failed += 1
                     log.error("[\(reqNum)] Other generation error: \(String(describing: guarded), privacy: .public)")
                     await controller.reset()
                     throw TimelineError.decodingFailure(reason: "\(guarded)")

@@ -28,6 +28,7 @@ struct TimelineEntryRow: View, Equatable {
 
     @State private var isExpanded = false
     @State private var showCopiedToast = false
+    @State private var showSafetyInfo = false
     @Environment(\.openWindow) private var openWindow
     @Environment(ConversationMonitor.self) private var monitor
 
@@ -142,6 +143,16 @@ struct TimelineEntryRow: View, Equatable {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .help("No summary available (non-summarizable content)")
+            }
+            if entry.isSafetyFiltered {
+                InfoButton(isPresented: $showSafetyInfo)
+                    .popover(isPresented: $showSafetyInfo) {
+                        InfoPopoverContent(
+                            title: "Unable to Summarize",
+                            message: "This message could not be summarized due to Apple Intelligence content controls.\n\nThe on-device language model's safety filters prevent processing this content. The original message is preserved in the detail view."
+                        )
+                    }
+                    .help("Unable to summarize due to content controls")
             }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")

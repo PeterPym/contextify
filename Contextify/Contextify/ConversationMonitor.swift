@@ -1054,6 +1054,7 @@ final class ConversationMonitor {
             requestId: nil,
             action: action,
             sessionId: entry.sessionId,
+            disposition: cached?.disposition,
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256
         )
@@ -1728,7 +1729,8 @@ final class ConversationMonitor {
 
                 updateEntry(at: index, with: old.copyWith(
                     summary: summary,
-                    action: old.action == .unsummarized ? .none : old.action
+                    action: old.action == .unsummarized ? .none : old.action,
+                    disposition: cache.disposition
                 ))
             }
 
