@@ -83,9 +83,7 @@ struct TimelineEntryRow: View, Equatable {
             }
         }
         .contextMenu {
-            Button("Copy Summary") { copy(entry.summary) }
-            Button("Copy Detail") { copy(entry.detail) }
-            Button("Copy Both as JSON") { copyAsJSON() }
+            Button("Copy Message Details as JSON") { copyAsJSON() }
 
             if let transcriptPath = entry.sourceContext?.filePath {
                 Divider()
