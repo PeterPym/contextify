@@ -1592,3 +1592,45 @@ CREATE TABLE git_activity (
 ---
 
 **Last Updated:** 2025-11-09
+
+---
+
+## Transcript Corruption Enhancements (P3)
+
+**Context:** Basic corruption detection and repair is implemented (`scripts/transcript-repair/repair_transcript.py`). These are optional enhancements for better UX.
+
+**Reference:** `build/docs/operations/transcript-corruption-detection.md` (Future Improvements section)
+
+### Auto-Repair Mode (P3)
+- Add optional auto-repair during ingestion
+- HooverEngine catches corruption, applies repairs automatically
+- User preference: "Auto-fix corrupted transcripts" (default: off)
+- Log repairs for transparency
+- **Effort:** 2-3 hours
+- **Value:** Medium (reduces manual intervention for power users)
+
+### Corruption Metrics Tracking (P3)
+- Track corruption rates by provider/version
+- Add corruption_events table to database
+- Surface stats in diagnostics API
+- Help identify systematic issues
+- **Effort:** 2-3 hours
+- **Value:** Low (interesting data, not critical)
+
+### UI Notifications for Corruption (P3)
+- Show toast when corrupted transcript detected
+- Offer one-click repair via UI
+- Link to repair docs
+- **Effort:** 1-2 hours
+- **Value:** Medium (better UX than manual script usage)
+
+### Repair History Tracking (P3)
+- Track which transcripts have been repaired
+- Store repair metadata (when, what issues, recovery success)
+- Prevent double-repair attempts
+- **Effort:** 1-2 hours
+- **Value:** Low (nice-to-have audit trail)
+
+---
+
+**Last Updated:** 2025-11-09

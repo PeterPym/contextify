@@ -196,6 +196,28 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 - **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics).
 - **SidecarMetadataStore** (`Contextify/Contextify/SidecarMetadataStore.swift`): JSON sidecar file persistence for transcript metadata.
 
+### Transcript Corruption (Claude Code Web)
+**Issue:** Claude Code Web "teleport" feature can corrupt transcripts, causing API 400 errors when resuming sessions.
+
+**Common symptoms:**
+- `API Error 400: unexpected tool_use_id found in tool_result blocks`
+- Session works in web but fails in CLI after teleport
+- Orphaned tool_result blocks, stop_reason mismatches, broken parent chains
+
+**Detection & Repair:**
+```bash
+# Analyze transcript (no changes)
+python3 scripts/transcript-repair/repair_transcript.py <transcript> --dry-run
+
+# Repair transcript (creates .backup)
+python3 scripts/transcript-repair/repair_transcript.py <transcript>
+```
+
+**Documentation:**
+- Full guide: `build/docs/operations/transcript-corruption-detection.md`
+- Script README: `scripts/transcript-repair/README.md`
+- Format spec: `build/docs/specifications/claude-code-format.md`
+
 ## Build, Test, and Development Commands
 
 **Primary build script:** `bash scripts/xc.sh build` (auto-detects Xcode-beta if installed)
