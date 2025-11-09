@@ -1331,7 +1331,7 @@ private extension FoundationLLM {
         case .user:
             return PrefixPolicy(
                 allowed: [
-                    "You made",
+                    "You informed",          // REPORT: past-tense self-reports
                     "You asked",
                     "You requested \(assistantName)",
                     "You explained",         // UNKNOWN: explanations/clarifications
@@ -1425,8 +1425,8 @@ private extension FoundationLLM {
 
             Use these prefixes based on DETECTED_INTENT:
             - DIRECTIVE   → "You requested \(assistantName) to [action]"
-            - QUESTION    → "You asked [question]"
-            - REPORT      → "You made [description]"
+            - QUESTION    → "You asked \(assistantName) [question]"
+            - REPORT      → "You informed \(assistantName) [description]"
             - AFFIRMATIVE → "You requested \(assistantName) to proceed as proposed."
             - NEGATIVE    → "You requested \(assistantName) not to proceed."
             - UNKNOWN     → Infer intent from MESSAGE content:
@@ -1674,7 +1674,7 @@ private extension FoundationLLM {
             case .question:
                 prefixMatchesIntent = s.hasPrefix("you asked")
             case .report:
-                prefixMatchesIntent = s.hasPrefix("you made")
+                prefixMatchesIntent = s.hasPrefix("you informed")
             case .affirmative:
                 prefixMatchesIntent = s.contains("proceed as proposed")
             case .negative:

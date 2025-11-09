@@ -122,7 +122,7 @@ public struct TimelineSourceContext: Hashable, Sendable {
             case .claudeCode:
                 return "Claude Code"
             case .codexCLI:
-                return "Codex CLI"
+                return "Codex"
             case .other:
                 return "AI Source"
             }
