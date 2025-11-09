@@ -1038,6 +1038,107 @@ for port in 17329...17339 {
 
 ---
 
+## Remove Manual Project Selection (P1 - UX Simplification)
+
+**Status:** Not Started
+**Priority:** P1 (UX Simplification)
+**Severity:** Medium (Requires UX rethinking)
+**Assignee:** TBD
+**Target Completion:** Next sprint
+
+### Problem
+
+File → Open Project allows manual project selection, but now that we have robust automatic transcript-based discovery:
+- Manual selection is redundant
+- Creates two paths to add projects (confusing UX)
+- Folder icon in ContentView header still triggers project picker (just changed to reveal in Finder)
+- No clear notification when new projects are auto-discovered
+
+**Current State:**
+- Projects can be added via File → Open Project
+- Projects can be auto-discovered via transcript scanning
+- User doesn't know when new projects appear
+
+### Solution
+
+**Remove Manual Project Addition:**
+- Remove File → Open Project menu item
+- All projects must have associated transcript files to be discovered
+- Simplifies mental model: "Contextify shows projects you've used Claude Code/Codex with"
+
+**Add Discovery Notifications:**
+- Show toast when new project detected: "New project discovered: [name]"
+- OR position new projects at far left of switcher with subtle badge
+- OR add temporary highlight/animation to new project tabs
+
+**Stress Testing Required:**
+- Verify discovery is efficient (doesn't slow down app)
+- Test with 10, 50, 100 projects
+- Verify discovery happens quickly enough (within seconds of new transcript)
+- Test discovery robustness (handles missing files, moved directories, etc.)
+
+### Tasks
+
+**Phase 1: Remove Manual Selection (2 hours)**
+- [ ] Remove File → Open Project menu item
+- [ ] Remove folder icon picker from ContentView (now reveals in Finder - commit pending)
+- [ ] Update keyboard shortcuts (if any)
+- [ ] Update documentation
+
+**Phase 2: Discovery Stress Testing (4-6 hours)**
+- [ ] Benchmark discovery with 10, 50, 100 projects
+- [ ] Test real-time detection (how fast does new project appear?)
+- [ ] Test edge cases: missing directories, renamed projects, moved transcripts
+- [ ] Verify no performance degradation during discovery
+- [ ] Document discovery timing expectations (target: <5 seconds for new project)
+
+**Phase 3: New Project Notifications (3-4 hours)**
+- [ ] Design notification UX (toast vs badge vs positioning)
+- [ ] Implement chosen approach
+- [ ] Add user preference to disable notifications (if toast)
+- [ ] Test notification doesn't interrupt workflow
+
+**Alternative Approaches:**
+- **Option A:** Toast notification (non-intrusive, temporary)
+- **Option B:** Badge on new project tab (persists until clicked)
+- **Option C:** Position new projects at far left (spatial hint)
+- **Option D:** Subtle animation on new project tab (draws attention)
+
+### Files
+
+- **Remove:** File menu project picker references
+- **Update:** `Contentify/Contextify/ContentView.swift` (folder icon already changed)
+- **Add:** Notification UI component (location TBD based on chosen approach)
+- **Test:** `Contextify/ContextifyTests/ProjectDiscoveryTests.swift`
+
+### Acceptance Criteria
+
+- [ ] File → Open Project menu item removed
+- [ ] No manual project addition UI remains
+- [ ] Discovery tested with 100 projects, completes in <30 seconds
+- [ ] New project appears in UI within 5 seconds of transcript creation
+- [ ] User is notified when new project discovered (via chosen UX)
+- [ ] Documentation updated to reflect transcript-only discovery
+- [ ] Edge cases handled gracefully (missing dirs, moved files)
+
+### Estimated Effort
+
+- **Phase 1:** 2 hours (removal)
+- **Phase 2:** 4-6 hours (stress testing)
+- **Phase 3:** 3-4 hours (notifications)
+- **Total:** 9-12 hours
+
+### Risk
+
+**Medium** - Removing manual selection requires discovery to be rock-solid. If discovery fails or is slow, users have no fallback.
+
+**Mitigation:**
+- Keep manual selection as hidden debug option (Shift+Cmd+Option+P or similar)
+- Thoroughly test discovery robustness before removing manual path
+- Document recovery steps if discovery fails
+
+---
+
 ## Codex Discovery Data Quality Issues (P2)
 
 **Status:** Confirmed, Not Started
@@ -1393,6 +1494,14 @@ Only 12 test files for ~100 Swift files. Major gaps:
 - Improve summary quality with surrounding entries
 - **Effort:** 3-4 hours
 - **Reference:** Multiple TODO comments in code
+
+### Diagnostics HTTP API Testing (P2)
+- Verify all endpoints functional (localhost:17329)
+- Test `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`
+- Validate helper script `./scripts/timeline_api.sh`
+- Document any issues or broken functionality
+- **Effort:** 1-2 hours
+- **Status:** Not Started (API built but may be broken, needs verification)
 
 ---
 
