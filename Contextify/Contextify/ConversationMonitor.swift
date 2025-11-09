@@ -1729,7 +1729,8 @@ final class ConversationMonitor {
 
                 updateEntry(at: index, with: old.copyWith(
                     summary: summary,
-                    action: old.action == .unsummarized ? .none : old.action
+                    action: old.action == .unsummarized ? .none : old.action,
+                    disposition: cache.disposition
                 ))
             }
 

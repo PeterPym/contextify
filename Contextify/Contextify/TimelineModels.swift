@@ -170,7 +170,8 @@ extension TimelineEntry {
     func copyWith(
         summary: String? = nil,
         sessionId: String? = nil,
-        action: TimelineEntryAction? = nil
+        action: TimelineEntryAction? = nil,
+        disposition: String?? = nil  // Optional<Optional<String>> to distinguish "not provided" from "set to nil"
     ) -> TimelineEntry {
         TimelineEntry(
             id: id,
@@ -187,6 +188,7 @@ extension TimelineEntry {
             requestId: requestId,
             action: action ?? self.action,
             sessionId: sessionId ?? self.sessionId,
+            disposition: disposition ?? self.disposition,  // Use new value if provided
             contentSha256: contentSha256,
             windowSha256: windowSha256
         )
