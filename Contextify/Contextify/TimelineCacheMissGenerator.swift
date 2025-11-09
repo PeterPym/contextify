@@ -467,6 +467,14 @@ actor TimelineCacheMissGenerator {
                     // Safety guardrail triggered - don't retry, just mark as filtered
                     log.info("Apple Intelligence filtered entry \(miss.entryId.prefix(8)) - marking as safety-filtered")
 
+                    // Generate fallback summary (truncated content preview)
+                    let fallbackSummary: String
+                    if miss.content.isEmpty {
+                        fallbackSummary = "[No content]"
+                    } else {
+                        fallbackSummary = String(miss.content.prefix(100)) + (miss.content.count > 100 ? "…" : "")
+                    }
+
                     // Save special cache entry indicating safety filtering
                     let filteredCache = TimelineCache(
                         contentSha256: miss.contentSha256,
@@ -474,8 +482,8 @@ actor TimelineCacheMissGenerator {
                         entryId: miss.entryId,
                         generatorSignature: timelineGeneratorSignature(),
                         disposition: "safety-filtered",  // Special marker for UI
-                        presentForm: "[Content filtered by Apple Intelligence]",
-                        pastForm: "[Content filtered by Apple Intelligence]",
+                        presentForm: fallbackSummary,
+                        pastForm: fallbackSummary,
                         selectedForm: "present",
                         generatedAt: Int(Date().timeIntervalSince1970),
                         userEdited: 0

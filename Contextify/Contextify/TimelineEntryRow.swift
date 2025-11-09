@@ -28,6 +28,7 @@ struct TimelineEntryRow: View, Equatable {
 
     @State private var isExpanded = false
     @State private var showCopiedToast = false
+    @State private var showSafetyInfo = false
     @Environment(\.openWindow) private var openWindow
     @Environment(ConversationMonitor.self) private var monitor
 
@@ -144,31 +145,14 @@ struct TimelineEntryRow: View, Equatable {
                     .help("No summary available (non-summarizable content)")
             }
             if entry.isSafetyFiltered {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .symbolRenderingMode(.multicolor)
-                    .foregroundStyle(.orange)
-                    .help("Content filtered by Apple Intelligence safety guardrails")
-                    .popover(isPresented: .constant(false)) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Content Filtered")
-                                .font(.headline)
-                            Text("This message was screened by Apple Intelligence and cannot be summarized due to safety guidelines.")
-                                .font(.caption)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding()
-                        .frame(maxWidth: 300)
+                InfoButton(isPresented: $showSafetyInfo)
+                    .popover(isPresented: $showSafetyInfo) {
+                        InfoPopoverContent(
+                            title: "Unable to Summarize",
+                            message: "This message could not be summarized due to Apple Intelligence content controls.\n\nThe on-device language model's safety filters prevent processing this content. The original message is preserved in the detail view."
+                        )
                     }
-                    .onTapGesture {
-                        // Show info alert
-                        let alert = NSAlert()
-                        alert.messageText = "Content Filtered"
-                        alert.informativeText = "This message was screened by Apple Intelligence and cannot be summarized due to safety guidelines.\n\nApple's on-device safety filters detected content that may violate content policies. The original message is preserved but cannot be processed by the language model."
-                        alert.alertStyle = .informational
-                        alert.addButton(withTitle: "OK")
-                        alert.runModal()
-                    }
+                    .help("Unable to summarize due to content controls")
             }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")
