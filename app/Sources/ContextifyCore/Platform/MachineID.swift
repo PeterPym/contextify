@@ -1,33 +1,52 @@
 import Foundation
-import Security
 import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "MachineID")
 
-/// Provides a stable, per-machine identifier using Keychain storage
-/// App Store-safe alternative to IOKit hardware UUID
+/// Provides a stable, per-machine identifier using Application Support storage
+/// App Store-safe, no user prompts required
 public enum MachineID {
-  private static let account = "Contextify.machineID"
-  private static let service = "dev.contextify"
+  private static let filename = "machine-id.txt"
+
+  /// Path to machine ID file in Application Support
+  private static var machineIDFile: URL? {
+    guard let appSupport = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first else {
+      return nil
+    }
+
+    let contextifyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
+
+    // Ensure directory exists
+    try? FileManager.default.createDirectory(
+      at: contextifyDir,
+      withIntermediateDirectories: true,
+      attributes: nil
+    )
+
+    return contextifyDir.appendingPathComponent(filename)
+  }
 
   /// Thread-safe cached machine ID
   /// static let initializer is lazy and guaranteed once-only with no races
   private enum Cache {
     static let machineID: String = {
-      // Try to read from Keychain
-      if let id = readFromKeychain() {
+      // Try to read from file
+      if let id = readFromFile() {
         return id
       }
 
       // Generate new stable ID
       let id = "ctx-" + UUID().uuidString.lowercased()
-      if saveToKeychain(id) {
-        log.info("Generated new machine ID (stored in Keychain)")
+      if saveToFile(id) {
+        log.info("Generated new machine ID (stored in Application Support)")
         return id
       }
 
-      // Fallback if Keychain unavailable (rare)
-      log.warning("Keychain unavailable; using hostname-based ID")
+      // Fallback if file system unavailable (extremely rare)
+      log.warning("Application Support unavailable; using hostname-based ID")
       return Host.current().localizedName ?? "unknown-\(UUID().uuidString)"
     }()
   }
@@ -38,53 +57,31 @@ public enum MachineID {
     Cache.machineID
   }
 
-  /// Reads machine ID from Keychain
-  private static func readFromKeychain() -> String? {
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: service,
-      kSecAttrAccount as String: account,
-      kSecReturnData as String: true,
-      kSecMatchLimit as String: kSecMatchLimitOne
-    ]
+  /// Reads machine ID from Application Support
+  private static func readFromFile() -> String? {
+    guard let fileURL = machineIDFile else { return nil }
 
-    var item: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &item)
-
-    guard status == errSecSuccess,
-          let data = item as? Data,
-          let id = String(data: data, encoding: .utf8) else {
+    do {
+      let id = try String(contentsOf: fileURL, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return id.isEmpty ? nil : id
+    } catch {
+      // File doesn't exist yet (first run) or read error
       return nil
     }
-
-    return id
   }
 
-  /// Saves machine ID to Keychain
+  /// Saves machine ID to Application Support
   @discardableResult
-  private static func saveToKeychain(_ id: String) -> Bool {
-    guard let data = id.data(using: .utf8) else { return false }
+  private static func saveToFile(_ id: String) -> Bool {
+    guard let fileURL = machineIDFile else { return false }
 
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: service,
-      kSecAttrAccount as String: account,
-      kSecValueData as String: data,
-      kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
-    ]
-
-    // Try to add; if exists, update instead
-    var status = SecItemAdd(query as CFDictionary, nil)
-    if status == errSecDuplicateItem {
-      let updateQuery: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: account
-      ]
-      let updateAttrs: [String: Any] = [kSecValueData as String: data]
-      status = SecItemUpdate(updateQuery as CFDictionary, updateAttrs as CFDictionary)
+    do {
+      try id.write(to: fileURL, atomically: true, encoding: .utf8)
+      return true
+    } catch {
+      log.error("Failed to save machine ID: \(error.localizedDescription)")
+      return false
     }
-
-    return status == errSecSuccess
   }
 }
