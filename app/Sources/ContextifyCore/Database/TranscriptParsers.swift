@@ -103,6 +103,9 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     let content: String
     let hasTextContent: Bool
     if let message = json["message"] as? [String: Any] {
+      // VALIDATION: Detect Claude Code Web corruption patterns
+      try validateMessageIntegrity(message: message, type: type, uuid: uuid, lineNumber: lineNumber)
+
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
       // User messages should ALWAYS be displayed in timeline, regardless of thinking metadata
@@ -189,6 +192,97 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
   private func parseISO8601(_ str: String) -> Date? {
     // Use cached formatters to avoid expensive ICU initialization on every call
     return iso8601FormatterWithFractional.date(from: str) ?? iso8601FormatterStandard.date(from: str)
+  }
+
+  /// Validate message integrity to detect Claude Code Web corruption patterns
+  ///
+  /// **Background:** Claude Code Web (new product) can create corrupted transcripts when
+  /// "teleporting" conversations to CLI. Common corruption patterns:
+  ///
+  /// 1. **Orphaned tool_result**: User message contains tool_result but no preceding tool_use
+  /// 2. **stop_reason mismatch**: Assistant has stop_reason="tool_use" but no tool_use blocks
+  ///
+  /// These corruptions cause API 400 errors and prevent session continuation.
+  ///
+  /// - Parameters:
+  ///   - message: The message dictionary from JSON
+  ///   - type: Message type ("user" or "assistant")
+  ///   - uuid: Message UUID for error reporting
+  ///   - lineNumber: Line number in transcript for error reporting
+  /// - Throws: ParserError.corruptedRecord if corruption detected
+  private func validateMessageIntegrity(
+    message: [String: Any],
+    type: String,
+    uuid: String,
+    lineNumber: Int
+  ) throws {
+    guard let contentBlocks = message["content"] as? [[String: Any]] else {
+      // String content is always valid
+      return
+    }
+
+    // VALIDATION 1: Check for orphaned tool_result (user messages)
+    if type == "user" {
+      for block in contentBlocks {
+        if block["type"] as? String == "tool_result",
+           let toolUseId = block["tool_use_id"] as? String {
+          // Orphaned tool_result detected
+          // This is recoverable by skipping the message, but we should log it
+          let details = """
+            Line \(lineNumber): Orphaned tool_result detected (uuid=\(uuid), tool_use_id=\(toolUseId)).
+            This message references a tool_use that doesn't exist in the preceding assistant message.
+            Common cause: Claude Code Web interruption during tool execution.
+            Recovery: Skip this message to allow session continuation.
+            """
+          throw ParserError.corruptedRecord(.orphanedToolResult, details: details)
+        }
+      }
+    }
+
+    // VALIDATION 2: Check stop_reason/content mismatch (assistant messages)
+    if type == "assistant" {
+      let stopReason = message["stop_reason"] as? String
+      let hasToolUse = contentBlocks.contains { block in
+        block["type"] as? String == "tool_use"
+      }
+      let hasOnlyThinking = contentBlocks.allSatisfy { block in
+        block["type"] as? String == "thinking"
+      }
+
+      if stopReason == "tool_use" && !hasToolUse {
+        // Assistant claims to use tools but has no tool_use blocks
+        let contentTypes = contentBlocks.compactMap { $0["type"] as? String }.joined(separator: ", ")
+        let details = """
+          Line \(lineNumber): stop_reason mismatch (uuid=\(uuid), stop_reason="tool_use", content=[\(contentTypes)]).
+          Assistant message has stop_reason="tool_use" but contains no tool_use blocks.
+          Common cause: Claude Code Web lost tool_use blocks during conversation teleport.
+          Recovery: Change stop_reason to "end_turn" or null.
+          """
+        throw ParserError.corruptedRecord(.stopReasonMismatch, details: details)
+      }
+    }
+
+    // VALIDATION 3: Check for invalid content block structures
+    for block in contentBlocks {
+      guard let blockType = block["type"] as? String else {
+        let details = """
+          Line \(lineNumber): Invalid content block (uuid=\(uuid), missing 'type' field).
+          Content blocks must have a 'type' field.
+          """
+        throw ParserError.corruptedRecord(.invalidContentBlock, details: details)
+      }
+
+      // Validate tool_result has required fields
+      if blockType == "tool_result" {
+        guard block["tool_use_id"] is String else {
+          let details = """
+            Line \(lineNumber): Invalid tool_result block (uuid=\(uuid), missing tool_use_id).
+            tool_result blocks must have a tool_use_id field.
+            """
+          throw ParserError.corruptedRecord(.invalidContentBlock, details: details)
+        }
+      }
+    }
   }
 }
 
