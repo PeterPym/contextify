@@ -126,15 +126,66 @@ if [[ "$HTTP_CODE" == "204" ]]; then
     echo "✅ Run ID: $RUN_ID"
     echo "🌐 $RUN_URL"
     echo ""
-    echo "💡 To watch this build:"
-    echo "   gh run watch $RUN_ID"
-    echo "   # or open in browser:"
-    echo "   open $RUN_URL"
+
+    # Poll for completion
+    echo "⏳ Monitoring build progress (Ctrl+C to stop watching)..."
+    echo ""
+
+    POLL_INTERVAL=10
+    ELAPSED=0
+    MAX_WAIT=1800  # 30 minutes max
+
+    while [[ $ELAPSED -lt $MAX_WAIT ]]; do
+      sleep $POLL_INTERVAL
+      ELAPSED=$((ELAPSED + POLL_INTERVAL))
+
+      # Get run status
+      RUN_STATUS=$(curl -s \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $GITHUB_TOKEN" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/actions/runs/$RUN_ID")
+
+      STATUS=$(echo "$RUN_STATUS" | grep -o '"status": "[^"]*"' | head -1 | cut -d'"' -f4)
+      CONCLUSION=$(echo "$RUN_STATUS" | grep -o '"conclusion": "[^"]*"' | head -1 | cut -d'"' -f4)
+
+      if [[ "$STATUS" == "completed" ]]; then
+        echo ""
+        echo "═══════════════════════════════════════"
+        if [[ "$CONCLUSION" == "success" ]]; then
+          echo "✅ Build SUCCEEDED in ${ELAPSED}s"
+        elif [[ "$CONCLUSION" == "failure" ]]; then
+          echo "❌ Build FAILED in ${ELAPSED}s"
+        else
+          echo "⚠️  Build completed with status: $CONCLUSION"
+        fi
+        echo "═══════════════════════════════════════"
+        echo ""
+        echo "🔗 View results: $RUN_URL"
+        echo ""
+
+        # Exit with appropriate code
+        if [[ "$CONCLUSION" == "success" ]]; then
+          exit 0
+        else
+          exit 1
+        fi
+      fi
+
+      # Show progress
+      printf "\r⏳ Status: %-15s | Elapsed: %3ds" "$STATUS" "$ELAPSED"
+    done
+
+    # Timeout
+    echo ""
+    echo ""
+    echo "⏰ Timeout after ${MAX_WAIT}s - build still running"
+    echo "🔗 View status: $RUN_URL"
+    exit 2
   else
     echo "⚠️  Could not fetch run details. Check the URL above."
+    exit 1
   fi
-
-  exit 0
 else
   echo "❌ Failed to trigger workflow"
   echo ""
