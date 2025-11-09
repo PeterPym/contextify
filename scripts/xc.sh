@@ -144,9 +144,21 @@ case "$action" in
   build|test)
     quit_running_app
 
-    run_xcodebuild -project "$proj" -scheme "$scheme" \
-      -configuration "$config" -destination "platform=macOS" \
-      -derivedDataPath "$dd" "$action"
+    # CI-specific signing overrides (when no development team certificates available)
+    if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
+      # In CI: use ad-hoc signing, no team required
+      run_xcodebuild -project "$proj" -scheme "$scheme" \
+        -configuration "$config" -destination "platform=macOS" \
+        -derivedDataPath "$dd" \
+        CODE_SIGN_IDENTITY="-" \
+        DEVELOPMENT_TEAM="" \
+        "$action"
+    else
+      # Local build: use Xcode project settings
+      run_xcodebuild -project "$proj" -scheme "$scheme" \
+        -configuration "$config" -destination "platform=macOS" \
+        -derivedDataPath "$dd" "$action"
+    fi
     app_path="$dd/Build/Products/$config/Contextify.app"
     echo "Built: $app_path"
     if [[ "$action" == "build" && -z "${CTX_NO_RUN:-}" ]]; then
