@@ -162,7 +162,13 @@ public final class StartupCoordinator {
             return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         }.value
 
-        // Phase 5: Create context
+        // Phase 5: Persist for next launch
+        await Task.detached {
+            HUDPreferences.setPersistedRoot(resolvedPath)
+        }.value
+        log.debug("💾 Persisted project path to UserDefaults for next launch")
+
+        // Phase 6: Create context
         let context = ActiveProjectContext(
             id: projectId,
             path: resolvedPath,
@@ -171,7 +177,7 @@ public final class StartupCoordinator {
             bookmark: bookmark
         )
 
-        // Phase 6: Publish
+        // Phase 7: Publish
         await publishContext(context)
 
         // Mark started only after we have a valid, published context
@@ -292,6 +298,14 @@ public final class StartupCoordinator {
             bookmark: bookmark
         )
         log.info("[UIOPT-COORD-CONTEXT-DONE] Context creation complete in \(String(format: "%.0f", Date().timeIntervalSince(contextStart) * 1000), privacy: .public)ms")
+
+        // Persist for next launch
+        let persistStart = Date()
+        log.info("[UIOPT-COORD-PERSIST-START] Persisting project path to UserDefaults...")
+        await Task.detached {
+            HUDPreferences.setPersistedRoot(path)
+        }.value
+        log.info("[UIOPT-COORD-PERSIST-DONE] Persistence complete in \(String(format: "%.0f", Date().timeIntervalSince(persistStart) * 1000), privacy: .public)ms")
 
         // Publish
         let publishStart = Date()
