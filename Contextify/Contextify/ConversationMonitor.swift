@@ -1054,6 +1054,7 @@ final class ConversationMonitor {
             requestId: nil,
             action: action,
             sessionId: entry.sessionId,
+            disposition: cached?.disposition,
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256
         )

@@ -461,6 +461,46 @@ actor TimelineCacheMissGenerator {
 
                 // Success!
                 return
+            } catch let timelineError as TimelineError {
+                // Check if it's a guardrail violation
+                if case .guardrailViolation = timelineError {
+                    // Safety guardrail triggered - don't retry, just mark as filtered
+                    log.info("Apple Intelligence filtered entry \(miss.entryId.prefix(8)) - marking as safety-filtered")
+
+                    // Save special cache entry indicating safety filtering
+                    let filteredCache = TimelineCache(
+                        contentSha256: miss.contentSha256,
+                        windowSha256: miss.windowSha256,
+                        entryId: miss.entryId,
+                        generatorSignature: timelineGeneratorSignature(),
+                        disposition: "safety-filtered",  // Special marker for UI
+                        presentForm: "[Content filtered by Apple Intelligence]",
+                        pastForm: "[Content filtered by Apple Intelligence]",
+                        selectedForm: "present",
+                        generatedAt: Int(Date().timeIntervalSince1970),
+                        userEdited: 0
+                    )
+
+                    try orchestrator.saveCachedTimeline(filteredCache)
+
+                    // Treat as success - no retry needed
+                    return
+                } else {
+                    // Other TimelineErrors - continue to retry logic
+                    lastError = timelineError
+                    attempt += 1
+
+                    if attempt < maxAttempts {
+                        // Exponential backoff with jitter: base 2^attempt seconds
+                        let baseDelay = pow(2.0, Double(attempt))
+                        let jitter = Double.random(in: 0...0.3) * baseDelay
+                        let delaySeconds = baseDelay + jitter
+
+                        log.warning("Attempt \(attempt, privacy: .public)/\(maxAttempts, privacy: .public) failed, retrying in \(String(format: "%.1f", delaySeconds), privacy: .public)s: \(timelineError.localizedDescription, privacy: .public)")
+
+                        try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                    }
+                }
             } catch {
                 lastError = error
                 attempt += 1

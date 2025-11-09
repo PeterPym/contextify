@@ -38,10 +38,16 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let requestId: UUID?
     let action: TimelineEntryAction
     let sessionId: String?  // Identifies which session this entry belongs to
+    let disposition: String?  // Cache disposition (e.g., "safety-filtered", "directive", etc.)
 
     // Hidden cache keys for lightweight refresh (not displayed in UI)
     let contentSha256: String?
     let windowSha256: String?
+
+    /// True if this entry was filtered by Apple Intelligence safety guardrails
+    var isSafetyFiltered: Bool {
+        disposition == "safety-filtered"
+    }
 
     init(
         id: UUID = UUID(),
@@ -58,6 +64,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         requestId: UUID? = nil,
         action: TimelineEntryAction = .none,
         sessionId: String? = nil,
+        disposition: String? = nil,
         contentSha256: String? = nil,
         windowSha256: String? = nil
     ) {
@@ -75,6 +82,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.requestId = requestId
         self.action = action
         self.sessionId = sessionId
+        self.disposition = disposition
         self.contentSha256 = contentSha256
         self.windowSha256 = windowSha256
     }
