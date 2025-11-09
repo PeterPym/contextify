@@ -33,18 +33,23 @@ This guide explains how to trigger GitHub Actions builds from Linux environments
 ### Triggering Builds
 
 ```bash
-# Trigger Debug build on current branch
+# Trigger Debug build on current branch (default)
 ./scripts/trigger-ci-build.sh Debug
 
-# Trigger Release build on main
-./scripts/trigger-ci-build.sh Release main
+# Trigger Release build on current branch
+./scripts/trigger-ci-build.sh Release
 
-# Trigger on a specific branch
+# Trigger on a specific branch (e.g., main)
+./scripts/trigger-ci-build.sh Debug main
+
+# Trigger on any branch explicitly
 ./scripts/trigger-ci-build.sh Debug feature/my-branch
 ```
 
+**Note:** The script automatically detects your current git branch. If you want to test your changes, just run `./scripts/trigger-ci-build.sh Debug` without specifying a branch!
+
 The script will:
-- ✅ Trigger the GitHub Actions workflow
+- ✅ Trigger the GitHub Actions workflow on your current branch (or specified branch)
 - ✅ Show the run URL
 - ✅ Provide the run ID for monitoring
 

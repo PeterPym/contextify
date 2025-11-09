@@ -17,7 +17,9 @@ WORKFLOW_FILE="on-demand-build.yml"
 
 # Configuration
 CONFIG="${1:-Debug}"
-BRANCH="${2:-main}"
+# Default to current branch if available, otherwise main
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+BRANCH="${2:-${CURRENT_BRANCH:-main}}"
 
 # GitHub token from environment or keyring
 GITHUB_TOKEN="${GITHUB_TOKEN:-}"

@@ -38,19 +38,24 @@ This guide explains how to trigger GitHub Actions CI builds directly from Claude
 Once setup is complete, you can trigger CI builds from any Claude Code web session:
 
 ```bash
-# Trigger Debug build on current branch
+# Trigger Debug build on current branch (default)
 ./scripts/trigger-ci-build.sh Debug
 
-# Trigger Release build on main
-./scripts/trigger-ci-build.sh Release main
+# Trigger Release build on current branch
+./scripts/trigger-ci-build.sh Release
 
-# Trigger on a specific branch
+# Trigger on a specific branch (e.g., main)
+./scripts/trigger-ci-build.sh Debug main
+
+# Trigger on any branch explicitly
 ./scripts/trigger-ci-build.sh Debug feature/my-branch
 ```
 
+**Note:** The script automatically uses your **current git branch** by default. This is usually what you want when testing your changes!
+
 The script will:
 - ✅ Use the `GITHUB_TOKEN` from your environment
-- ✅ Trigger the GitHub Actions workflow
+- ✅ Trigger the GitHub Actions workflow on your current branch (or specified branch)
 - ✅ Return the run ID and URL for monitoring
 
 ## How It Works
