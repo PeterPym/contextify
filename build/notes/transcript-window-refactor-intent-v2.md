@@ -238,9 +238,11 @@ User opens Inventory → loadMetadataForSessions()
 3. Validate no regressions
 4. **Expected outcome:** Immediate 36% size reduction
 
-### Phase 2: Error Handling (Medium Risk, High Value)
+### Phase 2: Error Handling + Concurrency Control (HIGH PRIORITY - Prevents Apple Intelligence Overload)
 
-**Goal:** Eliminate UUID title failures
+**Goal:** Eliminate UUID title failures AND prevent Apple Intelligence overload
+
+**CRITICAL:** Must implement viewport-aware loading with concurrency limits to prevent overwhelming Apple Intelligence with hundreds of concurrent LLM requests.
 
 1. Add error state to TranscriptInventoryView:
    ```swift
@@ -260,7 +262,36 @@ User opens Inventory → loadMetadataForSessions()
    }
    ```
 
-3. Update loadMetadataForSessions to capture errors:
+3. **CRITICAL: Add concurrency limit to loadMetadataForSessions** to prevent Apple Intelligence overload:
+   ```swift
+   let maxConcurrentMetadata = 3  // Limit concurrent LLM requests
+
+   for session in missingSessions {
+       // Wait if too many tasks running (backpressure)
+       while metadataTasks.count >= maxConcurrentMetadata {
+           await Task.yield()
+           try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+       }
+
+       // Spawn task with concurrency control
+       let task = Task { @MainActor in
+           // ... metadata generation
+       }
+       metadataTasks[id] = task
+   }
+   ```
+
+4. **CRITICAL: Remove bulk loading in .task modifier** (causes Apple Intelligence overload):
+   ```swift
+   .task {
+       await persistDiscoveredSessions(monitor.allSessions)
+       // DO NOT call loadMetadataForSessions(monitor.allSessions) here!
+       // This loads ALL sessions at once, overwhelming Apple Intelligence
+       // Instead, rely on .onChange(of: sessions) debounced loading
+   }
+   ```
+
+5. Update loadMetadataForSessions to capture errors:
    ```swift
    do {
        let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
@@ -274,13 +305,19 @@ User opens Inventory → loadMetadataForSessions()
    }
    ```
 
-4. Ensure persistDiscoveredSessions completes before loadMetadataForSessions:
+6. Ensure persistDiscoveredSessions completes before loadMetadataForSessions:
    - Already sequenced in onChange handler (lines 231-238)
    - Validate this ordering is preserved
 
-5. Add retry mechanism:
+7. Add retry mechanism:
    - Tapping error icon clears error and retriggers load
    - Or add "Regenerate" button in context menu
+
+**Why Concurrency Control is Critical:**
+- Without limits: Opening inventory with 500 transcripts → 500 concurrent LLM requests → Apple Intelligence overload error
+- With limit of 3: Max 3 concurrent requests → Apple Intelligence stays responsive
+- Follows proven pattern from TimelineCacheMissGenerator (processes 1 at a time)
+- Metadata generation is slower (~2-5s per session) so can handle slightly higher concurrency than timeline (3 vs 1)
 
 ### Phase 3: Visual Alignment (Low Risk, UX Improvement)
 

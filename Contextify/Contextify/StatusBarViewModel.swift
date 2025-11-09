@@ -144,7 +144,7 @@ final class StatusBarViewModel {
 
     /// Update stats from a single provider and recompute aggregate state
     private func aggregateStats(from stats: QueueStats, providerIndex: Int) {
-        log.debug("📊 StatusBar: Provider \(providerIndex) stats - pending=\(stats.pending), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining)s")
+        log.debug("[COORD-STATS] Provider[\(providerIndex, privacy: .public)] pending=\(stats.pending, privacy: .public), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining, privacy: .public)s")
 
         // Store provider's stats
         providerStats[providerIndex] = stats
@@ -157,6 +157,7 @@ final class StatusBarViewModel {
     private func recomputeAggregateState() {
         guard !providerStats.isEmpty else {
             // No providers reporting - clear state
+            log.debug("[COORD-AGGREGATE] No providers reporting, clearing state")
             monitoringActive = false
             queueDepth = 0
             isProcessing = false
@@ -167,9 +168,11 @@ final class StatusBarViewModel {
         }
 
         let allStats = Array(providerStats.values)
+        log.debug("[COORD-AGGREGATE] Recomputing from \(self.providerStats.count, privacy: .public) provider(s)")
 
         // TRUE SUM: Aggregate pending counts from all providers
         let totalPending = allStats.reduce(0) { $0 + $1.pending }
+        log.debug("[COORD-AGGREGATE] Total pending (sum across all providers): \(totalPending, privacy: .public)")
 
         // ANY: Processing if any provider is processing
         let anyProcessing = allStats.contains { $0.isProcessing }
@@ -193,7 +196,7 @@ final class StatusBarViewModel {
             || recentErrorCount != totalErrors
             || topErrorReason != firstErrorReason {
 
-            log.debug("📊 StatusBar: Updating UI - queueDepth: \(self.queueDepth)→\(totalPending), isProcessing: \(self.isProcessing)→\(uiProcessing), providers: \(allStats.count)")
+            log.info("[COORD-UPDATE] UI update - queueDepth: \(self.queueDepth, privacy: .public)→\(totalPending, privacy: .public), isProcessing: \(self.isProcessing)→\(uiProcessing), providers: \(allStats.count, privacy: .public)")
 
             queueDepth = totalPending
             isProcessing = uiProcessing
@@ -203,7 +206,7 @@ final class StatusBarViewModel {
 
             // Log when status transitions to "Up to date"
             if totalPending == 0 && !uiProcessing && totalErrors == 0 {
-                log.info("[UIOPT-STATUS-READY] ✅ Status bar shows 'Up to date' (all queues empty, not processing, no errors)")
+                log.info("[COORD-READY] ✅ Status bar shows 'Up to date' (all queues empty, not processing, no errors)")
             }
         }
     }

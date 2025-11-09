@@ -242,8 +242,10 @@ struct TranscriptInventoryView: View {
         // Ensure sessions are persisted before loading metadata
         await persistDiscoveredSessions(monitor.allSessions)
 
-        // Load metadata on initial appearance
-        await loadMetadataForSessions(monitor.allSessions)
+        // Load metadata on initial appearance - REMOVED
+        // Previously this loaded ALL sessions at once, causing Apple Intelligence overload
+        // Now relying on .onChange(of: sessions) debounced loading for viewport-only generation
+        // await loadMetadataForSessions(monitor.allSessions)
       }
       .onDisappear {
         // Cancel pending debounce task to prevent leaks
@@ -927,9 +929,12 @@ struct TranscriptInventoryView: View {
   private func retryMetadata(for session: TranscriptSession) {
     let id = session.identifier
 
+    log.info("[META-RETRY] Retrying metadata for session: \(id, privacy: .public)")
+
     // Clear error state and trigger regeneration
     metadataErrors.removeValue(forKey: id)
     loadingMetadata.insert(id)
+    log.debug("[META-RETRY] Cleared error state for session: \(id, privacy: .public)")
 
     let task = Task { @MainActor in
       defer {
@@ -943,11 +948,11 @@ struct TranscriptInventoryView: View {
         )
         metadata[id] = generated
         metadataErrors.removeValue(forKey: id)
-        log.info("✅ Retry succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
+        log.info("[META-DONE] ✅ Retry succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
       } catch {
         let errorMessage = error.localizedDescription
         metadataErrors[id] = errorMessage
-        log.error("❌ Retry failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+        log.error("[META-ERROR] ❌ Retry failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
       }
     }
     metadataTasks[id] = task
@@ -960,9 +965,12 @@ struct TranscriptInventoryView: View {
       return
     }
 
+    log.debug("[META-BATCH] Loading metadata for \(sessions.count, privacy: .public) sessions")
+
     // Batch fetch metadata from SQL
     let transcriptIds = sessions.map(\.identifier)
     let cachedMetadata = (try? orchestrator.getMetadataBatch(transcriptIds: transcriptIds)) ?? [:]
+    log.debug("[META-BATCH] Found \(cachedMetadata.count, privacy: .public) cached, need to generate \(transcriptIds.count - cachedMetadata.count, privacy: .public)")
 
     // Update state with cached results
     for (transcriptId, record) in cachedMetadata {
@@ -973,10 +981,26 @@ struct TranscriptInventoryView: View {
     let missingIds = Set(transcriptIds).subtracting(Set(cachedMetadata.keys)).subtracting(loadingMetadata)
     let missingSessions = sessions.filter { missingIds.contains($0.identifier) }
 
-    // Spawn generation tasks for cache misses
+    log.info("[META-QUEUE] Queueing \(missingSessions.count, privacy: .public) sessions for metadata generation")
+
+    // Concurrency limit to prevent Apple Intelligence overload
+    // Timeline queue processes 1 at a time; metadata can handle more since operations are longer
+    let maxConcurrentMetadata = 3
+
+    // Spawn generation tasks for cache misses with concurrency control
     for session in missingSessions {
       let id = session.identifier
+      log.debug("[META-QUEUE]   Session: \(id, privacy: .public)")
+
+      // Wait if too many tasks running (backpressure)
+      while metadataTasks.count >= maxConcurrentMetadata {
+        log.debug("[META-BACKPRESSURE] Waiting: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public) tasks running")
+        await Task.yield()  // Yield to allow running tasks to complete
+        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms backoff
+      }
+
       loadingMetadata.insert(id)
+      log.info("[META-START-TASK] Starting task for \(id, privacy: .public) (active: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public))")
 
       let task = Task { @MainActor in
         defer {
@@ -987,11 +1011,11 @@ struct TranscriptInventoryView: View {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
           metadata[id] = generated
           metadataErrors.removeValue(forKey: id)  // Clear error on success (Phase 3)
-          log.info("✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
+          log.info("[META-DONE] ✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
         } catch {
           let errorMessage = error.localizedDescription
           metadataErrors[id] = errorMessage  // Capture error for UI display (Phase 3)
-          log.error("❌ Failed to generate metadata for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+          log.error("[META-ERROR] ❌ Failed to generate metadata for \(id, privacy: .public): \(errorMessage, privacy: .public)")
         }
       }
       metadataTasks[id] = task

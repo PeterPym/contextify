@@ -62,21 +62,24 @@ actor TranscriptMetadataOrchestrator {
     forceRegenerate: Bool = false
   ) async throws -> TranscriptMetadata {
     guard let orchestrator = orchestrator else {
-      log.error("TranscriptMetadataOrchestrator not initialized with orchestrator")
+      log.error("[META-ERROR] TranscriptMetadataOrchestrator not initialized with orchestrator")
       throw TranscriptMetadataError.notInitialized
     }
 
     // Cancel existing task if forcing regeneration
     if forceRegenerate, let existingTask = activeTasks[session.fileURL] {
+      log.info("[META-CANCEL] Canceling existing task for \(session.identifier, privacy: .public) (force regenerate)")
       existingTask.cancel()
       activeTasks.removeValue(forKey: session.fileURL)
     }
 
     // Check for existing task
     if let existingTask = activeTasks[session.fileURL] {
-      log.info("Reusing existing generation task for \(session.identifier, privacy: .public)")
+      log.debug("[META-REUSE] Reusing existing generation task for \(session.identifier, privacy: .public)")
       return try await existingTask.value
     }
+
+    log.info("[META-START] Starting metadata generation for \(session.identifier, privacy: .public)")
 
     // Create new task
     let task = Task<TranscriptMetadata, Error> {
@@ -164,18 +167,18 @@ actor TranscriptMetadataOrchestrator {
       }
     }
 
-    log.info("Generating metadata for \(transcriptId, privacy: .public)")
+    log.info("[META-GEN] Generating metadata for \(transcriptId, privacy: .public)")
 
     // Read entries from database (not JSONL file)
     let parseStart = Date()
-    log.info("🔍 Calling getEntries(forTranscript: '\(transcriptId, privacy: .public)', afterTimestamp: nil)")
+    log.debug("[META-GEN] Calling getEntries for transcript: \(transcriptId, privacy: .public)")
     let entries = try orchestrator.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
-    log.info("🔍 getEntries returned \(entries.count) entries for transcript '\(transcriptId, privacy: .public)'")
+    log.debug("[META-GEN] Loaded \(entries.count, privacy: .public) entries from database")
     let exchanges = convertEntriesToExchanges(entries)
-    log.info("🔍 convertEntriesToExchanges produced \(exchanges.count) exchanges from \(entries.count) entries")
+    log.debug("[META-GEN] Converted to \(exchanges.count, privacy: .public) exchanges")
     let parseTime = Date().timeIntervalSince(parseStart)
 
-    log.info("📊 Loaded \(exchanges.count, privacy: .public) exchanges from database (from \(entries.count, privacy: .public) entries)")
+    log.info("[META-GEN] Loaded \(exchanges.count, privacy: .public) exchanges in \(String(format: "%.2f", parseTime), privacy: .public)s")
 
     // Handle very short transcripts with heuristic
     if exchanges.count < 3 {
@@ -189,7 +192,7 @@ actor TranscriptMetadataOrchestrator {
     guard await circuitBreaker.allow() else {
       stats.breakerOpens += 1
       let cbStats = await circuitBreaker.stats()
-      log.warning("Circuit breaker active (\(cbStats.failures)/\(cbStats.total), \(String(format: "%.1f%%", cbStats.ratio * 100))), using heuristic fallback")
+      log.warning("[CIRCUIT-OPEN] ⚠️  Circuit breaker active (\(cbStats.failures, privacy: .public)/\(cbStats.total, privacy: .public), \(String(format: "%.1f%%", cbStats.ratio * 100), privacy: .public)), using heuristic fallback")
       let metadata = HeuristicMetadata.generate(exchanges: exchanges)
       try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
       return metadata
@@ -280,6 +283,7 @@ actor TranscriptMetadataOrchestrator {
         metadata.messageCount = exchanges.count
         metadata.strategy = strategy.rawValue
 
+        log.info("[META-LLM-SUCCESS] ✅ LLM generation succeeded for \(transcriptId, privacy: .public)")
         await circuitBreaker.recordSuccess()
       } else {
         throw LLMError.unavailable
@@ -289,12 +293,12 @@ actor TranscriptMetadataOrchestrator {
       #endif
     } catch {
       stats.failures += 1
-      log.error("LLM call failed: \(error.localizedDescription, privacy: .public)")
+      log.error("[META-LLM-ERROR] ❌ LLM call failed for \(transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       await circuitBreaker.recordFailure()
 
       // Try bookends fallback if we weren't already using it
       if strategy != .bookends {
-        log.info("Retrying with bookends strategy (first 10 + last 10 exchanges)...")
+        log.info("[META-RETRY] Retrying with bookends strategy (first 10 + last 10 exchanges)...")
 
         // Reset session before retry to prevent history accumulation
         #if canImport(FoundationModels)
@@ -352,6 +356,7 @@ actor TranscriptMetadataOrchestrator {
             metadata.messageCount = exchanges.count
             metadata.strategy = "bookends"
 
+            log.info("[META-RETRY-SUCCESS] ✅ Bookends retry succeeded for \(transcriptId, privacy: .public)")
             await circuitBreaker.recordSuccess()
           } else {
             throw LLMError.unavailable
@@ -361,13 +366,14 @@ actor TranscriptMetadataOrchestrator {
           #endif
         } catch {
           stats.failures += 1
-          log.error("Bookends fallback also failed, using heuristic")
+          log.error("[META-FALLBACK] ❌ Bookends fallback failed for \(transcriptId, privacy: .public), using heuristic")
           await circuitBreaker.recordFailure()
           metadata = HeuristicMetadata.generate(exchanges: exchanges)
           metadata.strategy = "heuristic"
         }
       } else {
         // Already tried bookends, use heuristic
+        log.info("[META-FALLBACK] Using heuristic for \(transcriptId, privacy: .public) (already tried bookends)")
         metadata = HeuristicMetadata.generate(exchanges: exchanges)
         metadata.strategy = "heuristic"
       }
@@ -377,8 +383,10 @@ actor TranscriptMetadataOrchestrator {
 
     // Finalize metadata and save to SQL
     let storageStart = Date()
+    log.debug("[META-SAVE] Saving metadata to SQL for \(transcriptId, privacy: .public)")
     try await saveToSQL(metadata, transcriptId: transcriptId, fileURL: session.fileURL, orchestrator: orchestrator)
     let storageTime = Date().timeIntervalSince(storageStart)
+    log.debug("[META-SAVE] Saved in \(String(format: "%.2f", storageTime), privacy: .public)s")
 
     let totalTime = Date().timeIntervalSince(startTime)
 
