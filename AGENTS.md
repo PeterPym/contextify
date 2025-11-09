@@ -204,9 +204,32 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 
 **For Claude Code Web users and Linux environments:**
 
-Since Contextify is a macOS-only project requiring Xcode, builds from Linux environments must use **on-demand GitHub Actions** with macOS runners. The build script (`scripts/xc.sh`) automatically detects non-macOS environments and guides you through the process.
+Since Contextify is a macOS-only project requiring Xcode, builds from Linux environments must use **on-demand GitHub Actions** with macOS runners.
 
-**Quick Start:**
+#### Recommended: Use the Trigger Script (No gh CLI needed!)
+
+The easiest way to build from Claude Code Web or Linux:
+
+```bash
+# Trigger build on your current branch and wait for results
+./scripts/trigger-ci-build.sh Debug
+
+# Or explicitly specify a branch
+./scripts/trigger-ci-build.sh Debug feature/my-branch
+```
+
+**What it does:**
+- ✅ Triggers GitHub Actions on your current branch (or specified branch)
+- ✅ Waits for build completion (polls every 10s)
+- ✅ Reports success/failure with clear output
+- ✅ No gh CLI or additional tools required
+- ✅ Works in Claude Code Web, generic Linux, or macOS
+
+**Setup (one-time):**
+- Ensure `GITHUB_TOKEN` is set in your environment (Claude Code Web: add in environment settings)
+- See `scripts/CLAUDE-CODE-WEB-CI-GUIDE.md` for detailed setup
+
+#### Alternative: Using gh CLI
 
 1. **Auto-trigger from Linux** (if you have GitHub CLI):
    ```bash
