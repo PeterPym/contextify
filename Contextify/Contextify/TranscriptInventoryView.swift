@@ -36,6 +36,7 @@ struct TranscriptInventoryView: View {
   @State private var debounceTask: Task<Void, Never>?
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
+  @State private var metadataErrors: [String: String] = [:]  // Track errors by transcript ID (Phase 3)
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
@@ -311,9 +312,35 @@ struct TranscriptInventoryView: View {
           .frame(width: 16)
 
         if let meta = metadata[session.identifier] {
-          Text(meta.title)
-            .font(.callout)
-            .lineLimit(1)
+          // Show title with confidence indicator for low-confidence metadata
+          HStack(spacing: 4) {
+            Text(meta.title)
+              .font(.callout)
+              .lineLimit(1)
+            if meta.confidence < 0.5 {
+              Image(systemName: "info.circle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .help("Low confidence: \(meta.description)")
+            }
+          }
+        } else if let error = metadataErrors[session.identifier] {
+          // Show error state with retry option (Phase 3)
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+              .font(.caption2)
+              .foregroundStyle(.orange)
+            Text("Failed to analyze")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button("Retry") {
+              retryMetadata(for: session)
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.blue)
+          }
+          .help("Error: \(error)")
         } else if loadingMetadata.contains(session.identifier) {
           HStack(spacing: 4) {
             Image(systemName: "hourglass")
@@ -895,6 +922,37 @@ struct TranscriptInventoryView: View {
     }
   }
 
+  /// Retry metadata generation for a failed session (Phase 3)
+  @MainActor
+  private func retryMetadata(for session: TranscriptSession) {
+    let id = session.identifier
+
+    // Clear error state and trigger regeneration
+    metadataErrors.removeValue(forKey: id)
+    loadingMetadata.insert(id)
+
+    let task = Task { @MainActor in
+      defer {
+        loadingMetadata.remove(id)
+        metadataTasks[id] = nil
+      }
+      do {
+        let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+          for: session,
+          forceRegenerate: true  // Force regeneration to retry
+        )
+        metadata[id] = generated
+        metadataErrors.removeValue(forKey: id)
+        log.info("✅ Retry succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
+      } catch {
+        let errorMessage = error.localizedDescription
+        metadataErrors[id] = errorMessage
+        log.error("❌ Retry failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+      }
+    }
+    metadataTasks[id] = task
+  }
+
   @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
     // Centralized loading: batch fetch from SQL, then spawn Tasks only for cache misses
@@ -928,10 +986,12 @@ struct TranscriptInventoryView: View {
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
           metadata[id] = generated
+          metadataErrors.removeValue(forKey: id)  // Clear error on success (Phase 3)
           log.info("✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
         } catch {
-          log.error("❌ Failed to generate metadata for \(id, privacy: .public): \(String(describing: error), privacy: .public)")
-          // Failed to generate, loading indicator removed by defer
+          let errorMessage = error.localizedDescription
+          metadataErrors[id] = errorMessage  // Capture error for UI display (Phase 3)
+          log.error("❌ Failed to generate metadata for \(id, privacy: .public): \(errorMessage, privacy: .public)")
         }
       }
       metadataTasks[id] = task
