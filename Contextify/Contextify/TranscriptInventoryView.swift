@@ -48,6 +48,8 @@ struct TranscriptInventoryView: View {
   @State private var cleanupResult: (count: Int, ids: [String])? = nil
   @State private var showingCleanupAlert = false
   @AppStorage("transcript.hideBriefSessions") private var hideBriefSessions = false
+  @State private var showMetadataInfo: [String: Bool] = [:]  // Track info popover state per session
+  @State private var showErrorInfo: [String: Bool] = [:]  // Track error info popover state per session
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
@@ -330,10 +332,27 @@ struct TranscriptInventoryView: View {
               .font(.callout)
               .lineLimit(1)
             if meta.confidence < 0.5 {
-              Image(systemName: "info.circle")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .help("Low confidence: \(meta.description)")
+              InfoButton(isPresented: Binding(
+                get: { showMetadataInfo[session.identifier] ?? false },
+                set: { showMetadataInfo[session.identifier] = $0 }
+              ))
+              .popover(isPresented: Binding(
+                get: { showMetadataInfo[session.identifier] ?? false },
+                set: { showMetadataInfo[session.identifier] = $0 }
+              )) {
+                InfoPopoverContent(
+                  title: "Low Confidence Metadata",
+                  message: """
+                  Title: \(meta.title)
+
+                  Description: \(meta.description)
+
+                  Confidence: \(Int(meta.confidence * 100))%
+
+                  This metadata was generated with low confidence and may not accurately represent the transcript content.
+                  """
+                )
+              }
             }
           }
         } else if let error = metadataErrors[session.identifier] {
@@ -351,8 +370,29 @@ struct TranscriptInventoryView: View {
             .buttonStyle(.plain)
             .font(.caption)
             .foregroundStyle(.blue)
+            InfoButton(isPresented: Binding(
+              get: { showErrorInfo[session.identifier] ?? false },
+              set: { showErrorInfo[session.identifier] = $0 }
+            ))
+            .popover(isPresented: Binding(
+              get: { showErrorInfo[session.identifier] ?? false },
+              set: { showErrorInfo[session.identifier] = $0 }
+            )) {
+              InfoPopoverContent(
+                title: "Metadata Generation Failed",
+                message: """
+                Error: \(error)
+
+                This transcript could not be analyzed. Common causes:
+                • Apple Intelligence is disabled or unavailable
+                • Transcript content is corrupted or empty
+                • System resources temporarily unavailable
+
+                Try clicking the Retry button to attempt generation again.
+                """
+              )
+            }
           }
-          .help("Error: \(error)")
         } else if loadingMetadata.contains(session.identifier) {
           HStack(spacing: 4) {
             Image(systemName: "hourglass")
