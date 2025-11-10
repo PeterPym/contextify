@@ -72,6 +72,8 @@ actor TranscriptMetadataOrchestrator {
   private var queueMetrics = QueueMetrics()
 
   // Error tracking for queue processing (separate from circuit breaker)
+  // Local queue-level breaker: pauses the worker after N consecutive generation failures.
+  // Distinct from the LLM sliding-window CircuitBreaker (which decides per-call fallback to heuristics).
   private var consecutiveErrors = 0
   private var isPaused = false
   private let maxConsecutiveErrors = 3
@@ -191,7 +193,6 @@ actor TranscriptMetadataOrchestrator {
     }
 
     // Keep items that are visible OR recently enqueued (< stabilization delay)
-    let now = Date()
     pendingQueue.removeAll { item in
       let isVisible = visibleIDs.contains(item.id)
       let isRecent = item.age < Double(stabilizationDelayMs) / 1000.0
@@ -282,9 +283,7 @@ actor TranscriptMetadataOrchestrator {
 
   /// LIFO processing loop - processes queue until empty or cancelled
   private func processQueue() async {
-    isProcessing = true
     defer {
-      isProcessing = false
       log.debug("[QUEUE-STOP] Processing loop stopped")
     }
 
@@ -298,14 +297,16 @@ actor TranscriptMetadataOrchestrator {
         continue
       }
 
-      // Get next item (LIFO - most recent first)
-      guard let item = pendingQueue.popLast() else {
+      // Get next item (LIFO - most recent first): newest is at index 0
+      guard !pendingQueue.isEmpty else {
         // Queue empty, wait a bit before checking again
         try? await Task.sleep(for: .milliseconds(100))
         continue
       }
 
-      // Remove from deduplication set
+      // Mark as processing only when actually working on an item
+      isProcessing = true
+      let item = pendingQueue.removeFirst()  // Pop from front where newest items are
       pendingKeys.remove(item.id)
 
       // Log queue state
@@ -315,7 +316,9 @@ actor TranscriptMetadataOrchestrator {
       do {
         // Generate metadata (reuse existing generateMetadata logic)
         guard let orchestrator = orchestrator else {
-          log.error("[QUEUE-ERROR] Orchestrator not initialized")
+          log.error("[QUEUE-ERROR] Orchestrator not initialized; pausing worker 1s")
+          isProcessing = false
+          try? await Task.sleep(for: .seconds(1))
           continue
         }
 
@@ -330,9 +333,6 @@ actor TranscriptMetadataOrchestrator {
         // Success - reset error counter and update metrics
         consecutiveErrors = 0
         queueMetrics.totalProcessed += 1
-
-        // Notify observers of queue change
-        notifyQueueChanged()
 
       } catch {
         log.error("[QUEUE-ERROR] ❌ Failed to generate metadata for \(item.id.prefix(8)): \(error.localizedDescription)")
@@ -357,10 +357,11 @@ actor TranscriptMetadataOrchestrator {
             await self.resetCircuitBreaker()
           }
         }
-
-        // Notify observers
-        notifyQueueChanged()
       }
+
+      // Clear processing flag after item completion (success or failure)
+      isProcessing = false
+      notifyQueueChanged()
     }
 
     log.info("[QUEUE-LOOP] Processing loop cancelled")
