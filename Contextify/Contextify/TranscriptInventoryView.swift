@@ -442,15 +442,6 @@ struct TranscriptInventoryView: View {
       }
 
       HStack(spacing: 4) {
-        Label(session.provider.displayName, systemImage: session.provider.iconImage)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .labelStyle(.titleOnly)
-
-        Text("•")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-
         Text(session.lastActivity.relativeTimeString)
           .font(.caption)
           .foregroundStyle(.secondary)
