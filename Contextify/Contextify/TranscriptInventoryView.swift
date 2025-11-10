@@ -542,6 +542,14 @@ struct TranscriptInventoryView: View {
 
     Divider()
 
+    Button {
+      regenerateMetadata(for: session)
+    } label: {
+      Label("Regenerate Metadata", systemImage: "arrow.clockwise")
+    }
+
+    Divider()
+
     Button(role: .destructive) {
       transcriptToDelete = session
       showingDeleteConfirmation = true
@@ -1042,6 +1050,41 @@ struct TranscriptInventoryView: View {
         let errorMessage = error.localizedDescription
         metadataErrors[id] = errorMessage
         log.error("[META-ERROR] ❌ Retry failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+      }
+    }
+    metadataTasks[id] = task
+  }
+
+  /// Regenerate metadata for a session (context menu action)
+  @MainActor
+  private func regenerateMetadata(for session: TranscriptSession) {
+    let id = session.identifier
+
+    log.info("[META-REGEN] Regenerating metadata for session: \(id, privacy: .public)")
+
+    // Clear existing metadata and trigger forced regeneration
+    metadata.removeValue(forKey: id)
+    metadataErrors.removeValue(forKey: id)
+    loadingMetadata.insert(id)
+    log.debug("[META-REGEN] Cleared cached metadata for session: \(id, privacy: .public)")
+
+    let task = Task { @MainActor in
+      defer {
+        loadingMetadata.remove(id)
+        metadataTasks[id] = nil
+      }
+      do {
+        let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+          for: session,
+          forceRegenerate: true  // Force regeneration to bypass cache
+        )
+        metadata[id] = generated
+        metadataErrors.removeValue(forKey: id)
+        log.info("[META-DONE] ✅ Regeneration succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
+      } catch {
+        let errorMessage = error.localizedDescription
+        metadataErrors[id] = errorMessage
+        log.error("[META-ERROR] ❌ Regeneration failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
       }
     }
     metadataTasks[id] = task
