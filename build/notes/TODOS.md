@@ -1,8 +1,182 @@
 # High-Priority TODOs
 
 **Status:** Active
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-10
 **Priority Level:** P0 (Blocking release)
+
+---
+
+## Invalid Project Root Modal at Startup (P0)
+
+**Issue:** Modal alert appears at application startup showing "Stored project root is invalid or unreadable" for paths that are not actual project roots.
+
+**Example:**
+```
+Stored project root is invalid or unreadable (saved path):
+/Users/rob/Desktop/Video/Star Wars/Star Wars Episode I The Phantom Menace (1999) [1080p]
+```
+
+**Problem:** This creates poor UX - user sees a blocking modal at startup instead of graceful error handling.
+
+**Current Behavior:**
+- Modal blocks app launch
+- User must click "OK" to dismiss
+- No indication in UI which project has the issue
+
+**Expected Behavior:**
+- No modal at startup
+- Invalid/unreadable projects shown in tab bar with warning icon decoration
+- User can still access other valid projects
+- Existing error decoration logic already exists for some error states
+
+### Tasks
+
+- [ ] **[IR1]** Identify code path that shows invalid project root modal
+  - **Files to Check:**
+    - `HUDViewModel.swift` (project root validation)
+    - `StartupCoordinator.swift` (startup project resolution)
+    - `ProjectIdentity.swift` (path validation)
+  - **Search for:** Alert text "Stored project root is invalid"
+  - **Goal:** Find where this modal is triggered
+
+- [ ] **[IR2]** Trace how invalid paths get stored
+  - **Question:** Why is `/Users/rob/Desktop/Video/Star Wars/...` being saved as a project root?
+  - **Check:** Project creation/discovery logic
+  - **Check:** UserDefaults/bookmark persistence
+  - **Hypothesis:** May be related to file drag-drop or directory traversal
+
+- [ ] **[IR3]** Replace modal with graceful error handling
+  - **Remove:** Modal alert at startup
+  - **Add:** Mark project with error state in database
+  - **Add:** Show warning icon in tab bar (reuse existing error decoration)
+  - **Add:** Log error for debugging (not user-facing)
+
+- [ ] **[IR4]** Add validation before persisting project roots
+  - **Check:** Path exists
+  - **Check:** Path is readable
+  - **Check:** Path is a directory (not a file)
+  - **Check:** Path contains `.git` or is under `~/.claude/projects` or `~/.codex/sessions`
+  - **Reject:** Invalid paths before saving to UserDefaults/database
+
+**Acceptance Criteria:**
+- No modal appears at startup for invalid project roots
+- Invalid projects show warning icon in tab bar
+- Valid projects still load normally
+- User can click warning icon to see error details (future enhancement)
+- Invalid paths never get persisted to database/preferences
+
+**Estimated Time:** 3-4 hours
+
+**Priority:** P0 (blocks release - poor UX for startup)
+
+---
+
+## Ghost Project Entry After Drag-Drop Outside Window (P1)
+
+**Issue:** When dragging a project tab and releasing it outside the window boundary, the project tab bar can enter a broken state with a ghost dashed-line entry that cannot be interacted with.
+
+**Reproduction:**
+1. Open project tab bar with multiple projects
+2. Click and drag a project tab
+3. Move cursor outside the application window
+4. Release mouse button
+5. Result: Ghost dashed-line placeholder remains in tab bar
+
+**Current Behavior:**
+- Ghost/placeholder entry persists after drag-drop cancellation
+- Entry cannot be clicked or selected
+- Entry cannot be removed via UI
+- Only remediation is restarting the application
+- Project order may be corrupted in UI (though underlying data likely intact)
+
+**Root Cause (Hypothesis):**
+- Drag-drop gesture not properly handling cancellation when drop occurs outside valid drop zone
+- SwiftUI `.onDrop` completion handler not called when drag exits window
+- State not reset when drag gesture is abandoned
+- Missing cleanup in drag gesture failure path
+
+**Expected Behavior:**
+- Dragging project outside window cancels the drag operation
+- Tab returns to original position
+- No ghost entries persist
+- State fully resets to pre-drag condition
+
+### Tasks
+
+- [ ] **[GD1]** Identify drag-drop implementation
+  - **File:** `Contextify/Contextify/ProjectSwitcherView.swift`
+  - **Look for:** `.onDrag`, `.onDrop`, drag gesture handling
+  - **Check:** State management for drag-in-progress
+
+- [ ] **[GD2]** Add drag cancellation handling
+  - **Add:** `.onDrop` handler that detects invalid drop zones
+  - **Add:** Gesture state cleanup on drag exit/cancel
+  - **Check:** SwiftUI drag session lifecycle methods
+  - **Consider:** Using `DropDelegate` for more control
+
+- [ ] **[GD3]** Add state validation on drag completion
+  - **Validate:** Project order after any drag operation
+  - **Reset:** UI state if validation fails
+  - **Log:** Warning if ghost state detected
+  - **Auto-fix:** Remove ghost entries on next project list refresh
+
+- [ ] **[GD4]** Add preventive bounds checking
+  - **Detect:** When drag cursor leaves window bounds
+  - **Cancel:** Drag operation automatically
+  - **Alternative:** Disable drop acceptance outside tab bar region
+
+**Acceptance Criteria:**
+- Dragging project outside window cancels cleanly
+- No ghost entries persist after any drag operation
+- Project returns to original position on cancel
+- UI state always consistent with underlying data
+- State auto-heals on app restart or project list refresh
+
+**Files to Investigate:**
+- `Contextify/Contextify/ProjectSwitcherView.swift` (main tab bar UI)
+- `Contextify/Contextify/ProjectSwitcherState.swift` (state management)
+- `Contextify/Contextify/ProjectRowView.swift` (individual tab drag handling)
+
+**Estimated Time:** 2-3 hours
+
+**Priority:** P1 (annoying bug, but has workaround - restart app)
+
+---
+
+## Projects Tab: Auto-Discovery & Notifications (P1)
+
+**Issue:** Projects tab does not auto-refresh when new projects are detected. Users must manually switch projects to see newly discovered projects.
+
+**Goal:** Add real-time project discovery with toast notifications.
+
+### Tasks
+
+- [ ] **[PD1]** Add auto-refresh when FSEvents detects new project directories
+  - **Context:** `ContextifyApp.startProjectDirectoryMonitoring()` monitors `~/.claude/projects` and `~/.codex/sessions`
+  - **Current Behavior:** Detection triggers discovery but UI doesn't refresh
+  - **Needed:** Trigger `ProjectsViewModel.discoverProjects()` when new directories detected
+  - **Location:** `Contextify/Contextify/ContextifyApp.swift:496-540`
+
+- [ ] **[PD2]** Show toast notification when new projects discovered
+  - **Format:** "New project discovered: [project-name]"
+  - **Trigger:** After auto-discovery completes with new projects
+  - **Use:** Existing toast system (`NotificationCenter` + `.contextifyShowToast`)
+  - **Location:** `ProjectsViewModel.discoverProjects()` completion
+
+- [ ] **[PD3]** Debounce rapid filesystem events
+  - **Prevent:** Multiple toasts for single project creation (git init creates many files)
+  - **Strategy:** 2-second debounce on discovery trigger
+  - **Location:** FSEventsMonitor callback in `ContextifyApp`
+
+**Acceptance Criteria:**
+- Creating new Claude Code project → Project appears in tab within 3 seconds
+- Toast shows "New project discovered: [name]"
+- No duplicate toasts for same project
+- Existing projects not re-notified
+
+**Estimated Time:** 2-3 hours
+
+**Priority:** P1 (polish for release, not blocking)
 
 ---
 
