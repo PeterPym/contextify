@@ -225,8 +225,9 @@ struct StatusBarView: View {
             .help("LLM generation errors occurred")  // Simplified tooltip
             .accessibilityLabel("\(viewModel.recentErrorCount) generation errors")
 
-        } else if let viewModel, viewModel.isProcessing && viewModel.queueDepth > 0 {
-            // Processing state (only show if items exist - prevents race condition display)
+        } else if let viewModel, viewModel.queueDepth > 0 {
+            // Processing state - show spinner whenever queue has items
+            // (queue is considered "processing" even during brief idle periods between items)
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
@@ -248,13 +249,6 @@ struct StatusBarView: View {
                 }
             }
             .accessibilityLabel("Processing \(viewModel.queueDepth) summaries, estimated \(viewModel.estimatedSecondsRemaining) seconds remaining")
-
-        } else if let viewModel, viewModel.queueDepth > 0 {
-            // Pending (not processing yet)
-            Text("\(viewModel.queueDepth) pending")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("\(viewModel.queueDepth) summaries pending")
 
         } else {
             // Up to date (queue empty AND no recent errors)

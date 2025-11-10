@@ -179,9 +179,14 @@ public extension Notification.Name {
     /// - UserInfo: None
     static let timelineCacheUpdated = Notification.Name("TimelineCacheUpdated")
 
+    /// Posted when transcript metadata generation starts
+    /// - Object: String (transcript_id)
+    /// - UserInfo: ["transcriptId": String]
+    static let transcriptMetadataGenerationStarted = Notification.Name("TranscriptMetadataGenerationStarted")
+
     /// Posted when transcript metadata is updated
     /// - Object: String (transcript_id)
-    /// - UserInfo: None
+    /// - UserInfo: ["transcriptId": String]
     static let transcriptMetadataUpdated = Notification.Name("TranscriptMetadataUpdated")
 
     /// Posted when transcript file is updated (for file watcher)

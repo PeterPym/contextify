@@ -43,16 +43,16 @@ Both `TimelineCacheMissGenerator` and `TranscriptMetadataOrchestrator` share:
 
 | Aspect | TimelineCacheMissGenerator | TranscriptMetadataOrchestrator |
 |--------|---------------------------|-------------------------------|
-| **Processing Model** | FIFO batched (process 1-N items at a time) | Concurrent tasks (one task per item) |
-| **Batch Size** | Configurable (currently 1) | N/A (always 1) |
-| **Inter-batch Delay** | 0ms (was 2s, removed for speed) | N/A |
-| **Deduplication Key** | `CacheKey` (content+window hash) | `URL` (transcript file URL) |
-| **Pruning** | Viewport-aware + project-based | None (keep all active tasks) |
+| **Processing Model** | LIFO sequential (one item at a time) | LIFO sequential (one item at a time) |
+| **Batch Size** | 1 (sequential only) | 1 (sequential only) |
+| **Inter-batch Delay** | 0ms | 0ms |
+| **Deduplication Key** | `CacheKey` (content+window hash) | `String` (transcript ID) |
+| **Pruning** | Viewport-aware + project-based | Viewport-aware (500ms debounce) |
 | **Error Handling** | Per-item retry (3 attempts) | Circuit breaker fallback |
 | **Rate Limiting** | Stabilization delay (750ms) | Circuit breaker |
 | **LLM Session Strategy** | Per kind+provider pair | Per transcript ID |
 | **FK Safety** | Pre-flight check via `existingEntryIds()` | Throws on FK error |
-| **Queue Order** | LIFO (newest first, via `insert(at: 0)`) | N/A (concurrent, no order) |
+| **Queue Order** | LIFO (newest first, via `insert(at: 0)`) | LIFO (newest first, via `insert(at: 0)` + reverse) |
 
 ---
 

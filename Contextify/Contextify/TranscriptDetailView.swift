@@ -386,9 +386,24 @@ struct TranscriptDetailView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .task(id: session.identifier) {  // Changed from fileURL to identifier
+      // Reset state when session changes to prevent showing stale data
+      metadata = nil
+      fileSnapshots = []
+      systemEvents = []
+      usageStats = nil
+
       // Load metadata on appearance or when session changes
       await loadMetadata()
       await loadV7Metadata()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .transcriptMetadataUpdated)) { notification in
+      // Reload metadata when generation completes
+      guard let completedId = notification.object as? String,
+            completedId == session.identifier else { return }
+
+      Task {
+        await loadMetadata()
+      }
     }
   }
 
