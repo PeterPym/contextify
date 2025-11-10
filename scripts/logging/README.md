@@ -12,6 +12,8 @@
 |----------------|---------|--------|------|-----------|
 | Feature not appearing in UI | Pipeline Completeness | `monitor-pipeline-check.sh` | Automated | 0=pass, 1=fail |
 | Need to verify bug fix works | Automated Test | `monitor-automated-test.sh` | Automated | 0=pass, 1=fail |
+| Verifying fix works with clean DB | Clean DB Test Harness | Custom script (see Pattern 6) | Automated | 0=pass, 1=fail |
+| Data flows through A but not B | Cross-Component Trace | Tag analysis (see Pattern 7) | Manual | - |
 | App slow/laggy, timing issues | Gap Analysis | `monitor-interactive.sh` + `analyze-gaps.sh` | Semi-auto | - |
 | Exploring unknown issue | Interactive Monitoring | `monitor-interactive.sh` | Interactive | - |
 | Re-analyze captured logs | Pipeline Analysis | `analyze-pipeline.sh` | Post-hoc | 0=pass, 1=fail |
@@ -263,6 +265,215 @@ Same as Pipeline Completeness Check (stage-by-stage analysis, broken stage ident
 
 ---
 
+### Pattern 6: Clean DB Test Harness
+
+**When to use:**
+- Verifying a fix works with fresh database state
+- Testing first-launch UX flows
+- Reproducing bugs that only occur on clean install
+- Validating end-to-end feature integration from scratch
+
+**How it works:**
+Creates a self-validating test script that: (1) cleans database, (2) launches app, (3) captures logs for N seconds, (4) validates expected log markers appear in correct sequence, (5) reports pass/fail for each feature.
+
+**Key difference from Pattern 2:**
+- Pattern 2: Validates expectations on running app
+- Pattern 6: Full end-to-end test including DB reset and app launch
+
+**Template:**
+```bash
+#!/bin/bash
+set -euo pipefail
+
+DURATION=45
+
+echo "1. Clean database"
+./scripts/db_manager.sh clean --force > /dev/null 2>&1
+echo "✓ Done"
+
+# Kill existing app
+pkill -9 Contextify 2>/dev/null || true
+sleep 1
+
+# Start log capture
+LOGFILE="/tmp/test-$(date +%Y%m%d-%H%M%S).log"
+log stream --predicate 'subsystem == "dev.contextify"' --level debug > "$LOGFILE" 2>&1 &
+LOG_PID=$!
+
+sleep 1
+echo "2. Launching app..."
+open .derived/Build/Products/Debug/Contextify.app
+
+echo "3. Capturing for ${DURATION}s..."
+sleep ${DURATION}
+
+# Stop logging
+kill $LOG_PID 2>/dev/null || true
+
+echo ""
+echo "=== VALIDATION ==="
+
+# Validate expected markers
+PASS=0
+FAIL=0
+
+check() {
+    local tag="$1"
+    local desc="$2"
+
+    if grep -q "$tag" "$LOGFILE" 2>/dev/null; then
+        echo "✓ $desc"
+        PASS=$((PASS + 1))
+    else
+        echo "✗ $desc - MISSING TAG: $tag"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# Define your feature validations
+check "\[BACKEND-INIT\]" "Backend initialized"
+check "\[FEATURE-WORKING\]" "Feature works correctly"
+check "\[UI-RENDERED\]" "UI rendered expected state"
+
+echo ""
+echo "Passed: $PASS / Failed: $FAIL"
+
+if [ $FAIL -eq 0 ]; then
+    echo "✅ ALL CHECKS PASSED"
+    exit 0
+else
+    echo "❌ SOME CHECKS FAILED"
+    echo "Full log: $LOGFILE"
+    exit 1
+fi
+```
+
+**Real-world example:**
+See `/tmp/final-comprehensive-test.sh` - validates 6 features for welcome modal UX:
+- State changes (`[PSTATE-INGEST-START]`, `[PSTATE-PROGRESS]`)
+- UI rendering (`[WMODAL-BARS]`, `[TIMELINE-LOADING]`)
+- Data flow (`[SWITCHER-SORTED]` with contextify in order)
+
+**Output:**
+```
+=== VALIDATION ===
+✓ State: isIngesting set to true
+✓ State: discoveryProgress updated
+✗ UI: Welcome modal shows progress bars - MISSING TAG: [WMODAL-BARS]
+✓ UI: Timeline shows loading indicator
+✓ Switcher: Projects sorted
+✓ Switcher: Contextify in tab order
+
+Passed: 5 / Failed: 1
+
+❌ SOME CHECKS FAILED
+Full log: /tmp/test-20251110-125828.log
+```
+
+**When it fails:**
+- Shows EXACTLY which features work vs fail
+- Provides log file for detailed investigation
+- Reproducible (same result every run)
+
+**Next steps:**
+- Focus on missing tags → add logging if needed
+- Check timing: do tags appear in wrong order?
+- Use `grep "MISSING-TAG\|RELATED-TAG" $LOGFILE` to understand context
+
+**Benefits over manual testing:**
+- No human interpretation required
+- Runs in CI/CD
+- Documents expected behavior as code
+- Catches regressions immediately
+
+---
+
+### Pattern 7: Cross-Component Data Flow Tracing
+
+**When to use:**
+- Feature works in Component A but fails in Component B
+- Data successfully enters pipeline but doesn't reach UI
+- Need to identify WHERE in multi-component flow data is lost
+- Debugging integration issues between modules
+
+**How it works:**
+Tag each stage of a data pipeline with unique markers, then trace the flow through logs to find where it breaks.
+
+**Example problem:**
+"Project discovery finds contextify first, but tab bar shows it last"
+
+**Solution approach:**
+
+**1. Identify the components:**
+```
+ProjectDiscoveryService → TranscriptOrchestrator → ProjectSwitcherState → UI
+```
+
+**2. Add tags at each stage:**
+```swift
+// ProjectDiscoveryService.swift
+log.info("[DISCOVERY-ORDER] Top 3: contextify, ...")
+
+// TranscriptOrchestrator.swift
+log.info("[BACKEND-RESET-DONE] Reset display_order for 15 projects")
+
+// ProjectSwitcherState.swift
+log.info("[SWITCHER-SORTED] Tab order: contextify, ...")
+```
+
+**3. Trace the flow:**
+```bash
+grep "DISCOVERY\|BACKEND\|SWITCHER" /tmp/test.log
+```
+
+**4. Find the break:**
+```
+✓ [DISCOVERY-ORDER] Top 3: contextify first       ← Discovery works
+✓ [BACKEND-RESET-DONE] Reset 15 projects          ← DB operation works
+✗ [SWITCHER-SORTED] Tab order: webviewer first    ← Switcher uses different sort!
+```
+
+**Analysis:**
+- Data flows correctly through Discovery → Database
+- But Switcher sorts differently (SQL vs filesystem)
+- **Root cause:** Two components using incompatible sorting methods
+
+**Common patterns:**
+```
+✓ Stage A → ✗ Stage B   = Missing connection (event not fired, observer not registered)
+✓ Stage A → ⏱️ Stage B   = Timing issue (Stage B runs before Stage A completes)
+✓ Stage A → ⚠️ Stage B   = Transformation issue (Stage B receives wrong format)
+```
+
+**Tag naming for tracing:**
+Use format `[COMPONENT-EVENT]` with consistent event names:
+```
+[DISCOVERY-START] → [DISCOVERY-DONE]
+[HOOVER-START] → [HOOVER-DONE]
+[SWITCHER-REFRESH] → [SWITCHER-SORTED]
+```
+
+**Analysis commands:**
+```bash
+# Show full pipeline
+grep -E "DISCOVERY|BACKEND|SWITCHER" /tmp/test.log | less
+
+# Find first occurrence of each stage
+grep "DISCOVERY-" /tmp/test.log | head -1
+grep "BACKEND-" /tmp/test.log | head -1
+grep "SWITCHER-" /tmp/test.log | head -1
+
+# Check stage ordering
+grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
+```
+
+**When to use this pattern:**
+- After Pipeline Completeness Check identifies a broken stage
+- When data exists in logs but doesn't reach expected destination
+- Debugging "it works everywhere except..." problems
+
+---
+
 ## Tool Reference
 
 ### Monitoring Scripts (Capture Logs)
@@ -395,9 +606,61 @@ log.info("[FEATURE-DONE] Completed in \(elapsed, privacy: .public)s")
 
 ### 3. Tag Naming Convention
 
-- `FEATURE` = your feature area (e.g., SUMM, BATCH, COORD)
-- `EVENT` = specific event (e.g., START, DONE, ERROR)
-- Examples: `[HOOVER-START]`, `[TIMELINE-APPEND]`, `[SUMM-QUEUE]`
+**Format:** `[COMPONENT-ACTION]` or `[COMPONENT-STATE]`
+
+**Component naming:**
+- Use the module/feature name (e.g., `HOOVER`, `SWITCHER`, `DISCOVERY`, `BACKEND`)
+- Be consistent across related logs
+- Keep it short (max 12 chars for grep readability)
+
+**Action/State naming:**
+- Lifecycle events: `START`, `DONE`, `ERROR`, `CANCEL`
+- State snapshots: `SORTED`, `LOADED`, `RENDERED`, `UPDATED`
+- Specific operations: `REFRESH`, `INGEST`, `RESET`, `QUERY`
+
+**Examples:**
+```swift
+// Lifecycle pair (always log both)
+log.info("[HOOVER-START] Processing transcript: \(id, privacy: .public)")
+log.info("[HOOVER-DONE] Processed \(count) entries in \(elapsed, privacy: .public)ms")
+
+// State snapshot with data
+log.info("[SWITCHER-SORTED] Tab order (first 10): \(projectNames, privacy: .public)")
+
+// Operation with result
+log.info("[BACKEND-RESET-DONE] Reset display_order for \(count, privacy: .public) projects")
+```
+
+**Anti-patterns to avoid:**
+```swift
+// ❌ Generic tags (not greppable, not specific)
+log.info("[DEBUG] Something happened")
+log.info("[INFO] Processing...")
+
+// ❌ Tags without data (can't analyze metrics)
+log.info("[HOOVER-DONE]")  // Missing: how many? how long?
+
+// ❌ Inconsistent naming
+log.info("[HOOVER-START] ...")
+log.info("[HooverComplete] ...")  // Use [HOOVER-DONE] instead
+
+// ❌ Too verbose
+log.info("[TRANSCRIPT-HOOVER-ENGINE-PROCESSING-START] ...")  // Use [HOOVER-START]
+```
+
+**Tags for cross-component tracing:**
+When data flows through multiple components, use consistent event names:
+```swift
+[DISCOVERY-START] → [DISCOVERY-DONE]
+[BACKEND-RESET-START] → [BACKEND-RESET-DONE]
+[SWITCHER-REFRESH] → [SWITCHER-SORTED]
+[TIMELINE-LOADING] → [TIMELINE-LOADED]
+```
+
+This makes it easy to grep the full pipeline:
+```bash
+grep -E "DISCOVERY|BACKEND|SWITCHER|TIMELINE" /tmp/test.log
+```
 
 ### 4. Rebuild and Test
 
@@ -458,6 +721,154 @@ bash scripts/xc.sh build
    ./scripts/logging/monitor-pipeline-check.sh
    ```
    Verify new feature integrated into pipeline
+
+---
+
+## Commit Strategy for Debugging Sessions
+
+**Pattern:** Make atomic commits for each logical step in the debugging process.
+
+### Why This Matters
+
+- **Easy rollback:** If a fix doesn't work, revert just that commit
+- **Clear history:** Each commit documents what was tried and why
+- **Reproducible:** Other developers can follow the debugging journey
+- **CI-friendly:** Each commit can be tested independently
+
+### The Workflow
+
+```bash
+# 1. Add logging
+# ... add [COMPONENT-*] tags to source ...
+git add -A
+git commit -m "debug: add [COMPONENT-*] logging tags"
+
+# 2. Run test to see current behavior
+./scripts/logging/monitor-pipeline-check.sh
+# ... analyze logs, identify root cause ...
+
+# 3. Fix one component
+# ... make targeted fix ...
+git add -A
+git commit -m "fix(component): correct table name bug
+
+Evidence from logs:
+- Before: error 'no such table: entries'
+- After: [COMPONENT-DONE] processed 15 items ✓"
+
+# 4. Verify fix works
+./scripts/logging/monitor-pipeline-check.sh
+# ... test passes ...
+
+# 5. Repeat for next issue
+```
+
+### Commit Message Format
+
+**For logging additions:**
+```
+debug(component): add [TAG-*] instrumentation for debugging
+
+- Add [TAG-START] / [TAG-DONE] lifecycle events
+- Add [TAG-STATE] snapshots with data
+- Add [TAG-ERROR] for error paths
+```
+
+**For fixes:**
+```
+fix(component): brief description of what was fixed
+
+Root cause: <what was wrong>
+
+Evidence from logs:
+- Before: <log showing broken behavior>
+- After: <log showing fixed behavior>
+
+Test: <how to reproduce/verify>
+```
+
+### Example Session
+
+Real debugging session for tab order issue:
+
+```bash
+# Commit 1: Add logging
+git commit -m "debug(welcome-modal): add comprehensive OSLog instrumentation
+
+Add [BACKEND-*], [SWITCHER-*], [DISCOVERY-*] tags to trace
+project sorting pipeline."
+
+# Commit 2: Fix table name
+git commit -m "fix(database): correct table name 'entries' → 'transcript_entries'
+
+Root cause: SQL queries referenced non-existent table
+
+Evidence:
+- Before: error 'no such table: entries'
+- After: [SWITCHER-SORT-QUERY] Got 15 projects from DB ✓"
+
+# Commit 3: Fix timing
+git commit -m "fix(startup): reset display_order AFTER ingestion, not before
+
+Root cause: resetDisplayOrder() ran before projects existed
+
+Evidence:
+- Before: [BACKEND-RESET-DONE] Reset 0 projects
+- After: [BACKEND-RESET-DONE] Reset 15 projects ✓"
+
+# Commit 4: Fix sorting
+git commit -m "feat(discovery): sort projects by newest transcript mtime
+
+Evidence:
+- [DISCOVERY-ORDER] contextify (mtime: 2025-11-10 21:10:58) first ✓
+- [SWITCHER-SORTED] /Users/rob/code/projects/contextify first ✓"
+```
+
+### Benefits
+
+**For debugging:**
+- Each commit has clear before/after evidence
+- Can bisect to find which commit fixed the issue
+- Easy to share "what I tried" with team
+
+**For code review:**
+- Reviewer sees logical progression
+- Each fix is independently reviewable
+- Clear rationale for each change
+
+**For future debugging:**
+- Git history becomes a debugging tutorial
+- "How was this fixed last time?"
+- Commit messages document root causes
+
+### Anti-Patterns
+
+```bash
+# ❌ Batch commit at end
+git commit -m "fix everything"
+# → Can't isolate what fixed what
+
+# ❌ No evidence in commit message
+git commit -m "fix sorting"
+# → No proof it works, hard to understand later
+
+# ❌ Mixed concerns
+git commit -m "fix sorting and add logging and refactor"
+# → Can't revert just one change
+```
+
+### For LLMs
+
+**After each fix:**
+1. Test with automated script
+2. Extract evidence from logs
+3. Commit with evidence in message
+4. Move to next issue
+
+**Do NOT:**
+- Wait until all fixes done to commit
+- Commit without testing
+- Skip commit messages (they document the fix!)
 
 ---
 
