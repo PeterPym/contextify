@@ -446,7 +446,18 @@ struct TranscriptInventoryView: View {
         }
       }
     }
-    .padding(.vertical, 4)
+    .padding(12)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(Color(nsColor: .windowBackgroundColor))
+    )
+    .overlay(alignment: .leading) {
+      Capsule()
+        .fill(session.provider.color)
+        .frame(width: 3)
+        .padding(.vertical, 4)
+    }
+    .contentShape(Rectangle())
     // Note: Removed .onAppear metadata loading - now using aggregate viewport tracking
   }
 
