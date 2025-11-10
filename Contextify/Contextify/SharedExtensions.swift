@@ -28,19 +28,38 @@ extension Color {
 
 // MARK: - Date Formatting Extensions
 
-extension Date {
-    /// Relative time formatting (e.g., "2 hours ago", "yesterday")
-    var relativeTimeString: String {
+/// Static formatters to avoid O(n) allocations in row rendering
+/// Following pattern from TimelineEntryRow.swift (lines 12-23)
+fileprivate enum DateFormatters {
+    /// Relative time formatter (e.g., "2 hours ago", "yesterday")
+    /// Static to avoid allocation on every access
+    static let relative: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
-        return formatter.localizedString(for: self, relativeTo: Date())
+        return formatter
+    }()
+
+    /// Absolute timestamp formatter for tooltips
+    /// Format: "2:34:15 PM, Tuesday, January 15, 2025"
+    /// Static to avoid allocation on every access
+    static let absolute: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
+        return formatter
+    }()
+}
+
+extension Date {
+    /// Relative time formatting (e.g., "2 hours ago", "yesterday")
+    /// Uses static formatter to avoid O(n) allocations
+    var relativeTimeString: String {
+        DateFormatters.relative.localizedString(for: self, relativeTo: Date())
     }
 
     /// Absolute timestamp for tooltips
     /// Format: "2:34:15 PM, Tuesday, January 15, 2025"
+    /// Uses static formatter to avoid O(n) allocations
     var absoluteTimestampString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
-        return formatter.string(from: self)
+        DateFormatters.absolute.string(from: self)
     }
 }

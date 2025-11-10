@@ -792,11 +792,24 @@ struct TranscriptInventoryView: View {
 
   private func updateCounts() {
     let all = monitor.allSessions
+
+    // Single-pass counting to avoid O(2n) filter operations
+    var conversationCount = 0
+    var metadataCount = 0
+    for session in all {
+      if session.entryCount > 0 {
+        conversationCount += 1
+      } else {
+        metadataCount += 1
+      }
+    }
+
     let newCounts = (
-      conversations: all.filter { $0.entryCount > 0 }.count,
-      metadata: all.filter { $0.entryCount == 0 }.count,
+      conversations: conversationCount,
+      metadata: metadataCount,
       all: all.count
     )
+
     if scopeCounts.conversations != newCounts.conversations ||
        scopeCounts.metadata != newCounts.metadata ||
        scopeCounts.all != newCounts.all {
