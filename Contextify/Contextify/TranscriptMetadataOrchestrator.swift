@@ -113,15 +113,16 @@ actor TranscriptMetadataOrchestrator {
     let beforeCount = pendingQueue.count
     var skippedDuplicates = 0
 
-    // Add to LIFO queue with deduplication
+    // Add to LIFO queue, removing duplicates first to maintain proper ordering
     // Enqueue in reverse order so newest sessions (at start of array) end up at front of queue
     for session in sessions.reversed() {
       let transcriptId = session.identifier
 
-      // Skip if already queued
+      // If already queued, remove it first so we can re-insert at correct position
       if pendingKeys.contains(transcriptId) {
+        pendingQueue.removeAll { $0.id == transcriptId }
+        pendingKeys.remove(transcriptId)
         skippedDuplicates += 1
-        continue
       }
 
       let item = QueueItem(
