@@ -35,7 +35,48 @@ actor TranscriptMetadataOrchestrator {
     minimumRequests: 5       // Need at least 5 requests
   )
 
-  // Concurrency control (using shared utility)
+  // MARK: - Queue Infrastructure (Viewport-Aware Processing)
+
+  /// Queue item for LIFO processing of transcript metadata generation
+  private struct QueueItem: Identifiable {
+    let id: String  // transcript identifier (SQL primary key)
+    let session: TranscriptSession
+    let enqueuedAt: Date
+
+    var age: TimeInterval {
+      Date().timeIntervalSince(enqueuedAt)
+    }
+  }
+
+  // LIFO queue (newest first) - viewport prioritization
+  private var pendingQueue: [QueueItem] = []
+  private var pendingKeys: Set<String> = []  // Fast deduplication by transcript ID
+  private var processingTask: Task<Void, Never>?
+  private var isProcessing = false
+
+  // Stabilization delay to prevent flooding (matches TimelineCacheMissGenerator)
+  private let stabilizationDelayMs: Int = 500
+
+  // Queue metrics (viewport-aware pruning metrics)
+  private struct QueueMetrics {
+    var totalEnqueued = 0
+    var totalProcessed = 0
+    var totalPruned = 0
+    var totalErrors = 0
+
+    var pruningRate: Double {
+      guard totalEnqueued > 0 else { return 0.0 }
+      return Double(totalPruned) / Double(totalEnqueued)
+    }
+  }
+  private var queueMetrics = QueueMetrics()
+
+  // Error tracking for queue processing (separate from circuit breaker)
+  private var consecutiveErrors = 0
+  private var isPaused = false
+  private let maxConsecutiveErrors = 3
+
+  // Concurrency control (legacy - will be replaced by queue)
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
 
   // Observability stats
@@ -55,6 +96,95 @@ actor TranscriptMetadataOrchestrator {
   private var queueObservers: [UUID: AsyncStream<QueueStats>.Continuation] = [:]
 
   // MARK: - Public API
+
+  /// Enqueue sessions for background metadata generation (viewport-aware)
+  /// - Parameter sessions: Array of transcript sessions to generate metadata for
+  func enqueueMetadata(for sessions: [TranscriptSession]) async {
+    guard !sessions.isEmpty else {
+      log.debug("[QUEUE-ADD] Empty sessions array, returning")
+      return
+    }
+
+    log.info("[QUEUE-ADD] Enqueueing \(sessions.count) sessions for metadata generation")
+
+    let beforeCount = pendingQueue.count
+    var skippedDuplicates = 0
+
+    // Add to LIFO queue with deduplication
+    for session in sessions {
+      let transcriptId = session.identifier
+
+      // Skip if already queued
+      if pendingKeys.contains(transcriptId) {
+        skippedDuplicates += 1
+        continue
+      }
+
+      let item = QueueItem(
+        id: transcriptId,
+        session: session,
+        enqueuedAt: Date()
+      )
+
+      // Insert at front (LIFO - newest first)
+      pendingQueue.insert(item, at: 0)
+      pendingKeys.insert(transcriptId)
+    }
+
+    let added = pendingQueue.count - beforeCount
+    if skippedDuplicates > 0 {
+      log.debug("[QUEUE-ADD] Skipped \(skippedDuplicates) duplicate sessions")
+    }
+
+    // Update metrics
+    queueMetrics.totalEnqueued += added
+    log.info("[QUEUE-ADD] Added \(added) sessions (total pending: \(self.pendingQueue.count), total enqueued: \(self.queueMetrics.totalEnqueued))")
+
+    // Notify observers
+    notifyQueueChanged()
+
+    // Ensure processing task is running
+    await ensureProcessing()
+  }
+
+  /// Prune pending queue to keep only sessions visible in viewport
+  /// - Parameter visibleIDs: Set of transcript IDs currently visible to user
+  func pruneQueue(keepOnly visibleIDs: Set<String>) {
+    let beforeCount = pendingQueue.count
+    log.debug("[QUEUE-PRUNE] Checking queue: \(beforeCount) pending, \(visibleIDs.count) visible IDs")
+
+    guard beforeCount > 0 else {
+      log.debug("[QUEUE-PRUNE] Queue empty, nothing to prune")
+      return
+    }
+
+    // Keep items that are visible OR recently enqueued (< stabilization delay)
+    let now = Date()
+    pendingQueue.removeAll { item in
+      let isVisible = visibleIDs.contains(item.id)
+      let isRecent = item.age < Double(stabilizationDelayMs) / 1000.0
+      let shouldKeep = isVisible || isRecent
+
+      if !shouldKeep {
+        log.debug("[QUEUE-PRUNE] Removing session \(item.id.prefix(8)): visible=\(isVisible), recent=\(isRecent)")
+      }
+      return !shouldKeep
+    }
+
+    // Rebuild deduplication set
+    pendingKeys = Set(pendingQueue.map { $0.id })
+
+    let prunedCount = beforeCount - pendingQueue.count
+    if prunedCount > 0 {
+      // Update metrics
+      queueMetrics.totalPruned += prunedCount
+      let pruningRate = queueMetrics.pruningRate
+      log.info("[QUEUE-PRUNE] Removed \(prunedCount) invisible sessions (kept \(self.pendingQueue.count), pruning rate: \(String(format: "%.1f%%", pruningRate * 100)))")
+      notifyQueueChanged()
+    } else {
+      log.debug("[QUEUE-PRUNE] No sessions removed (all \(beforeCount) still visible or recent)")
+    }
+  }
 
   /// Ensures metadata exists for a session, generating if needed
   func ensureMetadata(
@@ -99,6 +229,106 @@ actor TranscriptMetadataOrchestrator {
   }
 
   // MARK: - Private Implementation
+
+  /// Ensure processing task is running (idempotent)
+  private func ensureProcessing() async {
+    // Spawn if missing
+    if processingTask == nil {
+      let count = pendingQueue.count
+      log.debug("[QUEUE-START] Spawning processing task (pending: \(count))")
+      processingTask = Task { await self.processQueue() }
+      return
+    }
+
+    // Defensive: if we have work queued but not processing, restart
+    if !isProcessing && !pendingQueue.isEmpty {
+      log.warning("[QUEUE-RESTART] Processing handle exists but not active; restarting worker (pending: \(self.pendingQueue.count))")
+      processingTask?.cancel()
+      processingTask = Task { await self.processQueue() }
+    }
+  }
+
+  /// LIFO processing loop - processes queue until empty or cancelled
+  private func processQueue() async {
+    isProcessing = true
+    defer {
+      isProcessing = false
+      log.debug("[QUEUE-STOP] Processing loop stopped")
+    }
+
+    log.info("[QUEUE-LOOP] Processing loop started")
+
+    while !Task.isCancelled {
+      // Check if paused by circuit breaker
+      if isPaused {
+        log.debug("[QUEUE-PAUSED] Processing paused, waiting...")
+        try? await Task.sleep(for: .milliseconds(1000))
+        continue
+      }
+
+      // Get next item (LIFO - most recent first)
+      guard let item = pendingQueue.popLast() else {
+        // Queue empty, wait a bit before checking again
+        try? await Task.sleep(for: .milliseconds(100))
+        continue
+      }
+
+      // Remove from deduplication set
+      pendingKeys.remove(item.id)
+
+      // Log queue state
+      let remaining = pendingQueue.count
+      log.info("[QUEUE-PROCESS] Processing \(item.id.prefix(8)) (\(remaining) remaining)")
+
+      do {
+        // Generate metadata (reuse existing generateMetadata logic)
+        guard let orchestrator = orchestrator else {
+          log.error("[QUEUE-ERROR] Orchestrator not initialized")
+          continue
+        }
+
+        _ = try await generateMetadata(
+          for: item.session,
+          orchestrator: orchestrator,
+          forceRegenerate: false
+        )
+
+        log.info("[QUEUE-DONE] ✅ Metadata generated for \(item.id.prefix(8))")
+
+        // Success - reset error counter and update metrics
+        consecutiveErrors = 0
+        queueMetrics.totalProcessed += 1
+
+        // Notify observers of queue change
+        notifyQueueChanged()
+
+      } catch {
+        log.error("[QUEUE-ERROR] ❌ Failed to generate metadata for \(item.id.prefix(8)): \(error.localizedDescription)")
+
+        // Track errors and trigger circuit breaker if needed
+        consecutiveErrors += 1
+        queueMetrics.totalErrors += 1
+
+        if consecutiveErrors >= maxConsecutiveErrors {
+          isPaused = true
+          log.warning("[CIRCUIT-BREAKER] ⚠️  Paused after \(self.consecutiveErrors) consecutive errors")
+
+          // Reset after 10 seconds
+          Task {
+            try? await Task.sleep(for: .seconds(10))
+            self.consecutiveErrors = 0
+            self.isPaused = false
+            self.log.info("[CIRCUIT-BREAKER] Resumed after cooldown")
+          }
+        }
+
+        // Notify observers
+        notifyQueueChanged()
+      }
+    }
+
+    log.info("[QUEUE-LOOP] Processing loop cancelled")
+  }
 
   private func removeTask(for url: URL) {
     activeTasks.removeValue(forKey: url)
@@ -541,18 +771,18 @@ actor TranscriptMetadataOrchestrator {
   }
 
   private func makeQueueStats() -> QueueStats {
-    let activeCount = activeTasks.count
-    let isProcessing = activeCount > 0
+    let pendingCount = pendingQueue.count
+    let processingCount = isProcessing ? 1 : 0  // Sequential processing (1 at a time)
 
-    // No ETA calculation for metadata (tasks complete independently)
-    // No error tracking exposed (handled by circuit breaker internally)
+    // No ETA calculation for metadata (generation time varies widely)
+    // Error tracking from queue metrics (not circuit breaker)
 
     return QueueStats(
-      pending: activeCount,
+      pending: pendingCount,
       isProcessing: isProcessing,
-      currentBatchSize: activeCount,  // All tasks run concurrently
-      estimatedSecondsRemaining: 0,   // No predictable ETA
-      recentErrorCount: 0,             // Circuit breaker handles this
+      currentBatchSize: processingCount,  // Sequential: 0 or 1
+      estimatedSecondsRemaining: 0,       // No predictable ETA
+      recentErrorCount: queueMetrics.totalErrors,
       topErrorReason: nil
     )
   }

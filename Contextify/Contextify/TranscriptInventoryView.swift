@@ -986,17 +986,17 @@ struct TranscriptInventoryView: View {
 
     lastVisibleSessionIDs = current
 
-    // Debounce viewport changes to avoid queueing during rapid scrolling (1250ms)
-    // Pattern matches ConversationMonitor.coalesceTask timing
+    // Debounce viewport changes to avoid queueing during rapid scrolling (500ms)
+    // Matches TranscriptMetadataOrchestrator stabilizationDelayMs
     viewportDebounceTask?.cancel()
     viewportDebounceTask = Task {
-      try? await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
+      try? await Task.sleep(nanoseconds: 500_000_000)  // 500ms = 0.5 seconds
       guard !Task.isCancelled else { return }
 
       log.info("[VIEWPORT-SETTLED] Viewport settled on \(lastVisibleSessionIDs.count) visible sessions")
 
-      // TODO Phase 2: Prune metadata queue (requires queue-based orchestrator)
-      // await pruneMetadataQueueToVisible(lastVisibleSessionIDs)
+      // Prune metadata queue to visible sessions
+      await TranscriptMetadataOrchestrator.shared.pruneQueue(keepOnly: lastVisibleSessionIDs)
 
       // Load metadata for visible sessions
       await queueVisibleMetadataGeneration(lastVisibleSessionIDs)
@@ -1086,7 +1086,7 @@ struct TranscriptInventoryView: View {
 
   @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
-    // Centralized loading: batch fetch from SQL, then spawn Tasks only for cache misses
+    // Queue-based loading: batch fetch from SQL, then enqueue cache misses to orchestrator
     guard let orchestrator = monitor.orchestrator else {
       return
     }
@@ -1103,49 +1103,14 @@ struct TranscriptInventoryView: View {
       metadata[transcriptId] = record.toUIModel()
     }
 
-    // Find sessions that need generation (not in cache, not already loading)
-    let missingIds = Set(transcriptIds).subtracting(Set(cachedMetadata.keys)).subtracting(loadingMetadata)
+    // Find sessions that need generation (not in cache)
+    let missingIds = Set(transcriptIds).subtracting(Set(cachedMetadata.keys))
     let missingSessions = sessions.filter { missingIds.contains($0.identifier) }
 
-    log.info("[META-QUEUE] Queueing \(missingSessions.count, privacy: .public) sessions for metadata generation")
+    log.info("[META-QUEUE] Enqueueing \(missingSessions.count, privacy: .public) sessions for metadata generation")
 
-    // Concurrency limit to prevent Apple Intelligence overload
-    // Timeline queue processes 1 at a time; metadata can handle more since operations are longer
-    let maxConcurrentMetadata = 3
-
-    // Spawn generation tasks for cache misses with concurrency control
-    for session in missingSessions {
-      let id = session.identifier
-      log.debug("[META-QUEUE]   Session: \(id, privacy: .public)")
-
-      // Wait if too many tasks running (backpressure)
-      while metadataTasks.count >= maxConcurrentMetadata {
-        log.debug("[META-BACKPRESSURE] Waiting: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public) tasks running")
-        await Task.yield()  // Yield to allow running tasks to complete
-        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms backoff
-      }
-
-      loadingMetadata.insert(id)
-      log.info("[META-START-TASK] Starting task for \(id, privacy: .public) (active: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public))")
-
-      let task = Task { @MainActor in
-        defer {
-          loadingMetadata.remove(id)
-          metadataTasks[id] = nil
-        }
-        do {
-          let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
-          metadata[id] = generated
-          metadataErrors.removeValue(forKey: id)  // Clear error on success (Phase 3)
-          log.info("[META-DONE] ✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
-        } catch {
-          let errorMessage = error.localizedDescription
-          metadataErrors[id] = errorMessage  // Capture error for UI display (Phase 3)
-          log.error("[META-ERROR] ❌ Failed to generate metadata for \(id, privacy: .public): \(errorMessage, privacy: .public)")
-        }
-      }
-      metadataTasks[id] = task
-    }
+    // Enqueue cache misses to orchestrator (replaces concurrent TaskGroup with LIFO queue)
+    await TranscriptMetadataOrchestrator.shared.enqueueMetadata(for: missingSessions)
   }
 }
 
