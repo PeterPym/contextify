@@ -207,9 +207,17 @@ actor FoundationLLM {
         var result = text
 
         // Fast path: if no markers present, skip expensive processing
-        if !result.contains("```") && !result.contains("\"\"\"") && !result.contains(">") && !result.contains("`") {
+        if !result.contains("```") && !result.contains("\"\"\"") && !result.contains(">") && !result.contains("`") && !result.contains("<bash-") {
             return collapseWhitespace(result)
         }
+
+        // Remove bash output tags (Claude Code Web format) - these contain verbose system output
+        // Pattern: <bash-stdout>...</bash-stdout>, <bash-stderr>...</bash-stderr>, <bash-input>...</bash-input>
+        result = result.replacingOccurrences(
+            of: #"<bash-(?:stdout|stderr|input)>.*?</bash-(?:stdout|stderr|input)>"#,
+            with: "[system output]",
+            options: .regularExpression
+        )
 
         var lines: [String] = []
         var inCodeBlock = false
@@ -1436,10 +1444,12 @@ private extension FoundationLLM {
               * If truly unclear → "You said: [brief excerpt]"
 
             Rules:
-            - MESSAGE has already been preprocessed to remove code blocks, quotes, and blockquotes
+            - MESSAGE has already been preprocessed to remove code blocks, quotes, blockquotes, and system output
             - If ACTION_HINT is present, it provides context but should NOT appear in the summary text
             - Use past-tense verb in the prefix ("requested", "asked", "made")
             - Focus on user's intent, not implementation details
+            - NEVER repeat verbose system output, file paths, or command results in the summary
+            - Keep summaries concise and high-level (≤140 chars is STRICT)
             - No emojis
 
             Fields:

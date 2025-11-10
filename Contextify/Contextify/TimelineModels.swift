@@ -49,6 +49,17 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         disposition == "safety-filtered"
     }
 
+    /// True if summary generation failed permanently (tombstone written)
+    var hasGenerationError: Bool {
+        disposition?.hasPrefix("error-") == true
+    }
+
+    /// The type of generation error (overflow, decoding, unexpected, database)
+    var generationErrorType: String? {
+        guard let disp = disposition, disp.hasPrefix("error-") else { return nil }
+        return String(disp.dropFirst(6))  // Remove "error-" prefix
+    }
+
     init(
         id: UUID = UUID(),
         kind: TimelineEntryKind,
