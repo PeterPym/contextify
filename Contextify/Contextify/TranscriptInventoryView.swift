@@ -113,9 +113,6 @@ struct TranscriptInventoryView: View {
           Spacer()
 
           Menu {
-            Button("Refresh Sessions") {
-              refreshSessions()
-            }
             Toggle("Hide Brief Sessions", isOn: $hideBriefSessions)
             if devMode.isEnabled {
               Divider()
@@ -871,10 +868,6 @@ struct TranscriptInventoryView: View {
     case .all: count = scopeCounts.all
     }
     return count > 0 ? " (\(count))" : ""
-  }
-
-  private func refreshSessions() {
-    // Refresh handled by window wrapper via monitor.refresh()
   }
 
   private func flushHeuristicCache() {
