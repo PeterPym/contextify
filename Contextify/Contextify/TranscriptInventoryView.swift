@@ -319,8 +319,9 @@ struct TranscriptInventoryView: View {
   private func sessionRow(_ session: TranscriptSession) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack {
-        Image(systemName: providerIcon(session.provider))
-          .foregroundStyle(providerColor(session.provider))
+        Image(session.provider.iconImage)
+          .renderingMode(.template)
+          .foregroundStyle(session.provider.color)
           .frame(width: 16)
 
         if let meta = metadata[session.identifier] {
@@ -402,7 +403,7 @@ struct TranscriptInventoryView: View {
       }
 
       HStack(spacing: 4) {
-        Label(providerName(session.provider), systemImage: providerIcon(session.provider))
+        Label(session.provider.displayName, systemImage: session.provider.iconImage)
           .font(.caption)
           .foregroundStyle(.secondary)
           .labelStyle(.titleOnly)
@@ -411,10 +412,10 @@ struct TranscriptInventoryView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
 
-        Text(relativeTime(session.lastActivity))
+        Text(session.lastActivity.relativeTimeString)
           .font(.caption)
           .foregroundStyle(.secondary)
-          .help(absoluteTimestamp(session.lastActivity))
+          .help(session.lastActivity.absoluteTimestampString)
 
         // Metadata-only indicator (always show for transcripts with no entries)
         if session.entryCount == 0 {
@@ -784,42 +785,13 @@ struct TranscriptInventoryView: View {
     }
   }
 
-  private func providerName(_ provider: TimelineSourceContext.Provider) -> String {
-    switch provider {
-    case .claudeCode: return "Claude Code"
-    case .codexCLI: return "Codex CLI"
-    case .other: return "Other"
-    }
-  }
-
-  private func providerIcon(_ provider: TimelineSourceContext.Provider) -> String {
-    switch provider {
-    case .claudeCode: return "terminal.fill"
-    case .codexCLI: return "chevron.left.forwardslash.chevron.right"
-    case .other: return "doc.text"
-    }
-  }
-
-  private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
-    switch provider {
-    case .claudeCode: return .orange
-    case .codexCLI: return .blue
-    case .other: return .gray
-    }
-  }
-
-  private func relativeTime(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
-  }
-
-  private func absoluteTimestamp(_ date: Date) -> String {
-    // Format: "2:34:15 PM, Tuesday, January 15, 2025"
-    let formatter = DateFormatter()
-    formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
-    return formatter.string(from: date)
-  }
+  // MARK: - Shared Utilities
+  // Provider and time formatters now use shared extensions:
+  // - provider.displayName (TimelineModels.swift)
+  // - provider.iconImage (TimelineModels.swift)
+  // - provider.color (TimelineModels.swift)
+  // - date.relativeTimeString (SharedExtensions.swift)
+  // - date.absoluteTimestampString (SharedExtensions.swift)
 
   // v23 (P0-4): Check if session is pinned in manual follow mode
   private func isPinned(_ session: TranscriptSession) -> Bool {

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ContextifyCore
 
 enum TimelineEntryKind: String, Codable, Sendable {
@@ -136,6 +137,18 @@ public struct TimelineSourceContext: Hashable, Sendable {
                 return "Codex"
             case .other:
                 return "AI Source"
+            }
+        }
+
+        /// Color for provider icons and accent bars
+        var color: Color {
+            switch self {
+            case .claudeCode:
+                return .orange
+            case .codexCLI:
+                return .white  // White for Codex icon rendering
+            case .other:
+                return .gray
             }
         }
     }
