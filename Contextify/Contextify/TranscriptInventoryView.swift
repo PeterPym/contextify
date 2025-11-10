@@ -218,6 +218,7 @@ struct TranscriptInventoryView: View {
               }
           }
         }
+        .padding(.horizontal, 8)
         .scrollTargetLayout()
       }
       .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
