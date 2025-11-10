@@ -75,6 +75,7 @@ actor TranscriptMetadataOrchestrator {
   private var consecutiveErrors = 0
   private var isPaused = false
   private let maxConsecutiveErrors = 3
+  private var circuitBreakerResetTask: Task<Void, Never>?  // Track reset Task to avoid duplicates
 
   // Concurrency control (legacy - will be replaced by queue)
   private var activeTasks: [URL: Task<TranscriptMetadata, Error>] = [:]
@@ -145,6 +146,37 @@ actor TranscriptMetadataOrchestrator {
 
     // Ensure processing task is running
     await ensureProcessing()
+  }
+
+  /// Shutdown generator and cancel any in-flight processing
+  func shutdown() {
+    log.info("[QUEUE-SHUTDOWN] Shutting down metadata generator (pending: \(self.pendingQueue.count))")
+
+    // Cancel processing
+    processingTask?.cancel()
+    processingTask = nil
+    isProcessing = false
+
+    // Cancel circuit breaker reset
+    circuitBreakerResetTask?.cancel()
+    circuitBreakerResetTask = nil
+
+    // Clear queue
+    pendingQueue.removeAll()
+    pendingKeys.removeAll()
+
+    // Reset state
+    consecutiveErrors = 0
+    isPaused = false
+
+    // Notify observers
+    notifyQueueChanged()
+
+    // Close observer streams
+    for (_, continuation) in queueObservers {
+      continuation.finish()
+    }
+    queueObservers.removeAll()
   }
 
   /// Prune pending queue to keep only sessions visible in viewport
@@ -313,12 +345,16 @@ actor TranscriptMetadataOrchestrator {
           isPaused = true
           log.warning("[CIRCUIT-BREAKER] ⚠️  Paused after \(self.consecutiveErrors) consecutive errors")
 
+          // Cancel any existing reset task to avoid duplicates
+          circuitBreakerResetTask?.cancel()
+
           // Reset after 10 seconds
-          Task {
+          circuitBreakerResetTask = Task { [weak self] in
+            guard let self = self else { return }
             try? await Task.sleep(for: .seconds(10))
-            self.consecutiveErrors = 0
-            self.isPaused = false
-            self.log.info("[CIRCUIT-BREAKER] Resumed after cooldown")
+            guard !Task.isCancelled else { return }
+
+            await self.resetCircuitBreaker()
           }
         }
 
@@ -328,6 +364,14 @@ actor TranscriptMetadataOrchestrator {
     }
 
     log.info("[QUEUE-LOOP] Processing loop cancelled")
+  }
+
+  /// Reset circuit breaker state (called after cooldown or manually)
+  private func resetCircuitBreaker() {
+    consecutiveErrors = 0
+    isPaused = false
+    circuitBreakerResetTask = nil
+    log.info("[CIRCUIT-BREAKER] Resumed after cooldown")
   }
 
   private func removeTask(for url: URL) {
