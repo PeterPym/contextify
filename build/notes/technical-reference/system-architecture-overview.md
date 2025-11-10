@@ -261,15 +261,16 @@ let entries = monitor.visibleEntries
 **Role:** Background generation of entry summaries using Apple Intelligence
 
 **Responsibilities:**
-- Maintains queue of entries needing summaries (FIFO processing)
+- Maintains LIFO queue (newest entries first) with viewport-aware pruning
 - Generates dual-form summaries (present: "Adding feature", past: "Added feature")
 - Writes cache to database (keyed by content + window hash)
 - Respects user edits (never overwrites user-edited summaries)
-- Viewport-aware queueing (only process visible entries)
+- Prunes invisible entries before LLM call (88% prevention rate during fast scrolling)
 
 **Architecture:**
 - Swift actor (thread-safe queue management)
-- Batch size: 1 (process one entry at a time for instant responsiveness)
+- Sequential processing (one LLM request at a time, FoundationLLM limitation)
+- 750ms stabilization delay (allows pruning to cancel stale work)
 - No rate limits (FoundationLLM is local, no API throttling)
 
 **Key API:**
@@ -482,7 +483,7 @@ This is tracked as a known issue and will be addressed in a future refactor.
                └─→ TimelineCacheMissGenerator.queueMisses()
 
 5. LLM Generation (background)
-   └─→ Process one entry at a time (FIFO)
+   └─→ Process one entry at a time (LIFO: newest first, viewport-aware pruning)
        └─→ FoundationLLM.summarizeTimelineWithForms()
            └─→ Generate present/past forms
                └─→ Save to cache (timeline_cache table)
@@ -555,7 +556,7 @@ See "Startup Paths: Legacy vs Coordinator" section above. Short answer: The coor
 
 **Triggered by:** Viewport visibility (entries user can see)
 **Timing:** After 1.25s debounce (scrolling has settled)
-**Processing:** One entry at a time, FIFO queue
+**Processing:** Sequential (one at a time), LIFO priority (newest first), viewport-aware pruning
 **Cache:** Keyed by content + window hash (deduplicates identical entries)
 
 **Not triggered by:**

@@ -25,6 +25,9 @@ final class StatusBarViewModel {
     private(set) var topErrorReason: String?
     private(set) var monitoringActive: Bool = false
 
+    // MARK: - Per-Provider State (Phase 5: True Aggregation)
+    private var providerStats: [Int: QueueStats] = [:]  // Track stats by provider index
+
     // Apple Intelligence status
     enum AIStatus: Sendable, Equatable {
         case checking  // Initial state before first health check completes
@@ -76,23 +79,19 @@ final class StatusBarViewModel {
         log.info("StatusBar: \(self.queueProviders.count) queue provider(s) available, starting observation")
         monitoringActive = true
 
-        // Start observation task for each provider
-        for provider in self.queueProviders {
+        // Start observation task for each provider (Phase 5: track by index)
+        for (index, provider) in self.queueProviders.enumerated() {
             let task = Task { @MainActor [weak self] in
                 guard let self else { return }
 
                 for await stats in provider.observeQueue() {
                     guard !Task.isCancelled else { break }
-                    self.aggregateStats(from: stats)
+                    self.aggregateStats(from: stats, providerIndex: index)
                 }
 
-                // Stream finished (provider ended or cancelled) - clear stale state
-                self.monitoringActive = false
-                self.queueDepth = 0
-                self.isProcessing = false
-                self.estimatedSecondsRemaining = 0
-                self.recentErrorCount = 0
-                self.topErrorReason = nil
+                // Stream finished (provider ended or cancelled) - remove from tracking
+                self.providerStats.removeValue(forKey: index)
+                self.recomputeAggregateState()
             }
             queueObservationTasks.append(task)
         }
@@ -141,38 +140,73 @@ final class StatusBarViewModel {
         hooverMessage = nil
     }
 
-    // MARK: - State Aggregation
+    // MARK: - State Aggregation (Phase 5: True Sum)
 
-    /// Aggregate stats from a single provider
-    /// Note: This is called from multiple streams, so we need to aggregate
-    private func aggregateStats(from stats: QueueStats) {
-        // For now, just use the latest stats from any provider
-        // A more sophisticated approach would maintain separate state per provider
-        // and sum/max the values, but this simple approach works for MVP
+    /// Update stats from a single provider and recompute aggregate state
+    private func aggregateStats(from stats: QueueStats, providerIndex: Int) {
+        log.debug("[COORD-STATS] Provider[\(providerIndex, privacy: .public)] pending=\(stats.pending, privacy: .public), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining, privacy: .public)s")
 
-        log.debug("📊 StatusBar: Received stats - pending=\(stats.pending), isProcessing=\(stats.isProcessing), eta=\(stats.estimatedSecondsRemaining)s")
+        // Store provider's stats
+        providerStats[providerIndex] = stats
+
+        // Recompute aggregate state from all providers
+        recomputeAggregateState()
+    }
+
+    /// Recompute aggregate state from all provider stats (Phase 5: True Sum)
+    private func recomputeAggregateState() {
+        guard !providerStats.isEmpty else {
+            // No providers reporting - clear state
+            log.debug("[COORD-AGGREGATE] No providers reporting, clearing state")
+            monitoringActive = false
+            queueDepth = 0
+            isProcessing = false
+            estimatedSecondsRemaining = 0
+            recentErrorCount = 0
+            topErrorReason = nil
+            return
+        }
+
+        let allStats = Array(providerStats.values)
+        log.debug("[COORD-AGGREGATE] Recomputing from \(self.providerStats.count, privacy: .public) provider(s)")
+
+        // TRUE SUM: Aggregate pending counts from all providers
+        let totalPending = allStats.reduce(0) { $0 + $1.pending }
+        log.debug("[COORD-AGGREGATE] Total pending (sum across all providers): \(totalPending, privacy: .public)")
+
+        // ANY: Processing if any provider is processing
+        let anyProcessing = allStats.contains { $0.isProcessing }
+
+        // MAX: Use longest ETA (conservative estimate)
+        let maxETA = allStats.map { $0.estimatedSecondsRemaining }.max() ?? 0
+
+        // SUM: Total error count across all providers
+        let totalErrors = allStats.reduce(0) { $0 + $1.recentErrorCount }
+
+        // FIRST: Use first non-nil error reason (could be enhanced to show all)
+        let firstErrorReason = allStats.compactMap { $0.topErrorReason }.first
 
         // Guard: only show processing when we actually have items to process
-        let uiProcessing = stats.isProcessing && stats.pending > 0
+        let uiProcessing = anyProcessing && totalPending > 0
 
         // Only update if changed (reduces SwiftUI invalidation)
-        if queueDepth != stats.pending
+        if queueDepth != totalPending
             || isProcessing != uiProcessing
-            || estimatedSecondsRemaining != stats.estimatedSecondsRemaining
-            || recentErrorCount != stats.recentErrorCount
-            || topErrorReason != stats.topErrorReason {
+            || estimatedSecondsRemaining != maxETA
+            || recentErrorCount != totalErrors
+            || topErrorReason != firstErrorReason {
 
-            log.debug("📊 StatusBar: Updating UI - queueDepth: \(self.queueDepth)→\(stats.pending), isProcessing: \(self.isProcessing)→\(uiProcessing)")
+            log.info("[COORD-UPDATE] UI update - queueDepth: \(self.queueDepth, privacy: .public)→\(totalPending, privacy: .public), isProcessing: \(self.isProcessing)→\(uiProcessing), providers: \(allStats.count, privacy: .public)")
 
-            queueDepth = stats.pending
+            queueDepth = totalPending
             isProcessing = uiProcessing
-            estimatedSecondsRemaining = uiProcessing ? stats.estimatedSecondsRemaining : 0
-            recentErrorCount = stats.recentErrorCount
-            topErrorReason = stats.topErrorReason
+            estimatedSecondsRemaining = uiProcessing ? maxETA : 0
+            recentErrorCount = totalErrors
+            topErrorReason = firstErrorReason
 
             // Log when status transitions to "Up to date"
-            if stats.pending == 0 && !uiProcessing && stats.recentErrorCount == 0 {
-                log.info("[UIOPT-STATUS-READY] ✅ Status bar shows 'Up to date' (queue empty, not processing, no errors)")
+            if totalPending == 0 && !uiProcessing && totalErrors == 0 {
+                log.info("[COORD-READY] ✅ Status bar shows 'Up to date' (all queues empty, not processing, no errors)")
             }
         }
     }

@@ -344,25 +344,94 @@ struct StatusBarView: View {
 
         if let reason {
             message += "\n\nTop error: \(simplifyErrorReason(reason))"
+            message += "\n\n" + contextualGuidance(for: reason)
         }
 
         message += """
 
 
-        Common causes:
-        • Apple Intelligence is disabled or unavailable
-        • Content quality too low (empty messages, no context)
-        • System resources temporarily unavailable
-
-        What to try:
-        1. Check Apple Intelligence in System Settings
-        2. Ensure sufficient system memory available
-        3. Wait a moment and try refreshing the timeline
-
-        Errors auto-clear after 3 successful generations.
+        How Contextify handles errors:
+        • Failed entries won't be retried automatically
+        • Errors auto-clear after 3 successful generations
+        • Summaries are optional - entries remain accessible
         """
 
         return message
+    }
+
+    /// Provide contextual guidance based on error type
+    private func contextualGuidance(for reason: String) -> String {
+        // llmUnavailable - "Apple Intelligence is overloaded and not responding"
+        if reason.contains("overload") || reason.contains("not responding") {
+            return """
+            What this means:
+            Apple Intelligence is temporarily overloaded. This is usually transient and should resolve within 1-2 minutes.
+
+            What to do:
+            Wait a moment and the system will recover automatically. No action needed.
+            """
+        }
+
+        // decodingFailure - "Summary format was invalid: Failed to extract content"
+        if reason.contains("format was invalid") || reason.contains("Failed to extract") {
+            return """
+            What this means:
+            The AI generated a response in an unexpected format that couldn't be parsed.
+
+            What to do:
+            This is a rare parsing issue. The entry remains accessible without a summary. No action needed.
+            """
+        }
+
+        // contextOverflow - "Message too long"
+        if reason.contains("too long") || reason.contains("tokens") {
+            return """
+            What this means:
+            This conversation entry exceeded the maximum size for summary generation.
+
+            What to do:
+            The entry is too large to summarize but remains fully accessible in the timeline. No action needed.
+            """
+        }
+
+        // guardrailViolation - safety filters
+        if reason.contains("safety filters") || reason.contains("grounding") || reason.contains("REJECTED") {
+            return """
+            What this means:
+            Apple Intelligence's safety filters prevented summary generation for this content.
+
+            What to do:
+            The entry remains accessible without a summary. No action needed.
+            """
+        }
+
+        // llmTimeout
+        if reason.contains("timeout") || reason.contains("timed out") {
+            return """
+            What this means:
+            Summary generation took too long and was cancelled.
+
+            What to do:
+            This is usually temporary. The entry remains accessible without a summary.
+            """
+        }
+
+        // databaseError
+        if reason.contains("database error") {
+            return """
+            What this means:
+            A database error occurred while saving the summary.
+
+            What to do:
+            Check available disk space. If the issue persists, check application logs.
+            """
+        }
+
+        // Generic/unexpected
+        return """
+        What to do:
+        The entry remains accessible without a summary. If this persists, check application logs for details.
+        """
     }
 
     // MARK: - Helper Functions

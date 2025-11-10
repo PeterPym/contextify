@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import ContextifyCore
 
 enum TimelineEntryKind: String, Codable, Sendable {
@@ -47,6 +48,17 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     /// True if this entry was filtered by Apple Intelligence safety guardrails
     var isSafetyFiltered: Bool {
         disposition == "safety-filtered"
+    }
+
+    /// True if summary generation failed permanently (tombstone written)
+    var hasGenerationError: Bool {
+        disposition?.hasPrefix("error-") == true
+    }
+
+    /// The type of generation error (overflow, decoding, unexpected, database)
+    var generationErrorType: String? {
+        guard let disp = disposition, disp.hasPrefix("error-") else { return nil }
+        return String(disp.dropFirst(6))  // Remove "error-" prefix
     }
 
     init(
@@ -125,6 +137,18 @@ public struct TimelineSourceContext: Hashable, Sendable {
                 return "Codex"
             case .other:
                 return "AI Source"
+            }
+        }
+
+        /// Color for provider icons and accent bars
+        var color: Color {
+            switch self {
+            case .claudeCode:
+                return .orange
+            case .codexCLI:
+                return .white  // White for Codex icon rendering
+            case .other:
+                return .gray
             }
         }
     }

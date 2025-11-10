@@ -13,12 +13,12 @@ Contextify uses **two independent LLM processing queues** for different content 
 1. **Timeline Summary Generation** (TimelineCacheMissGenerator)
    - Generates present/past form summaries for conversation entries
    - Triggered: When displaying timeline entries without cached summaries
-   - Queue: Batched FIFO processing (10 items/batch, 2s delays)
+   - Queue: LIFO with viewport-aware pruning (sequential processing, newest first)
 
 2. **Transcript Metadata Generation** (TranscriptMetadataOrchestrator)
    - Generates titles, descriptions, and topics for entire transcripts
    - Triggered: When viewing transcript inventory
-   - Queue: Concurrent task-per-transcript processing
+   - Queue: Concurrent task-per-transcript (limited concurrency, no pruning yet)
 
 Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
 
@@ -47,9 +47,9 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
         ┌───────────▼──────────────┐ ┌─────▼────────────────────┐
         │ TimelineCacheMissGenerator│ │TranscriptMetadataOrchestrator│
         │                           │ │                          │
-        │ • Queue: FIFO batch       │ │ • Queue: Concurrent tasks│
-        │ • Batch: 10 items         │ │ • Limit: Circuit breaker │
-        │ • Delay: 2s between       │ │ • Dedup: Active tasks    │
+        │ • Queue: LIFO priority    │ │ • Queue: Concurrent tasks│
+        │ • Mode: Sequential only   │ │ • Limit: Circuit breaker │
+        │ • Pruning: Viewport-aware │ │ • Dedup: Active tasks    │
         │ • Cache: SQL keyed by     │ │ • Cache: SQL by hash     │
         │   content+window hash     │ │                          │
         └───────────┬──────────────┘ └─────┬────────────────────┘
@@ -80,12 +80,15 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - Real-time during conversation monitoring
 
 **Processing Model:**
-- **Queue Type:** FIFO with batching
-- **Batch Size:** 10 items per batch
-- **Rate Limit:** 2-second delay between batches
+- **Queue Type:** LIFO (newest entries processed first)
+- **Processing Mode:** Sequential (one request at a time, FoundationLLM limitation)
+- **Viewport-Aware:** Prunes invisible entries before LLM call
+- **Stabilization Delay:** 750ms before LLM call (allows pruning to cancel stale work)
 - **Deduplication:** Content+window hash key
-- **Error Handling:** Per-item retry (3 attempts), circuit breaker on 5 consecutive failures
+- **Error Handling:** Per-item retry (3 attempts with exponential backoff)
 - **Cache:** SQL `timeline_cache` table
+
+**Why LIFO?** Prioritizes what user is looking at NOW. Newest entries (current viewport) jump to front of queue and get processed first. Older entries from previous scroll positions sit at back and are more likely to be pruned when user scrolls.
 
 **Output:**
 - `presentForm`: "Claude proposes to implement..."
@@ -109,11 +112,14 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - Manual refresh/regeneration
 
 **Processing Model:**
-- **Queue Type:** Concurrent tasks (one per transcript)
-- **Concurrency:** Unlimited concurrent generation
+- **Queue Type:** Concurrent task-per-transcript
+- **Concurrency:** Limited (max 3 concurrent requests to prevent Apple Intelligence overload)
+- **Viewport-Aware:** ⚠️ NOT IMPLEMENTED (hardcoded first-10 load only)
 - **Deduplication:** Active task tracking by transcript URL
 - **Error Handling:** Circuit breaker (60% failure threshold, 5-minute window)
 - **Cache:** SQL `transcript_metadata` table with hash verification
+
+**Known Issue:** Does not implement viewport-aware pruning like timeline queue. Opening inventory with 490 transcripts can overwhelm Apple Intelligence. See roadmap for planned refactoring.
 
 **Output:**
 - `title`: "Implement Dark Mode Toggle" (1-8 words)
@@ -126,6 +132,47 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - **Adaptive Strategy:** Transcripts >150 exchanges (smart sampling)
 
 **Detailed Documentation:** *(To be created: `transcript-metadata-llm-architecture.md`)*
+
+---
+
+## Error Handling: Tombstone Mechanism
+
+**Problem:** Permanent failures (context overflow, decoding errors) left entries in perpetual "generating" state, creating infinite retry loops when user scrolled them in/out of viewport.
+
+**Solution:** Error tombstones - cache entries marking permanent failure.
+
+### How Tombstones Work
+
+When LLM generation fails with a **non-retryable error**, the system writes a cache entry with:
+- **Disposition:** `"error-{errorType}"` (e.g., `"error-overflow"`, `"error-decoding"`)
+- **Fallback summary:** Truncated content preview (first 100 chars)
+- **Same cache key:** contentSha256 + windowSha256
+
+**Effect:** Entry is now "cached" (with error marker). Viewport changes won't re-queue it.
+
+### Disposition Semantics
+
+The `disposition` field evolved from binary (cached/not cached) to **ternary state machine**:
+
+| Disposition | Meaning | Retry? |
+|-------------|---------|--------|
+| `"directive"`, `"question"`, `"response"`, `"report"` | Successful generation | No (cached) |
+| `"error-overflow"` | Content > 4096 tokens | No (permanent) |
+| `"error-decoding"` | LLM output malformed | No (permanent) |
+| `"error-unexpected"` | Unknown error | No (permanent) |
+| `"error-database"` | SQL write failed | No (permanent) |
+| `"guardrail-violation"` | Content filtered (handled) | No (cached) |
+| `null` | Not yet attempted | Yes (queue) |
+
+### Error Classification
+
+**Permanent failures** (write tombstone):
+- contextOverflow, decodingFailure, unexpected, databaseError
+
+**Transient failures** (retry with exponential backoff, up to 3 attempts):
+- llmTimeout, llmUnavailable
+
+**Implementation:** `TimelineCacheMissGenerator.swift` lines 502-545, 811-844
 
 ---
 
@@ -353,6 +400,55 @@ When FoundationLLM is unavailable:
 - Timeline queue can handle thousands of pending items
 - Metadata circuit breaker prevents runaway failures
 - Both systems designed for single-user desktop use (not server-scale)
+
+---
+
+## FoundationLLM Sequential Processing Limitation
+
+**Apple's LanguageModelSession enforces sequential processing** - only one request can be in flight at a time per session.
+
+### Technical Details
+
+From Apple's FoundationModels framework documentation:
+- Each `LanguageModelSession` has an `isResponding` property
+- Sending a prompt while `isResponding == true` triggers a `rateLimited` error
+- You must either:
+  1. Wait for current request to complete, OR
+  2. Create multiple session instances for parallel processing
+
+### Implications for Contextify
+
+**Timeline Queue (TimelineCacheMissGenerator):**
+- Uses single shared `FoundationLLM.shared` instance
+- Processes one entry at a time sequentially
+- Cannot process batches concurrently
+- `maxBatchSize = 1` reflects this constraint (not a tunable parameter)
+
+**Transcript Metadata (TranscriptMetadataOrchestrator):**
+- Attempts concurrent task-per-transcript
+- Limited to max 3 concurrent to prevent overload
+- Each task likely shares same session → sequential bottleneck anyway
+
+**Why "batch" terminology persists in code:**
+Historical artifact. Code structure supports batching (`Array(pendingMisses.prefix(batchSize))`) but `maxBatchSize` is always 1 due to FoundationLLM limitation. The term "batch" is misleading - it's actually sequential single-item processing.
+
+### Testing Evidence
+
+WebSearch results confirm:
+```swift
+struct ChatView: View {
+    @State private var session = LanguageModelSession()
+
+    var body: some View {
+        Button("Send") {
+            Task { await sendMessage() }
+        }
+        .disabled(session.isResponding) // Gate interactions to prevent rateLimited error
+    }
+}
+```
+
+**Conclusion:** True concurrent LLM processing is not possible with FoundationLLM's current architecture. All queues must use sequential processing.
 
 ---
 

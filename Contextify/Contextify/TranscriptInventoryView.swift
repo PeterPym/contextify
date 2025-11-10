@@ -28,7 +28,6 @@ struct TranscriptInventoryView: View {
 
   @Binding var selectedScope: InventoryScope
   @Binding var scopeCounts: (conversations: Int, metadata: Int, all: Int)
-  let onSelectSession: (TranscriptSession) -> Void
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
@@ -36,7 +35,10 @@ struct TranscriptInventoryView: View {
   @State private var debounceTask: Task<Void, Never>?
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
+  @State private var metadataErrors: [String: String] = [:]  // Track errors by transcript ID (Phase 3)
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
+  @State private var lastVisibleSessionIDs: Set<String> = []  // Viewport tracking
+  @State private var viewportDebounceTask: Task<Void, Never>?  // Debounced viewport handler
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
   @State private var showingDeleteConfirmation = false
@@ -44,6 +46,9 @@ struct TranscriptInventoryView: View {
   @State private var showingCleanupConfirmation = false
   @State private var cleanupResult: (count: Int, ids: [String])? = nil
   @State private var showingCleanupAlert = false
+  @AppStorage("transcript.hideBriefSessions") private var hideBriefSessions = true
+  @State private var showMetadataInfo: [String: Bool] = [:]  // Track info popover state per session
+  @State private var showErrorInfo: [String: Bool] = [:]  // Track error info popover state per session
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
@@ -107,34 +112,29 @@ struct TranscriptInventoryView: View {
           }
           Spacer()
 
-          if devMode.isEnabled {
-            Button {
-              flushHeuristicCache()
-            } label: {
-              Label("Flush Heuristic Cache", systemImage: "trash")
-                .labelStyle(.iconOnly)
+          Menu {
+            Toggle("Hide Brief Sessions", isOn: $hideBriefSessions)
+            if devMode.isEnabled {
+              Divider()
+              Button {
+                flushHeuristicCache()
+              } label: {
+                Label("Flush Heuristic Cache", systemImage: "trash")
+              }
+              Button {
+                showingCleanupConfirmation = true
+              } label: {
+                Label("Clean Up Missing Files", systemImage: "trash.circle")
+              }
             }
-            .buttonStyle(.borderless)
-            .help("Clear cached placeholder titles")
-
-            Button {
-              refreshSessions()
-            } label: {
-              Label("Refresh", systemImage: "arrow.clockwise")
-                .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .help("Refresh transcript list")
-
-            Button {
-              showingCleanupConfirmation = true
-            } label: {
-              Label("Clean Up Missing Files", systemImage: "trash.circle")
-                .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .help("Delete transcript records for files that no longer exist")
+          } label: {
+            Image(systemName: "ellipsis")
+              .foregroundStyle(.secondary)
+              .padding(6)
+              .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
           }
+          .menuStyle(.borderlessButton)
+          .fixedSize()
         }
       }
       .padding()
@@ -198,15 +198,28 @@ struct TranscriptInventoryView: View {
 
       Divider()
 
-      // Session list with transcript ID-based selection (FIXED: use filteredSessions)
-      List(filteredSessions, id: \.identifier, selection: $selectedTranscriptId) { session in
-        sessionRow(session)
-          .tag(session.identifier)
-          .contextMenu {
-            exportContextMenu(for: session)
+      // Session list with transcript ID-based selection + viewport tracking
+      ScrollView {
+        LazyVStack(spacing: 0) {
+          ForEach(filteredSessions, id: \.identifier) { session in
+            sessionRow(session)
+              .id(session.identifier)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                selectedTranscriptId = session.identifier
+              }
+              .background(selectedTranscriptId == session.identifier ? Color.accentColor.opacity(0.15) : Color.clear)
+              .contextMenu {
+                exportContextMenu(for: session)
+              }
           }
+        }
+        .padding(.horizontal, 8)
+        .scrollTargetLayout()
       }
-      .listStyle(.sidebar)
+      .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
+        replaceVisibleSnapshot(visibleIDs)
+      }
       .searchable(text: $searchText, prompt: "Search transcripts")
       .onChange(of: searchText) { _, newValue in
         // Debounce search input (300ms)
@@ -226,28 +239,26 @@ struct TranscriptInventoryView: View {
           selectedTranscriptId = nil
         }
 
-        // PHASE 1: Ensure discovered sessions are persisted to database
-        // This prevents FK constraint errors when generating metadata
+        // Ensure discovered sessions are persisted to database (prevents FK errors)
         Task {
           await persistDiscoveredSessions(newSessions)
         }
 
-        // PHASE 2: Load metadata for new sessions (centralized, not per-row)
-        Task {
-          await loadMetadataForSessions(newSessions)
-        }
+        // Note: Metadata loading now handled by viewport tracking (handleVisibleSessionsChanged)
+        // No hardcoded first-10 load - only generate for what's actually visible
       }
       .task {
         // Ensure sessions are persisted before loading metadata
         await persistDiscoveredSessions(monitor.allSessions)
 
-        // Load metadata on initial appearance
-        await loadMetadataForSessions(monitor.allSessions)
+        // Metadata loading now handled by viewport tracking - no bulk load on appear
       }
       .onDisappear {
-        // Cancel pending debounce task to prevent leaks
+        // Cancel pending debounce tasks to prevent leaks
         debounceTask?.cancel()
         debounceTask = nil
+        viewportDebounceTask?.cancel()
+        viewportDebounceTask = nil
 
         // Cancel all metadata generation tasks
         metadataTasks.values.forEach { $0.cancel() }
@@ -273,9 +284,6 @@ struct TranscriptInventoryView: View {
       TranscriptDetailView(
         session: session,
         isActive: session.identifier == monitor.activeSession?.identifier,
-        onSelect: {
-          onSelectSession(session)
-        },
         onMetadataUpdate: { transcriptId, newMetadata in
           metadata[transcriptId] = newMetadata
         },
@@ -306,14 +314,79 @@ struct TranscriptInventoryView: View {
   private func sessionRow(_ session: TranscriptSession) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack {
-        Image(systemName: providerIcon(session.provider))
-          .foregroundStyle(providerColor(session.provider))
+        Image(session.provider.iconImage)
+          .renderingMode(.template)
+          .foregroundStyle(session.provider.color)
           .frame(width: 16)
 
         if let meta = metadata[session.identifier] {
-          Text(meta.title)
-            .font(.callout)
-            .lineLimit(1)
+          // Show title with confidence indicator for low-confidence metadata
+          HStack(spacing: 4) {
+            Text(meta.title)
+              .font(.callout)
+              .lineLimit(1)
+            if meta.confidence < 0.5 {
+              InfoButton(isPresented: Binding(
+                get: { showMetadataInfo[session.identifier] ?? false },
+                set: { showMetadataInfo[session.identifier] = $0 }
+              ))
+              .popover(isPresented: Binding(
+                get: { showMetadataInfo[session.identifier] ?? false },
+                set: { showMetadataInfo[session.identifier] = $0 }
+              )) {
+                InfoPopoverContent(
+                  title: "Low Confidence Metadata",
+                  message: """
+                  Title: \(meta.title)
+
+                  Description: \(meta.description)
+
+                  Confidence: \(Int(meta.confidence * 100))%
+
+                  This metadata was generated with low confidence and may not accurately represent the transcript content.
+                  """
+                )
+              }
+            }
+          }
+        } else if let error = metadataErrors[session.identifier] {
+          // Show error state with retry option (Phase 3)
+          HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle")
+              .font(.caption2)
+              .foregroundStyle(.orange)
+            Text("Failed to analyze")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button("Retry") {
+              retryMetadata(for: session)
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.blue)
+            InfoButton(isPresented: Binding(
+              get: { showErrorInfo[session.identifier] ?? false },
+              set: { showErrorInfo[session.identifier] = $0 }
+            ))
+            .popover(isPresented: Binding(
+              get: { showErrorInfo[session.identifier] ?? false },
+              set: { showErrorInfo[session.identifier] = $0 }
+            )) {
+              InfoPopoverContent(
+                title: "Metadata Generation Failed",
+                message: """
+                Error: \(error)
+
+                This transcript could not be analyzed. Common causes:
+                • Apple Intelligence is disabled or unavailable
+                • Transcript content is corrupted or empty
+                • System resources temporarily unavailable
+
+                Try clicking the Retry button to attempt generation again.
+                """
+              )
+            }
+          }
         } else if loadingMetadata.contains(session.identifier) {
           HStack(spacing: 4) {
             Image(systemName: "hourglass")
@@ -363,19 +436,10 @@ struct TranscriptInventoryView: View {
       }
 
       HStack(spacing: 4) {
-        Label(providerName(session.provider), systemImage: providerIcon(session.provider))
+        Text(session.lastActivity.relativeTimeString)
           .font(.caption)
           .foregroundStyle(.secondary)
-          .labelStyle(.titleOnly)
-
-        Text("•")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-
-        Text(relativeTime(session.lastActivity))
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .help(absoluteTimestamp(session.lastActivity))
+          .help(session.lastActivity.absoluteTimestampString)
 
         // Metadata-only indicator (always show for transcripts with no entries)
         if session.entryCount == 0 {
@@ -406,7 +470,19 @@ struct TranscriptInventoryView: View {
         }
       }
     }
-    .padding(.vertical, 4)
+    .padding(12)
+    .background(
+      RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .fill(Color(nsColor: .windowBackgroundColor))
+    )
+    .overlay(alignment: .leading) {
+      Capsule()
+        .fill(Color.secondary.opacity(0.3))
+        .frame(width: 3)
+        .padding(.vertical, 4)
+    }
+    .contentShape(Rectangle())
+    // Note: Removed .onAppear metadata loading - now using aggregate viewport tracking
   }
 
   // MARK: - Context Menu
@@ -447,6 +523,14 @@ struct TranscriptInventoryView: View {
       NSPasteboard.general.setString(session.fileURL.path, forType: .string)
     } label: {
       Label("Copy Path", systemImage: "doc.on.doc")
+    }
+
+    Divider()
+
+    Button {
+      regenerateMetadata(for: session)
+    } label: {
+      Label("Regenerate Metadata", systemImage: "arrow.clockwise")
     }
 
     Divider()
@@ -701,11 +785,24 @@ struct TranscriptInventoryView: View {
 
   private func updateCounts() {
     let all = monitor.allSessions
+
+    // Single-pass counting to avoid O(2n) filter operations
+    var conversationCount = 0
+    var metadataCount = 0
+    for session in all {
+      if session.entryCount > 0 {
+        conversationCount += 1
+      } else {
+        metadataCount += 1
+      }
+    }
+
     let newCounts = (
-      conversations: all.filter { $0.entryCount > 0 }.count,
-      metadata: all.filter { $0.entryCount == 0 }.count,
+      conversations: conversationCount,
+      metadata: metadataCount,
       all: all.count
     )
+
     if scopeCounts.conversations != newCounts.conversations ||
        scopeCounts.metadata != newCounts.metadata ||
        scopeCounts.all != newCounts.all {
@@ -726,6 +823,11 @@ struct TranscriptInventoryView: View {
       break // No filter
     }
 
+    // Apply brief sessions filter
+    if hideBriefSessions {
+      sessions = sessions.filter { $0.entryCount >= 3 }
+    }
+
     // Apply search filter
     if debouncedSearch.isEmpty {
       return sessions
@@ -744,42 +846,13 @@ struct TranscriptInventoryView: View {
     }
   }
 
-  private func providerName(_ provider: TimelineSourceContext.Provider) -> String {
-    switch provider {
-    case .claudeCode: return "Claude Code"
-    case .codexCLI: return "Codex CLI"
-    case .other: return "Other"
-    }
-  }
-
-  private func providerIcon(_ provider: TimelineSourceContext.Provider) -> String {
-    switch provider {
-    case .claudeCode: return "terminal.fill"
-    case .codexCLI: return "chevron.left.forwardslash.chevron.right"
-    case .other: return "doc.text"
-    }
-  }
-
-  private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
-    switch provider {
-    case .claudeCode: return .orange
-    case .codexCLI: return .blue
-    case .other: return .gray
-    }
-  }
-
-  private func relativeTime(_ date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .short
-    return formatter.localizedString(for: date, relativeTo: Date())
-  }
-
-  private func absoluteTimestamp(_ date: Date) -> String {
-    // Format: "2:34:15 PM, Tuesday, January 15, 2025"
-    let formatter = DateFormatter()
-    formatter.dateFormat = "h:mm:ss a, EEEE, MMMM d, yyyy"
-    return formatter.string(from: date)
-  }
+  // MARK: - Shared Utilities
+  // Provider and time formatters now use shared extensions:
+  // - provider.displayName (TimelineModels.swift)
+  // - provider.iconImage (TimelineModels.swift)
+  // - provider.color (TimelineModels.swift)
+  // - date.relativeTimeString (SharedExtensions.swift)
+  // - date.absoluteTimestampString (SharedExtensions.swift)
 
   // v23 (P0-4): Check if session is pinned in manual follow mode
   private func isPinned(_ session: TranscriptSession) -> Bool {
@@ -795,10 +868,6 @@ struct TranscriptInventoryView: View {
     case .all: count = scopeCounts.all
     }
     return count > 0 ? " (\(count))" : ""
-  }
-
-  private func refreshSessions() {
-    // Refresh handled by window wrapper via monitor.refresh()
   }
 
   private func flushHeuristicCache() {
@@ -895,6 +964,126 @@ struct TranscriptInventoryView: View {
     }
   }
 
+  // MARK: - Viewport-Aware Metadata Loading
+
+  /// Aggregate snapshot of visible session IDs from onScrollTargetVisibilityChange
+  /// Pattern matches ConversationMonitor.replaceVisibleSnapshot() for consistency
+  @MainActor
+  private func replaceVisibleSnapshot(_ ids: [String]) {
+    log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) sessions in viewport")
+
+    let current = Set(ids)
+    let newlyVisible = current.subtracting(lastVisibleSessionIDs)
+    if !newlyVisible.isEmpty {
+      log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible sessions")
+      for id in newlyVisible.prefix(5) {  // Log first 5 (matches ConversationMonitor pattern)
+        log.info("[VIEWPORT-ENTRY] Now visible: \(id, privacy: .public)")
+      }
+      if newlyVisible.count > 5 {
+        log.info("[VIEWPORT-ENTRY] ... and \(newlyVisible.count - 5, privacy: .public) more newly visible sessions")
+      }
+    }
+
+    lastVisibleSessionIDs = current
+
+    // Debounce viewport changes to avoid queueing during rapid scrolling (1250ms)
+    // Pattern matches ConversationMonitor.coalesceTask timing
+    viewportDebounceTask?.cancel()
+    viewportDebounceTask = Task {
+      try? await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
+      guard !Task.isCancelled else { return }
+
+      log.info("[VIEWPORT-SETTLED] Viewport settled on \(lastVisibleSessionIDs.count) visible sessions")
+
+      // TODO Phase 2: Prune metadata queue (requires queue-based orchestrator)
+      // await pruneMetadataQueueToVisible(lastVisibleSessionIDs)
+
+      // Load metadata for visible sessions
+      await queueVisibleMetadataGeneration(lastVisibleSessionIDs)
+    }
+  }
+
+  /// Queue metadata generation for visible sessions
+  /// Pattern matches ConversationMonitor.queueVisibleGeneratingEntries() naming
+  @MainActor
+  private func queueVisibleMetadataGeneration(_ visibleIDs: Set<String>) async {
+    let visibleSessions = filteredSessions.filter {
+      visibleIDs.contains($0.identifier)
+    }
+
+    log.debug("[META-QUEUE] Queueing metadata for \(visibleSessions.count) visible sessions")
+    await loadMetadataForSessions(visibleSessions)
+  }
+
+  /// Retry metadata generation for a failed session (Phase 3)
+  @MainActor
+  private func retryMetadata(for session: TranscriptSession) {
+    let id = session.identifier
+
+    log.info("[META-RETRY] Retrying metadata for session: \(id, privacy: .public)")
+
+    // Clear error state and trigger regeneration
+    metadataErrors.removeValue(forKey: id)
+    loadingMetadata.insert(id)
+    log.debug("[META-RETRY] Cleared error state for session: \(id, privacy: .public)")
+
+    let task = Task { @MainActor in
+      defer {
+        loadingMetadata.remove(id)
+        metadataTasks[id] = nil
+      }
+      do {
+        let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+          for: session,
+          forceRegenerate: true  // Force regeneration to retry
+        )
+        metadata[id] = generated
+        metadataErrors.removeValue(forKey: id)
+        log.info("[META-DONE] ✅ Retry succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
+      } catch {
+        let errorMessage = error.localizedDescription
+        metadataErrors[id] = errorMessage
+        log.error("[META-ERROR] ❌ Retry failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+      }
+    }
+    metadataTasks[id] = task
+  }
+
+  /// Regenerate metadata for a session (context menu action)
+  @MainActor
+  private func regenerateMetadata(for session: TranscriptSession) {
+    let id = session.identifier
+
+    log.info("[META-REGEN] Regenerating metadata for session: \(id, privacy: .public)")
+
+    // Clear existing metadata and trigger forced regeneration
+    metadata.removeValue(forKey: id)
+    metadataErrors.removeValue(forKey: id)
+    loadingMetadata.insert(id)
+    log.debug("[META-REGEN] Cleared cached metadata for session: \(id, privacy: .public)")
+
+    let task = Task { @MainActor in
+      defer {
+        loadingMetadata.remove(id)
+        metadataTasks[id] = nil
+      }
+      do {
+        let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
+          for: session,
+          forceRegenerate: true  // Force regeneration to bypass cache
+        )
+        metadata[id] = generated
+        metadataErrors.removeValue(forKey: id)
+        log.info("[META-DONE] ✅ Regeneration succeeded for \(id, privacy: .public): \(generated.title, privacy: .public)")
+      } catch {
+        let errorMessage = error.localizedDescription
+        metadataErrors[id] = errorMessage
+        log.error("[META-ERROR] ❌ Regeneration failed for \(id, privacy: .public): \(errorMessage, privacy: .public)")
+      }
+    }
+    metadataTasks[id] = task
+  }
+
   @MainActor
   private func loadMetadataForSessions(_ sessions: [TranscriptSession]) async {
     // Centralized loading: batch fetch from SQL, then spawn Tasks only for cache misses
@@ -902,9 +1091,12 @@ struct TranscriptInventoryView: View {
       return
     }
 
+    log.debug("[META-BATCH] Loading metadata for \(sessions.count, privacy: .public) sessions")
+
     // Batch fetch metadata from SQL
     let transcriptIds = sessions.map(\.identifier)
     let cachedMetadata = (try? orchestrator.getMetadataBatch(transcriptIds: transcriptIds)) ?? [:]
+    log.debug("[META-BATCH] Found \(cachedMetadata.count, privacy: .public) cached, need to generate \(transcriptIds.count - cachedMetadata.count, privacy: .public)")
 
     // Update state with cached results
     for (transcriptId, record) in cachedMetadata {
@@ -915,10 +1107,26 @@ struct TranscriptInventoryView: View {
     let missingIds = Set(transcriptIds).subtracting(Set(cachedMetadata.keys)).subtracting(loadingMetadata)
     let missingSessions = sessions.filter { missingIds.contains($0.identifier) }
 
-    // Spawn generation tasks for cache misses
+    log.info("[META-QUEUE] Queueing \(missingSessions.count, privacy: .public) sessions for metadata generation")
+
+    // Concurrency limit to prevent Apple Intelligence overload
+    // Timeline queue processes 1 at a time; metadata can handle more since operations are longer
+    let maxConcurrentMetadata = 3
+
+    // Spawn generation tasks for cache misses with concurrency control
     for session in missingSessions {
       let id = session.identifier
+      log.debug("[META-QUEUE]   Session: \(id, privacy: .public)")
+
+      // Wait if too many tasks running (backpressure)
+      while metadataTasks.count >= maxConcurrentMetadata {
+        log.debug("[META-BACKPRESSURE] Waiting: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public) tasks running")
+        await Task.yield()  // Yield to allow running tasks to complete
+        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms backoff
+      }
+
       loadingMetadata.insert(id)
+      log.info("[META-START-TASK] Starting task for \(id, privacy: .public) (active: \(metadataTasks.count, privacy: .public)/\(maxConcurrentMetadata, privacy: .public))")
 
       let task = Task { @MainActor in
         defer {
@@ -928,10 +1136,12 @@ struct TranscriptInventoryView: View {
         do {
           let generated = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
           metadata[id] = generated
-          log.info("✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
+          metadataErrors.removeValue(forKey: id)  // Clear error on success (Phase 3)
+          log.info("[META-DONE] ✅ Successfully generated metadata for \(id, privacy: .public): \(generated.title, privacy: .public)")
         } catch {
-          log.error("❌ Failed to generate metadata for \(id, privacy: .public): \(String(describing: error), privacy: .public)")
-          // Failed to generate, loading indicator removed by defer
+          let errorMessage = error.localizedDescription
+          metadataErrors[id] = errorMessage  // Capture error for UI display (Phase 3)
+          log.error("[META-ERROR] ❌ Failed to generate metadata for \(id, privacy: .public): \(errorMessage, privacy: .public)")
         }
       }
       metadataTasks[id] = task
@@ -939,564 +1149,7 @@ struct TranscriptInventoryView: View {
   }
 }
 
-/// Detail view for a selected transcript session
-struct TranscriptDetailView: View {
-  @Environment(ConversationMonitor.self) private var monitor  // v23: for pin/unpin actions
-
-  let session: TranscriptSession
-  let isActive: Bool
-  let onSelect: () -> Void
-  let onMetadataUpdate: ((String, TranscriptMetadata) -> Void)?  // Changed from URL to transcript ID
-  let orchestrator: TranscriptOrchestrator?
-
-  @State private var metadata: TranscriptMetadata?
-  @State private var isRegenerating = false
-
-  // v7 Metadata
-  @State private var fileSnapshots: [FileSnapshot] = []
-  @State private var systemEvents: [SystemEvent] = []
-  @State private var usageStats: UsageAggregate?
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        // Header with status badge
-        HStack {
-          VStack(alignment: .leading, spacing: 4) {
-            // Use metadata title if available, otherwise fall back to identifier
-            Text(metadata?.title ?? session.identifier)
-              .font(.title2)
-              .fontWeight(.semibold)
-
-            // Show description if available, otherwise show provider + filename
-            if let meta = metadata, !meta.description.isEmpty {
-              Text(meta.description)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-            } else {
-              Text("\(providerName) • \(session.fileURL.lastPathComponent)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            }
-          }
-
-          Spacer()
-
-          // v23: Active pill
-          if isActive {
-            Label("Active", systemImage: "circle.fill")
-              .font(.caption)
-              .foregroundStyle(.white)
-              .padding(.horizontal, 12)
-              .padding(.vertical, 4)
-              .background(Color.green)
-              .clipShape(Capsule())
-          }
-
-          // v23: Follow actions
-          if !isActive {
-            Button("Select for Monitoring") {
-              onSelect()
-            }
-            .buttonStyle(.borderedProminent)
-          } else {
-            // Active session - show pin/unpin based on mode
-            // Simplified: just show pin/unpin toggle
-            // Full implementation would check followMode from monitor
-            Button(action: {
-              Task {
-                await monitor.unpinToAuto()
-              }
-            }) {
-              Label("Unpin (Auto)", systemImage: "pin.slash")
-            }
-            .buttonStyle(.bordered)
-            .help("Switch to automatic follow mode")
-          }
-        }
-
-        Divider()
-
-        // Transcript Details (File Info + LLM metadata if available)
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Transcript Details")
-            .font(.headline)
-
-          // Include Title and Description from LLM metadata if available
-          if let meta = metadata {
-            metadataRow(label: "Title", value: meta.title)
-            metadataRow(label: "Description", value: meta.description)
-          }
-
-          metadataRow(label: "Last Modified", value: formattedDate(session.lastActivity))
-
-          // File Path with Finder reveal button
-          HStack(alignment: .top) {
-            Text("File Path")
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-              .frame(width: 100, alignment: .leading)
-
-            Text(session.fileURL.path)
-              .font(.subheadline)
-              .textSelection(.enabled)
-              .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-              NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
-            } label: {
-              Image(systemName: "folder")
-                .font(.subheadline)
-            }
-            .buttonStyle(.borderless)
-            .help("Reveal in Finder")
-          }
-
-          metadataRow(label: "File Name", value: session.fileURL.lastPathComponent)
-          metadataRow(label: "Provider", value: providerName)
-
-          if let fileSize = fileSize() {
-            metadataRow(label: "File Size", value: fileSize)
-          }
-
-          if let lineCount = lineCount() {
-            metadataRow(label: "Lines", value: "\(lineCount)")
-          }
-        }
-
-        Divider()
-
-        // AI-Generated Metadata
-        if let meta = metadata {
-          VStack(alignment: .leading, spacing: 12) {
-            HStack {
-              Text("AI Summary")
-                .font(.headline)
-
-              if meta.needsReview {
-                Text("Needs Review")
-                  .font(.caption)
-                  .foregroundStyle(.white)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 2)
-                  .background(Color.orange)
-                  .clipShape(Capsule())
-              }
-
-              if meta.promptVersion < 2 {
-                Text("Stale")
-                  .font(.caption)
-                  .foregroundStyle(.white)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 2)
-                  .background(Color.yellow)
-                  .clipShape(Capsule())
-              }
-
-              Spacer()
-
-              Button {
-                Task {
-                  await regenerateMetadata()
-                }
-              } label: {
-                HStack(spacing: 4) {
-                  if isRegenerating {
-                    ProgressView()
-                      .controlSize(.mini)
-                      .frame(width: 10, height: 10)
-                  } else {
-                    Image(systemName: "arrow.clockwise")
-                  }
-                  Text("Regenerate")
-                }
-                .font(.caption)
-              }
-              .buttonStyle(.bordered)
-              .disabled(isRegenerating)
-            }
-
-            HStack(alignment: .top) {
-              Text("Topics")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .frame(width: 100, alignment: .leading)
-
-              HStack(spacing: 6) {
-                ForEach(meta.topics, id: \.self) { topic in
-                  Text(topic)
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.2))
-                    .clipShape(Capsule())
-                }
-              }
-            }
-
-            metadataRow(label: "Confidence", value: String(format: "%.2f", meta.confidence))
-            metadataRow(label: "Generated", value: formattedDate(meta.generatedAt))
-            metadataRow(label: "Strategy", value: meta.strategy)
-            metadataRow(label: "Model", value: meta.model)
-            metadataRow(label: "Messages", value: "\(meta.messageCount)")
-            metadataRow(label: "Latency", value: "\(meta.latencyMs)ms")
-          }
-
-          Divider()
-        } else {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              Text("AI Summary")
-                .font(.headline)
-              Spacer()
-              ProgressView()
-                .controlSize(.mini)
-                .frame(width: 10, height: 10)
-            }
-            Text("Generating metadata…")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-
-          Divider()
-        }
-
-        // File Activity (v7 metadata)
-        if !fileSnapshots.isEmpty {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("File Activity")
-              .font(.headline)
-
-            metadataRow(label: "Snapshots", value: "\(fileSnapshots.count)")
-
-            if let firstSnapshot = fileSnapshots.first {
-              metadataRow(label: "Last Snapshot", value: formattedTimestamp(firstSnapshot.snapshotTimestamp))
-            }
-
-            // Show most recent snapshot details
-            if let snapshot = fileSnapshots.first {
-              // Get tracked files for this snapshot
-              if let orchestrator = orchestrator,
-                 let trackedFiles = try? orchestrator.getTrackedFiles(snapshotId: snapshot.id),
-                 !trackedFiles.isEmpty {
-                metadataRow(label: "Tracked Files", value: "\(trackedFiles.count)")
-
-                // Show file list (limited to 5)
-                VStack(alignment: .leading, spacing: 4) {
-                  ForEach(trackedFiles.prefix(5), id: \.id) { file in
-                    HStack {
-                      Image(systemName: "doc.text")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                      Text(file.filePath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                      Spacer()
-                      Text("v\(file.version)")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                    }
-                  }
-
-                  if trackedFiles.count > 5 {
-                    Text("+ \(trackedFiles.count - 5) more files")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                }
-              }
-            }
-          }
-
-          Divider()
-        }
-
-        // Usage Statistics (v7 metadata)
-        if let stats = usageStats, stats.messageCount > 0 {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("Usage Statistics")
-              .font(.headline)
-
-            metadataRow(label: "Messages", value: "\(stats.messageCount)")
-            metadataRow(label: "Input Tokens", value: formatNumber(stats.totalInputTokens))
-            metadataRow(label: "Output Tokens", value: formatNumber(stats.totalOutputTokens))
-
-            if stats.totalCacheCreation > 0 {
-              metadataRow(label: "Cache Creation", value: formatNumber(stats.totalCacheCreation))
-            }
-
-            if stats.totalCacheRead > 0 {
-              metadataRow(label: "Cache Read", value: formatNumber(stats.totalCacheRead))
-            }
-
-            let totalTokens = stats.totalInputTokens + stats.totalOutputTokens +
-                              stats.totalCacheCreation + stats.totalCacheRead
-            metadataRow(label: "Total Tokens", value: formatNumber(totalTokens))
-          }
-
-          Divider()
-        }
-
-        // System Events (v7 metadata)
-        if !systemEvents.isEmpty {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("System Events")
-              .font(.headline)
-
-            metadataRow(label: "Total Events", value: "\(systemEvents.count)")
-
-            // Count errors
-            let errorCount = systemEvents.filter { $0.level == "error" }.count
-            if errorCount > 0 {
-              metadataRow(label: "Errors", value: "\(errorCount)")
-            }
-
-            // Show recent events (limited to 5)
-            VStack(alignment: .leading, spacing: 6) {
-              ForEach(systemEvents.prefix(5), id: \.id) { event in
-                HStack(alignment: .top, spacing: 8) {
-                  // Level indicator
-                  Image(systemName: eventIcon(event.level))
-                    .font(.caption)
-                    .foregroundStyle(eventColor(event.level))
-                    .frame(width: 12)
-
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text(event.subtype)
-                      .font(.caption)
-                      .fontWeight(.medium)
-
-                    if let content = event.content {
-                      Text(content)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    }
-
-                    if let error = event.error {
-                      Text("Error: \(error)")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                    }
-
-                    Text(formattedTimestamp(event.timestamp))
-                      .font(.system(size: 9))
-                      .foregroundStyle(.tertiary)
-                  }
-
-                  Spacer()
-                }
-                .padding(.vertical, 4)
-              }
-
-              if systemEvents.count > 5 {
-                Text("+ \(systemEvents.count - 5) more events")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
-
-          Divider()
-        }
-
-        // Actions
-        VStack(spacing: 8) {
-          if !isActive {
-            Button {
-              onSelect()
-            } label: {
-              Label("Select for Monitoring", systemImage: "play.circle.fill")
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-          }
-
-          Button {
-            NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
-          } label: {
-            Label("Reveal in Finder", systemImage: "folder")
-              .frame(maxWidth: .infinity)
-          }
-
-          Button {
-            NSWorkspace.shared.open(session.fileURL)
-          } label: {
-            Label("Open in Default Editor", systemImage: "doc.text")
-              .frame(maxWidth: .infinity)
-          }
-
-          Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(session.fileURL.path, forType: .string)
-          } label: {
-            Label("Copy Path", systemImage: "doc.on.doc")
-              .frame(maxWidth: .infinity)
-          }
-        }
-        .buttonStyle(.bordered)
-      }
-      .padding()
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .task(id: session.identifier) {  // Changed from fileURL to identifier
-      // Load metadata on appearance or when session changes
-      await loadMetadata()
-      await loadV7Metadata()
-    }
-  }
-
-  @MainActor
-  private func loadMetadata() async {
-    // Load from SQL backend
-    guard let orchestrator = orchestrator else {
-      return
-    }
-
-    // Check SQL cache first
-    if let record = try? orchestrator.getMetadata(forTranscript: session.identifier) {
-      metadata = record.toUIModel()
-    } else {
-      // Not in cache, trigger generation
-      do {
-        metadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(for: session)
-      } catch {
-        // Failed to generate, metadata stays nil
-      }
-    }
-  }
-
-  @MainActor
-  private func regenerateMetadata() async {
-    isRegenerating = true
-    defer { isRegenerating = false }
-
-    do {
-      let newMetadata = try await TranscriptMetadataOrchestrator.shared.ensureMetadata(
-        for: session,
-        forceRegenerate: true
-      )
-      metadata = newMetadata
-
-      // Notify parent view to update list (using transcript ID)
-      onMetadataUpdate?(session.identifier, newMetadata)
-    } catch {
-      // Failed to regenerate, keep existing metadata
-    }
-  }
-
-  @MainActor
-  private func loadV7Metadata() async {
-    guard let orchestrator = orchestrator else { return }
-
-    do {
-      // Load file snapshots
-      fileSnapshots = try orchestrator.getFileSnapshots(transcriptId: session.identifier)
-
-      // Load system events (limit to recent 50)
-      systemEvents = try orchestrator.getSystemEvents(transcriptId: session.identifier, limit: 50)
-
-      // Load usage statistics
-      usageStats = try orchestrator.getTranscriptUsageStats(transcriptId: session.identifier)
-    } catch {
-      // Failed to load v7 metadata, keep empty arrays
-    }
-  }
-
-  @ViewBuilder
-  private func metadataRow(label: String, value: String) -> some View {
-    HStack(alignment: .top) {
-      Text(label)
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .frame(width: 100, alignment: .leading)
-
-      Text(value)
-        .font(.subheadline)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-  }
-
-  private var providerName: String {
-    switch session.provider {
-    case .claudeCode: return "Claude Code"
-    case .codexCLI: return "Codex CLI"
-    case .other: return "Other"
-    }
-  }
-
-  private func formattedDate(_ date: Date) -> String {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .short
-    return formatter.string(from: date)
-  }
-
-  private func fileSize() -> String? {
-    guard let attrs = try? FileManager.default.attributesOfItem(atPath: session.fileURL.path),
-          let size = attrs[.size] as? Int64 else {
-      return nil
-    }
-
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: size)
-  }
-
-  private func lineCount() -> Int? {
-    // Use database entry count instead of reading the entire file
-    guard let orch = orchestrator else { return nil }
-
-    // Use session identifier directly (it's already the database transcript ID)
-    let transcriptId = session.identifier
-
-    do {
-      let entries = try orch.getEntries(forTranscript: transcriptId, afterTimestamp: nil)
-      return entries.count
-    } catch {
-      return nil
-    }
-  }
-
-  // v7 Metadata Helpers
-
-  private func formattedTimestamp(_ timestamp: Int) -> String {
-    let date = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .short
-    return formatter.string(from: date)
-  }
-
-  private func formatNumber(_ number: Int) -> String {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
-  }
-
-  private func eventIcon(_ level: String) -> String {
-    switch level.lowercased() {
-    case "error": return "exclamationmark.circle.fill"
-    case "warning": return "exclamationmark.triangle.fill"
-    case "info": return "info.circle.fill"
-    default: return "circle.fill"
-    }
-  }
-
-  private func eventColor(_ level: String) -> Color {
-    switch level.lowercased() {
-    case "error": return .red
-    case "warning": return .orange
-    case "info": return .blue
-    default: return .secondary
-    }
-  }
-}
-
+// Note: TranscriptDetailView extracted to TranscriptDetailView.swift (Phase 2)
 // MARK: - Previews
 
 #if DEBUG
@@ -1507,8 +1160,7 @@ struct TranscriptInventoryView_Previews: PreviewProvider {
   static var previews: some View {
     TranscriptInventoryView(
       selectedScope: .constant(.conversations),
-      scopeCounts: .constant((conversations: 10, metadata: 5, all: 15)),
-      onSelectSession: { _ in }
+      scopeCounts: .constant((conversations: 10, metadata: 5, all: 15))
     )
     .environment(ConversationMonitor.shared)
   }

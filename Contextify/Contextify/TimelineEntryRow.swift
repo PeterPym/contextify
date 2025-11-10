@@ -29,6 +29,7 @@ struct TimelineEntryRow: View, Equatable {
     @State private var isExpanded = false
     @State private var showCopiedToast = false
     @State private var showSafetyInfo = false
+    @State private var showErrorInfo = false
     @Environment(\.openWindow) private var openWindow
     @Environment(ConversationMonitor.self) private var monitor
 
@@ -151,6 +152,16 @@ struct TimelineEntryRow: View, Equatable {
                         )
                     }
                     .help("Unable to summarize due to content controls")
+            }
+            if entry.hasGenerationError {
+                InfoButton(isPresented: $showErrorInfo)
+                    .popover(isPresented: $showErrorInfo) {
+                        InfoPopoverContent(
+                            title: "Summary Generation Failed",
+                            message: errorMessage(for: entry.generationErrorType)
+                        )
+                    }
+                    .help("Summary generation failed")
             }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")
@@ -276,30 +287,59 @@ struct TimelineEntryRow: View, Equatable {
         )
     }
 
+    // Provider color now uses TimelineSourceContext.Provider.color extension (TimelineModels.swift)
     private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
-        switch provider {
-        case .claudeCode: return .orange
-        case .codexCLI: return .white
-        case .other: return .gray
+        return provider.color
+    }
+
+    /// Generate contextual error message based on error type
+    private func errorMessage(for errorType: String?) -> String {
+        guard let type = errorType else {
+            return "An error occurred during summary generation. The original message is preserved in the detail view."
+        }
+
+        switch type {
+        case "overflow":
+            return """
+            This conversation entry is too long to summarize (exceeded the maximum token limit for Apple Intelligence).
+
+            The full content remains accessible in the detail view below. No summary will be generated for this entry.
+            """
+
+        case "decoding":
+            return """
+            The AI generated a response in an unexpected format that could not be parsed.
+
+            This is usually caused by malformed system output (bash commands, git output, etc.) in the conversation. The entry remains accessible without a summary.
+            """
+
+        case "database":
+            return """
+            Failed to save the generated summary due to a database error.
+
+            Check available disk space and database permissions. The original message is preserved in the detail view.
+            """
+
+        case "unexpected":
+            return """
+            An unexpected error occurred during summary generation.
+
+            This may indicate a bug or unsupported content format. The original message is preserved in the detail view.
+            """
+
+        default:
+            return """
+            Summary generation failed with error type: \(type)
+
+            The original message is preserved in the detail view.
+            """
         }
     }
 }
 
 // MARK: - Color Scheme
-private extension Color {
-    /// Contextify app color scheme
-    /// Full spec: build/notes/design-reference/color-scheme.md
-
-    // Primary colors
-    static let contextifyBlue = Color(red: 0.290, green: 0.482, blue: 0.655)   // #4A7BA7 - User/directive actions
-    static let contextifyGreen = Color(red: 0.318, green: 0.659, blue: 0.420)  // #51A86B - Completion/success states
-    static let contextifyTaupe = Color(red: 0.608, green: 0.545, blue: 0.494)  // #9B8B7E - Assistant messages
-
-    // Secondary colors (projected from palette)
-    static let contextifyRed = Color(red: 0.780, green: 0.306, blue: 0.306)    // #C74E4E - Errors/destructive actions
-    static let contextifyYellow = Color(red: 0.831, green: 0.659, blue: 0.306) // #D4A84E - Warnings/pending states
-    static let contextifyPurple = Color(red: 0.486, green: 0.408, blue: 0.659) // #7C68A8 - Metadata/generated content
-}
+// NOTE: Color palette moved to SharedExtensions.swift to avoid duplication
+// Using colors from SharedExtensions: contextifyBlue, contextifyTaupe, contextifyGreen, etc.
 
 private extension TimelineEntryKind {
     var accentColor: Color {

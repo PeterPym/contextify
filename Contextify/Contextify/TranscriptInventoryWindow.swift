@@ -13,24 +13,8 @@ struct TranscriptInventoryWindow: View {
   var body: some View {
     TranscriptInventoryView(
       selectedScope: $selectedScope,
-      scopeCounts: $scopeCounts,
-      onSelectSession: { session in
-        Task { @MainActor in
-          await monitor.switchToSessionFromUser(session)
-        }
-      }
+      scopeCounts: $scopeCounts
     )
-    .toolbar {
-      ToolbarItem(placement: .automatic) {
-        Button {
-          Task { @MainActor in
-            await monitor.refresh()
-          }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-      }
-    }
     .onChange(of: selectedScope) { _, newScope in
       selectedScopeRaw = newScope.rawValue
     }
