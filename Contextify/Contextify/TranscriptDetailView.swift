@@ -386,6 +386,12 @@ struct TranscriptDetailView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .task(id: session.identifier) {  // Changed from fileURL to identifier
+      // Reset state when session changes to prevent showing stale data
+      metadata = nil
+      fileSnapshots = []
+      systemEvents = []
+      usageStats = nil
+
       // Load metadata on appearance or when session changes
       await loadMetadata()
       await loadV7Metadata()
