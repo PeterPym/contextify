@@ -30,8 +30,8 @@ struct CacheMiss: Sendable {
 actor TimelineCacheMissGenerator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheMissGenerator")
     private let orchestrator: TranscriptOrchestrator
-    // Ordered queue (FIFO) with deduplication set for fast lookups
-    private var pendingMisses: [CacheMiss] = []  // Ordered queue (oldest first: append + removeFirst = FIFO)
+    // LIFO queue (newest first) with viewport-aware pruning and deduplication
+    private var pendingMisses: [CacheMiss] = []  // LIFO: newest entries at front (insert at 0), prioritizes current viewport
     private var pendingKeys: Set<CacheKey> = []  // Fast deduplication lookup
     private var generationTask: Task<Void, Never>?
     private var isProcessing = false
@@ -42,8 +42,8 @@ actor TimelineCacheMissGenerator {
 
     // Queue management
     private let maxQueueSize = 5000
-    private let maxBatchSize = 1  // Process one at a time for instant responsiveness
-    private let batchDelayNs: UInt64 = 0  // No artificial delay (FoundationLLM has no rate limits)
+    private let maxBatchSize = 1  // Sequential processing (FoundationLLM limitation: one request at a time)
+    private let batchDelayNs: UInt64 = 0  // No inter-item delay (FoundationLLM is local, no rate limits)
 
     // Stabilization delay to prevent flooding LLM with requests that get cancelled
     // Gives pruning mechanism time to cancel entries before they reach LLM
@@ -268,7 +268,8 @@ actor TimelineCacheMissGenerator {
             isProcessing = true
             notifyQueueChanged()  // Notify that processing started
 
-            // Take a batch from the front of the queue (FIFO)
+            // Take next item from front of queue (LIFO: newest entries processed first)
+            // Note: maxBatchSize is always 1 due to FoundationLLM sequential processing limitation
             let batchSize = min(maxBatchSize, pendingMisses.count)
             let batch = Array(pendingMisses.prefix(batchSize))
             pendingMisses.removeFirst(batchSize)
@@ -496,12 +497,42 @@ actor TimelineCacheMissGenerator {
 
                     // Treat as success - no retry needed
                     return
-                } else {
-                    // Other TimelineErrors - continue to retry logic
-                    lastError = timelineError
-                    attempt += 1
+                }
 
-                    if attempt < maxAttempts {
+                // Check for other permanent failures - write tombstone and don't retry
+                if case .contextOverflow = timelineError {
+                    log.error("Context overflow for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "overflow", error: timelineError)
+                    trackError(reason: timelineError.userMessage)
+                    return  // No retry
+                }
+
+                if case .decodingFailure = timelineError {
+                    log.error("Decoding failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "decoding", error: timelineError)
+                    trackError(reason: timelineError.userMessage)
+                    return  // No retry
+                }
+
+                if case .unexpected = timelineError {
+                    log.error("Unexpected error for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "unexpected", error: timelineError)
+                    trackError(reason: timelineError.userMessage)
+                    return  // No retry
+                }
+
+                if case .databaseError = timelineError {
+                    log.error("Database error for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "database", error: timelineError)
+                    trackError(reason: timelineError.userMessage)
+                    return  // No retry
+                }
+
+                // Transient errors (timeout, unavailable, cancelled) - continue to retry logic
+                lastError = timelineError
+                attempt += 1
+
+                if attempt < maxAttempts {
                         // Exponential backoff with jitter: base 2^attempt seconds
                         let baseDelay = pow(2.0, Double(attempt))
                         let jitter = Double.random(in: 0...0.3) * baseDelay
@@ -511,7 +542,6 @@ actor TimelineCacheMissGenerator {
 
                         try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
                     }
-                }
             } catch {
                 lastError = error
                 attempt += 1
@@ -774,6 +804,43 @@ actor TimelineCacheMissGenerator {
             }
             consecutiveSuccesses = 0  // Reset counter
         }
+    }
+
+    // MARK: - Error Tombstone Writing
+
+    /// Write a tombstone for permanent failures to prevent infinite viewport retries
+    /// Similar to guardrailViolation handling, but for other non-retryable errors
+    private func writeErrorTombstone(miss: CacheMiss, errorType: String, error: TimelineError) async throws {
+        log.info("Writing error tombstone for entry \(miss.entryId.prefix(8)) - type: \(errorType)")
+
+        // Generate fallback summary (truncated content preview)
+        let fallbackSummary: String
+        if miss.content.isEmpty {
+            fallbackSummary = "[No content]"
+        } else {
+            fallbackSummary = String(miss.content.prefix(100)) + (miss.content.count > 100 ? "…" : "")
+        }
+
+        // Write tombstone to cache with error disposition
+        let tombstone = TimelineCache(
+            contentSha256: miss.contentSha256,
+            windowSha256: miss.windowSha256,
+            entryId: miss.entryId,
+            generatorSignature: timelineGeneratorSignature(),
+            disposition: "error-\(errorType)",  // Marks as permanent failure
+            presentForm: fallbackSummary,
+            pastForm: fallbackSummary,
+            selectedForm: "present",
+            generatedAt: Int(Date().timeIntervalSince1970),
+            userEdited: 0
+        )
+
+        try orchestrator.saveCachedTimeline(tombstone)
+
+        // Post immediate UI update notification
+        await postCacheUpdateNotification(for: [miss])
+
+        log.info("Error tombstone written for \(miss.entryId.prefix(8)) - will not retry")
     }
 }
 
