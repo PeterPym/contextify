@@ -1,45 +1,21 @@
 # Revision Notes
 
-## Performance Improvements
+## Transcript Browser Window
 
-- **Transcript metadata loading:** Intelligent viewport-aware queue processes only visible sessions, preventing Apple Intelligence overload when browsing large transcript collections (400+ sessions now load instantly).
-- **Date formatting optimization:** Eliminated O(n) allocations in transcript list rendering, significantly improving scroll performance.
-- **Initial load experience:** Cached metadata loads immediately on view appearance, showing existing titles/descriptions without delay.
+The transcript browsing experience now handles large collections smoothly and provides clear feedback during AI-powered metadata generation:
 
-## UI Improvements
-
-- **Transcript session rows:** Unified styling with timeline entries for visual consistency (removed redundant provider text, normalized accent bars to neutral grey, better spacing).
-- **Loading indicators:** Hourglass animation appears during metadata generation with real-time queue status ("Processing X items" with spinner).
-- **Detail pane updates:** Metadata refreshes automatically when generation completes; switching between transcripts now correctly resets display state.
-- **Info button popovers:** Low-confidence metadata and brief sessions now show explanatory popovers on click.
-- **Context menu actions:** Added "Regenerate Metadata" option for manual refresh.
-- **Brief sessions filter:** New ellipsis menu with toggle to hide brief sessions (enabled by default).
+- **Smart loading:** Opens instantly even with 400+ transcripts. AI summaries generate only for what you're looking at, not everything at once.
+- **Better visuals:** Session rows now match the timeline's clean design. Removed clutter, improved spacing, and made everything easier to scan.
+- **Live feedback:** See exactly what's happening when AI generates titles and descriptions. Shows a progress indicator ("Processing 5 items") and marks each session with a hourglass while working on it.
+- **Automatic updates:** When AI finishes generating a summary, it appears immediately. Switch between transcripts and the detail pane always shows the right information.
+- **Quick actions:** Click info buttons to understand low-confidence summaries or why sessions are marked as brief. Right-click any session to regenerate its metadata. Use the menu to hide brief sessions (on by default).
+- **Smarter processing:** Newest sessions get summarized first. Scrolling away from a session stops working on it to focus on what you're actually viewing.
 
 ## Bug Fixes
 
-- **Metadata ordering:** Fixed LIFO queue to always process newest transcripts first, matching expected priority behavior.
-- **Detail pane stale data:** Switching from summarized to unsummarized transcript no longer shows previous metadata.
-- **Status bar consistency:** Queue depth always shows "Processing X items" with spinner (previously flickered between states).
-- **Circuit breaker cleanup:** Fixed task lifecycle management to prevent duplicate reset Tasks.
-- **Keychain password prompt:** Machine ID storage moved to Application Support, eliminating unnecessary keychain access on first launch.
+- **Status bar:** No more flickering between different states. Shows consistent status with spinner when work is in progress.
+- **Detail pane:** Fixed issue where switching between sessions would sometimes show outdated information.
 
 ## New Features
 
-- **Transcript corruption detection:** Built-in detection and repair utility for Claude Code Web "teleport" corruption (see `scripts/transcript-repair/`).
-- **Viewport-aware metadata generation:** Only visible transcript sessions queue for LLM processing, with automatic pruning on scroll (500ms debounce).
-- **Batch-free processing:** Simplified queue architecture eliminates batching complexity, matching timeline queue patterns.
-- **Refresh Sessions removal:** Automatic session discovery makes manual refresh button redundant (removed from UI).
-
-## Developer Experience
-
-- **CI workflow improvements:** GitHub Actions on-demand builds with automatic trigger scripts for Claude Code Web and Linux environments.
-- **Comprehensive documentation:** Updated LLM architecture docs to reflect LIFO sequential processing and viewport-aware pruning.
-- **Build monitoring:** Automated result reporting for CI builds with downloadable logs and artifacts.
-
-## Breaking Changes
-
-None. All changes are backward-compatible.
-
-## Known Issues
-
-- Transcript metadata row updates may occasionally lag behind generation completion (investigating notification reliability).
+- **Transcript corruption repair:** Automatic detection and repair tools for corrupted Claude Code Web transcripts (happens when using the "teleport" feature). See `scripts/transcript-repair/` for the repair utility.
