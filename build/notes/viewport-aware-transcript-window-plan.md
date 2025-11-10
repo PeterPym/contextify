@@ -57,6 +57,35 @@ Commit 94d29d4 attempted "viewport-aware loading" but only implemented:
 
 ---
 
+## Multi-Session Concurrency Clarification
+
+**IMPORTANT:** Timeline and Transcript queues CAN run concurrently!
+
+**How it works:**
+- `FoundationLLM` maintains up to 16 separate `SessionController` instances
+- Each session can process ONE request at a time
+- **Different sessions process concurrently**
+
+**Our architecture:**
+1. **Timeline Session** - Sequential processing (one entry at a time)
+   - Session key: Based on entry kind/provider
+   - LIFO queue with viewport-aware pruning
+
+2. **Transcript Session** - Sequential processing (one transcript at a time)
+   - Session key: Based on transcript metadata schema
+   - To be refactored: Queue-based with viewport-aware pruning
+
+**Both sessions run in parallel** (one timeline entry + one transcript at same time), but each queue is sequential internally.
+
+**Why sequential per queue?**
+- Enables viewport-aware pruning (can't prune mid-flight requests)
+- Simpler error handling and attribution
+- LIFO priority control
+
+**NOT doing:** Multiple sessions per queue (would lose pruning ability)
+
+---
+
 ## Technical Approach
 
 ### Option A: Refactor TranscriptMetadataOrchestrator to Queue-Based

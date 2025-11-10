@@ -135,6 +135,47 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 
 ---
 
+## Error Handling: Tombstone Mechanism
+
+**Problem:** Permanent failures (context overflow, decoding errors) left entries in perpetual "generating" state, creating infinite retry loops when user scrolled them in/out of viewport.
+
+**Solution:** Error tombstones - cache entries marking permanent failure.
+
+### How Tombstones Work
+
+When LLM generation fails with a **non-retryable error**, the system writes a cache entry with:
+- **Disposition:** `"error-{errorType}"` (e.g., `"error-overflow"`, `"error-decoding"`)
+- **Fallback summary:** Truncated content preview (first 100 chars)
+- **Same cache key:** contentSha256 + windowSha256
+
+**Effect:** Entry is now "cached" (with error marker). Viewport changes won't re-queue it.
+
+### Disposition Semantics
+
+The `disposition` field evolved from binary (cached/not cached) to **ternary state machine**:
+
+| Disposition | Meaning | Retry? |
+|-------------|---------|--------|
+| `"directive"`, `"question"`, `"response"`, `"report"` | Successful generation | No (cached) |
+| `"error-overflow"` | Content > 4096 tokens | No (permanent) |
+| `"error-decoding"` | LLM output malformed | No (permanent) |
+| `"error-unexpected"` | Unknown error | No (permanent) |
+| `"error-database"` | SQL write failed | No (permanent) |
+| `"guardrail-violation"` | Content filtered (handled) | No (cached) |
+| `null` | Not yet attempted | Yes (queue) |
+
+### Error Classification
+
+**Permanent failures** (write tombstone):
+- contextOverflow, decodingFailure, unexpected, databaseError
+
+**Transient failures** (retry with exponential backoff, up to 3 attempts):
+- llmTimeout, llmUnavailable
+
+**Implementation:** `TimelineCacheMissGenerator.swift` lines 502-545, 811-844
+
+---
+
 ## Status Bar Integration
 
 The status bar (bottom of main window) **aggregates both queues** to show unified LLM processing status.
