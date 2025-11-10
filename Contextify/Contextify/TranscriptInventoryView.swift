@@ -47,7 +47,7 @@ struct TranscriptInventoryView: View {
   @State private var showingCleanupConfirmation = false
   @State private var cleanupResult: (count: Int, ids: [String])? = nil
   @State private var showingCleanupAlert = false
-  @AppStorage("transcript.hideBriefSessions") private var hideBriefSessions = false
+  @AppStorage("transcript.hideBriefSessions") private var hideBriefSessions = true
   @State private var showMetadataInfo: [String: Bool] = [:]  // Track info popover state per session
   @State private var showErrorInfo: [String: Bool] = [:]  // Track error info popover state per session
 
