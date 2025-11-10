@@ -15,17 +15,6 @@ struct TranscriptInventoryWindow: View {
       selectedScope: $selectedScope,
       scopeCounts: $scopeCounts
     )
-    .toolbar {
-      ToolbarItem(placement: .automatic) {
-        Button {
-          Task { @MainActor in
-            await monitor.refresh()
-          }
-        } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
-        }
-      }
-    }
     .onChange(of: selectedScope) { _, newScope in
       selectedScopeRaw = newScope.rawValue
     }
