@@ -390,6 +390,15 @@ struct TranscriptDetailView: View {
       await loadMetadata()
       await loadV7Metadata()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .transcriptMetadataUpdated)) { notification in
+      // Reload metadata when generation completes
+      guard let completedId = notification.object as? String,
+            completedId == session.identifier else { return }
+
+      Task {
+        await loadMetadata()
+      }
+    }
   }
 
   // MARK: - Data Loading
