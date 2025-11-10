@@ -38,6 +38,8 @@ struct TranscriptInventoryView: View {
   @State private var loadingMetadata: Set<String> = []  // Changed from URL to transcript ID
   @State private var metadataErrors: [String: String] = [:]  // Track errors by transcript ID (Phase 3)
   @State private var metadataTasks: [String: Task<Void, Never>] = [:]  // Track background tasks for cancellation
+  @State private var lastVisibleSessionIDs: Set<String> = []  // Viewport tracking
+  @State private var viewportDebounceTask: Task<Void, Never>?  // Debounced viewport handler
   @State private var showingFlushAlert = false
   @State private var lastFlushCount = 0
   @State private var showingDeleteConfirmation = false
@@ -199,15 +201,27 @@ struct TranscriptInventoryView: View {
 
       Divider()
 
-      // Session list with transcript ID-based selection (FIXED: use filteredSessions)
-      List(filteredSessions, id: \.identifier, selection: $selectedTranscriptId) { session in
-        sessionRow(session)
-          .tag(session.identifier)
-          .contextMenu {
-            exportContextMenu(for: session)
+      // Session list with transcript ID-based selection + viewport tracking
+      ScrollView {
+        LazyVStack(spacing: 0) {
+          ForEach(filteredSessions, id: \.identifier) { session in
+            sessionRow(session)
+              .id(session.identifier)
+              .contentShape(Rectangle())
+              .onTapGesture {
+                selectedTranscriptId = session.identifier
+              }
+              .background(selectedTranscriptId == session.identifier ? Color.accentColor.opacity(0.15) : Color.clear)
+              .contextMenu {
+                exportContextMenu(for: session)
+              }
           }
+        }
+        .scrollTargetLayout()
       }
-      .listStyle(.sidebar)
+      .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
+        replaceVisibleSnapshot(visibleIDs)
+      }
       .searchable(text: $searchText, prompt: "Search transcripts")
       .onChange(of: searchText) { _, newValue in
         // Debounce search input (300ms)
@@ -227,34 +241,26 @@ struct TranscriptInventoryView: View {
           selectedTranscriptId = nil
         }
 
-        // PHASE 1: Ensure discovered sessions are persisted to database
-        // This prevents FK constraint errors when generating metadata
+        // Ensure discovered sessions are persisted to database (prevents FK errors)
         Task {
           await persistDiscoveredSessions(newSessions)
         }
 
-        // PHASE 2: Load metadata ONLY for visible sessions (viewport-aware)
-        // This prevents overwhelming Apple Intelligence with hundreds of concurrent requests
-        Task {
-          let visibleSessionLimit = 10  // Only load first 10 sessions
-          let visibleSessions = Array(filteredSessions.prefix(visibleSessionLimit))
-          log.debug("[META-VISIBLE] Loading metadata for \(visibleSessions.count, privacy: .public) visible sessions (total: \(newSessions.count, privacy: .public))")
-          await loadMetadataForSessions(visibleSessions)
-        }
+        // Note: Metadata loading now handled by viewport tracking (handleVisibleSessionsChanged)
+        // No hardcoded first-10 load - only generate for what's actually visible
       }
       .task {
         // Ensure sessions are persisted before loading metadata
         await persistDiscoveredSessions(monitor.allSessions)
 
-        // Load metadata on initial appearance - REMOVED
-        // Previously this loaded ALL sessions at once, causing Apple Intelligence overload
-        // Now relying on .onChange(of: sessions) debounced loading for viewport-only generation
-        // await loadMetadataForSessions(monitor.allSessions)
+        // Metadata loading now handled by viewport tracking - no bulk load on appear
       }
       .onDisappear {
-        // Cancel pending debounce task to prevent leaks
+        // Cancel pending debounce tasks to prevent leaks
         debounceTask?.cancel()
         debounceTask = nil
+        viewportDebounceTask?.cancel()
+        viewportDebounceTask = nil
 
         // Cancel all metadata generation tasks
         metadataTasks.values.forEach { $0.cancel() }
@@ -439,19 +445,8 @@ struct TranscriptInventoryView: View {
         }
       }
     }
-    .onAppear {
-      // VIEWPORT-AWARE LOADING: Load metadata when row becomes visible (scroll-to-load)
-      // Only load if not already loaded, loading, or errored
-      if metadata[session.identifier] == nil &&
-         !loadingMetadata.contains(session.identifier) &&
-         metadataErrors[session.identifier] == nil {
-        log.debug("[META-ONAPPEAR] Row appeared, loading metadata for: \(session.identifier, privacy: .public)")
-        Task {
-          await loadMetadataForSessions([session])
-        }
-      }
-    }
     .padding(.vertical, 4)
+    // Note: Removed .onAppear metadata loading - now using aggregate viewport tracking
   }
 
   // MARK: - Context Menu
@@ -938,6 +933,57 @@ struct TranscriptInventoryView: View {
     } catch {
       log.error("Failed to persist transcripts: \(error.localizedDescription)")
     }
+  }
+
+  // MARK: - Viewport-Aware Metadata Loading
+
+  /// Aggregate snapshot of visible session IDs from onScrollTargetVisibilityChange
+  /// Pattern matches ConversationMonitor.replaceVisibleSnapshot() for consistency
+  @MainActor
+  private func replaceVisibleSnapshot(_ ids: [String]) {
+    log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) sessions in viewport")
+
+    let current = Set(ids)
+    let newlyVisible = current.subtracting(lastVisibleSessionIDs)
+    if !newlyVisible.isEmpty {
+      log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible sessions")
+      for id in newlyVisible.prefix(5) {  // Log first 5 (matches ConversationMonitor pattern)
+        log.info("[VIEWPORT-ENTRY] Now visible: \(id, privacy: .public)")
+      }
+      if newlyVisible.count > 5 {
+        log.info("[VIEWPORT-ENTRY] ... and \(newlyVisible.count - 5, privacy: .public) more newly visible sessions")
+      }
+    }
+
+    lastVisibleSessionIDs = current
+
+    // Debounce viewport changes to avoid queueing during rapid scrolling (1250ms)
+    // Pattern matches ConversationMonitor.coalesceTask timing
+    viewportDebounceTask?.cancel()
+    viewportDebounceTask = Task {
+      try? await Task.sleep(nanoseconds: 1_250_000_000)  // 1250ms = 1.25 seconds
+      guard !Task.isCancelled else { return }
+
+      log.info("[VIEWPORT-SETTLED] Viewport settled on \(lastVisibleSessionIDs.count) visible sessions")
+
+      // TODO Phase 2: Prune metadata queue (requires queue-based orchestrator)
+      // await pruneMetadataQueueToVisible(lastVisibleSessionIDs)
+
+      // Load metadata for visible sessions
+      await queueVisibleMetadataGeneration(lastVisibleSessionIDs)
+    }
+  }
+
+  /// Queue metadata generation for visible sessions
+  /// Pattern matches ConversationMonitor.queueVisibleGeneratingEntries() naming
+  @MainActor
+  private func queueVisibleMetadataGeneration(_ visibleIDs: Set<String>) async {
+    let visibleSessions = filteredSessions.filter {
+      visibleIDs.contains($0.identifier)
+    }
+
+    log.debug("[META-QUEUE] Queueing metadata for \(visibleSessions.count) visible sessions")
+    await loadMetadataForSessions(visibleSessions)
   }
 
   /// Retry metadata generation for a failed session (Phase 3)
