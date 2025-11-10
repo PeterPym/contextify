@@ -492,7 +492,7 @@ struct TranscriptInventoryView: View {
     )
     .overlay(alignment: .leading) {
       Capsule()
-        .fill(session.provider.color)
+        .fill(Color.secondary.opacity(0.3))
         .frame(width: 3)
         .padding(.vertical, 4)
     }
