@@ -16,13 +16,10 @@ import OSLog
 /// - LLM-generated metadata (title, description, topics)
 /// - File information (path, size, lines)
 /// - v7 metadata (file snapshots, system events, usage statistics)
-/// - Actions (select for monitoring, reveal in Finder, etc.)
+/// - Actions (reveal in Finder, open in editor, copy path)
 struct TranscriptDetailView: View {
-  @Environment(ConversationMonitor.self) private var monitor  // v23: for pin/unpin actions
-
   let session: TranscriptSession
   let isActive: Bool
-  let onSelect: () -> Void
   let onMetadataUpdate: ((String, TranscriptMetadata) -> Void)?  // Changed from URL to transcript ID
   let orchestrator: TranscriptOrchestrator?
 
@@ -69,27 +66,6 @@ struct TranscriptDetailView: View {
               .padding(.vertical, 4)
               .background(Color.green)
               .clipShape(Capsule())
-          }
-
-          // v23: Follow actions
-          if !isActive {
-            Button("Select for Monitoring") {
-              onSelect()
-            }
-            .buttonStyle(.borderedProminent)
-          } else {
-            // Active session - show pin/unpin based on mode
-            // Simplified: just show pin/unpin toggle
-            // Full implementation would check followMode from monitor
-            Button(action: {
-              Task {
-                await monitor.unpinToAuto()
-              }
-            }) {
-              Label("Unpin (Auto)", systemImage: "pin.slash")
-            }
-            .buttonStyle(.bordered)
-            .help("Switch to automatic follow mode")
           }
         }
 
@@ -382,16 +358,6 @@ struct TranscriptDetailView: View {
 
         // Actions
         VStack(spacing: 8) {
-          if !isActive {
-            Button {
-              onSelect()
-            } label: {
-              Label("Select for Monitoring", systemImage: "play.circle.fill")
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-          }
-
           Button {
             NSWorkspace.shared.selectFile(session.fileURL.path, inFileViewerRootedAtPath: "")
           } label: {

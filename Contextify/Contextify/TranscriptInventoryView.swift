@@ -28,7 +28,6 @@ struct TranscriptInventoryView: View {
 
   @Binding var selectedScope: InventoryScope
   @Binding var scopeCounts: (conversations: Int, metadata: Int, all: Int)
-  let onSelectSession: (TranscriptSession) -> Void
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
@@ -288,9 +287,6 @@ struct TranscriptInventoryView: View {
       TranscriptDetailView(
         session: session,
         isActive: session.identifier == monitor.activeSession?.identifier,
-        onSelect: {
-          onSelectSession(session)
-        },
         onMetadataUpdate: { transcriptId, newMetadata in
           metadata[transcriptId] = newMetadata
         },
@@ -1171,8 +1167,7 @@ struct TranscriptInventoryView_Previews: PreviewProvider {
   static var previews: some View {
     TranscriptInventoryView(
       selectedScope: .constant(.conversations),
-      scopeCounts: .constant((conversations: 10, metadata: 5, all: 15)),
-      onSelectSession: { _ in }
+      scopeCounts: .constant((conversations: 10, metadata: 5, all: 15))
     )
     .environment(ConversationMonitor.shared)
   }
