@@ -22,6 +22,43 @@
 
 ---
 
+## ⚠️ CRITICAL: Before Using Any Tool
+
+### Subsystem/Category Must Match Code
+
+**The #1 reason debugging tools "don't work" is subsystem mismatch.**
+
+Your log capture predicate MUST exactly match the Logger in your code:
+
+```bash
+# ❌ WRONG - Won't capture ConversationMonitor logs
+log stream --predicate 'subsystem == "dev.contextify"'
+```
+
+```swift
+// Code uses different subsystem:
+private let log = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
+```
+
+```bash
+# ✅ CORRECT - Captures ConversationMonitor logs
+log stream --predicate 'subsystem == "dev.contextify.timeline"'
+
+# ✅ BEST - Captures all Contextify logs regardless of subsystem
+log stream --predicate 'subsystem BEGINSWITH "dev.contextify"'
+```
+
+**Quick check:** If your monitoring script shows zero logs, the subsystem doesn't match. Check the Logger declaration in the source file you're debugging.
+
+**Common Contextify subsystems:**
+- `dev.contextify` - General app logs (most components)
+- `dev.contextify.timeline` - ConversationMonitor, TimelineCacheMissGenerator
+- `dev.contextify.metadata` - TranscriptMetadataOrchestrator
+
+**Pro tip:** Use `BEGINSWITH` to capture all subsystems in one predicate.
+
+---
+
 ## Debugging Patterns
 
 ### Pattern 1: Pipeline Completeness Check
