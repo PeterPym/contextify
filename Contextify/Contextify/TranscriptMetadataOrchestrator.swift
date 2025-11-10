@@ -309,6 +309,15 @@ actor TranscriptMetadataOrchestrator {
       let item = pendingQueue.removeFirst()  // Pop from front where newest items are
       pendingKeys.remove(item.id)
 
+      // Notify UI that generation started (for loading indicator)
+      Task { @MainActor in
+        NotificationCenter.default.post(
+          name: .transcriptMetadataGenerationStarted,
+          object: item.id,
+          userInfo: ["transcriptId": item.id]
+        )
+      }
+
       // Log queue state
       let remaining = pendingQueue.count
       log.info("[QUEUE-PROCESS] Processing \(item.id.prefix(8)) (\(remaining) remaining)")
