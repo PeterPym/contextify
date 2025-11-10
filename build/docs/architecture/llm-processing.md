@@ -18,7 +18,7 @@ Contextify uses **two independent LLM processing queues** for different content 
 2. **Transcript Metadata Generation** (TranscriptMetadataOrchestrator)
    - Generates titles, descriptions, and topics for entire transcripts
    - Triggered: When viewing transcript inventory
-   - Queue: Concurrent task-per-transcript (limited concurrency, no pruning yet)
+   - Queue: LIFO with viewport-aware pruning (sequential processing, newest first)
 
 Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
 
@@ -47,9 +47,9 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
         ┌───────────▼──────────────┐ ┌─────▼────────────────────┐
         │ TimelineCacheMissGenerator│ │TranscriptMetadataOrchestrator│
         │                           │ │                          │
-        │ • Queue: LIFO priority    │ │ • Queue: Concurrent tasks│
-        │ • Mode: Sequential only   │ │ • Limit: Circuit breaker │
-        │ • Pruning: Viewport-aware │ │ • Dedup: Active tasks    │
+        │ • Queue: LIFO priority    │ │ • Queue: LIFO priority   │
+        │ • Mode: Sequential only   │ │ • Mode: Sequential only  │
+        │ • Pruning: Viewport-aware │ │ • Pruning: Viewport-aware│
         │ • Cache: SQL keyed by     │ │ • Cache: SQL by hash     │
         │   content+window hash     │ │                          │
         └───────────┬──────────────┘ └─────┬────────────────────┘
@@ -112,14 +112,14 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 - Manual refresh/regeneration
 
 **Processing Model:**
-- **Queue Type:** Concurrent task-per-transcript
-- **Concurrency:** Limited (max 3 concurrent requests to prevent Apple Intelligence overload)
-- **Viewport-Aware:** ⚠️ NOT IMPLEMENTED (hardcoded first-10 load only)
-- **Deduplication:** Active task tracking by transcript URL
+- **Queue Type:** LIFO (newest first) with viewport-aware pruning
+- **Concurrency:** Sequential (one at a time) with backpressure protection
+- **Viewport-Aware:** ✅ Prunes queue to visible sessions on scroll (500ms debounce)
+- **Deduplication:** Remove-and-reinsert to maintain LIFO order
 - **Error Handling:** Circuit breaker (60% failure threshold, 5-minute window)
 - **Cache:** SQL `transcript_metadata` table with hash verification
 
-**Known Issue:** Does not implement viewport-aware pruning like timeline queue. Opening inventory with 490 transcripts can overwhelm Apple Intelligence. See roadmap for planned refactoring.
+**Note:** Matches timeline queue architecture (LIFO, viewport pruning, sequential processing).
 
 **Output:**
 - `title`: "Implement Dark Mode Toggle" (1-8 words)
@@ -425,9 +425,9 @@ From Apple's FoundationModels framework documentation:
 - `maxBatchSize = 1` reflects this constraint (not a tunable parameter)
 
 **Transcript Metadata (TranscriptMetadataOrchestrator):**
-- Attempts concurrent task-per-transcript
-- Limited to max 3 concurrent to prevent overload
-- Each task likely shares same session → sequential bottleneck anyway
+- Uses LIFO queue with sequential processing (same as timeline)
+- Viewport-aware pruning removes invisible items
+- Batch enqueuing with remove-and-reinsert deduplication
 
 **Why "batch" terminology persists in code:**
 Historical artifact. Code structure supports batching (`Array(pendingMisses.prefix(batchSize))`) but `maxBatchSize` is always 1 due to FoundationLLM limitation. The term "batch" is misleading - it's actually sequential single-item processing.
@@ -468,9 +468,9 @@ struct ChatView: View {
 |--------|-------------------|---------------------|
 | **Purpose** | Entry-level summaries | Document-level titles/topics |
 | **Trigger** | Timeline display | Inventory view |
-| **Queue** | FIFO batched | Concurrent tasks |
-| **Batch** | 10 items | N/A (concurrent) |
-| **Rate Limit** | 2s between batches | Circuit breaker |
+| **Queue** | LIFO sequential | LIFO sequential |
+| **Pruning** | Viewport-aware | Viewport-aware |
+| **Rate Limit** | Overload protection | Circuit breaker |
 | **Latency** | ~200ms/item | 2-8s/transcript |
 | **Cache Key** | content+window hash | transcript_id + SHA256 |
 | **Error Strategy** | Per-item retry | Circuit breaker |

@@ -95,7 +95,7 @@ Contextify uses **two independent LLM processing queues** for content generation
 **Key Components:**
 - **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`): Main `@Observable` `@MainActor` component for timeline display. Manages TimelineState, visible entries, and session filtering. Integrates with SQL backend via TranscriptOrchestrator.
 - **TimelineCacheMissGenerator** (`Contextify/Contextify/TimelineCacheMissGenerator.swift`): Queue #1 - LIFO processing for timeline entry summaries. Generates present/past forms with viewport-based pruning and overload protection.
-- **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Queue #2 - Concurrent task processing for transcript titles/descriptions/topics. Includes circuit breaker and SQL caching.
+- **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Queue #2 - LIFO queue with viewport-aware pruning for transcript titles/descriptions/topics. Sequential processing with circuit breaker and SQL caching.
 - **FoundationLLM** (`Contextify/Contextify/FoundationLLM.swift`): Shared integration with Apple's LanguageModel/FoundationModels. **Requires macOS 26.0+**. On older macOS, systems fall back to heuristics (no LLM).
 - **StatusBar** (`Contextify/Contextify/StatusBarView.swift`, `StatusBarViewModel.swift`): Aggregates both LLM queues for unified monitoring. Shows processing status, pending counts, ETAs, and errors.
 - **TimelineModels** (`Contextify/Contextify/TimelineModels.swift`): Timeline-specific data models (TimelineEntry, CacheKey, Disposition).
