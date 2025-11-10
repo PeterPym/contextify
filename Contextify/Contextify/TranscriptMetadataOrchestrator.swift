@@ -114,7 +114,8 @@ actor TranscriptMetadataOrchestrator {
     var skippedDuplicates = 0
 
     // Add to LIFO queue with deduplication
-    for session in sessions {
+    // Enqueue in reverse order so newest sessions (at start of array) end up at front of queue
+    for session in sessions.reversed() {
       let transcriptId = session.identifier
 
       // Skip if already queued
