@@ -233,6 +233,40 @@ curl -H "Authorization: Bearer $GITHUB_TOKEN" \
   | grep '"status"\|"conclusion"'
 ```
 
+### Downloading Build Logs
+
+Download complete build logs (including compilation errors) as a ZIP archive:
+
+```bash
+# Get run ID from trigger script output or GitHub Actions UI
+RUN_ID=19217497540
+
+# Download logs ZIP file
+curl -L \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  -o build-logs-${RUN_ID}.zip \
+  https://api.github.com/repos/banagale/contextify/actions/runs/${RUN_ID}/logs
+
+# Extract logs
+unzip build-logs-${RUN_ID}.zip
+
+# Search for Swift compilation errors
+grep -h "error:" *.txt | grep -i "\.swift"
+```
+
+**Note:** All three headers are required:
+- `Accept: application/vnd.github+json` - Request GitHub's JSON API format
+- `Authorization: Bearer $GITHUB_TOKEN` - Authenticate with your token
+- `X-GitHub-Api-Version: 2022-11-28` - Specify API version for compatibility
+
+The downloaded ZIP contains:
+- `0_build.txt` - Main build job logs with compilation output
+- Other job logs if applicable
+
+**Tip:** Use this to debug build failures when the GitHub UI is not accessible or you need to process logs programmatically.
+
 ### Trigger from Python
 
 If you prefer Python:
