@@ -47,6 +47,7 @@ struct TranscriptInventoryView: View {
   @State private var showingCleanupConfirmation = false
   @State private var cleanupResult: (count: Int, ids: [String])? = nil
   @State private var showingCleanupAlert = false
+  @AppStorage("transcript.hideBriefSessions") private var hideBriefSessions = false
 
   private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
 
@@ -110,34 +111,32 @@ struct TranscriptInventoryView: View {
           }
           Spacer()
 
-          if devMode.isEnabled {
-            Button {
-              flushHeuristicCache()
-            } label: {
-              Label("Flush Heuristic Cache", systemImage: "trash")
-                .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderless)
-            .help("Clear cached placeholder titles")
-
-            Button {
+          Menu {
+            Button("Refresh Sessions") {
               refreshSessions()
-            } label: {
-              Label("Refresh", systemImage: "arrow.clockwise")
-                .labelStyle(.iconOnly)
             }
-            .buttonStyle(.borderless)
-            .help("Refresh transcript list")
-
-            Button {
-              showingCleanupConfirmation = true
-            } label: {
-              Label("Clean Up Missing Files", systemImage: "trash.circle")
-                .labelStyle(.iconOnly)
+            Toggle("Hide Brief Sessions", isOn: $hideBriefSessions)
+            if devMode.isEnabled {
+              Divider()
+              Button {
+                flushHeuristicCache()
+              } label: {
+                Label("Flush Heuristic Cache", systemImage: "trash")
+              }
+              Button {
+                showingCleanupConfirmation = true
+              } label: {
+                Label("Clean Up Missing Files", systemImage: "trash.circle")
+              }
             }
-            .buttonStyle(.borderless)
-            .help("Delete transcript records for files that no longer exist")
+          } label: {
+            Image(systemName: "ellipsis")
+              .foregroundStyle(.secondary)
+              .padding(6)
+              .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
           }
+          .menuStyle(.borderlessButton)
+          .fixedSize()
         }
       }
       .padding()
@@ -776,6 +775,11 @@ struct TranscriptInventoryView: View {
       sessions = sessions.filter { $0.entryCount == 0 }
     case .all:
       break // No filter
+    }
+
+    // Apply brief sessions filter
+    if hideBriefSessions {
+      sessions = sessions.filter { $0.entryCount >= 3 }
     }
 
     // Apply search filter
