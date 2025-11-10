@@ -251,7 +251,10 @@ struct TranscriptInventoryView: View {
         // Ensure sessions are persisted before loading metadata
         await persistDiscoveredSessions(monitor.allSessions)
 
-        // Metadata loading now handled by viewport tracking - no bulk load on appear
+        // Load cached metadata for all sessions on initial appearance
+        // (viewport tracking will handle subsequent updates and generation queue)
+        log.info("[META-INIT] Loading cached metadata for \(monitor.allSessions.count) sessions on initial appearance")
+        await loadMetadataForSessions(monitor.allSessions)
       }
       .onDisappear {
         // Cancel pending debounce tasks to prevent leaks
