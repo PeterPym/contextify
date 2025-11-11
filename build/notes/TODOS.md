@@ -1,8 +1,136 @@
 # High-Priority TODOs
 
 **Status:** Active
-**Last Updated:** 2025-11-10
+**Last Updated:** 2025-11-11
 **Priority Level:** P0 (Blocking release)
+
+---
+
+## Post-Merge First-Launch Issues (P0)
+
+**Status:** Not Started
+**Priority:** P0 (Critical UX issues)
+**Severity:** High (Core functionality broken)
+**Target Completion:** Immediate
+
+### Issue 1: Project Ingestion Order Doesn't Match Tab Order
+
+**Problem:** During first-launch ingestion, projects are processed in filesystem order, not display_order from database. Project tabs appear empty until all projects are processed, even though the user's active project may be discovered early.
+
+**User Impact:** User sees empty timeline for their active project while unrelated projects are being hoovered.
+
+**Expected Behavior:** Hoover projects in display_order (tab bar order), prioritizing left-to-right so active project populates first.
+
+**Tasks:**
+- [ ] **[FLU1.1]** Modify `ProjectActivityMonitor.discoverAllProjects()` to sort by display_order
+- [ ] **[FLU1.2]** Ensure active project is hoovered first (override if needed)
+- [ ] **[FLU1.3]** Test: active project timeline populates within 2s on first launch
+
+**Files:**
+- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift` (discoverAllProjects)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (listProjects query)
+
+**Estimated Effort:** 2-3 hours
+
+---
+
+### Issue 2: Broken Projects Show in Tab Bar with Warning Icons
+
+**Problem:** Projects with errors (3 instances: "test-project", "test-project", "test") appear in tab bar with orange warning icons. No way to identify what's wrong or remove them.
+
+**Observed:** Three broken projects with warning icons in screenshot.
+
+**Questions:**
+- What makes these projects invalid?
+- Are they missing transcript files?
+- Are they from deleted directories?
+- Are they corrupted metadata?
+
+**Expected Behavior:** Invalid projects should:
+- NOT appear in main tab bar (clutters UI)
+- Appear in Transcripts Inventory with clear error states
+- Show actionable error messages ("Directory not found", "No transcripts", etc.)
+- Provide "Remove Project" or "Fix" actions
+
+**Tasks:**
+- [ ] **[FLU2.1]** Identify why test-project (2x) and test have warning icons
+- [ ] **[FLU2.2]** Add validation during project discovery (skip invalid projects)
+- [ ] **[FLU2.3]** Move broken projects to separate "Broken Projects" section in Transcripts window
+- [ ] **[FLU2.4]** Add context menu: "Show Error", "Remove Project"
+- [ ] **[FLU2.5]** Add database field: `error_state` to projects table
+
+**Files:**
+- `Contextify/Contextify/ProjectSwitcherView.swift` (warning icon rendering)
+- `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift` (validation)
+- `Contextify/Contextify/TranscriptInventoryView.swift` (broken projects UI)
+
+**Estimated Effort:** 4-5 hours
+
+---
+
+### Issue 3: Timeline Summary Auto-Generation Doesn't Work
+
+**Problem:** LLM summaries for conversation log entries don't generate automatically when entries appear in viewport. User must manually trigger or entries remain without summaries.
+
+**Context:** Recent work attempted to fix viewport-based summary queueing but issue persists.
+
+**Expected Behavior:**
+- Entries in viewport should queue for summarization automatically
+- Summaries should appear within 2-5 seconds
+- No manual intervention required
+
+**Hypothesis:**
+- Viewport tracking may not be firing correctly
+- LLM queue may not be receiving entries
+- Circuit breaker may be blocking requests
+- ConversationMonitor → TimelineCacheMissGenerator integration broken
+
+**Tasks:**
+- [ ] **[FLU3.1]** Verify `updateVisibleEntries()` is called when entries appear
+- [ ] **[FLU3.2]** Verify `queueVisibleGeneratingEntries()` receives correct entry IDs
+- [ ] **[FLU3.3]** Check TimelineCacheMissGenerator queue status (is it empty?)
+- [ ] **[FLU3.4]** Add debug logging for viewport → queue flow
+- [ ] **[FLU3.5]** Test: clean database, load timeline, verify summaries appear
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (viewport tracking)
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (queue management)
+- `Contextify/Contextify/ConversationTimelineView.swift` (viewport updates)
+
+**Estimated Effort:** 3-4 hours
+
+**Reference:** `build/docs/components/timeline-cache.md`
+
+---
+
+### Issue 4: Welcome Modal Copy Cleanup
+
+**Problem:** Welcome modal has rough/incomplete copy:
+- "Run in Background" button should be removed (no longer relevant)
+- Instructional text could be clearer
+- Progress messaging needs polish
+
+**Tasks:**
+- [ ] **[FLU4.1]** Remove "Run in Background" button from WelcomeModalView
+- [ ] **[FLU4.2]** Review and improve welcome text clarity
+- [ ] **[FLU4.3]** Polish progress messaging ("Discovering projects..." → "Found 5 projects, ingesting...")
+- [ ] **[FLU4.4]** Add dismissal confirmation if user closes during ingestion
+
+**Files:**
+- `Contextify/Contextify/WelcomeModalView.swift`
+
+**Estimated Effort:** 1-2 hours
+
+---
+
+## Success Criteria (All Issues)
+
+- [ ] Active project timeline populates within 2s on first launch
+- [ ] No broken projects in tab bar (validation prevents them)
+- [ ] Broken projects appear in Transcripts window with actionable errors
+- [ ] Timeline summaries generate automatically for visible entries
+- [ ] Welcome modal copy is clear and actionable
+- [ ] No "Run in Background" button in welcome modal
 
 ---
 
