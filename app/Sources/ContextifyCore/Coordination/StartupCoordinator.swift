@@ -126,15 +126,16 @@ public final class StartupCoordinator {
     /// 1. `CONTEXTIFY_PROJECT_ROOT` environment variable
     /// 2. Persisted bookmark/path from UserDefaults
     /// 3. Current working directory (CWD)
-    /// 4. Error if none available
+    /// 4. **Graceful fallback:** If none available, enters "no project" state
+    ///    and posts `Notification.Name.startupRequiresWelcomeModal`
     ///
     /// Then ensures project exists in database and publishes context.
     ///
     /// **Thread Safety:** @MainActor isolated, but database operations run off-main.
     /// **Idempotent:** Safe to call multiple times (no-op after first call).
     ///
-    /// - Throws: `StartupError` if project resolution fails
-    public func start() async throws {
+    /// - Throws: Never throws (gracefully handles missing project)
+    public func start() async {
         guard !isStarted else {
             log.warning("StartupCoordinator.start() called while already started (no-op)")
             return
@@ -142,13 +143,42 @@ public final class StartupCoordinator {
 
         log.info("🚀 StartupCoordinator starting...")
 
-        // Phase 1: Resolve project root
-        let resolvedPath = try await resolveProjectRoot()
-        log.info("📁 Resolved project root: \(resolvedPath, privacy: .public)")
+        // Phase 1: Resolve project root (with graceful failure)
+        let resolvedPath: String
+        do {
+            resolvedPath = try await resolveProjectRoot()
+            log.info("📁 Resolved project root: \(resolvedPath, privacy: .public)")
+        } catch StartupError.noProjectRootAvailable {
+            // Graceful fallback: no project configured yet (first launch scenario)
+            log.info("ℹ️  No project configured - entering discovery mode")
 
-        // Phase 2: Ensure DB project exists
-        let projectId = try await ensureProjectInDatabase(path: resolvedPath)
-        log.info("✅ Project ID: \(projectId, privacy: .public)")
+            // Mark as started (prevent infinite loops)
+            isStarted = true
+
+            // Post notification to trigger welcome modal
+            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+
+            log.notice("⏸️  StartupCoordinator ready (no project - awaiting discovery)")
+            return
+        } catch {
+            // Unexpected error - still fail gracefully
+            log.error("❌ Unexpected error during project resolution: \(error.localizedDescription)")
+            isStarted = true
+            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+            return
+        }
+
+        // Phase 2: Ensure DB project exists (empty DB check moved to ContextifyApp to avoid race)
+        let projectId: String
+        do {
+            projectId = try await ensureProjectInDatabase(path: resolvedPath)
+            log.info("✅ Project ID: \(projectId, privacy: .public)")
+        } catch {
+            log.error("❌ Failed to create project in database: \(error.localizedDescription)")
+            isStarted = true
+            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+            return
+        }
 
         // Phase 3: Resolve git branch
         let branch = await resolveGitBranch(path: resolvedPath)
@@ -518,7 +548,13 @@ extension Notification.Name {
     /// Posted when the active project context changes.
     ///
     /// The notification object is the new `ActiveProjectContext`.
-    static let activeProjectContextDidChange = Notification.Name("dev.contextify.activeProjectContextDidChange")
+    public static let activeProjectContextDidChange = Notification.Name("dev.contextify.activeProjectContextDidChange")
+
+    /// Posted when startup requires showing the welcome modal.
+    ///
+    /// Triggered when no project root is available on first launch.
+    /// UI should show welcome modal with discovery progress.
+    public static let startupRequiresWelcomeModal = Notification.Name("dev.contextify.startupRequiresWelcomeModal")
 }
 
 // MARK: - URL Extension for Bookmark Data

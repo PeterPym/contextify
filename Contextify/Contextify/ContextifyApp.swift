@@ -6,6 +6,12 @@ import OSLog
 import FoundationModels
 #endif
 
+// MARK: - Discovery Errors
+
+enum DiscoveryError: Error {
+  case timeout
+}
+
 struct WindowCommands: Commands {
   @Environment(\.openWindow) private var openWindow
 
@@ -165,6 +171,7 @@ struct ContextifyApp: App {
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
+  @State private var showWelcomeModal = false  // C3.2: Welcome modal state
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
@@ -205,32 +212,75 @@ struct ContextifyApp: App {
       #endif
 
       // PHASE 1: Start coordinator FIRST (establishes project identity)
-      do {
-        try await StartupCoordinator.shared.start()
-        startupLog.info("✅ StartupCoordinator started successfully")
-      } catch {
-        startupLog.error("❌ StartupCoordinator failed: \(error.localizedDescription)")
-        // Continue anyway - ProjectSwitcherState will handle missing context gracefully
-      }
+      // Note: start() now gracefully handles "no project" state (never throws)
+      await StartupCoordinator.shared.start()
+      startupLog.info("✅ StartupCoordinator started successfully")
 
       // PHASE 2: Start dependent systems (now safe - coordinator has published context)
       ProjectSwitcherState.shared.start()
       startupLog.info("✅ ProjectSwitcherState started")
+
+      // PHASE 3: Subscribe to welcome modal trigger (C3.3)
+      // Note: Using onReceive in view body instead of manual NotificationCenter
+      // to work with SwiftUI's state management (@State cannot be mutated from closure)
     }
   }
 
   var body: some Scene {
     Window("Contextify", id: "main") {
-      ContentView()
-        .environment(model)
-        .environment(timeline)
-        .environment(DeveloperMode.shared)
-        .environment(ProjectSwitcherState.shared)  // Inject singleton so UI uses same instance
-        .background(WindowAccessor())
-        .task {
-          // Initialize projects system and auto-discover at app launch
-          await initializeProjectsSystem()
+      Group {
+        if let vm = projectsViewModel {
+          // C2.2: Pass ProjectsViewModel via environment
+          ContentView()
+            .environment(model)
+            .environment(timeline)
+            .environment(DeveloperMode.shared)
+            .environment(ProjectSwitcherState.shared)
+            .environment(vm)  // Add ProjectsViewModel
+            .background(WindowAccessor())
+            .sheet(isPresented: $showWelcomeModal) {
+              // C3.4: Welcome modal sheet
+              // User must manually dismiss to ensure they see progress complete
+              WelcomeModalView()
+                .environment(vm)
+                .interactiveDismissDisabled(vm.isDiscovering || vm.isIngesting)
+            }
+        } else {
+          // Initialization loading state (brief)
+          VStack(spacing: 12) {
+            ProgressView()
+            Text("Initializing...")
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+      }
+      .task {
+        // C2.1: Initialize ProjectsViewModel early
+        if projectsViewModel == nil {
+          do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let discoveryService = ProjectDiscoveryService(
+              db: try DatabaseManager.shared.pool,
+              orchestrator: orchestrator
+            )
+            let vm = ProjectsViewModel(
+              discoveryService: discoveryService,
+              hudModel: HUDViewModel.shared
+            )
+            self.projectsViewModel = vm
+          } catch {
+            let log = Logger(subsystem: "dev.contextify", category: "Startup")
+            log.error("Failed to initialize ProjectsViewModel: \(error.localizedDescription)")
+          }
+        }
+
+        // Initialize projects system and auto-discover at app launch
+        await initializeProjectsSystem()
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
+        showWelcomeModal = true
+      }
     }
     .defaultSize(width: 1200, height: 360)  // Timeline-only default for v1.0
     .windowToolbarStyle(.unified)
@@ -325,26 +375,152 @@ struct ContextifyApp: App {
     log.info("🔍 Initializing projects system at app launch")
 
     do {
-      // Initialize projects view model
-      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      // Initialize projects view model (C2.1 - may already be set from window .task)
+      if projectsViewModel == nil {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        let discoveryService = ProjectDiscoveryService(
+          db: try DatabaseManager.shared.pool,
+          orchestrator: orchestrator
+        )
+        let vm = ProjectsViewModel(
+          discoveryService: discoveryService,
+          hudModel: HUDViewModel.shared
+        )
+        self.projectsViewModel = vm
+      }
+
+      guard let vm = projectsViewModel else {
+        log.error("ProjectsViewModel not available")
+        return
+      }
+
+      // Check if database is empty BEFORE starting discovery
+      // This avoids race condition where ingestion completes before we check
+      let isEmptyDB: Bool
+      do {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        isEmptyDB = (try? orchestrator.listProjects().isEmpty) ?? false
+        if isEmptyDB {
+          log.info("📋 Empty database detected - showing welcome modal before discovery starts")
+          // Post notification to show welcome modal BEFORE discovery starts
+          await MainActor.run {
+            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+          }
+        }
+      } catch {
+        log.warning("Failed to check if database is empty: \(error.localizedDescription)")
+        isEmptyDB = false
+      }
 
       // Reconcile pending assistant_usage records at startup
-      try? orchestrator.reconcileAssistantUsage()
+      do {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        try orchestrator.reconcileAssistantUsage()
+      } catch {
+        log.warning("Failed to reconcile assistant usage: \(error.localizedDescription)")
+      }
 
-      let discoveryService = ProjectDiscoveryService(
-        db: try DatabaseManager.shared.pool,
-        orchestrator: orchestrator
-      )
-      let vm = ProjectsViewModel(
-        discoveryService: discoveryService,
-        hudModel: HUDViewModel.shared
-      )
-      self.projectsViewModel = vm
+      // Reset display_order for first-launch sorting by activity
+      // (On fresh database, all projects should sort by newest entry, not persisted order)
+      do {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        try orchestrator.resetDisplayOrder()
+        log.info("🔄 Reset display_order for activity-based sorting")
+      } catch {
+        log.warning("Failed to reset display_order: \(error.localizedDescription)")
+      }
 
-      // Auto-discover all projects at launch
+      // Auto-discover all projects at launch with timeout protection (60s max)
       log.info("🔍 Starting auto-discovery at app launch")
-      await vm.discoverProjects()
-      log.info("✅ Auto-discovery complete")
+
+      do {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          // Discovery task
+          group.addTask {
+            await vm.discoverProjects()
+          }
+
+          // Timeout task (60 seconds max)
+          group.addTask {
+            try await Task.sleep(for: .seconds(60))
+            throw DiscoveryError.timeout
+          }
+
+          // Wait for first to complete
+          try await group.next()
+          group.cancelAll()
+        }
+        log.info("✅ Auto-discovery complete")
+      } catch is DiscoveryError {
+        log.error("❌ Discovery timed out after 60s")
+        // Continue with whatever projects were found
+      }
+
+      // Reset display_order AFTER ingestion so projects sort by activity
+      // (getOrCreateProject assigns incrementing display_order during ingestion)
+      do {
+        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        try orchestrator.resetDisplayOrder()
+        log.info("[BACKEND-RESET-POST] Reset display_order after ingestion complete")
+      } catch {
+        log.warning("Failed to reset display_order after ingestion: \(error.localizedDescription)")
+      }
+
+      // C4.2: Auto-select most recent project if coordinator has no current project
+      // Fix: Use MainActor.run for atomic check-and-set to prevent TOCTOU race
+      await MainActor.run {
+        // Only proceed if still no project (atomic check)
+        guard StartupCoordinator.shared.current == nil, !vm.projects.isEmpty else {
+          if StartupCoordinator.shared.current != nil {
+            // Normal launch with existing project - keep modal open until timeline populated
+            // Modal will auto-dismiss once user has content to view
+            log.debug("Normal launch with existing project - keeping modal open until content ready")
+          } else {
+            // C6.1: No projects found - keep modal open to show "no projects" state
+            log.warning("⚠️  Discovery complete but no projects found")
+          }
+          return
+        }
+
+        // Atomically perform selection within MainActor context
+        Task {
+          do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+
+            // Try to get project with newest transcript entry (most recent work)
+            if let mostRecent = try orchestrator.getProjectWithNewestEntry() {
+              log.notice("🎯 Auto-selecting project with newest entry: \(mostRecent.rootPath, privacy: .public)")
+              try await StartupCoordinator.shared.switchProject(to: mostRecent.rootPath)
+            } else if let first = vm.projects.first {
+              // Fallback: select first discovered project
+              log.notice("🎯 Auto-selecting first discovered project: \(first.name)")
+              try await StartupCoordinator.shared.switchProject(to: first.path.path)
+            }
+
+            // Wait for timeline to start monitoring before closing modal
+            log.info("⏳ Waiting for timeline to initialize...")
+            try await Task.sleep(for: .milliseconds(500))
+
+            // Show completion message with happy emoji
+            await MainActor.run {
+              vm.setDiscoveryProgress(DiscoveryProgress(
+                phase: .complete,
+                projectsCompleted: vm.projects.count,
+                projectsTotal: vm.projects.count,
+                message: "🎉 Initial setup complete! Welcome to Contextify"
+              ))
+            }
+
+            // C4.3: Leave modal open - let user click "Get Started" button
+            // (Auto-dismiss was causing UX issues - user should control when to close)
+            log.info("✅ Auto-selection complete, modal showing completion state")
+
+          } catch {
+            log.error("Failed to auto-select project: \(error.localizedDescription, privacy: .public)")
+            // Keep modal open so user can see error state or manually select
+          }
+        }
+      }
 
       // Post notification for coordination
       NotificationCenter.default.post(
