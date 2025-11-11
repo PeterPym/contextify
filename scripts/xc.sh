@@ -325,16 +325,21 @@ run_xcodebuild() {
 # Build for the selected distribution
 run_build_for_dist() {
   local selected_scheme="$scheme_dmg"
-  local selected_entitlements="$entitlements_dmg"
-
-  if [[ "$dist" == "appstore" ]]; then
-    selected_scheme="$scheme_appstore"
-    selected_entitlements="$entitlements_appstore"
-  fi
+  local target_entitlements="Contextify/Contextify.entitlements"  # File Xcode actually uses
+  local backup_entitlements="Contextify/Contextify.entitlements.bak"
 
   echo "Building for distribution: $dist"
-  echo "  Scheme: $selected_scheme"
-  echo "  Entitlements: $selected_entitlements"
+
+  # Swap entitlements file if building App Store variant
+  if [[ "$dist" == "appstore" ]]; then
+    echo "  Using App Store entitlements (sandboxed)"
+    # Backup original
+    cp "$target_entitlements" "$backup_entitlements" 2>/dev/null || true
+    # Copy App Store entitlements to expected location
+    cp "$entitlements_appstore" "$target_entitlements"
+  else
+    echo "  Using DMG entitlements (unsandboxed)"
+  fi
 
   # Determine signing approach
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
@@ -344,15 +349,18 @@ run_build_for_dist() {
       -derivedDataPath "$dd" \
       CODE_SIGN_IDENTITY="-" \
       DEVELOPMENT_TEAM="" \
-      CODE_SIGN_ENTITLEMENTS="$selected_entitlements" \
       build
   else
-    # Local: use Xcode project settings with selected entitlements
+    # Local: use Xcode project settings
     run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
       -configuration "$config" -destination "platform=macOS" \
       -derivedDataPath "$dd" \
-      CODE_SIGN_ENTITLEMENTS="$selected_entitlements" \
       build
+  fi
+
+  # Restore original entitlements if we swapped them
+  if [[ "$dist" == "appstore" && -f "$backup_entitlements" ]]; then
+    mv "$backup_entitlements" "$target_entitlements"
   fi
 
   app_path="$dd/Build/Products/$config/Contextify.app"
