@@ -157,7 +157,26 @@ final class ConversationMonitor {
         "proceed", "change it to", "ensure ", "run ", "fix ", "update ", "refactor ", "implement "
     ]
 
+    /// Explicit phase tracking for timeline state machine
+    enum Phase: String {
+        case cold      // Not yet loaded
+        case loading   // SQL fetch in progress
+        case loaded    // Feed loaded successfully
+        case failed    // Load failed
+    }
+
     private let state = TimelineState()
+
+    /// Timeline load phase (tracked, drives UI state)
+    private(set) var phase: Phase = .cold
+
+    /// Revision counter to force SwiftUI updates when entries change
+    /// This ensures the UI reacts to state.entries changes
+    /// Note: We track both entriesRevision (incremented manually) and state.revision (incremented by TimelineState)
+    private(set) var entriesRevision: Int = 0
+
+    /// Expose state revision for SwiftUI observation (state itself is private let, so changes don't propagate)
+    var stateRevision: UInt64 { state.revision }
 
     /// Read-only view over state.entries (single source of truth)
     var entries: [TimelineEntry] { state.entries }
@@ -169,6 +188,9 @@ final class ConversationMonitor {
     /// No filtering by session - timeline shows chronological view across all sessions
     /// Limited for performance (tuneable via visibleEntryLimit)
     var visibleEntries: [TimelineEntry] {
+        // Force SwiftUI to track this property by reading both revision counters
+        _ = entriesRevision  // Manually incremented
+        _ = stateRevision    // Auto-incremented by TimelineState (must use public property for observation)
         let n = max(visibleEntryLimit, 1)
         return state.entries.count > n
           ? Array(state.entries.suffix(n))
@@ -219,11 +241,15 @@ final class ConversationMonitor {
     // This pattern has been suggested for removal multiple times but MUST be kept.
     @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?   // For cache update notifications
     @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol? // For project root change notifications
+    @ObservationIgnored nonisolated(unsafe) private var projectsDiscoveryObserver: NSObjectProtocol? // For projects discovery completion
+    @ObservationIgnored nonisolated(unsafe) private var hooveringProgressObserver: NSObjectProtocol? // For incremental hoovering progress
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
+    @ObservationIgnored private var progressDebounceTask: Task<Void, Never>?  // Debounce task for progress notifications
+    @ObservationIgnored private var lastProgressRefreshTime: Date?  // Track last progress refresh to enforce minimum interval
     @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
     @ObservationIgnored private var pendingCacheKeys: Set<CacheKey> = []  // CXT-13: Accumulated cache keys
 
@@ -275,6 +301,13 @@ final class ConversationMonitor {
         // even if monitoring hasn't started yet
         setupProjectChangeNotifications()
 
+        // Set up projects discovery notifications early, so we can react to ingestion completion
+        // even during startup before monitoring is active
+        setupProjectsDiscoveryNotifications()
+
+        // Set up hoovering progress notifications for incremental timeline updates
+        setupHooveringProgressNotifications()
+
         // Subscribe to coordinator updates for project context changes
         subscribeToContextUpdates()
 
@@ -321,6 +354,9 @@ final class ConversationMonitor {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = cacheUpdateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = projectsDiscoveryObserver {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = appLifecycleObserver {
@@ -381,15 +417,16 @@ final class ConversationMonitor {
 
                 // Verify project was persisted (forces read from DB, ensures commit)
                 // Use projectId parameter directly (already have it from function arg)
-                guard let _ = try orch.getProject(id: projectId) else {
+                // Note: Non-fatal check - if project doesn't exist yet (race condition during
+                // startup before ingestion), we proceed anyway and reload after ingestion completes
+                if let _ = try orch.getProject(id: projectId) {
                     await MainActor.run {
-                        self.lastError = "Failed to verify project creation"
-                        self.log.error("❌ Project \(projectId) not found after creation")
+                        self.log.info("✅ Project \(projectId) verified in database")
                     }
-                    return
-                }
-                await MainActor.run {
-                    self.log.info("✅ Project \(projectId) verified in database")
+                } else {
+                    await MainActor.run {
+                        self.log.warning("⚠️ Project \(projectId) not in database yet (startup race condition), will refresh after ingestion completes")
+                    }
                 }
 
                 // 3. Shutdown old cache miss generator with chained shutdown (CXT-1)
@@ -481,33 +518,17 @@ final class ConversationMonitor {
                     await TranscriptMetadataOrchestrator.shared.initialize(orchestrator: orchestrator)
 
                     await withTaskGroup(of: Void.self) { group in
-                        // Task 1: Discovery loop (structured, cancellable)
-                        group.addTask { [weak self] in
-                            guard let self else { return }
-                            do {
-                                try await self.discoverNewTranscripts(projectId: projectId, orchestrator: orchestrator)
-                            } catch is CancellationError {
-                                return
-                            } catch {
-                                await MainActor.run {
-                                    self.log.error("Background discovery failed: \(error.localizedDescription, privacy: .public)")
-                                }
-                            }
-                        }
+                        // NOTE: Discovery Task removed - ProjectActivityMonitor handles all transcript
+                        // discovery via FSEvents. Redundant filesystem scanning removed.
 
-                        // Task 2: Debounced transcript updates
+                        // Task 1: Debounced transcript updates
                         group.addTask { [weak self] in
                             await self?.watchForDebouncedTranscriptUpdates()
                         }
 
-                        // Task 3: Health monitoring with auto-recovery
+                        // Task 2: Health monitoring with auto-recovery
                         group.addTask { [weak self] in
                             await self?.runHealthMonitoring(projectId: projectId, orchestrator: orchestrator)
-                        }
-
-                        // Task 4: Fallback polling (in case FSEvents fails)
-                        group.addTask { [weak self] in
-                            await self?.runFallbackPolling(projectId: projectId, orchestrator: orchestrator)
                         }
                     }
                 }
@@ -525,7 +546,7 @@ final class ConversationMonitor {
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
                 await MainActor.run {
                     self.setupCacheUpdateNotifications()
-                    // Project change notifications already set up in init()
+                    // Project change and projects discovery notifications already set up in init()
 
                     self.isMonitoring = true
                     self.isInitializing = false  // Clear flag after successful initialization
@@ -724,13 +745,17 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
+        log.info("[TIMELINE-APPEND] setEntries \(new.count) (primer)")
         state.replace(with: new)
+        entriesRevision += 1  // Force SwiftUI update
+        log.info("[VIEWPORT-UPDATE] visibleEntries.count → \(self.visibleEntries.count)")
     }
 
     @MainActor
     private func appendEntry(_ e: TimelineEntry) {
         let beforeCount = state.entries.count
         state.append(e)
+        entriesRevision += 1  // Force SwiftUI update
         let afterCount = state.entries.count
 
         log.info("[TIMELINE-APPEND] Entry appended: \(e.id, privacy: .public) kind: \(e.kind.rawValue, privacy: .public) timestamp: \(e.timestamp, privacy: .public) timeline_count: \(beforeCount, privacy: .public)→\(afterCount, privacy: .public)")
@@ -1121,6 +1146,12 @@ final class ConversationMonitor {
     private func loadFeedFromSQL() async {
         guard let projectId = currentProjectId, orchestrator != nil else { return }
 
+        log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId)")
+
+        // Set loading phase (tracked by UI)
+        phase = .loading
+        log.info("[UIOPT-BRANCH] phase → loading")
+
         // P1-1: Hold isReadyForUpdates=false during initial load to prevent append races
         let priorReady = isReadyForUpdates
         isReadyForUpdates = false
@@ -1132,8 +1163,8 @@ final class ConversationMonitor {
         do {
             let startTime = Date()
             log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId)")
-            log.info("[UIOPT-SQL-QUERY] Executing getRecentFeed query...")
 
+            log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
             // Single query gets entries + cache
             // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
             let feed = try orchestrator.getRecentFeed(
@@ -1141,10 +1172,11 @@ final class ConversationMonitor {
                 limit: config.maxEntries,
                 generatorSignature: generatorSignature()
             )
+            log.info("[UIOPT-AWAIT] after DAO.getRecentFeed; count=\(feed.count)")
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
-            log.info("[UIOPT-SQL-QUERY] Query completed: \(feed.count, privacy: .public) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
+            log.info("[TIMELINE-LOAD] DAO.fetchPrimerEntries \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
 
             // Build transcript ID → file path lookup map
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
@@ -1196,20 +1228,32 @@ final class ConversationMonitor {
             let uiUpdateStart = Date()
             log.info("[UIOPT-UI-UPDATE] Updating timeline UI with \(newEntries.count, privacy: .public) entries...")
 
-            // Disable animations during bulk feed replace to reduce layout/animation costs
-            withAnimation(nil) {
-                setEntries(newEntries)
-                sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
-                pruneSeenIDsIfNeeded()
-            }
+            // Update state (ensure SwiftUI reactivity)
+            setEntries(newEntries)
+            sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
+            pruneSeenIDsIfNeeded()
 
             log.info("[UIOPT-UI-UPDATE] UI updated in \(String(format: "%.0f", Date().timeIntervalSince(uiUpdateStart) * 1000), privacy: .public)ms")
+            log.info("[UIOPT-YIELD] post-setEntries scheduling UI tick")
+            await Task.yield()  // Let UI process state change
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // NOTE: Initial queueing now handled by aggregate visibility tracking (onScrollTargetVisibilityChange)
-            // The first settled visibility snapshot will queue exactly what's on screen, no guessing.
-            if misses.isEmpty {
+            // Queue visible entries immediately after load
+            // Viewport tracking can be unreliable during modal display, so we queue explicitly here
+            if !misses.isEmpty, let generator = cacheMissGenerator {
+                // Use actual viewport state if available, otherwise estimate last ~12 entries (newest at end)
+                let estimatedVisible = Set(misses.suffix(12).map { UUID(uuidString: $0.entryId)! })
+                let visibleIDs: Set<UUID> = lastVisibleIDs.isEmpty ? estimatedVisible : lastVisibleIDs
+                let visibleMisses = misses.filter { UUID(uuidString: $0.entryId).map { visibleIDs.contains($0) } ?? false }
+
+                if !visibleMisses.isEmpty {
+                    log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries after load")
+                    Task {
+                        await generator.queueMisses(visibleMisses)
+                    }
+                }
+            } else if misses.isEmpty {
                 log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
             }
 
@@ -1223,8 +1267,11 @@ final class ConversationMonitor {
 
             lastUpdate = Date()
             lastError = nil
+            phase = .loaded  // Mark as successfully loaded
+            log.info("[UIOPT-BRANCH] phase → loaded")
 
             let elapsed = Date().timeIntervalSince(startTime)
+            log.info("[TIMELINE-LOAD] primer complete in \(Int(elapsed * 1000))ms")
             if elapsed > 0.02 {
                 log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
             }
@@ -1236,6 +1283,7 @@ final class ConversationMonitor {
         } catch {
             lastError = "Failed to load timeline: \(error.localizedDescription)"
             log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
+            phase = .failed  // Mark as failed
         }
     }
 
@@ -1353,6 +1401,83 @@ final class ConversationMonitor {
 
                     await self.refreshCachedEntries(keys: keysToRefresh)
                 }
+            }
+        }
+    }
+
+    private func setupProjectsDiscoveryNotifications() {
+        // Listen for projects metadata discovery completion
+        // NOTE: This notification fires after ProjectDiscoveryService upserts transcript records,
+        // but BEFORE ProjectActivityMonitor completes hoovering. Timeline may be empty initially.
+        projectsDiscoveryObserver = NotificationCenter.default.addObserver(
+            forName: .projectsIngestionComplete,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.log.info("📨 [TIMELINE-REFRESH-INGESTION] Received projectsIngestionComplete notification")
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    self?.log.warning("⚠️ [TIMELINE-REFRESH-INGESTION] Self was deallocated")
+                    return
+                }
+
+                self.log.info("🔄 [TIMELINE-REFRESH-INGESTION] Metadata discovery complete, reloading timeline (may be empty until hoovering finishes)...")
+                self.log.info("🔍 [TIMELINE-REFRESH-INGESTION] isMonitoring=\(self.isMonitoring) (refreshing regardless)")
+
+                await self.loadFeedFromSQL()
+                self.log.info("✅ [TIMELINE-REFRESH-INGESTION] Timeline feed reloaded (\(self.state.entries.count) entries - hoovering continues in background)")
+            }
+        }
+    }
+
+    private func setupHooveringProgressNotifications() {
+        // Listen for incremental hoovering progress (first 3, then every 10 transcripts)
+        // Enables timeline to populate as soon as newest transcripts are hoovered
+        hooveringProgressObserver = NotificationCenter.default.addObserver(
+            forName: .transcriptHooveringProgress,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+
+            // Only refresh if notification is for our active project
+            guard let projectId = notification.object as? String,
+                  projectId == self.currentProjectId else {
+                self.log.debug("[TIMELINE-REFRESH-PROGRESS] Ignoring progress notification for different project")
+                return
+            }
+
+            let count = notification.userInfo?["transcriptCount"] as? Int ?? 0
+            let total = notification.userInfo?["totalTranscripts"] as? Int ?? 0
+            self.log.info("📨 [TIMELINE-REFRESH-PROGRESS] Received hoovering progress: \(count)/\(total) transcripts")
+
+            // Debounce refresh to reduce flicker (coalesce rapid notifications)
+            // Use a more robust approach: enforce minimum 500ms between actual refreshes
+            self.progressDebounceTask?.cancel()
+            self.progressDebounceTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                // Calculate how long to wait based on last refresh
+                let now = Date()
+                let minInterval: TimeInterval = 0.5  // 500ms minimum between refreshes
+                let timeSinceLastRefresh = self.lastProgressRefreshTime.map { now.timeIntervalSince($0) } ?? minInterval
+
+                if timeSinceLastRefresh < minInterval {
+                    // Wait for remaining time
+                    let remainingWait = minInterval - timeSinceLastRefresh
+                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Waiting \(Int(remainingWait * 1000))ms before refresh (last refresh \(Int(timeSinceLastRefresh * 1000))ms ago)")
+                    try? await Task.sleep(for: .milliseconds(Int(remainingWait * 1000)))
+                }
+
+                guard !Task.isCancelled else {
+                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Refresh cancelled before execution")
+                    return
+                }
+
+                self.lastProgressRefreshTime = Date()
+                await self.loadFeedFromSQL()
+                self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
             }
         }
     }
@@ -1975,296 +2100,6 @@ final class ConversationMonitor {
         } while true
     }
 
-    nonisolated private func discoverNewTranscripts(projectId: String, orchestrator: TranscriptOrchestrator) async throws {
-        await MainActor.run {
-            log.debug("🔎 discoverNewTranscripts: starting with projectId=\(projectId)")
-        }
-
-        if Task.isCancelled { return }
-
-        // Verify project exists before discovering
-        guard try orchestrator.getProject(id: projectId) != nil else {
-            await MainActor.run {
-                log.error("❌ discoverNewTranscripts: project \(projectId) not found in database")
-            }
-            throw RepositoryError.notFound
-        }
-        await MainActor.run {
-            log.debug("✅ discoverNewTranscripts: verified project \(projectId) exists")
-        }
-
-        if Task.isCancelled { return }
-
-        // Find JSONL files on disk for THIS project only
-        // Use coordinator context as single source of truth
-        guard let context = await MainActor.run(body: {
-            StartupCoordinator.shared.current
-        }) else {
-            await MainActor.run {
-                log.debug("discoverNewTranscripts: no coordinator context available")
-            }
-            return
-        }
-        let projectRoot = URL(fileURLWithPath: context.path)
-
-        // Build expected directory name: Claude Code mangles paths like:
-        // /Users/rob/code/projects/contextify -> -Users-rob-code-projects-contextify
-        let expectedDirName = projectRoot.path.replacingOccurrences(of: "/", with: "-")
-
-        let claudeDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
-            .appendingPathComponent(expectedDirName)
-
-        // Check if this project's directory exists
-        guard FileManager.default.fileExists(atPath: claudeDir.path) else {
-            await MainActor.run {
-                log.info("No Claude Code directory found for project: \(expectedDirName)")
-            }
-            return
-        }
-
-        // Get all .jsonl files from this project's directory
-        // Run file I/O on background thread to avoid blocking main thread
-        let filesOnDisk = try await Task.detached {
-            try FileManager.default.contentsOfDirectory(
-                at: claudeDir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ).filter { $0.pathExtension == "jsonl" }
-        }.value
-
-        await MainActor.run {
-            log.info("🔍 Discovery: Found \(filesOnDisk.count) Claude Code sessions in \(expectedDirName)")
-        }
-
-        if Task.isCancelled { return }
-
-        // Use new upsert API - handles idempotency via path normalization
-        // Extract session ID from filename (matches ProjectDiscoveryService behavior)
-        let discovered = filesOnDisk.map { file in
-            DiscoveredTranscript(
-                fileURL: file,
-                provider: .claudeCode,
-                sessionId: file.deletingPathExtension().lastPathComponent
-            )
-        }
-
-        // Also discover Codex CLI sessions for this project
-        // Codex stores sessions globally in ~/.codex/sessions/YYYY/MM/DD/*.jsonl
-        // We need to scan recursively and match by 'cwd' field in session_meta
-        let projectPath = projectRoot.path
-        let codexResult = try await Task.detached(priority: .utility) { () -> (transcripts: [DiscoveredTranscript], parseFailures: Int, missingCwd: Int) in
-            let codexRoot = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".codex/sessions")
-
-            guard FileManager.default.fileExists(atPath: codexRoot.path) else {
-                return ([], 0, 0)
-            }
-
-            // Find all .jsonl files recursively
-            guard let enumerator = FileManager.default.enumerator(
-                at: codexRoot,
-                includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else {
-                return ([], 0, 0)
-            }
-
-            var matchingFiles: [DiscoveredTranscript] = []
-            var parseFailures = 0
-            var missingCwd = 0
-            let cutoff = Calendar.current.date(byAdding: .day, value: -45, to: Date()) ?? .distantPast
-
-            while !Task.isCancelled, let fileURL = enumerator.nextObject() as? URL {
-                if Task.isCancelled { break }
-
-                // Skip overly deep paths (defensive: ~/.codex/sessions/YYYY/MM/DD/<file>.jsonl → depth ~ 5–6)
-                let depth = fileURL.pathComponents.count - codexRoot.pathComponents.count
-                if depth > 8 { continue }
-
-                guard fileURL.pathExtension == "jsonl" else { continue }
-
-                guard
-                    let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
-                    resourceValues.isRegularFile == true
-                else {
-                    continue
-                }
-
-                if let modified = resourceValues.contentModificationDate, modified < cutoff {
-                    continue
-                }
-
-                guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
-                    parseFailures += 1
-                    continue
-                }
-                defer { try? handle.close() }
-
-                let chunk: Data
-                do {
-                    guard let data = try handle.read(upToCount: 8192), !data.isEmpty else {
-                        parseFailures += 1
-                        continue
-                    }
-                    chunk = data
-                } catch {
-                    parseFailures += 1
-                    continue
-                }
-
-                if Task.isCancelled { break }
-
-                let newline = chunk.firstIndex(of: 0x0A)
-                let lineData = newline.map { chunk.prefix(upTo: $0) } ?? chunk
-
-                guard
-                    let lineString = String(data: lineData, encoding: .utf8),
-                    !lineString.isEmpty,
-                    let jsonData = lineString.data(using: .utf8),
-                    let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
-                else {
-                    parseFailures += 1
-                    continue
-                }
-
-                guard
-                    let payload = json["payload"] as? [String: Any],
-                    let cwd = payload["cwd"] as? String,
-                    !cwd.isEmpty
-                else {
-                    missingCwd += 1
-                    continue
-                }
-
-                // Match by project path
-                if cwd == projectPath {
-                    let sessionId = fileURL.deletingPathExtension().lastPathComponent
-                    matchingFiles.append(DiscoveredTranscript(
-                        fileURL: fileURL,
-                        provider: .codexCLI,
-                        sessionId: sessionId
-                    ))
-                }
-            }
-
-            return (matchingFiles, parseFailures, missingCwd)
-        }.value
-
-        let codexDiscovered = codexResult.transcripts
-        if codexResult.parseFailures > 0 || codexResult.missingCwd > 0 {
-            // Demoted to .debug: These are typically from conversion scripts or incomplete sessions (benign)
-            log.debug("Codex discovery skipped \(codexResult.parseFailures) malformed session(s) and \(codexResult.missingCwd) session(s) missing cwd for project \(projectRoot.lastPathComponent, privacy: .public)")
-        }
-
-        await MainActor.run {
-            log.info("🔍 Discovery: Found \(codexDiscovered.count) Codex CLI sessions for project")
-        }
-
-        // Combine Claude Code and Codex CLI discoveries
-        let allDiscovered = discovered + codexDiscovered
-
-        let resolved = try orchestrator.upsertTranscripts(projectId: projectId, discovered: allDiscovered)
-
-        await MainActor.run {
-            log.info("✅ Upserted \(resolved.count) transcripts (\(resolved.filter(\.wasCreated).count) new)")
-        }
-
-        if Task.isCancelled { return }
-
-        // Start watchers for ALL transcripts (not just newly created)
-        // This ensures orphaned transcripts (existing in DB but never hoovered) get processed
-        // TranscriptWatcher.watch() is idempotent and will skip if already watching
-        if !resolved.isEmpty {
-            // Identify orphaned transcripts for diagnostic logging
-            // Fetch all transcripts for this project and build a lookup dictionary
-            let allTranscripts = try orchestrator.getTranscripts(forProject: projectId)
-            let transcriptLookup = Dictionary(uniqueKeysWithValues: allTranscripts.map { ($0.id, $0) })
-
-            let orphaned = resolved.filter { tr in
-                !tr.wasCreated &&
-                (transcriptLookup[tr.transcriptId]?.lastProcessedLine ?? -1) == 0
-            }
-
-            if !orphaned.isEmpty {
-                await MainActor.run {
-                    log.info("📋 Found \(orphaned.count) existing transcript(s) pending initial hoover (will process now)")
-                }
-            }
-
-            await MainActor.run {
-                log.info("[SESSION-REBUILD-START] Starting/verifying watchers for \(resolved.count, privacy: .public) transcripts (\(resolved.filter(\.wasCreated).count, privacy: .public) new, \(orphaned.count, privacy: .public) pending)")
-            }
-
-            // Start watchers for ALL transcripts
-            for tr in resolved {
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    log.info("[SESSION-WATCHER-START] Starting watcher for transcript: \(tr.transcriptId, privacy: .public) provider: \(tr.provider, privacy: .public)")
-                }
-                // watch() is idempotent: checks isWatching() and skips if already active
-                // It also performs initial hoovering, ensuring orphaned transcripts get processed
-                try orchestrator.startWatchingTranscript(transcriptId: tr.transcriptId, fileURL: tr.fileURL)
-                await MainActor.run {
-                    log.info("[SESSION-WATCHER-DONE] ✅ Watcher started for: \(tr.transcriptId, privacy: .public)")
-                }
-            }
-
-            // Run maintenance asynchronously in background (non-blocking)
-            // Defer to avoid blocking project switch UI
-            let orchestratorForMaintenance = orchestrator
-            Task.detached(priority: .utility) {
-                let logger = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
-                do {
-                    try orchestratorForMaintenance.performMaintenance()
-                    logger.info("✅ Background database maintenance completed")
-                } catch {
-                    logger.error("❌ Background maintenance failed: \(error.localizedDescription, privacy: .public)")
-                }
-            }
-
-            await MainActor.run {
-                log.info("✅ Discovery complete - all transcripts watching (maintenance deferred to background)")
-            }
-        } else {
-            await MainActor.run {
-                log.info("No transcripts found for this project")
-            }
-        }
-
-        // Refresh sessions list for transcript inventory (re-fetch after discovery)
-        let updatedTranscripts = try orchestrator.getTranscripts(forProject: projectId)
-        let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
-
-        // Fetch entry counts for all transcripts
-        var entryCounts: [String: Int] = [:]
-        for transcript in updatedTranscripts {
-            if let count = try? orchestrator.getEntryCount(transcriptId: transcript.id) {
-                entryCounts[transcript.id] = count
-            }
-        }
-
-        let sessions = Self.mapTranscriptsToSessions(
-            transcripts: updatedTranscripts,
-            latestTimestamps: latestTimestamps,
-            entryCounts: entryCounts
-        )
-        await MainActor.run {
-            self.log.info("[SESSION-REBUILD-MAP] Mapped \(updatedTranscripts.count, privacy: .public) transcripts to sessions")
-            self.allSessions = sessions
-            self.log.info("[SESSION-REBUILD-DONE] ✅ allSessions updated with \(self.allSessions.count, privacy: .public) sessions")
-
-            // Log session details for debugging
-            for session in self.allSessions.prefix(10) {  // Log first 10 to avoid spam
-                self.log.info("[SESSION-LIST] Session: \(session.identifier, privacy: .public) provider: \(session.provider.rawValue, privacy: .public) entries: \(session.entryCount, privacy: .public)")
-            }
-            if self.allSessions.count > 10 {
-                self.log.info("[SESSION-LIST] ... and \(self.allSessions.count - 10, privacy: .public) more sessions")
-            }
-
-            Task { await self.loadFeedFromSQL() }
-        }
-    }
 
     nonisolated private static func mapTranscriptsToSessions(
         transcripts: [Transcript],
@@ -2714,50 +2549,6 @@ final class ConversationMonitor {
         }
 
         log.info("🏥 Health monitoring stopped")
-    }
-
-    /// Fallback polling - runs every 10s when FSEvents may not be working
-    /// Manually triggers hoover for transcripts that haven't been updated recently
-    private func runFallbackPolling(projectId: String, orchestrator: TranscriptOrchestrator) async {
-        log.info("🔄 Fallback polling started")
-
-        while !Task.isCancelled {
-            do {
-                // Wait 10s between polls
-                try await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-
-                // Get all transcripts for this project
-                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-
-                for transcript in transcripts where !Task.isCancelled {
-                    let fileURL = URL(fileURLWithPath: transcript.filePath)
-
-                    // Check if file has been modified since last DB update
-                    guard let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                          let modDate = attrs[.modificationDate] as? Date else {
-                        continue
-                    }
-
-                    let lastUpdate = Date(timeIntervalSince1970: TimeInterval(transcript.updatedAt))
-                    let age = Date().timeIntervalSince(lastUpdate)
-
-                    // If file modified recently but DB not updated in > 60s, manually trigger hoover
-                    if modDate > lastUpdate && age > 60 {
-                        log.debug("🔄 Fallback polling: triggering hoover for \(transcript.id)")
-                        try orchestrator.manualHoover(transcriptId: transcript.id, fileURL: fileURL)
-                    }
-                }
-
-            } catch is CancellationError {
-                break
-            } catch {
-                // Log errors but continue polling
-                log.debug("Fallback polling error: \(error.localizedDescription)")
-            }
-        }
-
-        log.info("🔄 Fallback polling stopped")
     }
 
     /// Attempt to recover stalled watcher

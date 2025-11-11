@@ -1,8 +1,10 @@
 import SwiftUI
 import OSLog
+import ContextifyCore
 
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
+    @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.openWindow) private var openWindow
     @State private var scrollTask: Task<Void, Never>?
 
@@ -117,34 +119,77 @@ struct ConversationTimelineView: View {
     }
 
     private var timelineContent: some View {
+        ZStack {
+            switch (monitor.phase, monitor.visibleEntries.isEmpty) {
+            case (.cold, _), (.loading, true):
+                // Loading state - show spinner while fetching or if no entries yet during load
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Loading conversation…")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    log.info("[UIOPT-FIRST-PAINT] content-empty appear (loading)")
+                }
+
+            case (.failed, _):
+                // Error state
+                VStack(spacing: 12) {
+                    Text("Couldn't load conversation.")
+                        .font(.headline)
+                    if let error = monitor.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("Retry") {
+                        TimelineIntegration.shared.requestManualRefresh(trigger: .manualHotkey)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            case (.loaded, true):
+                // Loaded but truly empty (no conversation yet)
+                emptyState
+                    .onAppear {
+                        log.info("[UIOPT-FIRST-PAINT] content-empty appear (no entries)")
+                    }
+
+            default:
+                // Loaded with entries - show timeline
+                actualTimelineContent
+                    .onAppear {
+                        log.info("[UIOPT-FIRST-PAINT] content appear; entries=\(monitor.visibleEntries.count)")
+                    }
+            }
+        }
+        .id(monitor.entriesRevision)  // Key the whole container off revision to force branch re-evaluation
+    }
+
+    private var actualTimelineContent: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
-                    if let error = monitor.lastError {
-                        errorBanner(error)
-                    }
-
-                    if monitor.visibleEntries.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(monitor.visibleEntries) { entry in
-                            TimelineEntryRow(
-                                entry: entry,
-                                onScrollToEntry: { entryId in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
-                                        proxy.scrollTo(entryId, anchor: .center)
-                                    }
+                    ForEach(monitor.visibleEntries, id: \.id) { entry in
+                        TimelineEntryRow(
+                            entry: entry,
+                            onScrollToEntry: { entryId in
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    proxy.scrollTo(entryId, anchor: .center)
                                 }
-                            )
-                            .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
-                            // PERF: Removed transition to reduce animation costs during bulk loads
-                            // .transition(.move(edge: .trailing).combined(with: .opacity))
-                            .id(entry.id)
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id(scrollAnchorID)
+                            }
+                        )
+                        .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
+                        // PERF: Removed transition to reduce animation costs during bulk loads
+                        // .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .id(entry.id)
                     }
+                    Color.clear
+                        .frame(height: 1)
+                        .id(scrollAnchorID)
                 }
                 .scrollTargetLayout()  // Required for aggregate visibility tracking (macOS 15+)
                 .onAppear {
@@ -189,23 +234,54 @@ struct ConversationTimelineView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "text.bubble")
-                .font(.title3)
-                .foregroundStyle(.tertiary)
+        VStack(spacing: 16) {
+            // Show ingestion progress if actively loading
+            if projectsVM.isIngesting, let progress = projectsVM.discoveryProgress {
+                let _ = log.info("[TIMELINE-LOADING] Showing loading indicator (isIngesting=true, progress=\(progress.projectsCompleted, privacy: .public)/\(progress.projectsTotal, privacy: .public))")
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(0.8)
 
-            HStack(spacing: 6) {
-                Text("No Activity Yet")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    VStack(spacing: 4) {
+                        Text("Loading conversation history...")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
 
-                InfoButton(isPresented: $showEmptyStateInfo)
-                    .popover(isPresented: $showEmptyStateInfo) {
-                        InfoPopoverContent(
-                            title: "About the Timeline",
-                            message: emptyStateExplanation
-                        )
+                        if let project = progress.currentProject {
+                            Text(project)
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+
+                        Text("\(progress.projectsCompleted)/\(progress.projectsTotal) projects")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
+                }
+                .padding(.vertical, 32)
+            } else {
+                let _ = log.info("[TIMELINE-EMPTY] Showing empty state (isIngesting=\(projectsVM.isIngesting, privacy: .public), hasProgress=\(projectsVM.discoveryProgress != nil, privacy: .public))")
+                // Normal empty state
+                VStack(spacing: 8) {
+                    Image(systemName: "text.bubble")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+
+                    HStack(spacing: 6) {
+                        Text("No Activity Yet")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+
+                        InfoButton(isPresented: $showEmptyStateInfo)
+                            .popover(isPresented: $showEmptyStateInfo) {
+                                InfoPopoverContent(
+                                    title: "About the Timeline",
+                                    message: emptyStateExplanation
+                                )
+                            }
+                    }
+                }
             }
 
             // Show different message based on whether transcripts exist
