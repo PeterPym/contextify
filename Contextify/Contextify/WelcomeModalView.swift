@@ -19,6 +19,11 @@ struct WelcomeModalView: View {
     @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.dismiss) private var dismiss
 
+    // Folder access for App Store builds
+    @StateObject private var folderAccessController = FolderAccessController()
+    @State private var authorizations: [SourceID: SourceAuthorization] = [:]
+    @State private var showPermissionsStep = false
+
     // Track retry attempts to prevent infinite loops
     @State private var retryCount = 0
     private let maxRetries = 3
@@ -30,7 +35,9 @@ struct WelcomeModalView: View {
 
             // Status content (changes based on discovery state)
             Group {
-                if projectsVM.isDiscovering || projectsVM.isIngesting {
+                if showPermissionsStep && needsPermissions {
+                    permissionsContent
+                } else if projectsVM.isDiscovering || projectsVM.isIngesting {
                     discoveringContent
                 } else if !projectsVM.projects.isEmpty {
                     completedContent
@@ -47,6 +54,14 @@ struct WelcomeModalView: View {
         .padding(32)
         .frame(width: 500)
         .background(Color(nsColor: .windowBackgroundColor))
+        .task {
+            // Check if we need to show permissions on App Store builds
+            await loadAuthorizations()
+            if needsPermissions {
+                showPermissionsStep = true
+                log.info("[WMODAL-PERMISSIONS] Showing permissions step (App Store build, no authorizations)")
+            }
+        }
         .onAppear {
             log.info("[WMODAL-LIFECYCLE] Modal appeared, isDiscovering=\(projectsVM.isDiscovering), hasProgress=\(projectsVM.discoveryProgress != nil)")
         }
@@ -151,7 +166,7 @@ struct WelcomeModalView: View {
                     .font(.headline)
             }
 
-            Text("You're all set! Your conversations are ready to explore.")
+            Text("All set! Your conversations are ready.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -222,7 +237,7 @@ struct WelcomeModalView: View {
             Text("No projects found")
                 .font(.headline)
 
-            Text("Contextify looks for Claude Code and Codex CLI sessions in your home directory. You can add a project manually using File → Open Project.")
+            Text("Contextify monitors Claude Code and Codex CLI conversations. Start a coding session with either tool, and your project will appear here automatically.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -231,30 +246,198 @@ struct WelcomeModalView: View {
         .padding(.vertical, 16)
     }
 
+    // MARK: - Permissions
+
+    private var permissionsContent: some View {
+        VStack(spacing: 20) {
+            Text("Allow access to your transcripts")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Contextify reads your developer transcripts to build timelines and search.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Source authorization rows
+            VStack(spacing: 12) {
+                ForEach(SourceID.allCases, id: \.self) { source in
+                    SourceAuthorizationRow(
+                        source: source,
+                        controller: folderAccessController,
+                        authorization: authorizations[source]
+                    ) { updatedAuth in
+                        authorizations[source] = updatedAuth
+                    }
+                }
+            }
+            .padding(.vertical)
+        }
+    }
+
+    // MARK: - Helper Computed Properties
+
+    private var needsPermissions: Bool {
+        // Check if we're in a sandboxed build and don't have any authorizations
+        #if APPSTORE
+        return !hasAnyAuthorizations
+        #else
+        // For DMG builds, check if sandbox is active at runtime
+        let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+        return isSandboxed && !hasAnyAuthorizations
+        #endif
+    }
+
+    private var hasAnyAuthorizations: Bool {
+        authorizations.values.contains { $0.status == .authorized }
+    }
+
+    private func loadAuthorizations() async {
+        let allAuths = await folderAccessController.allAuthorizations()
+        for auth in allAuths {
+            authorizations[auth.id] = auth
+        }
+    }
+
     // MARK: - Action Button
 
     private var actionButton: some View {
         Group {
-            if projectsVM.isDiscovering || projectsVM.isIngesting {
-                Button("Continue in Background") {
-                    log.info("User dismissed welcome modal during discovery/ingestion")
-                    dismiss()
+            if showPermissionsStep && needsPermissions {
+                // Permissions step buttons
+                HStack(spacing: 12) {
+                    Button("Skip for now") {
+                        log.info("User skipped permissions step")
+                        showPermissionsStep = false
+                    }
+                    .buttonStyle(.plain)
+
+                    Button("Continue") {
+                        log.info("User granted permissions, continuing to discovery")
+                        showPermissionsStep = false
+                        Task {
+                            await projectsVM.startDiscovery()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!hasAnyAuthorizations)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.bordered)
-            } else if !projectsVM.projects.isEmpty {
+            } else if !projectsVM.projects.isEmpty && !projectsVM.isDiscovering && !projectsVM.isIngesting {
                 Button("Get Started") {
                     log.info("User clicked Get Started - closing welcome modal")
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-            } else {
-                Button("Dismiss") {
-                    log.info("User dismissed welcome modal (no projects)")
+            } else if !projectsVM.isDiscovering && !projectsVM.isIngesting {
+                Button("Close") {
+                    log.info("User closed welcome modal (no projects)")
                     dismiss()
                 }
                 .buttonStyle(.bordered)
             }
+            // No button during discovery/ingestion - modal auto-closes when complete
+        }
+    }
+}
+
+// MARK: - Source Authorization Row
+
+struct SourceAuthorizationRow: View {
+    let source: SourceID
+    @ObservedObject var controller: FolderAccessController
+    let authorization: SourceAuthorization?
+    let onAuthorizationChanged: (SourceAuthorization) -> Void
+
+    @State private var isRequesting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Source name
+            Text(source.displayName)
+                .font(.headline)
+
+            Spacer()
+
+            // Status chip
+            statusChip
+
+            // Action button
+            actionButton
+        }
+        .padding()
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(8)
+    }
+
+    private var statusChip: some View {
+        let status = authorization?.status ?? .notAuthorized
+        let (text, color) = statusDisplay(for: status)
+
+        return Text(text)
+            .font(.caption)
+            .fontWeight(.medium)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.2))
+            .foregroundColor(color)
+            .cornerRadius(4)
+    }
+
+    private var actionButton: some View {
+        Group {
+            if authorization?.status == .broken {
+                Button("Re-link...") {
+                    requestAccess()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRequesting)
+            } else if authorization?.status == .authorized {
+                Button {} label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                }
+                .buttonStyle(.plain)
+                .disabled(true)
+            } else {
+                Button("Grant Access...") {
+                    requestAccess()
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRequesting)
+            }
+        }
+    }
+
+    private func statusDisplay(for status: AuthorizationStatus) -> (String, Color) {
+        switch status {
+        case .authorized: return ("Authorized", .green)
+        case .notAuthorized: return ("Not authorized", .secondary)
+        case .broken: return ("Broken", .orange)
+        }
+    }
+
+    private func requestAccess() {
+        isRequesting = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            do {
+                let auths = try await controller.requestAccess(for: [source])
+                if let auth = auths.first {
+                    onAuthorizationChanged(auth)
+                    log.info("[PERMISSIONS] Granted access for \(source.rawValue)")
+                }
+            } catch FolderAccessError.userCancelled {
+                log.info("[PERMISSIONS] User cancelled access for \(source.rawValue)")
+            } catch {
+                log.error("[PERMISSIONS] Failed to grant access for \(source.rawValue): \(error.localizedDescription)")
+                errorMessage = error.localizedDescription
+            }
+            isRequesting = false
         }
     }
 }
