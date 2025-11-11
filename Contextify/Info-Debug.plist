@@ -31,5 +31,15 @@
       </array>
     </dict>
   </array>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Contextify needs access to read your developer transcripts from your Desktop folder.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Contextify needs access to read your developer transcripts from your Documents folder.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Contextify needs access to read your developer transcripts from your Downloads folder.</string>
+  <key>NSNetworkVolumesUsageDescription</key>
+  <string>Contextify needs access to read your developer transcripts from network drives.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Contextify needs access to read your developer transcripts from external drives.</string>
 </dict>
 </plist>
