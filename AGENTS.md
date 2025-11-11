@@ -354,6 +354,24 @@ Common commands:
 
 **Note:** Build commands launch the app by default. Use `CTX_NO_RUN=1` to skip launching.
 
+**First-run QA testing (CLI-only toolkit):**
+- **Complete guide:** `build/docs/testing/first-run-qa-guide.md`
+- Seed demo fixtures: `bash scripts/xc.sh seed-demo`
+- DMG first-run (unsandboxed): `bash scripts/xc.sh --dist=dmg Debug cleanrun`
+- App Store first-run (sandboxed): `bash scripts/xc.sh --dist=appstore Debug cleanrun`
+- Reset permissions only: `bash scripts/xc.sh reset-perms`
+- Reset app state only: `bash scripts/xc.sh reset-state`
+- Reset all (perms + state): `bash scripts/xc.sh reset-all`
+- Stream app logs: `bash scripts/xc.sh logs`
+- **Distribution modes:**
+  - `--dist=dmg` (default): Unsandboxed build, fast path for testing
+  - `--dist=appstore`: Sandboxed build, requires permission grants
+- **Use cases:**
+  - Test onboarding flow (Permissions → Discovery → Indexing → Auto-dismiss)
+  - Verify TCC permission handling (gated vs ungated locations)
+  - Test security-scoped bookmarks (App Store builds)
+  - Reproducible testing with demo fixtures (<10s runs)
+
 **Log capture for debugging:**
 - Capture last 5 min: `make logs` → `/tmp/contextify-recent.log`
 - Stream live: `make logs-live` → `/tmp/contextify-live.log`

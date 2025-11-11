@@ -12,22 +12,53 @@ config="$default_config"
 action="$default_action"
 dev_mode=0
 
+# Distribution mode (dmg vs appstore)
+dist="dmg"
+scheme_dmg="Contextify"
+scheme_appstore="Contextify"  # Will use different entitlements
+entitlements_dmg="Contextify/Contextify.entitlements"
+entitlements_appstore="Contextify/Contextify-AppStore.entitlements"
+
+# Fixtures
+fixtures_root="$PWD/Fixtures/transcripts"
+tmp_demo="${TMPDIR:-/tmp}/contextify-demo"
+
 parse_arg() {
   local value="$1"
   case "$value" in
     --dev|--developer-mode)
       dev_mode=1
       ;;
+    --dist=appstore)
+      dist="appstore"
+      ;;
+    --dist=dmg)
+      dist="dmg"
+      ;;
     Debug|Release)
       config="$value"
       ;;
-    build|test|clean|cleanrun)
+    build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs)
       action="$value"
       ;;
     *)
-      echo "usage: $0 [--dev] [Debug|Release] [build|test|clean|cleanrun]" >&2
-      echo "  --dev: Enable developer mode (shows test buttons)" >&2
-      echo "  cleanrun: Clean database, then build and run" >&2
+      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs]" >&2
+      echo "" >&2
+      echo "Options:" >&2
+      echo "  --dev              Enable developer mode (shows test buttons)" >&2
+      echo "  --dist=dmg         Build DMG distribution (unsandboxed, default)" >&2
+      echo "  --dist=appstore    Build App Store distribution (sandboxed)" >&2
+      echo "" >&2
+      echo "Actions:" >&2
+      echo "  build              Build and run (default)" >&2
+      echo "  test               Run tests" >&2
+      echo "  clean              Clean build artifacts" >&2
+      echo "  cleanrun           Clean database + build + run (first-run)" >&2
+      echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
+      echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
+      echo "  reset-all          Reset both permissions and state" >&2
+      echo "  seed-demo          Seed demo fixtures and symlink defaults" >&2
+      echo "  logs               Stream app logs in real-time" >&2
       exit 2
       ;;
   esac
@@ -123,6 +154,159 @@ quit_running_app() {
   pkill -x Contextify >/dev/null 2>&1 || true
 }
 
+# Helper: Extract bundle ID from built app
+bundle_id_for_app() {
+  local app="$1"
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist" 2>/dev/null || echo "dev.contextify.Contextify"
+}
+
+# Helper: Find container base directory for a bundle ID
+containers_base_for_bid() {
+  local bid="$1"
+  local cdir="$HOME/Library/Containers/$bid/Data/Library"
+  if [[ -d "$cdir" ]]; then
+    echo "$cdir"
+  else
+    echo "$HOME/Library"
+  fi
+}
+
+# Helper: Get Application Support path for bundle ID
+app_support_path_for_bid() {
+  local bid="$1"
+  local base
+  base="$(containers_base_for_bid "$bid")"
+  echo "$base/Application Support/Contextify"
+}
+
+# Helper: Get all possible preferences paths for bundle ID
+prefs_paths_for_bid() {
+  local bid="$1"
+  echo "$HOME/Library/Preferences/$bid.plist"
+  echo "$HOME/Library/Containers/$bid/Data/Library/Preferences/$bid.plist"
+}
+
+# Reset app state (DB, caches, preferences, bookmarks)
+reset_state_for_bid() {
+  local bid="$1"
+  echo "Resetting app state for bundle ID: $bid"
+
+  quit_running_app
+  sleep 0.5
+
+  # Remove Application Support (includes DB and bookmarks)
+  local as_path
+  as_path="$(app_support_path_for_bid "$bid")"
+  if [[ -d "$as_path" ]]; then
+    echo "  Removing: $as_path"
+    rm -rf "$as_path" 2>/dev/null || true
+  fi
+
+  # Remove caches
+  if [[ -d "$HOME/Library/Caches/$bid" ]]; then
+    echo "  Removing: $HOME/Library/Caches/$bid"
+    rm -rf "$HOME/Library/Caches/$bid" 2>/dev/null || true
+  fi
+  if [[ -d "$HOME/Library/Containers/$bid/Data/Library/Caches" ]]; then
+    echo "  Removing: $HOME/Library/Containers/$bid/Data/Library/Caches"
+    rm -rf "$HOME/Library/Containers/$bid/Data/Library/Caches" 2>/dev/null || true
+  fi
+
+  # Remove preferences
+  defaults delete "$bid" >/dev/null 2>&1 || true
+  while read -r p; do
+    if [[ -f "$p" ]]; then
+      echo "  Removing: $p"
+      rm -f "$p" 2>/dev/null || true
+    fi
+  done < <(prefs_paths_for_bid "$bid")
+
+  echo "App state reset complete"
+}
+
+# Reset TCC permissions for bundle ID
+reset_tcc_for_bid() {
+  local bid="$1"
+  echo "Resetting TCC permissions for bundle ID: $bid"
+
+  quit_running_app
+  sleep 0.5
+
+  # Reset all TCC permissions
+  tccutil reset All "$bid" 2>/dev/null || true
+
+  # Optionally reset specific services (uncomment for granular testing)
+  # tccutil reset SystemPolicyDesktopFolder "$bid" 2>/dev/null || true
+  # tccutil reset SystemPolicyDocumentsFolder "$bid" 2>/dev/null || true
+  # tccutil reset SystemPolicyDownloadsFolder "$bid" 2>/dev/null || true
+  # tccutil reset SystemPolicyNetworkVolumes "$bid" 2>/dev/null || true
+  # tccutil reset SystemPolicyRemovableVolumes "$bid" 2>/dev/null || true
+
+  echo "TCC permissions reset complete"
+}
+
+# Seed demo fixtures
+seed_demo_fixtures() {
+  echo "Seeding demo fixtures..."
+
+  # Clean and create temp demo directory
+  rm -rf "$tmp_demo"
+  mkdir -p "$tmp_demo"
+
+  # Copy fixtures if they exist (directly to tmp_demo, preserving structure)
+  if [[ -d "$fixtures_root/claude" ]]; then
+    echo "  Copying Claude fixtures..."
+    mkdir -p "$tmp_demo/claude"
+    rsync -a "$fixtures_root/claude/" "$tmp_demo/claude/"
+  fi
+  if [[ -d "$fixtures_root/codex" ]]; then
+    echo "  Copying Codex fixtures..."
+    mkdir -p "$tmp_demo/codex"
+    rsync -a "$fixtures_root/codex/" "$tmp_demo/codex/"
+  fi
+
+  # Create home directories if they don't exist
+  mkdir -p "$HOME/.claude" "$HOME/.codex"
+
+  # Backup existing symlinks/directories
+  if [[ -e "$HOME/.claude/projects" ]]; then
+    local backup_name="projects.bak.$(date +%s)"
+    echo "  Backing up existing ~/.claude/projects to $backup_name"
+    mv "$HOME/.claude/projects" "$HOME/.claude/$backup_name" 2>/dev/null || true
+  fi
+  if [[ -e "$HOME/.codex/sessions" ]]; then
+    local backup_name="sessions.bak.$(date +%s)"
+    echo "  Backing up existing ~/.codex/sessions to $backup_name"
+    mv "$HOME/.codex/sessions" "$HOME/.codex/$backup_name" 2>/dev/null || true
+  fi
+
+  # Create symlinks - note we symlink to projects/ and sessions/ subdirectories
+  ln -sfn "$tmp_demo/claude/projects" "$HOME/.claude/projects"
+  ln -sfn "$tmp_demo/codex/sessions" "$HOME/.codex/sessions"
+
+  echo ""
+  echo "Demo fixtures seeded successfully:"
+  echo "  ~/.claude/projects -> $tmp_demo/claude/projects"
+  echo "  ~/.codex/sessions  -> $tmp_demo/codex/sessions"
+  echo ""
+
+  # Show what was seeded
+  local claude_count=$(find "$tmp_demo/claude/projects" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  local codex_count=$(find "$tmp_demo/codex/sessions" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  echo "Fixture summary:"
+  echo "  Claude Code transcripts: $claude_count"
+  echo "  Codex CLI transcripts: $codex_count"
+  echo ""
+  echo "Run './scripts/xc.sh cleanrun' to test first-run with this data"
+}
+
+# Stream app logs
+watch_logs() {
+  echo "Streaming Contextify logs (Ctrl-C to stop)..."
+  echo ""
+  log stream --style compact --predicate 'process == "Contextify"' --level debug
+}
+
 run_xcodebuild() {
   # Use xcbeautify if available (best option, especially for CI)
   if [[ $have_xcbeautify -eq 1 ]]; then
@@ -138,39 +322,107 @@ run_xcodebuild() {
   fi
 }
 
-# Handle cleanrun first
+# Build for the selected distribution
+run_build_for_dist() {
+  local selected_scheme="$scheme_dmg"
+  local selected_entitlements="$entitlements_dmg"
+
+  if [[ "$dist" == "appstore" ]]; then
+    selected_scheme="$scheme_appstore"
+    selected_entitlements="$entitlements_appstore"
+  fi
+
+  echo "Building for distribution: $dist"
+  echo "  Scheme: $selected_scheme"
+  echo "  Entitlements: $selected_entitlements"
+
+  # Determine signing approach
+  if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
+    # CI: use ad-hoc signing
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_IDENTITY="-" \
+      DEVELOPMENT_TEAM="" \
+      CODE_SIGN_ENTITLEMENTS="$selected_entitlements" \
+      build
+  else
+    # Local: use Xcode project settings with selected entitlements
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_ENTITLEMENTS="$selected_entitlements" \
+      build
+  fi
+
+  app_path="$dd/Build/Products/$config/Contextify.app"
+  echo "Built: $app_path"
+}
+
+# Handle new actions first (before the main case statement)
 if [[ "$action" == "cleanrun" ]]; then
   echo "🧹 Cleaning database..."
   ./scripts/db_manager.sh clean --force
-  echo "🔨 Building and running..."
-  action="build"  # Switch to build action
+
+  echo "🔨 Building ($dist)..."
+  quit_running_app
+  run_build_for_dist
+
+  bundle_id="$(bundle_id_for_app "$app_path")"
+  echo "Bundle ID: $bundle_id"
+
+  echo "♻️  Resetting app state and TCC..."
+  reset_state_for_bid "$bundle_id"
+  reset_tcc_for_bid "$bundle_id"
+
+  echo "🚀 Launching first-run..."
+  open "$app_path"
+  exit 0
+fi
+
+# Individual reset actions
+if [[ "$action" == "reset-perms" || "$action" == "reset-state" || "$action" == "reset-all" ]]; then
+  # Build to get the bundle ID
+  quit_running_app
+  run_build_for_dist
+
+  bundle_id="$(bundle_id_for_app "$app_path")"
+  echo "Bundle ID: $bundle_id"
+
+  if [[ "$action" == "reset-perms" || "$action" == "reset-all" ]]; then
+    reset_tcc_for_bid "$bundle_id"
+  fi
+
+  if [[ "$action" == "reset-state" || "$action" == "reset-all" ]]; then
+    reset_state_for_bid "$bundle_id"
+  fi
+
+  echo ""
+  echo "Reset complete. Run './scripts/xc.sh build' to launch the app."
+  exit 0
+fi
+
+# Seed demo fixtures
+if [[ "$action" == "seed-demo" ]]; then
+  seed_demo_fixtures
+  exit 0
+fi
+
+# Stream logs
+if [[ "$action" == "logs" ]]; then
+  watch_logs
+  exit 0
 fi
 
 case "$action" in
   clean)
     rm -rf "$dd"
     ;;
-  build|test)
+  build)
     quit_running_app
+    run_build_for_dist
 
-    # CI-specific signing overrides (when no development team certificates available)
-    if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
-      # In CI: use ad-hoc signing, no team required
-      run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_IDENTITY="-" \
-        DEVELOPMENT_TEAM="" \
-        "$action"
-    else
-      # Local build: use Xcode project settings
-      run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
-        -derivedDataPath "$dd" "$action"
-    fi
-    app_path="$dd/Build/Products/$config/Contextify.app"
-    echo "Built: $app_path"
-    if [[ "$action" == "build" && -z "${CTX_NO_RUN:-}" ]]; then
+    if [[ -z "${CTX_NO_RUN:-}" ]]; then
       # Set developer mode if --dev flag was provided
       if [[ $dev_mode -eq 1 ]]; then
         echo "Enabling developer mode..."
@@ -183,9 +435,26 @@ case "$action" in
       open "$app_path"
     fi
     ;;
+  test)
+    quit_running_app
+
+    # For tests, use the standard scheme (not distribution-specific)
+    if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
+      run_xcodebuild -project "$proj" -scheme "$scheme" \
+        -configuration "$config" -destination "platform=macOS" \
+        -derivedDataPath "$dd" \
+        CODE_SIGN_IDENTITY="-" \
+        DEVELOPMENT_TEAM="" \
+        test
+    else
+      run_xcodebuild -project "$proj" -scheme "$scheme" \
+        -configuration "$config" -destination "platform=macOS" \
+        -derivedDataPath "$dd" test
+    fi
+    ;;
   *)
-    echo "usage: $0 [--dev] [Debug|Release] [build|test|clean]" >&2
-    echo "  --dev: Enable developer mode (shows test buttons)" >&2
+    echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs]" >&2
+    echo "Run '$0' without arguments for full help" >&2
     exit 2
     ;;
 esac
