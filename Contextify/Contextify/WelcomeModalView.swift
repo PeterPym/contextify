@@ -35,7 +35,9 @@ struct WelcomeModalView: View {
 
             // Status content (changes based on discovery state)
             Group {
-                if showPermissionsStep && needsPermissions {
+                if showPermissionsStep {
+                    // Show permissions step until user explicitly dismisses it
+                    // (Don't auto-hide when first authorization is granted)
                     permissionsContent
                 } else if projectsVM.isDiscovering || projectsVM.isIngesting {
                     discoveringContent
@@ -279,14 +281,18 @@ struct WelcomeModalView: View {
     // MARK: - Helper Computed Properties
 
     private var needsPermissions: Bool {
-        // Check if we're in a sandboxed build and don't have any authorizations
+        // Check if we're in a sandboxed build
+        // Keep showing permissions step until user explicitly dismisses it
+        // (Don't auto-hide just because one source is authorized)
         #if APPSTORE
-        return !hasAnyAuthorizations
+        let isSandboxed = true
         #else
-        // For DMG builds, check if sandbox is active at runtime
         let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-        return isSandboxed && !hasAnyAuthorizations
         #endif
+
+        // Only show permissions step on first launch (no authorizations at all)
+        // Once user has seen it, they control when to proceed via Continue/Skip buttons
+        return isSandboxed && !hasAnyAuthorizations
     }
 
     private var hasAnyAuthorizations: Bool {
