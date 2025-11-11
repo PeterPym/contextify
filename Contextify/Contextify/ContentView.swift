@@ -35,38 +35,51 @@ struct ContentView: View {
     @Environment(DeveloperMode.self) private var devMode
     // Observe project switcher so body re-renders when project list changes
     @Environment(ProjectSwitcherState.self) private var projectSwitcher
+    // C2.3: ProjectsViewModel - guaranteed to exist by parent conditional rendering
+    // (ContextifyApp only shows ContentView when projectsViewModel != nil)
+    @Environment(ProjectsViewModel.self) private var projectsVM
     @State private var showToast = false
     @State private var toastText = ""
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Project switcher (top navigation)
-            // Show only when we have 2+ projects (otherwise just wastes vertical space)
-            if projectSwitcher.allProjects.count >= 2 {
-                ProjectSwitcherView()
+        ZStack {
+            // Main content
+            VStack(spacing: 0) {
+                // Project switcher (top navigation)
+                // Show only when we have 2+ projects (otherwise just wastes vertical space)
+                if projectSwitcher.allProjects.count >= 2 {
+                    ProjectSwitcherView()
+                    Divider()
+                }
+
+                // Project header (always visible for v1.0)
+                projectHeader
                 Divider()
+
+                // Timeline - full width, no sidebar
+                SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
+                    ConversationTimelineView()
+                }
+                .frame(
+                    minWidth: Layout.timelineMin,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity  // Expand to fill available space
+                )
+                .padding(Layout.containerPadding)
+
+                // Status bar footer (always at bottom)
+                StatusBarView()
             }
+            .background(WindowTitleWriter(title: "Contextify"))
 
-            // Project header (always visible for v1.0)
-            projectHeader
-            Divider()
-
-            // Timeline - full width, no sidebar
-            SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                ConversationTimelineView()
+            // C5.1: Loading overlay when modal dismissed during discovery
+            // Fix: Guard against projectsVM not being initialized yet
+            if StartupCoordinator.shared.current == nil, projectsVM.isDiscovering {
+                discoveryOverlay
             }
-            .frame(
-                minWidth: Layout.timelineMin,
-                maxWidth: .infinity
-            )
-            .padding(Layout.containerPadding)
-
-            // Status bar footer
-            StatusBarView()
         }
-        .background(WindowTitleWriter(title: "Contextify"))
         .overlay(alignment: .top) { toast }
         .frame(
             minWidth: Layout.timelineMin,  // Timeline-only minimum for v1.0
@@ -77,6 +90,7 @@ struct ContentView: View {
             await model.startup()
 
             // Wait for coordinator to publish stable project context
+            // (or timeout if in discovery mode - welcome modal will handle project selection)
             do {
                 let context = try await StartupCoordinator.shared.ready()
                 uiLog.info("📍 Got startup context: \(context.displayName) (id: \(context.id, privacy: .public))")
@@ -85,8 +99,9 @@ struct ContentView: View {
                 await TimelineIntegration.shared.startMonitoring(projectId: context.id)
                 uiLog.info("✅ Timeline monitoring started for project: \(context.id, privacy: .public)")
             } catch {
-                uiLog.error("Failed to get startup context: \(error.localizedDescription, privacy: .public)")
-                presentToast("Could not initialize project monitoring")
+                // Context not available (first launch / discovery mode)
+                // Welcome modal will trigger project selection when discovery completes
+                uiLog.info("ℹ️  No project context available - awaiting discovery")
             }
 
             // Note: ProjectSwitcherState.shared.start() is called in ContextifyApp init
@@ -105,6 +120,31 @@ struct ContentView: View {
         } message: {
             Text(model.alertMessage ?? "")
         }
+    }
+
+    // MARK: - Discovery Overlay
+
+    /// Loading overlay shown when welcome modal is dismissed during discovery (C5.1, C5.2)
+    private var discoveryOverlay: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+
+            Text("Discovering projects...")
+                .font(.headline)
+
+            if let progress = projectsVM.discoveryProgress {
+                Text("\(progress.projectsCompleted) of \(progress.projectsTotal) projects processed")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Scanning for Claude Code and Codex sessions")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial)  // C5.2: Material background
     }
 
     // MARK: - Project Header (Extracted for v1.0)
