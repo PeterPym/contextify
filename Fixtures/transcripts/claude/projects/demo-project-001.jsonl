@@ -1,0 +1,5 @@
+{"uuid":"file-history-001","type":"file-history","timestamp":"2025-11-11T12:00:00.000Z","snapshot":{"projectRoot":"/Users/demo/test-project","trackedFileBackups":{}}}
+{"uuid":"msg-001","type":"user","timestamp":"2025-11-11T12:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Add a hello world function"}]}}
+{"uuid":"msg-002","type":"assistant","timestamp":"2025-11-11T12:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"I'll create a simple hello world function for you."}]}}
+{"uuid":"msg-003","type":"user","timestamp":"2025-11-11T12:00:05.000Z","message":{"role":"user","content":[{"type":"text","text":"Can you add tests?"}]}}
+{"uuid":"msg-004","type":"assistant","timestamp":"2025-11-11T12:00:06.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Sure! I'll add comprehensive unit tests."}]}}

@@ -1,0 +1,5 @@
+{"messageId":"file-history-001","timestamp":"2025-11-11T12:00:00.000Z","payload":{"type":"file-history","snapshot":{"projectRoot":"/Users/demo/test-project","trackedFileBackups":{}}}}
+{"messageId":"msg-001","timestamp":"2025-11-11T12:00:01.000Z","payload":{"type":"message","message":{"role":"user","content":[{"type":"input_text","text":"Create a calculator class"}]}}}
+{"messageId":"msg-002","timestamp":"2025-11-11T12:00:02.000Z","payload":{"type":"message","message":{"role":"assistant","content":[{"type":"output_text","text":"I'll create a calculator class with basic operations."}]}}}
+{"messageId":"msg-003","timestamp":"2025-11-11T12:00:05.000Z","payload":{"type":"message","message":{"role":"user","content":[{"type":"input_text","text":"Add division with error handling"}]}}}
+{"messageId":"msg-004","timestamp":"2025-11-11T12:00:06.000Z","payload":{"type":"message","message":{"role":"assistant","content":[{"type":"output_text","text":"I'll add division with proper zero-division error handling."}]}}}
