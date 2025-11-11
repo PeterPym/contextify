@@ -124,8 +124,8 @@ public final class FolderAccessController: ObservableObject {
     /// Automatically starts and stops the security scope.
     public func withAccess<T>(
         _ authorization: SourceAuthorization,
-        _ operation: (URL) throws -> T
-    ) async rethrows -> T {
+        _ operation: @Sendable (URL) throws -> T
+    ) async throws -> T {
         let resolution = try await resolve(authorization)
 
         guard resolution.url.startAccessingSecurityScopedResource() else {

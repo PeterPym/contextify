@@ -168,6 +168,7 @@ struct ContextifyApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
+  @StateObject private var folderAccessController = FolderAccessController()  // App Store authorization
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
@@ -241,7 +242,7 @@ struct ContextifyApp: App {
             .sheet(isPresented: $showWelcomeModal) {
               // C3.4: Welcome modal sheet
               // User must manually dismiss to ensure they see progress complete
-              WelcomeModalView()
+              WelcomeModalView(folderAccessController: folderAccessController)
                 .environment(vm)
                 .interactiveDismissDisabled(vm.isDiscovering || vm.isIngesting)
             }
@@ -262,7 +263,8 @@ struct ContextifyApp: App {
             let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
             let discoveryService = ProjectDiscoveryService(
               db: try DatabaseManager.shared.pool,
-              orchestrator: orchestrator
+              orchestrator: orchestrator,
+              folderAccessController: folderAccessController
             )
             let vm = ProjectsViewModel(
               discoveryService: discoveryService,
@@ -321,7 +323,8 @@ struct ContextifyApp: App {
             let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
             let discoveryService = ProjectDiscoveryService(
               db: try DatabaseManager.shared.pool,
-              orchestrator: orchestrator
+              orchestrator: orchestrator,
+              folderAccessController: folderAccessController
             )
             let vm = ProjectsViewModel(
               discoveryService: discoveryService,
@@ -380,7 +383,8 @@ struct ContextifyApp: App {
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         let discoveryService = ProjectDiscoveryService(
           db: try DatabaseManager.shared.pool,
-          orchestrator: orchestrator
+          orchestrator: orchestrator,
+          folderAccessController: folderAccessController
         )
         let vm = ProjectsViewModel(
           discoveryService: discoveryService,

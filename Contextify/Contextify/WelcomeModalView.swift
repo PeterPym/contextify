@@ -19,8 +19,8 @@ struct WelcomeModalView: View {
     @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.dismiss) private var dismiss
 
-    // Folder access for App Store builds
-    @StateObject private var folderAccessController = FolderAccessController()
+    // Folder access for App Store builds (injected from app level)
+    @ObservedObject var folderAccessController: FolderAccessController
     @State private var authorizations: [SourceID: SourceAuthorization] = [:]
     @State private var showPermissionsStep = false
 
@@ -317,7 +317,7 @@ struct WelcomeModalView: View {
                         log.info("User granted permissions, continuing to discovery")
                         showPermissionsStep = false
                         Task {
-                            await projectsVM.startDiscovery()
+                            await projectsVM.discoverProjects()
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -445,31 +445,31 @@ struct SourceAuthorizationRow: View {
 // MARK: - Previews
 
 #Preview("Discovering") {
-    WelcomeModalView()
+    WelcomeModalView(folderAccessController: FolderAccessController())
         .environment(mockProjectsVM(state: .discovering, projectCount: 0))
         .frame(width: 500, height: 400)
 }
 
 #Preview("Ingesting") {
-    WelcomeModalView()
+    WelcomeModalView(folderAccessController: FolderAccessController())
         .environment(mockProjectsVM(state: .ingesting, projectCount: 5, currentProject: "my-awesome-project", currentIndex: 3))
         .frame(width: 500, height: 400)
 }
 
 #Preview("Complete") {
-    WelcomeModalView()
+    WelcomeModalView(folderAccessController: FolderAccessController())
         .environment(mockProjectsVM(state: .complete, projectCount: 5))
         .frame(width: 500, height: 400)
 }
 
 #Preview("No Projects") {
-    WelcomeModalView()
+    WelcomeModalView(folderAccessController: FolderAccessController())
         .environment(mockProjectsVM(state: .complete, projectCount: 0))
         .frame(width: 500, height: 400)
 }
 
 #Preview("Error") {
-    WelcomeModalView()
+    WelcomeModalView(folderAccessController: FolderAccessController())
         .environment(mockProjectsVM(state: .error, projectCount: 0, errorMessage: "Failed to access ~/.claude/projects directory"))
         .frame(width: 500, height: 400)
 }

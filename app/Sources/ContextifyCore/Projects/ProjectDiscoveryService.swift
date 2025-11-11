@@ -6,15 +6,18 @@ import OSLog
 public actor ProjectDiscoveryService {
   private let db: DatabasePool
   private let orchestrator: TranscriptOrchestrator
+  private let folderAccessController: FolderAccessController?  // Optional for backward compat
   private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
   private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
 
   public init(
     db: DatabasePool,
-    orchestrator: TranscriptOrchestrator
+    orchestrator: TranscriptOrchestrator,
+    folderAccessController: FolderAccessController? = nil
   ) {
     self.db = db
     self.orchestrator = orchestrator
+    self.folderAccessController = folderAccessController
   }
 
   // MARK: - Public API
@@ -173,6 +176,12 @@ public actor ProjectDiscoveryService {
 
   /// Discovers Claude Code projects from ~/.claude/projects/
   private func discoverClaudeCodeProjects() async throws -> [URL] {
+    // Use authorized access if controller available
+    if let controller = folderAccessController {
+      return try await discoverWithAuthorization(source: .claude, controller: controller)
+    }
+
+    // Fallback: Direct access for DMG builds (existing code)
     let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
 
@@ -193,9 +202,40 @@ public actor ProjectDiscoveryService {
     }
   }
 
+  /// Discovers projects using authorized folder access (App Store sandbox)
+  private func discoverWithAuthorization(
+    source: SourceID,
+    controller: FolderAccessController
+  ) async throws -> [URL] {
+    // Get authorization for this source
+    guard let auth = await controller.authorization(for: source),
+          auth.status == .authorized else {
+      logger.info("No authorization for \(source.rawValue), skipping")
+      return []
+    }
+
+    // Use security-scoped access
+    return try await controller.withAccess(auth) { url in
+      guard FileManager.default.fileExists(atPath: url.path) else {
+        logger.debug("\(source.rawValue) directory not found at \(url.path)")
+        return []
+      }
+
+      let subdirs = try FileManager.default.contentsOfDirectory(
+        at: url,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+
+      return subdirs.compactMap { dir in
+        reversePathMapping(dirURL: dir)
+      }
+    }
+  }
+
   /// Reverses Claude Code directory name back to original project path
   /// Uses JSONL content inspection for robust path detection, with heuristic fallback
-  private func reversePathMapping(dirURL: URL) -> URL? {
+  private nonisolated func reversePathMapping(dirURL: URL) -> URL? {
     let fm = FileManager.default
 
     // Try to find a JSONL file in this directory
