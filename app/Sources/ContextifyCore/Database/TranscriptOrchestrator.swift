@@ -160,8 +160,145 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.list()
   }
 
+  /// List projects sorted by activity (most recent entry first)
+  /// When display_order is NULL, sorts by newest entry timestamp
+  public func listProjectsSortedByActivity() throws -> [Project] {
+    try dbManager.pool.read { db in
+      let sql = """
+        SELECT p.*
+        FROM projects p
+        LEFT JOIN (
+          SELECT project_id, MAX(created_ts) as max_entry_ts
+          FROM transcript_entries
+          GROUP BY project_id
+        ) e ON p.id = e.project_id
+        ORDER BY
+          CASE WHEN p.display_order IS NOT NULL THEN 0 ELSE 1 END,
+          p.display_order ASC,
+          COALESCE(e.max_entry_ts, 0) DESC,
+          p.created_at DESC
+        """
+      return try Project.fetchAll(db, sql: sql)
+    }
+  }
+
+  /// Get the most recently viewed project (for auto-selection on first launch)
+  ///
+  /// Returns the project with the highest last_viewed_ts (most recently viewed).
+  /// Falls back to most recently created project if all timestamps are zero.
+  ///
+  /// **Migration Safety:** Handles existing databases where last_viewed_ts may be
+  /// zero for all projects (pre-v12 migrations or never-viewed projects).
+  ///
+  /// - Returns: Most recent project, or nil if no projects exist
+  /// Get project with most recent transcript entry (for auto-selection on first launch)
+  public func getProjectWithNewestEntry() throws -> Project? {
+    try dbManager.pool.read { db in
+      // Try to query for project ID with most recent entry timestamp
+      // This may fail if entries table doesn't exist yet (fresh database)
+      let projectId: String?
+      do {
+        let sql = """
+          SELECT project_id
+          FROM transcript_entries
+          ORDER BY created_ts DESC
+          LIMIT 1
+        """
+        projectId = try String.fetchOne(db, sql: sql)
+        if let id = projectId {
+          print("🔍 DEBUG: Found project from transcript_entries table: \(id)")
+        } else {
+          print("🔍 DEBUG: No transcript_entries found in table, falling back")
+        }
+      } catch {
+        // Table doesn't exist or query failed - no entries yet
+        print("🔍 DEBUG: Entries table query failed: \(error.localizedDescription)")
+        projectId = nil
+      }
+
+      guard let projectId = projectId else {
+        // No entries found - fall back to Contextify project itself, or most recently created
+        print("🔍 DEBUG: No entries found, falling back to project selection")
+
+        // First try: find project with "contextify" in the path (case-insensitive)
+        if let contextifyProject = try Project
+          .filter(sql: "LOWER(root_path) LIKE '%contextify%'")
+          .limit(1)
+          .fetchOne(db) {
+          print("🔍 DEBUG: Fallback selected Contextify project: \(contextifyProject.rootPath)")
+          return contextifyProject
+        }
+
+        // Second try: most recently created project
+        let fallback = try Project
+          .order(Column("created_at").desc)
+          .limit(1)
+          .fetchOne(db)
+        if let fb = fallback {
+          print("🔍 DEBUG: Fallback selected most recent project: \(fb.rootPath)")
+        } else {
+          print("🔍 DEBUG: No projects found at all!")
+        }
+        return fallback
+      }
+
+      // Fetch the project
+      let project = try Project.fetchOne(db, key: projectId)
+      if let p = project {
+        print("🔍 DEBUG: Fetched project by ID: \(p.rootPath)")
+      }
+      return project
+    }
+  }
+
+  /// Get project by last viewed timestamp (deprecated - use getProjectWithNewestEntry for auto-selection)
+  @available(*, deprecated, renamed: "getProjectWithNewestEntry")
+  public func getMostRecentProject() throws -> Project? {
+    try dbManager.pool.read { db in
+      // Try viewed projects first (preferred)
+      if let recent = try Project
+          .filter(Column("last_viewed_ts") > 0)
+          .order(Column("last_viewed_ts").desc)
+          .limit(1)
+          .fetchOne(db) {
+        return recent
+      }
+
+      // Fallback: most recently created (handles zero timestamps)
+      return try Project
+        .order(Column("created_at").desc)
+        .limit(1)
+        .fetchOne(db)
+    }
+  }
+
   public func getProject(id: String) throws -> Project? {
     try projectRepo.get(id: id)
+  }
+
+  /// Reset all display_order values to NULL for activity-based sorting
+  /// (Used on first launch to ensure projects sort by newest entry)
+  public func resetDisplayOrder() throws {
+    log.info("[BACKEND-RESET-START] Resetting display_order to NULL")
+
+    var rowsAffected = 0
+    try dbManager.pool.write { db in
+      try db.execute(sql: "UPDATE projects SET display_order = NULL")
+      rowsAffected = db.changesCount
+    }
+
+    log.info("[BACKEND-RESET-DONE] Reset display_order → NULL for \(rowsAffected, privacy: .public) projects")
+
+    // Verify: count projects with non-NULL display_order
+    let nonNullCount = try dbManager.pool.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE display_order IS NOT NULL") ?? 0
+    }
+
+    if nonNullCount > 0 {
+      log.warning("[BACKEND-RESET-VERIFY] ⚠️ Still have \(nonNullCount, privacy: .public) projects with non-NULL display_order!")
+    } else {
+      log.info("[BACKEND-RESET-VERIFY] ✓ All projects have NULL display_order")
+    }
   }
 
   public func setProjectHidden(projectId: String, hidden: Bool) throws {
@@ -307,9 +444,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public func discoverTranscripts(
     projectId: String,
     transcriptFiles: [(url: URL, provider: String, sessionId: String?)],
-    progress: IngestProgressSink? = nil
-  ) throws {
-    log.info("[BATCH-DISC-START] Starting batch discovery for \(transcriptFiles.count, privacy: .public) transcripts in project: \(projectId, privacy: .public)")
+    progress: IngestProgressSink? = nil,
+    concurrency: Int = 8
+  ) async throws {
+    log.info("[BATCH-DISC-START] Starting parallel discovery for \(transcriptFiles.count, privacy: .public) transcripts in project: \(projectId, privacy: .public) (concurrency: \(concurrency, privacy: .public))")
 
     guard let project = try projectRepo.get(id: projectId) else {
       log.error("[BATCH-DISC-ERROR] Project not found: \(projectId, privacy: .public)")
@@ -319,21 +457,84 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let progressSink = progress ?? NoOpProgressSink()
     progressSink.didStartProject(name: project.name ?? projectId, transcriptCount: transcriptFiles.count)
 
-    for (index, file) in transcriptFiles.enumerated() {
-      log.info("[BATCH-DISC-FILE] Processing \(index + 1, privacy: .public)/\(transcriptFiles.count, privacy: .public): \(file.url.lastPathComponent, privacy: .public) provider: \(file.provider, privacy: .public)")
-      try discoverTranscript(
-        projectId: projectId,
-        fileURL: file.url,
-        provider: file.provider,
-        providerSessionId: file.sessionId,
-        startWatching: true,
-        progress: progressSink
-      )
-      log.info("[BATCH-DISC-COMPLETE-FILE] Completed \(index + 1, privacy: .public)/\(transcriptFiles.count, privacy: .public): \(file.url.lastPathComponent, privacy: .public)")
+    let total = transcriptFiles.count
+    let completed = OSAllocatedUnfairLock(initialState: 0)
+    let hasNotified = OSAllocatedUnfairLock(initialState: false)  // Track if we've sent progress notification
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      var activeTaskCount = 0
+
+      for file in transcriptFiles {
+        // Wait for a slot to open up if we're at max concurrency
+        if activeTaskCount >= concurrency {
+          try await group.next()
+          activeTaskCount -= 1
+        }
+
+        // Add task for this transcript
+        group.addTask {
+          // Note: Don't pass progressSink to avoid data races in parallel execution
+          try self.discoverTranscript(
+            projectId: projectId,
+            fileURL: file.url,
+            provider: file.provider,
+            providerSessionId: file.sessionId,
+            startWatching: true,
+            progress: nil
+          )
+
+          // Update progress counter
+          let current = completed.withLock { count in
+            count += 1
+            return count
+          }
+
+          log.debug("[BATCH-DISC-COMPLETE-FILE] Completed \(current, privacy: .public)/\(total, privacy: .public): \(file.url.lastPathComponent, privacy: .public)")
+
+          // Smart notification: only notify once we have enough entries to fill the timeline
+          // Query database to check if we have 25+ entries (timeline limit), then notify exactly once
+          let shouldCheck = hasNotified.withLock { notified in
+            !notified && current >= 3  // Start checking after first batch completes
+          }
+
+          if shouldCheck {
+            let entryCount = (try? self.getRecentFeed(forProject: projectId, limit: 26, generatorSignature: "").count) ?? 0
+
+            if entryCount >= 25 {
+              let shouldNotify = hasNotified.withLock { notified in
+                if !notified {
+                  notified = true
+                  return true
+                }
+                return false
+              }
+
+              if shouldNotify {
+                await MainActor.run {
+                  NotificationCenter.default.post(
+                    name: .transcriptHooveringProgress,
+                    object: projectId,
+                    userInfo: [
+                      "transcriptCount": current,
+                      "totalTranscripts": total,
+                      "entryCount": entryCount
+                    ]
+                  )
+                }
+                log.info("[BATCH-DISC-PROGRESS] Timeline ready: \(entryCount, privacy: .public) entries available (transcript \(current, privacy: .public)/\(total, privacy: .public))")
+              }
+            }
+          }
+        }
+        activeTaskCount += 1
+      }
+
+      // Wait for all remaining tasks to complete
+      try await group.waitForAll()
     }
 
     progressSink.didCompleteProject(name: project.name ?? projectId)
-    log.info("[BATCH-DISC-DONE] Batch discovery complete for project: \(projectId, privacy: .public) (\(transcriptFiles.count, privacy: .public) transcripts)")
+    log.info("[BATCH-DISC-DONE] Parallel discovery complete for project: \(projectId, privacy: .public) (\(transcriptFiles.count, privacy: .public) transcripts)")
   }
 
   // MARK: - Private Helpers

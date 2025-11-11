@@ -85,11 +85,13 @@ final class ProjectsViewModel {
 
       // Phase 2: Ingestion
       if !discovered.isEmpty {
+        logger.info("[PSTATE-INGEST-START] Setting isIngesting = true")
         isIngesting = true
         let projectURLs = discovered.map { $0.path }
 
         try await discoveryService.ingestAllProjects(projects: projectURLs) { [weak self] progress in
           Task { @MainActor in
+            logger.info("[PSTATE-PROGRESS] discoveryProgress: \(progress.projectsCompleted, privacy: .public)/\(progress.projectsTotal, privacy: .public) projects, \(progress.transcriptsCompleted, privacy: .public)/\(progress.transcriptsTotal, privacy: .public) transcripts")
             self?.discoveryProgress = progress
           }
         }
@@ -97,6 +99,8 @@ final class ProjectsViewModel {
         // Refresh metadata after ingestion using canonical currentPath
         let refreshed = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
         projects = refreshed
+        logger.info("[PSTATE-INGEST-DONE] Setting isIngesting = false")
+        isIngesting = false
       }
 
       logger.info("Discovery and ingestion complete")
@@ -140,6 +144,11 @@ final class ProjectsViewModel {
     Task {
       await discoverProjects()
     }
+  }
+
+  /// Set discovery progress (for completion messages from external callers)
+  func setDiscoveryProgress(_ progress: DiscoveryProgress?) {
+    self.discoveryProgress = progress
   }
 
   // MARK: - Event Observation

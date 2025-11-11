@@ -65,9 +65,10 @@ public actor ProjectDiscoveryService {
       ))
     }
 
-    // 6. Sort by display_order (matching main window tab bar order)
+    // 6. Sort by newest transcript file modification time (filesystem-based)
+    // This ensures projects with recent work appear first, even before ingestion
     let sorted = discovered.sorted { lhs, rhs in
-      // Primary: display_order ascending (matches ProjectSwitcherState sorting)
+      // Primary: display_order ascending (if set)
       if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder {
         return lOrder < rOrder
       } else if lhs.displayOrder != nil {
@@ -75,12 +76,21 @@ public actor ProjectDiscoveryService {
       } else if rhs.displayOrder != nil {
         return false
       } else {
-        // Fallback: sort by last activity (most recent first) for unordered projects
-        return (lhs.lastActivity ?? .distantPast) > (rhs.lastActivity ?? .distantPast)
+        // Secondary: newest transcript file mtime (most recent first)
+        let lhsMtime = getNewestTranscriptMtime(for: lhs.path)
+        let rhsMtime = getNewestTranscriptMtime(for: rhs.path)
+        return lhsMtime > rhsMtime  // Newest first
       }
     }
 
     logger.info("Discovery complete: \(sorted.count) projects found")
+
+    // Log first 3 projects for debugging
+    if !sorted.isEmpty {
+      let top3 = sorted.prefix(3).map { "\($0.name) (mtime: \(getNewestTranscriptMtime(for: $0.path)))" }.joined(separator: ", ")
+      logger.info("[DISCOVERY-ORDER] Top 3 by activity: \(top3, privacy: .public)")
+    }
+
     return sorted
   }
 
@@ -143,6 +153,13 @@ public actor ProjectDiscoveryService {
       projectsTotal: total,
       message: "Ingestion complete"
     ))
+
+    // Post notification that metadata discovery is complete
+    // NOTE: This only upserts transcript records, actual hoovering happens via ProjectActivityMonitor
+    await MainActor.run {
+      NotificationCenter.default.post(name: .projectsIngestionComplete, object: nil)
+    }
+    logger.info("Posted .projectsIngestionComplete notification after metadata discovery (hoovering handled separately by ProjectActivityMonitor)")
 
     let errorCount = ingestionErrors.count
     if errorCount > 0 {
@@ -258,6 +275,48 @@ public actor ProjectDiscoveryService {
     return path.lastPathComponent
   }
 
+  /// Sort projects by filesystem transcript modification time
+  /// Public API for use by ProjectSwitcherState when display_order is NULL
+  public func sortProjectsByFilesystemActivity(_ projectPaths: [String]) -> [String] {
+    return projectPaths.sorted { lhsPath, rhsPath in
+      let lhsURL = URL(fileURLWithPath: lhsPath)
+      let rhsURL = URL(fileURLWithPath: rhsPath)
+      let lhsMtime = getNewestTranscriptMtime(for: lhsURL)
+      let rhsMtime = getNewestTranscriptMtime(for: rhsURL)
+      return lhsMtime > rhsMtime  // Newest first
+    }
+  }
+
+  /// Gets the modification time of the newest transcript file for a project
+  /// Used for sorting projects by most recent activity BEFORE ingestion
+  private func getNewestTranscriptMtime(for projectPath: URL) -> Date {
+    let fm = FileManager.default
+
+    // Get Claude Code transcript directory for this project
+    guard let dir = claudeDir(for: projectPath) else {
+      return Date.distantPast
+    }
+
+    var newestTime = Date.distantPast
+
+    // Find all .jsonl files in directory
+    if let files = try? fm.contentsOfDirectory(
+      at: dir,
+      includingPropertiesForKeys: [.contentModificationDateKey],
+      options: [.skipsHiddenFiles]
+    ) {
+      for file in files where file.pathExtension == "jsonl" {
+        if let resourceValues = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
+           let mtime = resourceValues.contentModificationDate,
+           mtime > newestTime {
+          newestTime = mtime
+        }
+      }
+    }
+
+    return newestTime
+  }
+
   /// Finds the Claude Code directory for a known project path
   /// Avoids lossy encoding by scanning and reverse-mapping all Claude dirs
   private func claudeDir(for projectPath: URL) -> URL? {
@@ -320,7 +379,7 @@ public actor ProjectDiscoveryService {
           p.display_order,
           COUNT(DISTINCT t.id) AS transcript_count,
           COUNT(e.id) AS entry_count,
-          MAX(e.timestamp) AS last_activity,
+          MAX(e.created_ts) AS last_activity_ts,
           GROUP_CONCAT(DISTINCT t.provider ORDER BY t.provider) AS providers
         FROM projects p
         LEFT JOIN transcripts t ON t.project_id = p.id
@@ -346,13 +405,10 @@ public actor ProjectDiscoveryService {
       let displayOrder: Int? = row["display_order"]
 
       let lastActivity: Date? = {
-        let dbValue: DatabaseValue = row["last_activity"]
-        if let iso = String.fromDatabaseValue(dbValue), !iso.isEmpty,
-           let parsed = Self.parseISO8601(iso) {
-          return parsed
-        }
-        if let seconds = Int.fromDatabaseValue(dbValue) {
-          return Self.normalizeTimestamp(seconds).map { Date(timeIntervalSince1970: $0) }
+        let dbValue: DatabaseValue = row["last_activity_ts"]
+        // Parse epoch timestamp (created_ts is stored as INTEGER)
+        if let epochSeconds = Double.fromDatabaseValue(dbValue) {
+          return Date(timeIntervalSince1970: epochSeconds)
         }
         return nil
       }()

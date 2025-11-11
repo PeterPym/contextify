@@ -21,12 +21,13 @@ parse_arg() {
     Debug|Release)
       config="$value"
       ;;
-    build|test|clean)
+    build|test|clean|cleanrun)
       action="$value"
       ;;
     *)
-      echo "usage: $0 [--dev] [Debug|Release] [build|test|clean]" >&2
+      echo "usage: $0 [--dev] [Debug|Release] [build|test|clean|cleanrun]" >&2
       echo "  --dev: Enable developer mode (shows test buttons)" >&2
+      echo "  cleanrun: Clean database, then build and run" >&2
       exit 2
       ;;
   esac
@@ -136,6 +137,14 @@ run_xcodebuild() {
     xcodebuild "$@"
   fi
 }
+
+# Handle cleanrun first
+if [[ "$action" == "cleanrun" ]]; then
+  echo "🧹 Cleaning database..."
+  ./scripts/db_manager.sh clean --force
+  echo "🔨 Building and running..."
+  action="build"  # Switch to build action
+fi
 
 case "$action" in
   clean)

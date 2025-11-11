@@ -260,9 +260,29 @@ public actor ProjectActivityMonitor {
       options: [.skipsHiddenFiles]
     )
 
+    // Prioritize active project for faster time-to-first-data
+    // Get current project path from StartupCoordinator
+    let activeProjectPath = await StartupCoordinator.shared.current?.path
+
+    // Sort directories: active project first, then others
+    let sortedContents = contents.sorted { dir1, dir2 in
+      // Try to reverse-mangle both paths to compare with active project
+      let path1 = try? ProjectIdentity.reverseManglePath(provider: provider, directory: dir1)
+      let path2 = try? ProjectIdentity.reverseManglePath(provider: provider, directory: dir2)
+
+      // Active project always comes first
+      if let activePath = activeProjectPath {
+        if path1 == activePath { return true }
+        if path2 == activePath { return false }
+      }
+
+      // Otherwise maintain original order
+      return false
+    }
+
     var totalTranscripts = 0
 
-    for directory in contents {
+    for directory in sortedContents {
       var isDir: ObjCBool = false
       guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDir),
             isDir.boolValue else {
@@ -285,12 +305,19 @@ public actor ProjectActivityMonitor {
         // Discover and hoover all transcript files for this project
         let transcriptFiles = try FileManager.default.contentsOfDirectory(
           at: directory,
-          includingPropertiesForKeys: [.isRegularFileKey],
+          includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
           options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "jsonl" }
+        )
+        .filter { $0.pathExtension == "jsonl" }
+        .sorted { url1, url2 in
+          // Sort by modification time, newest first (for faster time-to-first-data)
+          let date1 = (try? url1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+          let date2 = (try? url2.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+          return date1 > date2
+        }
 
         if !transcriptFiles.isEmpty {
-          log.info("[DISC-PROJECT-START] Found \(transcriptFiles.count, privacy: .public) transcript files for project: \(projectPath, privacy: .public)")
+          log.info("[DISC-PROJECT-START] Found \(transcriptFiles.count, privacy: .public) transcript files for project: \(projectPath, privacy: .public) (sorted newest first)")
 
           let transcripts = transcriptFiles.compactMap { url -> (url: URL, provider: String, sessionId: String?)? in
             // Extract session ID from filename (e.g., "767f2c90-6979-406b-9644-38cbbfcf8187.jsonl")
@@ -299,12 +326,13 @@ public actor ProjectActivityMonitor {
             return (url: url, provider: provider, sessionId: sessionId)
           }
 
-          // Batch discover and hoover transcripts
-          log.info("[DISC-PROJECT-BATCH] Starting batch discovery for \(transcripts.count, privacy: .public) transcripts")
-          try orchestrator.discoverTranscripts(
+          // Batch discover and hoover transcripts (parallel)
+          log.info("[DISC-PROJECT-BATCH] Starting parallel batch discovery for \(transcripts.count, privacy: .public) transcripts")
+          try await orchestrator.discoverTranscripts(
             projectId: dbProjectId,
             transcriptFiles: transcripts,
-            progress: nil
+            progress: nil,
+            concurrency: 8
           )
 
           log.info("[DISC-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
@@ -422,12 +450,13 @@ public actor ProjectActivityMonitor {
           rootPath: projectPath
         )
 
-        // Batch discover transcripts
+        // Batch discover transcripts (parallel)
         let transcriptFiles = transcripts.map { (url: $0.url, provider: "codex.cli", sessionId: $0.sessionId) }
-        try orchestrator.discoverTranscripts(
+        try await orchestrator.discoverTranscripts(
           projectId: dbProjectId,
           transcriptFiles: transcriptFiles,
-          progress: nil
+          progress: nil,
+          concurrency: 8
         )
 
         log.info("[DISC-CODEX-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")

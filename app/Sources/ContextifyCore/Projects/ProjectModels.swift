@@ -118,6 +118,11 @@ public struct DiscoveryProgress: Sendable {
   public let projectsTotal: Int
   public let message: String
 
+  // Transcript-level progress (for granular feedback during ingestion)
+  public let currentTranscript: String?
+  public let transcriptsCompleted: Int
+  public let transcriptsTotal: Int
+
   public enum Phase: Sendable {
     case scanning      // Finding projects
     case ingesting     // Loading transcripts
@@ -129,12 +134,18 @@ public struct DiscoveryProgress: Sendable {
     currentProject: String? = nil,
     projectsCompleted: Int,
     projectsTotal: Int,
-    message: String
+    message: String,
+    currentTranscript: String? = nil,
+    transcriptsCompleted: Int = 0,
+    transcriptsTotal: Int = 0
   ) {
     self.phase = phase
     self.currentProject = currentProject
     self.projectsCompleted = projectsCompleted
     self.projectsTotal = projectsTotal
     self.message = message
+    self.currentTranscript = currentTranscript
+    self.transcriptsCompleted = transcriptsCompleted
+    self.transcriptsTotal = transcriptsTotal
   }
 }
