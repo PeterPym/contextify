@@ -9,6 +9,15 @@ extension Notification.Name {
   /// Backward-compatibility alias (deprecated)
   @available(*, deprecated, renamed: "projectRootDidChange")
   public static let ProjectRootDidChange = Notification.Name("projectRootDidChange")
+
+  /// Posted when ALL project transcript ingestion (hoovering) completes
+  /// This fires after all hoover operations finish, unlike projectsDiscoveryComplete which fires early
+  public static let projectsIngestionComplete = Notification.Name("contextify.projectsIngestionComplete")
+
+  /// Posted during transcript hoovering to report incremental progress
+  /// Emitted after first 3 transcripts and every 10 thereafter for real-time timeline updates
+  /// userInfo contains: "transcriptCount" (Int), "totalTranscripts" (Int), "projectId" (String)
+  public static let transcriptHooveringProgress = Notification.Name("contextify.transcriptHooveringProgress")
 }
 
 // MARK: - Notification UserInfo Keys
