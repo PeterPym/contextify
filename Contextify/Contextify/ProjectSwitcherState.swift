@@ -152,15 +152,13 @@ public final class ProjectSwitcherState {
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
       log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
 
-      // Start global monitoring if consent given
-      if ConsentManager.shared.isMultiProjectModeEnabled {
-        do {
-          if let monitor = activityMonitor {
-            try await monitor.startGlobalMonitoring()
-          }
-        } catch {
-          log.error("Failed to start global monitoring: \(error.localizedDescription)")
+      // Start global monitoring (multi-project mode is always enabled)
+      do {
+        if let monitor = activityMonitor {
+          try await monitor.startGlobalMonitoring()
         }
+      } catch {
+        log.error("Failed to start global monitoring: \(error.localizedDescription)")
       }
     }
 
@@ -215,26 +213,48 @@ public final class ProjectSwitcherState {
   public func refreshProjects() async {
     guard let orchestrator = orchestrator else { return }
 
+    log.info("[SWITCHER-REFRESH] Starting refresh of project list")
+
     do {
-      // Query all projects from database
-      let projects = try orchestrator.listProjects()
+      // Query all projects sorted by activity (newest entry first)
+      log.info("[SWITCHER-SORT-START] Querying projects sorted by activity")
+      let projects = try orchestrator.listProjectsSortedByActivity()
+      log.info("[SWITCHER-SORT-QUERY] Got \(projects.count, privacy: .public) projects from DB")
+
+      // Log display_order status for debugging
+      let withOrder = projects.filter { $0.displayOrder != nil }.count
+      let withoutOrder = projects.count - withOrder
+      log.info("[SWITCHER-SORT-DEBUG] Projects with display_order: \(withOrder, privacy: .public), without: \(withoutOrder, privacy: .public)")
 
       // Filter out hidden projects (v18)
       let visibleProjects = projects.filter { !$0.hidden }
       let hiddenCount = projects.count - visibleProjects.count
 
-      // Sort by display_order (v19), falling back to created_at for nulls
-      let sortedProjects = visibleProjects.sorted { lhs, rhs in
-        if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder {
-          return lOrder < rOrder
-        } else if lhs.displayOrder != nil {
-          return true  // Projects with display_order come first
-        } else if rhs.displayOrder != nil {
-          return false
-        } else {
-          return lhs.createdAt < rhs.createdAt  // Fall back to created_at
+      // Secondary sort by filesystem transcript mtime for projects without display_order
+      // (SQL sorts by DB entries, but in clean DB those don't exist yet)
+      let sortedProjects: [Project]
+      if withOrder == 0 {
+        // All projects have NULL display_order - use filesystem sort
+        log.info("[SWITCHER-SORT-FILESYSTEM] Applying filesystem mtime sort (no display_order set)")
+        let discoveryService = try ProjectDiscoveryService(db: DatabaseManager.shared.pool, orchestrator: orchestrator)
+        let paths = visibleProjects.map { $0.rootPath }
+        let sortedPaths = await discoveryService.sortProjectsByFilesystemActivity(paths)
+
+        // Re-order projects to match sorted paths
+        sortedProjects = sortedPaths.compactMap { path in
+          visibleProjects.first { $0.rootPath == path }
         }
+      } else {
+        // Some projects have display_order - use SQL sort as-is
+        sortedProjects = visibleProjects
       }
+
+      // Log final order with display_order values
+      let sortedDebug = sortedProjects.prefix(10).map { p in
+        let orderStr = p.displayOrder.map { "order=\($0)" } ?? "order=NULL"
+        return "\(p.rootPath) [\(orderStr)]"
+      }.joined(separator: " | ")
+      log.info("[SWITCHER-SORTED] Tab order (first 10): \(sortedDebug, privacy: .public)")
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
       let projectInfos = sortedProjects.map { project in
@@ -258,7 +278,7 @@ public final class ProjectSwitcherState {
 
       log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
     } catch {
-      log.error("ProjectSwitcher: refreshProjects error=\(String(describing: error))")
+      log.error("[SWITCHER-ERROR] refreshProjects failed: \(String(describing: error), privacy: .public)")
     }
   }
 
