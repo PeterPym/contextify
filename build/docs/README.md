@@ -13,6 +13,7 @@
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
+| **Testing** | QA & testing workflows | [First-Run QA Guide](testing/first-run-qa-guide.md) |
 | **Design** | Design decisions | [Color Scheme](design/color-scheme.md), [Help System](design/help-tooltip-ux-system.md) |
 | **Operations** | Release & deployment | [App Store](operations/app-store/), [Marketing](operations/marketing/) |
 | **Archive** | Historical context | [Investigations](archive/investigations/), [Feature Specs](archive/feature-specs/) |
@@ -21,7 +22,7 @@
 
 ## What Goes Where?
 
-- **Current state docs** → `architecture/`, `components/`, `specifications/`, `guides/`, `design/`
+- **Current state docs** → `architecture/`, `components/`, `specifications/`, `guides/`, `testing/`, `design/`
 - **Operational docs** → `operations/` (app store, marketing, release)
 - **Historical context** → `archive/` (completed investigations, original feature specs)
 - **Planning docs** → `/tmp/` (NOT in repo)
@@ -73,6 +74,12 @@ Operational how-to docs. How to use diagnostics API, build on Linux, etc.
 - [Linux CI Builds](guides/linux-ci-builds.md) - Building from non-macOS environments
 - [Logging Best Practices](guides/logging-best-practices.md) - OSLog usage guidelines
 - [Feature Flags](guides/feature-flags.md) - Feature flag documentation
+
+### testing/
+QA workflows and testing procedures.
+
+**Key docs:**
+- [First-Run QA Guide](testing/first-run-qa-guide.md) - CLI toolkit for testing onboarding flows (DMG vs App Store)
 
 ### design/
 Design decisions. Color scheme, typography, help system UX.
