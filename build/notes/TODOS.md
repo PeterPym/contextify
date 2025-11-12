@@ -94,52 +94,87 @@ Add "Import Database" feature in Settings > Database tab:
 
 ---
 
-## P0: Disable Git Monitoring in Sandboxed Builds (App Store Release Blocker)
+## P0: Disable Git Monitoring in Sandboxed Builds (URGENT - Release Blocker)
 
 **Status:** Not Started
-**Priority:** P0 (Blocks App Store release)
-**Effort:** 2-3 hours
+**Priority:** P0 (BLOCKING App Store release - must complete ASAP)
+**Effort:** 1-2 hours (fast cleanup)
 **Branch:** `feature/appstore-folder-authorization`
+**Target:** Complete before merging this branch to main
 
 ### Problem
 
-Git branch monitoring requires security-scoped access to project root directories. In sandboxed builds, creating these bookmarks requires explicit user permission (via NSOpenPanel). Without bookmarks, git watchers fail with console spam:
+Git branch monitoring is **completely broken** in sandboxed builds. Console spam every 2 seconds:
 
 ```
-error  Sandboxed without security scope; skipping watcher arm
-error  No bookmark in coordinator context for sandboxed build; watchers may fail
+error  [GIT-BROKEN] Git monitoring failed (no project root access in sandboxed build)
+error  [GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)
 ```
 
-This creates poor UX (error logs every 2 seconds) and feature doesn't work.
+**Current state:** Feature doesn't work, creates error spam, blocks clean App Store submission.
 
-### Scope Reduction Strategy
+**Root cause:** Requires user permission to project root directories. Complex to implement properly (per-project bookmarks, NSOpenPanel, permission UI). NOT WORTH IT for initial release.
 
-**For App Store Launch:**
-- Disable git branch monitoring entirely in sandboxed builds
-- Show project name only (no branch display)
-- Remove all git watcher code paths
-- Zero error logs in Console.app
+### Solution: Remove Git Code from Sandboxed Builds
 
-**Post-Launch Feature (Optional):**
-- Add "Grant Project Access" UI with explainer
-- Per-project bookmark management
-- Opt-in git monitoring
+**Simple, fast approach:**
+1. Early return from `updateHeadWatcher()` if sandboxed (skip all git logic)
+2. Hide branch UI in sandboxed builds (show project name only)
+3. Remove bookmark restoration attempts in sandboxed builds
+4. **Result:** Clean logs, zero errors, shippable App Store build
 
-### Tasks
+**Post-launch (optional):** Add "Grant Project Access" feature with proper UX (P1, not required)
 
-#### Phase 1: Disable Git Monitoring (P0 - This Release)
+### Tasks (Fast Cleanup - 1-2 hours)
 
-- [ ] **[NOGIT1]** Add `Sandbox.isSandboxed` check in `updateHeadWatcher()` - early return
-- [ ] **[NOGIT2]** Remove branch display from header in sandboxed builds (show project name only)
-- [ ] **[NOGIT3]** Remove git-related code from `handleCoordinatorUpdate()` when sandboxed
-- [ ] **[NOGIT4]** Verify zero "Sandboxed without security scope" errors in logs
-- [ ] **[NOGIT5]** Test App Store build: clean logs, no git errors
+- [ ] **[NOGIT1]** `HUDCore.swift:932` - Early return from `updateHeadWatcher()` if `Sandbox.isSandboxed`
+- [ ] **[NOGIT2]** `HUDCore.swift:536-558` - Remove bookmark restoration code in `handleCoordinatorUpdate()` if sandboxed
+- [ ] **[NOGIT3]** `ContentView.swift` - Hide branch display in header if `Sandbox.isSandboxed`
+- [ ] **[NOGIT4]** Test App Store build: `bash scripts/xc.sh --dist=appstore Debug cleanrun`
+- [ ] **[NOGIT5]** Verify: Zero `[GIT-BROKEN]` errors in Console.app logs
+
+**Implementation:**
+```swift
+// HUDCore.swift:932
+public func updateHeadWatcher() {
+    #if os(macOS)
+    guard !Sandbox.isSandboxed else {
+        // Git monitoring disabled in sandboxed builds (no project root access)
+        // See TODOS.md P0: Post-launch feature for "Grant Project Access" UI
+        return
+    }
+    #endif
+
+    cancelHeadAndRefWatchers()
+    // ... existing git watcher code ...
+}
+
+// HUDCore.swift:536 (handleCoordinatorUpdate)
+// Remove entire bookmark restoration block if sandboxed - git watchers disabled anyway
+
+// ContentView.swift (header)
+if !Sandbox.isSandboxed {
+    Text("Branch: \(vm.branch)")  // Only show in DMG builds
+}
+```
 
 **Files:**
-- `app/Sources/ContextifyCore/HUDCore.swift` (updateHeadWatcher, handleCoordinatorUpdate)
-- `Contextify/Contextify/ContentView.swift` (header branch display)
+- `app/Sources/ContextifyCore/HUDCore.swift` (2 locations)
+- `Contextify/Contextify/ContentView.swift` (header UI)
 
-**Estimated Effort:** 2-3 hours
+**Testing:**
+```bash
+# App Store build test
+bash scripts/xc.sh --dist=appstore Debug cleanrun
+log stream --predicate 'subsystem == "dev.contextify"' --level debug
+
+# Expected: Zero [GIT-BROKEN] errors
+# Expected: Project name shows, no branch
+# Expected: Timeline loads, all core features work
+```
+
+**Estimated Effort:** 1-2 hours (simple code removal, no new features)
+**Must Complete:** Before merging `feature/appstore-folder-authorization` to main
 
 #### Phase 2: Optional Project Access (P1 - Post-Launch Feature)
 
