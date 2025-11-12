@@ -286,9 +286,10 @@ struct WelcomeModalView: View {
         let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
         #endif
 
-        // Only show permissions step on first launch (no authorizations at all)
-        // Once user has seen it, they control when to proceed via Continue/Skip buttons
-        return isSandboxed && !hasAnyAuthorizations
+        // Keep showing permissions step until user explicitly dismisses it
+        // Don't auto-hide after first authorization - let user click Continue/Skip
+        // Note: showPermissionsStep is controlled by user actions, not authorization state
+        return isSandboxed && showPermissionsStep
     }
 
     private var hasAnyAuthorizations: Bool {

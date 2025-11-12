@@ -292,18 +292,39 @@ public final class FolderAccessController: ObservableObject {
             return false
 
         case .codex:
-            // Codex structure: .codex/sessions/<session>.jsonl (flat)
-            // Check if url contains .jsonl files directly
-            guard let files = try? fm.contentsOfDirectory(
-                at: url,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) else {
-                log.debug("Cannot read directory: \(url.path)")
+            // Codex structure: .codex/sessions/YYYY/MM/DD/<session>.jsonl (hierarchical)
+            // Recursively search up to 3 levels deep
+
+            func findJsonlRecursive(in dir: URL, depth: Int = 0, maxDepth: Int = 3) -> Bool {
+                guard depth < maxDepth else { return false }
+
+                guard let contents = try? fm.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                ) else {
+                    return false
+                }
+
+                // Check current level for .jsonl files
+                if contents.contains(where: { $0.pathExtension == "jsonl" }) {
+                    return true
+                }
+
+                // Recurse into subdirectories
+                for item in contents {
+                    guard (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                        continue
+                    }
+                    if findJsonlRecursive(in: item, depth: depth + 1, maxDepth: maxDepth) {
+                        return true
+                    }
+                }
+
                 return false
             }
 
-            let hasTranscripts = files.contains(where: { $0.pathExtension == "jsonl" })
+            let hasTranscripts = findJsonlRecursive(in: url)
             if hasTranscripts {
                 log.info("Found Codex transcripts in: \(url.path)")
             } else {
