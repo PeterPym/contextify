@@ -554,7 +554,7 @@ public final class HUDViewModel {
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
     } else if Sandbox.isSandboxed {
-      watcherLog.warning("No bookmark in coordinator context for sandboxed build; watchers may fail")
+      watcherLog.error("[GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)")
     }
 
     // Update file watchers for new project
@@ -934,7 +934,7 @@ public final class HUDViewModel {
 
     #if os(macOS)
     if Sandbox.isSandboxed, securityScopedURL == nil {
-      watcherLog.error("Sandboxed without security scope; skipping watcher arm")
+      watcherLog.error("[GIT-BROKEN] Git monitoring failed (no project root access in sandboxed build)")
       startBranchMonitor()
       return
     }

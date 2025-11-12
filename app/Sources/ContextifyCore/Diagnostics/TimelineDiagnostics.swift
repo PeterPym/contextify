@@ -331,8 +331,8 @@ public actor TimelineDiagnosticsService {
                 issues.append(.init(
                     severity: .critical,
                     category: .watcherMissing,
-                    message: "Watcher not running for transcript \(transcript.id)",
-                    recommendation: "Call startWatchingTranscript() to resume monitoring"
+                    message: "[TRANSCRIPT-WATCHER] Watcher not running for transcript \(transcript.id) (file exists at \(fileURL.path))",
+                    recommendation: "Possible causes: race condition during startup, permission issue, or watcher start failure. Check if timeline updates appear for this transcript."
                 ))
             }
 
