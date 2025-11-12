@@ -11,6 +11,7 @@ public enum FolderAccessError: Error, LocalizedError {
     case securityScopeAccessDenied(URL)
     case userCancelled
     case staleBookmarkRefreshFailed(URL)
+    case noTranscriptsFound(URL, SourceID)
 
     public var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ public enum FolderAccessError: Error, LocalizedError {
             return "User cancelled folder selection"
         case .staleBookmarkRefreshFailed(let url):
             return "Failed to refresh stale bookmark for \(url.path)"
+        case .noTranscriptsFound(let url, let source):
+            return "No \(source.displayName) transcripts found in \(url.lastPathComponent). Please select the correct folder (usually \(source.defaultPath))."
         }
     }
 }
@@ -83,16 +86,24 @@ public final class FolderAccessController: ObservableObject {
             log.info("User selected: \(url.path)")
 
             // Try to match URL to requested sources
-            if let matchedSource = matchURLToSource(url, candidates: sources) {
-                do {
-                    let auth = try await createAuthorization(for: matchedSource, url: url)
-                    results.append(auth)
-                    log.info("Created authorization: source=\(matchedSource.rawValue) url=\(url.path)")
-                } catch {
-                    log.error("Failed to create authorization for \(matchedSource.rawValue): \(error.localizedDescription)")
-                }
-            } else {
+            guard let matchedSource = matchURLToSource(url, candidates: sources) else {
                 log.warning("Selected URL does not match any requested sources: \(url.path)")
+                continue
+            }
+
+            // Validate that folder contains transcripts
+            guard validateTranscripts(in: url, for: matchedSource) else {
+                log.error("No transcripts found in selected folder: \(url.path)")
+                throw FolderAccessError.noTranscriptsFound(url, matchedSource)
+            }
+
+            do {
+                let auth = try await createAuthorization(for: matchedSource, url: url)
+                results.append(auth)
+                log.info("Created authorization: source=\(matchedSource.rawValue) url=\(url.path)")
+            } catch {
+                log.error("Failed to create authorization for \(matchedSource.rawValue): \(error.localizedDescription)")
+                throw error
             }
         }
 
@@ -241,5 +252,64 @@ public final class FolderAccessController: ObservableObject {
         }
 
         return nil
+    }
+
+    /// Validate that a folder contains transcripts for the given source.
+    /// Returns true if transcripts are found, false otherwise.
+    private func validateTranscripts(in url: URL, for source: SourceID) -> Bool {
+        let fm = FileManager.default
+
+        switch source {
+        case .claude:
+            // Claude Code structure: .claude/projects/<project-hash>/<session>.jsonl
+            // Check if url contains project subdirectories with .jsonl files
+            guard let subdirs = try? fm.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                log.debug("Cannot read directory: \(url.path)")
+                return false
+            }
+
+            // Check if any subdirectory contains .jsonl files
+            for subdir in subdirs {
+                guard (try? subdir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                    continue
+                }
+
+                if let files = try? fm.contentsOfDirectory(
+                    at: subdir,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                ), files.contains(where: { $0.pathExtension == "jsonl" }) {
+                    log.info("Found Claude Code transcripts in: \(subdir.lastPathComponent)")
+                    return true
+                }
+            }
+
+            log.warning("No Claude Code transcripts found in: \(url.path)")
+            return false
+
+        case .codex:
+            // Codex structure: .codex/sessions/<session>.jsonl (flat)
+            // Check if url contains .jsonl files directly
+            guard let files = try? fm.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) else {
+                log.debug("Cannot read directory: \(url.path)")
+                return false
+            }
+
+            let hasTranscripts = files.contains(where: { $0.pathExtension == "jsonl" })
+            if hasTranscripts {
+                log.info("Found Codex transcripts in: \(url.path)")
+            } else {
+                log.warning("No Codex transcripts found in: \(url.path)")
+            }
+            return hasTranscripts
+        }
     }
 }

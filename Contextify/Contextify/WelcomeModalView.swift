@@ -361,18 +361,28 @@ struct SourceAuthorizationRow: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Source name
-            Text(source.displayName)
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                // Source name
+                Text(source.displayName)
+                    .font(.headline)
 
-            Spacer()
+                Spacer()
 
-            // Status chip
-            statusChip
+                // Status chip
+                statusChip
 
-            // Action button
-            actionButton
+                // Action button
+                actionButton
+            }
+
+            // Error message (if any)
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
