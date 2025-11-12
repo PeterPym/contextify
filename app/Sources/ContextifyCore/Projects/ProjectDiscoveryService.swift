@@ -68,7 +68,13 @@ public actor ProjectDiscoveryService {
       ))
     }
 
-    // 6. Sort by newest transcript file modification time (filesystem-based)
+    // 6. Pre-compute mtimes for sorting (async calls required for sandbox access)
+    var mtimeCache: [URL: Date] = [:]
+    for project in discovered {
+      mtimeCache[project.path] = await getNewestTranscriptMtime(for: project.path)
+    }
+
+    // 7. Sort by newest transcript file modification time (filesystem-based)
     // This ensures projects with recent work appear first, even before ingestion
     let sorted = discovered.sorted { lhs, rhs in
       // Primary: display_order ascending (if set)
@@ -80,8 +86,8 @@ public actor ProjectDiscoveryService {
         return false
       } else {
         // Secondary: newest transcript file mtime (most recent first)
-        let lhsMtime = getNewestTranscriptMtime(for: lhs.path)
-        let rhsMtime = getNewestTranscriptMtime(for: rhs.path)
+        let lhsMtime = mtimeCache[lhs.path] ?? Date.distantPast
+        let rhsMtime = mtimeCache[rhs.path] ?? Date.distantPast
         return lhsMtime > rhsMtime  // Newest first
       }
     }
@@ -90,7 +96,7 @@ public actor ProjectDiscoveryService {
 
     // Log first 3 projects for debugging
     if !sorted.isEmpty {
-      let top3 = sorted.prefix(3).map { "\($0.name) (mtime: \(getNewestTranscriptMtime(for: $0.path)))" }.joined(separator: ", ")
+      let top3 = sorted.prefix(3).map { "\($0.name) (mtime: \(mtimeCache[$0.path] ?? Date.distantPast))" }.joined(separator: ", ")
       logger.info("[DISCOVERY-ORDER] Top 3 by activity: \(top3, privacy: .public)")
     }
 
@@ -126,7 +132,7 @@ public actor ProjectDiscoveryService {
 
       do {
         // Check if project has Claude Code transcripts
-        if let claudeDir = claudeDir(for: projectPath) {
+        if let claudeDir = await claudeDir(for: projectPath) {
           try await ingestClaudeCodeTranscripts(for: projectPath, claudeDir: claudeDir)
         }
 
@@ -317,23 +323,31 @@ public actor ProjectDiscoveryService {
 
   /// Sort projects by filesystem transcript modification time
   /// Public API for use by ProjectSwitcherState when display_order is NULL
-  public func sortProjectsByFilesystemActivity(_ projectPaths: [String]) -> [String] {
+  ///
+  /// **Note:** This function is async because sandbox access requires security-scoped
+  /// authorization to read transcript files for mtime comparison
+  public func sortProjectsByFilesystemActivity(_ projectPaths: [String]) async -> [String] {
+    // Pre-compute mtimes (required for sandbox access with withAccess)
+    var mtimeCache: [String: Date] = [:]
+    for path in projectPaths {
+      let url = URL(fileURLWithPath: path)
+      mtimeCache[path] = await getNewestTranscriptMtime(for: url)
+    }
+
     return projectPaths.sorted { lhsPath, rhsPath in
-      let lhsURL = URL(fileURLWithPath: lhsPath)
-      let rhsURL = URL(fileURLWithPath: rhsPath)
-      let lhsMtime = getNewestTranscriptMtime(for: lhsURL)
-      let rhsMtime = getNewestTranscriptMtime(for: rhsURL)
+      let lhsMtime = mtimeCache[lhsPath] ?? Date.distantPast
+      let rhsMtime = mtimeCache[rhsPath] ?? Date.distantPast
       return lhsMtime > rhsMtime  // Newest first
     }
   }
 
   /// Gets the modification time of the newest transcript file for a project
   /// Used for sorting projects by most recent activity BEFORE ingestion
-  private func getNewestTranscriptMtime(for projectPath: URL) -> Date {
+  private func getNewestTranscriptMtime(for projectPath: URL) async -> Date {
     let fm = FileManager.default
 
     // Get Claude Code transcript directory for this project
-    guard let dir = claudeDir(for: projectPath) else {
+    guard let dir = await claudeDir(for: projectPath) else {
       return Date.distantPast
     }
 
@@ -359,18 +373,62 @@ public actor ProjectDiscoveryService {
 
   /// Finds the Claude Code directory for a known project path
   /// Avoids lossy encoding by scanning and reverse-mapping all Claude dirs
-  private func claudeDir(for projectPath: URL) -> URL? {
+  ///
+  /// **App Sandbox Requirement:**
+  /// In sandboxed builds (App Store), reading files requires security-scoped access.
+  /// This function uses `FolderAccessController.withAccess()` to temporarily access
+  /// `~/.claude/projects` with the user's granted permissions. Without this, the app
+  /// would get EPERM errors when trying to list directories.
+  ///
+  /// **Control Flow:**
+  /// 1. If folderAccessController exists (sandboxed build):
+  ///    - Check if user has authorized Claude folder access
+  ///    - Use `withAccess()` to read directory with security-scoped bookmark
+  ///    - Scope is active only during the closure execution
+  /// 2. If no controller (DMG build):
+  ///    - Direct filesystem access (app is not sandboxed)
+  ///
+  /// - Returns: The Claude directory URL that maps to the project path, or nil if not found
+  private func claudeDir(for projectPath: URL) async -> URL? {
     let root = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
 
-    guard let dirs = try? FileManager.default.contentsOfDirectory(
-      at: root,
-      includingPropertiesForKeys: [.isDirectoryKey],
-      options: [.skipsHiddenFiles]
-    ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
-    else {
-      logger.debug("Could not list Claude projects directory")
-      return nil
+    // SANDBOXED PATH: Use security-scoped access via FolderAccessController
+    let dirs: [URL]
+    if let controller = folderAccessController {
+      // Check if user granted access to Claude folder
+      guard let auth = await controller.authorization(for: .claude),
+            auth.status == .authorized else {
+        logger.debug("No Claude authorization for ingestion (sandboxed build requires user permission)")
+        return nil
+      }
+
+      do {
+        // CRITICAL: All file system operations must happen INSIDE withAccess closure
+        // The security-scoped resource is only accessible while the closure executes
+        dirs = try await controller.withAccess(auth) { authorizedRoot in
+          try FileManager.default.contentsOfDirectory(
+            at: authorizedRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+          ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
+        }
+      } catch {
+        logger.debug("Could not list Claude projects directory (sandbox access denied): \(error.localizedDescription)")
+        return nil
+      }
+    } else {
+      // NON-SANDBOXED PATH: DMG builds have direct filesystem access
+      guard let foundDirs = try? FileManager.default.contentsOfDirectory(
+        at: root,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
+      else {
+        logger.debug("Could not list Claude projects directory (DMG build, direct access failed)")
+        return nil
+      }
+      dirs = foundDirs
     }
 
     logger.info("Searching for Claude dir matching: \(projectPath.path, privacy: .public)")
@@ -483,12 +541,48 @@ public actor ProjectDiscoveryService {
   // MARK: - Ingestion Methods
 
   /// Ingests Claude Code transcripts for a project
+  ///
+  /// **App Sandbox Requirement:**
+  /// Transcript ingestion requires reading `.jsonl` files from `~/.claude/projects/<hash>/`.
+  /// In sandboxed builds, this requires security-scoped access even though we already
+  /// used it in `claudeDir()`. The security scope is ONLY active during the `withAccess`
+  /// closure execution, so we must use it again here when actually reading files.
+  ///
+  /// **Why we need withAccess twice (discovery + ingestion):**
+  /// 1. Discovery phase: Read directory names to find project mappings
+  /// 2. Ingestion phase: Read .jsonl file contents for database import
+  ///
+  /// Each phase needs its own `withAccess` call because the scope is released
+  /// when the closure returns. You cannot "save" a URL from one withAccess call
+  /// and use it in another - the scope will have been released.
   private func ingestClaudeCodeTranscripts(for projectPath: URL, claudeDir: URL) async throws {
-    let transcriptFiles = try FileManager.default.contentsOfDirectory(
-      at: claudeDir,
-      includingPropertiesForKeys: [.isDirectoryKey],
-      options: [.skipsHiddenFiles]
-    ).filter { $0.pathExtension == "jsonl" }
+    // SANDBOXED PATH: Use security-scoped access to read transcript files
+    let transcriptFiles: [URL]
+    if let controller = folderAccessController {
+      guard let auth = await controller.authorization(for: .claude),
+            auth.status == .authorized else {
+        logger.debug("No Claude authorization for transcript ingestion (sandboxed build)")
+        return
+      }
+
+      // CRITICAL: Read file list INSIDE withAccess closure
+      // We already used withAccess in claudeDir(), but that scope is now released
+      // We need a new scope to actually read the transcript files
+      transcriptFiles = try await controller.withAccess(auth) { _ in
+        try FileManager.default.contentsOfDirectory(
+          at: claudeDir,
+          includingPropertiesForKeys: [.isDirectoryKey],
+          options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "jsonl" }
+      }
+    } else {
+      // NON-SANDBOXED PATH: DMG builds have direct filesystem access
+      transcriptFiles = try FileManager.default.contentsOfDirectory(
+        at: claudeDir,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ).filter { $0.pathExtension == "jsonl" }
+    }
 
     // Create project if it doesn't exist
     let projectId = try orchestrator.getOrCreateProject(
