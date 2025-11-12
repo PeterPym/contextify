@@ -94,10 +94,83 @@ Add "Import Database" feature in Settings > Database tab:
 
 ---
 
+## P0: Disable Git Monitoring in Sandboxed Builds (App Store Release Blocker)
+
+**Status:** Not Started
+**Priority:** P0 (Blocks App Store release)
+**Effort:** 2-3 hours
+**Branch:** `feature/appstore-folder-authorization`
+
+### Problem
+
+Git branch monitoring requires security-scoped access to project root directories. In sandboxed builds, creating these bookmarks requires explicit user permission (via NSOpenPanel). Without bookmarks, git watchers fail with console spam:
+
+```
+error  Sandboxed without security scope; skipping watcher arm
+error  No bookmark in coordinator context for sandboxed build; watchers may fail
+```
+
+This creates poor UX (error logs every 2 seconds) and feature doesn't work.
+
+### Scope Reduction Strategy
+
+**For App Store Launch:**
+- Disable git branch monitoring entirely in sandboxed builds
+- Show project name only (no branch display)
+- Remove all git watcher code paths
+- Zero error logs in Console.app
+
+**Post-Launch Feature (Optional):**
+- Add "Grant Project Access" UI with explainer
+- Per-project bookmark management
+- Opt-in git monitoring
+
+### Tasks
+
+#### Phase 1: Disable Git Monitoring (P0 - This Release)
+
+- [ ] **[NOGIT1]** Add `Sandbox.isSandboxed` check in `updateHeadWatcher()` - early return
+- [ ] **[NOGIT2]** Remove branch display from header in sandboxed builds (show project name only)
+- [ ] **[NOGIT3]** Remove git-related code from `handleCoordinatorUpdate()` when sandboxed
+- [ ] **[NOGIT4]** Verify zero "Sandboxed without security scope" errors in logs
+- [ ] **[NOGIT5]** Test App Store build: clean logs, no git errors
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift` (updateHeadWatcher, handleCoordinatorUpdate)
+- `Contextify/Contextify/ContentView.swift` (header branch display)
+
+**Estimated Effort:** 2-3 hours
+
+#### Phase 2: Optional Project Access (P1 - Post-Launch Feature)
+
+- [ ] **[PROJACCESS1]** Design "Grant Project Access" button + info popover
+- [ ] **[PROJACCESS2]** Implement NSOpenPanel flow for project root selection
+- [ ] **[PROJACCESS3]** Per-project bookmark storage (database or JSON)
+- [ ] **[PROJACCESS4]** Show branch when bookmark exists, "Grant Access" when missing
+- [ ] **[PROJACCESS5]** Add Settings toggle: "Enable git branch monitoring"
+
+**UX Flow:**
+```
+Header (no bookmark):  [Project: contextify] [Grant Project Access] (i)
+Header (with bookmark): [Project: contextify] [Branch: main ✓]
+```
+
+**Files:**
+- `Contextify/Contextify/ContentView.swift` (conditional header UI)
+- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift` (bookmark handling)
+- `app/Sources/ContextifyCore/Database/Models.swift` (per-project bookmark field)
+
+**Estimated Effort:** 6-8 hours
+**Priority:** P1 (nice to have, not required for launch)
+
+**See:** `build/docs/architecture/sandbox-appstore-architecture.md` § "Bookmark Creation Workflow"
+
+---
+
 ## P0: App Store Submission Preparation
 
-**Status:** Not Started  
-**Priority:** P0 (Blocks public release)  
+**Status:** Not Started
+**Priority:** P0 (Blocks public release)
 **Effort:** 8-12 hours
 
 ### Tasks
