@@ -45,6 +45,10 @@ parse_arg() {
       dist="appstore"
       action="cleanrun"
       ;;
+    da)
+      dist="dmg"
+      action="cleanrun"
+      ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
       echo "This command replaces ~/.claude/projects with test fixtures, causing active transcripts to be lost." >&2
@@ -52,7 +56,7 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca]" >&2
+      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
@@ -65,6 +69,7 @@ parse_arg() {
       echo "  clean              Clean build artifacts" >&2
       echo "  cleanrun           Clean database + build + run (first-run)" >&2
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
+      echo "  da                 Shortcut for DMG cleanrun (db reset + perms + launch)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
