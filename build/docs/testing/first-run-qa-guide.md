@@ -2,13 +2,22 @@
 
 This guide describes the CLI-only QA toolkit for testing Contextify's first-run onboarding flow across both distribution models (DMG and App Store).
 
+## ⚠️ IMPORTANT: seed-demo Currently Disabled
+
+**The `seed-demo` command is temporarily disabled** due to interference with active Claude Code usage:
+- It replaces real `~/.claude/projects` and `~/.codex/sessions` with symlinks to `/tmp`
+- Active Claude Code sessions write to temp storage, causing data loss on reboot
+- No automatic restoration mechanism exists
+
+**Re-enable for final QA testing only.** Until then, use your real transcripts for testing.
+
 ## Overview
 
 The QA toolkit provides command-line controls to:
 
 - **Reset app state** (database, preferences, security-scoped bookmarks)
 - **Reset macOS privacy permissions** (TCC entries)
-- **Seed deterministic demo fixtures** for reproducible testing
+- ~~**Seed deterministic demo fixtures** for reproducible testing~~ (DISABLED - see warning above)
 - **Select distribution mode** (DMG unsandboxed vs App Store sandboxed)
 - **Stream app logs** in real-time during onboarding
 
@@ -17,9 +26,6 @@ The QA toolkit provides command-line controls to:
 ## Quick Reference
 
 ```bash
-# Seed demo fixtures (do this once)
-./scripts/xc.sh seed-demo
-
 # DMG first-run (unsandboxed, fast path)
 ./scripts/xc.sh --dist=dmg Debug cleanrun
 
