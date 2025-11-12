@@ -297,7 +297,7 @@ struct ContextifyApp: App {
         showWelcomeModal = true
       }
     }
-    .defaultSize(width: 1200, height: 360)  // Timeline-only default for v1.0
+    .defaultSize(width: 940, height: 360)  // Main content (640) + Timeline sidebar (300)
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
