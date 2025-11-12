@@ -248,15 +248,27 @@ struct WelcomeModalView: View {
 
     private var permissionsContent: some View {
         VStack(spacing: 20) {
-            Text("Please allow access to your transcripts")
+            Text("Grant Folder Access")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Apps downloaded from the App Store require you to manually grant access to your transcript folders.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Contextify reads your Claude Code or Codex transcripts to build searchable timelines. At least one of these tools must be installed first.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("This takes about 4 clicks. We'll automatically open the correct folders—you just need to click \"Grant Access\" in each dialog.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("Your transcript data stays private on your machine and is never sent to the internet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             // Source authorization rows
             VStack(spacing: 12) {
@@ -278,18 +290,25 @@ struct WelcomeModalView: View {
 
     private var needsPermissions: Bool {
         // Check if we're in a sandboxed build
-        // Keep showing permissions step until user explicitly dismisses it
-        // (Don't auto-hide just because one source is authorized)
         #if APPSTORE
         let isSandboxed = true
         #else
         let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
         #endif
 
-        // Keep showing permissions step until user explicitly dismisses it
-        // Don't auto-hide after first authorization - let user click Continue/Skip
-        // Note: showPermissionsStep is controlled by user actions, not authorization state
-        return isSandboxed && showPermissionsStep
+        // Show permissions step on first launch (no authorizations exist yet)
+        // Once shown, showPermissionsStep controls visibility until user dismisses
+        if !isSandboxed {
+            return false
+        }
+
+        // If permissions step is already visible, keep it visible
+        if showPermissionsStep {
+            return true
+        }
+
+        // Otherwise, show it if no authorizations exist
+        return !hasAnyAuthorizations
     }
 
     private var hasAnyAuthorizations: Bool {
@@ -428,7 +447,7 @@ struct SourceAuthorizationRow: View {
     private func statusDisplay(for status: AuthorizationStatus) -> (String, Color) {
         switch status {
         case .authorized: return ("Authorized", .green)
-        case .notAuthorized: return ("Not authorized", .secondary)
+        case .notAuthorized: return ("Awaiting access", .secondary)
         case .broken: return ("Broken", .orange)
         }
     }
