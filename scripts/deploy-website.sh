@@ -1,0 +1,101 @@
+#!/bin/bash
+#
+# deploy-website.sh - Deploy contextify.sh website to server
+#
+# Usage: ./scripts/deploy-website.sh [--dry-run]
+#
+
+set -e
+
+# Configuration
+SERVER="web@banagale.com"
+REMOTE_DIR="/var/www/contextify.sh"
+LOCAL_DIR="website"
+TEMP_UPLOAD_DIR="/home/web/contextify-upload"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Parse arguments
+DRY_RUN=false
+if [[ "$1" == "--dry-run" ]]; then
+    DRY_RUN=true
+fi
+
+echo -e "${YELLOW}Deploying contextify.sh website...${NC}"
+echo ""
+
+# Validate local directory exists
+if [ ! -d "$LOCAL_DIR" ]; then
+    echo -e "${RED}Error: Local directory not found: $LOCAL_DIR${NC}"
+    echo "Run this script from the project root: ./scripts/deploy-website.sh"
+    exit 1
+fi
+
+# List files to deploy
+echo -e "${YELLOW}Files to deploy:${NC}"
+find "$LOCAL_DIR" -type f | sed "s|^$LOCAL_DIR/||" | sort
+echo ""
+
+# Count files
+FILE_COUNT=$(find "$LOCAL_DIR" -type f | wc -l | tr -d ' ')
+echo "Total files: $FILE_COUNT"
+echo ""
+
+if $DRY_RUN; then
+    echo -e "${YELLOW}DRY RUN - no files will be uploaded${NC}"
+    exit 0
+fi
+
+# Create temp upload directory on server
+echo -e "${YELLOW}Creating temp upload directory on server...${NC}"
+ssh "$SERVER" "mkdir -p $TEMP_UPLOAD_DIR"
+
+# Upload files via rsync
+echo -e "${YELLOW}Uploading files...${NC}"
+rsync -avz --delete \
+    --exclude '.DS_Store' \
+    --exclude '.git' \
+    "$LOCAL_DIR/" \
+    "$SERVER:$TEMP_UPLOAD_DIR/"
+
+echo ""
+
+# Move to final location and set permissions
+echo -e "${YELLOW}Moving to /var/www and setting permissions...${NC}"
+ssh "$SERVER" "sudo rsync -a --delete $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
+               sudo chown -R www-data:www-data $REMOTE_DIR && \
+               sudo find $REMOTE_DIR -type f -exec chmod 644 {} \; && \
+               sudo find $REMOTE_DIR -type d -exec chmod 755 {} \; && \
+               rm -rf $TEMP_UPLOAD_DIR"
+
+echo -e "${GREEN}✓ Files copied to $REMOTE_DIR${NC}"
+echo ""
+
+# Test site accessibility
+echo -e "${YELLOW}Testing site accessibility...${NC}"
+sleep 2
+
+# Check if site is accessible
+if curl -fsSL https://contextify.sh > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ SUCCESS: Website deployed and accessible!${NC}"
+    echo ""
+    echo -e "${GREEN}✓ Visit: https://contextify.sh${NC}"
+    echo -e "${GREEN}✓ Privacy Policy: https://contextify.sh/privacy.html${NC}"
+    echo -e "${GREEN}✓ Support: https://contextify.sh/support.html${NC}"
+else
+    echo -e "${RED}✗ WARNING: Site may not be accessible yet${NC}"
+    echo -e "${YELLOW}This could mean:${NC}"
+    echo -e "${YELLOW}  1. DNS hasn't propagated yet (wait 5-10 minutes)${NC}"
+    echo -e "${YELLOW}  2. Nginx config needs to be created/reloaded${NC}"
+    echo -e "${YELLOW}  3. SSL certificate needs to be issued${NC}"
+    echo ""
+    echo "Check Nginx status:"
+    echo "  ssh $SERVER 'sudo systemctl status nginx'"
+    echo ""
+    echo "Check Nginx config:"
+    echo "  ssh $SERVER 'sudo nginx -t'"
+fi
