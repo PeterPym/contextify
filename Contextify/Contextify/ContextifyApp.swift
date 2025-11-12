@@ -415,12 +415,8 @@ struct ContextifyApp: App {
       // Initialize projects view model (C2.1 - may already be set from window .task)
       if projectsViewModel == nil {
         // Only use folder access controller in sandboxed builds
-        #if APPSTORE
-        let controller: FolderAccessController? = folderAccessController
-        #else
-        let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-        let controller: FolderAccessController? = isSandboxed ? folderAccessController : nil
-        #endif
+        // Use compile-time check based on entitlements (runtime check is unreliable)
+        let controller: FolderAccessController? = Sandbox.isSandboxed ? folderAccessController : nil
 
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         let discoveryService = ProjectDiscoveryService(
