@@ -12,6 +12,8 @@ extension Notification.Name {
 
   /// Posted when ALL project transcript ingestion (hoovering) completes
   /// This fires after all hoover operations finish, unlike projectsDiscoveryComplete which fires early
+  /// SUBSCRIBERS: ProjectSwitcherState uses this to refresh tabs after welcome modal ingestion
+  /// (handles race where watchers already exist so .discovered events aren't emitted)
   public static let projectsIngestionComplete = Notification.Name("contextify.projectsIngestionComplete")
 
   /// Posted during transcript hoovering to report incremental progress

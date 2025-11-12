@@ -49,6 +49,7 @@ public final class ProjectSwitcherState {
 
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
+  @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
 
@@ -75,6 +76,7 @@ public final class ProjectSwitcherState {
   deinit {
     // Cancel any pending tasks (safety net for tests/non-singleton usage)
     projectObservationTask?.cancel()
+    ingestionCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
@@ -131,6 +133,20 @@ public final class ProjectSwitcherState {
       }
     }
 
+    // Subscribe to ingestion complete notification to refresh tabs
+    // CRITICAL: This handles a race condition where welcome modal ingests projects BEFORE
+    // startGlobalMonitoring() runs. When watchers already exist, ensureWatcher() skips
+    // emitting .discovered events, so we need this notification to trigger refreshProjects().
+    // Without this, tabs won't appear after welcome modal ingestion completes.
+    ingestionCompleteTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
+      for await _ in notifications {
+        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
+        await self.refreshProjects()
+      }
+    }
+
     // Initial discovery & full unread pass based on current DB
     Task {
       // Get initial context from coordinator (guaranteed to be available)
@@ -178,6 +194,8 @@ public final class ProjectSwitcherState {
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
+    ingestionCompleteTask?.cancel()
+    ingestionCompleteTask = nil
     coalesceTask?.cancel()
     coalesceTask = nil
     removeProjectRootObserver()

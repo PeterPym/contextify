@@ -122,6 +122,9 @@ public actor ProjectActivityMonitor {
   }
 
   /// Idempotent watcher start (returns existing handle if already started)
+  /// IMPORTANT: Only emits .discovered event on FIRST call per projectId. If watcher already
+  /// exists, returns early WITHOUT emitting. Callers expecting .discovered events must handle
+  /// this case separately (e.g., ProjectSwitcherState subscribes to .projectsIngestionComplete).
   public func ensureWatcher(projectId: String) async throws -> WatchHandle {
     if let existing = activeWatchers[projectId] {
       log.debug("Watcher already active for project: \(projectId)")
@@ -134,7 +137,7 @@ public actor ProjectActivityMonitor {
 
     log.info("Started watcher for project: \(projectId)")
 
-    // Emit discovered event
+    // Emit discovered event (only on first call - see IMPORTANT note above)
     emitEvent(ProjectEvent(projectId: projectId, kind: .discovered))
 
     return handle
