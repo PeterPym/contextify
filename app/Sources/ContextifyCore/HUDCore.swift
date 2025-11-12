@@ -545,7 +545,7 @@ public final class HUDViewModel {
           relativeTo: nil,
           bookmarkDataIsStale: &isStale
         )
-        await updateSecurityScope(scopedURL)
+        updateSecurityScope(for: scopedURL, persisted: true)
 
         if isStale {
           watcherLog.warning("Security-scoped bookmark is stale for \(context.displayName)")
@@ -553,7 +553,7 @@ public final class HUDViewModel {
       } catch {
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
-    } else if isSandboxed {
+    } else if Sandbox.isSandboxed {
       watcherLog.warning("No bookmark in coordinator context for sandboxed build; watchers may fail")
     }
 
