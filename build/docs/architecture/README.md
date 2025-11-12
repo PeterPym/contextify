@@ -38,6 +38,14 @@ This directory contains high-level architectural documentation that explains:
 - Event-driven discovery and updates
 - **Implementation:** Shipped (ProjectSwitcherState + ProjectSwitcherView)
 
+### [Sandbox & App Store Architecture](sandbox-appstore-architecture.md)
+**Topics:** Sandboxed vs unsandboxed builds, security-scoped bookmarks
+- Security-scoped bookmark lifecycle and patterns
+- DMG (unsandboxed) vs App Store (sandboxed) code paths
+- Testing procedures and permission management
+- Known sandbox-specific bugs and limitations
+- **Critical for:** App Store builds, release testing, distribution
+
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
 - Tables, migrations (v1-v23), repositories

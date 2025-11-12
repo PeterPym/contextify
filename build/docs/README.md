@@ -9,7 +9,7 @@
 
 | Category | Purpose | Key Documents |
 |----------|---------|---------------|
-| **Architecture** | System design & data flow | [Data Flow](architecture/data-flow.md), [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md) |
+| **Architecture** | System design & data flow | [Data Flow](architecture/data-flow.md), [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
@@ -51,6 +51,7 @@ System-level design documents. How the major components fit together.
 - [LLM Processing](architecture/llm-processing.md) - Dual-queue LLM system (FoundationLLM)
 - [Startup Coordinator](architecture/startup-coordinator.md) - Project identity pipeline
 - [Window System](architecture/window-system.md) - 4-window macOS app architecture
+- [Sandbox & App Store](architecture/sandbox-appstore-architecture.md) - Sandboxed builds, security-scoped bookmarks, distribution modes
 
 ### components/
 Component-specific implementation details. How individual subsystems work.
@@ -80,6 +81,9 @@ QA workflows and testing procedures.
 
 **Key docs:**
 - [First-Run QA Guide](testing/first-run-qa-guide.md) - CLI toolkit for testing onboarding flows (DMG vs App Store)
+
+**See also:**
+- [Sandbox & App Store Architecture](architecture/sandbox-appstore-architecture.md) - Testing sandboxed builds, permission management
 
 ### design/
 Design decisions. Color scheme, typography, help system UX.
