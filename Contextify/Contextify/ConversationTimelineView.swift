@@ -286,10 +286,35 @@ struct ConversationTimelineView: View {
 
             // Show different message based on whether transcripts exist
             if monitor.allSessions.isEmpty {
-                Text("Use Claude Code or Codex to populate the timeline.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .multilineTextAlignment(.center)
+                VStack(spacing: 12) {
+                    Text("Use Claude Code or Codex to populate the timeline.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+
+                    // Check if user hasn't granted folder permissions (sandboxed build only)
+                    #if APPSTORE
+                    let isSandboxed = true
+                    #else
+                    let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
+                    #endif
+
+                    if isSandboxed {
+                        // Show button to grant permissions if sandboxed and no sessions found
+                        VStack(spacing: 8) {
+                            Text("Need to grant folder access?")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Button("Open Transcript Sources...") {
+                                openWindow(id: "transcript-sources")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                        .padding(.top, 8)
+                    }
+                }
             } else {
                 Text("This conversation has not started yet.")
                     .font(.caption)

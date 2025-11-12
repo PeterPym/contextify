@@ -257,6 +257,15 @@ public final class FolderAccessController: ObservableObject {
     /// Validate that a folder contains transcripts for the given source.
     /// Returns true if transcripts are found, false otherwise.
     private func validateTranscripts(in url: URL, for source: SourceID) -> Bool {
+        // Start accessing security-scoped resource (NSOpenPanel provides temporary access)
+        guard url.startAccessingSecurityScopedResource() else {
+            log.error("[VALIDATE] Failed to start accessing: \(url.path)")
+            return false
+        }
+        defer {
+            url.stopAccessingSecurityScopedResource()
+        }
+
         let fm = FileManager.default
 
         switch source {
@@ -295,27 +304,39 @@ public final class FolderAccessController: ObservableObject {
             // Codex structure: .codex/sessions/YYYY/MM/DD/<session>.jsonl (hierarchical)
             // Recursively search up to 3 levels deep
 
-            func findJsonlRecursive(in dir: URL, depth: Int = 0, maxDepth: Int = 3) -> Bool {
-                guard depth < maxDepth else { return false }
+            func findJsonlRecursive(in dir: URL, depth: Int = 0, maxDepth: Int = 4) -> Bool {
+                log.debug("[CODEX-VALIDATE] Searching at depth=\(depth) path=\(dir.path)")
+
+                guard depth < maxDepth else {
+                    log.debug("[CODEX-VALIDATE] Max depth reached at \(dir.path)")
+                    return false
+                }
 
                 guard let contents = try? fm.contentsOfDirectory(
                     at: dir,
                     includingPropertiesForKeys: [.isDirectoryKey],
                     options: [.skipsHiddenFiles]
                 ) else {
+                    log.warning("[CODEX-VALIDATE] Cannot read directory: \(dir.path)")
                     return false
                 }
 
+                log.debug("[CODEX-VALIDATE] Found \(contents.count) items in \(dir.lastPathComponent)")
+
                 // Check current level for .jsonl files
-                if contents.contains(where: { $0.pathExtension == "jsonl" }) {
+                let jsonlFiles = contents.filter { $0.pathExtension == "jsonl" }
+                if !jsonlFiles.isEmpty {
+                    log.info("[CODEX-VALIDATE] Found \(jsonlFiles.count) .jsonl files at \(dir.path)")
                     return true
                 }
 
                 // Recurse into subdirectories
-                for item in contents {
-                    guard (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
-                        continue
-                    }
+                let subdirs = contents.filter { item in
+                    (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+                }
+                log.debug("[CODEX-VALIDATE] Found \(subdirs.count) subdirectories to search")
+
+                for item in subdirs {
                     if findJsonlRecursive(in: item, depth: depth + 1, maxDepth: maxDepth) {
                         return true
                     }
@@ -326,9 +347,9 @@ public final class FolderAccessController: ObservableObject {
 
             let hasTranscripts = findJsonlRecursive(in: url)
             if hasTranscripts {
-                log.info("Found Codex transcripts in: \(url.path)")
+                log.info("[CODEX-VALIDATE] ✅ Validation succeeded for: \(url.path)")
             } else {
-                log.warning("No Codex transcripts found in: \(url.path)")
+                log.warning("[CODEX-VALIDATE] ❌ No Codex transcripts found in: \(url.path)")
             }
             return hasTranscripts
         }

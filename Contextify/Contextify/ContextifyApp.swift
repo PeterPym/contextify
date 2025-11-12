@@ -27,6 +27,11 @@ struct WindowCommands: Commands {
       }
       .keyboardShortcut("p", modifiers: [.command, .shift])
 
+      Button("Transcript Sources...") {
+        openWindow(id: "transcript-sources")
+      }
+      .keyboardShortcut("t", modifiers: [.command, .option])
+
       Divider()
 
       Button("Previous Project") {
@@ -304,6 +309,13 @@ struct ContextifyApp: App {
     Settings {
       SettingsView()
     }
+
+    // Transcript Sources settings window
+    Window("Transcript Sources", id: "transcript-sources") {
+      TranscriptSourcesSettingsView(folderAccessController: folderAccessController)
+    }
+    .defaultSize(width: 500, height: 350)
+    .windowResizability(.contentSize)
 
     Window("Transcript Inventory", id: "transcript-inventory") {
       TranscriptInventoryWindow()
