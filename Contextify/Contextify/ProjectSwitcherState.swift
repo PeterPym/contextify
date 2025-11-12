@@ -370,6 +370,19 @@ public final class ProjectSwitcherState {
     }
   }
 
+  /// Manually trigger a full hoover rescan (Diagnostics menu, welcome modal investigations)
+  public func triggerManualHooverRescan(reason: String = "user-command") {
+    guard let monitor = activityMonitor else {
+      log.error("Manual hoover rescan requested but activity monitor is unavailable")
+      return
+    }
+
+    log.info("[MANUAL-RESCAN] Trigger requested (reason: \(reason))")
+    Task {
+      await monitor.forceRescanAllProjects(reason: reason)
+    }
+  }
+
   /// Switch to a different project
   public func switchToProject(_ projectId: String) async {
     let switchStart = Date()

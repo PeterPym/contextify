@@ -116,6 +116,18 @@ public actor ProjectActivityMonitor {
     log.info("Stopped all project monitoring")
   }
 
+  /// Manually trigger a full discovery/hoover pass (used for diagnostics)
+  public func forceRescanAllProjects(reason: String = "manual") async {
+    log.info("[MANUAL-RESCAN] Requested full rescan (reason: \(reason, privacy: .public))")
+
+    do {
+      try await discoverAllProjects()
+      log.info("[MANUAL-RESCAN] Completed full rescan (reason: \(reason, privacy: .public))")
+    } catch {
+      log.error("[MANUAL-RESCAN] Failed to complete rescan: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   /// Legacy compatibility - calls stopGlobalMonitoring()
   public func stopAll() async {
     await stopGlobalMonitoring()
