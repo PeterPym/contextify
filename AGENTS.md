@@ -186,12 +186,13 @@ NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 ### Transcript Parsing & Metadata
 - **TranscriptParsers** (`app/Sources/ContextifyCore/Database/TranscriptParsers.swift`): JSONL parsers for Claude Code and Codex CLI formats. Used by HooverEngine during ingestion (JSONL → DB).
 - **ConversationMonitor**: Consumes parsed entries from SQL; **does not parse JSONL**.
-- **IMPORTANT:** For all transcript parsing, format differences, and JSON structure details, **ALWAYS consult** `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md`
-  - Documents Claude Code vs Codex JSONL format differences (lines 118-131)
-  - Record type taxonomy and field shapes (lines 47-115)
-  - Parsing strategies for both formats (lines 177-192)
-  - Content block types: Claude Code uses `text`, Codex uses `input_text`/`output_text`
-  - Message structure: Claude Code has top-level `uuid`/`type`, Codex wraps in `payload.type:"message"`
+- **CRITICAL:** For all transcript work (parsing, discovery, permissions), **ALWAYS consult** `build/docs/specifications/transcript-formats.md` FIRST
+  - **Storage locations:** Claude Code (`~/.claude/projects/`) vs Codex (`~/.codex/sessions/YYYY/MM/DD/`)
+  - **Project discovery:** Claude Code uses directory structure, Codex uses `session_meta.payload.cwd` field
+  - **Record types:** Complete specifications for all record types in both formats
+  - **Content blocks:** Claude Code uses `text`, Codex uses `input_text`/`output_text`
+  - **Message linking:** Claude Code uses `uuid`+`parentUuid`, Codex uses `call_id` for tools
+  - **Format comparison:** Side-by-side comparison table of all differences
 - **ConversationSources** (`Contextify/Contextify/ConversationSources.swift`): Provider-specific session discovery (Claude Code, Codex CLI)
 - **TranscriptMetadataOrchestrator** (`Contextify/Contextify/TranscriptMetadataOrchestrator.swift`): Coordinates LLM-based metadata generation for transcripts (titles, descriptions, topics).
 - **SidecarMetadataStore** (`Contextify/Contextify/SidecarMetadataStore.swift`): JSON sidecar file persistence for transcript metadata.
