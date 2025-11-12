@@ -315,6 +315,12 @@ struct WelcomeModalView: View {
         authorizations.values.contains { $0.status == .authorized }
     }
 
+    private var hasAuthorizedAllSources: Bool {
+        SourceID.allCases.allSatisfy { source in
+            authorizations[source]?.status == .authorized
+        }
+    }
+
     private func loadAuthorizations() async {
         let allAuths = await folderAccessController.allAuthorizations()
         for auth in allAuths {
@@ -329,11 +335,13 @@ struct WelcomeModalView: View {
             if showPermissionsStep && needsPermissions {
                 // Permissions step buttons
                 HStack(spacing: 12) {
-                    Button("Skip for now") {
-                        log.info("User skipped permissions step")
-                        showPermissionsStep = false
+                    if !hasAuthorizedAllSources {
+                        Button("Skip for now") {
+                            log.info("User skipped permissions step")
+                            showPermissionsStep = false
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     Button("Continue") {
                         log.info("User granted permissions, continuing to discovery")
@@ -343,7 +351,7 @@ struct WelcomeModalView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!hasAnyAuthorizations)
+                    .disabled(!hasAuthorizedAllSources)
                     .keyboardShortcut(.defaultAction)
                 }
             } else if !projectsVM.projects.isEmpty && !projectsVM.isDiscovering && !projectsVM.isIngesting {
