@@ -172,7 +172,19 @@ public enum HUDPreferences {
 // MARK: - Sandbox
 
 public enum Sandbox {
+  /// Compile-time check for sandbox status based on entitlements
+  /// DMG builds: false (Contextify.entitlements - no sandbox key)
+  /// App Store builds: true (Contextify-AppStore.entitlements - has sandbox key)
   public static var isSandboxed: Bool {
+    #if APPSTORE_BUILD
+    return true
+    #else
+    return false
+    #endif
+  }
+
+  /// Runtime check for sandbox status (less reliable, use sparingly)
+  public static var isRuntimeSandboxed: Bool {
     #if os(macOS)
     if getenv("APP_SANDBOX_CONTAINER_ID") != nil { return true }
     if ProcessInfo.processInfo.environment["__XPC_SANDBOXED"] == "1" { return true }

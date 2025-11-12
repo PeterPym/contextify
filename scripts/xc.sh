@@ -357,6 +357,12 @@ run_build_for_dist() {
   fi
 
   # Determine signing approach
+  # Add APPSTORE_BUILD compiler flag for App Store builds
+  local swift_flags=""
+  if [[ "$dist" == "appstore" ]]; then
+    swift_flags="OTHER_SWIFT_FLAGS=\$(inherited) -D APPSTORE_BUILD"
+  fi
+
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
     # CI: use ad-hoc signing
     run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
@@ -364,12 +370,14 @@ run_build_for_dist() {
       -derivedDataPath "$dd" \
       CODE_SIGN_IDENTITY="-" \
       DEVELOPMENT_TEAM="" \
+      $swift_flags \
       build
   else
     # Local: use Xcode project settings
     run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
       -configuration "$config" -destination "platform=macOS" \
       -derivedDataPath "$dd" \
+      $swift_flags \
       build
   fi
 
