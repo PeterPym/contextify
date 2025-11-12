@@ -1,8 +1,52 @@
 # High-Priority TODOs
 
-**Status:** Active
-**Last Updated:** 2025-11-11
+**Status:** Active  
+**Last Updated:** 2025-11-11  
 **Priority Level:** P0 (Blocking release)
+
+---
+
+## ✅ COMPLETED: Website Launch (2025-11-11)
+
+**Status:** 95% Complete (Ready for App Store)  
+**Branch:** `feature/website-launch` (4 commits, ready to push)  
+**Documentation:** `build/notes/website-launch-status.md`
+
+### Completed
+- [x] Domain: contextify.sh registered and DNS configured
+- [x] Website: homepage, privacy policy, support page
+- [x] Infrastructure: Nginx + SSL deployed
+- [x] Scripts: deploy-website.sh, setup-server.sh
+- [x] Docs: 43KB planning documentation
+- [x] Git: 4 atomic commits (2,963 lines)
+
+### Remaining (5%)
+- [ ] Disable Namecheap URL forwarding (5 min)
+- [ ] Setup hello@contextify.sh email (15 min)
+
+**App Store URLs Ready:**
+- Marketing: https://contextify.sh
+- Privacy: https://contextify.sh/privacy.html  
+- Support: https://contextify.sh/support.html
+
+---
+
+## P0: App Store Submission Preparation
+
+**Status:** Not Started  
+**Priority:** P0 (Blocks public release)  
+**Effort:** 8-12 hours
+
+### Tasks
+- [ ] **[AS-1]** App Store Connect setup (metadata, screenshots, description)
+- [ ] **[AS-2]** Build Release binary (sign, archive, validate, upload)
+- [ ] **[AS-3]** Submit for review (compliance, age rating, reviewer notes)
+- [ ] **[AS-4]** TestFlight beta (optional, recommended)
+
+**See:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
+
+---
+
 
 ---
 

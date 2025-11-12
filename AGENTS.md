@@ -487,6 +487,18 @@ When encountering bugs or issues:
 - Logging conventions: `build/docs/guides/logging-best-practices.md`
 - Debugging case study: `build/notes/research/debugging-setup-2025-11-08.md`
 
+## Website & Marketing Administration
+
+**Website:** contextify.sh (static HTML, Nginx, Let's Encrypt SSL)
+- Deploy: `./scripts/deploy-website.sh` (rsync-based, one-command)
+- Server: web@banagale.com (DigitalOcean droplet 143.198.70.216)
+- DNS: Managed at DigitalOcean (ns1/2/3.digitalocean.com)
+- Email: Apple Custom Email via iCloud+ (hello@contextify.sh)
+- Config: `build/nginx-contextify.conf` (deployed to `/etc/nginx/sites-available/contextify`)
+- Web root: `/var/www/contextify.sh/`
+- SSL: Auto-renewal via certbot (Let's Encrypt)
+- Docs: `build/docs/website/`, `build/notes/website-launch-status.md`
+
 ## Testing Guidelines
 - **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
 - Key test files:
