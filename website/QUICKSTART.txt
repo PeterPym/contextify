@@ -1,0 +1,73 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║                   CONTEXTIFY.SH QUICK START                       ║
+║                     Launch in 3 Commands                          ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+STEP 1: Add DNS (5 minutes)
+────────────────────────────────────────────────────────────────────
+doctl compute domain records create contextify.sh \
+  --record-type A \
+  --record-name @ \
+  --record-data 143.198.70.216 \
+  --record-ttl 300
+
+# Wait 5 minutes, then verify:
+dig contextify.sh +short
+# (should return 143.198.70.216)
+
+
+STEP 2: Setup Nginx + SSL (15 minutes)
+────────────────────────────────────────────────────────────────────
+ssh web@banagale.com
+
+# Create web root
+sudo mkdir -p /var/www/contextify.sh
+sudo chown www-data:www-data /var/www/contextify.sh
+
+# Create vhost (see website/README.md for config)
+sudo nano /etc/nginx/sites-available/contextify
+
+# Enable and reload
+sudo ln -s /etc/nginx/sites-available/contextify /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# Get SSL certificate
+sudo certbot --nginx -d contextify.sh -d www.contextify.sh
+
+exit
+
+
+STEP 3: Deploy (5 minutes)
+────────────────────────────────────────────────────────────────────
+./scripts/deploy-website.sh
+
+
+DONE! Test it:
+────────────────────────────────────────────────────────────────────
+open https://contextify.sh
+
+
+NEXT: Setup Email
+────────────────────────────────────────────────────────────────────
+1. Go to iCloud Settings → Custom Email Domain
+2. Add contextify.sh
+3. Follow Apple's DNS setup instructions
+4. Create alias: hello@contextify.sh
+
+
+APP STORE URLS:
+────────────────────────────────────────────────────────────────────
+Marketing URL:      https://contextify.sh
+Privacy Policy URL: https://contextify.sh/privacy.html
+Support URL:        https://contextify.sh/support.html
+Contact Email:      hello@contextify.sh
+
+
+FULL DOCS:
+────────────────────────────────────────────────────────────────────
+build/docs/website/LAUNCH-CHECKLIST.md  (step-by-step with details)
+build/docs/website/EXECUTIVE-SUMMARY.md (overview and rationale)
+website/README.md                        (maintenance guide)
+
+╚═══════════════════════════════════════════════════════════════════╝
