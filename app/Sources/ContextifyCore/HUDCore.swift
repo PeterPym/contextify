@@ -533,6 +533,30 @@ public final class HUDViewModel {
     projectRootURL = url
     branch = context.branch ?? "—"
 
+    // Restore security-scoped access to project root. Without this, sandboxed builds
+    // cannot monitor .git/HEAD (branch display breaks) or access other project files.
+    // The bookmark grants persistent filesystem access across app launches and project switches.
+    if let bookmark = context.bookmark {
+      do {
+        var isStale = false
+        let scopedURL = try URL(
+          resolvingBookmarkData: bookmark,
+          options: .withSecurityScope,
+          relativeTo: nil,
+          bookmarkDataIsStale: &isStale
+        )
+        await updateSecurityScope(scopedURL)
+
+        if isStale {
+          watcherLog.warning("Security-scoped bookmark is stale for \(context.displayName)")
+        }
+      } catch {
+        watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
+      }
+    } else if isSandboxed {
+      watcherLog.warning("No bookmark in coordinator context for sandboxed build; watchers may fail")
+    }
+
     // Update file watchers for new project
     updateHeadWatcher()
 
