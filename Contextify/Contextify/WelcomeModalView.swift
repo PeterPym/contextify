@@ -83,10 +83,6 @@ struct WelcomeModalView: View {
             Text("Welcome to Contextify")
                 .font(.title)
                 .fontWeight(.semibold)
-
-            Text("Discovering your projects...")
-                .font(.body)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -252,11 +248,11 @@ struct WelcomeModalView: View {
 
     private var permissionsContent: some View {
         VStack(spacing: 20) {
-            Text("Allow access to your transcripts")
+            Text("Please allow access to your transcripts")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Contextify reads your developer transcripts to build timelines and search.")
+            Text("Apps downloaded from the App Store require you to manually grant access to your transcript folders.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
