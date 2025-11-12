@@ -1,7 +1,7 @@
 # High-Priority TODOs
 
 **Status:** Active  
-**Last Updated:** 2025-11-11  
+**Last Updated:** 2025-11-12
 **Priority Level:** P0 (Blocking release)
 
 ---
@@ -31,6 +31,69 @@
 
 ---
 
+## Database Import/Export Feature (P1)
+
+**Status:** Not Started  
+**Priority:** P1 (User convenience, data portability)  
+**Target Completion:** Future release
+
+### Problem
+
+Settings allows changing database location (move functionality), but there's no way to **import** an existing database from another location. Users who want to:
+- Restore from a backup
+- Migrate from a different machine
+- Use a database from a previous installation
+
+...must manually copy the database file to the expected location. This is error-prone and requires technical knowledge.
+
+### Expected Behavior
+
+Add "Import Database" feature in Settings > Database tab:
+- File picker to select existing `contextify.db` file
+- Validate database schema version
+- Run migrations if needed (database from older app version)
+- Copy to active database location
+- Restart monitoring with imported data
+
+### Implementation Considerations
+
+1. **Schema Validation:**
+   - Read `user_version` PRAGMA from selected file
+   - Compare with current app's expected version
+   - Show warning if version mismatch
+
+2. **Migration Handling:**
+   - If database is older: run migrations automatically
+   - If database is newer: show error (can't downgrade)
+   - Use existing `DatabaseMigration` infrastructure
+
+3. **Safety:**
+   - Backup current database before import
+   - Atomic operation (rollback on failure)
+   - Validate imported database integrity (PRAGMA integrity_check)
+
+4. **UX:**
+   - Progress indicator during import/migration
+   - Clear success/error messages
+   - Option to restart app after import
+
+### Tasks
+
+- [ ] **[DBIMP1]** Add "Import Database" button to Settings > Database tab
+- [ ] **[DBIMP2]** Implement schema version validation
+- [ ] **[DBIMP3]** Add automatic migration for older databases
+- [ ] **[DBIMP4]** Add backup-before-import safety mechanism
+- [ ] **[DBIMP5]** Test with databases from v1-v23 schema versions
+
+**Files:**
+- `Contextify/Contextify/Settings/DatabaseSettingsView.swift`
+- `app/Sources/ContextifyCore/Database/DatabaseMigration.swift`
+- `app/Sources/ContextifyCore/Database/DatabaseManager.swift`
+
+**Estimated Effort:** 6-8 hours
+
+---
+
 ## P0: App Store Submission Preparation
 
 **Status:** Not Started  
@@ -44,9 +107,6 @@
 - [ ] **[AS-4]** TestFlight beta (optional, recommended)
 
 **See:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
-
----
-
 
 ---
 
