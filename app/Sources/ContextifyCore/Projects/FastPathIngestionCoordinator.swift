@@ -78,6 +78,8 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
   }
 
   private func processProject(projectId: String) async {
+    log.info("[FAST-PATH-ENTRY] processProject started for project: \(projectId, privacy: .public)")
+
     let transcripts: [Transcript]
     do {
       transcripts = try orchestrator.getTranscripts(forProject: projectId)
@@ -86,11 +88,24 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
       return
     }
 
+    // Log each transcript's state BEFORE filtering
+    log.info("[FAST-PATH-TRANSCRIPT] Found \(transcripts.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
+    for transcript in transcripts.prefix(10) {
+      log.info("[FAST-PATH-TRANSCRIPT] Transcript \(transcript.id.prefix(8), privacy: .public) ingestState: \(transcript.ingestState, privacy: .public) lastProcessedLine: \(transcript.lastProcessedLine, privacy: .public)")
+    }
+
     let targets = transcripts.filter { $0.ingestState != "complete" }
-    guard !targets.isEmpty else { return }
+
+    // Log filter results
+    log.info("[FAST-PATH-FILTER] Filtered \(targets.count, privacy: .public) targets from \(transcripts.count, privacy: .public) total transcripts for project \(projectId, privacy: .public)")
+
+    guard !targets.isEmpty else {
+      log.info("[FAST-PATH-FILTER] No partial transcripts to process, bailing out for project \(projectId, privacy: .public)")
+      return
+    }
 
     let subset = Array(targets.prefix(maxTranscriptsPerProject))
-    log.debug("[FAST-PATH-PROJECT] Processing \(subset.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
+    log.info("[FAST-PATH-PROJECT] Processing \(subset.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
 
     // Only notify UI once per project (on first transcript completion)
     let shouldNotifyUI = !notifiedProjects.contains(projectId)
@@ -110,6 +125,8 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
             return result
           }
           let notifyForThisTranscript = shouldNotifyUI && shouldNotifyForThisOne
+
+          self.log.info("[FAST-PATH-NOTIFY] Transcript \(transcript.id.prefix(8), privacy: .public) notifyUI: \(notifyForThisTranscript, privacy: .public) (shouldNotifyUI: \(shouldNotifyUI, privacy: .public), isFirst: \(shouldNotifyForThisOne, privacy: .public))")
 
           do {
             let needsCompletion = try self.orchestrator.ingestTranscript(

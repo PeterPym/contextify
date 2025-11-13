@@ -710,6 +710,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let isPartial = refreshed?.ingestState == "partial"
 
     if notifyUI {
+      log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
       DispatchQueue.main.async {
         NotificationCenter.default.post(
           name: Notification.Name("TranscriptUpdated"),

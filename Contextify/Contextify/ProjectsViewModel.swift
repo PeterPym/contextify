@@ -110,6 +110,7 @@ final class ProjectsViewModel {
 #if APPSTORE_BUILD
         if Sandbox.isSandboxed, let coordinator = fastPathCoordinator {
           let projectIds = discovered.map { $0.id }
+          logger.info("[VIEWMODEL-FASTPATH] Calling runFastPath with activeProjectId: \(currentProjectId ?? "none", privacy: .public) projectIds: \(projectIds.count, privacy: .public)")
           await coordinator.runFastPath(projectIds: projectIds, activeProjectId: currentProjectId)
         }
 #endif
@@ -135,7 +136,7 @@ final class ProjectsViewModel {
 
   /// Sets a project as the current project
   func setAsCurrent(_ project: DiscoveredProject) {
-    logger.info("Setting current project via coordinator: \(project.name)")
+    logger.info("[VIEWMODEL-SWITCH] Switching to project: \(project.name, privacy: .public) path: \(project.path.path, privacy: .public)")
     let pathString = project.path.path
     Task {
       do {
