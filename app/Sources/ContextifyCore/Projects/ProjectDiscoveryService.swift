@@ -33,10 +33,12 @@ public actor ProjectDiscoveryService {
   /// - Directly executes operation with raw filesystem path
   /// - No authorization required
   ///
-  /// **CRITICAL:**
-  /// All filesystem operations on ~/.claude/projects MUST happen inside this closure.
-  /// URLs obtained inside this closure CANNOT be stored and used outside it -
-  /// the security scope is released when the closure returns.
+  /// **CRITICAL - Security Scope Rules:**
+  /// - URLs obtained inside this closure may be stored for later use
+  /// - However, any FileManager operations (reading, writing, listing) on those URLs
+  ///   MUST occur inside a future `withClaudeRoot` or `withAccess` call
+  /// - The security scope is released when the closure returns
+  /// - Do NOT call FileManager APIs on these URLs outside a security scope
   private func withClaudeRoot<T>(
     _ operation: @Sendable (URL) throws -> T
   ) async throws -> T {
