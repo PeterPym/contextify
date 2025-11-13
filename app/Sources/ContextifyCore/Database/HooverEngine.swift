@@ -14,6 +14,30 @@ public enum MonitorConfig {
   public static let parseErrorRetentionPerTranscript: Int = 500
 }
 
+// MARK: - Hoover Limits
+
+public enum IngestLimit: Sendable {
+  case none
+  case entries(Int)
+
+  var maxEntries: Int? {
+    switch self {
+    case .none:
+      return nil
+    case let .entries(value):
+      return value
+    }
+  }
+}
+
+public struct HooverOutcome {
+  public let processedLines: Int
+  public let newEntries: Int
+  public let reachedEOF: Bool
+  public let lastEntryId: String?
+  public let contentSha256: String?
+}
+
 // MARK: - Parsed Entry Insert
 
 /// Intermediate struct for entries before DB insert
@@ -182,7 +206,8 @@ public final class HooverEngine {
     transcriptId: String,
     lastProcessedLine: Int,
     lastProcessedEntryId: String?,
-    lineCount: Int
+    lineCount: Int,
+    ingestState: String
   ) throws {
     try db.write { db in
       try db.execute(sql: """
@@ -192,6 +217,7 @@ public final class HooverEngine {
             line_count = ?,
             parser_version = ?,
             status = 'active',
+            ingest_state = ?,
             last_error = NULL,
             updated_at = ?
         WHERE id = ?
@@ -200,6 +226,7 @@ public final class HooverEngine {
         lastProcessedEntryId,
         lineCount,
         1,
+        ingestState,
         Int(Date().timeIntervalSince1970),
         transcriptId
       ])
@@ -220,13 +247,13 @@ public final class HooverEngine {
   }
 
   /// Hoover a transcript with streaming parser
-  /// Returns the SHA256 hash of the entire transcript content
-  @discardableResult
+  /// Returns outcome information for the ingestion run
   public func hooverTranscript(
     _ transcript: Transcript,
     fileURL: URL,
-    progress: IngestProgressSink
-  ) throws -> String {
+    progress: IngestProgressSink,
+    limit: IngestLimit = .none
+  ) throws -> HooverOutcome {
     log.info("[HOOVER-START] Starting hoover for transcript: \(transcript.id, privacy: .public) from checkpoint: \(transcript.lastProcessedLine, privacy: .public)")
     let startTime = Date()
 
@@ -251,6 +278,9 @@ public final class HooverEngine {
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
     var lastEntryId: String? = nil  // Track last entry ID for checkpoint
+    var entriesInserted = 0
+    var limitReached = false
+    var hitEOF = false
 
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
@@ -313,7 +343,7 @@ public final class HooverEngine {
 
     // Process remaining lines
     var outerLoopCount = 0
-    while true {
+    outerLoop: while true {
       outerLoopCount += 1
       log.debug("[HOOVER-OUTER-LOOP] Iteration \(outerLoopCount): lineNo=\(lineNo), bufferSize=\(buffer.count) bytes")
 
@@ -374,6 +404,16 @@ public final class HooverEngine {
           metadataBatch.add(metadataResult)
         }
 
+        if entryId != nil {
+          entriesInserted += 1
+        }
+
+        if let maxEntries = limit.maxEntries, entriesInserted >= maxEntries {
+          limitReached = true
+          log.info("[HOOVER-LIMIT] Reached ingest limit (\(maxEntries)) for transcript: \(transcript.id, privacy: .public)")
+          break
+        }
+
         // Checkpoint every N lines
         if batch.count >= MonitorConfig.batchLines {
           log.info("[HOOVER-BATCH-COMMIT] Committing batch of \(batch.count) entries")
@@ -394,9 +434,14 @@ public final class HooverEngine {
       }
       log.debug("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
 
+      if limitReached {
+        break outerLoop
+      }
+
       // READ MORE DATA - only after draining existing buffer
       guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
         log.info("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public), outerLoops=\(outerLoopCount) for transcript: \(transcript.id, privacy: .public)")
+        hitEOF = true
         break
       }
       log.debug("[HOOVER-READ-CHUNK] Read \(chunk.count) bytes, buffer now \(buffer.count + chunk.count) bytes")
@@ -462,11 +507,15 @@ public final class HooverEngine {
 
     // ALWAYS update checkpoint, regardless of whether there were new entries
     // This ensures checkpoint is persisted even for already-processed transcripts
+    let ingestState = hitEOF ? "complete" : "partial"
+    let finalLineCount = hitEOF ? lineNo : max(lineNo, transcript.lineCount)
+
     try updateCheckpoint(
       transcriptId: transcript.id,
       lastProcessedLine: lineNo,
       lastProcessedEntryId: lastEntryId,
-      lineCount: lineNo
+      lineCount: finalLineCount,
+      ingestState: ingestState
     )
 
     // Verify checkpoint was updated correctly
@@ -480,12 +529,25 @@ public final class HooverEngine {
     let duration = Date().timeIntervalSince(startTime)
     progress.didCompleteTranscript(durationMs: Int(duration * 1000))
 
-    let transcriptSHA256 = transcriptHasher.finalize()
+    let transcriptSHA256: String?
+    if hitEOF {
+      transcriptSHA256 = transcriptHasher.finalize()
+    } else {
+      _ = transcriptHasher.finalize()
+      transcriptSHA256 = nil
+    }
+
     let linesPerSec = duration > 0 ? Int(Double(lineNo) / duration) : 0
     let newLines = lineNo - transcript.lastProcessedLine
-    log.info("[HOOVER-DONE] Hoovered transcript \(transcript.id, privacy: .public): \(newLines, privacy: .public) new lines (total: \(lineNo, privacy: .public)) in \(Int(duration * 1000), privacy: .public)ms (\(linesPerSec, privacy: .public)/s)")
+    log.info("[HOOVER-DONE] Hoovered transcript \(transcript.id, privacy: .public): \(newLines, privacy: .public) new lines (total: \(lineNo, privacy: .public)) in \(Int(duration * 1000), privacy: .public)ms (\(linesPerSec, privacy: .public)/s). ingest_state=\(ingestState, privacy: .public)")
 
-    return transcriptSHA256
+    return HooverOutcome(
+      processedLines: lineNo,
+      newEntries: entriesInserted,
+      reachedEOF: hitEOF,
+      lastEntryId: lastEntryId,
+      contentSha256: transcriptSHA256
+    )
   }
 
   /// Commit a batch of entries and errors to the database

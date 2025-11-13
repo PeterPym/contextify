@@ -11,8 +11,10 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectsView
 @Observable
 final class ProjectsViewModel {
   let discoveryService: ProjectDiscoveryService
+  private let orchestrator: TranscriptOrchestrator
   private let hudModel: HUDViewModel
   private let activityMonitor: ProjectActivityMonitor
+  private let fastPathCoordinator: FastPathIngestionCoordinator?
 
   // State
   private(set) var projects: [DiscoveredProject] = []
@@ -31,18 +33,23 @@ final class ProjectsViewModel {
   private(set) var currentProjectId: String?
   private(set) var currentProjectPath: String?
 
-  init(discoveryService: ProjectDiscoveryService, hudModel: HUDViewModel) {
+  init(
+    discoveryService: ProjectDiscoveryService,
+    orchestrator: TranscriptOrchestrator,
+    hudModel: HUDViewModel
+  ) {
     self.discoveryService = discoveryService
+    self.orchestrator = orchestrator
     self.hudModel = hudModel
 
-    // Get activity monitor from shared orchestrator
-    do {
-      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-      self.activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
-    } catch {
-      logger.error("Failed to initialize ProjectActivityMonitor: \(error.localizedDescription)")
-      fatalError("Cannot initialize ProjectsViewModel without activity monitor")
+    self.activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
+
+    // Initialize fast-path coordinator for instant timeline population
+    let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
+    Task(priority: .background) {
+      await coordinator.resumePendingCompletions()
     }
+    self.fastPathCoordinator = coordinator
 
     // Start observing project events for auto-refresh
     startObservingEvents()
@@ -96,6 +103,13 @@ final class ProjectsViewModel {
           }
         }
 
+        // Run fast-path ingestion for instant timeline population
+        if let coordinator = fastPathCoordinator {
+          let projectIds = discovered.map { $0.id }
+          logger.info("[VIEWMODEL-FASTPATH] Calling runFastPath with activeProjectId: \(self.currentProjectId ?? "none", privacy: .public) projectIds: \(projectIds.count, privacy: .public)")
+          await coordinator.runFastPath(projectIds: projectIds, activeProjectId: self.currentProjectId)
+        }
+
         // Refresh metadata after ingestion using canonical currentPath
         let refreshed = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
         projects = refreshed
@@ -117,7 +131,7 @@ final class ProjectsViewModel {
 
   /// Sets a project as the current project
   func setAsCurrent(_ project: DiscoveredProject) {
-    logger.info("Setting current project via coordinator: \(project.name)")
+    logger.info("[VIEWMODEL-SWITCH] Switching to project: \(project.name, privacy: .public) path: \(project.path.path, privacy: .public)")
     let pathString = project.path.path
     Task {
       do {

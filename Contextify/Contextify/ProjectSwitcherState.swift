@@ -34,6 +34,7 @@ public final class ProjectSwitcherState {
 
   private var orchestrator: TranscriptOrchestrator?
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
+  private var fastPathCoordinator: FastPathIngestionCoordinator?
 
   // All discovered projects (visible only)
   private(set) var allProjects: [ProjectInfo] = []
@@ -52,6 +53,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
+  @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
+  @ObservationIgnored private var monitorFallbackTask: Task<Void, Never>?
+  @ObservationIgnored private var hasStartedMonitoring = false
 
   // Coalescing state for batch unread updates
   @ObservationIgnored private var pendingUnread: Set<String> = []
@@ -79,6 +83,8 @@ public final class ProjectSwitcherState {
     ingestionCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
+    monitorStartTask?.cancel()
+    monitorFallbackTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -125,6 +131,17 @@ public final class ProjectSwitcherState {
       log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
+    if fastPathCoordinator == nil {
+      let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
+      Task(priority: .background) {
+        await coordinator.resumePendingCompletions()
+      }
+      fastPathCoordinator = coordinator
+      log.info("✅ ProjectSwitcher: initialized fast-path coordinator")
+    }
+
+    scheduleMonitorStart()
+
     // Subscribe to coordinator updates for project context changes
     coordinatorTask = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -168,14 +185,6 @@ public final class ProjectSwitcherState {
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
       log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
 
-      // Start global monitoring (multi-project mode is always enabled)
-      do {
-        if let monitor = activityMonitor {
-          try await monitor.startGlobalMonitoring()
-        }
-      } catch {
-        log.error("Failed to start global monitoring: \(error.localizedDescription)")
-      }
     }
 
     // Single observer loop
@@ -198,6 +207,8 @@ public final class ProjectSwitcherState {
     ingestionCompleteTask = nil
     coalesceTask?.cancel()
     coalesceTask = nil
+    cancelMonitorStartTasks()
+    hasStartedMonitoring = false
     removeProjectRootObserver()
     isStarted = false
 
@@ -276,9 +287,25 @@ public final class ProjectSwitcherState {
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
       let projectInfos = sortedProjects.map { project in
-        // Use DB bit as source of truth, OR with FS check to catch newly missing directories
-        let isOrphaned = project.isOrphaned
-          || !FileManager.default.fileExists(atPath: project.rootPath)
+        let pathExists = FileManager.default.fileExists(atPath: project.rootPath)
+
+        if project.isOrphaned && pathExists {
+          let projectId = project.id
+          Task.detached(priority: .utility) {
+            do {
+              try orchestrator.markProjectRestored(projectId: projectId)
+              await MainActor.run {
+                log.info("[ORPHAN-RESTORE] Cleared orphaned flag for project \(projectId, privacy: .public)")
+              }
+            } catch {
+              await MainActor.run {
+                log.error("[ORPHAN-RESTORE-ERROR] Failed to clear orphaned flag for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+              }
+            }
+          }
+        }
+
+        let isOrphaned = project.isOrphaned || !pathExists
         return ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
@@ -395,13 +422,13 @@ public final class ProjectSwitcherState {
 
     // Deduplicate: if already switching to this project, skip
     if switchInProgress == projectId {
-      log.debug("🔀 ProjectSwitcher: Switch to \(projectId) already in progress, skipping duplicate")
+      log.debug("🔀 ProjectSwitcher: Switch to \(projectId, privacy: .public) already in progress, skipping duplicate")
       log.info("[UIOPT-SWITCH-SKIP] Already switching to \(projectId, privacy: .public), skipped")
       return
     }
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
-    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId)")
+    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId, privacy: .public)")
 
     // Cancel any previous switch task (only one switch at a time)
     switchTask?.cancel()
@@ -446,7 +473,7 @@ public final class ProjectSwitcherState {
         logger.info("[UIOPT-SWITCH-DB-START] Looking up project in database...")
 
         guard let project = try orchestrator.getProject(id: projectId) else {
-          logger.error("Project not found: \(projectId)")
+          logger.error("Project not found: \(projectId, privacy: .public)")
           logger.error("[UIOPT-SWITCH-ERROR] Project \(projectId, privacy: .public) not found in database")
           return
         }
@@ -477,6 +504,20 @@ public final class ProjectSwitcherState {
     // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
     // This ensures UI and data stay in sync with no race condition
 
+    if let coordinator = fastPathCoordinator {
+      var projectIds = allProjects.map { $0.id }
+      if !projectIds.contains(projectId) {
+        projectIds.append(projectId)
+      }
+
+      log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
+      Task.detached(priority: .utility) { [coordinator, projectIds, projectId] in
+        await coordinator.runFastPath(projectIds: projectIds, activeProjectId: projectId)
+      }
+    } else {
+      log.info("[FASTPATH-SWITCH] Fast-path coordinator unavailable; skipping preview run")
+    }
+
     // CXT-11: Update metadata in background (non-blocking)
     Task.detached(priority: .userInitiated) { [orchestrator] in
       let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
@@ -485,7 +526,7 @@ public final class ProjectSwitcherState {
         try orchestrator.markProjectSelected(projectId: projectId)
         let timestamp = ISO8601Z.string(from: Date())
         try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-        logger.debug("✅ Project metadata updated in database: \(projectId)")
+        logger.debug("✅ Project metadata updated in database: \(projectId, privacy: .public)")
       } catch {
         logger.error("Failed to update project metadata: \(error.localizedDescription)")
       }
@@ -509,7 +550,7 @@ public final class ProjectSwitcherState {
       // Refresh project list to remove hidden project
       await refreshProjects()
 
-      log.info("Hidden project: \(projectId)")
+      log.info("Hidden project: \(projectId, privacy: .public)")
     } catch {
       log.error("Failed to hide project: \(error.localizedDescription)")
     }
@@ -526,7 +567,7 @@ public final class ProjectSwitcherState {
       // Refresh project list
       await refreshProjects()
 
-      log.info("Unhidden project: \(projectId)")
+      log.info("Unhidden project: \(projectId, privacy: .public)")
     } catch {
       log.error("Failed to unhide project: \(error.localizedDescription)")
     }
@@ -594,6 +635,57 @@ public final class ProjectSwitcherState {
   }
 
   // MARK: - Private
+
+  @MainActor
+  private func scheduleMonitorStart() {
+    guard activityMonitor != nil else {
+      log.error("[SWITCHER-MONITOR] Cannot schedule monitoring start without activity monitor")
+      return
+    }
+
+    cancelMonitorStartTasks()
+
+    monitorStartTask = Task { [weak self] in
+      guard let self else { return }
+      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
+      for await _ in notifications {
+        await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
+        return
+      }
+    }
+
+    monitorFallbackTask = Task { [weak self] in
+      guard let self else { return }
+      try? await Task.sleep(nanoseconds: 5_000_000_000)
+      await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
+    }
+  }
+
+  @MainActor
+  private func startGlobalMonitoringIfNeeded(reason: String) async {
+    guard !hasStartedMonitoring else { return }
+    guard let monitor = activityMonitor else {
+      log.error("[SWITCHER-MONITOR] Cannot start monitoring (reason: \(reason)) - activity monitor unavailable")
+      return
+    }
+
+    hasStartedMonitoring = true
+    cancelMonitorStartTasks()
+
+    do {
+      try await monitor.startGlobalMonitoring()
+      log.info("[SWITCHER-MONITOR] Started global monitoring (reason: \(reason))")
+    } catch {
+      log.error("Failed to start global monitoring (reason: \(reason)): \(error.localizedDescription)")
+    }
+  }
+
+  private func cancelMonitorStartTasks() {
+    monitorStartTask?.cancel()
+    monitorStartTask = nil
+    monitorFallbackTask?.cancel()
+    monitorFallbackTask = nil
+  }
 
   private func ensureCurrentProjectInDatabase() async {
     guard let orchestrator = orchestrator else { return }

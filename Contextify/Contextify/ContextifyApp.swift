@@ -419,6 +419,7 @@ struct ContextifyApp: App {
         )
         let vm = ProjectsViewModel(
           discoveryService: discoveryService,
+          orchestrator: orchestrator,
           hudModel: HUDViewModel.shared
         )
         self.projectsViewModel = vm

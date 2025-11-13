@@ -373,12 +373,12 @@ final class ConversationMonitor {
     func startMonitoring(projectId: String) {
         let taskStart = Date()
         log.info("[TIMELINE-START] Starting timeline monitoring for project: \(projectId, privacy: .public)")
-        log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId)")
+        log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId, privacy: .public)")
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
         // Skip if already monitoring this exact project (prevents duplicate calls during startup)
         if isMonitoring && currentProjectId == projectId {
-            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId), skipping")
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId, privacy: .public), skipping")
             return
         }
 
@@ -395,7 +395,7 @@ final class ConversationMonitor {
         // Set flag to prevent onProjectOrSessionChange from running during initialization
         isInitializing = true
 
-        log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId)")
+        log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId, privacy: .public)")
 
         // CXT-13: Remove @MainActor to prevent blocking UI on project switch
         Task { [weak self] in
@@ -411,7 +411,7 @@ final class ConversationMonitor {
                 await MainActor.run {
                     self.orchestrator = orch
                     self.currentProjectId = projectId
-                    self.log.info("📁 Project ID set: \(projectId)")
+                    self.log.info("📁 Project ID set: \(projectId, privacy: .public)")
                     self.log.info("[UIOPT-DB-INIT] Project ID set on main actor")
                 }
 
@@ -421,11 +421,11 @@ final class ConversationMonitor {
                 // startup before ingestion), we proceed anyway and reload after ingestion completes
                 if let _ = try orch.getProject(id: projectId) {
                     await MainActor.run {
-                        self.log.info("✅ Project \(projectId) verified in database")
+                        self.log.info("✅ Project \(projectId, privacy: .public) verified in database")
                     }
                 } else {
                     await MainActor.run {
-                        self.log.warning("⚠️ Project \(projectId) not in database yet (startup race condition), will refresh after ingestion completes")
+                        self.log.warning("⚠️ Project \(projectId, privacy: .public) not in database yet (startup race condition), will refresh after ingestion completes")
                     }
                 }
 
@@ -509,7 +509,7 @@ final class ConversationMonitor {
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = orchestratorForGenerator
                 await MainActor.run {
-                    self.log.info("🚀 Spawning background tasks for project: \(projectId)")
+                    self.log.info("🚀 Spawning background tasks for project: \(projectId, privacy: .public)")
                 }
                 let backgroundTasks = Task { [weak self] in
                     guard let self else { return }
@@ -550,7 +550,7 @@ final class ConversationMonitor {
 
                     self.isMonitoring = true
                     self.isInitializing = false  // Clear flag after successful initialization
-                    self.log.info("SQL-based timeline monitoring started (projectId: \(projectId))")
+                    self.log.info("SQL-based timeline monitoring started (projectId: \(projectId, privacy: .public))")
                     self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
                 NotificationCenter.default.post(name: .conversationMonitoringDidStart, object: nil)
@@ -817,7 +817,7 @@ final class ConversationMonitor {
         // Start monitoring with new project ID from coordinator
         let monitorStart = Date()
         log.info("🚀 [SWITCH-MONITOR] Starting monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
-        log.info("[SUMM-MONITOR] Calling startMonitoring(projectId: \(context.id))")
+        log.info("[SUMM-MONITOR] Calling startMonitoring(projectId: \(context.id, privacy: .public))")
         startMonitoring(projectId: context.id)
         log.info("🚀 [SWITCH-MONITOR-DONE] Monitor start triggered in \(String(format: "%.2f", Date().timeIntervalSince(monitorStart)))s")
 
@@ -1146,7 +1146,7 @@ final class ConversationMonitor {
     private func loadFeedFromSQL() async {
         guard let projectId = currentProjectId, orchestrator != nil else { return }
 
-        log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId)")
+        log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
         // Set loading phase (tracked by UI)
         phase = .loading
@@ -1162,7 +1162,7 @@ final class ConversationMonitor {
 
         do {
             let startTime = Date()
-            log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId)")
+        log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
 
             log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
             // Single query gets entries + cache
@@ -1323,7 +1323,7 @@ final class ConversationMonitor {
 
         if let cursor = await cursorPersistence.load(projectId: projectId) {
             lastSeenCursor = cursor
-            log.debug("Loaded persisted cursor for project \(projectId): \(cursor.id)")
+            log.debug("Loaded persisted cursor for project \(projectId, privacy: .public): \(cursor.id, privacy: .public)")
         }
     }
 
@@ -1782,7 +1782,7 @@ final class ConversationMonitor {
             log.debug("App resigned active while not monitoring - skip background fill")
             return
         }
-        log.info("App resigned active - starting background fill for unseen entries (project: \(projectId))")
+        log.info("App resigned active - starting background fill for unseen entries (project: \(projectId, privacy: .public))")
 
         // CXT-103: Atomically clear and cancel any existing background fill task
         let oldTask = backgroundFillTask
@@ -2533,7 +2533,8 @@ final class ConversationMonitor {
 
                     // Auto-recovery for specific issues
                     if issue.category == .watcherMissing {
-                        await attemptWatcherRecovery(projectId: projectId, orchestrator: orchestrator)
+                        log.debug("[WATCHER-HEALTH-DISABLED] Skipping watcher recovery per watcher-rca-validation-20251113.md")
+                        continue
                     } else if issue.category == .hooverStall {
                         await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
                     }
@@ -2557,8 +2558,8 @@ final class ConversationMonitor {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
 
             for transcript in transcripts where !orchestrator.isWatchingTranscript(transcriptId: transcript.id) {
-                log.info("🔧 Attempting to restart watcher for: \(transcript.id)")
                 let fileURL = URL(fileURLWithPath: transcript.filePath)
+                log.info("🔧 Attempting to restart watcher for: \(transcript.id) at path: \(fileURL.path, privacy: .public)")
                 try orchestrator.startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
             }
         } catch {
