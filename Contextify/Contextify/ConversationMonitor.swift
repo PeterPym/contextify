@@ -2533,7 +2533,8 @@ final class ConversationMonitor {
 
                     // Auto-recovery for specific issues
                     if issue.category == .watcherMissing {
-                        await attemptWatcherRecovery(projectId: projectId, orchestrator: orchestrator)
+                        log.debug("[WATCHER-HEALTH-DISABLED] Skipping watcher recovery per watcher-rca-validation-20251113.md")
+                        continue
                     } else if issue.category == .hooverStall {
                         await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
                     }
