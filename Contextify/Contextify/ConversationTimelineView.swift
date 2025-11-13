@@ -293,7 +293,7 @@ struct ConversationTimelineView: View {
                         .multilineTextAlignment(.center)
 
                     // Check if user hasn't granted folder permissions (sandboxed build only)
-                    #if APPSTORE
+                    #if APPSTORE_BUILD
                     let isSandboxed = true
                     #else
                     let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil

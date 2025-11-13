@@ -262,34 +262,6 @@ struct ContextifyApp: App {
         }
       }
       .task {
-        // C2.1: Initialize ProjectsViewModel early
-        if projectsViewModel == nil {
-          do {
-            // Only use folder access controller in sandboxed builds
-            #if APPSTORE
-            let controller: FolderAccessController? = folderAccessController
-            #else
-            let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-            let controller: FolderAccessController? = isSandboxed ? folderAccessController : nil
-            #endif
-
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let discoveryService = ProjectDiscoveryService(
-              db: try DatabaseManager.shared.pool,
-              orchestrator: orchestrator,
-              folderAccessController: controller
-            )
-            let vm = ProjectsViewModel(
-              discoveryService: discoveryService,
-              hudModel: HUDViewModel.shared
-            )
-            self.projectsViewModel = vm
-          } catch {
-            let log = Logger(subsystem: "dev.contextify", category: "Startup")
-            log.error("Failed to initialize ProjectsViewModel: \(error.localizedDescription)")
-          }
-        }
-
         // Initialize projects system and auto-discover at app launch
         await initializeProjectsSystem()
       }
@@ -347,34 +319,8 @@ struct ContextifyApp: App {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-          // Initialize on first window open
-          do {
-            // Only use folder access controller in sandboxed builds
-            #if APPSTORE
-            let controller: FolderAccessController? = folderAccessController
-            #else
-            let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-            let controller: FolderAccessController? = isSandboxed ? folderAccessController : nil
-            #endif
-
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let discoveryService = ProjectDiscoveryService(
-              db: try DatabaseManager.shared.pool,
-              orchestrator: orchestrator,
-              folderAccessController: controller
-            )
-            let vm = ProjectsViewModel(
-              discoveryService: discoveryService,
-              hudModel: HUDViewModel.shared
-            )
-            self.projectsViewModel = vm
-
-            // Auto-discover
-            await vm.discoverProjects()
-          } catch {
-            let log = Logger(subsystem: "dev.contextify", category: "Projects")
-            log.error("Failed to initialize projects: \(error.localizedDescription)")
-          }
+          // Initialize projects system (single source of truth with accessProvider)
+          await initializeProjectsSystem()
         }
       }
     }
@@ -643,6 +589,11 @@ struct ContextifyApp: App {
   @MainActor
   private func startProjectDirectoryMonitoring(viewModel: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
+
+    #if APPSTORE_BUILD
+    log.info("[INIT] Skipping FSEvents project directory monitoring in App Store build")
+    return
+    #endif
 
     // Get paths to monitor - Claude Code project directories and Codex CLI session directories
     let claudeProjectsPath = FileManager.default.homeDirectoryForCurrentUser
