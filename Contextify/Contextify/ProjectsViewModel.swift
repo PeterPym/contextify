@@ -14,9 +14,7 @@ final class ProjectsViewModel {
   private let orchestrator: TranscriptOrchestrator
   private let hudModel: HUDViewModel
   private let activityMonitor: ProjectActivityMonitor
-#if APPSTORE_BUILD
   private let fastPathCoordinator: FastPathIngestionCoordinator?
-#endif
 
   // State
   private(set) var projects: [DiscoveredProject] = []
@@ -45,15 +43,11 @@ final class ProjectsViewModel {
     self.hudModel = hudModel
 
     self.activityMonitor = ProjectActivityMonitor(orchestrator: orchestrator)
-#if APPSTORE_BUILD
-    if Sandbox.isSandboxed {
-      let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
-      coordinator.resumePendingCompletions()
-      self.fastPathCoordinator = coordinator
-    } else {
-      self.fastPathCoordinator = nil
-    }
-#endif
+
+    // Initialize fast-path coordinator for instant timeline population
+    let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
+    coordinator.resumePendingCompletions()
+    self.fastPathCoordinator = coordinator
 
     // Start observing project events for auto-refresh
     startObservingEvents()
@@ -107,13 +101,12 @@ final class ProjectsViewModel {
           }
         }
 
-#if APPSTORE_BUILD
-        if Sandbox.isSandboxed, let coordinator = fastPathCoordinator {
+        // Run fast-path ingestion for instant timeline population
+        if let coordinator = fastPathCoordinator {
           let projectIds = discovered.map { $0.id }
-          logger.info("[VIEWMODEL-FASTPATH] Calling runFastPath with activeProjectId: \(currentProjectId ?? "none", privacy: .public) projectIds: \(projectIds.count, privacy: .public)")
-          await coordinator.runFastPath(projectIds: projectIds, activeProjectId: currentProjectId)
+          logger.info("[VIEWMODEL-FASTPATH] Calling runFastPath with activeProjectId: \(self.currentProjectId ?? "none", privacy: .public) projectIds: \(projectIds.count, privacy: .public)")
+          await coordinator.runFastPath(projectIds: projectIds, activeProjectId: self.currentProjectId)
         }
-#endif
 
         // Refresh metadata after ingestion using canonical currentPath
         let refreshed = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)

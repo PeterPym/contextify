@@ -1,8 +1,7 @@
 import Foundation
 import OSLog
 
-#if APPSTORE_BUILD
-/// Fast-path transcript ingestion coordinator for App Store builds.
+/// Fast-path transcript ingestion coordinator.
 /// NOTE: This class is manually synchronized and is safe to send across concurrency domains.
 /// The `enqueuedCompletions` and `notifiedProjects` state is protected by the serial `completionQueue`
 /// or by being accessed only from the serial loop in `runFastPath`. The `orchestrator` dependency
@@ -13,7 +12,6 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
   private let maxPreviewConcurrency: Int
   private let maxTranscriptsPerProject: Int
   private let completionQueue = DispatchQueue(label: "dev.contextify.fastpath.completions", qos: .utility)
-  private let completionSemaphore: DispatchSemaphore
   private var enqueuedCompletions: Set<String> = []
   private var notifiedProjects: Set<String> = []
   private let log = Logger(subsystem: "dev.contextify", category: "FastPathIngestion")
@@ -22,14 +20,12 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
     orchestrator: TranscriptOrchestrator,
     previewLimit: Int = 25,
     maxPreviewConcurrency: Int = 4,
-    maxTranscriptsPerProject: Int = 5,
-    maxBackgroundConcurrency: Int = 2
+    maxTranscriptsPerProject: Int = 5
   ) {
     self.orchestrator = orchestrator
     self.previewLimit = previewLimit
     self.maxPreviewConcurrency = max(1, maxPreviewConcurrency)
     self.maxTranscriptsPerProject = max(1, maxTranscriptsPerProject)
-    self.completionSemaphore = DispatchSemaphore(value: max(1, maxBackgroundConcurrency))
   }
 
   public func resumePendingCompletions() {
@@ -151,9 +147,7 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
       self.enqueuedCompletions.insert(transcriptId)
 
       Task(priority: .utility) {
-        self.completionSemaphore.wait()
         defer {
-          self.completionSemaphore.signal()
           self.completionQueue.async {
             self.enqueuedCompletions.remove(transcriptId)
           }
@@ -172,4 +166,3 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
     }
   }
 }
-#endif
