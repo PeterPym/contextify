@@ -84,6 +84,41 @@ for arg in "$@"; do
   parse_arg "$arg"
 done
 
+# Print build configuration summary
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  Contextify Build Configuration"
+echo "═══════════════════════════════════════════════════════════════"
+echo "  Distribution:  $dist $(if [[ "$dist" == "appstore" ]]; then echo "(sandboxed)"; else echo "(unsandboxed)"; fi)"
+echo "  Configuration: $config"
+echo "  Action:        $action"
+if [[ "$dev_mode" -eq 1 ]]; then
+  echo "  Developer Mode: ENABLED"
+fi
+echo ""
+if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" ]]; then
+  echo "  ⚠️  This will:"
+  echo "      • Clean build cache (.derived/)"
+  echo "      • Wipe database (all projects/transcripts/entries)"
+  echo "      • Reset app preferences and bookmarks"
+  echo "      • Reset TCC permissions (folder access, etc.)"
+  echo "      • Launch fresh app instance"
+elif [[ "$action" == "reset-state" ]]; then
+  echo "  ⚠️  This will:"
+  echo "      • Wipe database (all projects/transcripts/entries)"
+  echo "      • Reset app preferences and bookmarks"
+elif [[ "$action" == "reset-perms" ]]; then
+  echo "  ⚠️  This will:"
+  echo "      • Reset TCC permissions (folder access, etc.)"
+elif [[ "$action" == "reset-all" ]]; then
+  echo "  ⚠️  This will:"
+  echo "      • Wipe database (all projects/transcripts/entries)"
+  echo "      • Reset app preferences and bookmarks"
+  echo "      • Reset TCC permissions (folder access, etc.)"
+fi
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+
 # Detect non-macOS environments (Linux, WSL, etc.)
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo ""
