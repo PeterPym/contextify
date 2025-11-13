@@ -35,13 +35,14 @@ public actor ProjectDiscoveryService {
   ///
   /// **CRITICAL - Security Scope Rules:**
   /// - URLs obtained inside this closure may be stored for later use
+  /// - Storing these URLs is only safe as *identifiers*; they do NOT carry an active security scope
   /// - However, any FileManager operations (reading, writing, listing) on those URLs
   ///   MUST occur inside a future `withClaudeRoot` or `withAccess` call
   /// - The security scope is released when the closure returns
   /// - Do NOT call FileManager APIs on these URLs outside a security scope
   private func withClaudeRoot<T>(
     _ operation: @Sendable (URL) throws -> T
-  ) async throws -> T {
+  ) async throws -> T where T: Sendable {
     guard let controller = folderAccessController else {
       // Non-sandboxed build: just call operation on the raw path
       let root = FileManager.default.homeDirectoryForCurrentUser
@@ -402,7 +403,7 @@ public actor ProjectDiscoveryService {
         )
 
         let mtimes = files.compactMap {
-          (try? $0.resourceValues(forKeys: [.contentModificationDateKey])).contentModificationDate
+          (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         }
         return mtimes.max() ?? Date.distantPast
       }
