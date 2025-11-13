@@ -582,6 +582,110 @@ find ~/Library/CloudStorage -name "contextify.db" 2>/dev/null  # Dropbox/iCloud
 
 **Note:** When users change database locations, the old database file remains in place (not deleted). Always use the most recently modified database file.
 
+## Transcript Access Security (App Store Builds)
+
+**IMPORTANT:** In sandboxed (App Store) builds, accessing transcript directories requires security-scoped bookmarks.
+
+### Affected Directories
+
+- `~/.claude/projects/` (Claude Code transcripts)
+- `~/.codex/sessions/` (Codex CLI transcripts)
+
+Both are outside the App Store sandbox and require user authorization.
+
+### Architecture
+
+**Core Layer (sandbox-agnostic):**
+- `TranscriptAccessProvider` protocol - Abstract interface for scoped access
+- `PassthroughAccessProvider` - DMG builds (direct filesystem access)
+- `TranscriptProviderID` - Type-safe provider constants
+
+**App Layer (sandbox-aware):**
+- `SandboxTranscriptAccessProvider` - App Store builds (security-scoped bookmarks)
+- Built once during app init with URLs from `FolderAccessController`
+
+### Build Modes
+
+**DMG builds (`--dist=dmg`):**
+- Use `PassthroughAccessProvider` (direct filesystem access)
+- Core discovery + FSEvents enabled
+- No permission prompts required
+
+**App Store builds (`--dist=appstore`):**
+- Use `SandboxTranscriptAccessProvider` (security-scoped access)
+- Core discovery + FSEvents disabled
+- App layer handles discovery via `ProjectDiscoveryService`
+- User must grant folder permissions in onboarding
+
+### File I/O Rules
+
+**Critical requirement:** All FileManager operations on Claude/Codex directories MUST happen inside `accessProvider.withAccess()` closure.
+
+**This includes:**
+- File listing (`contentsOfDirectory`)
+- Attribute queries (`attributesOfItem`)
+- Reading file contents (`FileHandle`, `Data(contentsOf:)`)
+
+**Code pattern:**
+```swift
+try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
+  // All file I/O happens here, synchronously
+  let files = try FileManager.default.contentsOfDirectory(at: root, ...)
+  let handle = try FileHandle(forReadingFrom: fileURL)
+  // ...
+}
+// Security scope released here
+```
+
+**What NOT to do:**
+```swift
+var capturedURL: URL?
+try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
+  capturedURL = root  // OK to capture URL
+}
+// BAD: Using URL outside scope
+let data = try Data(contentsOf: capturedURL!)  // Will fail in sandbox!
+```
+
+### Components Using Scoped Access
+
+- **TranscriptOrchestrator:** Wraps `discoverTranscript()` for external providers
+- **HooverEngine:** Reads transcript files (called by orchestrator, inside scope)
+- **ProjectDiscoveryService:** Discovery and metadata extraction (has own scope handling)
+
+### Debugging
+
+**Check which provider is active:**
+```bash
+log stream --predicate 'subsystem == "dev.contextify"' --level info | grep "INIT.*provider"
+
+# DMG: "[INIT] Created passthrough access provider (DMG build)"
+# App Store: "[INIT] Created sandbox access provider (claude: authorized, codex: none)"
+```
+
+**Verify security scope is working:**
+```bash
+log stream --predicate 'subsystem == "dev.contextify"' --level debug | grep "HOOVER-FILE-SIZE"
+
+# If you see file sizes logged, file access is working
+# If you see "Operation not permitted", scope is not active
+```
+
+### Testing
+
+**DMG build:**
+```bash
+bash scripts/xc.sh --dist=dmg Debug cleanrun
+# Should work without permission prompts
+```
+
+**App Store build:**
+```bash
+bash scripts/xc.sh --dist=appstore Debug cleanrun
+# Grant permissions in onboarding
+# Verify hoovering succeeds without errors
+```
+
 ## Quickstart For Agents
 - Ensure Xcode 16 (or Xcode-beta) is installed and selected by the script (it auto-detects)
 - Build once: `bash scripts/xc.sh build`
