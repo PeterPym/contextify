@@ -378,31 +378,36 @@ public actor ProjectDiscoveryService {
   /// Gets the modification time of the newest transcript file for a project
   /// Used for sorting projects by most recent activity BEFORE ingestion
   private func getNewestTranscriptMtime(for projectPath: URL) async -> Date {
-    let fm = FileManager.default
+    do {
+      return try await withClaudeRoot { root in
+        // Same logic as claudeDir(for:), but computing mtimes instead
+        let dirs = try FileManager.default.contentsOfDirectory(
+          at: root,
+          includingPropertiesForKeys: [.isDirectoryKey],
+          options: [.skipsHiddenFiles]
+        ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
-    // Get Claude Code transcript directory for this project
-    guard let dir = await claudeDir(for: projectPath) else {
+        // Find the matching project dir
+        guard let dir = dirs.first(where: { reversePathMapping(dirURL: $0) == projectPath }) else {
+          return Date.distantPast
+        }
+
+        // Find all .jsonl files and get newest mtime
+        let files = try FileManager.default.contentsOfDirectory(
+          at: dir,
+          includingPropertiesForKeys: [.contentModificationDateKey],
+          options: [.skipsHiddenFiles]
+        )
+
+        let mtimes = files.compactMap {
+          (try? $0.resourceValues(forKeys: [.contentModificationDateKey])).contentModificationDate
+        }
+        return mtimes.max() ?? Date.distantPast
+      }
+    } catch {
+      logger.debug("Failed to compute mtime for \(projectPath.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
       return Date.distantPast
     }
-
-    var newestTime = Date.distantPast
-
-    // Find all .jsonl files in directory
-    if let files = try? fm.contentsOfDirectory(
-      at: dir,
-      includingPropertiesForKeys: [.contentModificationDateKey],
-      options: [.skipsHiddenFiles]
-    ) {
-      for file in files where file.pathExtension == "jsonl" {
-        if let resourceValues = try? file.resourceValues(forKeys: [.contentModificationDateKey]),
-           let mtime = resourceValues.contentModificationDate,
-           mtime > newestTime {
-          newestTime = mtime
-        }
-      }
-    }
-
-    return newestTime
   }
 
   /// Finds the Claude Code directory for a known project path
