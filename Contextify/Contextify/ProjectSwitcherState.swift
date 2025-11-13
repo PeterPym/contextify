@@ -287,9 +287,25 @@ public final class ProjectSwitcherState {
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
       let projectInfos = sortedProjects.map { project in
-        // Use DB bit as source of truth, OR with FS check to catch newly missing directories
-        let isOrphaned = project.isOrphaned
-          || !FileManager.default.fileExists(atPath: project.rootPath)
+        let pathExists = FileManager.default.fileExists(atPath: project.rootPath)
+
+        if project.isOrphaned && pathExists {
+          let projectId = project.id
+          Task.detached(priority: .utility) {
+            do {
+              try orchestrator.markProjectRestored(projectId: projectId)
+              await MainActor.run {
+                log.info("[ORPHAN-RESTORE] Cleared orphaned flag for project \(projectId, privacy: .public)")
+              }
+            } catch {
+              await MainActor.run {
+                log.error("[ORPHAN-RESTORE-ERROR] Failed to clear orphaned flag for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+              }
+            }
+          }
+        }
+
+        let isOrphaned = project.isOrphaned || !pathExists
         return ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
