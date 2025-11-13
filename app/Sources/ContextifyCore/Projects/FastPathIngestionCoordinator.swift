@@ -90,7 +90,10 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
       log.info("[FAST-PATH-TRANSCRIPT] Transcript \(transcript.id.prefix(8), privacy: .public) ingestState: \(transcript.ingestState, privacy: .public) lastProcessedLine: \(transcript.lastProcessedLine, privacy: .public)")
     }
 
-    let targets = transcripts.filter { $0.ingestState != "complete" }
+    // Filter for transcripts that need processing:
+    // - ingestState='partial': partially ingested, needs completion
+    // - lastProcessedLine=0: newly discovered, needs preview
+    let targets = transcripts.filter { $0.ingestState != "complete" || $0.lastProcessedLine == 0 }
 
     // Log filter results
     log.info("[FAST-PATH-FILTER] Filtered \(targets.count, privacy: .public) targets from \(transcripts.count, privacy: .public) total transcripts for project \(projectId, privacy: .public)")

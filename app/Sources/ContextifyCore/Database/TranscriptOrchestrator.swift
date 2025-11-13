@@ -882,14 +882,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
               id, project_id, file_path, normalized_path, path_hash,
               provider, provider_session_id,
               last_modified, file_size, content_length, mtime_ms, content_sha256,
-              line_count, last_processed_line, parser_version, status,
+              line_count, last_processed_line, parser_version, status, ingest_state,
               created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """, arguments: [
             transcriptId, projectId, path, normalizedPath, pathHash,
             disc.provider, sessionIdArg,  // Pass nil as NULL, not empty string
             TimeUnits.secondsFromMs(mtimeMs), len > 0 ? Int(len) : nil, len, mtimeMs, sha,
-            0, 0, 1, "active",
+            0, 0, 1, "active", "complete",  // New transcripts start as complete, fast-path will mark partial
             nowSec, nowSec
           ])
 
