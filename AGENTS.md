@@ -135,6 +135,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `.info` - Significant state changes (watching files, session switches)
 - `.warning` - Retries, fallbacks, recoverable issues
 - `.error` - Failures requiring intervention
+- **Privacy:** When logging identifiers (project IDs, transcript IDs, file paths) set interpolation privacy to `.public` unless there is a strong reason not to. We are in pre-production and biasing toward unrestricted logs to accelerate diagnostics.
 
 **For detailed conventions:** See `build/docs/guides/logging-best-practices.md`
 
