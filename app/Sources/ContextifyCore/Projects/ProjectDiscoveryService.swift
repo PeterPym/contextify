@@ -20,6 +20,46 @@ public actor ProjectDiscoveryService {
     self.folderAccessController = folderAccessController
   }
 
+  // MARK: - Security-Scoped Access Helpers
+
+  /// Execute an operation with security-scoped access to ~/.claude/projects.
+  ///
+  /// **Sandboxed builds (App Store):**
+  /// - Requires user to have granted folder authorization for Claude Code
+  /// - Wraps operation in `FolderAccessController.withAccess()` to maintain security scope
+  /// - Throws if authorization is missing or access is denied
+  ///
+  /// **Unsandboxed builds (DMG):**
+  /// - Directly executes operation with raw filesystem path
+  /// - No authorization required
+  ///
+  /// **CRITICAL:**
+  /// All filesystem operations on ~/.claude/projects MUST happen inside this closure.
+  /// URLs obtained inside this closure CANNOT be stored and used outside it -
+  /// the security scope is released when the closure returns.
+  private func withClaudeRoot<T>(
+    _ operation: @Sendable (URL) throws -> T
+  ) async throws -> T {
+    guard let controller = folderAccessController else {
+      // Non-sandboxed build: just call operation on the raw path
+      let root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects")
+      return try operation(root)
+    }
+
+    // Sandboxed build: must use security-scoped access
+    guard let auth = await controller.authorization(for: .claude),
+          auth.status == .authorized else {
+      logger.debug("No Claude authorization (sandboxed build requires user permission)")
+      throw FolderAccessError.securityScopeAccessDenied(
+        FileManager.default.homeDirectoryForCurrentUser
+          .appendingPathComponent(".claude/projects")
+      )
+    }
+
+    return try await controller.withAccess(auth, operation)
+  }
+
   // MARK: - Public API
 
   /// Discovers all Claude Code and Codex projects
