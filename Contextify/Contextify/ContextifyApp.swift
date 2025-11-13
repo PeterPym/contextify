@@ -294,6 +294,8 @@ struct ContextifyApp: App {
         await initializeProjectsSystem()
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
+        let startupLog = Logger(subsystem: "dev.contextify", category: "Projects")
+        startupLog.info("[WELCOME-TRIGGERED] Welcome modal notification received, showing modal")
         showWelcomeModal = true
       }
     }
@@ -418,6 +420,9 @@ struct ContextifyApp: App {
         // Use compile-time check based on entitlements (runtime check is unreliable)
         let controller: FolderAccessController? = Sandbox.isSandboxed ? folderAccessController : nil
 
+        log.info("[INIT-SANDBOX-CHECK] Sandbox.isSandboxed = \(Sandbox.isSandboxed, privacy: .public)")
+        log.info("[INIT-CONTROLLER] FolderAccessController: \(controller == nil ? "nil" : "present", privacy: .public)")
+
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         let discoveryService = ProjectDiscoveryService(
           db: try DatabaseManager.shared.pool,
@@ -443,11 +448,14 @@ struct ContextifyApp: App {
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         isEmptyDB = (try? orchestrator.listProjects().isEmpty) ?? false
         if isEmptyDB {
+          log.info("[WELCOME-DECISION] DB empty: true, sandboxed: \(Sandbox.isSandboxed, privacy: .public), will show modal: true")
           log.info("📋 Empty database detected - showing welcome modal before discovery starts")
           // Post notification to show welcome modal BEFORE discovery starts
           await MainActor.run {
             NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
           }
+        } else {
+          log.info("[WELCOME-DECISION] DB empty: false, will NOT show modal")
         }
       } catch {
         log.warning("Failed to check if database is empty: \(error.localizedDescription)")
