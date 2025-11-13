@@ -34,6 +34,7 @@ public final class ProjectSwitcherState {
 
   private var orchestrator: TranscriptOrchestrator?
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
+  private var fastPathCoordinator: FastPathIngestionCoordinator?
 
   // All discovered projects (visible only)
   private(set) var allProjects: [ProjectInfo] = []
@@ -52,6 +53,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
+  @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
+  @ObservationIgnored private var monitorFallbackTask: Task<Void, Never>?
+  @ObservationIgnored private var hasStartedMonitoring = false
 
   // Coalescing state for batch unread updates
   @ObservationIgnored private var pendingUnread: Set<String> = []
@@ -79,6 +83,8 @@ public final class ProjectSwitcherState {
     ingestionCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
+    monitorStartTask?.cancel()
+    monitorFallbackTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -125,6 +131,13 @@ public final class ProjectSwitcherState {
       log.info("ℹ️  ProjectSwitcher: reusing existing activity monitor (id: \(monitorId))")
     }
 
+    if fastPathCoordinator == nil {
+      let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
+      coordinator.resumePendingCompletions()
+      fastPathCoordinator = coordinator
+      log.info("✅ ProjectSwitcher: initialized fast-path coordinator")
+    }
+
     // Subscribe to coordinator updates for project context changes
     coordinatorTask = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -168,13 +181,8 @@ public final class ProjectSwitcherState {
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
       log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
 
-      // Start global monitoring (multi-project mode is always enabled)
-      do {
-        if let monitor = activityMonitor {
-          try await monitor.startGlobalMonitoring()
-        }
-      } catch {
-        log.error("Failed to start global monitoring: \(error.localizedDescription)")
+      await MainActor.run {
+        self.scheduleMonitorStart()
       }
     }
 
@@ -198,6 +206,8 @@ public final class ProjectSwitcherState {
     ingestionCompleteTask = nil
     coalesceTask?.cancel()
     coalesceTask = nil
+    cancelMonitorStartTasks()
+    hasStartedMonitoring = false
     removeProjectRootObserver()
     isStarted = false
 
@@ -477,6 +487,20 @@ public final class ProjectSwitcherState {
     // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
     // This ensures UI and data stay in sync with no race condition
 
+    if let coordinator = fastPathCoordinator {
+      var projectIds = allProjects.map { $0.id }
+      if !projectIds.contains(projectId) {
+        projectIds.append(projectId)
+      }
+
+      log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
+      Task.detached(priority: .utility) {
+        await coordinator.runFastPath(projectIds: projectIds, activeProjectId: projectId)
+      }
+    } else {
+      log.info("[FASTPATH-SWITCH] Fast-path coordinator unavailable; skipping preview run")
+    }
+
     // CXT-11: Update metadata in background (non-blocking)
     Task.detached(priority: .userInitiated) { [orchestrator] in
       let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
@@ -594,6 +618,57 @@ public final class ProjectSwitcherState {
   }
 
   // MARK: - Private
+
+  @MainActor
+  private func scheduleMonitorStart() {
+    guard activityMonitor != nil else {
+      log.error("[SWITCHER-MONITOR] Cannot schedule monitoring start without activity monitor")
+      return
+    }
+
+    cancelMonitorStartTasks()
+
+    monitorStartTask = Task { [weak self] in
+      guard let self else { return }
+      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
+      for await _ in notifications {
+        await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
+        return
+      }
+    }
+
+    monitorFallbackTask = Task { [weak self] in
+      guard let self else { return }
+      try? await Task.sleep(nanoseconds: 20_000_000_000)
+      await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
+    }
+  }
+
+  @MainActor
+  private func startGlobalMonitoringIfNeeded(reason: String) async {
+    guard !hasStartedMonitoring else { return }
+    guard let monitor = activityMonitor else {
+      log.error("[SWITCHER-MONITOR] Cannot start monitoring (reason: \(reason)) - activity monitor unavailable")
+      return
+    }
+
+    hasStartedMonitoring = true
+    cancelMonitorStartTasks()
+
+    do {
+      try await monitor.startGlobalMonitoring()
+      log.info("[SWITCHER-MONITOR] Started global monitoring (reason: \(reason))")
+    } catch {
+      log.error("Failed to start global monitoring (reason: \(reason)): \(error.localizedDescription)")
+    }
+  }
+
+  private func cancelMonitorStartTasks() {
+    monitorStartTask?.cancel()
+    monitorStartTask = nil
+    monitorFallbackTask?.cancel()
+    monitorFallbackTask = nil
+  }
 
   private func ensureCurrentProjectInDatabase() async {
     guard let orchestrator = orchestrator else { return }
