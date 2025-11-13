@@ -411,6 +411,21 @@ enum DatabaseSchema {
       try db.execute(sql: "ANALYZE")
     }
 
+    migrator.registerMigration("v24_fast_path_ingestion") { db in
+      if try !db.columnExists("ingest_state", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts
+          ADD COLUMN ingest_state TEXT NOT NULL DEFAULT 'complete'
+          CHECK (ingest_state IN ('complete','partial'))
+        """)
+      }
+
+      try db.create(table: "ingestion_locks", ifNotExists: true) { t in
+        t.column("transcript_id", .text).primaryKey().references("transcripts", onDelete: .cascade)
+        t.column("locked_at", .integer).notNull()
+      }
+    }
+
     return migrator
   }
 
@@ -462,6 +477,7 @@ enum DatabaseSchema {
       t.column("last_processed_entry_id", .text)  // v2: resume checkpoint
       t.column("parser_version", .integer).notNull().defaults(to: 1)
       t.column("status", .text).notNull().defaults(to: "active").check(sql: "status IN ('active','unavailable','error')")
+      t.column("ingest_state", .text).notNull().defaults(to: "complete").check(sql: "ingest_state IN ('complete','partial')")
       t.column("last_error", .text)
       // Identity fields (v3: for path-based deduplication)
       t.column("normalized_path", .text)
@@ -494,6 +510,11 @@ enum DatabaseSchema {
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
     """)
+
+    try db.create(table: "ingestion_locks", ifNotExists: true) { t in
+      t.column("transcript_id", .text).primaryKey().references("transcripts", onDelete: .cascade)
+      t.column("locked_at", .integer).notNull()
+    }
 
     // Transcript entries table (v2: window fields, v4: embeddings, v12: created_ts for unread)
     try db.create(table: "transcript_entries", ifNotExists: true) { t in

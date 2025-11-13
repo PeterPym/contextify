@@ -44,6 +44,20 @@ public struct ResolvedTranscript: Sendable {
   }
 }
 
+public enum IngestionMode {
+  case preview(entries: Int)
+  case complete
+
+  var ingestLimit: IngestLimit {
+    switch self {
+    case let .preview(entries):
+      return .entries(entries)
+    case .complete:
+      return .none
+    }
+  }
+}
+
 /// High-level orchestrator for transcript ingestion and monitoring
 /// NOT @MainActor - allows safe concurrent access from background tasks
 /// Sendable: GRDB pool handles thread-safety, repositories are stateless
@@ -69,6 +83,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let hooverEngine: HooverEngine
   private let watcher: TranscriptWatcher
   private let validator: TranscriptValidator
+  private let ingestionLockTTL: TimeInterval = 600
 
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
@@ -380,7 +395,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     provider: String,
     providerSessionId: String?,
     startWatching: Bool = true,
-    progress: IngestProgressSink? = nil
+    progress: IngestProgressSink? = nil,
+    ingestLimit: IngestLimit = .none
   ) throws {
     log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public) provider: \(provider, privacy: .public) project: \(projectId, privacy: .public)")
 
@@ -397,7 +413,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           provider: provider,
           providerSessionId: providerSessionId,
           startWatching: startWatching,
-          progress: progress
+          progress: progress,
+          ingestLimit: ingestLimit
         )
       }
     } else {
@@ -408,7 +425,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         provider: provider,
         providerSessionId: providerSessionId,
         startWatching: startWatching,
-        progress: progress
+        progress: progress,
+        ingestLimit: ingestLimit
       )
     }
   }
@@ -424,7 +442,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     provider: String,
     providerSessionId: String?,
     startWatching: Bool,
-    progress: IngestProgressSink?
+    progress: IngestProgressSink?,
+    ingestLimit: IngestLimit
   ) throws {
     // Diagnostic: Verify project exists before proceeding
     guard let project = try projectRepo.get(id: projectId) else {
@@ -482,8 +501,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Hoover the transcript
     log.info("[TRANS-DISC-HOOVER-START] Starting hoover for transcript: \(transcriptId, privacy: .public)")
     let progressSink = progress ?? NoOpProgressSink()
-    let transcriptSHA256 = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink)
-    log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) SHA256: \(String(transcriptSHA256.prefix(8)), privacy: .public)")
+    let outcome = try hooverEngine.hooverTranscript(transcript, fileURL: fileURL, progress: progressSink, limit: ingestLimit)
+    if let sha = outcome.contentSha256 {
+      log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) SHA256: \(String(sha.prefix(8)), privacy: .public)")
+    } else {
+      log.info("[TRANS-DISC-HOOVER-DONE] ✅ Hoovered transcript: \(transcriptId, privacy: .public) (partial \(outcome.newEntries) entries)")
+    }
 
     // TODO: pass transcriptSHA256 to metadata generation/persistence when implemented
 
@@ -599,6 +622,115 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     progressSink.didCompleteProject(name: project.name ?? projectId)
     log.info("[BATCH-DISC-DONE] Parallel discovery complete for project: \(projectId, privacy: .public) (\(transcriptFiles.count, privacy: .public) transcripts)")
+  }
+
+  // MARK: - Targeted Ingestion
+
+  private func acquireIngestionLock(transcriptId: String) throws -> Bool {
+    let pool = try dbManager.pool
+    let now = Int(Date().timeIntervalSince1970)
+    var acquired = false
+
+    try pool.write { db in
+      let expiry = now - Int(ingestionLockTTL)
+      try db.execute(sql: "DELETE FROM ingestion_locks WHERE locked_at < ?", arguments: [expiry])
+      try db.execute(sql: """
+        INSERT OR IGNORE INTO ingestion_locks(transcript_id, locked_at)
+        VALUES (?, ?)
+      """, arguments: [transcriptId, now])
+      acquired = db.changesCount > 0
+    }
+
+    return acquired
+  }
+
+  private func releaseIngestionLock(transcriptId: String) {
+    do {
+      let pool = try dbManager.pool
+      try pool.write { db in
+        try db.execute(sql: "DELETE FROM ingestion_locks WHERE transcript_id = ?", arguments: [transcriptId])
+      }
+    } catch {
+      log.error("[INGEST-LOCK] Failed to release lock for \(transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
+  @discardableResult
+  public func ingestTranscript(
+    transcriptId: String,
+    mode: IngestionMode,
+    notifyUI: Bool = true
+  ) throws -> Bool {
+    guard let transcript = try transcriptRepo.get(transcriptId) else {
+      throw RepositoryError.notFound
+    }
+
+    if case .preview = mode, transcript.ingestState == "complete" {
+      log.debug("[FAST-PATH] Transcript already complete, skipping preview: \(transcriptId, privacy: .public)")
+      return false
+    }
+
+    guard try acquireIngestionLock(transcriptId: transcriptId) else {
+      log.debug("[INGEST-LOCK] Another worker is processing transcript: \(transcriptId, privacy: .public)")
+      return transcript.ingestState == "partial"
+    }
+
+    defer { releaseIngestionLock(transcriptId: transcriptId) }
+
+    let fileURL = URL(fileURLWithPath: transcript.filePath)
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      log.error("[FAST-PATH] File missing for transcript \(transcriptId, privacy: .public) at \(fileURL.path, privacy: .public)")
+      try transcriptRepo.setIngestionState(
+        id: transcript.id,
+        lastProcessedLine: transcript.lastProcessedLine,
+        lineCount: transcript.lineCount,
+        parserVersion: transcript.parserVersion,
+        status: "deleted",
+        ingestState: "complete",
+        lastError: "File missing during ingest"
+      )
+      return false
+    }
+
+    try discoverTranscript(
+      projectId: transcript.projectId,
+      fileURL: fileURL,
+      provider: transcript.provider,
+      providerSessionId: transcript.providerSessionId,
+      startWatching: true,
+      progress: nil,
+      ingestLimit: mode.ingestLimit
+    )
+
+    let refreshed = try transcriptRepo.get(transcriptId)
+    let isPartial = refreshed?.ingestState == "partial"
+
+    if notifyUI {
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(
+          name: Notification.Name("TranscriptUpdated"),
+          object: nil,
+          userInfo: ["projectId": transcript.projectId]
+        )
+      }
+    }
+
+    return isPartial
+  }
+
+  public func getPartialTranscripts(limit: Int? = nil) throws -> [Transcript] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      var sql = """
+        SELECT * FROM transcripts
+        WHERE ingest_state = 'partial'
+        ORDER BY updated_at DESC
+      """
+      if let limit {
+        sql += " LIMIT \(limit)"
+      }
+      return try Transcript.fetchAll(db, sql: sql)
+    }
   }
 
   // MARK: - Private Helpers
@@ -1021,6 +1153,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           lineCount: transcript.lineCount,
           parserVersion: transcript.parserVersion,
           status: "deleted",
+          ingestState: "complete",
           lastError: "File no longer exists"
         )
         markedDeleted += 1
@@ -1152,7 +1285,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Manually trigger hoover for a transcript (for recovery/debugging)
   /// Bypasses watcher and directly ingests new content from file
   @discardableResult
-  public func manualHoover(transcriptId: String, fileURL: URL) throws -> String {
+  public func manualHoover(transcriptId: String, fileURL: URL) throws -> HooverOutcome {
     guard let transcript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
     }

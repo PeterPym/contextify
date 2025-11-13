@@ -216,6 +216,7 @@ final class IntegrationTests: XCTestCase {
       lineCount: 10,
       parserVersion: 1,
       status: "active",
+      ingestState: "complete",
       lastError: nil
     )
 

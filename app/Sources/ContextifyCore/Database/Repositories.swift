@@ -159,6 +159,7 @@ public protocol TranscriptRepository {
     lineCount: Int,
     parserVersion: Int,
     status: String,
+    ingestState: String,
     lastError: String?
   ) throws
 
@@ -232,6 +233,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
         lastProcessedEntryId: nil,
         parserVersion: 1,
         status: "active",
+        ingestState: "complete",
         lastError: nil,
         createdAt: now,
         updatedAt: now
@@ -247,6 +249,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
     lineCount: Int,
     parserVersion: Int,
     status: String,
+    ingestState: String,
     lastError: String?
   ) throws {
     let now = Int(Date().timeIntervalSince1970)
@@ -259,6 +262,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
       transcript.lineCount = lineCount
       transcript.parserVersion = parserVersion
       transcript.status = status
+      transcript.ingestState = ingestState
       transcript.lastError = lastError
       transcript.updatedAt = now
       try transcript.update(db)

@@ -571,6 +571,7 @@ private func mockProjectsVM(
     )
     let vm = ProjectsViewModel(
         discoveryService: discoveryService,
+        orchestrator: orchestrator,
         hudModel: HUDViewModel.shared
     )
 

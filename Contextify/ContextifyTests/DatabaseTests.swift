@@ -126,6 +126,7 @@ final class DatabaseTests: XCTestCase {
       lineCount: 100,
       parserVersion: 1,
       status: "active",
+      ingestState: "complete",
       lastError: nil
     )
 
@@ -453,6 +454,7 @@ final class DatabaseTests: XCTestCase {
       lineCount: 100,
       parserVersion: 1,
       status: "active",
+      ingestState: "complete",
       lastError: nil
     )
 

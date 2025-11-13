@@ -49,6 +49,7 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
   public var lastProcessedEntryId: String?
   public var parserVersion: Int
   public var status: String
+  public var ingestState: String
   public var lastError: String?
   public var createdAt: Int
   public var updatedAt: Int
@@ -69,6 +70,7 @@ public struct Transcript: Codable, FetchableRecord, PersistableRecord, Sendable 
     case lastProcessedEntryId = "last_processed_entry_id"
     case parserVersion = "parser_version"
     case status
+    case ingestState = "ingest_state"
     case lastError = "last_error"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
