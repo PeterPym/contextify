@@ -140,6 +140,8 @@ public final class ProjectSwitcherState {
       log.info("✅ ProjectSwitcher: initialized fast-path coordinator")
     }
 
+    scheduleMonitorStart()
+
     // Subscribe to coordinator updates for project context changes
     coordinatorTask = Task { @MainActor [weak self] in
       guard let self else { return }
@@ -183,9 +185,6 @@ public final class ProjectSwitcherState {
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
       log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
 
-      await MainActor.run {
-        self.scheduleMonitorStart()
-      }
     }
 
     // Single observer loop
@@ -641,7 +640,7 @@ public final class ProjectSwitcherState {
 
     monitorFallbackTask = Task { [weak self] in
       guard let self else { return }
-      try? await Task.sleep(nanoseconds: 20_000_000_000)
+      try? await Task.sleep(nanoseconds: 5_000_000_000)
       await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
     }
   }
