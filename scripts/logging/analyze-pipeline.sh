@@ -82,7 +82,20 @@ echo ""
 
 declare -a ACTIVE_STAGES
 declare -a BROKEN_STAGES
-declare -A STAGE_COUNTS
+declare -a STAGE_NAMES
+declare -a STAGE_VALUES
+
+get_stage_count() {
+    local search="$1"
+    local idx
+    for idx in "${!STAGE_NAMES[@]}"; do
+        if [[ "${STAGE_NAMES[$idx]}" == "$search" ]]; then
+            printf '%s' "${STAGE_VALUES[$idx]}"
+            return
+        fi
+    done
+    printf '0'
+}
 
 for stage_def in "${PIPELINE_STAGES[@]}"; do
     stage_name="${stage_def%%:*}"
@@ -92,8 +105,14 @@ for stage_def in "${PIPELINE_STAGES[@]}"; do
     pattern=$(echo "$tags" | tr ',' '|')
 
     # Count occurrences
-    count=$(grep -cE "\[($pattern)\]" "$LOGFILE" 2>/dev/null || echo "0")
-    STAGE_COUNTS["$stage_name"]=$count
+    if output=$(grep -cE "\[($pattern)\]" "$LOGFILE" 2>/dev/null); then
+        count="$output"
+    else
+        count="0"
+    fi
+    count="${count//$'\n'/}"
+    STAGE_NAMES+=("$stage_name")
+    STAGE_VALUES+=("$count")
 
     if [ "$count" -gt 0 ]; then
         ACTIVE_STAGES+=("$stage_name")
@@ -113,7 +132,7 @@ echo ""
 
 for stage_def in "${PIPELINE_STAGES[@]}"; do
     stage_name="${stage_def%%:*}"
-    count="${STAGE_COUNTS[$stage_name]}"
+    count="$(get_stage_count "$stage_name")"
 
     if [ "$count" -eq 0 ]; then
         printf "❌ %-30s %6d events  PIPELINE BROKEN\n" "$stage_name:" "$count"
@@ -153,7 +172,7 @@ else
     last_working=""
     for stage_def in "${PIPELINE_STAGES[@]}"; do
         stage_name="${stage_def%%:*}"
-        count="${STAGE_COUNTS[$stage_name]}"
+        count="$(get_stage_count "$stage_name")"
 
         if [ "$count" -eq 0 ] && [ -z "$first_broken" ]; then
             first_broken="$stage_name"
@@ -190,7 +209,12 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Error check
-error_count=$(grep -ci error "$LOGFILE" 2>/dev/null || echo "0")
+if output=$(grep -ci error "$LOGFILE" 2>/dev/null); then
+    error_count="${output//$'\n'/}"
+else
+    error_count="0"
+fi
+
 if [ "$error_count" -gt 0 ]; then
     echo "⚠️  Errors found: $error_count occurrences"
     echo "   View: grep -i error $LOGFILE"
@@ -198,7 +222,7 @@ if [ "$error_count" -gt 0 ]; then
 fi
 
 # Project switches
-switch_count="${STAGE_COUNTS[Project Switch]:-0}"
+switch_count="$(get_stage_count "Project Switch")"
 if [ "$switch_count" -gt 0 ]; then
     echo "ℹ️  Project switches: $switch_count"
     echo "   Pipeline analysis may be affected by project switching"
@@ -210,7 +234,8 @@ fi
 total_events=0
 for stage_def in "${PIPELINE_STAGES[@]}"; do
     stage_name="${stage_def%%:*}"
-    total_events=$((total_events + ${STAGE_COUNTS[$stage_name]:-0}))
+    count=$(get_stage_count "$stage_name")
+    total_events=$((total_events + count))
 done
 
 if [ "$total_events" -eq 0 ]; then
