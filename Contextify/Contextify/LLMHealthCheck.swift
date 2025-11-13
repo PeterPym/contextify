@@ -71,6 +71,7 @@ actor LLMHealthCheck {
   private var lastCheckTime: Date?
   private var cacheInterval: TimeInterval = 5  // Start with 5s, back off on repeated failures
   private var consecutiveFailures = 0
+  private var consecutiveTimeouts = 0
   private let maxCacheInterval: TimeInterval = 30
 
   private init() {}
@@ -81,6 +82,7 @@ actor LLMHealthCheck {
     case .healthy:
       // Reset on success
       consecutiveFailures = 0
+      consecutiveTimeouts = 0
       cacheInterval = 5
 
     case .unavailable(let reason):
@@ -296,7 +298,7 @@ actor LLMHealthCheck {
       log.error("   Error type: TimeoutError (internal timeout, NOT external cancellation)")
       return .unavailable(.overloaded)
 
-    } catch is CancellationError {
+} catch is CancellationError {
       // Cancellation can happen when:
       // 1. The timeout fires and cancels the LLM task (but timeout would be caught first)
       // 2. External cancellation (e.g., app shutdown, project switch, parent task cancelled)
