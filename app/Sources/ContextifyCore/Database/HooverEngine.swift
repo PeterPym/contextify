@@ -16,7 +16,7 @@ public enum MonitorConfig {
 
 // MARK: - Hoover Limits
 
-public enum IngestLimit {
+public enum IngestLimit: Sendable {
   case none
   case entries(Int)
 
