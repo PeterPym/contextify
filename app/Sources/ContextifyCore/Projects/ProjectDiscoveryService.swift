@@ -222,29 +222,23 @@ public actor ProjectDiscoveryService {
 
   /// Discovers Claude Code projects from ~/.claude/projects/
   private func discoverClaudeCodeProjects() async throws -> [URL] {
-    // Use authorized access if controller available
-    if let controller = folderAccessController {
-      return try await discoverWithAuthorization(source: .claude, controller: controller)
-    }
+    return try await withClaudeRoot { root in
+      guard FileManager.default.fileExists(atPath: root.path) else {
+        logger.debug("Claude projects directory not found at \(root.path)")
+        return []
+      }
 
-    // Fallback: Direct access for DMG builds (existing code)
-    let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/projects")
+      let subdirs = try FileManager.default.contentsOfDirectory(
+        at: root,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
-    guard FileManager.default.fileExists(atPath: claudeProjectsDir.path) else {
-      logger.debug("Claude projects directory not found")
-      return []
-    }
-
-    let subdirs = try FileManager.default.contentsOfDirectory(
-      at: claudeProjectsDir,
-      includingPropertiesForKeys: [.isDirectoryKey],
-      options: [.skipsHiddenFiles]
-    ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-
-    // Convert directory URLs to project paths via JSONL inspection
-    return subdirs.compactMap { dir in
-      reversePathMapping(dirURL: dir)
+      // Convert directory URLs to project paths via JSONL inspection
+      // This runs INSIDE the security scope, so reversePathMapping can read files
+      return subdirs.compactMap { dir in
+        reversePathMapping(dirURL: dir)
+      }
     }
   }
 
