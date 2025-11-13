@@ -431,7 +431,41 @@ struct ContextifyApp: App {
         log.info("[INIT-SANDBOX-CHECK] Sandbox.isSandboxed = \(Sandbox.isSandboxed, privacy: .public)")
         log.info("[INIT-CONTROLLER] FolderAccessController: \(controller == nil ? "nil" : "present", privacy: .public)")
 
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+        // Build TranscriptAccessProvider
+        let accessProvider: TranscriptAccessProvider
+
+        #if APPSTORE_BUILD
+        // App Store build: security-scoped URLs from FolderAccessController
+        let claudeAuth = await folderAccessController.authorization(for: .claude)
+        let codexAuth  = await folderAccessController.authorization(for: .codex)
+
+        var claudeURL: URL? = nil
+        if let auth = claudeAuth, auth.status == .authorized {
+          claudeURL = try? await folderAccessController.resolve(auth).url
+        }
+
+        var codexURL: URL? = nil
+        if let auth = codexAuth, auth.status == .authorized {
+          codexURL = try? await folderAccessController.resolve(auth).url
+        }
+
+        accessProvider = SandboxTranscriptAccessProvider(
+          claudeRoot: claudeURL,
+          codexRoot: codexURL
+        )
+        log.info("[INIT] Created sandbox access provider (claude: \(claudeAuth?.status.rawValue ?? "none"), codex: \(codexAuth?.status.rawValue ?? "none"))")
+
+        #else
+        // DMG build: direct filesystem access
+        accessProvider = PassthroughAccessProvider()
+        log.info("[INIT] Created passthrough access provider (DMG build)")
+        #endif
+
+        // Initialize orchestrator with access provider
+        let orchestrator = try TranscriptOrchestrator(
+          dbManager: .shared,
+          accessProvider: accessProvider
+        )
         let discoveryService = ProjectDiscoveryService(
           db: try DatabaseManager.shared.pool,
           orchestrator: orchestrator,
