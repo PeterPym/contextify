@@ -64,8 +64,8 @@ public actor FastPathIngestionCoordinator {
     }
 
     for projectId in projectIds {
-      if seen.insert(projectId, privacy: .public).inserted {
-        ordered.append(projectId, privacy: .public)
+      if seen.insert(projectId).inserted {
+        ordered.append(projectId)
       }
     }
     return ordered
@@ -101,7 +101,7 @@ public actor FastPathIngestionCoordinator {
     // Only notify UI once per project (on first transcript completion)
     let shouldNotifyUI = registerProjectNotificationIfNeeded(projectId: projectId)
     if shouldNotifyUI {
-      pendingNotificationTokens.insert(projectId, privacy: .public)
+      pendingNotificationTokens.insert(projectId)
     }
 
     await withTaskGroup(of: Void.self) { group in
@@ -129,7 +129,7 @@ public actor FastPathIngestionCoordinator {
     }
 
     if shouldNotifyUI {
-      pendingNotificationTokens.remove(projectId, privacy: .public)
+      pendingNotificationTokens.remove(projectId)
     }
   }
 
@@ -161,12 +161,12 @@ public actor FastPathIngestionCoordinator {
   }
 
   private func registerProjectNotificationIfNeeded(projectId: String) -> Bool {
-    guard !notifiedProjects.contains(projectId, privacy: .public) else { return false }
-    notifiedProjects.insert(projectId, privacy: .public)
+    guard !notifiedProjects.contains(projectId) else { return false }
+    notifiedProjects.insert(projectId)
     return true
   }
 
   private func consumeNotificationToken(for projectId: String) -> Bool {
-    pendingNotificationTokens.remove(projectId, privacy: .public) != nil
+    pendingNotificationTokens.remove(projectId) != nil
   }
 }

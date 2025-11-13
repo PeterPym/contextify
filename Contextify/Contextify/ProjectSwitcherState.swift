@@ -490,8 +490,8 @@ public final class ProjectSwitcherState {
 
     if let coordinator = fastPathCoordinator {
       var projectIds = allProjects.map { $0.id }
-      if !projectIds.contains(projectId, privacy: .public) {
-        projectIds.append(projectId, privacy: .public)
+      if !projectIds.contains(projectId) {
+        projectIds.append(projectId)
       }
 
       log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
@@ -733,7 +733,7 @@ public final class ProjectSwitcherState {
 
   /// Schedule coalesced unread refresh for a project
   private func scheduleUnreadRefresh(for projectId: String) {
-    pendingUnread.insert(projectId, privacy: .public)
+    pendingUnread.insert(projectId)
     coalesceTask?.cancel()
     coalesceTask = Task { [weak self] in
       // Small window to coalesce multiple FSEvents

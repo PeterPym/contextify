@@ -177,13 +177,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Create new project
     let projectId = try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
-    log.info("Created new project: \(projectId, privacy: .public) for path: \(canon)")
+    log.info("Created new project: \(projectId) for path: \(canon)")
 
     // Verify the project was created
     if let verified = try projectRepo.get(id: projectId) {
       log.info("✅ Project creation verified: \(verified.id)")
     } else {
-      log.error("❌ Project creation failed - cannot retrieve project \(projectId, privacy: .public)")
+      log.error("❌ Project creation failed - cannot retrieve project \(projectId)")
     }
 
     return projectId
@@ -770,7 +770,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     discovered: [DiscoveredTranscript]
   ) throws -> [ResolvedTranscript] {
     guard let project = try projectRepo.get(id: projectId) else {
-      log.error("❌ FK validation failed: project \(projectId, privacy: .public) does not exist")
+      log.error("❌ FK validation failed: project \(projectId) does not exist")
       throw RepositoryError.notFound
     }
 
@@ -905,7 +905,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
     }
 
-    log.info("Upserted \(resolved.count) transcripts for project \(projectId, privacy: .public) (\(resolved.filter(\.wasCreated).count) new)")
+    log.info("Upserted \(resolved.count) transcripts for project \(projectId) (\(resolved.filter(\.wasCreated).count) new)")
     return resolved
   }
 
@@ -930,7 +930,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // MARK: - Transcript Queries
 
   public func getTranscripts(forProject projectId: String) throws -> [Transcript] {
-    try transcriptRepo.byProject(projectId, privacy: .public)
+    try transcriptRepo.byProject(projectId)
   }
 
   /// Delete a transcript and all its associated data
@@ -1145,7 +1145,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   /// Reconcile transcripts against filesystem - mark missing files as deleted
   public func reconcileDeletedTranscripts(projectId: String) throws {
-    let transcripts = try transcriptRepo.byProject(projectId, privacy: .public)
+    let transcripts = try transcriptRepo.byProject(projectId)
     var markedDeleted = 0
 
     for transcript in transcripts {
@@ -1166,7 +1166,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
 
     if markedDeleted > 0 {
-      log.info("Reconciled project \(projectId, privacy: .public): marked \(markedDeleted) transcripts as deleted")
+      log.info("Reconciled project \(projectId): marked \(markedDeleted) transcripts as deleted")
     }
   }
 
