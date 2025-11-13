@@ -449,8 +449,36 @@ struct ContextifyApp: App {
         return
       }
 
-      // Check if database is empty BEFORE starting discovery
-      // This avoids race condition where ingestion completes before we check
+      // ═══════════════════════════════════════════════════════════════════════════════
+      // WELCOME MODAL DECISION (Onboarding Workflow)
+      // ═══════════════════════════════════════════════════════════════════════════════
+      //
+      // **ONBOARDING WORKFLOW:**
+      // The welcome modal provides a 3-step onboarding experience:
+      //   1. Permissions (conditional - only App Store builds without existing bookmarks)
+      //   2. Discovery progress visualization (all builds)
+      //   3. Completion message (all builds)
+      //
+      // **TRIGGER CONDITION:**
+      // Show modal if database is empty (0 projects) - applies to ALL builds (DMG + App Store)
+      //
+      // **DISTRIBUTION-SPECIFIC BEHAVIOR:**
+      // - DMG builds: Modal shows steps 2-3 only (skip permissions, have full filesystem access)
+      // - App Store builds (first launch): Modal shows all 3 steps (permissions required)
+      // - App Store builds (subsequent launches): Modal shows steps 2-3 only (bookmarks exist)
+      //
+      // **WHY ALL BUILDS SHOW THE MODAL:**
+      // Even DMG builds benefit from showing discovery progress on first launch:
+      // - User sees what's happening (not a black box)
+      // - Progress bars show discovery/ingestion status
+      // - Clear completion message when ready to use
+      //
+      // **The modal itself handles the conditional logic:**
+      // WelcomeModalView.needsPermissions determines if step 1 (permissions) is shown.
+      // We just decide HERE whether to show the modal at all.
+      //
+      // ═══════════════════════════════════════════════════════════════════════════════
+
       let isEmptyDB: Bool
       do {
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
@@ -459,18 +487,16 @@ struct ContextifyApp: App {
 
         log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
 
-        // Only show welcome modal in sandboxed builds with empty DB
-        if isEmptyDB && Sandbox.isSandboxed {
-          log.info("[WELCOME-DECISION] DB empty + sandboxed = WILL show modal")
-          log.info("📋 Empty database detected in sandboxed build - showing welcome modal before discovery starts")
+        // Show welcome modal for all empty database cases (onboarding workflow)
+        if isEmptyDB {
+          log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
+          log.info("📋 Empty database detected - showing welcome modal for onboarding")
           // Post notification to show welcome modal BEFORE discovery starts
           await MainActor.run {
             NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
           }
-        } else if isEmptyDB && !Sandbox.isSandboxed {
-          log.info("[WELCOME-DECISION] DB empty + unsandboxed = will NOT show modal (DMG build)")
         } else {
-          log.info("[WELCOME-DECISION] DB not empty = will NOT show modal")
+          log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
         }
       } catch {
         log.warning("Failed to check if database is empty: \(error.localizedDescription)")

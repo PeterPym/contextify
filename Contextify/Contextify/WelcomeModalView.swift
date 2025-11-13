@@ -12,9 +12,37 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "WelcomeModal")
 
-/// Welcome modal shown on first launch with no project configured
+/// Welcome modal for onboarding users through the discovery process.
 ///
-/// Shows discovery progress and automatically selects most recent project when complete.
+/// **ONBOARDING WORKFLOW (3 STEPS):**
+///
+/// **Step 1: Permissions (conditional - sandboxed builds only)**
+/// - DMG builds: Skip this step (have full filesystem access)
+/// - App Store builds (first launch): Show permission grants for ~/.claude and ~/.codex
+/// - App Store builds (subsequent launches): Skip if bookmarks already exist
+///
+/// **Step 2: Discovery Progress (all builds)**
+/// - Show live progress bars as projects and transcripts are discovered
+/// - Display current project/transcript being processed
+/// - Show counts (e.g., "5/12 projects", "234/456 files")
+///
+/// **Step 3: Completion (all builds)**
+/// - Show "Found N projects" success message
+/// - "Get Started" button to dismiss modal
+/// - Modal auto-closes when discovery completes
+///
+/// **When This Modal Appears:**
+/// - Trigger: Empty database (0 projects) at app launch
+/// - All builds: DMG and App Store
+/// - NOT shown: Subsequent launches with existing projects in database
+///
+/// **View State Logic:**
+/// The modal's body uses a conditional hierarchy (lines 38-50):
+/// 1. If `showPermissionsStep` → show permissions UI (sandboxed builds only)
+/// 2. Else if discovering/ingesting → show progress bars
+/// 3. Else if projects found → show completion message
+/// 4. Else if error → show error with retry
+/// 5. Else → show "no projects found" message
 struct WelcomeModalView: View {
     @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.dismiss) private var dismiss
@@ -288,26 +316,34 @@ struct WelcomeModalView: View {
 
     // MARK: - Helper Computed Properties
 
+    /// Determines if the permissions step should be shown in the welcome modal.
+    ///
+    /// **Decision Logic:**
+    /// 1. DMG builds (unsandboxed): NEVER show permissions (they have full filesystem access)
+    /// 2. App Store builds (sandboxed) + no existing authorizations: SHOW permissions
+    /// 3. App Store builds (sandboxed) + existing authorizations: SKIP permissions (user already granted)
+    ///
+    /// **Why this isn't just "isSandboxed":**
+    /// This property incorporates persistent state (saved bookmarks). On subsequent launches,
+    /// even sandboxed builds skip permissions if bookmarks exist.
+    ///
+    /// **Example flows:**
+    /// - DMG, first launch: needsPermissions=false → skip to discovery
+    /// - App Store, first launch: needsPermissions=true → show permissions → then discovery
+    /// - App Store, second launch: needsPermissions=false → skip to discovery (bookmarks exist)
     private var needsPermissions: Bool {
-        // Check if we're in a sandboxed build
-        #if APPSTORE
-        let isSandboxed = true
-        #else
-        let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-        #endif
-
-        // Show permissions step on first launch (no authorizations exist yet)
-        // Once shown, showPermissionsStep controls visibility until user dismisses
-        if !isSandboxed {
+        // DMG builds never need permissions (have full filesystem access)
+        if !Sandbox.isSandboxed {
             return false
         }
 
+        // App Store builds: check if user already granted permissions
         // If permissions step is already visible, keep it visible
         if showPermissionsStep {
             return true
         }
 
-        // Otherwise, show it if no authorizations exist
+        // Show permissions step if no saved bookmarks exist
         return !hasAnyAuthorizations
     }
 
