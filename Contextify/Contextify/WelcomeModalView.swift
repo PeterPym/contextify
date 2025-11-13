@@ -37,7 +37,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "WelcomeModal")
 /// - NOT shown: Subsequent launches with existing projects in database
 ///
 /// **View State Logic:**
-/// The modal's body uses a conditional hierarchy (lines 38-50):
+/// The modal's body uses a conditional hierarchy:
 /// 1. If `showPermissionsStep` → show permissions UI (sandboxed builds only)
 /// 2. Else if discovering/ingesting → show progress bars
 /// 3. Else if projects found → show completion message
