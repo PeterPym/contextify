@@ -132,6 +132,18 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     watcher.setMetadataInvalidator { [weak self] transcriptId in
       try? self?.deleteMetadata(forTranscript: transcriptId)
     }
+
+    // Set re-hoover callback to route through discoverTranscript (applies security-scoped access)
+    watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
+      try self?.discoverTranscript(
+        projectId: projectId,
+        fileURL: fileURL,
+        provider: provider,
+        providerSessionId: sessionId,
+        startWatching: false,  // Already watching
+        progress: nil
+      )
+    }
   }
 
   // MARK: - Project Management

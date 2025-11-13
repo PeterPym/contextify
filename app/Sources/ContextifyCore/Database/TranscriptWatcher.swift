@@ -13,6 +13,7 @@ public final class TranscriptWatcher {
   private let hooverEngine: HooverEngine
   private let transcriptRepo: TranscriptRepository
   private var metadataInvalidator: ((String) throws -> Void)?
+  private var rehoover: ((String, URL, String, String?) throws -> Void)?
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var debounceTimers: [String: Timer] = [:]
   private var lastEventTime: [String: Date] = [:]
@@ -24,16 +25,23 @@ public final class TranscriptWatcher {
   public init(
     hooverEngine: HooverEngine,
     transcriptRepo: TranscriptRepository,
-    metadataInvalidator: ((String) throws -> Void)? = nil
+    metadataInvalidator: ((String) throws -> Void)? = nil,
+    rehoover: ((String, URL, String, String?) throws -> Void)? = nil
   ) {
     self.hooverEngine = hooverEngine
     self.transcriptRepo = transcriptRepo
     self.metadataInvalidator = metadataInvalidator
+    self.rehoover = rehoover
   }
 
   /// Set metadata invalidation callback (useful when orchestrator needs weak self reference)
   public func setMetadataInvalidator(_ invalidator: @escaping (String) throws -> Void) {
     self.metadataInvalidator = invalidator
+  }
+
+  /// Set re-hoover callback for security-scoped re-ingestion (useful when orchestrator needs weak self reference)
+  public func setRehoover(_ rehooverCallback: @escaping (String, URL, String, String?) throws -> Void) {
+    self.rehoover = rehooverCallback
   }
 
   /// Check if a transcript is being watched
@@ -178,12 +186,19 @@ public final class TranscriptWatcher {
         // Invalidate cached metadata (file changed, so metadata may be stale)
         try? self.metadataInvalidator?(transcriptId)
 
-        // Stream new lines using hoover engine (it will resume from checkpoint)
-        _ = try self.hooverEngine.hooverTranscript(
-          transcript,
-          fileURL: fileURL,
-          progress: NoOpProgressSink()
-        )
+        // NOTE: All transcript re-ingestion goes through TranscriptOrchestrator
+        // so security-scoped access is consistently applied in sandbox builds.
+        if let rehoover = self.rehoover {
+          // Use orchestrator callback (applies security-scoped access for external transcripts)
+          try rehoover(transcript.projectId, fileURL, transcript.provider, transcript.providerSessionId)
+        } else {
+          // Fallback: direct hoover (legacy path, no security scope)
+          _ = try self.hooverEngine.hooverTranscript(
+            transcript,
+            fileURL: fileURL,
+            progress: NoOpProgressSink()
+          )
+        }
 
         log.info("[WATCHER-NOTIFY] Posting TranscriptUpdated notification for: \(transcriptId, privacy: .public)")
 
