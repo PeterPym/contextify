@@ -345,6 +345,11 @@ run_build_for_dist() {
 
   echo "Building for distribution: $dist"
 
+  # Clean build cache when switching distribution modes to ensure compiler flags take effect
+  # (APPSTORE_BUILD flag changes between dmg and appstore builds)
+  echo "  Cleaning build cache to ensure fresh compilation..."
+  rm -rf "$dd" 2>/dev/null || true
+
   # Swap entitlements file if building App Store variant
   if [[ "$dist" == "appstore" ]]; then
     echo "  Using App Store entitlements (sandboxed)"
