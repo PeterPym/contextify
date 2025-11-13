@@ -2,18 +2,16 @@ import Foundation
 import OSLog
 
 /// Fast-path transcript ingestion coordinator.
-/// NOTE: This class is manually synchronized and is safe to send across concurrency domains.
-/// The `enqueuedCompletions` and `notifiedProjects` state is protected by the serial `completionQueue`
-/// or by being accessed only from the serial loop in `runFastPath`. The `orchestrator` dependency
-/// is already `@unchecked Sendable`.
-public final class FastPathIngestionCoordinator: @unchecked Sendable {
+/// Coordinates preview ingestion to populate the UI instantly and queues full ingestion
+/// work in the background. Actor isolation guarantees safe access to shared state.
+public actor FastPathIngestionCoordinator {
   private let orchestrator: TranscriptOrchestrator
   private let previewLimit: Int
   private let maxPreviewConcurrency: Int
   private let maxTranscriptsPerProject: Int
-  private let completionQueue = DispatchQueue(label: "dev.contextify.fastpath.completions", qos: .utility)
   private var enqueuedCompletions: Set<String> = []
   private var notifiedProjects: Set<String> = []
+  private var pendingNotificationTokens: Set<String> = []
   private let log = Logger(subsystem: "dev.contextify", category: "FastPathIngestion")
 
   public init(
@@ -28,16 +26,16 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
     self.maxTranscriptsPerProject = max(1, maxTranscriptsPerProject)
   }
 
-  public func resumePendingCompletions() {
-    completionQueue.async {
-      guard let partials = try? self.orchestrator.getPartialTranscripts() else {
-        self.log.error("[FAST-PATH-RESUME] Failed to load partial transcripts")
-        return
-      }
-      if !partials.isEmpty {
-        self.log.info("[FAST-PATH-RESUME] Resuming \(partials.count, privacy: .public) partial transcripts")
-      }
-      partials.forEach { self.enqueueCompletion(transcriptId: $0.id) }
+  public func resumePendingCompletions() async {
+    guard let partials = try? orchestrator.getPartialTranscripts() else {
+      log.error("[FAST-PATH-RESUME] Failed to load partial transcripts")
+      return
+    }
+    if !partials.isEmpty {
+      log.info("[FAST-PATH-RESUME] Resuming \(partials.count, privacy: .public) partial transcripts")
+    }
+    for transcript in partials {
+      await enqueueCompletion(transcriptId: transcript.id)
     }
   }
 
@@ -84,16 +82,10 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
       return
     }
 
-    // Log each transcript's state BEFORE filtering
     log.info("[FAST-PATH-TRANSCRIPT] Found \(transcripts.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
-    for transcript in transcripts.prefix(10) {
-      log.info("[FAST-PATH-TRANSCRIPT] Transcript \(transcript.id.prefix(8), privacy: .public) ingestState: \(transcript.ingestState, privacy: .public) lastProcessedLine: \(transcript.lastProcessedLine, privacy: .public)")
-    }
 
-    // Filter for transcripts that need processing:
-    // - ingestState='partial': partially ingested, needs completion
-    // - lastProcessedLine=0: newly discovered, needs preview
-    let targets = transcripts.filter { $0.ingestState != "complete" || $0.lastProcessedLine == 0 }
+    // Filter for transcripts that still need processing (ingest_state != complete)
+    let targets = transcripts.filter { $0.ingestState != "complete" }
 
     // Log filter results
     log.info("[FAST-PATH-FILTER] Filtered \(targets.count, privacy: .public) targets from \(transcripts.count, privacy: .public) total transcripts for project \(projectId, privacy: .public)")
@@ -107,65 +99,73 @@ public final class FastPathIngestionCoordinator: @unchecked Sendable {
     log.info("[FAST-PATH-PROJECT] Processing \(subset.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
 
     // Only notify UI once per project (on first transcript completion)
-    let shouldNotifyUI = !notifiedProjects.contains(projectId)
+    let shouldNotifyUI = registerProjectNotificationIfNeeded(projectId: projectId)
     if shouldNotifyUI {
-      notifiedProjects.insert(projectId)
+      pendingNotificationTokens.insert(projectId)
     }
 
-    // Protect isFirstTranscript flag from concurrent access within TaskGroup
-    let isFirstTranscript = OSAllocatedUnfairLock(initialState: true)
     await withTaskGroup(of: Void.self) { group in
       for transcript in subset {
-        group.addTask {
-          // Atomic check-and-set to ensure only one task notifies UI
-          let shouldNotifyForThisOne = isFirstTranscript.withLock { isFirst in
-            let result = isFirst
-            isFirst = false
-            return result
-          }
-          let notifyForThisTranscript = shouldNotifyUI && shouldNotifyForThisOne
+        group.addTask { [previewLimit = self.previewLimit, orchestrator = self.orchestrator, log = self.log] in
+          let notifyForThisTranscript = shouldNotifyUI && await self.consumeNotificationToken(for: projectId)
 
-          self.log.info("[FAST-PATH-NOTIFY] Transcript \(transcript.id.prefix(8), privacy: .public) notifyUI: \(notifyForThisTranscript, privacy: .public) (shouldNotifyUI: \(shouldNotifyUI, privacy: .public), isFirst: \(shouldNotifyForThisOne, privacy: .public))")
+          log.info("[FAST-PATH-NOTIFY] Transcript \(transcript.id.prefix(8), privacy: .public) notifyUI: \(notifyForThisTranscript, privacy: .public) (shouldNotifyUI: \(shouldNotifyUI, privacy: .public))")
 
           do {
-            let needsCompletion = try self.orchestrator.ingestTranscript(
+            let needsCompletion = try orchestrator.ingestTranscript(
               transcriptId: transcript.id,
-              mode: .preview(entries: self.previewLimit),
+              mode: .preview(entries: previewLimit),
               notifyUI: notifyForThisTranscript
             )
             if needsCompletion {
-              self.enqueueCompletion(transcriptId: transcript.id)
+              await self.enqueueCompletion(transcriptId: transcript.id)
             }
           } catch {
-            self.log.error("[FAST-PATH] Preview ingest failed for \(transcript.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            log.error("[FAST-PATH] Preview ingest failed for \(transcript.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
           }
         }
+      }
+    }
+
+    if shouldNotifyUI {
+      pendingNotificationTokens.remove(projectId)
+    }
+  }
+
+  private func enqueueCompletion(transcriptId: String) async {
+    guard enqueuedCompletions.insert(transcriptId).inserted else { return }
+
+    let orchestrator = self.orchestrator
+    let log = self.log
+
+    Task.detached(priority: .utility) { [weak self] in
+      defer {
+        await self?.removeEnqueuedCompletion(transcriptId: transcriptId)
+      }
+
+      do {
+        _ = try orchestrator.ingestTranscript(
+          transcriptId: transcriptId,
+          mode: .complete,
+          notifyUI: false  // UI already notified during preview
+        )
+      } catch {
+        log.error("[FAST-PATH] Background completion failed for \(transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
       }
     }
   }
 
-  private func enqueueCompletion(transcriptId: String) {
-    completionQueue.async {
-      guard !self.enqueuedCompletions.contains(transcriptId) else { return }
-      self.enqueuedCompletions.insert(transcriptId)
+  private func removeEnqueuedCompletion(transcriptId: String) {
+    enqueuedCompletions.remove(transcriptId)
+  }
 
-      Task(priority: .utility) {
-        defer {
-          self.completionQueue.async {
-            self.enqueuedCompletions.remove(transcriptId)
-          }
-        }
+  private func registerProjectNotificationIfNeeded(projectId: String) -> Bool {
+    guard !notifiedProjects.contains(projectId) else { return false }
+    notifiedProjects.insert(projectId)
+    return true
+  }
 
-        do {
-          _ = try self.orchestrator.ingestTranscript(
-            transcriptId: transcriptId,
-            mode: .complete,
-            notifyUI: false  // UI already notified during preview
-          )
-        } catch {
-          self.log.error("[FAST-PATH] Background completion failed for \(transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
-      }
-    }
+  private func consumeNotificationToken(for projectId: String) -> Bool {
+    pendingNotificationTokens.remove(projectId) != nil
   }
 }

@@ -46,7 +46,9 @@ final class ProjectsViewModel {
 
     // Initialize fast-path coordinator for instant timeline population
     let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
-    coordinator.resumePendingCompletions()
+    Task(priority: .background) {
+      await coordinator.resumePendingCompletions()
+    }
     self.fastPathCoordinator = coordinator
 
     // Start observing project events for auto-refresh
@@ -137,13 +139,6 @@ final class ProjectsViewModel {
         // isCurrent will update via coordinator subscription; do a lightweight refresh for responsiveness
         if let refreshed = try? await discoveryService.discoverAllProjects(currentProjectPath: pathString) {
           projects = refreshed
-
-          // Run fast-path for instant timeline population on the switched project
-          if let coordinator = self.fastPathCoordinator {
-            let projectIds = refreshed.map { $0.id }
-            logger.info("[VIEWMODEL-SWITCH-FASTPATH] Running fast-path for switched project: \(project.id, privacy: .public)")
-            await coordinator.runFastPath(projectIds: projectIds, activeProjectId: project.id)
-          }
         }
       } catch {
         logger.error("Coordinator switch failed: \(error.localizedDescription)")

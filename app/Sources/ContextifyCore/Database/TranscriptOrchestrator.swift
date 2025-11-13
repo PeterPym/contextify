@@ -889,7 +889,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
             transcriptId, projectId, path, normalizedPath, pathHash,
             disc.provider, sessionIdArg,  // Pass nil as NULL, not empty string
             TimeUnits.secondsFromMs(mtimeMs), len > 0 ? Int(len) : nil, len, mtimeMs, sha,
-            0, 0, 1, "active", "complete",  // New transcripts start as complete, fast-path will mark partial
+            0, 0, 1, "active", "partial",  // New transcripts start as partial so fast-path can preview
             nowSec, nowSec
           ])
 

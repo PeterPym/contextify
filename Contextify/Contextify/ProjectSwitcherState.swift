@@ -133,7 +133,9 @@ public final class ProjectSwitcherState {
 
     if fastPathCoordinator == nil {
       let coordinator = FastPathIngestionCoordinator(orchestrator: orchestrator)
-      coordinator.resumePendingCompletions()
+      Task(priority: .background) {
+        await coordinator.resumePendingCompletions()
+      }
       fastPathCoordinator = coordinator
       log.info("✅ ProjectSwitcher: initialized fast-path coordinator")
     }
@@ -494,7 +496,7 @@ public final class ProjectSwitcherState {
       }
 
       log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
-      Task.detached(priority: .utility) {
+      Task.detached(priority: .utility) { [coordinator, projectIds, projectId] in
         await coordinator.runFastPath(projectIds: projectIds, activeProjectId: projectId)
       }
     } else {
