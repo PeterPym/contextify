@@ -424,65 +424,30 @@ public actor ProjectDiscoveryService {
   ///
   /// - Returns: The Claude directory URL that maps to the project path, or nil if not found
   private func claudeDir(for projectPath: URL) async -> URL? {
-    let root = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/projects")
+    do {
+      return try await withClaudeRoot { root in
+        let dirs = try FileManager.default.contentsOfDirectory(
+          at: root,
+          includingPropertiesForKeys: [.isDirectoryKey],
+          options: [.skipsHiddenFiles]
+        ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
-    // SANDBOXED PATH: Use security-scoped access via FolderAccessController
-    let dirs: [URL]
-    if let controller = folderAccessController {
-      // Check if user granted access to Claude folder
-      guard let auth = await controller.authorization(for: .claude),
-            auth.status == .authorized else {
-        logger.debug("No Claude authorization for ingestion (sandboxed build requires user permission)")
-        return nil
-      }
+        logger.info("Searching for Claude dir matching: \(projectPath.path, privacy: .public)")
 
-      do {
-        // CRITICAL: All file system operations must happen INSIDE withAccess closure
-        // The security-scoped resource is only accessible while the closure executes
-        dirs = try await controller.withAccess(auth) { authorizedRoot in
-          try FileManager.default.contentsOfDirectory(
-            at: authorizedRoot,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-          ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
+        // Find the directory whose reverse mapping matches our project path
+        // All of this runs INSIDE the security scope
+        for dir in dirs {
+          if let decoded = reversePathMapping(dirURL: dir),
+             decoded == projectPath {
+            return dir
+          }
         }
-      } catch {
-        logger.debug("Could not list Claude projects directory (sandbox access denied): \(error.localizedDescription)")
         return nil
       }
-    } else {
-      // NON-SANDBOXED PATH: DMG builds have direct filesystem access
-      guard let foundDirs = try? FileManager.default.contentsOfDirectory(
-        at: root,
-        includingPropertiesForKeys: [.isDirectoryKey],
-        options: [.skipsHiddenFiles]
-      ).filter({ (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true })
-      else {
-        logger.debug("Could not list Claude projects directory (DMG build, direct access failed)")
-        return nil
-      }
-      dirs = foundDirs
+    } catch {
+      logger.debug("Could not resolve Claude dir for \(projectPath.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return nil
     }
-
-    logger.info("Searching for Claude dir matching: \(projectPath.path, privacy: .public)")
-    logger.info("Scanning \(dirs.count) Claude directories")
-
-    // Find the directory whose reverse mapping matches our project path
-    for dir in dirs {
-      if let mapped = reversePathMapping(dirURL: dir) {
-        logger.info("  \(dir.lastPathComponent, privacy: .public) → \(mapped.path, privacy: .public)")
-        if mapped.path == projectPath.path {
-          logger.info("✅ Found match: \(dir.lastPathComponent, privacy: .public)")
-          return dir
-        }
-      } else {
-        logger.info("  \(dir.lastPathComponent, privacy: .public) → (failed to map)")
-      }
-    }
-
-    logger.warning("❌ No Claude directory found for: \(projectPath.path, privacy: .public)")
-    return nil
   }
 
   // MARK: - Database Queries
