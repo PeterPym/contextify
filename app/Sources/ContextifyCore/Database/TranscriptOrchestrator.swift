@@ -382,7 +382,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     startWatching: Bool = true,
     progress: IngestProgressSink? = nil
   ) throws {
-    log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public)")
+    log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public) provider: \(provider, privacy: .public) project: \(projectId, privacy: .public)")
 
     // Determine if this provider needs security-scoped access.
     let needsScope = needsSecurityScope(provider: provider)

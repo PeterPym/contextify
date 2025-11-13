@@ -16,7 +16,7 @@ public protocol TranscriptAccessProvider: Sendable {
   ///           or any error thrown by the body closure.
   func withAccess<T>(
     for provider: String,
-    _ body: (URL) throws -> T
+    _ body: @Sendable (URL) throws -> T
   ) throws -> T
 }
 
@@ -26,7 +26,7 @@ public struct PassthroughAccessProvider: TranscriptAccessProvider {
 
   public func withAccess<T>(
     for provider: String,
-    _ body: (URL) throws -> T
+    _ body: @Sendable (URL) throws -> T
   ) throws -> T {
     let home = FileManager.default.homeDirectoryForCurrentUser
     let root: URL

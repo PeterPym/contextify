@@ -4,7 +4,7 @@ import OSLog
 // MARK: - Progress Protocol
 
 /// Protocol for reporting hoover/stream progress
-public protocol IngestProgressSink: AnyObject {
+public protocol IngestProgressSink: AnyObject, Sendable {
   /// Called once at start. totalLines may be nil if unknown.
   func didStartTranscript(name: String, totalLines: Int?)
 
@@ -20,7 +20,7 @@ public protocol IngestProgressSink: AnyObject {
 // MARK: - No-Op Sink
 
 /// No-op implementation for background tasks
-public final class NoOpProgressSink: IngestProgressSink {
+public final class NoOpProgressSink: IngestProgressSink, @unchecked Sendable {
   public init() {}
 
   public func didStartTranscript(name: String, totalLines: Int?) {}
@@ -34,7 +34,7 @@ public final class NoOpProgressSink: IngestProgressSink {
 // MARK: - Logging Sink
 
 /// Progress sink that logs to OSLog
-public final class LoggingProgressSink: IngestProgressSink {
+public final class LoggingProgressSink: IngestProgressSink, @unchecked Sendable {
   private let log: Logger
 
   public init(log: Logger) {
