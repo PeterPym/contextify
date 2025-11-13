@@ -295,7 +295,8 @@ struct ContextifyApp: App {
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
         let startupLog = Logger(subsystem: "dev.contextify", category: "Projects")
-        startupLog.info("[WELCOME-TRIGGERED] Welcome modal notification received, showing modal")
+        startupLog.info("[WELCOME-TRIGGERED] Welcome modal notification received")
+        startupLog.info("[WELCOME-STATE] Setting showWelcomeModal = true")
         showWelcomeModal = true
       }
     }
@@ -413,6 +414,13 @@ struct ContextifyApp: App {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("🔍 Initializing projects system at app launch")
 
+    // Log build type (compile-time check)
+    #if APPSTORE_BUILD
+    log.info("[INIT-BUILD-TYPE] Compiled with APPSTORE_BUILD flag (sandboxed)")
+    #else
+    log.info("[INIT-BUILD-TYPE] Compiled WITHOUT APPSTORE_BUILD flag (DMG/unsandboxed)")
+    #endif
+
     do {
       // Initialize projects view model (C2.1 - may already be set from window .task)
       if projectsViewModel == nil {
@@ -446,16 +454,23 @@ struct ContextifyApp: App {
       let isEmptyDB: Bool
       do {
         let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        isEmptyDB = (try? orchestrator.listProjects().isEmpty) ?? false
-        if isEmptyDB {
-          log.info("[WELCOME-DECISION] DB empty: true, sandboxed: \(Sandbox.isSandboxed, privacy: .public), will show modal: true")
-          log.info("📋 Empty database detected - showing welcome modal before discovery starts")
+        let projectCount = (try? orchestrator.listProjects().count) ?? 0
+        isEmptyDB = projectCount == 0
+
+        log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
+
+        // Only show welcome modal in sandboxed builds with empty DB
+        if isEmptyDB && Sandbox.isSandboxed {
+          log.info("[WELCOME-DECISION] DB empty + sandboxed = WILL show modal")
+          log.info("📋 Empty database detected in sandboxed build - showing welcome modal before discovery starts")
           // Post notification to show welcome modal BEFORE discovery starts
           await MainActor.run {
             NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
           }
+        } else if isEmptyDB && !Sandbox.isSandboxed {
+          log.info("[WELCOME-DECISION] DB empty + unsandboxed = will NOT show modal (DMG build)")
         } else {
-          log.info("[WELCOME-DECISION] DB empty: false, will NOT show modal")
+          log.info("[WELCOME-DECISION] DB not empty = will NOT show modal")
         }
       } catch {
         log.warning("Failed to check if database is empty: \(error.localizedDescription)")
