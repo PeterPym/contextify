@@ -77,14 +77,8 @@ struct ProjectRowView: View {
             .frame(minHeight: 44)  // P2-2: Accessibility - ensure ≥44pt hit target
             .help("Configure active session following")
 
-            // Info button for follow mode explanation
-            InfoButton(isPresented: $showFollowModeInfo)
-              .popover(isPresented: $showFollowModeInfo) {
-                InfoPopoverContent(
-                  title: "Follow Modes",
-                  message: followModeExplanation
-                )
-              }
+            // Info popover temporarily disabled per apple-intelligence false positives review
+            // (Avoids persistent "tip" hovering over project tabs during investigations)
           }
         }
 
