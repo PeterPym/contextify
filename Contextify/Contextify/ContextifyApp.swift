@@ -423,6 +423,7 @@ struct ContextifyApp: App {
           hudModel: HUDViewModel.shared
         )
         self.projectsViewModel = vm
+        timeline.configureSharedOrchestrator(orchestrator)
       }
 
       guard let vm = projectsViewModel else {

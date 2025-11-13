@@ -228,7 +228,7 @@ final class ConversationMonitor {
         }
     }
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
-    @ObservationIgnored var orchestrator: TranscriptOrchestrator!  // Shared instance (nonisolated, accessible to inventory view)
+    @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
@@ -317,6 +317,13 @@ final class ConversationMonitor {
         log.info("[TIMELINE-INIT] ConversationMonitor ready")
     }
 
+    /// Configure shared orchestrator (preferred)
+    @MainActor
+    func configureSharedOrchestrator(_ orchestrator: TranscriptOrchestrator) {
+        self.orchestrator = orchestrator
+        log.info("[TIMELINE-ORCH] Using shared TranscriptOrchestrator instance")
+    }
+
     /// Subscribe to coordinator updates for project switching
     @MainActor
     private func subscribeToContextUpdates() {
@@ -397,22 +404,32 @@ final class ConversationMonitor {
 
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId, privacy: .public)")
 
-        // CXT-13: Remove @MainActor to prevent blocking UI on project switch
         Task { [weak self] in
             guard let self else { return }
             log.info("🔧 [MONITOR-TASK] Background task started (elapsed: \(String(format: "%.3f", Date().timeIntervalSince(taskStart)))s)")
 
-            // 1. Initialize orchestrator and bind known project id (P1-1: off main actor)
+            // 1. Initialize or reuse orchestrator
             do {
-                let dbStart = Date()
-                log.info("[UIOPT-DB-INIT] Creating TranscriptOrchestrator...")
-                let orch = try await Task.detached { try TranscriptOrchestrator(dbManager: .shared) }.value
-                log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
+                var orch: TranscriptOrchestrator
+                if let shared = await MainActor.run(body: { () -> TranscriptOrchestrator? in
+                    self.orchestrator
+                }) {
+                    orch = shared
+                } else {
+                    let dbStart = Date()
+                    self.log.warning("[UIOPT-DB-INIT] Shared orchestrator not configured; creating local instance (watcher state isolated)")
+                    self.log.info("[UIOPT-DB-INIT] Creating TranscriptOrchestrator...")
+                    let newlyCreated = try TranscriptOrchestrator(dbManager: .shared)
+                    await MainActor.run {
+                        self.orchestrator = newlyCreated
+                        self.log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
+                    }
+                    orch = newlyCreated
+                }
+
                 await MainActor.run {
-                    self.orchestrator = orch
                     self.currentProjectId = projectId
                     self.log.info("📁 Project ID set: \(projectId, privacy: .public)")
-                    self.log.info("[UIOPT-DB-INIT] Project ID set on main actor")
                 }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
@@ -2533,8 +2550,11 @@ final class ConversationMonitor {
 
                     // Auto-recovery for specific issues
                     if issue.category == .watcherMissing {
-                        log.debug("[WATCHER-HEALTH-DISABLED] Skipping watcher recovery per watcher-rca-validation-20251113.md")
-                        continue
+                        await attemptWatcherRecovery(
+                            projectId: projectId,
+                            orchestrator: orchestrator,
+                            targetTranscriptId: snapshot.watcherState.transcriptId
+                        )
                     } else if issue.category == .hooverStall {
                         await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
                     }
@@ -2553,11 +2573,14 @@ final class ConversationMonitor {
     }
 
     /// Attempt to recover stalled watcher
-    private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator) async {
+    private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?) async {
         do {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
 
             for transcript in transcripts where !orchestrator.isWatchingTranscript(transcriptId: transcript.id) {
+                if let target = targetTranscriptId, target != transcript.id {
+                    continue
+                }
                 let fileURL = URL(fileURLWithPath: transcript.filePath)
                 log.info("🔧 Attempting to restart watcher for: \(transcript.id) at path: \(fileURL.path, privacy: .public)")
                 try orchestrator.startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
