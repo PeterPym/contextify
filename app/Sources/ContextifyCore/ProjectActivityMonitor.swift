@@ -62,12 +62,13 @@ public actor ProjectActivityMonitor {
     }
 
     isMonitoring = true
-    log.info("Starting global project monitoring")
+    log.info("[INIT] ProjectActivityMonitor: starting global monitoring")
 
     // Discover all projects from transcript roots
     try await discoverAllProjects()
 
-    // Start FSEvents monitoring for live transcript updates
+    #if !APPSTORE_BUILD
+    // Start FSEvents monitoring for live transcript updates (DMG builds only)
     #if os(macOS)
     let claudeRoot = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
@@ -90,12 +91,15 @@ public actor ProjectActivityMonitor {
         }
       }
 
-      log.info("Started FSEvents monitoring for \(roots.count) transcript roots")
+      log.info("[INIT] ProjectActivityMonitor: global discovery + FSEvents enabled (DMG)")
     } else {
       log.warning("No transcript roots found for FSEvents monitoring")
     }
     #else
     log.debug("FSEvents monitoring not available on this platform")
+    #endif
+    #else
+    log.info("[INIT] ProjectActivityMonitor: sandbox mode (no global discovery FSEvents; app layer handles discovery)")
     #endif
   }
 
@@ -220,6 +224,11 @@ public actor ProjectActivityMonitor {
   }
 
   private func discoverAllProjects() async throws {
+    #if APPSTORE_BUILD
+    log.info("[DISC-SCAN-SKIP] Skipping core discovery in sandbox (app layer handles this)")
+    return
+    #endif
+
     let startTime = Date()
     log.info("[DISC-SCAN-START] Starting discovery scan for all projects")
 
