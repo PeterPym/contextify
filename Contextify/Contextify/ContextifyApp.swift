@@ -449,35 +449,14 @@ struct ContextifyApp: App {
         return
       }
 
-      // ═══════════════════════════════════════════════════════════════════════════════
-      // WELCOME MODAL DECISION (Onboarding Workflow)
-      // ═══════════════════════════════════════════════════════════════════════════════
+      // Show welcome modal for onboarding when database is empty (0 projects).
+      // Applies to ALL builds (DMG + App Store).
       //
-      // **ONBOARDING WORKFLOW:**
-      // The welcome modal provides a 3-step onboarding experience:
-      //   1. Permissions (conditional - only App Store builds without existing bookmarks)
-      //   2. Discovery progress visualization (all builds)
-      //   3. Completion message (all builds)
+      // The modal handles conditional logic internally:
+      // - App Store builds: show permissions step first (if no bookmarks exist)
+      // - DMG builds: skip permissions, go straight to discovery progress
       //
-      // **TRIGGER CONDITION:**
-      // Show modal if database is empty (0 projects) - applies to ALL builds (DMG + App Store)
-      //
-      // **DISTRIBUTION-SPECIFIC BEHAVIOR:**
-      // - DMG builds: Modal shows steps 2-3 only (skip permissions, have full filesystem access)
-      // - App Store builds (first launch): Modal shows all 3 steps (permissions required)
-      // - App Store builds (subsequent launches): Modal shows steps 2-3 only (bookmarks exist)
-      //
-      // **WHY ALL BUILDS SHOW THE MODAL:**
-      // Even DMG builds benefit from showing discovery progress on first launch:
-      // - User sees what's happening (not a black box)
-      // - Progress bars show discovery/ingestion status
-      // - Clear completion message when ready to use
-      //
-      // **The modal itself handles the conditional logic:**
-      // WelcomeModalView.needsPermissions determines if step 1 (permissions) is shown.
-      // We just decide HERE whether to show the modal at all.
-      //
-      // ═══════════════════════════════════════════════════════════════════════════════
+      // See WelcomeModalView.swift for complete onboarding workflow documentation.
 
       let isEmptyDB: Bool
       do {
