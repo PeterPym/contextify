@@ -1,0 +1,24 @@
+Contextify Transcript Watcher Restart Excerpt
+============================================
+
+Captured from `/tmp/first-launch-20251110-231153.log` while debugging
+watcher restarts. Sensitive paths redacted.
+
+```
+2025-11-10 23:12:55.169 Db Contextify[31521:b749d7] [dev.contextify:HooverEngine] [HOOVER-PARSE-START] Line 17243: <private>...
+2025-11-10 23:12:55.170 I  Contextify[31521:b7479f] [dev.contextify:TranscriptOrchestrator] [TRANS-DISC-VALID] ✅ Transcript validation passed: ca39c468-4ee8-4ec2-905c-b94609ffea03.jsonl
+...
+2025-11-10 23:12:55.186 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-START] Request to watch transcript: D1BE4718-4A81-4EA7-A956-279CA57BFB06 at path: <redacted>/agent-cab8cb3f.jsonl
+2025-11-10 23:12:55.186 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-DONE] ✅ Now watching transcript: D1BE4718-4A81-4EA7-A956-279CA57BFB06
+2025-11-10 23:12:55.186 I  Contextify[31521:b746fd] [dev.contextify.timeline:ConversationMonitor] 🔧 Attempting to restart watcher for: <private>
+2025-11-10 23:12:55.186 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-START] Request to watch transcript: 48A9D9B2-3379-41E9-975A-757D40E6CF05 at path: <redacted>/4836996d-be4e-473c-be58-58c822c1cbf8.jsonl
+2025-11-10 23:12:55.186 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-DONE] ✅ Now watching transcript: 48A9D9B2-3379-41E9-975A-757D40E6CF05
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify.timeline:ConversationMonitor] 🔧 Attempting to restart watcher for: <private>
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-START] Request to watch transcript: 48AB3418-ED29-4947-A142-70216E6BC3ED at path: <redacted>/64d0fa9d-007c-4e25-bf05-fca55557d979.jsonl
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-DONE] ✅ Now watching transcript: 48AB3418-ED29-4947-A142-70216E6BC3ED
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify.timeline:ConversationMonitor] 🔧 Attempting to restart watcher for: <private>
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-START] Request to watch transcript: 48C6AF21-846F-4B19-8AFC-D53AA50E1219 at path: <redacted>/f16bb0bc-aeb1-43a5-a874-9d2efcddfe87.jsonl
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify:TranscriptWatcher] [WATCHER-WATCH-DONE] ✅ Now watching transcript: 48C6AF21-846F-4B19-8AFC-D53AA50E1219
+2025-11-10 23:12:55.187 I  Contextify[31521:b746fd] [dev.contextify.timeline:ConversationMonitor] 🔧 Attempting to restart watcher for: <private>
+...
+```
