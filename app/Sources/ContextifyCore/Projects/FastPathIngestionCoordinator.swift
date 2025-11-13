@@ -2,7 +2,12 @@ import Foundation
 import OSLog
 
 #if APPSTORE_BUILD
-public final class FastPathIngestionCoordinator {
+/// Fast-path transcript ingestion coordinator for App Store builds.
+/// NOTE: This class is manually synchronized and is safe to send across concurrency domains.
+/// The `enqueuedCompletions` and `notifiedProjects` state is protected by the serial `completionQueue`
+/// or by being accessed only from the serial loop in `runFastPath`. The `orchestrator` dependency
+/// is already `@unchecked Sendable`.
+public final class FastPathIngestionCoordinator: @unchecked Sendable {
   private let orchestrator: TranscriptOrchestrator
   private let previewLimit: Int
   private let maxPreviewConcurrency: Int
@@ -93,12 +98,18 @@ public final class FastPathIngestionCoordinator {
       notifiedProjects.insert(projectId)
     }
 
-    var isFirstTranscript = true
+    // Protect isFirstTranscript flag from concurrent access within TaskGroup
+    let isFirstTranscript = OSAllocatedUnfairLock(initialState: true)
     await withTaskGroup(of: Void.self) { group in
       for transcript in subset {
         group.addTask {
-          let notifyForThisTranscript = shouldNotifyUI && isFirstTranscript
-          isFirstTranscript = false
+          // Atomic check-and-set to ensure only one task notifies UI
+          let shouldNotifyForThisOne = isFirstTranscript.withLock { isFirst in
+            let result = isFirst
+            isFirst = false
+            return result
+          }
+          let notifyForThisTranscript = shouldNotifyUI && shouldNotifyForThisOne
 
           do {
             let needsCompletion = try self.orchestrator.ingestTranscript(
