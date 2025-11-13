@@ -560,28 +560,11 @@ public actor ProjectDiscoveryService {
   /// when the closure returns. You cannot "save" a URL from one withAccess call
   /// and use it in another - the scope will have been released.
   private func ingestClaudeCodeTranscripts(for projectPath: URL, claudeDir: URL) async throws {
-    // SANDBOXED PATH: Use security-scoped access to read transcript files
-    let transcriptFiles: [URL]
-    if let controller = folderAccessController {
-      guard let auth = await controller.authorization(for: .claude),
-            auth.status == .authorized else {
-        logger.debug("No Claude authorization for transcript ingestion (sandboxed build)")
-        return
-      }
-
-      // CRITICAL: Read file list INSIDE withAccess closure
-      // We already used withAccess in claudeDir(), but that scope is now released
-      // We need a new scope to actually read the transcript files
-      transcriptFiles = try await controller.withAccess(auth) { _ in
-        try FileManager.default.contentsOfDirectory(
-          at: claudeDir,
-          includingPropertiesForKeys: [.isDirectoryKey],
-          options: [.skipsHiddenFiles]
-        ).filter { $0.pathExtension == "jsonl" }
-      }
-    } else {
-      // NON-SANDBOXED PATH: DMG builds have direct filesystem access
-      transcriptFiles = try FileManager.default.contentsOfDirectory(
+    // CRITICAL: Each phase needs its own withAccess() call because the scope is released
+    // when the closure returns. We cannot use URLs obtained in earlier phases (like
+    // claudeDir from discovery) - we must re-enter the scope for ingestion.
+    let transcriptFiles = try await withClaudeRoot { _ in
+      try FileManager.default.contentsOfDirectory(
         at: claudeDir,
         includingPropertiesForKeys: [.isDirectoryKey],
         options: [.skipsHiddenFiles]
@@ -596,6 +579,8 @@ public actor ProjectDiscoveryService {
     logger.info("Ingesting Claude transcripts for project_id: \(projectId, privacy: .public) (path: \(projectPath.path, privacy: .public))")
 
     // Prepare discovered transcripts
+    // Note: We store the file URLs in the database, but don't read them here
+    // HooverEngine will re-enter security scope when actually reading file contents
     let discovered = transcriptFiles.map { file in
       DiscoveredTranscript(
         fileURL: file,
