@@ -107,7 +107,8 @@ public actor FastPathIngestionCoordinator {
     await withTaskGroup(of: Void.self) { group in
       for transcript in subset {
         group.addTask { [previewLimit = self.previewLimit, orchestrator = self.orchestrator, log = self.log] in
-          let notifyForThisTranscript = shouldNotifyUI && await self.consumeNotificationToken(for: projectId)
+          let tokenConsumed = await self.consumeNotificationToken(for: projectId)
+          let notifyForThisTranscript = shouldNotifyUI && tokenConsumed
 
           log.info("[FAST-PATH-NOTIFY] Transcript \(transcript.id.prefix(8), privacy: .public) notifyUI: \(notifyForThisTranscript, privacy: .public) (shouldNotifyUI: \(shouldNotifyUI, privacy: .public))")
 
@@ -139,10 +140,6 @@ public actor FastPathIngestionCoordinator {
     let log = self.log
 
     Task.detached(priority: .utility) { [weak self] in
-      defer {
-        await self?.removeEnqueuedCompletion(transcriptId: transcriptId)
-      }
-
       do {
         _ = try orchestrator.ingestTranscript(
           transcriptId: transcriptId,
@@ -151,6 +148,10 @@ public actor FastPathIngestionCoordinator {
         )
       } catch {
         log.error("[FAST-PATH] Background completion failed for \(transcriptId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      }
+
+      if let self {
+        await self.removeEnqueuedCompletion(transcriptId: transcriptId)
       }
     }
   }
