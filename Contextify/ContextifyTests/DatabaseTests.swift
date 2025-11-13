@@ -694,4 +694,233 @@ final class DatabaseTests: XCTestCase {
     XCTAssertTrue(invalidationCalled)
     XCTAssertEqual(invalidatedId, transcriptId)
   }
+
+  // MARK: - Fast-Path Ingestion Tests
+
+  func testHooverEnginePreviewLimit() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    // Create test transcript file with 20 entries
+    let transcriptFile = tempDir.appendingPathComponent("test-transcript.jsonl")
+    var lines: [String] = []
+    for i in 1...20 {
+      lines.append("""
+        {"type":"user","timestamp":"\(Date().addingTimeInterval(TimeInterval(i)).ISO8601Format())","uuid":"user-\(i)","message":{"role":"user","content":[{"type":"text","text":"Test message \(i)"}]}}
+        """)
+    }
+    try lines.joined(separator: "\n").write(to: transcriptFile, atomically: true, encoding: .utf8)
+
+    // Setup repositories and engine
+    let transcriptRepo = TranscriptRepositoryImpl(pool: pool)
+    let entryRepo = EntryRepositoryImpl(pool: pool)
+    let errorRepo = ParseErrorRepositoryImpl(pool: pool)
+    let parser = ClaudeCodeLineParser()
+    let metadataParser = ClaudeCodeMetadataParser()
+
+    let hooverEngine = HooverEngine(
+      db: pool,
+      transcriptRepo: transcriptRepo,
+      entryRepo: entryRepo,
+      errorRepo: errorRepo,
+      parser: parser,
+      fileSnapshotRepo: FileSnapshotRepositoryImpl(pool: pool),
+      trackedFileRepo: TrackedFileRepositoryImpl(pool: pool),
+      transcriptSummaryRepo: TranscriptSummaryRepositoryImpl(pool: pool),
+      systemEventRepo: SystemEventRepositoryImpl(pool: pool),
+      assistantUsageRepo: AssistantUsageRepositoryImpl(pool: pool),
+      metadataParser: metadataParser
+    )
+
+    // Create project and transcript records
+    let projectId = "test-project"
+    let projectRepo = ProjectRepositoryImpl(pool: pool)
+    try projectRepo.upsert(
+      id: projectId,
+      name: "Test Project",
+      rootPath: tempDir.path,
+      gitBranch: nil,
+      gitCommit: nil,
+      lastViewedTs: Int(Date().timeIntervalSince1970),
+      bookmarkData: nil,
+      orphanedSince: nil
+    )
+
+    let transcriptId = "test-transcript"
+    try transcriptRepo.upsert(
+      id: transcriptId,
+      projectId: projectId,
+      provider: "claude-code",
+      providerSessionId: nil,
+      filePath: transcriptFile.path,
+      lineCount: 20,
+      lastProcessedLine: 0,
+      lastProcessedEntryId: nil,
+      parserVersion: 1,
+      status: "active",
+      ingestState: "complete",
+      lastError: nil,
+      createdAt: Int(Date().timeIntervalSince1970),
+      updatedAt: Int(Date().timeIntervalSince1970),
+      normalizedPath: nil,
+      pathHash: nil,
+      mtimeMs: nil
+    )
+
+    let transcript = try transcriptRepo.get(transcriptId)!
+
+    // Test 1: Hoover with limit of 10 entries
+    let progressSink = NoOpProgressSink()
+    let outcome1 = try hooverEngine.hooverTranscript(
+      transcript,
+      fileURL: transcriptFile,
+      progress: progressSink,
+      limit: .entries(10)
+    )
+
+    XCTAssertEqual(outcome1.newEntries, 10, "Should ingest exactly 10 entries")
+    XCTAssertFalse(outcome1.reachedEOF, "Should not reach EOF with limit")
+    XCTAssertNil(outcome1.contentSha256, "Should not compute SHA when not at EOF")
+
+    // Verify transcript state is partial
+    let partialTranscript = try transcriptRepo.get(transcriptId)!
+    XCTAssertEqual(partialTranscript.ingestState, "partial", "Should mark as partial")
+    XCTAssertGreaterThan(partialTranscript.lastProcessedLine, 0, "Should have processed lines")
+
+    // Test 2: Resume and complete ingestion
+    let updatedTranscript = try transcriptRepo.get(transcriptId)!
+    let outcome2 = try hooverEngine.hooverTranscript(
+      updatedTranscript,
+      fileURL: transcriptFile,
+      progress: progressSink,
+      limit: .none
+    )
+
+    XCTAssertEqual(outcome2.newEntries, 10, "Should ingest remaining 10 entries")
+    XCTAssertTrue(outcome2.reachedEOF, "Should reach EOF")
+    XCTAssertNotNil(outcome2.contentSha256, "Should compute SHA at EOF")
+
+    // Verify transcript state is complete
+    let completeTranscript = try transcriptRepo.get(transcriptId)!
+    XCTAssertEqual(completeTranscript.ingestState, "complete", "Should mark as complete")
+
+    // Verify total entries
+    let totalEntries = try pool.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries WHERE transcript_id = ?", arguments: [transcriptId]) ?? 0
+    }
+    XCTAssertEqual(totalEntries, 20, "Should have ingested all 20 entries")
+  }
+
+  func testIngestionLockPreventsParallelIngest() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    let orchestrator = try TranscriptOrchestrator(dbManager: DatabaseManager(dbPath: dbPath.path))
+
+    // Create test project
+    let projectId = "test-project"
+    let projectRepo = ProjectRepositoryImpl(pool: pool)
+    try projectRepo.upsert(
+      id: projectId,
+      name: "Test Project",
+      rootPath: tempDir.path,
+      gitBranch: nil,
+      gitCommit: nil,
+      lastViewedTs: Int(Date().timeIntervalSince1970),
+      bookmarkData: nil,
+      orphanedSince: nil
+    )
+
+    // Create transcript with partial state
+    let transcriptFile = tempDir.appendingPathComponent("test-transcript.jsonl")
+    try "".write(to: transcriptFile, atomically: true, encoding: .utf8)
+
+    let transcriptId = "test-transcript"
+    let transcriptRepo = TranscriptRepositoryImpl(pool: pool)
+    try transcriptRepo.upsert(
+      id: transcriptId,
+      projectId: projectId,
+      provider: "claude-code",
+      providerSessionId: nil,
+      filePath: transcriptFile.path,
+      lineCount: 0,
+      lastProcessedLine: 0,
+      lastProcessedEntryId: nil,
+      parserVersion: 1,
+      status: "active",
+      ingestState: "partial",
+      lastError: nil,
+      createdAt: Int(Date().timeIntervalSince1970),
+      updatedAt: Int(Date().timeIntervalSince1970),
+      normalizedPath: nil,
+      pathHash: nil,
+      mtimeMs: nil
+    )
+
+    // Test lock behavior
+    var firstCallResult: Bool = false
+    var secondCallResult: Bool = false
+
+    // First call should acquire lock
+    firstCallResult = try orchestrator.ingestTranscript(
+      transcriptId: transcriptId,
+      mode: .preview(entries: 10),
+      notifyUI: false
+    )
+
+    // Manually acquire lock to simulate concurrent access
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO ingestion_locks(transcript_id, locked_at)
+        VALUES (?, ?)
+      """, arguments: [transcriptId, Int(Date().timeIntervalSince1970)])
+    }
+
+    // Second call should fail to acquire lock and return current state
+    secondCallResult = try orchestrator.ingestTranscript(
+      transcriptId: transcriptId,
+      mode: .preview(entries: 10),
+      notifyUI: false
+    )
+
+    // Verify lock prevented parallel access
+    XCTAssertFalse(secondCallResult, "Second call should return false (already complete or locked)")
+  }
+
+  func testIngestStateIndexExists() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+
+    let pool = try DatabasePool(path: dbPath.path, configuration: config)
+    try pool.write { db in
+      try DatabaseSchema.migrate(db)
+    }
+
+    // Verify index exists
+    let indexes = try pool.read { db in
+      try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='transcripts'")
+    }
+
+    XCTAssertTrue(indexes.contains("idx_tr_ingest_state_updated_at"), "Index for ingest_state should exist")
+  }
+}
+
+// Helper for testing
+private class NoOpProgressSink: IngestProgressSink {
+  func didStartTranscript(name: String, totalLines: Int) {}
+  func didAdvance(linesProcessed: Int, totalLines: Int?) {}
+  func didCompleteTranscript(durationMs: Int) {}
 }

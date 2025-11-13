@@ -424,6 +424,12 @@ enum DatabaseSchema {
         t.column("transcript_id", .text).primaryKey().references("transcripts", onDelete: .cascade)
         t.column("locked_at", .integer).notNull()
       }
+
+      // Index for efficient partial transcript queries (startup resume)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_tr_ingest_state_updated_at
+        ON transcripts(ingest_state, updated_at DESC)
+      """)
     }
 
     return migrator
@@ -509,6 +515,12 @@ enum DatabaseSchema {
     """)
     try db.execute(sql: """
       CREATE INDEX IF NOT EXISTS idx_tr_mtime_ms ON transcripts(mtime_ms)
+    """)
+
+    // Fast-path ingestion: efficiently find partial transcripts
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_tr_ingest_state_updated_at
+      ON transcripts(ingest_state, updated_at DESC)
     """)
 
     try db.create(table: "ingestion_locks", ifNotExists: true) { t in

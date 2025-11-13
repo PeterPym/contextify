@@ -661,21 +661,25 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     mode: IngestionMode,
     notifyUI: Bool = true
   ) throws -> Bool {
-    guard let transcript = try transcriptRepo.get(transcriptId) else {
+    guard let initialTranscript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
     }
 
-    if case .preview = mode, transcript.ingestState == "complete" {
+    if case .preview = mode, initialTranscript.ingestState == "complete" {
       log.debug("[FAST-PATH] Transcript already complete, skipping preview: \(transcriptId, privacy: .public)")
       return false
     }
 
     guard try acquireIngestionLock(transcriptId: transcriptId) else {
       log.debug("[INGEST-LOCK] Another worker is processing transcript: \(transcriptId, privacy: .public)")
-      return transcript.ingestState == "partial"
+      // Reload transcript to get current state (may have changed since initial read)
+      let refreshedTranscript = try transcriptRepo.get(transcriptId)
+      return refreshedTranscript?.ingestState == "partial"
     }
 
     defer { releaseIngestionLock(transcriptId: transcriptId) }
+
+    let transcript = initialTranscript
 
     let fileURL = URL(fileURLWithPath: transcript.filePath)
     guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -685,9 +689,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         lastProcessedLine: transcript.lastProcessedLine,
         lineCount: transcript.lineCount,
         parserVersion: transcript.parserVersion,
-        status: "deleted",
+        status: "unavailable",
         ingestState: "complete",
-        lastError: "File missing during ingest"
+        lastError: "File no longer exists"
       )
       return false
     }
