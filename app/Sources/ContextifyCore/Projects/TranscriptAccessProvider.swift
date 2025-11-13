@@ -10,12 +10,13 @@ public protocol TranscriptAccessProvider: Sendable {
   /// - Parameters:
   ///   - provider: Provider identifier (e.g. TranscriptProviderID.claude)
   ///   - body: Closure to execute with access to the provider's root directory.
+  ///           Note: Runs synchronously on the calling thread - no async work allowed.
   /// - Returns: Result from the body closure.
   /// - Throws: An error if authorization is missing in sandboxed builds
   ///           or any error thrown by the body closure.
   func withAccess<T>(
     for provider: String,
-    _ body: @Sendable (URL) throws -> T
+    _ body: (URL) throws -> T
   ) throws -> T
 }
 
@@ -25,7 +26,7 @@ public struct PassthroughAccessProvider: TranscriptAccessProvider {
 
   public func withAccess<T>(
     for provider: String,
-    _ body: @Sendable (URL) throws -> T
+    _ body: (URL) throws -> T
   ) throws -> T {
     let home = FileManager.default.homeDirectoryForCurrentUser
     let root: URL

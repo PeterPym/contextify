@@ -73,8 +73,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
 
-  public init(dbManager: DatabaseManager) throws {
+  private let accessProvider: TranscriptAccessProvider?
+
+  public init(
+    dbManager: DatabaseManager,
+    accessProvider: TranscriptAccessProvider? = nil
+  ) throws {
     self.dbManager = dbManager
+    self.accessProvider = accessProvider
     let pool = try dbManager.pool
 
     // v23: Initialize write queue early (P0-3: non-optional let)
@@ -364,8 +370,50 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     startWatching: Bool = true,
     progress: IngestProgressSink? = nil
   ) throws {
-    log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public) provider: \(provider, privacy: .public) project: \(projectId, privacy: .public)")
+    log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public)")
 
+    // Determine if this provider needs security-scoped access.
+    let needsScope = needsSecurityScope(provider: provider)
+
+    if needsScope, let accessProvider {
+      try accessProvider.withAccess(for: provider) { root in
+        // In debug builds, enforce that fileURL is under the root.
+        assert(fileURL.path.hasPrefix(root.path), "fileURL not under provider root: \(fileURL.path) vs \(root.path)")
+        try self.doDiscoverTranscript(
+          projectId: projectId,
+          fileURL: fileURL,
+          provider: provider,
+          providerSessionId: providerSessionId,
+          startWatching: startWatching,
+          progress: progress
+        )
+      }
+    } else {
+      // DMG build or provider without special scope.
+      try self.doDiscoverTranscript(
+        projectId: projectId,
+        fileURL: fileURL,
+        provider: provider,
+        providerSessionId: providerSessionId,
+        startWatching: startWatching,
+        progress: progress
+      )
+    }
+  }
+
+  /// Internal implementation - all file I/O must happen synchronously here.
+  ///
+  /// IMPORTANT: All file I/O on `fileURL` must complete synchronously in this call.
+  /// TranscriptAccessProvider.withAccess() wraps this call with a security scope.
+  /// Do not offload file reads to background tasks that outlive this call.
+  private func doDiscoverTranscript(
+    projectId: String,
+    fileURL: URL,
+    provider: String,
+    providerSessionId: String?,
+    startWatching: Bool,
+    progress: IngestProgressSink?
+  ) throws {
     // Diagnostic: Verify project exists before proceeding
     guard let project = try projectRepo.get(id: projectId) else {
       log.error("[TRANS-DISC-ERROR] ❌ FK validation failed: project \(projectId, privacy: .public) does not exist")
@@ -438,6 +486,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
 
     log.info("[TRANS-DISC-COMPLETE] ✅ Discovery complete for transcript: \(transcriptId, privacy: .public)")
+  }
+
+  private func needsSecurityScope(provider: String) -> Bool {
+    return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
   }
 
   /// Batch discover transcripts for a project
