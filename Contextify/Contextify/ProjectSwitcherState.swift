@@ -406,13 +406,13 @@ public final class ProjectSwitcherState {
 
     // Deduplicate: if already switching to this project, skip
     if switchInProgress == projectId {
-      log.debug("🔀 ProjectSwitcher: Switch to \(projectId) already in progress, skipping duplicate")
+      log.debug("🔀 ProjectSwitcher: Switch to \(projectId, privacy: .public) already in progress, skipping duplicate")
       log.info("[UIOPT-SWITCH-SKIP] Already switching to \(projectId, privacy: .public), skipped")
       return
     }
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
-    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId)")
+    log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId, privacy: .public)")
 
     // Cancel any previous switch task (only one switch at a time)
     switchTask?.cancel()
@@ -457,7 +457,7 @@ public final class ProjectSwitcherState {
         logger.info("[UIOPT-SWITCH-DB-START] Looking up project in database...")
 
         guard let project = try orchestrator.getProject(id: projectId) else {
-          logger.error("Project not found: \(projectId)")
+          logger.error("Project not found: \(projectId, privacy: .public)")
           logger.error("[UIOPT-SWITCH-ERROR] Project \(projectId, privacy: .public) not found in database")
           return
         }
@@ -510,7 +510,7 @@ public final class ProjectSwitcherState {
         try orchestrator.markProjectSelected(projectId: projectId)
         let timestamp = ISO8601Z.string(from: Date())
         try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-        logger.debug("✅ Project metadata updated in database: \(projectId)")
+        logger.debug("✅ Project metadata updated in database: \(projectId, privacy: .public)")
       } catch {
         logger.error("Failed to update project metadata: \(error.localizedDescription)")
       }
@@ -534,7 +534,7 @@ public final class ProjectSwitcherState {
       // Refresh project list to remove hidden project
       await refreshProjects()
 
-      log.info("Hidden project: \(projectId)")
+      log.info("Hidden project: \(projectId, privacy: .public)")
     } catch {
       log.error("Failed to hide project: \(error.localizedDescription)")
     }
@@ -551,7 +551,7 @@ public final class ProjectSwitcherState {
       // Refresh project list
       await refreshProjects()
 
-      log.info("Unhidden project: \(projectId)")
+      log.info("Unhidden project: \(projectId, privacy: .public)")
     } catch {
       log.error("Failed to unhide project: \(error.localizedDescription)")
     }
