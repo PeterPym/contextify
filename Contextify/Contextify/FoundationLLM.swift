@@ -207,15 +207,37 @@ actor FoundationLLM {
         var result = text
 
         // Fast path: if no markers present, skip expensive processing
-        if !result.contains("```") && !result.contains("\"\"\"") && !result.contains(">") && !result.contains("`") && !result.contains("<bash-") {
+        if !result.contains("```") && !result.contains("\"\"\"") && !result.contains(">") && !result.contains("`") && !result.contains("<bash-") && !result.contains("<command-") && !result.contains("<system-") && !result.contains("Caveat:") {
             return collapseWhitespace(result)
         }
 
-        // Remove bash output tags (Claude Code Web format) - these contain verbose system output
+        // Remove "Caveat:" meta-messages (Claude Code wrapper messages)
+        // These are informational wrappers that should not be summarized
+        if result.hasPrefix("Caveat:") {
+            return "[meta message]"
+        }
+
+        // Remove bash output tags (Claude Code format) - these contain verbose system output
         // Pattern: <bash-stdout>...</bash-stdout>, <bash-stderr>...</bash-stderr>, <bash-input>...</bash-input>
+        // Note: Use capture group and backreference to ensure tags match; (?s) makes . match newlines
         result = result.replacingOccurrences(
-            of: #"<bash-(?:stdout|stderr|input)>.*?</bash-(?:stdout|stderr|input)>"#,
+            of: #"(?s)<bash-(stdout|stderr|input)>.*?</bash-\1>"#,
             with: "[system output]",
+            options: .regularExpression
+        )
+
+        // Remove command tags (slash command format)
+        // Pattern: <command-name>...</command-name>, <command-message>...</command-message>
+        result = result.replacingOccurrences(
+            of: #"(?s)<command-(name|message)>.*?</command-\1>"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove system reminder tags (injected by Claude Code)
+        result = result.replacingOccurrences(
+            of: #"(?s)<system-reminder>.*?</system-reminder>"#,
+            with: "",
             options: .regularExpression
         )
 
@@ -1441,7 +1463,7 @@ private extension FoundationLLM {
               * If explaining/clarifying → "You explained [what]"
               * If providing info/context → "You mentioned [what]"
               * If acknowledging/commenting → "You noted [what]"
-              * If truly unclear → "You said: [brief excerpt]"
+              * If truly unclear → "You said [brief paraphrase]"
 
             Rules:
             - MESSAGE has already been preprocessed to remove code blocks, quotes, blockquotes, and system output
