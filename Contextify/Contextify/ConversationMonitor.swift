@@ -2557,8 +2557,8 @@ final class ConversationMonitor {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
 
             for transcript in transcripts where !orchestrator.isWatchingTranscript(transcriptId: transcript.id) {
-                log.info("🔧 Attempting to restart watcher for: \(transcript.id)")
                 let fileURL = URL(fileURLWithPath: transcript.filePath)
+                log.info("🔧 Attempting to restart watcher for: \(transcript.id) at path: \(fileURL.path, privacy: .public)")
                 try orchestrator.startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
             }
         } catch {
