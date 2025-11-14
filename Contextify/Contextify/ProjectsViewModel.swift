@@ -128,19 +128,28 @@ final class ProjectsViewModel {
         logger.info("[PSTATE-INGEST-DONE] Setting isIngesting = false")
         isIngesting = false
 
+        // Update pipeline readiness (DB has been updated during ingestion)
+        StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true)
+
         await warmUpWatchers(for: refreshed)
       } else {
         welcomePhase = .ready
         isWelcomeReady = true
+        // No ingestion needed, but mark as ready
+        StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true, watchersReady: true)
       }
 
       logger.info("Discovery and ingestion complete")
+      // Update pipeline readiness (discovery complete)
+      StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
 
     } catch {
       logger.error("Discovery failed: \(error.localizedDescription)")
       errorMessage = "Discovery failed: \(error.localizedDescription)"
       welcomePhase = .ready
       isWelcomeReady = true
+      // Even on failure, mark discovery as complete
+      StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
     }
 
     isDiscovering = false
@@ -257,6 +266,8 @@ final class ProjectsViewModel {
       logger.info("[WELCOME-WATCHERS] No transcripts found - marking ready")
       self.welcomePhase = .ready
       self.isWelcomeReady = true
+      // Update pipeline readiness (no watchers needed, so mark as ready)
+      StartupCoordinator.shared.updatePipelineReadiness(watchersReady: true)
       return
     }
 
@@ -279,6 +290,9 @@ final class ProjectsViewModel {
     self.welcomePhase = .ready
     self.isWelcomeReady = true
     logger.info("[WELCOME-PHASE] Ready - timeline warm up complete")
+
+    // Update pipeline readiness (watchers are ready)
+    StartupCoordinator.shared.updatePipelineReadiness(watchersReady: true)
   }
 
   private func resolveCurrentProjectPath() async throws -> String? {
