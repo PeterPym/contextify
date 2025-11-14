@@ -288,6 +288,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
+    @ObservationIgnored private var feedHydrationTask: Task<Void, Never>?  // Cancelable hydration work item
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
@@ -593,7 +594,7 @@ final class ConversationMonitor {
                 // 5. Load initial feed (fast - single query)
                 let feedStart = Date()
                 log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
-                await self.loadFeedFromSQL()
+                await self.loadFeedFromSQL()?.value
                 log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000), privacy: .public)ms")
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
@@ -740,7 +741,7 @@ final class ConversationMonitor {
 
                 // 5. Load feed and initialize cursor
                 try Task.checkCancellation()
-                await self.loadFeedFromSQL()
+                await self.loadFeedFromSQL()?.value
 
                 // 6. Replay switch events
                 try Task.checkCancellation()
@@ -932,7 +933,7 @@ final class ConversationMonitor {
     @MainActor
     func requestImmediateRefresh(trigger: TimelineRefreshTrigger) {
         Task { @MainActor in
-            await loadFeedFromSQL()
+            await loadFeedFromSQL()?.value
         }
     }
 
@@ -960,7 +961,7 @@ final class ConversationMonitor {
             guard let transcript = foundTranscript else {
                 log.warning("No transcript found for session: \(session.fileURL.path)")
                 // Fall back to loading all entries
-                await loadFeedFromSQL()
+                await loadFeedFromSQL()?.value
                 return
             }
 
@@ -1018,7 +1019,7 @@ final class ConversationMonitor {
         await MainActor.run { [weak self] in
             guard let self else { return }
             Task { @MainActor in
-                await self.loadFeedFromSQL()
+                await self.loadFeedFromSQL()?.value
             }
         }
     }
@@ -1233,8 +1234,9 @@ final class ConversationMonitor {
     }
 
     @MainActor
-    private func loadFeedFromSQL() async {
-        guard let projectId = currentProjectId, let orchestrator = orchestrator else { return }
+    @discardableResult
+    private func loadFeedFromSQL() async -> Task<Void, Never>? {
+        guard let projectId = currentProjectId, let orchestrator = orchestrator else { return nil }
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
@@ -1245,34 +1247,65 @@ final class ConversationMonitor {
         // P1-1: Hold isReadyForUpdates=false during initial load to prevent append races
         let priorReady = isReadyForUpdates
         isReadyForUpdates = false
-        defer { isReadyForUpdates = priorReady }
-
         isProcessing = true
-        defer { isProcessing = false }
 
-        do {
-            let startTime = Date()
-            log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
-            log.info("[TIMELINE-HYDRATE-START] project=\(projectId, privacy: .public) count=\(self.config.maxEntries, privacy: .public)")
+        feedHydrationTask?.cancel()
+        let maxEntries = config.maxEntries
+        let signature = generatorSignature()
 
-            // Move DB operations to background task with userInitiated priority
-            let (feed, transcriptPaths) = try await Task(priority: .userInitiated) {
+        feedHydrationTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+
+            do {
+                let startTime = Date()
+                log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
+                log.info("[TIMELINE-HYDRATE-START] project=\(projectId, privacy: .public) count=\(maxEntries, privacy: .public)")
+
                 log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
-                // Single query gets entries + cache
                 let feed = try orchestrator.getRecentFeed(
                     forProject: projectId,
-                    limit: config.maxEntries,
-                    generatorSignature: generatorSignature()
+                    limit: maxEntries,
+                    generatorSignature: signature
                 )
                 log.info("[UIOPT-AWAIT] after DAO.getRecentFeed; count=\(feed.count)")
 
-                // Build transcript ID → file path lookup map
                 let transcripts = try orchestrator.getTranscripts(forProject: projectId)
                 let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 
-                return (feed, transcriptPaths)
-            }.value
+                await MainActor.run {
+                    guard self.currentProjectId == projectId else { return }
+                }
+                await self.finishFeedLoad(
+                    projectId: projectId,
+                    feed: feed,
+                    transcriptPaths: transcriptPaths,
+                    startTime: startTime,
+                    priorReady: priorReady
+                )
+            } catch {
+                if error is CancellationError {
+                    await MainActor.run {
+                        self.restoreLoadStateAfterCancellation(priorReady: priorReady)
+                    }
+                } else {
+                    await MainActor.run {
+                        self.handleFeedLoadError(error, priorReady: priorReady)
+                    }
+                }
+            }
+        }
 
+        return feedHydrationTask
+    }
+
+    @MainActor
+    private func finishFeedLoad(
+        projectId: String,
+        feed: [(TranscriptEntry, TimelineCache?)],
+        transcriptPaths: [String: String],
+        startTime: Date,
+        priorReady: Bool
+    ) async {
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
             log.info("[TIMELINE-LOAD] DAO.fetchPrimerEntries \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
@@ -1371,12 +1404,26 @@ final class ConversationMonitor {
             // Diagnostic: Check entry content
             let nonEmptyCount = self.entries.filter { !$0.summary.isEmpty && !$0.detail.isEmpty }.count
             let emptyCount = self.entries.count - nonEmptyCount
-            log.info("Loaded \(self.entries.count) entries (\(nonEmptyCount) with content, \(emptyCount) empty) in \(Int(elapsed * 1000))ms")
-        } catch {
-            lastError = "Failed to load timeline: \(error.localizedDescription)"
-            log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
-            phase = .failed  // Mark as failed
-        }
+        log.info("Loaded \(self.entries.count) entries (\(nonEmptyCount) with content, \(emptyCount) empty) in \(Int(elapsed * 1000))ms")
+
+        isProcessing = false
+        isReadyForUpdates = priorReady
+    }
+
+    @MainActor
+    private func handleFeedLoadError(_ error: Error, priorReady: Bool) {
+        lastError = "Failed to load timeline: \(error.localizedDescription)"
+        log.error("SQL feed load failed: \(error.localizedDescription, privacy: .public)")
+        phase = .failed
+        isProcessing = false
+        isReadyForUpdates = priorReady
+    }
+
+    @MainActor
+    private func restoreLoadStateAfterCancellation(priorReady: Bool) {
+        log.debug("[TIMELINE-HYDRATE-CANCELLED] Previous load cancelled before completion")
+        isProcessing = false
+        isReadyForUpdates = priorReady
     }
 
     /// v23: Load and replay system switch events from database (restart-safe)
@@ -1517,7 +1564,7 @@ final class ConversationMonitor {
                 self.log.info("🔄 [TIMELINE-REFRESH-INGESTION] Metadata discovery complete, reloading timeline (may be empty until hoovering finishes)...")
                 self.log.info("🔍 [TIMELINE-REFRESH-INGESTION] isMonitoring=\(self.isMonitoring) (refreshing regardless)")
 
-                await self.loadFeedFromSQL()
+                await self.loadFeedFromSQL()?.value
                 self.log.info("✅ [TIMELINE-REFRESH-INGESTION] Timeline feed reloaded (\(self.state.entries.count) entries - hoovering continues in background)")
             }
         }
@@ -1568,7 +1615,7 @@ final class ConversationMonitor {
                 }
 
                 self.lastProgressRefreshTime = Date()
-                await self.loadFeedFromSQL()
+                await self.loadFeedFromSQL()?.value
                 self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
             }
         }
@@ -2060,7 +2107,7 @@ final class ConversationMonitor {
             // If no cursor, do full reload instead
             guard let cursor = lastSeenCursor else {
                 log.debug("[INCR-UPDATE-RELOAD] No cursor available, doing full reload")
-                await loadFeedFromSQL()
+                await loadFeedFromSQL()?.value
                 return
             }
 
