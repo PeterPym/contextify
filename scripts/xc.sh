@@ -11,6 +11,8 @@ default_action="build"
 config="$default_config"
 action="$default_action"
 dev_mode=0
+quiet_mode=1  # Quiet by default, use --verbose to see full output
+fast_clean=0  # Fast clean mode (preserve dependencies like GRDB)
 
 # Distribution mode (dmg vs appstore)
 dist="dmg"
@@ -28,6 +30,9 @@ parse_arg() {
   case "$value" in
     --dev|--developer-mode)
       dev_mode=1
+      ;;
+    --verbose|-v)
+      quiet_mode=0
       ;;
     --dist=appstore)
       dist="appstore"
@@ -50,11 +55,10 @@ parse_arg() {
       action="cleanrun"
       ;;
     dr)
-      # Fast derived data clean (no db reset, no perms reset)
-      echo "Cleaning derived data..."
-      rm -rf .derived 2>/dev/null || true
-      echo "Derived data cleaned. Run 'bash scripts/xc.sh build' to rebuild."
-      exit 0
+      # Fast cleanrun (like da, but preserves GRDB and dependencies)
+      dist="dmg"
+      action="cleanrun"
+      fast_clean=1
       ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
@@ -63,10 +67,11 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
+      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
+      echo "  --verbose, -v      Show full build output (default: errors/warnings only)" >&2
       echo "  --dist=dmg         Build DMG distribution (unsandboxed, default)" >&2
       echo "  --dist=appstore    Build App Store distribution (sandboxed)" >&2
       echo "" >&2
@@ -76,8 +81,8 @@ parse_arg() {
       echo "  clean              Clean build artifacts" >&2
       echo "  cleanrun           Clean database + build + run (first-run)" >&2
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
-      echo "  da                 Shortcut for DMG cleanrun (db reset + perms + launch)" >&2
-      echo "  dr                 Fast derived data clean only (no db/perms reset)" >&2
+      echo "  da                 Shortcut for DMG cleanrun (full clean: db + perms + GRDB)" >&2
+      echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
@@ -366,18 +371,28 @@ watch_logs() {
 }
 
 run_xcodebuild() {
-  # Use xcbeautify if available (best option, especially for CI)
+  set -o pipefail
+
+  # Build the pipeline: xcodebuild -> DVT filter -> formatter -> quiet filter (if enabled)
+  local pipeline=""
+
+  # Always filter out DVTAssertions warnings (Xcode internal noise)
+  pipeline="sed '/DVTAssertions:/,/Please file a bug/d'"
+
   if [[ $have_xcbeautify -eq 1 ]]; then
-    set -o pipefail
-    xcodebuild "$@" | xcbeautify $xcbeautify_renderer
-  # Fall back to xcpretty if available
+    pipeline="$pipeline | xcbeautify $xcbeautify_renderer"
   elif [[ $have_xcpretty -eq 1 ]]; then
-    set -o pipefail
-    xcodebuild "$@" | xcpretty
-  # No formatter available, use raw output
+    pipeline="$pipeline | xcpretty"
   else
-    xcodebuild "$@"
+    pipeline="$pipeline | cat"
   fi
+
+  # In quiet mode, filter to only show Swift compilation errors/warnings, build milestones, and build status
+  if [[ $quiet_mode -eq 1 ]]; then
+    pipeline="$pipeline | grep -E '(\\.swift:[0-9]+:[0-9]+: (error|warning):|BUILD SUCCEEDED|BUILD FAILED|Built:|Launching|^\\([0-9]+ failures?\\)|^Ld |Linking Contextify|Signing|CodeSign.*Contextify|CompileAssetCatalog|ProcessInfoPlistFile)' || true"
+  fi
+
+  xcodebuild "$@" 2>&1 | eval "$pipeline"
 }
 
 # Build for the selected distribution
@@ -387,8 +402,15 @@ run_build_for_dist() {
 
   echo "Building for distribution: $dist"
 
-  echo "  Cleaning build cache to ensure fresh compilation..."
-  rm -rf "$dd" 2>/dev/null || true
+  if [[ $fast_clean -eq 1 ]]; then
+    echo "  Fast clean: removing Contextify app artifacts (preserving dependencies)..."
+    rm -rf "$dd/Build/Intermediates.noindex/Contextify.build" 2>/dev/null || true
+    rm -rf "$dd/Build/Products/$config/Contextify.app" 2>/dev/null || true
+    rm -rf "$dd/Build/Products/$config/__preview.dylib" 2>/dev/null || true
+  else
+    echo "  Cleaning build cache to ensure fresh compilation..."
+    rm -rf "$dd" 2>/dev/null || true
+  fi
 
   if [[ "$dist" == "appstore" ]]; then
     echo "  Using App Store entitlements (sandboxed)"
@@ -401,7 +423,7 @@ run_build_for_dist() {
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
     if [[ "$dist" == "appstore" ]]; then
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
@@ -410,7 +432,7 @@ run_build_for_dist() {
         build
     else
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
@@ -420,14 +442,14 @@ run_build_for_dist() {
   else
     if [[ "$dist" == "appstore" ]]; then
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
         OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
         build
     else
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
         build
@@ -520,19 +542,19 @@ case "$action" in
     # For tests, use the standard scheme (not distribution-specific)
     if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
       run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
         test
     else
       run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" test
     fi
     ;;
   *)
-    echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs|ca]" >&2
+    echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs|ca]" >&2
     echo "Run '$0' without arguments for full help" >&2
     exit 2
     ;;
