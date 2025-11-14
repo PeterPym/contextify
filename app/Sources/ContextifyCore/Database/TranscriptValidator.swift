@@ -216,8 +216,8 @@ public final class TranscriptValidator {
                          && json["timestamp"] != nil
                          && json["type"] != nil
       case "codex.cli":
-        hasRequiredFields = json["id"] != nil
-                         && json["timestamp"] != nil
+        // Codex records don't have top-level 'id' - only timestamp and type
+        hasRequiredFields = json["timestamp"] != nil
                          && json["type"] != nil
       default:
         return .invalid(.invalidFormat(
@@ -233,9 +233,12 @@ public final class TranscriptValidator {
     }
 
     if linesChecked > 0 && !hasValidEntry {
+      let requiredFields = provider == "claude.code"
+        ? "(uuid, timestamp, type)"
+        : "(timestamp, type)"
       return .invalid(.invalidFormat(
         file: fileURL.lastPathComponent,
-        reason: "First \(linesChecked) lines lack required fields (uuid, timestamp, type)"
+        reason: "First \(linesChecked) lines lack required fields \(requiredFields)"
       ))
     }
 
