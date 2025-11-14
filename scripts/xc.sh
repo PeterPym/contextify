@@ -373,15 +373,18 @@ watch_logs() {
 run_xcodebuild() {
   set -o pipefail
 
-  # Build the pipeline: xcodebuild -> formatter -> quiet filter (if enabled)
+  # Build the pipeline: xcodebuild -> DVT filter -> formatter -> quiet filter (if enabled)
   local pipeline=""
 
+  # Always filter out DVTAssertions warnings (Xcode internal noise)
+  pipeline="sed '/DVTAssertions:/,/Please file a bug/d'"
+
   if [[ $have_xcbeautify -eq 1 ]]; then
-    pipeline="xcbeautify $xcbeautify_renderer"
+    pipeline="$pipeline | xcbeautify $xcbeautify_renderer"
   elif [[ $have_xcpretty -eq 1 ]]; then
-    pipeline="xcpretty"
+    pipeline="$pipeline | xcpretty"
   else
-    pipeline="cat"
+    pipeline="$pipeline | cat"
   fi
 
   # In quiet mode, filter to only show Swift compilation errors/warnings and build status
@@ -389,7 +392,7 @@ run_xcodebuild() {
     pipeline="$pipeline | grep -E '(\\.swift:[0-9]+:[0-9]+: (error|warning):|BUILD SUCCEEDED|BUILD FAILED|Built:|Launching|^\\([0-9]+ failures?\\))' || true"
   fi
 
-  xcodebuild "$@" | eval "$pipeline"
+  xcodebuild "$@" 2>&1 | eval "$pipeline"
 }
 
 # Build for the selected distribution
