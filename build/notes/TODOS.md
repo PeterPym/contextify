@@ -2228,3 +2228,97 @@ CREATE TABLE git_activity (
 - `Sources/TranscriptValidatorCLI/main.swift`
 
 **Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025‑11‑11 16:35)`
+
+---
+
+# Low Priority Features & Optimizations
+
+## Store Queue Metadata Types (P3)
+
+**Status:** Not Started
+**Priority:** P3 (Data collection for future features)
+**Implementation Plan:** `build/docs/plans/metadata-ingestion-queue-types.md`
+
+### Background
+
+Claude Code transcripts contain metadata record types that are currently skipped and discarded:
+- `queue-operation` - Internal queue operation tracking
+- `timeline-state` - Timeline state snapshots
+- `queue-operation-result` - Queue operation results
+
+These records (~5.2% of all records) are being thrown away. Following "save for a rainy day" principle, we should collect and store them even if not currently used.
+
+### Current State
+
+**Parser:** Already skips these types correctly (commit b7ca8bd)
+- ✅ No parsing errors
+- ❌ Records discarded (not stored)
+
+**Metadata parser:** Only handles file-history-snapshot, summary, system events
+- Need to extend to collect queue-related metadata
+
+### Goals
+
+- Store all metadata types in database for future analysis
+- Enable future features: queue performance monitoring, session replay, debugging
+- No immediate UI or features required - just data collection
+
+### Implementation Summary
+
+**10-day implementation** (see detailed plan):
+
+1. **Phase 1:** Document real schemas from transcripts
+2. **Phase 2:** Add v26 migration (3 new tables)
+3. **Phase 3-7:** Extend parsers, models, repositories
+4. **Phase 8:** Add telemetry and monitoring
+
+**New tables:**
+- `queue_operations` (with operation_id join key)
+- `timeline_states`
+- `queue_operation_results` (linked to operations)
+
+**Performance impact:** <5% slowdown, <20% storage increase (acceptable)
+
+### Future Use Cases
+
+When needed:
+- Queue reliability monitoring (success rates by operation type)
+- Session replay capabilities
+- Timeline corruption debugging
+- Failed operation analysis
+
+### Related Enhancements (Also P3)
+
+**Metadata Retention Policy**
+- Prune old metadata after configurable window (e.g., 90 days)
+- Prevent unbounded growth
+- Implement only if storage becomes issue
+
+**JSON Blob Compression**
+- Compress large metadata payloads (operation_data, state_data, result_data)
+- Implement only if average blob size > 10KB
+- Use zlib/gzip for transparency
+
+**Metadata-Only Transcript Deferral**
+- Prioritize conversational transcripts during ingestion
+- Defer metadata-only transcripts to background queue
+- Improves perceived first-run performance
+- Priority: P2 (UX improvement)
+
+### References
+
+- **Implementation plan:** `build/docs/plans/metadata-ingestion-queue-types.md`
+- **Root cause analysis:** `/tmp/metadata-ingestion-technical-briefing-v2.md` (review copy)
+- **Parser fix:** Commit 51d4174 (skip metadata), b7ca8bd (extended skip list)
+- **Format docs:** `build/docs/specifications/claude-code-format.md`
+
+### Decision
+
+**Defer implementation** until:
+1. Storage metrics show need for analysis capabilities, OR
+2. User requests queue/timeline debugging features, OR
+3. Session replay becomes priority feature
+
+**Estimated effort when prioritized:** 10 days (well-documented, straightforward extension)
+
+---
