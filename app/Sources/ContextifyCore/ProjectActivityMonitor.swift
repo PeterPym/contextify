@@ -3,6 +3,11 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "ProjectActivity")
 
+private struct ProjectDiscoveryResult {
+  let batches: [ProjectTranscriptBatch]
+  let transcriptCount: Int
+}
+
 /// Project event emitted by ProjectActivityMonitor
 public struct ProjectEvent: Sendable {
   public enum Kind: String, Sendable {
@@ -232,6 +237,8 @@ public actor ProjectActivityMonitor {
     let startTime = Date()
     log.info("[DISC-SCAN-START] Starting discovery scan for all projects")
 
+    var aggregatedBatches: [ProjectTranscriptBatch] = []
+
     // Discover projects from Claude Code and Codex CLI transcript roots
     let claudeRoot = FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/projects")
@@ -245,7 +252,9 @@ public actor ProjectActivityMonitor {
     if FileManager.default.fileExists(atPath: claudeRoot.path) {
       log.info("[DISC-SCAN-ROOT] Scanning Claude Code root: \(claudeRoot.path, privacy: .public)")
       let providerStartTime = Date()
-      claudeCount = try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
+      let result = try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
+      claudeCount = result.transcriptCount
+      aggregatedBatches.append(contentsOf: result.batches)
       let duration = Date().timeIntervalSince(providerStartTime)
       log.info("[DISC-SCAN-ROOT-DONE] Claude Code discovery complete: \(claudeCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
@@ -256,7 +265,9 @@ public actor ProjectActivityMonitor {
     if FileManager.default.fileExists(atPath: codexRoot.path) {
       log.info("[DISC-SCAN-ROOT] Scanning Codex CLI root: \(codexRoot.path, privacy: .public)")
       let providerStartTime = Date()
-      codexCount = try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
+      let result = try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
+      codexCount = result.transcriptCount
+      aggregatedBatches.append(contentsOf: result.batches)
       let duration = Date().timeIntervalSince(providerStartTime)
       log.info("[DISC-SCAN-ROOT-DONE] Codex CLI discovery complete: \(codexCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
@@ -269,9 +280,14 @@ public actor ProjectActivityMonitor {
     if totalDuration > 60.0 {
       log.warning("[DISC-SCAN-SLOW] Discovery took \(Int(totalDuration), privacy: .public)s - expected < 60s")
     }
+
+    if !aggregatedBatches.isEmpty {
+      let coordinator = MultiProjectIngestionCoordinator(orchestrator: orchestrator)
+      try await coordinator.runPrimerAndBackfill(batches: aggregatedBatches)
+    }
   }
 
-  private func discoverProjectsInRoot(_ root: URL, provider: String) async throws -> Int {
+  private func discoverProjectsInRoot(_ root: URL, provider: String) async throws -> ProjectDiscoveryResult {
     // Codex uses nested YYYY/MM/DD structure - requires recursive discovery
     if provider == "codex.cli" {
       return try await discoverCodexSessionsRecursively(root: root)
@@ -305,6 +321,7 @@ public actor ProjectActivityMonitor {
     }
 
     var totalTranscripts = 0
+    var batches: [ProjectTranscriptBatch] = []
 
     for directory in sortedContents {
       var isDir: ObjCBool = false
@@ -343,29 +360,23 @@ public actor ProjectActivityMonitor {
         if !transcriptFiles.isEmpty {
           log.info("[DISC-PROJECT-START] Found \(transcriptFiles.count, privacy: .public) transcript files for project: \(projectPath, privacy: .public) (sorted newest first)")
 
-          let transcripts = transcriptFiles.compactMap { url -> (url: URL, provider: String, sessionId: String?)? in
-            // Extract session ID from filename (e.g., "767f2c90-6979-406b-9644-38cbbfcf8187.jsonl")
+          let transcripts = transcriptFiles.compactMap { url -> TranscriptDescriptor? in
             let sessionId = url.deletingPathExtension().lastPathComponent
+            let lastModified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             log.debug("[DISC-PROJECT-FILE] Transcript: \(url.lastPathComponent, privacy: .public) session: \(sessionId, privacy: .public)")
-            return (url: url, provider: provider, sessionId: sessionId)
+            return TranscriptDescriptor(
+              fileURL: url,
+              provider: provider,
+              sessionId: sessionId,
+              lastModified: lastModified
+            )
           }
 
-          // Batch discover and hoover transcripts (parallel)
-          let priority: TaskPriority = ContextifyConfig.shared.bulkLowPriorityEnabled ? .background : .utility
-          log.info("[DISC-PROJECT-PRIORITY] .\(priority == .background ? "background" : "utility", privacy: .public)")
-          log.info("[DISC-PROJECT-BATCH] Starting parallel batch discovery for \(transcripts.count, privacy: .public) transcripts")
-
-          try await Task.detached(priority: priority) {
-            try await self.orchestrator.discoverTranscripts(
-              projectId: dbProjectId,
-              transcriptFiles: transcripts,
-              progress: nil,
-              concurrency: 8
-            )
-          }.value
-
-          log.info("[DISC-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
-          totalTranscripts += transcripts.count
+          if !transcripts.isEmpty {
+            log.info("[DISC-PROJECT-QUEUE] Prepared \(transcripts.count, privacy: .public) transcripts for deferred ingestion (project: \(projectPath, privacy: .public))")
+            batches.append(ProjectTranscriptBatch(projectId: dbProjectId, transcripts: transcripts))
+            totalTranscripts += transcripts.count
+          }
         }
 
         // Ensure watcher for this project (for project-level events)
@@ -418,11 +429,11 @@ public actor ProjectActivityMonitor {
       }
     }
 
-    return totalTranscripts
+    return ProjectDiscoveryResult(batches: batches, transcriptCount: totalTranscripts)
   }
 
   /// Recursively discover Codex sessions (nested YYYY/MM/DD structure)
-  private func discoverCodexSessionsRecursively(root: URL) async throws -> Int {
+  private func discoverCodexSessionsRecursively(root: URL) async throws -> ProjectDiscoveryResult {
     let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: [.isRegularFileKey],
@@ -431,12 +442,13 @@ public actor ProjectActivityMonitor {
 
     guard let enumerator = enumerator else {
       log.warning("[DISC-CODEX] Failed to create enumerator for: \(root.path, privacy: .public)")
-      return 0
+      return ProjectDiscoveryResult(batches: [], transcriptCount: 0)
     }
 
     var transcriptCount = 0
     // Group transcripts by project path for batch processing
     var transcriptsByProject: [String: [(url: URL, sessionId: String)]] = [:]
+    var batches: [ProjectTranscriptBatch] = []
 
     // Collect all files first (enumerator isn't async-compatible)
     var allFiles: [URL] = []
@@ -479,16 +491,20 @@ public actor ProjectActivityMonitor {
           rootPath: projectPath
         )
 
-        // Batch discover transcripts (parallel)
-        let transcriptFiles = transcripts.map { (url: $0.url, provider: "codex.cli", sessionId: $0.sessionId) }
-        try await orchestrator.discoverTranscripts(
-          projectId: dbProjectId,
-          transcriptFiles: transcriptFiles,
-          progress: nil,
-          concurrency: 8
-        )
+        let descriptors = transcripts.map { item in
+          TranscriptDescriptor(
+            fileURL: item.url,
+            provider: "codex.cli",
+            sessionId: item.sessionId,
+            lastModified: (try? item.url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+          )
+        }
 
-        log.info("[DISC-CODEX-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
+        if !descriptors.isEmpty {
+          let sortedDescriptors = descriptors.sorted { $0.lastModified > $1.lastModified }
+          log.info("[DISC-CODEX-PROJECT-DONE] Prepared \(sortedDescriptors.count, privacy: .public) transcripts for deferred ingestion (project: \(projectPath, privacy: .public))")
+          batches.append(ProjectTranscriptBatch(projectId: dbProjectId, transcripts: sortedDescriptors))
+        }
 
         // Ensure watcher for this project
         let projectId = ProjectIdentity.computeProjectID(provider: "codex.cli", path: projectPath)
@@ -499,7 +515,7 @@ public actor ProjectActivityMonitor {
     }
 
     log.info("[DISC-CODEX-COMPLETE] Discovered \(transcriptCount, privacy: .public) Codex transcripts across \(transcriptsByProject.count, privacy: .public) projects")
-    return transcriptCount
+    return ProjectDiscoveryResult(batches: batches, transcriptCount: transcriptCount)
   }
 
   /// Handle file system change from FSEvents

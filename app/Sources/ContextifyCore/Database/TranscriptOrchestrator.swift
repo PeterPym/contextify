@@ -110,6 +110,19 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let validator: TranscriptValidator
   private let ingestionLockTTL: TimeInterval = 600
 
+  private struct PrimerStatus {
+    let target: Int
+    let startedAt: Date
+    var ready: Bool
+  }
+
+  private struct PrimerTrackerState {
+    var statuses: [String: PrimerStatus] = [:]
+    var readyCount: Int = 0
+  }
+
+  private let primerStatusLock = OSAllocatedUnfairLock(initialState: PrimerTrackerState())
+
   // Hoover scheduler for concurrency control
   private lazy var _hooverScheduler: HooverScheduler = HooverScheduler(
     orchestrator: self,
@@ -191,6 +204,64 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         startWatching: false,  // Already watching
         bypassScheduler: true
       )
+    }
+  }
+
+  // MARK: - Primer Tracking
+
+  public func resetPrimerTracking() {
+    primerStatusLock.withLock { state in
+      state.statuses.removeAll()
+      state.readyCount = 0
+    }
+  }
+
+  public func registerPrimer(projectId: String, target: Int, startedAt: Date = Date()) {
+    primerStatusLock.withLock { state in
+      state.statuses[projectId] = PrimerStatus(target: target, startedAt: startedAt, ready: false)
+    }
+  }
+
+  private func evaluatePrimerReadinessIfNeeded(projectId: String) {
+    let shouldEvaluate = primerStatusLock.withLock { state in
+      if let status = state.statuses[projectId] {
+        return !status.ready
+      }
+      return false
+    }
+
+    guard shouldEvaluate else { return }
+
+    let entryCount: Int
+    do {
+      entryCount = try getEntryCount(forProject: projectId)
+    } catch {
+      log.error("[PRIMER-ERROR] Failed to read entry count for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return
+    }
+
+    let snapshot = primerStatusLock.withLock { state -> (entries: Int, elapsedMs: Int, ready: Int, total: Int)? in
+      guard var status = state.statuses[projectId], !status.ready else {
+        return nil
+      }
+
+      guard entryCount >= status.target else { return nil }
+
+      status.ready = true
+      state.statuses[projectId] = status
+      state.readyCount += 1
+      let elapsedMs = Int(Date().timeIntervalSince(status.startedAt) * 1000)
+      return (entryCount, elapsedMs, state.readyCount, state.statuses.count)
+    }
+
+    guard let snapshot else { return }
+
+    log.info(
+      "[PRIMER-READY] project=\(projectId, privacy: .public) entries=\(snapshot.entries, privacy: .public) elapsed_ms=\(snapshot.elapsedMs, privacy: .public)"
+    )
+
+    if snapshot.ready == snapshot.total {
+      log.info("[PRIMER-ALL-READY] ready=\(snapshot.ready, privacy: .public)/\(snapshot.total, privacy: .public)")
     }
   }
 
@@ -491,6 +562,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         bypassScheduler: true
       )
     }
+
+    evaluatePrimerReadinessIfNeeded(projectId: projectId)
   }
 
   /// Evict stale preflight cache entries older than the specified age

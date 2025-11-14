@@ -13,6 +13,8 @@ public final class ContextifyConfig: @unchecked Sendable {
     static let maxConcurrentHoovers = "contextify.scheduler.maxConcurrency"
     static let gitHighPriority = "contextify.priority.gitHigh"
     static let bulkLowPriority = "contextify.priority.bulkLow"
+    static let primerTargetEntries = "contextify.primer.target"
+    static let primerBatchLimit = "contextify.primer.batchLimit"
   }
 
   // Fix #1: Preflight
@@ -48,6 +50,16 @@ public final class ContextifyConfig: @unchecked Sendable {
     set { defaults.set(newValue, forKey: Key.bulkLowPriority) }
   }
 
+  public var primerTargetEntries: Int {
+    get { defaults.object(forKey: Key.primerTargetEntries) as? Int ?? 25 }
+    set { defaults.set(newValue, forKey: Key.primerTargetEntries) }
+  }
+
+  public var primerBatchLimit: Int {
+    get { max(1, defaults.object(forKey: Key.primerBatchLimit) as? Int ?? 2) }
+    set { defaults.set(max(1, newValue), forKey: Key.primerBatchLimit) }
+  }
+
   // Targets for validation
   public let gitLatencyTargetMs: Int = 200
   public let hooverLatencyTargetMs: Int = 5000
@@ -62,5 +74,7 @@ public final class ContextifyConfig: @unchecked Sendable {
     defaults.removeObject(forKey: Key.maxConcurrentHoovers)
     defaults.removeObject(forKey: Key.gitHighPriority)
     defaults.removeObject(forKey: Key.bulkLowPriority)
+    defaults.removeObject(forKey: Key.primerTargetEntries)
+    defaults.removeObject(forKey: Key.primerBatchLimit)
   }
 }
