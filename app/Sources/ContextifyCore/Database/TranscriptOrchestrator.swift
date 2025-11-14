@@ -514,7 +514,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     fileURL: URL,
     projectRootPath: String,
     provider: String
-  ) throws -> (isValid: Bool, errorMessage: String?, wasHit: Bool) {
+  ) throws -> (isValid: Bool, errorMessage: String?) {
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let currentMtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
@@ -535,10 +535,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       log.info("[PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
 
       if status == "passed" {
-        return (isValid: true, errorMessage: nil, wasHit: true)
+        return (isValid: true, errorMessage: nil)
       } else {
         let error = row["error"] as? String ?? "Unknown preflight failure"
-        return (isValid: false, errorMessage: error, wasHit: true)
+        return (isValid: false, errorMessage: error)
       }
     }
 
@@ -572,8 +572,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     return (
       isValid: result.isValid,
-      errorMessage: result.errors.first?.description,
-      wasHit: false
+      errorMessage: result.errors.first?.description
     )
   }
 

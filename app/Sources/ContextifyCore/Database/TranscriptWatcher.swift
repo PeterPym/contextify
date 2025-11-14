@@ -19,6 +19,7 @@ public final class TranscriptWatcher {
   private var lastEventTime: [String: Date] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
   private var heartbeatStarted = false
+  private var shouldStopHeartbeat = false
 
   // Event deduplication: filter events within 50ms of previous event for same transcript
   private let minEventInterval: TimeInterval = 0.05
@@ -58,17 +59,15 @@ public final class TranscriptWatcher {
     log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
     log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
 
-    // Start heartbeat on first watch (only once)
-    watcherQueue.sync {
+    // Combined: start heartbeat on first watch and check if already watching (single sync call)
+    let alreadyWatching = watcherQueue.sync { () -> Bool in
       if !heartbeatStarted {
         heartbeatStarted = true
         startHeartbeat()
       }
+      return watchers[transcriptId] != nil
     }
 
-    // Idempotence check inside lock to prevent race condition where two threads
-    // both pass the check before either adds to the dictionary
-    let alreadyWatching = watcherQueue.sync { watchers[transcriptId] != nil }
     if alreadyWatching {
       log.info("[WATCHER-WATCH-SKIP] Already watching transcript: \(transcriptId, privacy: .public) - skipping")
       return
@@ -91,7 +90,9 @@ public final class TranscriptWatcher {
     )
 
     source.setEventHandler { [weak self] in
-      self?.handleFileChange(transcriptId: transcriptId, fileURL: fileURL)
+      guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
+      let eventData = source.data
+      self.handleFileChange(transcriptId: transcriptId, fileURL: fileURL, eventData: eventData)
     }
 
     source.setCancelHandler {
@@ -140,6 +141,10 @@ public final class TranscriptWatcher {
 
   /// Stop all watchers
   public func stopAll() {
+    watcherQueue.sync {
+      shouldStopHeartbeat = true
+    }
+
     let allKeys = watcherQueue.sync { Array(watchers.keys) }
     for transcriptId in allKeys {
       stopWatching(transcriptId: transcriptId)
@@ -147,7 +152,7 @@ public final class TranscriptWatcher {
   }
 
   /// Handle file change event (debounced)
-  private func handleFileChange(transcriptId: String, fileURL: URL) {
+  private func handleFileChange(transcriptId: String, fileURL: URL, eventData: DispatchSource.FileSystemEvent) {
     // Event deduplication: filter duplicate events within minEventInterval
     let now = Date()
     let shouldProcess = watcherQueue.sync { () -> Bool in
@@ -164,8 +169,19 @@ public final class TranscriptWatcher {
 
     guard shouldProcess else { return }
 
+    // Decode event flags
+    var flagsArray: [String] = []
+    if eventData.contains(.write) { flagsArray.append("write") }
+    if eventData.contains(.extend) { flagsArray.append("extend") }
+    if eventData.contains(.attrib) { flagsArray.append("attrib") }
+    if eventData.contains(.link) { flagsArray.append("link") }
+    if eventData.contains(.rename) { flagsArray.append("rename") }
+    if eventData.contains(.revoke) { flagsArray.append("revoke") }
+    if eventData.contains(.funlock) { flagsArray.append("funlock") }
+    let flagsString = flagsArray.isEmpty ? "none" : flagsArray.joined(separator: "|")
+
     log.info("[WATCHER-EVENT] File change detected for transcript: \(transcriptId, privacy: .public) path: \(fileURL.path, privacy: .public)")
-    log.info("[FSEVENTS-CHANGE] transcript=\(transcriptId, privacy: .public) flags=write")
+    log.info("[FSEVENTS-CHANGE] transcript=\(transcriptId, privacy: .public) flags=\(flagsString, privacy: .public)")
 
     watcherQueue.sync {
       // Cancel existing timer
@@ -235,11 +251,19 @@ public final class TranscriptWatcher {
   // MARK: - Heartbeat
 
   private func startHeartbeat() {
-    // Start periodic heartbeat on watcherQueue (called from within watcherQueue.sync in watch())
-    // This runs on a background queue, sleeps, then logs heartbeat
+    // Start periodic heartbeat on background queue
+    // Loop exits when shouldStopHeartbeat is set or self is deallocated
     DispatchQueue.global(qos: .utility).async { [weak self] in
       while let strongSelf = self {
         Thread.sleep(forTimeInterval: strongSelf.heartbeatInterval)
+
+        // Check if we should stop
+        let shouldStop = strongSelf.watcherQueue.sync { strongSelf.shouldStopHeartbeat }
+        if shouldStop {
+          log.info("[FSEVENTS-HEARTBEAT] Stopping heartbeat")
+          break
+        }
+
         strongSelf.emitHeartbeat()
       }
     }
