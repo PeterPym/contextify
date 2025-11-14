@@ -18,9 +18,11 @@ public final class TranscriptWatcher {
   private var debounceTimers: [String: Timer] = [:]
   private var lastEventTime: [String: Date] = [:]
   private let watcherQueue = DispatchQueue(label: "dev.contextify.transcriptWatcher")
+  private var heartbeatStarted = false
 
   // Event deduplication: filter events within 50ms of previous event for same transcript
   private let minEventInterval: TimeInterval = 0.05
+  private let heartbeatInterval: TimeInterval = 60.0
 
   public init(
     hooverEngine: HooverEngine,
@@ -54,6 +56,15 @@ public final class TranscriptWatcher {
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL) throws {
     log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
+    log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+
+    // Start heartbeat on first watch (only once)
+    watcherQueue.sync {
+      if !heartbeatStarted {
+        heartbeatStarted = true
+        startHeartbeat()
+      }
+    }
 
     // Idempotence check inside lock to prevent race condition where two threads
     // both pass the check before either adds to the dictionary
@@ -115,6 +126,7 @@ public final class TranscriptWatcher {
       if let source = watchers[transcriptId] {
         source.cancel()
         watchers.removeValue(forKey: transcriptId)
+        log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
       }
 
       if let timer = debounceTimers[transcriptId] {
@@ -153,6 +165,7 @@ public final class TranscriptWatcher {
     guard shouldProcess else { return }
 
     log.info("[WATCHER-EVENT] File change detected for transcript: \(transcriptId, privacy: .public) path: \(fileURL.path, privacy: .public)")
+    log.info("[FSEVENTS-CHANGE] transcript=\(transcriptId, privacy: .public) flags=write")
 
     watcherQueue.sync {
       // Cancel existing timer
@@ -182,6 +195,7 @@ public final class TranscriptWatcher {
         }
 
         log.info("[WATCHER-HOOVER-TRIGGER] Triggering incremental hoover for: \(transcriptId, privacy: .public)")
+        log.info("[FSEVENTS-TRIGGER-INGEST] transcript=\(transcriptId, privacy: .public)")
 
         // Invalidate cached metadata (file changed, so metadata may be stale)
         try? self.metadataInvalidator?(transcriptId)
@@ -215,6 +229,28 @@ public final class TranscriptWatcher {
       } catch {
         log.error("[WATCHER-PROCESS-ERROR] Failed to stream transcript changes: \(error.localizedDescription, privacy: .public)")
       }
+    }
+  }
+
+  // MARK: - Heartbeat
+
+  private func startHeartbeat() {
+    // Start periodic heartbeat on watcherQueue (called from within watcherQueue.sync in watch())
+    // This runs on a background queue, sleeps, then logs heartbeat
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      while let strongSelf = self {
+        Thread.sleep(forTimeInterval: strongSelf.heartbeatInterval)
+        strongSelf.emitHeartbeat()
+      }
+    }
+  }
+
+  private func emitHeartbeat() {
+    // Access watchers count on watcherQueue (this is called from background queue, not watcherQueue)
+    watcherQueue.async { [weak self] in
+      guard let self else { return }
+      let count = self.watchers.count
+      log.info("[FSEVENTS-HEARTBEAT] watching=\(count, privacy: .public)")
     }
   }
 }

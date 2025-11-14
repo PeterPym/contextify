@@ -1255,6 +1255,7 @@ final class ConversationMonitor {
         log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
 
             log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
+            log.info("[TIMELINE-HYDRATE-START] project=\(projectId, privacy: .public) count=\(self.config.maxEntries, privacy: .public)")
             // Single query gets entries + cache
             // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
             let feed = try orchestrator.getRecentFeed(
@@ -1357,6 +1358,7 @@ final class ConversationMonitor {
             log.info("[UIOPT-BRANCH] phase → loaded")
 
             let elapsed = Date().timeIntervalSince(startTime)
+            log.info("[TIMELINE-HYDRATE-DONE] duration_ms=\(Int(elapsed * 1000), privacy: .public) entries=\(feed.count, privacy: .public)")
             log.info("[TIMELINE-LOAD] primer complete in \(Int(elapsed * 1000))ms")
             if elapsed > 0.02 {
                 log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")

@@ -23,6 +23,7 @@ public actor HooverScheduler {
   // Recursion prevention - track both queued and actively processing paths
   private var queuedPaths: Set<String> = []
   private var processingPaths: Set<String> = []
+  private var skipCount: Int = 0
 
   public init(
     orchestrator: TranscriptOrchestrator,
@@ -42,7 +43,8 @@ public actor HooverScheduler {
   ) async throws {
     // Prevent recursion/duplicates - check both queued and processing
     if queuedPaths.contains(fileURL.path) || processingPaths.contains(fileURL.path) {
-      log.debug("[HOOVER-SCHED-SKIP] Already queued/processing: \(fileURL.lastPathComponent, privacy: .public)")
+      skipCount += 1
+      log.info("[HOOVER-SCHED-SKIP] Already queued/processing: \(fileURL.lastPathComponent, privacy: .public)")
       return
     }
 
@@ -105,6 +107,6 @@ public actor HooverScheduler {
   public var activeTaskCount: Int { activeCount }
 
   public func logStatus() {
-    log.info("[HOOVER-SCHED-STATUS] active=\(self.activeCount, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) capacity=\(self.maxConcurrency, privacy: .public)")
+    log.info("[HOOVER-SCHED-STATUS] active=\(self.activeCount, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) skipped=\(self.skipCount, privacy: .public) capacity=\(self.maxConcurrency, privacy: .public)")
   }
 }

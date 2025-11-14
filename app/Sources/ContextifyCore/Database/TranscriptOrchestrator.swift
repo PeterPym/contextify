@@ -514,7 +514,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     fileURL: URL,
     projectRootPath: String,
     provider: String
-  ) throws -> (isValid: Bool, errorMessage: String?) {
+  ) throws -> (isValid: Bool, errorMessage: String?, wasHit: Bool) {
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let currentMtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
@@ -532,19 +532,19 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
        let cachedMtime = row["mtime"] as? Double,
        abs(cachedMtime - currentMtime) < 1.0 {
 
-      log.debug("[TRANS-PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
+      log.info("[PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
 
       if status == "passed" {
-        return (isValid: true, errorMessage: nil)
+        return (isValid: true, errorMessage: nil, wasHit: true)
       } else {
         let error = row["error"] as? String ?? "Unknown preflight failure"
-        return (isValid: false, errorMessage: error)
+        return (isValid: false, errorMessage: error, wasHit: true)
       }
     }
 
     // Cache miss - extract mtime for logging (if row exists but mtime stale)
     let cachedMtime = (cached?["mtime"] as? Double) ?? 0
-    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
+    log.info("[PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
 
     // Perform fresh validation
     let result = validator.validate(
@@ -568,11 +568,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       ])
     }
 
-    log.debug("[TRANS-PREFLIGHT-CACHE-UPDATE] \(fileURL.lastPathComponent, privacy: .public): \(result.isValid ? "passed" : "failed", privacy: .public)")
+    log.info("[PREFLIGHT-CACHE-UPDATE] \(fileURL.lastPathComponent, privacy: .public): \(result.isValid ? "passed" : "failed", privacy: .public)")
 
     return (
       isValid: result.isValid,
-      errorMessage: result.errors.first?.description
+      errorMessage: result.errors.first?.description,
+      wasHit: false
     )
   }
 
@@ -799,6 +800,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
 
     progressSink.didCompleteProject(name: project.name ?? projectId)
+
+    // Log preflight summary - detailed hit/miss/failure counts available in individual [PREFLIGHT-CACHE-*] logs
+    log.info("[PREFLIGHT-SUMMARY] Discovery complete for \(transcriptFiles.count, privacy: .public) transcripts (check PREFLIGHT-CACHE-* logs for details)")
+
     log.info("[BATCH-DISC-DONE] Parallel discovery complete for project: \(projectId, privacy: .public) (\(transcriptFiles.count, privacy: .public) transcripts)")
   }
 

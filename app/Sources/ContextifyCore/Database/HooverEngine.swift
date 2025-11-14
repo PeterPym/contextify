@@ -568,6 +568,8 @@ public final class HooverEngine {
       lastError: lastErrorMessage
     )
 
+    log.info("[DB-UPDATE] transcript=\(transcript.id, privacy: .public) entries=\(parsedEntryCount, privacy: .public) state=\(ingestState, privacy: .public)")
+
     // Verify checkpoint was updated correctly
     if let updatedTranscript = try? db.read({ db in try Transcript.fetchOne(db, key: transcript.id) }) {
       log.debug("[HOOVER-CHECKPOINT-VERIFY] Checkpoint updated: \(transcript.lastProcessedLine, privacy: .public) → \(updatedTranscript.lastProcessedLine, privacy: .public)")
