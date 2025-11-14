@@ -204,6 +204,7 @@ struct ConversationTimelineView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .scrollContentBackground(.hidden)
             // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks
             .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
