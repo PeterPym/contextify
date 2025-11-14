@@ -436,10 +436,10 @@ struct WelcomeModalView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(!projectsVM.isWelcomeReady)
+                .disabled(!StartupCoordinator.shared.pipelineReadiness.isReady)
 
-                if !projectsVM.isWelcomeReady {
-                    Text("Please keep Contextify open while we warm up your timeline…")
+                if !StartupCoordinator.shared.pipelineReadiness.isReady {
+                    Text("Please keep Contextify open while we initialize the pipeline…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
