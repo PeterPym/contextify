@@ -532,8 +532,19 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     projectRootPath: String,
     provider: String
   ) throws -> (isValid: Bool, errorMessage: String?) {
-    let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-    let currentMtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+    let currentMtime: Double
+
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
+       let modDate = attrs[.modificationDate] as? Date {
+      currentMtime = modDate.timeIntervalSince1970
+    } else if let resourceValues = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
+              let modDate = resourceValues.contentModificationDate {
+      currentMtime = modDate.timeIntervalSince1970
+      log.warning("[PREFLIGHT-MTIME-FALLBACK] Using resourceValues for \(fileURL.lastPathComponent, privacy: .public)")
+    } else {
+      currentMtime = 0
+      log.error("[PREFLIGHT-MTIME-ERROR] Could not read mtime for \(fileURL.lastPathComponent, privacy: .public); cache will miss")
+    }
 
     // Check standalone cache table (keyed by file_path + provider)
     let cached = try dbManager.pool.read { db in
@@ -585,6 +596,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       ])
     }
 
+    log.debug("[PREFLIGHT-CACHE-WRITE] file=\(fileURL.lastPathComponent, privacy: .public) status=\(result.isValid ? "passed" : "failed", privacy: .public) mtime=\(currentMtime, privacy: .public)")
     log.info("[PREFLIGHT-CACHE-UPDATE] \(fileURL.lastPathComponent, privacy: .public): \(result.isValid ? "passed" : "failed", privacy: .public)")
 
     return (
@@ -1220,6 +1232,15 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   public func getEntries(forTranscript transcriptId: String, afterTimestamp: Int? = nil) throws -> [TranscriptEntry] {
     try entryRepo.byTranscript(transcriptId, afterTimestamp: afterTimestamp)
+  }
+
+  public func getEntryCount(forProject projectId: String) throws -> Int {
+    try dbManager.pool.read { db in
+      try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries
+        WHERE project_id = ? AND display_in_timeline = 1
+      """, arguments: [projectId]) ?? 0
+    }
   }
 
   public func getRecentEntries(forProject projectId: String, limit: Int = 50) throws -> [TranscriptEntry] {

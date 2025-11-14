@@ -1253,6 +1253,15 @@ final class ConversationMonitor {
         let maxEntries = config.maxEntries
         let signature = generatorSignature()
 
+        let existingEntryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
+        if existingEntryCount == 0 {
+            log.debug("[TIMELINE-HYDRATE-SKIP] project=\(projectId, privacy: .public) reason=no entries yet")
+            isProcessing = false
+            isReadyForUpdates = priorReady
+            phase = .loaded
+            return nil
+        }
+
         feedHydrationTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
