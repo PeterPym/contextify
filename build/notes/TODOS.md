@@ -31,6 +31,55 @@
 
 ---
 
+## Fix Build Warnings (P1)
+
+**Status:** Not Started
+**Priority:** P1 (Code quality, Swift 6 compliance)
+**Effort:** 4-6 hours
+
+### Problem
+
+Build produces ~40+ compiler warnings across key files, primarily in ConversationMonitor.swift:
+- Unnecessary `await` expressions (no async ops)
+- Main actor isolation violations in Sendable closures
+- Deprecated API usage (getEntriesAfterCursor)
+- Unused variable initializations
+- Unreachable code after returns
+- Unnecessary macOS availability checks
+
+### Impact
+
+- Code quality degradation
+- Potential concurrency bugs (Sendable closure violations)
+- Future Swift versions may promote warnings to errors
+- Pre-commit build guard shows warnings on every commit
+
+### Tasks
+
+- [ ] **[BW1]** Fix ConversationMonitor.swift (9 warnings: lines 1320, 1440, 1585, 1596, 1597, 1930, 1978, 2119, 2138)
+- [ ] **[BW2]** Fix TranscriptMetadataOrchestrator.swift (2 warnings: lines 541, 616 - unnecessary availability checks)
+- [ ] **[BW3]** Fix ProjectsViewModel.swift (3 warnings: lines 204, 306)
+- [ ] **[BW4]** Fix ProjectSwitcherState.swift (3 warnings: lines 195, 197, 643)
+- [ ] **[BW5]** Verify clean build with zero warnings
+
+### Files
+
+- `Contextify/Contextify/ConversationMonitor.swift`
+- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift`
+- `Contextify/Contextify/ProjectsViewModel.swift`
+- `Contextify/Contextify/ProjectSwitcherState.swift`
+
+### Acceptance Criteria
+
+- [ ] `scripts/xc.sh dr` produces zero warnings
+- [ ] No Swift 6 concurrency violations
+- [ ] Deprecated APIs replaced with current equivalents
+- [ ] No unused code or unreachable statements
+
+**Estimated Effort:** 4-6 hours
+
+---
+
 ## Database Import/Export Feature (P1)
 
 **Status:** Not Started  
