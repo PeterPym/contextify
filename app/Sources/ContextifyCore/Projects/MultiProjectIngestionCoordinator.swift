@@ -77,6 +77,17 @@ final class MultiProjectIngestionCoordinator {
       }
     }
 
+    if let activeProjectId {
+      await forcePrimerRegistrationIfNeeded(
+        projectId: activeProjectId,
+        primerTarget: primerTarget,
+        limit: activePrimerBatchLimit,
+        primerProjects: &primerProjects,
+        primerBuckets: &primerBuckets,
+        sourceBatches: batches
+      )
+    }
+
     var orderedProjects = primerProjects
     if let activeProjectId,
        primerBuckets[activeProjectId] != nil {
@@ -115,6 +126,61 @@ final class MultiProjectIngestionCoordinator {
         concurrency: 8
       )
     }
+  }
+
+  private func forcePrimerRegistrationIfNeeded(
+    projectId: String,
+    primerTarget: Int,
+    limit: Int,
+    primerProjects: inout [String],
+    primerBuckets: inout [String: [TranscriptDescriptor]],
+    sourceBatches: [ProjectTranscriptBatch]
+  ) async {
+    guard primerBuckets[projectId] == nil else { return }
+
+    let entryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
+    guard entryCount < primerTarget else { return }
+
+    if let descriptors = prepareDescriptors(for: projectId, limit: limit, sourceBatches: sourceBatches), !descriptors.isEmpty {
+      primerBuckets[projectId] = descriptors
+      if !primerProjects.contains(projectId) {
+        primerProjects.append(projectId)
+      }
+      orchestrator.registerPrimer(projectId: projectId, target: primerTarget)
+      log.info(
+        "[PRIMER-FORCE] project=\(projectId, privacy: .public) descriptors=\(descriptors.count, privacy: .public) entry_count=\(entryCount, privacy: .public)"
+      )
+    } else {
+      log.warning("[PRIMER-FORCE] Unable to prepare descriptors for project \(projectId, privacy: .public)")
+    }
+  }
+
+  private func prepareDescriptors(
+    for projectId: String,
+    limit: Int,
+    sourceBatches: [ProjectTranscriptBatch]
+  ) -> [TranscriptDescriptor]? {
+    if let batch = sourceBatches.first(where: { $0.projectId == projectId }),
+       !batch.transcripts.isEmpty {
+      return Array(batch.transcripts.prefix(limit))
+    }
+
+    guard let transcripts = try? orchestrator.getTranscripts(forProject: projectId),
+          !transcripts.isEmpty else { return nil }
+
+    let sorted = transcripts.sorted { lhs, rhs in
+      lhs.lastModified > rhs.lastModified
+    }
+
+    let mapped = sorted.prefix(limit).map { transcript in
+      TranscriptDescriptor(
+        fileURL: URL(fileURLWithPath: transcript.filePath),
+        provider: transcript.provider,
+        sessionId: transcript.providerSessionId,
+        lastModified: Date(timeIntervalSince1970: TimeInterval(transcript.lastModified))
+      )
+    }
+    return mapped
   }
 
   private func runPrimer(queue: [PrimerQueueEntry]) async throws {

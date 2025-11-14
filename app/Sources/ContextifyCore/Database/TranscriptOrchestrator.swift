@@ -260,6 +260,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       "[PRIMER-READY] project=\(projectId, privacy: .public) entries=\(snapshot.entries, privacy: .public) elapsed_ms=\(snapshot.elapsedMs, privacy: .public)"
     )
 
+    NotificationCenter.default.post(
+      name: .timelinePrimerReady,
+      object: projectId,
+      userInfo: ["entries": snapshot.entries]
+    )
+
     if snapshot.ready == snapshot.total {
       log.info("[PRIMER-ALL-READY] ready=\(snapshot.ready, privacy: .public)/\(snapshot.total, privacy: .public)")
     }

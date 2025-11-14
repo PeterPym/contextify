@@ -16,6 +16,10 @@ extension Notification.Name {
   /// (handles race where watchers already exist so .discovered events aren't emitted)
   public static let projectsIngestionComplete = Notification.Name("contextify.projectsIngestionComplete")
 
+  /// Posted when a project's primer target has been reached (fast-path entries available)
+  /// Object: projectId (String). userInfo["entries"]: Int entry count snapshot.
+  public static let timelinePrimerReady = Notification.Name("contextify.timelinePrimerReady")
+
   /// Posted during transcript hoovering to report incremental progress
   /// Emitted after first 3 transcripts and every 10 thereafter for real-time timeline updates
   /// userInfo contains: "transcriptCount" (Int), "totalTranscripts" (Int), "projectId" (String)

@@ -262,6 +262,22 @@ struct ConversationTimelineView: View {
                     }
                 }
                 .padding(.vertical, 32)
+            } else if monitor.isAwaitingPrimer {
+                let _ = log.info("[TIMELINE-LOADING] Awaiting primer completion for active project")
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+
+                    VStack(spacing: 4) {
+                        Text("Finalizing conversation data…")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text("Hang tight, just a few more seconds.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.vertical, 32)
             } else {
                 let _ = log.info("[TIMELINE-EMPTY] Showing empty state (isIngesting=\(projectsVM.isIngesting, privacy: .public), hasProgress=\(projectsVM.discoveryProgress != nil, privacy: .public))")
                 // Normal empty state

@@ -8,4 +8,7 @@ extension Notification.Name {
   /// Posted when ALL project transcript ingestion (hoovering) completes
   /// This fires after all hoover operations finish, unlike projectsDiscoveryComplete which fires early
   static let projectsIngestionComplete = Notification.Name("contextify.projectsIngestionComplete")
+
+  /// Posted when a project's primer target is satisfied and entries are ready for display
+  static let timelinePrimerReady = Notification.Name("contextify.timelinePrimerReady")
 }

@@ -247,6 +247,7 @@ final class ConversationMonitor {
     @ObservationIgnored nonisolated(unsafe) private var cacheUpdateObserver: NSObjectProtocol?   // For cache update notifications
     @ObservationIgnored nonisolated(unsafe) private var projectChangeObserver: NSObjectProtocol? // For project root change notifications
     @ObservationIgnored nonisolated(unsafe) private var projectsDiscoveryObserver: NSObjectProtocol? // For projects discovery completion
+    @ObservationIgnored nonisolated(unsafe) private var primerReadyObserver: NSObjectProtocol? // For primer ready events
     @ObservationIgnored nonisolated(unsafe) private var hooveringProgressObserver: NSObjectProtocol? // For incremental hoovering progress
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
@@ -257,6 +258,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastProgressRefreshTime: Date?  // Track last progress refresh to enforce minimum interval
     @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
     @ObservationIgnored private var pendingCacheKeys: Set<CacheKey> = []  // CXT-13: Accumulated cache keys
+    @ObservationIgnored private var primerRetryTask: Task<Void, Never>?
+    private(set) var isAwaitingPrimer = false
 
     // v23: Active session follow state
     @ObservationIgnored private var startupTask: Task<Void, Never>?  // P0-2: Cancellable startup sequence
@@ -311,6 +314,7 @@ final class ConversationMonitor {
         // Set up projects discovery notifications early, so we can react to ingestion completion
         // even during startup before monitoring is active
         setupProjectsDiscoveryNotifications()
+        setupPrimerReadyNotifications()
 
         // Set up hoovering progress notifications for incremental timeline updates
         setupHooveringProgressNotifications()
@@ -373,6 +377,9 @@ final class ConversationMonitor {
         if let observer = projectsDiscoveryObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = primerReadyObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
         if let observer = appLifecycleObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -381,6 +388,7 @@ final class ConversationMonitor {
         }
 
         monitorRestartGuardTask?.cancel()
+        primerRetryTask?.cancel()
 
         log.info("ConversationMonitor deinit: cancelled tasks, stopped HTTP server, removed observers")
     }
@@ -419,6 +427,7 @@ final class ConversationMonitor {
         log.info("[TIMELINE-START] Starting timeline monitoring for project: \(projectId, privacy: .public)")
         log.info("📊 [MONITOR-ENTRY] startMonitoring called for \(projectId, privacy: .public)")
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
+        cancelPrimerRetry(reason: "project-switch")
 
         // Skip if already monitoring this exact project (prevents duplicate calls during startup)
         if isMonitoring && currentProjectId == projectId {
@@ -1259,8 +1268,11 @@ final class ConversationMonitor {
             isProcessing = false
             isReadyForUpdates = priorReady
             phase = .loaded
+            schedulePrimerRetry(for: projectId)
             return nil
         }
+
+        cancelPrimerRetry(reason: "entries-available")
 
         feedHydrationTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
@@ -1577,6 +1589,91 @@ final class ConversationMonitor {
                 self.log.info("✅ [TIMELINE-REFRESH-INGESTION] Timeline feed reloaded (\(self.state.entries.count) entries - hoovering continues in background)")
             }
         }
+    }
+
+    private func setupPrimerReadyNotifications() {
+        primerReadyObserver = NotificationCenter.default.addObserver(
+            forName: .timelinePrimerReady,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+
+            guard let projectId = notification.object as? String else {
+                self.log.error("⚠️ [TIMELINE-PRIMER-READY] Missing projectId in notification")
+                return
+            }
+
+            let entries = notification.userInfo?["entries"] as? Int
+            self.log.info("📨 [TIMELINE-PRIMER-READY] Received primer-ready for \(projectId, privacy: .public) entries=\(entries ?? -1, privacy: .public)")
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+
+                guard self.currentProjectId == projectId else {
+                    self.log.debug("[TIMELINE-PRIMER-READY] Ignoring primer-ready for different project \(projectId, privacy: .public)")
+                    return
+                }
+
+                guard self.isMonitoring else {
+                    self.log.debug("[TIMELINE-PRIMER-READY] Ignoring primer-ready while monitor inactive")
+                    return
+                }
+
+                self.cancelPrimerRetry(reason: "primer-ready")
+                self.log.info("🔄 [TIMELINE-PRIMER-READY] Refreshing timeline after primer-ready event")
+                await self.loadFeedFromSQL()?.value
+            }
+        }
+    }
+
+    @MainActor
+    private func schedulePrimerRetry(for projectId: String) {
+        guard primerRetryTask == nil else { return }
+
+        log.info("[TIMELINE-RETRY-SCHEDULED] Waiting for primer entries (project=\(projectId, privacy: .public))")
+        guard let orchestrator = orchestrator else {
+            log.error("[TIMELINE-RETRY] Cannot schedule retry - orchestrator unavailable")
+            return
+        }
+
+        isAwaitingPrimer = true
+
+        primerRetryTask = Task { [weak self, orchestrator] in
+            guard let self else { return }
+            let maxAttempts = 10
+            for attempt in 1...maxAttempts {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+
+                let entryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
+                if entryCount > 0 {
+                    await MainActor.run {
+                        self.log.info("[TIMELINE-RETRY] Primer entries detected after \(attempt, privacy: .public) attempts - refreshing timeline")
+                    }
+                    await self.loadFeedFromSQL()?.value
+                    await MainActor.run {
+                        self.primerRetryTask = nil
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                self.log.warning("[TIMELINE-RETRY] Timed out waiting for primer entries (project=\(projectId, privacy: .public))")
+                self.primerRetryTask = nil
+                self.isAwaitingPrimer = false
+            }
+        }
+    }
+
+    @MainActor
+    private func cancelPrimerRetry(reason: String) {
+        guard primerRetryTask != nil else { return }
+        log.info("[TIMELINE-RETRY-CANCELLED] reason=\(reason, privacy: .public)")
+        primerRetryTask?.cancel()
+        primerRetryTask = nil
+        isAwaitingPrimer = false
     }
 
     private func setupHooveringProgressNotifications() {
