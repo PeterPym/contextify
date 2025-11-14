@@ -10,6 +10,12 @@ private let logger = Logger(subsystem: "dev.contextify", category: "ProjectsView
 @MainActor
 @Observable
 final class ProjectsViewModel {
+  enum WelcomePhase: String, Sendable {
+    case discovery
+    case ingesting
+    case watchers
+    case ready
+  }
   let discoveryService: ProjectDiscoveryService
   private let orchestrator: TranscriptOrchestrator
   private let hudModel: HUDViewModel
@@ -23,6 +29,10 @@ final class ProjectsViewModel {
   private(set) var discoveryProgress: DiscoveryProgress?
   private(set) var errorMessage: String?
   private(set) var lastScanTime: Date?
+  private(set) var welcomePhase: WelcomePhase = .discovery
+  private(set) var isWelcomeReady = false
+  private(set) var watcherTargetCount = 0
+  private(set) var watchersReadyCount = 0
 
   // Event observation
   @ObservationIgnored private var eventObservationTask: Task<Void, Never>?
@@ -76,6 +86,7 @@ final class ProjectsViewModel {
     logger.debug("discoverProjects() invoked")
     isDiscovering = true
     errorMessage = nil
+    resetWelcomeState()
 
     do {
       // Phase 1: Discovery
@@ -92,6 +103,7 @@ final class ProjectsViewModel {
 
       // Phase 2: Ingestion
       if !discovered.isEmpty {
+        welcomePhase = .ingesting
         logger.info("[PSTATE-INGEST-START] Setting isIngesting = true")
         isIngesting = true
         let projectURLs = discovered.map { $0.path }
@@ -115,6 +127,11 @@ final class ProjectsViewModel {
         projects = refreshed
         logger.info("[PSTATE-INGEST-DONE] Setting isIngesting = false")
         isIngesting = false
+
+        await warmUpWatchers(for: refreshed)
+      } else {
+        welcomePhase = .ready
+        isWelcomeReady = true
       }
 
       logger.info("Discovery and ingestion complete")
@@ -122,6 +139,8 @@ final class ProjectsViewModel {
     } catch {
       logger.error("Discovery failed: \(error.localizedDescription)")
       errorMessage = "Discovery failed: \(error.localizedDescription)"
+      welcomePhase = .ready
+      isWelcomeReady = true
     }
 
     isDiscovering = false
@@ -224,6 +243,44 @@ final class ProjectsViewModel {
   }
 
   // MARK: - Helpers
+  private func resetWelcomeState() {
+    welcomePhase = .discovery
+    isWelcomeReady = false
+    watcherTargetCount = 0
+    watchersReadyCount = 0
+  }
+
+  private func warmUpWatchers(for discovered: [DiscoveredProject]) async {
+    let eligible = discovered.filter { $0.transcriptCount > 0 }
+
+    guard !eligible.isEmpty else {
+      logger.info("[WELCOME-WATCHERS] No transcripts found - marking ready")
+      welcomePhase = .ready
+      isWelcomeReady = true
+      return
+    }
+
+    welcomePhase = .watchers
+    watcherTargetCount = eligible.count
+    watchersReadyCount = 0
+    logger.info("[WELCOME-WATCHERS] Ensuring watchers for \(eligible.count, privacy: .public) projects")
+
+    for project in eligible {
+      do {
+        _ = try await activityMonitor.ensureWatcher(projectId: project.id)
+        watchersReadyCount += 1
+        logger.info("[WELCOME-WATCHERS] ready=\(watchersReadyCount)/\(watcherTargetCount) project=\(project.id, privacy: .public)")
+      } catch {
+        watchersReadyCount += 1
+        logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      }
+    }
+
+    welcomePhase = .ready
+    isWelcomeReady = true
+    logger.info("[WELCOME-PHASE] Ready - timeline warm up complete")
+  }
+
   private func resolveCurrentProjectPath() async throws -> String? {
     if let path = currentProjectPath { return path }
     if let ctx = StartupCoordinator.shared.current { return ctx.path }

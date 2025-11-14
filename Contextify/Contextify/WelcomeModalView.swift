@@ -67,6 +67,8 @@ struct WelcomeModalView: View {
                     // Show permissions step until user explicitly dismisses it
                     // (Don't auto-hide when first authorization is granted)
                     permissionsContent
+                } else if projectsVM.welcomePhase == .watchers && !projectsVM.isWelcomeReady {
+                    watcherWarmupContent
                 } else if projectsVM.isDiscovering || projectsVM.isIngesting {
                     discoveringContent
                 } else if !projectsVM.projects.isEmpty {
@@ -192,10 +194,17 @@ struct WelcomeModalView: View {
                     .font(.headline)
             }
 
-            Text("All set! Your conversations are ready.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                if projectsVM.isWelcomeReady {
+                    Text("All set! Your conversations are ready.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text("Almost there—warming up transcript watchers...")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
         }
         .padding(.vertical, 24)
     }
@@ -358,6 +367,42 @@ struct WelcomeModalView: View {
         }
     }
 
+    private var watcherWarmupContent: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(.blue)
+
+            Text("Preparing timelines")
+                .font(.headline)
+
+            Text("We’re verifying watchers so Contextify can update your transcripts in real time. This only happens on first launch.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if projectsVM.watcherTargetCount > 0 {
+                VStack(spacing: 8) {
+                    ProgressView(
+                        value: Double(projectsVM.watchersReadyCount),
+                        total: Double(max(projectsVM.watcherTargetCount, 1))
+                    )
+                    .progressViewStyle(.linear)
+
+                    Text("Watchers ready: \(projectsVM.watchersReadyCount)/\(projectsVM.watcherTargetCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 16)
+            } else {
+                ProgressView()
+                    .scaleEffect(1.1)
+            }
+        }
+        .padding(.vertical, 24)
+    }
+
     // MARK: - Action Button
 
     private var actionButton: some View {
@@ -391,6 +436,15 @@ struct WelcomeModalView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(!projectsVM.isWelcomeReady)
+
+                if !projectsVM.isWelcomeReady {
+                    Text("Please keep Contextify open while we warm up your timeline…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
             } else if !projectsVM.isDiscovering && !projectsVM.isIngesting {
                 Button("Close") {
                     log.info("User closed welcome modal (no projects)")
