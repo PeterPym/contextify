@@ -413,7 +413,7 @@ run_build_for_dist() {
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
     if [[ "$dist" == "appstore" ]]; then
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
@@ -422,7 +422,7 @@ run_build_for_dist() {
         build
     else
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
@@ -432,14 +432,14 @@ run_build_for_dist() {
   else
     if [[ "$dist" == "appstore" ]]; then
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
         OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
         build
     else
       run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
         build
@@ -532,14 +532,14 @@ case "$action" in
     # For tests, use the standard scheme (not distribution-specific)
     if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
       run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" \
         CODE_SIGN_IDENTITY="-" \
         DEVELOPMENT_TEAM="" \
         test
     else
       run_xcodebuild -project "$proj" -scheme "$scheme" \
-        -configuration "$config" -destination "platform=macOS" \
+        -configuration "$config" -destination "platform=macOS,arch=arm64" \
         -derivedDataPath "$dd" test
     fi
     ;;
