@@ -24,7 +24,8 @@ struct ConversationTimelineView: View {
         }
         .frame(
             minWidth: minWidth,
-            maxWidth: .infinity
+            maxWidth: .infinity,
+            maxHeight: .infinity
         )
         .background(Color.clear)
         .overlay(alignment: .bottomTrailing) {
@@ -323,7 +324,7 @@ struct ConversationTimelineView: View {
                     .multilineTextAlignment(.center)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 160)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyStateExplanation: String {
