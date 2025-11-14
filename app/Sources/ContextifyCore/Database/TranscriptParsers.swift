@@ -75,13 +75,19 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       throw ParserError.invalidJSON
     }
 
-    // Required fields
-    guard let uuid = json["uuid"] as? String else {
-      throw ParserError.missingRequiredField("uuid")
-    }
-
+    // Required fields - check type first
     guard let type = json["type"] as? String else {
       throw ParserError.missingRequiredField("type")
+    }
+
+    // Skip structural metadata records (no conversation content)
+    // These records don't have uuid, timestamp, or message fields
+    if type == "file-history-snapshot" || type == "summary" {
+      throw ParserError.skipEntry
+    }
+
+    guard let uuid = json["uuid"] as? String else {
+      throw ParserError.missingRequiredField("uuid")
     }
 
     guard let timestampStr = json["timestamp"] as? String,
