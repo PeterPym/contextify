@@ -494,11 +494,23 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Delete preflight cache entry for a specific file
+  /// TODO: Hook this into transcript deletion events (TranscriptWatcher, transcriptRepo.delete)
+  /// For now, 7-day TTL in evictStalePreflightCache handles orphaned entries
+  public func deletePreflightCacheEntry(fileURL: URL, provider: String) throws {
+    try dbManager.pool.write { db in
+      try db.execute(sql: """
+        DELETE FROM transcript_preflight_cache
+        WHERE file_path = ? AND provider = ?
+      """, arguments: [fileURL.path, provider])
+    }
+    log.debug("[PREFLIGHT-DELETE] Removed cache entry for \(fileURL.lastPathComponent, privacy: .public)")
+  }
+
   /// Check preflight cache and validate if needed
   /// Returns: (isValid, errorMessage)
   /// Query standalone cache table by (file_path, provider)
   private func checkPreflight(
-    projectId: String,
     fileURL: URL,
     projectRootPath: String,
     provider: String
@@ -530,7 +542,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
     }
 
-    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public) (cached mtime: \(cached?["mtime"] as? Double ?? 0, privacy: .public), current: \(currentMtime, privacy: .public))")
+    // Cache miss - extract mtime for logging (if row exists but mtime stale)
+    let cachedMtime = (cached?["mtime"] as? Double) ?? 0
+    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
 
     // Perform fresh validation
     let result = validator.validate(
@@ -585,7 +599,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
     // Check preflight validation (with caching)
     let preflightResult = try checkPreflight(
-      projectId: projectId,
       fileURL: fileURL,
       projectRootPath: project.rootPath ?? "",
       provider: provider
