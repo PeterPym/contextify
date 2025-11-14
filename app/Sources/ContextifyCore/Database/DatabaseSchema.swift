@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 24
+  static let version = 25
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -459,6 +459,53 @@ enum DatabaseSchema {
         ON transcripts(preflight_status)
         WHERE preflight_status IS NOT NULL
       """)
+    }
+
+    // v25: Standalone preflight cache table
+    migrator.registerMigration("v25_preflight_cache_standalone") { db in
+      // Create standalone preflight cache table keyed by (file_path, provider)
+      // This allows caching validation results before transcript rows exist
+      // and prevents cross-provider collisions (Claude vs Codex same filenames)
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS transcript_preflight_cache (
+          file_path TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          mtime REAL NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+          error TEXT,
+          checked_at REAL NOT NULL,
+          PRIMARY KEY (file_path, provider)
+        ) WITHOUT ROWID
+      """)
+
+      // Index for cache eviction (find stale entries by age)
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_preflight_checked_at
+        ON transcript_preflight_cache(checked_at)
+      """)
+
+      // Migrate existing preflight data from transcripts table (if any)
+      // Use INSERT OR REPLACE to handle duplicates gracefully
+      try db.execute(sql: """
+        INSERT OR REPLACE INTO transcript_preflight_cache (file_path, provider, mtime, status, error, checked_at)
+        SELECT
+          file_path,
+          provider,
+          COALESCE(preflight_mtime, 0),
+          CASE
+            WHEN preflight_status = 'passed' THEN 'passed'
+            WHEN preflight_status = 'failed' THEN 'failed'
+            ELSE 'passed'
+          END,
+          preflight_error,
+          COALESCE(preflight_checked_at, CAST(strftime('%s','now') AS REAL))
+        FROM transcripts
+        WHERE preflight_status IS NOT NULL
+      """)
+
+      // Note: We keep the preflight columns in transcripts table for now
+      // to avoid complex migration. They are now deprecated and will be ignored.
+      // Future cleanup: Add migration to drop these columns when safe.
     }
 
     return migrator

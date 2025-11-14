@@ -476,9 +476,27 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Evict stale preflight cache entries older than the specified age
+  /// Call periodically (e.g., on app startup) to prevent unbounded cache growth
+  public func evictStalePreflightCache(olderThanDays days: Int = 7) throws {
+    let cutoffTime = Date().timeIntervalSince1970 - Double(days * 24 * 60 * 60)
+
+    let deletedCount = try dbManager.pool.write { db in
+      try db.execute(sql: """
+        DELETE FROM transcript_preflight_cache
+        WHERE checked_at < ?
+      """, arguments: [cutoffTime])
+      return db.changesCount
+    }
+
+    if deletedCount > 0 {
+      log.info("[PREFLIGHT-EVICT] Evicted \(deletedCount, privacy: .public) stale cache entries (older than \(days, privacy: .public) days)")
+    }
+  }
+
   /// Check preflight cache and validate if needed
   /// Returns: (isValid, errorMessage)
-  /// Query by project_id + file_path (UNIQUE constraint)
+  /// Query standalone cache table by (file_path, provider)
   private func checkPreflight(
     projectId: String,
     fileURL: URL,
@@ -488,37 +506,55 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let currentMtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
 
-    // Check cache using project_id + file_path (UNIQUE constraint)
+    // Check standalone cache table (keyed by file_path + provider)
     let cached = try dbManager.pool.read { db in
       try Row.fetchOne(db, sql: """
-        SELECT preflight_status, preflight_mtime, preflight_error
-        FROM transcripts
-        WHERE project_id = ? AND file_path = ?
-      """, arguments: [projectId, fileURL.path])
+        SELECT status, mtime, error
+        FROM transcript_preflight_cache
+        WHERE file_path = ? AND provider = ?
+      """, arguments: [fileURL.path, provider])
     }
 
     if let row = cached,
-       let status = row["preflight_status"] as? String,
-       let cachedMtime = row["preflight_mtime"] as? Double,
+       let status = row["status"] as? String,
+       let cachedMtime = row["mtime"] as? Double,
        abs(cachedMtime - currentMtime) < 1.0 {
 
-      log.debug("[TRANS-PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public)")
+      log.debug("[TRANS-PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public) (cached mtime: \(cachedMtime, privacy: .public), current: \(currentMtime, privacy: .public))")
 
       if status == "passed" {
         return (isValid: true, errorMessage: nil)
       } else {
-        let error = row["preflight_error"] as? String ?? "Unknown preflight failure"
+        let error = row["error"] as? String ?? "Unknown preflight failure"
         return (isValid: false, errorMessage: error)
       }
     }
 
-    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public)")
+    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public) (cached mtime: \(cached?["mtime"] as? Double ?? 0, privacy: .public), current: \(currentMtime, privacy: .public))")
 
+    // Perform fresh validation
     let result = validator.validate(
       fileURL: fileURL,
       projectRootPath: projectRootPath,
       provider: provider
     )
+
+    // Persist validation result to cache immediately (before transcript row exists)
+    try dbManager.pool.write { db in
+      try db.execute(sql: """
+        INSERT OR REPLACE INTO transcript_preflight_cache (file_path, provider, mtime, status, error, checked_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      """, arguments: [
+        fileURL.path,
+        provider,
+        currentMtime,
+        result.isValid ? "passed" : "failed",
+        result.errors.first?.description,
+        Date().timeIntervalSince1970
+      ])
+    }
+
+    log.debug("[TRANS-PREFLIGHT-CACHE-UPDATE] \(fileURL.lastPathComponent, privacy: .public): \(result.isValid ? "passed" : "failed", privacy: .public)")
 
     return (
       isValid: result.isValid,
@@ -562,7 +598,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
       let lastModified = attrs[.modificationDate] as? Date ?? Date()
       let fileSize = attrs[.size] as? Int
-      let currentMtime = (lastModified.timeIntervalSince1970)
 
       // Upsert transcript record for tracking
       let transcriptId = try transcriptRepo.upsert(
@@ -574,22 +609,17 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         fileSize: fileSize
       )
 
-      // Mark as error and update preflight cache
+      // Mark as error (preflight cache already updated in checkPreflight)
       try dbManager.pool.write { db in
         try db.execute(sql: """
           UPDATE transcripts
           SET status = 'error',
               ingest_state = 'complete',
               last_processed_line = 0,
-              last_error = ?,
-              preflight_status = 'failed',
-              preflight_checked_at = ?,
-              preflight_mtime = ?
+              last_error = ?
           WHERE id = ?
         """, arguments: [
           preflightResult.errorMessage ?? "Preflight validation failed",
-          Int(Date().timeIntervalSince1970),
-          Int(currentMtime),
           transcriptId
         ])
       }
@@ -598,25 +628,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       return  // Skip hoover, continue batch
     }
 
-    // Update cache for passed validation
-    try dbManager.pool.write { db in
-      let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-      let currentMtime = ((attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)
-
-      try db.execute(sql: """
-        UPDATE transcripts
-        SET preflight_status = 'passed',
-            preflight_checked_at = ?,
-            preflight_mtime = ?
-        WHERE project_id = ? AND file_path = ?
-      """, arguments: [
-        Int(Date().timeIntervalSince1970),
-        Int(currentMtime),
-        projectId,
-        fileURL.path
-      ])
-    }
-
+    // Preflight passed - cache already updated in checkPreflight()
     log.info("[TRANS-DISC-PREFLIGHT-PASS] ✅ \(fileURL.lastPathComponent, privacy: .public)")
 
     // Get file metadata
@@ -685,6 +697,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     concurrency: Int = 8
   ) async throws {
     log.info("[BATCH-DISC-START] Starting parallel discovery for \(transcriptFiles.count, privacy: .public) transcripts in project: \(projectId, privacy: .public) (concurrency: \(concurrency, privacy: .public))")
+
+    // Evict stale preflight cache entries (7-day TTL) on each batch discovery
+    try? evictStalePreflightCache(olderThanDays: 7)
 
     guard let project = try projectRepo.get(id: projectId) else {
       log.error("[BATCH-DISC-ERROR] Project not found: \(projectId, privacy: .public)")
