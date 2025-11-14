@@ -416,6 +416,29 @@ public actor TimelineDiagnosticsService {
                     recommendation: "Check logs for stack trace"
                 ))
             }
+
+            if monitor.idleRestartFailureCount > 0 {
+                let lastRequestDesc = monitor.lastRestartRequest?.description ?? "unknown"
+                issues.append(.init(
+                    severity: .critical,
+                    category: .initialization,
+                    message: "Timeline restart guard triggered \(monitor.idleRestartFailureCount)x (last request: \(lastRequestDesc))",
+                    recommendation: "Verify StartupCoordinator context availability and ConversationMonitor restart guard logs"
+                ))
+            } else if let lastRequest = monitor.lastRestartRequest {
+                let lastReady = monitor.lastReadyAt ?? .distantPast
+                if lastReady < lastRequest {
+                    let delay = Date().timeIntervalSince(lastRequest)
+                    if delay > 5 {
+                        issues.append(.init(
+                            severity: .high,
+                            category: .initialization,
+                            message: "Timeline restart pending for \(Int(delay))s",
+                            recommendation: "Ensure handleProjectRootChange waits for coordinator context"
+                        ))
+                    }
+                }
+            }
         } else {
             timelineState = nil
         }
@@ -478,6 +501,9 @@ public struct MonitorStateSnapshot: Sendable {
     public let isProcessing: Bool
     public let lastError: String?
     public let cursorExists: Bool
+    public let lastRestartRequest: Date?
+    public let lastReadyAt: Date?
+    public let idleRestartFailureCount: Int
 
     public init(
         isMonitoring: Bool,
@@ -486,7 +512,10 @@ public struct MonitorStateSnapshot: Sendable {
         lastUpdate: Date?,
         isProcessing: Bool,
         lastError: String?,
-        cursorExists: Bool
+        cursorExists: Bool,
+        lastRestartRequest: Date?,
+        lastReadyAt: Date?,
+        idleRestartFailureCount: Int
     ) {
         self.isMonitoring = isMonitoring
         self.entryCount = entryCount
@@ -495,5 +524,8 @@ public struct MonitorStateSnapshot: Sendable {
         self.isProcessing = isProcessing
         self.lastError = lastError
         self.cursorExists = cursorExists
+        self.lastRestartRequest = lastRestartRequest
+        self.lastReadyAt = lastReadyAt
+        self.idleRestartFailureCount = idleRestartFailureCount
     }
 }

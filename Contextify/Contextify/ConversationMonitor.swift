@@ -227,6 +227,11 @@ final class ConversationMonitor {
             onProjectOrSessionChange()
         }
     }
+    @ObservationIgnored private var lastMonitorRestartRequest: Date?
+    @ObservationIgnored private var lastMonitorReadyAt: Date?
+    @ObservationIgnored private var monitorRestartGuardTask: Task<Void, Never>?
+    @ObservationIgnored private var monitorRestartFailureCount = 0
+    @ObservationIgnored private var pendingIdleRestartAlert = false
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -374,7 +379,37 @@ final class ConversationMonitor {
             NotificationCenter.default.removeObserver(observer)
         }
 
+        monitorRestartGuardTask?.cancel()
+
         log.info("ConversationMonitor deinit: cancelled tasks, stopped HTTP server, removed observers")
+    }
+
+    @MainActor
+    private func scheduleMonitorRestartGuard(for projectId: String) {
+        monitorRestartGuardTask?.cancel()
+        let requestTimestamp = Date()
+        lastMonitorRestartRequest = requestTimestamp
+
+        monitorRestartGuardTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            await MainActor.run {
+                guard let self else { return }
+                guard self.lastMonitorRestartRequest == requestTimestamp else { return }
+                if self.isMonitoring && self.currentProjectId == projectId {
+                    return
+                }
+                self.monitorRestartFailureCount &+= 1
+                self.pendingIdleRestartAlert = true
+                self.log.error("🛑 [MONITOR-IDLE] Timeline still idle 5s after restart request #\(self.monitorRestartFailureCount) for project \(projectId, privacy: .public)")
+            }
+        }
+    }
+
+    @MainActor
+    private func acknowledgeMonitorReady(projectId: String) {
+        pendingIdleRestartAlert = false
+        lastMonitorReadyAt = Date()
+        monitorRestartGuardTask?.cancel()
     }
 
     @MainActor
@@ -386,6 +421,7 @@ final class ConversationMonitor {
 
         // Skip if already monitoring this exact project (prevents duplicate calls during startup)
         if isMonitoring && currentProjectId == projectId {
+            acknowledgeMonitorReady(projectId: projectId)
             log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId, privacy: .public), skipping")
             return
         }
@@ -568,6 +604,7 @@ final class ConversationMonitor {
 
                     self.isMonitoring = true
                     self.isInitializing = false  // Clear flag after successful initialization
+                    self.acknowledgeMonitorReady(projectId: projectId)
                     self.log.info("SQL-based timeline monitoring started (projectId: \(projectId, privacy: .public))")
                     self.log.info("[UIOPT-MONITOR-READY] ConversationMonitor is now monitoring and ready")
                 }
@@ -586,6 +623,7 @@ final class ConversationMonitor {
     func stopMonitoring() {
         log.info("[TIMELINE-STOP] Stopping timeline monitoring")
         isMonitoring = false
+        lastMonitorReadyAt = nil
         activeSession = nil
         // Cancel background task group
         backgroundTasks?.cancel()
@@ -836,6 +874,7 @@ final class ConversationMonitor {
         let monitorStart = Date()
         log.info("🚀 [SWITCH-MONITOR] Starting monitoring (elapsed: \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s)")
         log.info("[SUMM-MONITOR] Calling startMonitoring(projectId: \(context.id, privacy: .public))")
+        scheduleMonitorRestartGuard(for: context.id)
         startMonitoring(projectId: context.id)
         log.info("🚀 [SWITCH-MONITOR-DONE] Monitor start triggered in \(String(format: "%.2f", Date().timeIntervalSince(monitorStart)))s")
 
@@ -846,15 +885,48 @@ final class ConversationMonitor {
     func handleProjectRootChange() {
         log.info("🔄 Project root changed (legacy notification) - reloading conversation timeline")
 
-        // Use coordinator context instead of querying database
-        guard let context = StartupCoordinator.shared.current else {
-            log.error("handleProjectRootChange: no coordinator context available; aborting restart")
-            return
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            if let context = StartupCoordinator.shared.current {
+                await self.handleContextUpdate(context)
+                return
+            }
+
+            do {
+                let awaitedContext = try await StartupCoordinator.shared.ready()
+                self.log.info("handleProjectRootChange: coordinator context became available after wait (id: \(awaitedContext.id, privacy: .public))")
+                await self.handleContextUpdate(awaitedContext)
+                return
+            } catch {
+                self.log.error("handleProjectRootChange: coordinator context unavailable after .ready() wait - \(error.localizedDescription, privacy: .public)")
+            }
+
+            guard let fallbackContext = self.fallbackContextFromProjectSwitcher() else {
+                self.log.error("handleProjectRootChange: no coordinator context or fallback project; aborting restart")
+                return
+            }
+
+            self.log.warning("handleProjectRootChange: using fallback context from ProjectSwitcherState for project \(fallbackContext.id, privacy: .public)")
+            await self.handleContextUpdate(fallbackContext)
+        }
+    }
+
+    @MainActor
+    private func fallbackContextFromProjectSwitcher() -> ActiveProjectContext? {
+        guard let fallbackId = ProjectSwitcherState.shared.activeProjectId else {
+            return nil
         }
 
-        Task { @MainActor in
-            await handleContextUpdate(context)
+        guard let info = ProjectSwitcherState.shared.allProjects.first(where: { $0.id == fallbackId }) else {
+            return nil
         }
+
+        return ActiveProjectContext(
+            id: info.id,
+            path: info.rootPath,
+            displayName: info.name
+        )
     }
 
     @MainActor
@@ -2474,7 +2546,10 @@ final class ConversationMonitor {
             lastUpdate: lastUpdate,
             isProcessing: isProcessing,
             lastError: lastError,
-            cursorExists: lastSeenCursor != nil
+            cursorExists: lastSeenCursor != nil,
+            lastRestartRequest: lastMonitorRestartRequest,
+            lastReadyAt: lastMonitorReadyAt,
+            idleRestartFailureCount: monitorRestartFailureCount
         )
 
         return await diagnostics.captureSnapshot(
@@ -2526,46 +2601,24 @@ final class ConversationMonitor {
 
         while !Task.isCancelled {
             do {
+                let shouldRunImmediateCheck = await MainActor.run { () -> Bool in
+                    if self.pendingIdleRestartAlert {
+                        self.pendingIdleRestartAlert = false
+                        return true
+                    }
+                    return false
+                }
+
+                if shouldRunImmediateCheck {
+                    await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "restart-guard")
+                    continue
+                }
+
                 // Wait 30s between checks
                 try await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
 
-                await MainActor.run { [weak self] in
-                    self?.lastHealthCheck = Date()
-                }
-
-                // Capture diagnostic snapshot
-                guard let snapshot = await self.captureDiagnostics() else {
-                    continue
-                }
-
-                // Log heartbeat (debug level - visible during development)
-                log.debug("🏥 Health check: \(snapshot.issues.count) issues")
-
-                // CXT-13: Skip health check during project switch to avoid spurious recovery attempts
-                let switching = await MainActor.run { self.isSwitchingProjects }
-                guard !switching else {
-                    log.debug("🏥 Skipping health check during project switch")
-                    continue
-                }
-
-                // Check for critical issues and attempt recovery
-                for issue in snapshot.issues where issue.severity == .critical {
-                    await MainActor.run { [weak self] in
-                        self?.log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
-                    }
-
-                    // Auto-recovery for specific issues
-                    if issue.category == .watcherMissing {
-                        await attemptWatcherRecovery(
-                            projectId: projectId,
-                            orchestrator: orchestrator,
-                            targetTranscriptId: snapshot.watcherState.transcriptId
-                        )
-                    } else if issue.category == .hooverStall {
-                        await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
-                    }
-                }
+                await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "interval")
 
             } catch is CancellationError {
                 break
@@ -2577,6 +2630,45 @@ final class ConversationMonitor {
         }
 
         log.info("🏥 Health monitoring stopped")
+    }
+
+    private func performHealthCheck(projectId: String, orchestrator: TranscriptOrchestrator, trigger: String) async {
+        await MainActor.run { [weak self] in
+            self?.lastHealthCheck = Date()
+        }
+
+        // Capture diagnostic snapshot
+        guard let snapshot = await self.captureDiagnostics() else {
+            return
+        }
+
+        // Log heartbeat (debug level - visible during development)
+        log.debug("🏥 Health check (trigger=\(trigger)): \(snapshot.issues.count) issues")
+
+        // CXT-13: Skip health check during project switch to avoid spurious recovery attempts
+        let switching = await MainActor.run { self.isSwitchingProjects }
+        guard !switching else {
+            log.debug("🏥 Skipping health check during project switch")
+            return
+        }
+
+        // Check for critical issues and attempt recovery
+        for issue in snapshot.issues where issue.severity == .critical {
+            await MainActor.run { [weak self] in
+                self?.log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
+            }
+
+            // Auto-recovery for specific issues
+            if issue.category == .watcherMissing {
+                await attemptWatcherRecovery(
+                    projectId: projectId,
+                    orchestrator: orchestrator,
+                    targetTranscriptId: snapshot.watcherState.transcriptId
+                )
+            } else if issue.category == .hooverStall {
+                await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
+            }
+        }
     }
 
     /// Attempt to recover stalled watcher

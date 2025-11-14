@@ -519,10 +519,11 @@ struct ContextifyApp: App {
       }
 
       // C4.2: Auto-select most recent project if coordinator has no current project
-      // Fix: Use MainActor.run for atomic check-and-set to prevent TOCTOU race
+      var shouldAutoSelect = false
+      var discoveredProjects: [DiscoveredProject] = []
       await MainActor.run {
-        // Only proceed if still no project (atomic check)
-        guard StartupCoordinator.shared.current == nil, !vm.projects.isEmpty else {
+        discoveredProjects = vm.projects
+        guard StartupCoordinator.shared.current == nil, !discoveredProjects.isEmpty else {
           if StartupCoordinator.shared.current != nil {
             // Normal launch with existing project - keep modal open until timeline populated
             // Modal will auto-dismiss once user has content to view
@@ -533,44 +534,45 @@ struct ContextifyApp: App {
           }
           return
         }
+        shouldAutoSelect = true
+      }
 
-        // Atomically perform selection within MainActor context
-        Task {
-          do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      if shouldAutoSelect {
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
 
-            // Try to get project with newest transcript entry (most recent work)
-            if let mostRecent = try orchestrator.getProjectWithNewestEntry() {
-              log.notice("🎯 Auto-selecting project with newest entry: \(mostRecent.rootPath, privacy: .public)")
-              try await StartupCoordinator.shared.switchProject(to: mostRecent.rootPath)
-            } else if let first = vm.projects.first {
-              // Fallback: select first discovered project
-              log.notice("🎯 Auto-selecting first discovered project: \(first.name)")
-              try await StartupCoordinator.shared.switchProject(to: first.path.path)
-            }
-
-            // Wait for timeline to start monitoring before closing modal
-            log.info("⏳ Waiting for timeline to initialize...")
-            try await Task.sleep(for: .milliseconds(500))
-
-            // Show completion message with happy emoji
-            await MainActor.run {
-              vm.setDiscoveryProgress(DiscoveryProgress(
-                phase: .complete,
-                projectsCompleted: vm.projects.count,
-                projectsTotal: vm.projects.count,
-                message: "🎉 Initial setup complete! Welcome to Contextify"
-              ))
-            }
-
-            // C4.3: Leave modal open - let user click "Get Started" button
-            // (Auto-dismiss was causing UX issues - user should control when to close)
-            log.info("✅ Auto-selection complete, modal showing completion state")
-
-          } catch {
-            log.error("Failed to auto-select project: \(error.localizedDescription, privacy: .public)")
-            // Keep modal open so user can see error state or manually select
+          // Try to get project with newest transcript entry (most recent work)
+          if let mostRecent = try orchestrator.getProjectWithNewestEntry() {
+            log.notice("🎯 Auto-selecting project with newest entry: \(mostRecent.rootPath, privacy: .public)")
+            try await StartupCoordinator.shared.switchProject(to: mostRecent.rootPath)
+          } else if let first = discoveredProjects.first {
+            // Fallback: select first discovered project
+            log.notice("🎯 Auto-selecting first discovered project: \(first.name)")
+            try await StartupCoordinator.shared.switchProject(to: first.path.path)
           }
+
+          // Wait for timeline to start monitoring before closing modal
+          log.info("⏳ Waiting for timeline to initialize...")
+          try await Task.sleep(for: .milliseconds(500))
+
+          let total = discoveredProjects.count
+          // Show completion message with happy emoji
+          await MainActor.run {
+            vm.setDiscoveryProgress(DiscoveryProgress(
+              phase: .complete,
+              projectsCompleted: total,
+              projectsTotal: total,
+              message: "🎉 Initial setup complete! Welcome to Contextify"
+            ))
+          }
+
+          // C4.3: Leave modal open - let user click "Get Started" button
+          // (Auto-dismiss was causing UX issues - user should control when to close)
+          log.info("✅ Auto-selection complete, modal showing completion state")
+
+        } catch {
+          log.error("Failed to auto-select project: \(error.localizedDescription, privacy: .public)")
+          // Keep modal open so user can see error state or manually select
         }
       }
 
