@@ -49,6 +49,13 @@ parse_arg() {
       dist="dmg"
       action="cleanrun"
       ;;
+    dr)
+      # Fast derived data clean (no db reset, no perms reset)
+      echo "Cleaning derived data..."
+      rm -rf .derived 2>/dev/null || true
+      echo "Derived data cleaned. Run 'bash scripts/xc.sh build' to rebuild."
+      exit 0
+      ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
       echo "This command replaces ~/.claude/projects with test fixtures, causing active transcripts to be lost." >&2
@@ -56,7 +63,7 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da]" >&2
+      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
@@ -70,6 +77,7 @@ parse_arg() {
       echo "  cleanrun           Clean database + build + run (first-run)" >&2
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
       echo "  da                 Shortcut for DMG cleanrun (db reset + perms + launch)" >&2
+      echo "  dr                 Fast derived data clean only (no db/perms reset)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
