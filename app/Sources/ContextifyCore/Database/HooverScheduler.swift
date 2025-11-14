@@ -20,7 +20,8 @@ public actor HooverScheduler {
   // Proper queue with continuations (not Task.sleep)
   private var pendingWork: [(WorkItem, CheckedContinuation<Void, Error>)] = []
 
-  // Recursion prevention
+  // Recursion prevention - track both queued and actively processing paths
+  private var queuedPaths: Set<String> = []
   private var processingPaths: Set<String> = []
 
   public init(
@@ -39,9 +40,9 @@ public actor HooverScheduler {
     provider: String,
     sessionId: String?
   ) async throws {
-    // Prevent recursion/duplicates
-    if processingPaths.contains(fileURL.path) {
-      log.debug("[HOOVER-SCHED-SKIP] Already processing: \(fileURL.lastPathComponent, privacy: .public)")
+    // Prevent recursion/duplicates - check both queued and processing
+    if queuedPaths.contains(fileURL.path) || processingPaths.contains(fileURL.path) {
+      log.debug("[HOOVER-SCHED-SKIP] Already queued/processing: \(fileURL.lastPathComponent, privacy: .public)")
       return
     }
 
@@ -62,6 +63,7 @@ public actor HooverScheduler {
         continuation.resume()
       } else {
         // Queue for later
+        self.queuedPaths.insert(fileURL.path)
         self.pendingWork.append((item, continuation))
         log.info("[HOOVER-SCHED-QUEUE] \(fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public)")
       }
@@ -90,7 +92,8 @@ public actor HooverScheduler {
     // Resume next pending item if any
     if !pendingWork.isEmpty {
       let (item, continuation) = pendingWork.removeFirst()
-      processingPaths.insert(item.fileURL.path)
+      queuedPaths.remove(item.fileURL.path)  // No longer queued
+      processingPaths.insert(item.fileURL.path)  // Now processing
       activeCount += 1
       log.info("[HOOVER-SCHED-RESUME] \(item.fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public)")
       continuation.resume()
