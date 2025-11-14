@@ -12,6 +12,7 @@ config="$default_config"
 action="$default_action"
 dev_mode=0
 quiet_mode=1  # Quiet by default, use --verbose to see full output
+fast_clean=0  # Fast clean mode (preserve dependencies like GRDB)
 
 # Distribution mode (dmg vs appstore)
 dist="dmg"
@@ -54,11 +55,10 @@ parse_arg() {
       action="cleanrun"
       ;;
     dr)
-      # Fast derived data clean (no db reset, no perms reset)
-      echo "Cleaning derived data..."
-      rm -rf .derived 2>/dev/null || true
-      echo "Derived data cleaned. Run 'bash scripts/xc.sh build' to rebuild."
-      exit 0
+      # Fast cleanrun (like da, but preserves GRDB and dependencies)
+      dist="dmg"
+      action="cleanrun"
+      fast_clean=1
       ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
@@ -81,8 +81,8 @@ parse_arg() {
       echo "  clean              Clean build artifacts" >&2
       echo "  cleanrun           Clean database + build + run (first-run)" >&2
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
-      echo "  da                 Shortcut for DMG cleanrun (db reset + perms + launch)" >&2
-      echo "  dr                 Fast derived data clean only (no db/perms reset)" >&2
+      echo "  da                 Shortcut for DMG cleanrun (full clean: db + perms + GRDB)" >&2
+      echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
@@ -402,8 +402,15 @@ run_build_for_dist() {
 
   echo "Building for distribution: $dist"
 
-  echo "  Cleaning build cache to ensure fresh compilation..."
-  rm -rf "$dd" 2>/dev/null || true
+  if [[ $fast_clean -eq 1 ]]; then
+    echo "  Fast clean: removing Contextify app artifacts (preserving dependencies)..."
+    rm -rf "$dd/Build/Intermediates.noindex/Contextify.build" 2>/dev/null || true
+    rm -rf "$dd/Build/Products/$config/Contextify.app" 2>/dev/null || true
+    rm -rf "$dd/Build/Products/$config/__preview.dylib" 2>/dev/null || true
+  else
+    echo "  Cleaning build cache to ensure fresh compilation..."
+    rm -rf "$dd" 2>/dev/null || true
+  fi
 
   if [[ "$dist" == "appstore" ]]; then
     echo "  Using App Store entitlements (sandboxed)"
