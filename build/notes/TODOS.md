@@ -280,7 +280,9 @@ Header (with bookmark): [Project: contextify] [Branch: main ✓]
 
 ---
 
-### Issue 3: Timeline Summary Auto-Generation Doesn't Work
+### Issue 3: Timeline Summary Auto-Generation Doesn't Work *(Resolved)*
+
+**Status:** Fixed in `8ba2c5a` (viewport-aware queueing race condition) with additional logging + QA coverage (`scripts/logging/monitor-viewport-queueing.sh`).
 
 **Problem:** LLM summaries for conversation log entries don't generate automatically when entries appear in viewport. User must manually trigger or entries remain without summaries.
 
@@ -298,11 +300,11 @@ Header (with bookmark): [Project: contextify] [Branch: main ✓]
 - ConversationMonitor → TimelineCacheMissGenerator integration broken
 
 **Tasks:**
-- [ ] **[FLU3.1]** Verify `updateVisibleEntries()` is called when entries appear
-- [ ] **[FLU3.2]** Verify `queueVisibleGeneratingEntries()` receives correct entry IDs
-- [ ] **[FLU3.3]** Check TimelineCacheMissGenerator queue status (is it empty?)
-- [ ] **[FLU3.4]** Add debug logging for viewport → queue flow
-- [ ] **[FLU3.5]** Test: clean database, load timeline, verify summaries appear
+- [x] **[FLU3.1]** Verify `updateVisibleEntries()` is called when entries appear
+- [x] **[FLU3.2]** Verify `queueVisibleGeneratingEntries()` receives correct entry IDs
+- [x] **[FLU3.3]** Check TimelineCacheMissGenerator queue status (is it empty?)
+- [x] **[FLU3.4]** Add debug logging for viewport → queue flow
+- [x] **[FLU3.5]** Test: clean database, load timeline, verify summaries appear
 
 **Files:**
 - `Contextify/Contextify/ConversationMonitor.swift` (viewport tracking)
@@ -311,7 +313,7 @@ Header (with bookmark): [Project: contextify] [Branch: main ✓]
 
 **Estimated Effort:** 3-4 hours
 
-**Reference:** `build/docs/components/timeline-cache.md`
+**Reference:** `build/docs/components/timeline-cache.md`, `build/docs/testing/first-run-qa-guide.md#6-viewport-aware-queueing-verification`
 
 ---
 

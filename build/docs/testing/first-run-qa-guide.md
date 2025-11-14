@@ -204,6 +204,26 @@ rm -rf ~/.claude/projects ~/.codex/sessions
 - No errors or crashes
 - Provides actionable next steps
 
+### 6. Viewport-Aware Queueing Verification
+
+**Setup:**
+```bash
+./scripts/logging/monitor-viewport-queueing.sh
+```
+
+**Expected flow:**
+1. Script waits 3 seconds, then captures logs for 5 seconds
+2. While logging, switch to a different project in Contextify
+3. Conversation load defers queueing (`SUMM-LOAD-DEFER`)
+4. Viewport tracking initializes (`SUMM-VIEWPORT-INIT`)
+5. Visible entries queue once viewport settles (no 12-entry fallback)
+
+**Validation:**
+- Script exits 0 (PASS)
+- Output shows viewport counts instead of "Queueing 12" fallback
+- Timing metric `< 100ms` between load completion and viewport report
+- PASS indicates viewport-aware queueing is healthy for project switches
+
 ## CLI Command Reference
 
 ### Actions
