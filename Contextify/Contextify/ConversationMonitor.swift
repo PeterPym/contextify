@@ -1234,7 +1234,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func loadFeedFromSQL() async {
-        guard let projectId = currentProjectId, orchestrator != nil else { return }
+        guard let projectId = currentProjectId, let orchestrator = orchestrator else { return }
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
@@ -1252,26 +1252,30 @@ final class ConversationMonitor {
 
         do {
             let startTime = Date()
-        log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
-
-            log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
+            log.info("[SUMM-LOAD] Loading feed from SQL for project: \(projectId, privacy: .public)")
             log.info("[TIMELINE-HYDRATE-START] project=\(projectId, privacy: .public) count=\(self.config.maxEntries, privacy: .public)")
-            // Single query gets entries + cache
-            // Note: P1-1 deferred - TranscriptEntry not Sendable, would need Models.swift update
-            let feed = try orchestrator.getRecentFeed(
-                forProject: projectId,
-                limit: config.maxEntries,
-                generatorSignature: generatorSignature()
-            )
-            log.info("[UIOPT-AWAIT] after DAO.getRecentFeed; count=\(feed.count)")
+
+            // Move DB operations to background task with userInitiated priority
+            let (feed, transcriptPaths) = try await Task(priority: .userInitiated) {
+                log.info("[UIOPT-AWAIT] before DAO.getRecentFeed")
+                // Single query gets entries + cache
+                let feed = try orchestrator.getRecentFeed(
+                    forProject: projectId,
+                    limit: config.maxEntries,
+                    generatorSignature: generatorSignature()
+                )
+                log.info("[UIOPT-AWAIT] after DAO.getRecentFeed; count=\(feed.count)")
+
+                // Build transcript ID → file path lookup map
+                let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+                let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
+
+                return (feed, transcriptPaths)
+            }.value
 
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
             log.info("[TIMELINE-LOAD] DAO.fetchPrimerEntries \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
-
-            // Build transcript ID → file path lookup map
-            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-            let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 
             // Map to UI entries and track seen IDs + collect cache misses
             let mapStart = Date()
