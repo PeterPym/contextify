@@ -282,6 +282,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
+    @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
@@ -1256,22 +1257,17 @@ final class ConversationMonitor {
 
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
-            // Queue visible entries immediately after load
-            // Viewport tracking can be unreliable during modal display, so we queue explicitly here
-            if !misses.isEmpty, let generator = cacheMissGenerator {
-                // Use actual viewport state if available, otherwise estimate last ~12 entries (newest at end)
-                let estimatedVisible = Set(misses.suffix(12).map { UUID(uuidString: $0.entryId)! })
-                let visibleIDs: Set<UUID> = lastVisibleIDs.isEmpty ? estimatedVisible : lastVisibleIDs
-                let visibleMisses = misses.filter { UUID(uuidString: $0.entryId).map { visibleIDs.contains($0) } ?? false }
-
-                if !visibleMisses.isEmpty {
-                    log.info("[SUMM-QUEUE] Queueing \(visibleMisses.count)/\(misses.count) visible entries after load")
-                    Task {
-                        await generator.queueMisses(visibleMisses)
-                    }
-                }
-            } else if misses.isEmpty {
-                log.info("[SUMM-MISSES] No cache misses - all entries have summaries")
+            // Viewport-aware queueing: Trust viewport tracking to queue visible entries
+            // The initial visibility snapshot (needsInitialVisibilitySnapshot) will handle queueing
+            // when replaceVisibleSnapshot() fires after ScrollView measures the viewport.
+            //
+            // This eliminates the race condition where we would queue "last 12 entries" before
+            // the viewport callback reports which entries are actually visible.
+            if !misses.isEmpty {
+                log.info("[SUMM-LOAD-STATE] lastVisibleIDs.count=\(self.lastVisibleIDs.count, privacy: .public), needsInitialSnapshot=\(self.needsInitialVisibilitySnapshot, privacy: .public)")
+                log.info("[SUMM-LOAD-DEFER] Deferring queueing to viewport tracking (\(misses.count, privacy: .public) candidates)")
+            } else {
+                log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
             }
 
             // P1-1: Initialize cursor from tail only if not already set (prevent regression)
@@ -1284,6 +1280,7 @@ final class ConversationMonitor {
 
             lastUpdate = Date()
             lastError = nil
+            lastLoadCompletionTime = Date()  // Track completion time for viewport timing analysis
             phase = .loaded  // Mark as successfully loaded
             log.info("[UIOPT-BRANCH] phase → loaded")
 
@@ -1659,13 +1656,23 @@ final class ConversationMonitor {
         debugVisibleIDs = current  // Update observable for debug visualization
 
         // First settled snapshot after project switch: queue exactly what's on screen
-        // IMPORTANT: This often fires BEFORE currentProjectId/cacheMissGenerator are ready
-        // (race between visibility callback and async Task initialization). The debounce
-        // timer below acts as a fallback that retries after initialization completes.
-        // TODO: Fix race condition properly in Phase 2/3 refactor (see TODOS.md)
         if needsInitialVisibilitySnapshot {
             needsInitialVisibilitySnapshot = false
-            log.info("[SUMM-QUEUE] Initial visibility snapshot: \(ids.count) entries visible")
+
+            // Log timing between load completion and first viewport report
+            if let loadTime = lastLoadCompletionTime {
+                let delta = Date().timeIntervalSince(loadTime) * 1000
+                log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
+            }
+
+            // Count how many visible entries need summarization
+            let visibleNeedingSummaries = ids.filter { id in
+                guard let entry = lookup(id) else { return false }
+                return entry.action == .unsummarized
+            }.count
+
+            log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+
             Task {
                 await self.pruneQueueToVisible(current)
                 await self.queueVisibleGeneratingEntries(current)
