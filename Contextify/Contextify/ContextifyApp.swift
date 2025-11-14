@@ -238,6 +238,7 @@ struct ContextifyApp: App {
         if let vm = projectsViewModel {
           // C2.2: Pass ProjectsViewModel via environment
           ContentView()
+            .frame(minHeight: 500)
             .environment(model)
             .environment(timeline)
             .environment(DeveloperMode.shared)
@@ -272,7 +273,7 @@ struct ContextifyApp: App {
         showWelcomeModal = true
       }
     }
-    .defaultSize(width: 940, height: 360)  // Main content (640) + Timeline sidebar (300)
+    .defaultSize(width: 400, height: 500)
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
