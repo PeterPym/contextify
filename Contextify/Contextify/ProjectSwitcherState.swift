@@ -69,6 +69,12 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var switchInProgress: String?
   @ObservationIgnored private var switchTask: Task<Void, Never>?
 
+  // Tab order stabilization
+  @ObservationIgnored private var isTabOrderFrozen: Bool = false
+  @ObservationIgnored private var tabOrderFreezeTask: Task<Void, Never>?
+  @ObservationIgnored private var pendingTabProjects: [ProjectInfo]?
+  private let tabOrderFreezeInterval: TimeInterval = 4
+
   // Notification coalescing to prevent duplicate/oscillating notifications
   @ObservationIgnored private var lastHandledPath: String?
   @ObservationIgnored private var lastHandledAt: CFAbsoluteTime = 0
@@ -88,6 +94,7 @@ public final class ProjectSwitcherState {
     coordinatorTask?.cancel()
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
+    tabOrderFreezeTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -262,24 +269,9 @@ public final class ProjectSwitcherState {
       let visibleProjects = projects.filter { !$0.hidden }
       let hiddenCount = projects.count - visibleProjects.count
 
-      // Secondary sort by filesystem transcript mtime for projects without display_order
-      // (SQL sorts by DB entries, but in clean DB those don't exist yet)
-      let sortedProjects: [Project]
-      if withOrder == 0 {
-        // All projects have NULL display_order - use filesystem sort
-        log.info("[SWITCHER-SORT-FILESYSTEM] Applying filesystem mtime sort (no display_order set)")
-        let discoveryService = try ProjectDiscoveryService(db: DatabaseManager.shared.pool, orchestrator: orchestrator)
-        let paths = visibleProjects.map { $0.rootPath }
-        let sortedPaths = await discoveryService.sortProjectsByFilesystemActivity(paths)
-
-        // Re-order projects to match sorted paths
-        sortedProjects = sortedPaths.compactMap { path in
-          visibleProjects.first { $0.rootPath == path }
-        }
-      } else {
-        // Some projects have display_order - use SQL sort as-is
-        sortedProjects = visibleProjects
-      }
+      // SQL already sorts by activity (max entry timestamp) when display_order is NULL
+      // so we can trust the database order even on first launch.
+      let sortedProjects = visibleProjects
 
       // Log final order with display_order values
       let sortedDebug = sortedProjects.prefix(10).map { p in
@@ -318,12 +310,20 @@ public final class ProjectSwitcherState {
         )
       }
 
+      let visibleTabs = projectInfos.filter { !$0.isOrphaned }
+
       // Update state on main actor
       await MainActor.run {
         self.allProjects = projectInfos
         self.hasHiddenProjects = hiddenCount > 0
-        let visibleTabs = projectInfos.filter { !$0.isOrphaned }
-        self.updateTabProjects(visibleTabs)
+
+        if self.isTabOrderFrozen {
+          self.pendingTabProjects = visibleTabs
+          log.info("[SWITCHER-SORT-FROZEN] Deferred tab update while freeze active (tabs=\(visibleTabs.count, privacy: .public))")
+        } else {
+          self.pendingTabProjects = nil
+          self.updateTabProjects(visibleTabs)
+        }
       }
 
       log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
@@ -453,6 +453,8 @@ public final class ProjectSwitcherState {
 
     log.info("🔀 ProjectSwitcher: Switching to project: \(projectId, privacy: .public)")
     log.info("[SUMM-SWITCH] ProjectSwitcherState initiating switch to: \(projectId, privacy: .public)")
+
+    freezeTabOrdering(reason: "user-switch")
 
     // Cancel any previous switch task (only one switch at a time)
     switchTask?.cancel()
@@ -629,6 +631,7 @@ public final class ProjectSwitcherState {
     await MainActor.run {
       self.updateTabProjects(reorderedTabs)
       self.allProjects = reorderedTabs + remainingProjects
+      self.unfreezeTabOrdering(reason: "manual-reorder")
     }
 
     // Persist to database asynchronously (non-blocking)
@@ -743,6 +746,36 @@ public final class ProjectSwitcherState {
       log.info("🏁 Set activeProjectId to: \(self.activeProjectId ?? "nil", privacy: .public)")
     } catch {
       log.error("Failed to ensure current project in database: \(error.localizedDescription)")
+    }
+  }
+
+  private func freezeTabOrdering(reason: String, duration: TimeInterval? = nil) {
+    let interval = duration ?? tabOrderFreezeInterval
+    tabOrderFreezeTask?.cancel()
+    isTabOrderFrozen = true
+    log.info("[SWITCHER-SORT-FROZEN] Freeze activated (reason: \(reason)) for \(interval)s")
+
+    tabOrderFreezeTask = Task { [weak self] in
+      guard let self else { return }
+      try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+      await MainActor.run {
+        self.unfreezeTabOrdering(reason: "timeout")
+      }
+    }
+  }
+
+  private func unfreezeTabOrdering(reason: String) {
+    guard isTabOrderFrozen else { return }
+
+    isTabOrderFrozen = false
+    tabOrderFreezeTask?.cancel()
+    tabOrderFreezeTask = nil
+    log.info("[SWITCHER-SORT-UNFROZEN] Tab order thawed (reason: \(reason))")
+
+    if let pending = pendingTabProjects {
+      pendingTabProjects = nil
+      let visible = pending.filter { !$0.isOrphaned }
+      updateTabProjects(visible)
     }
   }
 

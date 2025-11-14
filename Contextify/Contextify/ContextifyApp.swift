@@ -473,14 +473,18 @@ struct ContextifyApp: App {
         log.warning("Failed to reconcile assistant usage: \(error.localizedDescription)")
       }
 
-      // Reset display_order for first-launch sorting by activity
-      // (On fresh database, all projects should sort by newest entry, not persisted order)
-      do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        try orchestrator.resetDisplayOrder()
-        log.info("🔄 Reset display_order for activity-based sorting")
-      } catch {
-        log.warning("Failed to reset display_order: \(error.localizedDescription)")
+      let shouldResetDisplayOrder = isEmptyDB
+
+      if shouldResetDisplayOrder {
+        // Reset display_order for first-launch sorting by activity
+        // (On fresh database, all projects should sort by newest entry, not persisted order)
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          try orchestrator.resetDisplayOrder()
+          log.info("🔄 Reset display_order for activity-based sorting")
+        } catch {
+          log.warning("Failed to reset display_order: \(error.localizedDescription)")
+        }
       }
 
       // Auto-discover all projects at launch with timeout protection (60s max)
@@ -504,19 +508,17 @@ struct ContextifyApp: App {
           group.cancelAll()
         }
         log.info("✅ Auto-discovery complete")
+        if shouldResetDisplayOrder {
+          do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            try orchestrator.seedDisplayOrderFromTranscriptActivityIfUnset()
+          } catch {
+            log.warning("Failed to seed display_order from transcript activity: \(error.localizedDescription)")
+          }
+        }
       } catch is DiscoveryError {
         log.error("❌ Discovery timed out after 60s")
         // Continue with whatever projects were found
-      }
-
-      // Reset display_order AFTER ingestion so projects sort by activity
-      // (getOrCreateProject assigns incrementing display_order during ingestion)
-      do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        try orchestrator.resetDisplayOrder()
-        log.info("[BACKEND-RESET-POST] Reset display_order after ingestion complete")
-      } catch {
-        log.warning("Failed to reset display_order after ingestion: \(error.localizedDescription)")
       }
 
       // C4.2: Auto-select most recent project if coordinator has no current project

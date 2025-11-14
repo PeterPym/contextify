@@ -482,6 +482,49 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Seed display_order values using transcript modification times when no manual order exists.
+  public func seedDisplayOrderFromTranscriptActivityIfUnset() throws {
+    let hasExistingOrder = try dbManager.pool.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects WHERE display_order IS NOT NULL") ?? 0
+    } > 0
+
+    guard !hasExistingOrder else {
+      log.info("[DISPLAY-ORDER-SEED] Skipping seed - display_order already populated")
+      return
+    }
+
+    struct ActivityRow {
+      let id: String
+      let activity: Int
+    }
+
+    let rows: [ActivityRow] = try dbManager.pool.read { db in
+      try Row.fetchAll(db, sql: """
+        SELECT p.id AS id,
+               COALESCE(MAX(t.mtime_ms), MAX(t.last_modified), p.updated_at) AS activity
+        FROM projects p
+        LEFT JOIN transcripts t ON t.project_id = p.id
+        GROUP BY p.id
+      """).compactMap { row in
+        guard let id: String = row["id"] else { return nil }
+        let activityValue = (row["activity"] as? Int64).map(Int.init) ?? 0
+        return ActivityRow(id: id, activity: activityValue)
+      }
+    }
+
+    let orderedIds = rows
+      .sorted { $0.activity > $1.activity }
+      .map(\.id)
+
+    guard !orderedIds.isEmpty else {
+      log.info("[DISPLAY-ORDER-SEED] No projects to seed")
+      return
+    }
+
+    try setProjectDisplayOrderBulk(orderedIds)
+    log.info("[DISPLAY-ORDER-SEED] Seeded display_order for \(orderedIds.count, privacy: .public) projects")
+  }
+
   public func markProjectOrphaned(projectId: String, orphanedSince: Int) throws {
     try projectRepo.markOrphaned(id: projectId, orphanedSince: orphanedSince)
   }
