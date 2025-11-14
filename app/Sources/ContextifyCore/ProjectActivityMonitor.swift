@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "ProjectActivity
 private struct ProjectDiscoveryResult {
   let batches: [ProjectTranscriptBatch]
   let transcriptCount: Int
+  let activeProjectId: String?
 }
 
 /// Project event emitted by ProjectActivityMonitor
@@ -238,6 +239,7 @@ public actor ProjectActivityMonitor {
     log.info("[DISC-SCAN-START] Starting discovery scan for all projects")
 
     var aggregatedBatches: [ProjectTranscriptBatch] = []
+    var activeProjectId: String?
 
     // Discover projects from Claude Code and Codex CLI transcript roots
     let claudeRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -255,6 +257,9 @@ public actor ProjectActivityMonitor {
       let result = try await discoverProjectsInRoot(claudeRoot, provider: "claude.code")
       claudeCount = result.transcriptCount
       aggregatedBatches.append(contentsOf: result.batches)
+      if activeProjectId == nil {
+        activeProjectId = result.activeProjectId
+      }
       let duration = Date().timeIntervalSince(providerStartTime)
       log.info("[DISC-SCAN-ROOT-DONE] Claude Code discovery complete: \(claudeCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
@@ -268,6 +273,9 @@ public actor ProjectActivityMonitor {
       let result = try await discoverProjectsInRoot(codexRoot, provider: "codex.cli")
       codexCount = result.transcriptCount
       aggregatedBatches.append(contentsOf: result.batches)
+      if activeProjectId == nil {
+        activeProjectId = result.activeProjectId
+      }
       let duration = Date().timeIntervalSince(providerStartTime)
       log.info("[DISC-SCAN-ROOT-DONE] Codex CLI discovery complete: \(codexCount, privacy: .public) transcripts in \(Int(duration * 1000), privacy: .public)ms")
     } else {
@@ -283,7 +291,10 @@ public actor ProjectActivityMonitor {
 
     if !aggregatedBatches.isEmpty {
       let coordinator = MultiProjectIngestionCoordinator(orchestrator: orchestrator)
-      try await coordinator.runPrimerAndBackfill(batches: aggregatedBatches)
+      try await coordinator.runPrimerAndBackfill(
+        batches: aggregatedBatches,
+        activeProjectId: activeProjectId
+      )
     }
   }
 
@@ -322,6 +333,7 @@ public actor ProjectActivityMonitor {
 
     var totalTranscripts = 0
     var batches: [ProjectTranscriptBatch] = []
+    var discoveredActiveProjectId: String?
 
     for directory in sortedContents {
       var isDir: ObjCBool = false
@@ -336,6 +348,11 @@ public actor ProjectActivityMonitor {
         let projectPath = try ProjectIdentity.reverseManglePath(provider: provider, directory: directory)
         projectPathForLogging = projectPath  // Update with unmangled path for error logging
         let projectId = ProjectIdentity.computeProjectID(provider: provider, path: projectPath)
+        if discoveredActiveProjectId == nil,
+           let activePath = activeProjectPath,
+           projectPath == activePath {
+          discoveredActiveProjectId = projectId
+        }
 
         // Create/upsert project in database
         let dbProjectId = try orchestrator.getOrCreateProject(
@@ -429,11 +446,16 @@ public actor ProjectActivityMonitor {
       }
     }
 
-    return ProjectDiscoveryResult(batches: batches, transcriptCount: totalTranscripts)
+    return ProjectDiscoveryResult(
+      batches: batches,
+      transcriptCount: totalTranscripts,
+      activeProjectId: discoveredActiveProjectId
+    )
   }
 
   /// Recursively discover Codex sessions (nested YYYY/MM/DD structure)
   private func discoverCodexSessionsRecursively(root: URL) async throws -> ProjectDiscoveryResult {
+    let activeProjectPath = await StartupCoordinator.shared.current?.path
     let enumerator = FileManager.default.enumerator(
       at: root,
       includingPropertiesForKeys: [.isRegularFileKey],
@@ -442,13 +464,14 @@ public actor ProjectActivityMonitor {
 
     guard let enumerator = enumerator else {
       log.warning("[DISC-CODEX] Failed to create enumerator for: \(root.path, privacy: .public)")
-      return ProjectDiscoveryResult(batches: [], transcriptCount: 0)
+      return ProjectDiscoveryResult(batches: [], transcriptCount: 0, activeProjectId: nil)
     }
 
     var transcriptCount = 0
     // Group transcripts by project path for batch processing
     var transcriptsByProject: [String: [(url: URL, sessionId: String)]] = [:]
     var batches: [ProjectTranscriptBatch] = []
+    var discoveredActiveProjectId: String?
 
     // Collect all files first (enumerator isn't async-compatible)
     var allFiles: [URL] = []
@@ -491,6 +514,12 @@ public actor ProjectActivityMonitor {
           rootPath: projectPath
         )
 
+        if discoveredActiveProjectId == nil,
+           let activePath = activeProjectPath,
+           projectPath == activePath {
+          discoveredActiveProjectId = dbProjectId
+        }
+
         let descriptors = transcripts.map { item in
           TranscriptDescriptor(
             fileURL: item.url,
@@ -515,7 +544,11 @@ public actor ProjectActivityMonitor {
     }
 
     log.info("[DISC-CODEX-COMPLETE] Discovered \(transcriptCount, privacy: .public) Codex transcripts across \(transcriptsByProject.count, privacy: .public) projects")
-    return ProjectDiscoveryResult(batches: batches, transcriptCount: transcriptCount)
+    return ProjectDiscoveryResult(
+      batches: batches,
+      transcriptCount: transcriptCount,
+      activeProjectId: discoveredActiveProjectId
+    )
   }
 
   /// Handle file system change from FSEvents

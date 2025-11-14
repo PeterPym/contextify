@@ -543,14 +543,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     providerSessionId: String?,
     startWatching: Bool = true,
     progress: IngestProgressSink? = nil,
-    ingestLimit: IngestLimit = .none
+    ingestLimit: IngestLimit = .none,
+    isPrimer: Bool = false
   ) async throws {
     if ContextifyConfig.shared.hooverSchedulerEnabled {
       try await hooverScheduler.enqueue(
         projectId: projectId,
         fileURL: fileURL,
         provider: provider,
-        sessionId: providerSessionId
+        sessionId: providerSessionId,
+        isPrimer: isPrimer
       )
     } else {
       try discoverTranscriptInternal(

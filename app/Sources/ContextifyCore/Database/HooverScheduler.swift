@@ -13,12 +13,18 @@ public actor HooverScheduler {
     let sessionId: String?
   }
 
+  private struct PendingItem {
+    let work: WorkItem
+    let isPrimer: Bool
+    let continuation: CheckedContinuation<Void, Error>
+  }
+
   private let orchestrator: TranscriptOrchestrator
   private let maxConcurrency: Int
   private var activeCount: Int = 0
 
   // Proper queue with continuations (not Task.sleep)
-  private var pendingWork: [(WorkItem, CheckedContinuation<Void, Error>)] = []
+  private var pendingWork: [PendingItem] = []
 
   // Recursion prevention - track both queued and actively processing paths
   private var queuedPaths: Set<String> = []
@@ -39,7 +45,8 @@ public actor HooverScheduler {
     projectId: String,
     fileURL: URL,
     provider: String,
-    sessionId: String?
+    sessionId: String?,
+    isPrimer: Bool = false
   ) async throws {
     // Prevent recursion/duplicates - check both queued and processing
     if queuedPaths.contains(fileURL.path) || processingPaths.contains(fileURL.path) {
@@ -66,8 +73,15 @@ public actor HooverScheduler {
       } else {
         // Queue for later
         self.queuedPaths.insert(fileURL.path)
-        self.pendingWork.append((item, continuation))
-        log.info("[HOOVER-SCHED-QUEUE] \(fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public)")
+        let pending = PendingItem(work: item, isPrimer: isPrimer, continuation: continuation)
+        if isPrimer {
+          self.pendingWork.insert(pending, at: 0)
+        } else {
+          self.pendingWork.append(pending)
+        }
+        log.info(
+          "[HOOVER-SCHED-QUEUE] \(fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) primer=\(isPrimer, privacy: .public) primer_pending=\(self.pendingPrimerCount, privacy: .public)"
+        )
       }
     }
 
@@ -93,12 +107,14 @@ public actor HooverScheduler {
 
     // Resume next pending item if any
     if !pendingWork.isEmpty {
-      let (item, continuation) = pendingWork.removeFirst()
-      queuedPaths.remove(item.fileURL.path)  // No longer queued
-      processingPaths.insert(item.fileURL.path)  // Now processing
+      let pending = pendingWork.removeFirst()
+      queuedPaths.remove(pending.work.fileURL.path)  // No longer queued
+      processingPaths.insert(pending.work.fileURL.path)  // Now processing
       activeCount += 1
-      log.info("[HOOVER-SCHED-RESUME] \(item.fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public)")
-      continuation.resume()
+      log.info(
+        "[HOOVER-SCHED-RESUME] \(pending.work.fileURL.lastPathComponent, privacy: .public) active=\(self.activeCount, privacy: .public)/\(self.maxConcurrency, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) primer=\(pending.isPrimer, privacy: .public) primer_pending=\(self.pendingPrimerCount, privacy: .public)"
+      )
+      pending.continuation.resume()
     }
   }
 
@@ -106,7 +122,13 @@ public actor HooverScheduler {
   public var queueDepth: Int { pendingWork.count }
   public var activeTaskCount: Int { activeCount }
 
+  private var pendingPrimerCount: Int {
+    pendingWork.filter { $0.isPrimer }.count
+  }
+
   public func logStatus() {
-    log.info("[HOOVER-SCHED-STATUS] active=\(self.activeCount, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) skipped=\(self.skipCount, privacy: .public) capacity=\(self.maxConcurrency, privacy: .public)")
+    log.info(
+      "[HOOVER-SCHED-STATUS] active=\(self.activeCount, privacy: .public) queued=\(self.pendingWork.count, privacy: .public) primer_pending=\(self.pendingPrimerCount, privacy: .public) skipped=\(self.skipCount, privacy: .public) capacity=\(self.maxConcurrency, privacy: .public)"
+    )
   }
 }

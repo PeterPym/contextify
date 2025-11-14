@@ -1,4 +1,14 @@
 import Foundation
+import OSLog
+
+private let parserLog = Logger(subsystem: "dev.contextify", category: "TranscriptParser")
+private let metadataRecordTypes: Set<String> = [
+  "file-history-snapshot",
+  "summary",
+  "queue-operation",
+  "timeline-state",
+  "queue-operation-result"
+]
 
 // MARK: - Shared ISO8601 Date Formatters (Performance)
 
@@ -81,8 +91,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     }
 
     // Skip structural metadata records (no conversation content)
-    // These records don't have uuid, timestamp, or message fields
-    if type == "file-history-snapshot" || type == "summary" {
+    if metadataRecordTypes.contains(type) {
+      parserLog.debug("[PARSER-SKIP-METADATA] type=\(type, privacy: .public)")
       throw ParserError.skipEntry
     }
 
@@ -95,10 +105,7 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       throw ParserError.missingRequiredField("timestamp")
     }
 
-    // Skip meta messages (system/command wrappers)
-    if (json["isMeta"] as? Bool) == true {
-      throw ParserError.skipEntry
-    }
+    let isMetaMessage = (json["isMeta"] as? Bool) == true
 
     // Skip sidechain messages
     if (json["isSidechain"] as? Bool) == true {
@@ -123,6 +130,11 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
 
       // Skip empty local-command-stdout wrappers (structural artifacts with no semantic value)
       if content == "<local-command-stdout></local-command-stdout>" {
+        throw ParserError.skipEntry
+      }
+
+      if isMetaMessage && !containsCommandContent(content) {
+        parserLog.debug("[PARSER-SKIP-METADATA] meta=true type=\(type, privacy: .public)")
         throw ParserError.skipEntry
       }
     } else {
@@ -182,6 +194,10 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     } else {
       return ("", false)
     }
+  }
+
+  private func containsCommandContent(_ text: String) -> Bool {
+    text.contains("<command-name>") || text.contains("/clear")
   }
 
   private func mapKind(_ type: String) -> String {

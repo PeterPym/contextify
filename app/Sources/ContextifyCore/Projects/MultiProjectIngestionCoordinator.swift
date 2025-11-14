@@ -28,7 +28,10 @@ final class MultiProjectIngestionCoordinator {
     self.config = config
   }
 
-  func runPrimerAndBackfill(batches: [ProjectTranscriptBatch]) async throws {
+  func runPrimerAndBackfill(
+    batches: [ProjectTranscriptBatch],
+    activeProjectId: String?
+  ) async throws {
     guard !batches.isEmpty else {
       log.info("[PRIMER-SKIP] No project batches available for ingestion")
       return
@@ -36,6 +39,7 @@ final class MultiProjectIngestionCoordinator {
 
     let primerTarget = config.primerTargetEntries
     let primerBatchLimit = max(1, config.primerBatchLimit)
+    let activePrimerBatchLimit = max(primerBatchLimit, primerBatchLimit * 2)
 
     orchestrator.resetPrimerTracking()
 
@@ -47,16 +51,20 @@ final class MultiProjectIngestionCoordinator {
       guard !batch.transcripts.isEmpty else { continue }
 
       let entryCount = (try? orchestrator.getEntryCount(forProject: batch.projectId)) ?? 0
+      let isActiveProject = (batch.projectId == activeProjectId)
+      let effectivePrimerLimit = isActiveProject ? activePrimerBatchLimit : primerBatchLimit
 
       if entryCount < primerTarget {
-        let primerCount = min(primerBatchLimit, batch.transcripts.count)
+        let primerCount = min(effectivePrimerLimit, batch.transcripts.count)
         if primerCount > 0 {
           let primerSlice = Array(batch.transcripts.prefix(primerCount))
+          if primerBuckets[batch.projectId] == nil {
+            primerProjects.append(batch.projectId)
+          }
           primerBuckets[batch.projectId] = primerSlice
-          primerProjects.append(batch.projectId)
           orchestrator.registerPrimer(projectId: batch.projectId, target: primerTarget)
           log.info(
-            "[PRIMER-START] project=\(batch.projectId, privacy: .public) target=\(primerTarget, privacy: .public) entries=\(entryCount, privacy: .public) primer_transcripts=\(primerSlice.count, privacy: .public)"
+            "[PRIMER-START] project=\(batch.projectId, privacy: .public) target=\(primerTarget, privacy: .public) entries=\(entryCount, privacy: .public) primer_transcripts=\(primerSlice.count, privacy: .public) bias=\(isActiveProject, privacy: .public)"
           )
         }
 
@@ -69,7 +77,19 @@ final class MultiProjectIngestionCoordinator {
       }
     }
 
-    let primerQueue = buildPrimerQueue(order: primerProjects, buckets: primerBuckets)
+    var orderedProjects = primerProjects
+    if let activeProjectId,
+       primerBuckets[activeProjectId] != nil {
+      orderedProjects.removeAll(where: { $0 == activeProjectId })
+      orderedProjects.insert(activeProjectId, at: 0)
+      if let activeDescriptors = primerBuckets[activeProjectId] {
+        log.info(
+          "[PRIMER-BIAS] project=\(activeProjectId, privacy: .public) primer_transcripts=\(activeDescriptors.count, privacy: .public)"
+        )
+      }
+    }
+
+    let primerQueue = buildPrimerQueue(order: orderedProjects, buckets: primerBuckets)
 
     if !primerQueue.isEmpty {
       log.info(
@@ -118,7 +138,8 @@ final class MultiProjectIngestionCoordinator {
             providerSessionId: entry.descriptor.sessionId,
             startWatching: true,
             progress: nil,
-            ingestLimit: .none
+            ingestLimit: .none,
+            isPrimer: true
           )
         }
       }
@@ -156,4 +177,3 @@ final class MultiProjectIngestionCoordinator {
     return queue
   }
 }
-
