@@ -14,7 +14,7 @@
 | Need to verify bug fix works | Automated Test | `monitor-automated-test.sh` | Automated | 0=pass, 1=fail |
 | Verifying fix works with clean DB | Clean DB Test Harness | Custom script (see Pattern 6) | Automated | 0=pass, 1=fail |
 | Capture logs for later analysis | Full Pipeline Capture | `monitor-transcript-queues.sh` | Capture-only | - |
-| Unexpected tag volume or unknown instrumentation | Tag Exploration | `analyze-tags.sh` | Post-hoc | - |
+| Unexpected tag volume or unknown instrumentation | Tag Exploration | `analyze-tags.sh` | Post-hoc | 0=pass, 1=error |
 | Data flows through A but not B | Cross-Component Trace | Tag analysis (see Pattern 7) | Manual | - |
 | App slow/laggy, timing issues | Gap Analysis | `monitor-interactive.sh` + `analyze-gaps.sh` | Semi-auto | - |
 | Exploring unknown issue | Interactive Monitoring | `monitor-interactive.sh` | Interactive | - |
@@ -564,6 +564,10 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 - Need to verify START/DONE pairs complete or confirm a component actually fired
 - Comparing baseline vs experiment runs to quantify change
 
+**Requirements:** macOS `python3` (bundled with Xcode CLT) to execute the analyzer.
+
+**Exit codes:** `0` on success, `1` when arguments are invalid or a log file is missing.
+
 **How it works:**
 `analyze-tags.sh` parses any transcript-queue monitor log, inventories every `[TAG]`, and reports:
 - Sorted frequency table plus first/last occurrence for each tag
@@ -595,6 +599,11 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 - If a component is missing entirely, re-run `monitor-transcript-queues.sh` to ensure predicate captured it
 - Pair with `analyze-pipeline.sh` to distinguish "pipeline silent" vs "pipeline noisy but wrong tags"
 - **LLM reminder:** Whenever new instrumentation tags are added or renamed, update `analyze-tags.sh` so its START/DONE heuristics and component guidance stay current. Read this script before assuming coverage.
+
+**Troubleshooting:**
+- "No tags found" → confirm the log includes `[TAG]` markers (e.g., `grep -c "\[" log`), and ensure the monitoring predicate captured `dev.contextify*` subsystems.
+- `START/DONE` shows large positives for WATCH or MONITOR tags → these are long-lived resources; the tool now labels them as "expected" but you can filter them out with `--component` if desired.
+- Unicode-heavy logs: the script opens files as UTF-8 with replacement, so emoji remain safe but counts may drop if tags are missing.
 
 ---
 

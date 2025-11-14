@@ -32,6 +32,15 @@ END_SUFFIXES = (
     "RESPONSE",
 )
 
+LONG_LIVED_HINTS = (
+    "WATCH",
+    "MONITOR",
+    "INIT",
+    "LISTEN",
+    "KEEPALIVE",
+    "HEARTBEAT",
+)
+
 TAG_PATTERN = re.compile(r"\[([A-Z0-9-]+)\]")
 TIMESTAMP_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{3})?)")
 
@@ -73,20 +82,21 @@ def extract_timestamp(line: str) -> str:
     return "n/a"
 
 
-def track_pair(tag: str, start_counts: Counter, end_counts: Counter) -> None:
+def track_pair(tag: str, start_counts: Counter, end_counts: Counter) -> str:
     upper_tag = tag.upper()
     for suffix in START_SUFFIXES:
         needle = f"-{suffix}"
         if upper_tag.endswith(needle):
             base = upper_tag[: -len(needle)]
             start_counts[base] += 1
-            return
+            return "start"
     for suffix in END_SUFFIXES:
         needle = f"-{suffix}"
         if upper_tag.endswith(needle):
             base = upper_tag[: -len(needle)]
             end_counts[base] += 1
-            return
+            return "end"
+    return "none"
 
 
 def analyze_logs(paths, component_filter):
@@ -96,6 +106,7 @@ def analyze_logs(paths, component_filter):
     end_counts: Counter[str] = Counter()
     first_occurrence = {}
     last_occurrence = {}
+    action_counts: Counter[str] = Counter()
     per_file = []
     total_tagged_entries = 0
 
@@ -130,7 +141,9 @@ def analyze_logs(paths, component_filter):
                     last_occurrence[upper_tag] = context
                     component = upper_tag.split("-", 1)[0]
                     component_counts[component] += 1
-                    track_pair(upper_tag, start_counts, end_counts)
+                    match_type = track_pair(upper_tag, start_counts, end_counts)
+                    if match_type == "none":
+                        action_counts[upper_tag] += 1
                 if has_match:
                     total_tagged_entries += 1
         per_file.append(
@@ -150,6 +163,7 @@ def analyze_logs(paths, component_filter):
         "component_counts": component_counts,
         "start_counts": start_counts,
         "end_counts": end_counts,
+        "action_counts": action_counts,
         "total_tagged_entries": sum(counts.values()),
         "lines_with_tags": total_tagged_entries,
     }
@@ -211,11 +225,20 @@ def print_component_summary(component_counts):
     print("")
 
 
-def print_mismatches(start_counts, end_counts):
+def print_mismatches(start_counts, end_counts, action_counts, full_counts):
     mismatch_rows = []
     for base in sorted(set(start_counts.keys()) | set(end_counts.keys())):
         start = start_counts.get(base, 0)
         end = end_counts.get(base, 0)
+        if start == 0 and end > 0:
+            fallback = action_counts.get(base, 0)
+            if fallback:
+                start = fallback
+            else:
+                done_variant = f"{base}-DONE"
+                base_occurrence = full_counts.get(base, 0)
+                if base_occurrence and full_counts.get(done_variant, 0):
+                    start = base_occurrence
         if start != end:
             mismatch_rows.append((base, start, end))
     if not mismatch_rows:
@@ -226,10 +249,22 @@ def print_mismatches(start_counts, end_counts):
         mismatch_rows, key=lambda item: abs(item[1] - item[2]), reverse=True
     ):
         delta = start - end
-        state = "missing completions" if delta > 0 else "extra completions"
-        print(
-            f"  - {base:<25} start={start:<5} end={end:<5} (Δ {delta:+}) {state}"
-        )
+        expected = False
+        if delta > 0:
+            for hint in LONG_LIVED_HINTS:
+                if hint in base:
+                    expected = True
+                    break
+        if expected:
+            state = "long-lived resource (expected)"
+            marker = "  - "
+        elif delta > 0:
+            state = "missing completions"
+            marker = "  ⚠️ - "
+        else:
+            state = "extra completions"
+            marker = "  ⚠️ - "
+        print(f"{marker}{base:<25} start={start:<5} end={end:<5} (Δ {delta:+}) {state}")
 
 
 def print_comparison(primary_counts, compare_counts):
@@ -291,7 +326,12 @@ def main():
     print_tag_table(analysis, args.top)
     print_component_summary(analysis["component_counts"])
     print("START/DONE validation:")
-    print_mismatches(analysis["start_counts"], analysis["end_counts"])
+    print_mismatches(
+        analysis["start_counts"],
+        analysis["end_counts"],
+        analysis["action_counts"],
+        analysis["counts"],
+    )
 
     if args.compare:
         compare_paths = expand_paths([args.compare])
