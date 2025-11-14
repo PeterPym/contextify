@@ -37,7 +37,7 @@ private extension CGRect {
 // MARK: - Container drop delegate
 
 private struct ProjectTabsDropDelegate: DropDelegate {
-  let allProjects: [ProjectInfo]
+  let projects: [ProjectInfo]
   let tabFrames: [String: CGRect]
   @Binding var draggingProject: ProjectInfo?
   @Binding var insertionIndex: Int?
@@ -53,9 +53,9 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   // Returns nil if cursor is in a gap between tabs (non-responsive)
   private func proposedInsertionIndex(for locationX: CGFloat) -> Int? {
     // Require complete measurement for stable behavior
-    guard tabFrames.count == allProjects.count else { return nil }
-    let frames = allProjects.compactMap { tabFrames[$0.id] }
-    guard frames.count == allProjects.count, !frames.isEmpty else { return nil }
+    guard tabFrames.count == projects.count else { return nil }
+    let frames = projects.compactMap { tabFrames[$0.id] }
+    guard frames.count == projects.count, !frames.isEmpty else { return nil }
 
     // Find which tab the cursor is over based on left/right halves
     for (i, frame) in frames.enumerated() {
@@ -99,7 +99,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
 
   func dropUpdated(info: DropInfo) -> DropProposal? {
     guard let dragging = draggingProject,
-          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else {
+          let fromIndex = projects.firstIndex(where: { $0.id == dragging.id }) else {
       insertionIndex = nil
       return .init(operation: .move)
     }
@@ -116,8 +116,8 @@ private struct ProjectTabsDropDelegate: DropDelegate {
       // Apply stickiness: only change if significantly different from current
       if let current = insertionIndex {
         // Calculate distance from current slot position
-        let frames = allProjects.compactMap { tabFrames[$0.id] }
-        guard frames.count == allProjects.count, !frames.isEmpty else {
+        let frames = projects.compactMap { tabFrames[$0.id] }
+        guard frames.count == projects.count, !frames.isEmpty else {
           insertionIndex = proposed
           return .init(operation: .move)
         }
@@ -153,7 +153,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
 
   func performDrop(info: DropInfo) -> Bool {
     guard let dragging = draggingProject,
-          let fromIndex = allProjects.firstIndex(where: { $0.id == dragging.id }) else {
+          let fromIndex = projects.firstIndex(where: { $0.id == dragging.id }) else {
       // Clear immediately on early exit
       draggingProject = nil
       insertionIndex = nil
@@ -181,7 +181,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
       return false
     }
 
-    var updated = allProjects
+    var updated = projects
     updated.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: finalSlot)
     onReorder(updated.map(\.id))
 
@@ -226,7 +226,7 @@ struct ProjectSwitcherView: View {
   /// Collapses to 0 only on the LEFT side of the dragged tab (keeps right side normal)
   private func gapWidth(betweenIndex i: Int) -> CGFloat {
     guard let dragged = draggingProject else { return baseSpacing }
-    let right = state.allProjects[i + 1].id
+    let right = state.tabProjects[i + 1].id
     // Only collapse if the gap is immediately to the left of (before) the dragged tab
     return (dragged.id == right) ? 0 : baseSpacing
   }
@@ -235,7 +235,7 @@ struct ProjectSwitcherView: View {
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 0) {  // No global spacing - use explicit Gap views
-          ForEach(Array(state.allProjects.enumerated()), id: \.element.id) { index, project in
+          ForEach(Array(state.tabProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
             if insertionIndex == index, let draggingProject {
               // Gap before insertion indicator (unless at start)
@@ -285,7 +285,7 @@ struct ProjectSwitcherView: View {
             }
 
             // Pairwise gap - skip if insertion indicator will appear at next position
-            if index < state.allProjects.count - 1 {
+            if index < state.tabProjects.count - 1 {
               // Skip gap if insertion indicator will appear between this tab and next
               let skipGap = insertionIndex == index + 1
               if !skipGap {
@@ -295,7 +295,7 @@ struct ProjectSwitcherView: View {
           }
 
           // Insertion indicator after last tab
-          if let insertionIndex, insertionIndex == state.allProjects.count, let draggingProject {
+          if let insertionIndex, insertionIndex == state.tabProjects.count, let draggingProject {
             // Gap before insertion indicator
             Gap(width: baseSpacing)
 
@@ -317,7 +317,7 @@ struct ProjectSwitcherView: View {
         .onDrop(
           of: [.text],
           delegate: ProjectTabsDropDelegate(
-            allProjects: state.allProjects,
+            projects: state.tabProjects,
             tabFrames: tabPositions,
             draggingProject: $draggingProject,
             insertionIndex: $insertionIndex,
@@ -335,7 +335,7 @@ struct ProjectSwitcherView: View {
       // Tier 3 onboarding hint: show on hover (first-time only)
       .onHover { hovering in
         // Only trigger if user hasn't seen the hint and there are multiple projects
-        guard !hasSeenHint, state.allProjects.count > 1 else { return }
+        guard !hasSeenHint, state.tabProjects.count > 1 else { return }
 
         if hovering {
           // Start delayed show (1 second hover delay)

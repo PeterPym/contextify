@@ -49,7 +49,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 // Project switcher (top navigation)
                 // Show only when we have 2+ projects (otherwise just wastes vertical space)
-                if projectSwitcher.allProjects.count >= 2 {
+                if projectSwitcher.tabProjects.count >= 2 {
                     ProjectSwitcherView()
                     Divider()
                 }

@@ -47,6 +47,9 @@ final class StatusBarViewModel {
     private var hooverObservationTask: Task<Void, Never>?
     private var hooverFadeTask: Task<Void, Never>?
     private var isStarted: Bool = false
+    private var aiCancellationEvents: [Date] = []
+    private var cancellationBurstActive = false
+    private var lastAIWarningReason: String?
 
     init(queueProviders: [any QueueStatsProvider]) {
         self.queueProviders = queueProviders
@@ -138,6 +141,9 @@ final class StatusBarViewModel {
         isProcessing = false
         estimatedSecondsRemaining = 0
         hooverMessage = nil
+        aiCancellationEvents.removeAll()
+        cancellationBurstActive = false
+        lastAIWarningReason = nil
     }
 
     // MARK: - State Aggregation (Phase 5: True Sum)
@@ -259,10 +265,44 @@ final class StatusBarViewModel {
         case .healthy:
             log.info("Apple Intelligence: Available ✓")
             aiStatus = .available
+            lastAIWarningReason = nil
+            aiCancellationEvents.removeAll()
+            cancellationBurstActive = false
 
         case .unavailable(let reason):
-            log.warning("Apple Intelligence: Unavailable - \(reason.userFacingMessage)")
-            aiStatus = .unavailable(reason: reason.userFacingMessage)
+            switch reason {
+            case .healthCheckCancelled:
+                log.debug("Apple Intelligence: health check cancelled during startup")
+                recordCancellationEvent()
+                aiStatus = .checking
+                lastAIWarningReason = nil
+            default:
+                if lastAIWarningReason != reason.userFacingMessage {
+                    log.warning("Apple Intelligence: Unavailable - \(reason.userFacingMessage)")
+                    lastAIWarningReason = reason.userFacingMessage
+                } else {
+                    log.debug("Apple Intelligence: Repeated unavailable reason - \(reason.userFacingMessage)")
+                }
+                aiCancellationEvents.removeAll()
+                cancellationBurstActive = false
+                aiStatus = .unavailable(reason: reason.userFacingMessage)
+            }
+        }
+    }
+
+    private func recordCancellationEvent(window: TimeInterval = 30) {
+        let now = Date()
+        aiCancellationEvents.append(now)
+        let cutoff = now.addingTimeInterval(-window)
+        aiCancellationEvents = aiCancellationEvents.filter { $0 >= cutoff }
+
+        if aiCancellationEvents.count > 3 {
+            if !cancellationBurstActive {
+                log.warning("[AI-HEALTH] cancellationCount=\(aiCancellationEvents.count) window=\(Int(window))s")
+                cancellationBurstActive = true
+            }
+        } else if cancellationBurstActive {
+            cancellationBurstActive = false
         }
     }
 

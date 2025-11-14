@@ -44,6 +44,14 @@ public struct ResolvedTranscript: Sendable {
   }
 }
 
+public struct WatcherRecoverySummary: Sendable {
+  public let projectId: String
+  public let startedCount: Int
+  public let alreadyActiveCount: Int
+  public let missingFileCount: Int
+  public let targetTranscriptId: String?
+}
+
 public enum IngestionMode {
   case preview(entries: Int)
   case complete
@@ -1285,6 +1293,64 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Check if a transcript is being watched
   public func isWatchingTranscript(transcriptId: String) -> Bool {
     return watcher.isWatching(transcriptId: transcriptId)
+  }
+
+  /// Ensure watchers are running for a project's transcripts
+  /// - Parameters:
+  ///   - projectId: Database project identifier
+  ///   - targetTranscriptId: Optional transcript focus (defaults to all transcripts)
+  /// - Returns: Summary of watcher state changes for diagnostics/telemetry
+  public func ensureProjectWatcher(
+    projectId: String,
+    targetTranscriptId: String? = nil
+  ) throws -> WatcherRecoverySummary {
+    let transcripts = try getTranscripts(forProject: projectId)
+    guard !transcripts.isEmpty else {
+      log.warning("[WATCHER-RECOVERY] No transcripts found for project \(projectId, privacy: .public)")
+      return WatcherRecoverySummary(
+        projectId: projectId,
+        startedCount: 0,
+        alreadyActiveCount: 0,
+        missingFileCount: 0,
+        targetTranscriptId: targetTranscriptId
+      )
+    }
+
+    var started = 0
+    var already = 0
+    var missing = 0
+
+    for transcript in transcripts {
+      if let targetTranscriptId, targetTranscriptId != transcript.id {
+        continue
+      }
+
+      let fileURL = URL(fileURLWithPath: transcript.filePath)
+      guard FileManager.default.fileExists(atPath: fileURL.path) else {
+        log.warning("[WATCHER-RECOVERY-SKIP] Transcript file missing for \(transcript.id, privacy: .public) at \(fileURL.path, privacy: .public)")
+        missing += 1
+        continue
+      }
+
+      if watcher.isWatching(transcriptId: transcript.id) {
+        log.debug("[WATCHER-RECOVERY-SKIP] Already watching transcript \(transcript.id, privacy: .public)")
+        already += 1
+        continue
+      }
+
+      log.info("[WATCHER-RECOVERY-START] Restarting watcher for transcript \(transcript.id, privacy: .public)")
+      try startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
+      started += 1
+      log.info("[WATCHER-RECOVERY-SUCCESS] Watcher active for transcript \(transcript.id, privacy: .public)")
+    }
+
+    return WatcherRecoverySummary(
+      projectId: projectId,
+      startedCount: started,
+      alreadyActiveCount: already,
+      missingFileCount: missing,
+      targetTranscriptId: targetTranscriptId
+    )
   }
 
   /// Manually trigger hoover for a transcript (for recovery/debugging)

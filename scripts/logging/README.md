@@ -57,6 +57,24 @@ log stream --predicate 'subsystem BEGINSWITH "dev.contextify"'
 
 **Pro tip:** Use `BEGINSWITH` to capture all subsystems in one predicate.
 
+### Capture prerequisite: use monitor-transcript-queues.sh
+
+Before running any analysis script, capture logs with `./scripts/logging/monitor-transcript-queues.sh`.
+It records **all** `dev.contextify*` subsystems (Projects, Watchers, Hoover, Timeline, UI) into
+`/tmp/transcript-queue-monitor-*.log`. Post-hoc tools such as `analyze-pipeline.sh` assume the
+log contains `[DISC-`, `[FSEVENTS-`, `[WATCHER-`, `[HOOVER-`, and `[UIOPT-]` tags; those are
+emitted outside `dev.contextify.timeline`, so narrower predicates will yield empty reports.
+
+Example:
+
+```bash
+# Capture 45 seconds of complete pipeline logs
+DURATION=45 ./scripts/logging/monitor-transcript-queues.sh
+
+# Then analyze
+./scripts/logging/analyze-pipeline.sh /tmp/transcript-queue-monitor-*.log
+```
+
 ---
 
 ## Debugging Patterns

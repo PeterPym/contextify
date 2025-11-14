@@ -2674,16 +2674,11 @@ final class ConversationMonitor {
     /// Attempt to recover stalled watcher
     private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?) async {
         do {
-            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-
-            for transcript in transcripts where !orchestrator.isWatchingTranscript(transcriptId: transcript.id) {
-                if let target = targetTranscriptId, target != transcript.id {
-                    continue
-                }
-                let fileURL = URL(fileURLWithPath: transcript.filePath)
-                log.info("🔧 Attempting to restart watcher for: \(transcript.id) at path: \(fileURL.path, privacy: .public)")
-                try orchestrator.startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
-            }
+            let summary = try orchestrator.ensureProjectWatcher(
+                projectId: projectId,
+                targetTranscriptId: targetTranscriptId
+            )
+            log.info("[WATCHER-RECOVERY] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
         } catch {
             log.error("Watcher recovery failed: \(error.localizedDescription)")
         }

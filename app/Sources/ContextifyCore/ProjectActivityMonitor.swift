@@ -143,7 +143,7 @@ public actor ProjectActivityMonitor {
   /// this case separately (e.g., ProjectSwitcherState subscribes to .projectsIngestionComplete).
   public func ensureWatcher(projectId: String) async throws -> WatchHandle {
     if let existing = activeWatchers[projectId] {
-      log.debug("Watcher already active for project: \(projectId)")
+      log.info("[WATCHER-NOTIFY] Watcher already active for project: \(projectId, privacy: .public)")
       return existing
     }
 
@@ -151,7 +151,7 @@ public actor ProjectActivityMonitor {
     let handle = WatchHandle(id: projectId)
     activeWatchers[projectId] = handle
 
-    log.info("Started watcher for project: \(projectId)")
+    log.info("[WATCHER-NOTIFY] Started watcher for project: \(projectId, privacy: .public)")
 
     // Emit discovered event (only on first call - see IMPORTANT note above)
     emitEvent(ProjectEvent(projectId: projectId, kind: .discovered))

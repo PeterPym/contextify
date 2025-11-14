@@ -36,8 +36,11 @@ public final class ProjectSwitcherState {
   var activityMonitor: ProjectActivityMonitor?  // Internal: shared with StatusBarViewModel for event observation
   private var fastPathCoordinator: FastPathIngestionCoordinator?
 
-  // All discovered projects (visible only)
+  // All discovered projects (Projects window + diagnostics)
   private(set) var allProjects: [ProjectInfo] = []
+
+  // Tabs-visible projects (excludes orphaned paths)
+  private(set) var tabProjects: [ProjectInfo] = []
 
   // Currently active project ID
   private(set) var activeProjectId: String?
@@ -319,6 +322,8 @@ public final class ProjectSwitcherState {
       await MainActor.run {
         self.allProjects = projectInfos
         self.hasHiddenProjects = hiddenCount > 0
+        let visibleTabs = projectInfos.filter { !$0.isOrphaned }
+        self.updateTabProjects(visibleTabs)
       }
 
       log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
@@ -359,20 +364,39 @@ public final class ProjectSwitcherState {
     }
   }
 
+  @MainActor
+  private func updateTabProjects(_ projects: [ProjectInfo]) {
+    let previousIds = Set(tabProjects.map { $0.id })
+    let nextIds = Set(projects.map { $0.id })
+
+    let hiddenIds = previousIds.subtracting(nextIds)
+    let restoredIds = nextIds.subtracting(previousIds)
+
+    for id in hiddenIds {
+      log.info("[ORPHAN-TAB-HIDE] action=hide project=\(id, privacy: .public)")
+    }
+
+    for id in restoredIds {
+      log.info("[ORPHAN-TAB-HIDE] action=show project=\(id, privacy: .public)")
+    }
+
+    tabProjects = projects
+  }
+
   /// Cycle to previous project (for keyboard shortcut)
   public func cycleToPreviousProject() async {
     let startTime = Date()
     log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Previous Project (Cmd+Shift+[)")
-    guard !allProjects.isEmpty else { return }
+    guard !tabProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
-       let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) {
+       let currentIndex = tabProjects.firstIndex(where: { $0.id == currentId }) {
       // Move to previous, wrapping around to end
-      let previousIndex = currentIndex > 0 ? currentIndex - 1 : allProjects.count - 1
-      let previousProject = allProjects[previousIndex]
+      let previousIndex = currentIndex > 0 ? currentIndex - 1 : tabProjects.count - 1
+      let previousProject = tabProjects[previousIndex]
       log.info("[UIOPT-INPUT] Previous project selected: \(previousProject.name, privacy: .public) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms)")
       await switchToProject(previousProject.id)
-    } else if let first = allProjects.first {
+    } else if let first = tabProjects.first {
       // No active project, select first
       await switchToProject(first.id)
     }
@@ -382,16 +406,16 @@ public final class ProjectSwitcherState {
   public func cycleToNextProject() async {
     let startTime = Date()
     log.info("[UIOPT-INPUT] ⌨️ Keyboard shortcut: Next Project (Cmd+Shift+])")
-    guard !allProjects.isEmpty else { return }
+    guard !tabProjects.isEmpty else { return }
 
     if let currentId = activeProjectId,
-       let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) {
+       let currentIndex = tabProjects.firstIndex(where: { $0.id == currentId }) {
       // Move to next, wrapping around to start
-      let nextIndex = currentIndex < allProjects.count - 1 ? currentIndex + 1 : 0
-      let nextProject = allProjects[nextIndex]
+      let nextIndex = currentIndex < tabProjects.count - 1 ? currentIndex + 1 : 0
+      let nextProject = tabProjects[nextIndex]
       log.info("[UIOPT-INPUT] Next project selected: \(nextProject.name, privacy: .public) (elapsed: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms)")
       await switchToProject(nextProject.id)
-    } else if let first = allProjects.first {
+    } else if let first = tabProjects.first {
       // No active project, select first
       await switchToProject(first.id)
     }
@@ -595,14 +619,16 @@ public final class ProjectSwitcherState {
     guard let orchestrator = orchestrator else { return }
 
     // OPTIMIZATION: Update UI immediately without waiting for DB/FS operations
-    // Create ordered list from existing allProjects array
-    let reorderedProjects = orderedProjectIds.compactMap { id in
-      allProjects.first(where: { $0.id == id })
+    // Reorder visible tab projects first, then append any remaining (orphans)
+    let reorderedTabs = orderedProjectIds.compactMap { id in
+      tabProjects.first(where: { $0.id == id })
     }
+    let orderedSet = Set(orderedProjectIds)
+    let remainingProjects = allProjects.filter { !orderedSet.contains($0.id) }
 
-    // Update state immediately for instant visual feedback
     await MainActor.run {
-      self.allProjects = reorderedProjects
+      self.updateTabProjects(reorderedTabs)
+      self.allProjects = reorderedTabs + remainingProjects
     }
 
     // Persist to database asynchronously (non-blocking)
@@ -733,6 +759,8 @@ public final class ProjectSwitcherState {
       await MainActor.run {
         self.allProjects.removeAll { $0.id == event.projectId }
         self.unreadCounts.removeValue(forKey: event.projectId)
+        let visibleTabs = self.allProjects.filter { !$0.isOrphaned }
+        self.updateTabProjects(visibleTabs)
       }
 
     case .transcriptUpdated:
@@ -765,31 +793,31 @@ public final class ProjectSwitcherState {
   /// Switch to the previous project in the list (cycles to end if at beginning)
   @MainActor
   public func switchToPreviousProject() async {
-    guard !allProjects.isEmpty else { return }
+    guard !tabProjects.isEmpty else { return }
     guard let currentId = activeProjectId,
-          let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) else {
+          let currentIndex = tabProjects.firstIndex(where: { $0.id == currentId }) else {
       // No active project - switch to first
-      await switchToProject(allProjects[0].id)
+      await switchToProject(tabProjects[0].id)
       return
     }
 
-    let previousIndex = currentIndex == 0 ? allProjects.count - 1 : currentIndex - 1
-    await switchToProject(allProjects[previousIndex].id)
+    let previousIndex = currentIndex == 0 ? tabProjects.count - 1 : currentIndex - 1
+    await switchToProject(tabProjects[previousIndex].id)
   }
 
   /// Switch to the next project in the list (cycles to beginning if at end)
   @MainActor
   public func switchToNextProject() async {
-    guard !allProjects.isEmpty else { return }
+    guard !tabProjects.isEmpty else { return }
     guard let currentId = activeProjectId,
-          let currentIndex = allProjects.firstIndex(where: { $0.id == currentId }) else {
+          let currentIndex = tabProjects.firstIndex(where: { $0.id == currentId }) else {
       // No active project - switch to first
-      await switchToProject(allProjects[0].id)
+      await switchToProject(tabProjects[0].id)
       return
     }
 
-    let nextIndex = (currentIndex + 1) % allProjects.count
-    await switchToProject(allProjects[nextIndex].id)
+    let nextIndex = (currentIndex + 1) % tabProjects.count
+    await switchToProject(tabProjects[nextIndex].id)
   }
 
   // MARK: - Observer lifecycle (MainActor)
