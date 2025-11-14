@@ -2150,3 +2150,32 @@ CREATE TABLE git_activity (
 ---
 
 **Last Updated:** 2025-11-09
+## Transcript Repair Workflow (P1)
+
+**Status:** Instrumentation Complete, UI not started  
+**Priority:** P1 (needed to deal with corrupt transcripts discovered on 2025‑11‑11)
+
+### Background
+- During the 2025‑11‑13 clean run we detected **87 fresh Claude Code transcripts** that now fail the parser (missing `uuid`, `timestamp`, etc.).
+- Hoover now logs `[HOOVER-CORRUPT] transcript=<id> path=<path> reason=<first error>` and automatically marks these transcripts `status = "error"`, so they are skipped in future ingests.
+- CLI tooling (`swift run TranscriptValidatorCLI <path>`) can reproduce the parser error for any transcript, but there is no in-app repair workflow yet.
+
+### Goals
+- Surface corrupt transcripts inside the Transcript window (e.g., badge + “repair/delete” CTA).
+- Provide at least one automated repair action (truncate, re-run parser, or open file in editor).
+- Preserve the corrupted samples (all from `/Users/rob/.claude/projects/-Users-rob-…`, timestamped 2025‑11‑11 ~16:35) for QA/reference.
+
+### Tasks
+- [ ] **[TRFIX1]** Transcript window: indicate `status == error` rows with a warning chip.
+- [ ] **[TRFIX2]** Add “Validate in CLI” / “Reveal in Finder” actions so users (or support) can inspect the raw `.jsonl`.
+- [ ] **[TRFIX3]** Provide an automated repair option (truncate to first valid line, or re-run parser and overwrite, etc.).
+- [ ] **[TRFIX4]** Ensure repaired transcripts automatically flip back to `status = "active"` and rejoin ingestion.
+- [ ] **[TRFIX5]** Regression test: corrupt transcript stays quarantined until user repairs it.
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift`
+- `Contextify/Contextify/TranscriptParser.swift`
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
+- `Sources/TranscriptValidatorCLI/main.swift`
+
+**Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025‑11‑11 16:35)`

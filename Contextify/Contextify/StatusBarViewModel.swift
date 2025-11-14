@@ -292,13 +292,13 @@ final class StatusBarViewModel {
 
     private func recordCancellationEvent(window: TimeInterval = 30) {
         let now = Date()
-        aiCancellationEvents.append(now)
+        self.aiCancellationEvents.append(now)
         let cutoff = now.addingTimeInterval(-window)
-        aiCancellationEvents = aiCancellationEvents.filter { $0 >= cutoff }
+        self.aiCancellationEvents = self.aiCancellationEvents.filter { $0 >= cutoff }
 
-        if aiCancellationEvents.count > 3 {
+        if self.aiCancellationEvents.count > 3 {
             if !cancellationBurstActive {
-                log.warning("[AI-HEALTH] cancellationCount=\(aiCancellationEvents.count) window=\(Int(window))s")
+                log.warning("[AI-HEALTH] cancellationCount=\(self.aiCancellationEvents.count) window=\(Int(window))s")
                 cancellationBurstActive = true
             }
         } else if cancellationBurstActive {

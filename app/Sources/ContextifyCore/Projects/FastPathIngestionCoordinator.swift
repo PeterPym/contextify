@@ -85,7 +85,7 @@ public actor FastPathIngestionCoordinator {
     log.info("[FAST-PATH-TRANSCRIPT] Found \(transcripts.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
 
     // Filter for transcripts that still need processing (ingest_state != complete)
-    let targets = transcripts.filter { $0.ingestState != "complete" }
+    let targets = transcripts.filter { $0.ingestState != "complete" && $0.status == "active" }
 
     // Log filter results
     log.info("[FAST-PATH-FILTER] Filtered \(targets.count, privacy: .public) targets from \(transcripts.count, privacy: .public) total transcripts for project \(projectId, privacy: .public)")

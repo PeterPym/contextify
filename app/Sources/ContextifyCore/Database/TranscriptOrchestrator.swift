@@ -736,7 +736,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     return try pool.read { db in
       var sql = """
         SELECT * FROM transcripts
-        WHERE ingest_state = 'partial'
+        WHERE ingest_state = 'partial' AND status = 'active'
         ORDER BY updated_at DESC
       """
       if let limit {

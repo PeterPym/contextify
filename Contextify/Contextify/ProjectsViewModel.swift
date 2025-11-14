@@ -255,29 +255,29 @@ final class ProjectsViewModel {
 
     guard !eligible.isEmpty else {
       logger.info("[WELCOME-WATCHERS] No transcripts found - marking ready")
-      welcomePhase = .ready
-      isWelcomeReady = true
+      self.welcomePhase = .ready
+      self.isWelcomeReady = true
       return
     }
 
-    welcomePhase = .watchers
-    watcherTargetCount = eligible.count
-    watchersReadyCount = 0
+    self.welcomePhase = .watchers
+    self.watcherTargetCount = eligible.count
+    self.watchersReadyCount = 0
     logger.info("[WELCOME-WATCHERS] Ensuring watchers for \(eligible.count, privacy: .public) projects")
 
     for project in eligible {
       do {
         _ = try await activityMonitor.ensureWatcher(projectId: project.id)
-        watchersReadyCount += 1
-        logger.info("[WELCOME-WATCHERS] ready=\(watchersReadyCount)/\(watcherTargetCount) project=\(project.id, privacy: .public)")
+        self.watchersReadyCount += 1
+        logger.info("[WELCOME-WATCHERS] ready=\(self.watchersReadyCount)/\(self.watcherTargetCount) project=\(project.id, privacy: .public)")
       } catch {
-        watchersReadyCount += 1
+        self.watchersReadyCount += 1
         logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
       }
     }
 
-    welcomePhase = .ready
-    isWelcomeReady = true
+    self.welcomePhase = .ready
+    self.isWelcomeReady = true
     logger.info("[WELCOME-PHASE] Ready - timeline warm up complete")
   }
 

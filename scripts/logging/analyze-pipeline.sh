@@ -101,8 +101,14 @@ for stage_def in "${PIPELINE_STAGES[@]}"; do
     stage_name="${stage_def%%:*}"
     tags="${stage_def#*:}"
 
-    # Convert comma-separated tags to grep pattern
-    pattern=$(echo "$tags" | tr ',' '|')
+    # Convert comma-separated tags to prefix-matching regexes inside []
+    # e.g. "DISC-" becomes "DISC-[^]]*" so `[DISC-PROJECT-START]` counts toward discovery
+    IFS=',' read -ra tag_array <<< "$tags"
+    expanded_tags=()
+    for tag in "${tag_array[@]}"; do
+        expanded_tags+=("${tag}[^]]*")
+    done
+    pattern=$(IFS='|'; echo "${expanded_tags[*]}")
 
     # Count occurrences
     if output=$(grep -cE "\[($pattern)\]" "$LOGFILE" 2>/dev/null); then

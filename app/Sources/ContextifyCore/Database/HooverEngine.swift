@@ -12,6 +12,8 @@ public enum MonitorConfig {
   public static let checkpointEveryLines: Int = 1000
   public static let parseErrorMaxChars: Int = 1024
   public static let parseErrorRetentionPerTranscript: Int = 500
+  public static let parseErrorLogLimit: Int = 25
+  public static let parseErrorAbortThreshold: Int = 50
 }
 
 // MARK: - Hoover Limits
@@ -207,7 +209,9 @@ public final class HooverEngine {
     lastProcessedLine: Int,
     lastProcessedEntryId: String?,
     lineCount: Int,
-    ingestState: String
+    ingestState: String,
+    status: String = "active",
+    lastError: String? = nil
   ) throws {
     try db.write { db in
       try db.execute(sql: """
@@ -216,9 +220,9 @@ public final class HooverEngine {
             last_processed_entry_id = COALESCE(?, last_processed_entry_id),
             line_count = ?,
             parser_version = ?,
-            status = 'active',
+            status = ?,
             ingest_state = ?,
-            last_error = NULL,
+            last_error = ?,
             updated_at = ?
         WHERE id = ?
       """, arguments: [
@@ -226,7 +230,9 @@ public final class HooverEngine {
         lastProcessedEntryId,
         lineCount,
         1,
+        status,
         ingestState,
+        lastError,
         Int(Date().timeIntervalSince1970),
         transcriptId
       ])
@@ -278,7 +284,11 @@ public final class HooverEngine {
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
     var transcriptHasher = SHA256Utils.IncrementalHasher()
     var lastEntryId: String? = nil  // Track last entry ID for checkpoint
-    var entriesInserted = 0
+    var parsedEntryCount = 0
+    var parseErrorCount = 0
+    var firstParseErrorLine: Int?
+    var firstParseErrorReason: String?
+    var hasLoggedParseErrorOverflow = false
     var limitReached = false
     var hitEOF = false
 
@@ -387,9 +397,27 @@ public final class HooverEngine {
           log.debug("[HOOVER-PARSE-SKIP] Line \(lineNo) skipped (meta/empty)")
           // Don't add to batch, don't record as error
         } catch {
-          let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
-          log.info("[HOOVER-PARSE-ERROR] Line \(lineNo): \(error.localizedDescription)")
-          errors.append((lineNo, truncated, error.localizedDescription))
+          parseErrorCount += 1
+          if firstParseErrorReason == nil {
+            firstParseErrorLine = lineNo
+            firstParseErrorReason = error.localizedDescription
+            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) line=\(lineNo, privacy: .public) reason=\(error.localizedDescription)")
+          } else if !hasLoggedParseErrorOverflow && parseErrorCount == MonitorConfig.parseErrorLogLimit {
+            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) exceeding \(MonitorConfig.parseErrorLogLimit, privacy: .public) parse errors, suppressing additional logs")
+            hasLoggedParseErrorOverflow = true
+          }
+
+          if errors.count < MonitorConfig.parseErrorRetentionPerTranscript {
+            let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
+            errors.append((lineNo, truncated, error.localizedDescription))
+          }
+
+          if !limitReached,
+             parsedEntryCount == 0,
+             parseErrorCount >= MonitorConfig.parseErrorAbortThreshold {
+            log.error("[HOOVER-PARSE-ABORT] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) aborting after \(parseErrorCount, privacy: .public) errors with no valid entries")
+            break outerLoop
+          }
         }
 
         // v7: Extract metadata regardless of whether entry was added to batch
@@ -405,10 +433,10 @@ public final class HooverEngine {
         }
 
         if entryId != nil {
-          entriesInserted += 1
+          parsedEntryCount += 1
         }
 
-        if let maxEntries = limit.maxEntries, entriesInserted >= maxEntries {
+        if let maxEntries = limit.maxEntries, parsedEntryCount >= maxEntries {
           limitReached = true
           log.info("[HOOVER-LIMIT] Reached ingest limit (\(maxEntries)) for transcript: \(transcript.id, privacy: .public)")
           break
@@ -486,6 +514,9 @@ public final class HooverEngine {
         ) {
           metadataBatch.add(metadataResult)
         }
+        if entryId != nil {
+          parsedEntryCount += 1
+        }
       } else {
         errors.append((lineNo + 1, "<invalid UTF-8>", "Final line is not valid UTF-8"))
       }
@@ -507,15 +538,34 @@ public final class HooverEngine {
 
     // ALWAYS update checkpoint, regardless of whether there were new entries
     // This ensures checkpoint is persisted even for already-processed transcripts
-    let ingestState = hitEOF ? "complete" : "partial"
     let finalLineCount = hitEOF ? lineNo : max(lineNo, transcript.lineCount)
+    let firstParseErrorDescription: String? = {
+      guard let reason = firstParseErrorReason else { return nil }
+      if let line = firstParseErrorLine {
+        return "Line \(line): \(reason)"
+      }
+      return reason
+    }()
+
+    let hadParseErrors = parseErrorCount > 0
+    let shouldMarkCorrupt = hadParseErrors && parsedEntryCount == 0
+
+    let ingestState = shouldMarkCorrupt ? "complete" : (hitEOF ? "complete" : "partial")
+    let status = shouldMarkCorrupt ? "error" : "active"
+    let lastErrorMessage = shouldMarkCorrupt ? firstParseErrorDescription : nil
+
+    if shouldMarkCorrupt {
+      log.error("[HOOVER-CORRUPT] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) parse_errors=\(parseErrorCount, privacy: .public) reason=\(firstParseErrorDescription ?? "unknown", privacy: .public)")
+    }
 
     try updateCheckpoint(
       transcriptId: transcript.id,
       lastProcessedLine: lineNo,
       lastProcessedEntryId: lastEntryId,
       lineCount: finalLineCount,
-      ingestState: ingestState
+      ingestState: ingestState,
+      status: status,
+      lastError: lastErrorMessage
     )
 
     // Verify checkpoint was updated correctly
@@ -543,7 +593,7 @@ public final class HooverEngine {
 
     return HooverOutcome(
       processedLines: lineNo,
-      newEntries: entriesInserted,
+      newEntries: parsedEntryCount,
       reachedEOF: hitEOF,
       lastEntryId: lastEntryId,
       contentSha256: transcriptSHA256
