@@ -9,7 +9,7 @@ import GRDB
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 23
+  static let version = 24
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -429,6 +429,35 @@ enum DatabaseSchema {
       try db.execute(sql: """
         CREATE INDEX IF NOT EXISTS idx_tr_ingest_state_updated_at
         ON transcripts(ingest_state, updated_at DESC)
+      """)
+
+      // Preflight validation cache columns
+      if try !db.columnExists("preflight_status", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts ADD COLUMN preflight_status TEXT
+        """)
+      }
+      if try !db.columnExists("preflight_checked_at", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts ADD COLUMN preflight_checked_at INTEGER
+        """)
+      }
+      if try !db.columnExists("preflight_mtime", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts ADD COLUMN preflight_mtime INTEGER
+        """)
+      }
+      if try !db.columnExists("preflight_error", in: "transcripts") {
+        try db.execute(sql: """
+          ALTER TABLE transcripts ADD COLUMN preflight_error TEXT
+        """)
+      }
+
+      // Index for preflight cache queries
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcripts_preflight
+        ON transcripts(preflight_status)
+        WHERE preflight_status IS NOT NULL
       """)
     }
 

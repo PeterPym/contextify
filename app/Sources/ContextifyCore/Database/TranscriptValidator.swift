@@ -73,12 +73,14 @@ public final class TranscriptValidator {
     errors.append(contentsOf: cwdResult.errors)
     warnings.append(contentsOf: cwdResult.warnings)
 
-    // Future validations can be added here:
-    // - validateFileFormat() - check JSONL structure
-    // - validateRequiredFields() - ensure critical fields present
-    // - validateFileSize() - prevent processing huge files
-    // - validateTimestamps() - check for reasonable date ranges
-    // - validateSessionId() - ensure session ID format is valid
+    // Validation #2: Structural integrity (fast-fail for corrupt files)
+    let structureResult = validateStructure(
+      fileURL: fileURL,
+      provider: provider,
+      linesToCheck: 4
+    )
+    errors.append(contentsOf: structureResult.errors)
+    warnings.append(contentsOf: structureResult.warnings)
 
     let isValid = errors.isEmpty
 
@@ -151,34 +153,92 @@ public final class TranscriptValidator {
     return .valid
   }
 
-  // MARK: - Future Validation Rules (Placeholders)
+  // MARK: - Structural Validation
 
-  // Example future validators:
-  /*
-  private func validateFileFormat(fileURL: URL) -> TranscriptValidationResult {
-    // Check that file is valid JSONL (each line is valid JSON)
-    // Return invalid if malformed
-  }
+  /// Fast structural validation - reads first N lines to check required fields
+  /// Pure file-system operation - no database access
+  private func validateStructure(
+    fileURL: URL,
+    provider: String,
+    linesToCheck: Int = 4
+  ) -> TranscriptValidationResult {
+    guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+      return .invalid(.invalidFormat(
+        file: fileURL.lastPathComponent,
+        reason: "Cannot open file for reading"
+      ))
+    }
+    defer { try? handle.close() }
 
-  private func validateRequiredFields(fileURL: URL, provider: String) -> TranscriptValidationResult {
-    // Ensure critical fields exist in transcript (timestamp, type, etc.)
-    // Provider-specific field requirements
-  }
+    var linesChecked = 0
+    var hasValidEntry = false
+    var buffer = Data()
+    let newline = UInt8(ascii: "\n")
 
-  private func validateFileSize(fileURL: URL, maxSizeBytes: Int64) -> TranscriptValidationResult {
-    // Prevent processing extremely large files that could cause memory issues
-    // Could be configurable per-project
-  }
+    while linesChecked < linesToCheck {
+      buffer.removeAll(keepingCapacity: true)
+      var foundNewline = false
 
-  private func validateTimestamps(fileURL: URL) -> TranscriptValidationResult {
-    // Check that timestamps are in reasonable range (not year 1970 or 2100)
-    // Detect timestamp corruption
-  }
+      while !foundNewline {
+        let chunk = handle.readData(ofLength: 1024)
+        if chunk.isEmpty {
+          if buffer.isEmpty && linesChecked == 0 {
+            return .invalid(.invalidFormat(
+              file: fileURL.lastPathComponent,
+              reason: "File is empty or unreadable"
+            ))
+          }
+          foundNewline = true
+          break
+        }
 
-  private func validateSessionId(sessionId: String?, provider: String) -> TranscriptValidationResult {
-    // Ensure session ID format is valid for the provider
-    // Claude Code: UUID format
-    // Codex: session-YYYYMMDD-HHMMSS format
+        if let newlineIndex = chunk.firstIndex(of: newline) {
+          buffer.append(chunk.prefix(upTo: newlineIndex))
+          let consumed = newlineIndex + 1
+          handle.seek(toFileOffset: handle.offsetInFile - UInt64(chunk.count - consumed))
+          foundNewline = true
+        } else {
+          buffer.append(chunk)
+        }
+      }
+
+      if buffer.isEmpty { break }
+      linesChecked += 1
+
+      guard let json = try? JSONSerialization.jsonObject(with: buffer) as? [String: Any] else {
+        continue
+      }
+
+      let hasRequiredFields: Bool
+      switch provider {
+      case "claude.code":
+        hasRequiredFields = json["uuid"] != nil
+                         && json["timestamp"] != nil
+                         && json["type"] != nil
+      case "codex.cli":
+        hasRequiredFields = json["id"] != nil
+                         && json["timestamp"] != nil
+                         && json["type"] != nil
+      default:
+        return .invalid(.invalidFormat(
+          file: fileURL.lastPathComponent,
+          reason: "Unsupported provider: \(provider)"
+        ))
+      }
+
+      if hasRequiredFields {
+        hasValidEntry = true
+        break
+      }
+    }
+
+    if linesChecked > 0 && !hasValidEntry {
+      return .invalid(.invalidFormat(
+        file: fileURL.lastPathComponent,
+        reason: "First \(linesChecked) lines lack required fields (uuid, timestamp, type)"
+      ))
+    }
+
+    return .valid
   }
-  */
 }

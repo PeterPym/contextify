@@ -93,6 +93,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   private let validator: TranscriptValidator
   private let ingestionLockTTL: TimeInterval = 600
 
+  // Hoover scheduler for concurrency control
+  private lazy var _hooverScheduler: HooverScheduler = HooverScheduler(
+    orchestrator: self,
+    maxConcurrency: ContextifyConfig.shared.maxConcurrentHoovers
+  )
+
+  public var hooverScheduler: HooverScheduler { _hooverScheduler }
+
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
 
@@ -156,15 +164,15 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       try? self?.deleteMetadata(forTranscript: transcriptId)
     }
 
-    // Set re-hoover callback to route through discoverTranscript (applies security-scoped access)
+    // Set re-hoover callback to route through discoverTranscriptInternal (synchronous)
     watcher.setRehoover { [weak self] projectId, fileURL, provider, sessionId in
-      try self?.discoverTranscript(
+      try self?.discoverTranscriptInternal(
         projectId: projectId,
         fileURL: fileURL,
         provider: provider,
         providerSessionId: sessionId,
         startWatching: false,  // Already watching
-        progress: nil
+        bypassScheduler: true
       )
     }
   }
@@ -397,14 +405,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // MARK: - Transcript Discovery & Ingestion
 
   /// Discover and ingest a transcript file
-  public func discoverTranscript(
+  /// Internal method bypasses scheduler (prevents recursion)
+  internal func discoverTranscriptInternal(
     projectId: String,
     fileURL: URL,
     provider: String,
     providerSessionId: String?,
-    startWatching: Bool = true,
-    progress: IngestProgressSink? = nil,
-    ingestLimit: IngestLimit = .none
+    startWatching: Bool,
+    bypassScheduler: Bool = false
   ) throws {
     log.info("[TRANS-DISC-START] Discovering transcript: \(fileURL.lastPathComponent, privacy: .public) provider: \(provider, privacy: .public) project: \(projectId, privacy: .public)")
 
@@ -421,8 +429,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           provider: provider,
           providerSessionId: providerSessionId,
           startWatching: startWatching,
-          progress: progress,
-          ingestLimit: ingestLimit
+          progress: nil,
+          ingestLimit: .none
         )
       }
     } else {
@@ -433,10 +441,89 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         provider: provider,
         providerSessionId: providerSessionId,
         startWatching: startWatching,
-        progress: progress,
-        ingestLimit: ingestLimit
+        progress: nil,
+        ingestLimit: .none
       )
     }
+  }
+
+  /// Public method routes through scheduler
+  public func discoverTranscript(
+    projectId: String,
+    fileURL: URL,
+    provider: String,
+    providerSessionId: String?,
+    startWatching: Bool = true,
+    progress: IngestProgressSink? = nil,
+    ingestLimit: IngestLimit = .none
+  ) async throws {
+    if ContextifyConfig.shared.hooverSchedulerEnabled {
+      try await hooverScheduler.enqueue(
+        projectId: projectId,
+        fileURL: fileURL,
+        provider: provider,
+        sessionId: providerSessionId
+      )
+    } else {
+      try discoverTranscriptInternal(
+        projectId: projectId,
+        fileURL: fileURL,
+        provider: provider,
+        providerSessionId: providerSessionId,
+        startWatching: startWatching,
+        bypassScheduler: true
+      )
+    }
+  }
+
+  /// Check preflight cache and validate if needed
+  /// Returns: (isValid, errorMessage)
+  /// Query by project_id + file_path (UNIQUE constraint)
+  private func checkPreflight(
+    projectId: String,
+    fileURL: URL,
+    projectRootPath: String,
+    provider: String
+  ) throws -> (isValid: Bool, errorMessage: String?) {
+    let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    let currentMtime = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+
+    // Check cache using project_id + file_path (UNIQUE constraint)
+    let cached = try dbManager.pool.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT preflight_status, preflight_mtime, preflight_error
+        FROM transcripts
+        WHERE project_id = ? AND file_path = ?
+      """, arguments: [projectId, fileURL.path])
+    }
+
+    if let row = cached,
+       let status = row["preflight_status"] as? String,
+       let cachedMtime = row["preflight_mtime"] as? Double,
+       abs(cachedMtime - currentMtime) < 1.0 {
+
+      log.debug("[TRANS-PREFLIGHT-CACHE-HIT] \(fileURL.lastPathComponent, privacy: .public): \(status, privacy: .public)")
+
+      if status == "passed" {
+        return (isValid: true, errorMessage: nil)
+      } else {
+        let error = row["preflight_error"] as? String ?? "Unknown preflight failure"
+        return (isValid: false, errorMessage: error)
+      }
+    }
+
+    log.debug("[TRANS-PREFLIGHT-CACHE-MISS] \(fileURL.lastPathComponent, privacy: .public)")
+
+    let result = validator.validate(
+      fileURL: fileURL,
+      projectRootPath: projectRootPath,
+      provider: provider
+    )
+
+    return (
+      isValid: result.isValid,
+      errorMessage: result.errors.first?.description
+    )
   }
 
   /// Internal implementation - all file I/O must happen synchronously here.
@@ -460,22 +547,77 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
     log.debug("[TRANS-DISC-VALID] ✅ FK validation: project \(projectId, privacy: .public) exists")
 
-    // Validate transcript integrity before hoovering
-    let validationResult = validator.validate(
+    // Check preflight validation (with caching)
+    let preflightResult = try checkPreflight(
+      projectId: projectId,
       fileURL: fileURL,
       projectRootPath: project.rootPath ?? "",
       provider: provider
     )
 
-    guard validationResult.isValid else {
-      log.error("[TRANS-DISC-ERROR] ❌ Transcript validation failed for \(fileURL.lastPathComponent, privacy: .public)")
-      for error in validationResult.errors {
-        log.error("[TRANS-DISC-ERROR]    \(error.description, privacy: .public)")
+    if !preflightResult.isValid {
+      log.warning("[TRANS-DISC-PREFLIGHT-FAIL] \(fileURL.lastPathComponent, privacy: .public)")
+
+      // Get file metadata
+      let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+      let lastModified = attrs[.modificationDate] as? Date ?? Date()
+      let fileSize = attrs[.size] as? Int
+      let currentMtime = (lastModified.timeIntervalSince1970)
+
+      // Upsert transcript record for tracking
+      let transcriptId = try transcriptRepo.upsert(
+        projectId: projectId,
+        fileURL: fileURL,
+        provider: provider,
+        providerSessionId: providerSessionId,
+        lastModified: lastModified,
+        fileSize: fileSize
+      )
+
+      // Mark as error and update preflight cache
+      try dbManager.pool.write { db in
+        try db.execute(sql: """
+          UPDATE transcripts
+          SET status = 'error',
+              ingest_state = 'complete',
+              last_processed_line = 0,
+              last_error = ?,
+              preflight_status = 'failed',
+              preflight_checked_at = ?,
+              preflight_mtime = ?
+          WHERE id = ?
+        """, arguments: [
+          preflightResult.errorMessage ?? "Preflight validation failed",
+          Int(Date().timeIntervalSince1970),
+          Int(currentMtime),
+          transcriptId
+        ])
       }
-      throw validationResult.errors.first ?? RepositoryError.invalidData
+
+      log.info("[TRANS-DISC-SKIP-HOOVER] \(transcriptId, privacy: .public)")
+      return  // Skip hoover, continue batch
     }
 
-    log.info("[TRANS-DISC-VALID] ✅ Transcript validation passed: \(fileURL.lastPathComponent, privacy: .public)")
+    // Update cache for passed validation
+    try dbManager.pool.write { db in
+      let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+      let currentMtime = ((attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)
+
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET preflight_status = 'passed',
+            preflight_checked_at = ?,
+            preflight_mtime = ?
+        WHERE project_id = ? AND file_path = ?
+      """, arguments: [
+        Int(Date().timeIntervalSince1970),
+        Int(currentMtime),
+        projectId,
+        fileURL.path
+      ])
+    }
+
+    log.info("[TRANS-DISC-PREFLIGHT-PASS] ✅ \(fileURL.lastPathComponent, privacy: .public)")
 
     // Get file metadata
     let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -569,7 +711,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Add task for this transcript
         group.addTask {
           // Note: Don't pass progressSink to avoid data races in parallel execution
-          try self.discoverTranscript(
+          try await self.discoverTranscript(
             projectId: projectId,
             fileURL: file.url,
             provider: file.provider,
@@ -668,7 +810,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     transcriptId: String,
     mode: IngestionMode,
     notifyUI: Bool = true
-  ) throws -> Bool {
+  ) async throws -> Bool {
     guard let initialTranscript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
     }
@@ -704,7 +846,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       return false
     }
 
-    try discoverTranscript(
+    try await discoverTranscript(
       projectId: transcript.projectId,
       fileURL: fileURL,
       provider: transcript.provider,

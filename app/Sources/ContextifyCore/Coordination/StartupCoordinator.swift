@@ -464,8 +464,11 @@ public final class StartupCoordinator {
         log.info("[UIOPT-COORD-GIT-FUNC-START] resolveGitBranch() called")
 
         // Run git detection on background thread (file I/O)
+        let priority: TaskPriority = ContextifyConfig.shared.gitHighPriorityEnabled ? .userInitiated : .utility
+        log.info("[UIOPT-COORD-GIT-PRIORITY] \(priority == .userInitiated ? "userInitiated" : "utility", privacy: .public)")
         log.info("[UIOPT-COORD-GIT-TASK-START] Spawning detached Task...")
-        let result = await Task.detached(priority: .utility) { () -> String? in
+
+        let result = await Task.detached(priority: priority) { () -> String? in
             let taskStart = Date()
             self.log.info("[UIOPT-COORD-GIT-TASK-EXEC] Task executing on background thread")
 
@@ -490,7 +493,13 @@ public final class StartupCoordinator {
             self.log.info("[UIOPT-COORD-GIT-INFO-DONE] computeGitInfo returned in \(String(format: "%.0f", Date().timeIntervalSince(infoStart) * 1000), privacy: .public)ms")
 
             let taskElapsed = Date().timeIntervalSince(taskStart)
-            self.log.info("[UIOPT-COORD-GIT-TASK-DONE] Task complete in \(String(format: "%.0f", taskElapsed * 1000), privacy: .public)ms")
+            let durationMs = Int(taskElapsed * 1000)
+            self.log.info("[UIOPT-COORD-GIT-TASK-DONE] \(durationMs, privacy: .public)ms (target: \(ContextifyConfig.shared.gitLatencyTargetMs, privacy: .public)ms)")
+
+            if durationMs > ContextifyConfig.shared.gitLatencyTargetMs {
+                self.log.warning("[UIOPT-COORD-GIT-SLOW] ⚠️ \(durationMs, privacy: .public)ms > \(ContextifyConfig.shared.gitLatencyTargetMs, privacy: .public)ms")
+            }
+
             return info.branch
         }.value
 

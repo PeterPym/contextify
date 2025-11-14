@@ -351,13 +351,18 @@ public actor ProjectActivityMonitor {
           }
 
           // Batch discover and hoover transcripts (parallel)
+          let priority: TaskPriority = ContextifyConfig.shared.bulkLowPriorityEnabled ? .background : .utility
+          log.info("[DISC-PROJECT-PRIORITY] .\(priority == .background ? "background" : "utility", privacy: .public)")
           log.info("[DISC-PROJECT-BATCH] Starting parallel batch discovery for \(transcripts.count, privacy: .public) transcripts")
-          try await orchestrator.discoverTranscripts(
-            projectId: dbProjectId,
-            transcriptFiles: transcripts,
-            progress: nil,
-            concurrency: 8
-          )
+
+          try await Task.detached(priority: priority) {
+            try await self.orchestrator.discoverTranscripts(
+              projectId: dbProjectId,
+              transcriptFiles: transcripts,
+              progress: nil,
+              concurrency: 8
+            )
+          }.value
 
           log.info("[DISC-PROJECT-DONE] Discovered \(transcripts.count, privacy: .public) transcripts for project: \(projectPath, privacy: .public)")
           totalTranscripts += transcripts.count

@@ -113,7 +113,7 @@ public actor FastPathIngestionCoordinator {
           log.info("[FAST-PATH-NOTIFY] Transcript \(transcript.id.prefix(8), privacy: .public) notifyUI: \(notifyForThisTranscript, privacy: .public) (shouldNotifyUI: \(shouldNotifyUI, privacy: .public))")
 
           do {
-            let needsCompletion = try orchestrator.ingestTranscript(
+            let needsCompletion = try await orchestrator.ingestTranscript(
               transcriptId: transcript.id,
               mode: .preview(entries: previewLimit),
               notifyUI: notifyForThisTranscript
@@ -141,7 +141,7 @@ public actor FastPathIngestionCoordinator {
 
     Task.detached(priority: .utility) { [weak self] in
       do {
-        _ = try orchestrator.ingestTranscript(
+        _ = try await orchestrator.ingestTranscript(
           transcriptId: transcriptId,
           mode: .complete,
           notifyUI: false  // UI already notified during preview
