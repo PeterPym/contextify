@@ -11,6 +11,7 @@ default_action="build"
 config="$default_config"
 action="$default_action"
 dev_mode=0
+quiet_mode=1  # Quiet by default, use --verbose to see full output
 
 # Distribution mode (dmg vs appstore)
 dist="dmg"
@@ -28,6 +29,9 @@ parse_arg() {
   case "$value" in
     --dev|--developer-mode)
       dev_mode=1
+      ;;
+    --verbose|-v)
+      quiet_mode=0
       ;;
     --dist=appstore)
       dist="appstore"
@@ -63,10 +67,11 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
+      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
+      echo "  --verbose, -v      Show full build output (default: errors/warnings only)" >&2
       echo "  --dist=dmg         Build DMG distribution (unsandboxed, default)" >&2
       echo "  --dist=appstore    Build App Store distribution (sandboxed)" >&2
       echo "" >&2
@@ -366,18 +371,25 @@ watch_logs() {
 }
 
 run_xcodebuild() {
-  # Use xcbeautify if available (best option, especially for CI)
+  set -o pipefail
+
+  # Build the pipeline: xcodebuild -> formatter -> quiet filter (if enabled)
+  local pipeline=""
+
   if [[ $have_xcbeautify -eq 1 ]]; then
-    set -o pipefail
-    xcodebuild "$@" | xcbeautify $xcbeautify_renderer
-  # Fall back to xcpretty if available
+    pipeline="xcbeautify $xcbeautify_renderer"
   elif [[ $have_xcpretty -eq 1 ]]; then
-    set -o pipefail
-    xcodebuild "$@" | xcpretty
-  # No formatter available, use raw output
+    pipeline="xcpretty"
   else
-    xcodebuild "$@"
+    pipeline="cat"
   fi
+
+  # In quiet mode, filter to only show Swift compilation errors/warnings and build status
+  if [[ $quiet_mode -eq 1 ]]; then
+    pipeline="$pipeline | grep -E '(\\.swift:[0-9]+:[0-9]+: (error|warning):|BUILD SUCCEEDED|BUILD FAILED|Built:|Launching|^\\([0-9]+ failures?\\))' || true"
+  fi
+
+  xcodebuild "$@" | eval "$pipeline"
 }
 
 # Build for the selected distribution
@@ -532,7 +544,7 @@ case "$action" in
     fi
     ;;
   *)
-    echo "usage: $0 [--dev] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs|ca]" >&2
+    echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs|ca]" >&2
     echo "Run '$0' without arguments for full help" >&2
     exit 2
     ;;
