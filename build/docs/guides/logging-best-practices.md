@@ -8,6 +8,23 @@
 
 This document provides detailed logging guidelines for Contextify development. Follow Apple's Unified Logging semantics with a two-phase approach that balances development velocity with production log cleanliness.
 
+### Pipeline telemetry tags
+
+Several tags are now considered "infrastructure logs" and **must remain at `.info`** so diagnostics
+scripts can detect them. Do not demote or remove these unless you provide an equivalent signal.
+
+| Tag prefix | Emitted by | Purpose |
+|------------|------------|---------|
+| `[FSEVENTS-WATCH-*]`, `[FSEVENTS-CHANGE]`, `[FSEVENTS-HEARTBEAT]` | `TranscriptWatcher` | Confirms file-system watchers are alive and reacting to changes |
+| `[DB-UPDATE]` | `HooverEngine` | Indicates rows were persisted; used by pipeline analyzer |
+| `[PREFLIGHT-CACHE-*]` | `TranscriptOrchestrator` | Shows cache hits/misses for corrupt transcript triage |
+| `[TIMELINE-HYDRATE-*]` | `ConversationMonitor` | Measures timeline load latency for gap analysis |
+| `[HOOVER-SCHED-*]` | `HooverScheduler` | Reports queue depth + duplicate suppression |
+
+Scripts such as `monitor-pipeline-check.sh`, `monitor-transcript-queues.sh`, `analyze-pipeline.sh`,
+and `analyze-gaps.sh` depend on these tags to report stage-by-stage health. When adding new
+subsystems, emit analogous tags so telemetry stays complete.
+
 ## Two-Phase Logging Strategy
 
 ### Phase 1: Initial Development (feature branch)

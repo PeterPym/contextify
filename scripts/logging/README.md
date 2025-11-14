@@ -13,6 +13,7 @@
 | Feature not appearing in UI | Pipeline Completeness | `monitor-pipeline-check.sh` | Automated | 0=pass, 1=fail |
 | Need to verify bug fix works | Automated Test | `monitor-automated-test.sh` | Automated | 0=pass, 1=fail |
 | Verifying fix works with clean DB | Clean DB Test Harness | Custom script (see Pattern 6) | Automated | 0=pass, 1=fail |
+| Capture logs for later analysis | Full Pipeline Capture | `monitor-transcript-queues.sh` | Capture-only | - |
 | Data flows through A but not B | Cross-Component Trace | Tag analysis (see Pattern 7) | Manual | - |
 | App slow/laggy, timing issues | Gap Analysis | `monitor-interactive.sh` + `analyze-gaps.sh` | Semi-auto | - |
 | Exploring unknown issue | Interactive Monitoring | `monitor-interactive.sh` | Interactive | - |
@@ -60,20 +61,44 @@ log stream --predicate 'subsystem BEGINSWITH "dev.contextify"'
 ### Capture prerequisite: use monitor-transcript-queues.sh
 
 Before running any analysis script, capture logs with `./scripts/logging/monitor-transcript-queues.sh`.
+This restores the "monitor transcript queues" workflow in the diagnostics docset.
 It records **all** `dev.contextify*` subsystems (Projects, Watchers, Hoover, Timeline, UI) into
-`/tmp/transcript-queue-monitor-*.log`. Post-hoc tools such as `analyze-pipeline.sh` assume the
-log contains `[DISC-`, `[FSEVENTS-`, `[WATCHER-`, `[HOOVER-`, and `[UIOPT-]` tags; those are
-emitted outside `dev.contextify.timeline`, so narrower predicates will yield empty reports.
+`/tmp/transcript-queue-monitor-*.log`. Post-hoc tools such as `analyze-pipeline.sh` and
+`analyze-gaps.sh` expect the log to contain the new instrumentation tags:
+
+- `[FSEVENTS-*]` – watcher lifecycle + heartbeat
+- `[DB-UPDATE]` / `[HOOVER-UPDATE-ROWS]` – confirmed database writes
+- `[PREFLIGHT-CACHE-*]` – cache hits/misses (for corrupt transcript diagnosis)
+- `[TIMELINE-HYDRATE-*]` – ConversationMonitor hydration timing
 
 Example:
 
 ```bash
-# Capture 45 seconds of complete pipeline logs
+# Capture 45 seconds of complete pipeline logs (all subsystems)
 DURATION=45 ./scripts/logging/monitor-transcript-queues.sh
 
-# Then analyze
+# Then analyze or run gap reports
 ./scripts/logging/analyze-pipeline.sh /tmp/transcript-queue-monitor-*.log
+./scripts/logging/analyze-gaps.sh /tmp/transcript-queue-monitor-*.log 1000
 ```
+
+The monitor script is safe to run from LLM agents; it defaults to 30 s captures but respects
+`DURATION` if you need longer windows when onboarding or reproducing a bug.
+
+---
+
+## Script cheat sheet
+
+| Script | Purpose | Typical use |
+|--------|---------|-------------|
+| `monitor-transcript-queues.sh` | Capture **all** Contextify subsystems for a fixed window, save to `/tmp/transcript-queue-monitor-*` | Always run this first before `analyze-*` tools |
+| `monitor-pipeline-check.sh` | Capture + immediately analyze pipeline stages (uses `[FSEVENTS-*]`, `[DB-UPDATE]`, `[TIMELINE-*]`, `[UIOPT-*]`) | Diagnose "feature not appearing" quickly |
+| `analyze-pipeline.sh <log>` | Offline report using a previously captured log | Verify Stage 1–7 activity after test run |
+| `analyze-gaps.sh <log> 1000` | Offline gap analysis over captured log | Investigate UI stalls/lurches |
+| `validate-priority-fix.sh <log>` | Check Git latency + CRITICAL gaps | Use after making priority / scheduler changes |
+
+Run `monitor-transcript-queues.sh` whenever you need a ground-truth log; everything else can be
+rerun against that file without re-capturing.
 
 ---
 

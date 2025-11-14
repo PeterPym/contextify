@@ -702,6 +702,29 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
   }
 
+  /// Check if project has high preflight failure rate (>90%)
+  private func shouldSkipCorruptProject(projectRootPath: String) throws -> Bool {
+    let stats = try dbManager.pool.read { db in
+      try Row.fetchOne(db, sql: """
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failures
+        FROM transcript_preflight_cache
+        WHERE file_path LIKE ? || '%'
+      """, arguments: [projectRootPath])
+    }
+
+    guard let row = stats,
+          let total = row["total"] as? Int64,
+          let failures = row["failures"] as? Int64,
+          total > 0 else {
+      return false  // No cache data, don't skip
+    }
+
+    let failureRatio = Double(failures) / Double(total)
+    return failureRatio > 0.9 && total >= 10  // Require at least 10 samples
+  }
+
   /// Batch discover transcripts for a project
   public func discoverTranscripts(
     projectId: String,
@@ -717,6 +740,12 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     guard let project = try projectRepo.get(id: projectId) else {
       log.error("[BATCH-DISC-ERROR] Project not found: \(projectId, privacy: .public)")
       throw RepositoryError.notFound
+    }
+
+    // Auto-skip projects with >90% preflight failures (corrupt workspaces)
+    if try shouldSkipCorruptProject(projectRootPath: project.rootPath) {
+      log.warning("[CORRUPT-SKIP] Skipping project with high failure rate: \(project.name ?? projectId, privacy: .public) at \(project.rootPath, privacy: .public)")
+      return
     }
 
     let progressSink = progress ?? NoOpProgressSink()
