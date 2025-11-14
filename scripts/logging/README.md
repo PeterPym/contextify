@@ -564,9 +564,9 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 - Need to verify START/DONE pairs complete or confirm a component actually fired
 - Comparing baseline vs experiment runs to quantify change
 
-**Requirements:** macOS `python3` (bundled with Xcode CLT) to execute the analyzer.
+**Requirements:** macOS `python3` (ships with Xcode CLT).
 
-**Exit codes:** `0` on success, `1` when arguments are invalid or a log file is missing.
+**Exit codes:** `0` success, `1` invalid args or missing log.
 
 **How it works:**
 `analyze-tags.sh` parses any transcript-queue monitor log, inventories every `[TAG]`, and reports:
@@ -601,9 +601,9 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 - **LLM reminder:** Whenever new instrumentation tags are added or renamed, update `analyze-tags.sh` so its START/DONE heuristics and component guidance stay current. Read this script before assuming coverage.
 
 **Troubleshooting:**
-- "No tags found" → confirm the log includes `[TAG]` markers (e.g., `grep -c "\[" log`), and ensure the monitoring predicate captured `dev.contextify*` subsystems.
-- `START/DONE` shows large positives for WATCH or MONITOR tags → these are long-lived resources; the tool now labels them as "expected" but you can filter them out with `--component` if desired.
-- Unicode-heavy logs: the script opens files as UTF-8 with replacement, so emoji remain safe but counts may drop if tags are missing.
+- "No tags found" → verify the log has `[TAG]` markers (e.g., `grep -c "\[" log`) and that `monitor-transcript-queues.sh` captured `dev.contextify*` subsystems.
+- Large positives for WATCH/MONITOR prefixes → these are long-lived resources and are marked "expected"; filter them via `--component` if you need a tighter view.
+- Unicode logs are read as UTF-8 with replacement; visible emoji stay intact even if some counts drop.
 
 ---
 
