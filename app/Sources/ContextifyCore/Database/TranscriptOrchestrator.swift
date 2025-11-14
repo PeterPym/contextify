@@ -44,6 +44,23 @@ public struct ResolvedTranscript: Sendable {
   }
 }
 
+/// Pipeline readiness state for gating UI
+public struct PipelineReadiness: Sendable {
+  public var discoveryComplete: Bool
+  public var dbUpdated: Bool
+  public var watchersReady: Bool
+
+  public var isReady: Bool {
+    discoveryComplete && dbUpdated && watchersReady
+  }
+
+  public init(discoveryComplete: Bool = false, dbUpdated: Bool = false, watchersReady: Bool = false) {
+    self.discoveryComplete = discoveryComplete
+    self.dbUpdated = dbUpdated
+    self.watchersReady = watchersReady
+  }
+}
+
 public struct WatcherRecoverySummary: Sendable {
   public let projectId: String
   public let startedCount: Int

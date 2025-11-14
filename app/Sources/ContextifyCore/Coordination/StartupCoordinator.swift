@@ -9,6 +9,7 @@
 import Foundation
 import OSLog
 import Observation
+import GRDB
 
 /// Error types for startup coordination.
 public enum StartupError: Error, Equatable {
@@ -67,6 +68,14 @@ public final class StartupCoordinator {
     /// Observable property that updates when project switches.
     /// UI can bind to this directly or subscribe to `updates` stream.
     public private(set) var current: ActiveProjectContext?
+
+    /// Pipeline readiness state for gating UI (Welcome modal, etc).
+    ///
+    /// Observable property that tracks:
+    /// - discoveryComplete: All transcript discovery finished
+    /// - dbUpdated: At least one DB write occurred
+    /// - watchersReady: File watchers are active
+    public var pipelineReadiness = PipelineReadiness()
 
     /// Whether coordinator has been started.
     @ObservationIgnored private var isStarted = false
@@ -564,6 +573,34 @@ extension Notification.Name {
     /// Triggered when no project root is available on first launch.
     /// UI should show welcome modal with discovery progress.
     public static let startupRequiresWelcomeModal = Notification.Name("dev.contextify.startupRequiresWelcomeModal")
+}
+
+// MARK: - Pipeline Readiness Tracking
+
+@MainActor
+extension StartupCoordinator {
+    /// Update pipeline readiness state and log when ready.
+    ///
+    /// Call this method from orchestration points:
+    /// - After discovery completes
+    /// - After first DB write
+    /// - After watchers start
+    public func updatePipelineReadiness(
+        discoveryComplete: Bool? = nil,
+        dbUpdated: Bool? = nil,
+        watchersReady: Bool? = nil
+    ) {
+        let wasReady = pipelineReadiness.isReady
+
+        if let discoveryComplete { pipelineReadiness.discoveryComplete = discoveryComplete }
+        if let dbUpdated { pipelineReadiness.dbUpdated = dbUpdated }
+        if let watchersReady { pipelineReadiness.watchersReady = watchersReady }
+
+        let isReady = pipelineReadiness.isReady
+        if isReady && !wasReady {
+            log.info("[PIPELINE-READY] All criteria met: discovery=\(self.pipelineReadiness.discoveryComplete, privacy: .public) db=\(self.pipelineReadiness.dbUpdated, privacy: .public) watchers=\(self.pipelineReadiness.watchersReady, privacy: .public)")
+        }
+    }
 }
 
 // MARK: - URL Extension for Bookmark Data
