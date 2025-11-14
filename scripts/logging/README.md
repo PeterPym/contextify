@@ -14,6 +14,7 @@
 | Need to verify bug fix works | Automated Test | `monitor-automated-test.sh` | Automated | 0=pass, 1=fail |
 | Verifying fix works with clean DB | Clean DB Test Harness | Custom script (see Pattern 6) | Automated | 0=pass, 1=fail |
 | Capture logs for later analysis | Full Pipeline Capture | `monitor-transcript-queues.sh` | Capture-only | - |
+| Unexpected tag volume or unknown instrumentation | Tag Exploration | `analyze-tags.sh` | Post-hoc | - |
 | Data flows through A but not B | Cross-Component Trace | Tag analysis (see Pattern 7) | Manual | - |
 | App slow/laggy, timing issues | Gap Analysis | `monitor-interactive.sh` + `analyze-gaps.sh` | Semi-auto | - |
 | Exploring unknown issue | Interactive Monitoring | `monitor-interactive.sh` | Interactive | - |
@@ -95,6 +96,7 @@ The monitor script is safe to run from LLM agents; it defaults to 30 s capture
 | `monitor-pipeline-check.sh` | Capture + immediately analyze pipeline stages (uses `[FSEVENTS-*]`, `[DB-UPDATE]`, `[TIMELINE-*]`, `[UIOPT-*]`) | Diagnose "feature not appearing" quickly |
 | `analyze-pipeline.sh <log>` | Offline report using a previously captured log | Verify Stage 1–7 activity after test run |
 | `analyze-gaps.sh <log> 1000` | Offline gap analysis over captured log | Investigate UI stalls/lurches |
+| `analyze-tags.sh <log>` | Discover tag inventory, component breakdowns, START/DONE mismatches | Investigate suspicious tag counts or missing completions |
 | `validate-priority-fix.sh <log>` | Check Git latency + CRITICAL gaps | Use after making priority / scheduler changes |
 
 Run `monitor-transcript-queues.sh` whenever you need a ground-truth log; everything else can be
@@ -554,6 +556,48 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 
 ---
 
+### Pattern 8: Log Tag Exploration & Frequency Analysis
+
+**When to use:**
+- A log capture exists but you don't know which tags fire the most
+- Pipeline scripts report suspicious counts (e.g., "why are there 40 SWITCH events?")
+- Need to verify START/DONE pairs complete or confirm a component actually fired
+- Comparing baseline vs experiment runs to quantify change
+
+**How it works:**
+`analyze-tags.sh` parses any transcript-queue monitor log, inventories every `[TAG]`, and reports:
+- Sorted frequency table plus first/last occurrence for each tag
+- Component breakdown (which subsystems produced the most logs)
+- START/DONE imbalance detection across tags that follow that pattern
+- Optional diff mode to compare two captures
+
+**Usage:**
+```bash
+# Basic discovery (supports wildcards)
+./scripts/logging/analyze-tags.sh /tmp/transcript-queue-monitor-*.log
+
+# Focus on a single component prefix and limit to top tags
+./scripts/logging/analyze-tags.sh /tmp/transcript-queue-monitor-*.log \
+  --component SWITCH --top 15
+
+# Compare before/after captures to quantify impact
+./scripts/logging/analyze-tags.sh before.log --compare after.log
+```
+
+**Interpreting the report:**
+- **Tag table** → confirms which instrumentation fired, plus first/last timestamps (helpful for sequencing)
+- **Top components** → highlights noisy subsystems and validates whether UI/Hoover/Timeline logs exist
+- **START/DONE validation** → surfaces incomplete operations; positive Δ = missing completions, negative Δ = unexpected completions
+- **Comparison section** (when `--compare` used) → shows per-tag deltas with ↑/↓ markers
+
+**Follow-ups:**
+- Use mismatch data to focus on the failing component and correlate with Pattern 7 traces
+- If a component is missing entirely, re-run `monitor-transcript-queues.sh` to ensure predicate captured it
+- Pair with `analyze-pipeline.sh` to distinguish "pipeline silent" vs "pipeline noisy but wrong tags"
+- **LLM reminder:** Whenever new instrumentation tags are added or renamed, update `analyze-tags.sh` so its START/DONE heuristics and component guidance stay current. Read this script before assuming coverage.
+
+---
+
 ## Tool Reference
 
 ### Monitoring Scripts (Capture Logs)
@@ -584,6 +628,12 @@ grep -E "DISCOVERY-DONE|SWITCHER-SORTED" /tmp/test.log | cat -n
 - **Input:** Log file path
 - **Output:** Stage completeness analysis
 - **Use:** Post-hoc pipeline analysis
+
+**analyze-tags.sh** - Inventory instrumentation tags
+- **Input:** Log file path (supports globs)
+- **Output:** Tag frequency table, component breakdown, START/DONE validation, optional diff vs `--compare`
+- **Use:** Quantify instrumentation volume, find missing completions, or compare before/after runs
+- **Maintenance reminder:** When documentation or code introduces new tags, review and extend this script accordingly so automated discovery keeps pace.
 
 ---
 
