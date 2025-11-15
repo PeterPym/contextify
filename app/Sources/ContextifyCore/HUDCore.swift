@@ -721,6 +721,9 @@ public final class HUDViewModel {
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {
+    // Defensive guard: git operations disabled in sandboxed builds
+    guard !Sandbox.isSandboxed else { return }
+
     if updating {
       pendingUpdate = true
       if let env { pendingEnvironment = env }
@@ -943,16 +946,18 @@ public final class HUDViewModel {
   }
 
   public func updateHeadWatcher() {
+    // Always cancel existing watchers first (cleanup before early returns)
+    cancelHeadAndRefWatchers()
+
     #if os(macOS)
     // Git monitoring disabled in sandboxed builds (requires per-project folder access)
     // Sandboxed builds would need user to grant access to each project root via NSOpenPanel,
     // which is too complex for initial App Store release. See TODOS.md for future enhancement.
     guard !Sandbox.isSandboxed else {
+      watcherLog.info("Git monitoring disabled (App Store build)")
       return
     }
     #endif
-
-    cancelHeadAndRefWatchers()
 
     let base: URL = {
       if let current = projectRootURL { return current }
@@ -1009,18 +1014,14 @@ public final class HUDViewModel {
     }
 
     let now = Date()
-    if Sandbox.isSandboxed {
+    // Note: This handler is never called in sandboxed builds (watcher not created)
+    if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
       lastHeadEventAt = now
-      refreshBranchFromHEAD()
+      updateGitInfo()
     } else {
-      if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
-        lastHeadEventAt = now
-        updateGitInfo()
-      } else {
-        lastHeadEventAt = now
-        pendingUpdate = true
-        scheduleDrain()
-      }
+      lastHeadEventAt = now
+      pendingUpdate = true
+      scheduleDrain()
     }
 
     if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
