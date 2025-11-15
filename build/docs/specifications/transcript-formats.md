@@ -318,6 +318,7 @@ python3 scripts/transcript-repair/repair_transcript.py <transcript>
 - Filename: `<session-name>-<timestamp>-<uuid>.jsonl`
 - All projects stored in same global directory (not per-project like Claude Code)
 - Project association via `cwd` field in `session_meta` record
+- **Discovery use:** Contextify's Codex discovery parses `session_meta.payload.cwd` (and `payload.id`) to build the global project index, so this field MUST remain accurate to ensure projects appear in the UI.
 
 ### Format Overview
 

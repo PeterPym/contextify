@@ -24,26 +24,28 @@ Global project discovery automatically finds all Claude Code and Codex CLI proje
 #### 1. ProjectDiscoveryService
 **File:** `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`
 
-**Core discovery algorithm:**
+**Core discovery algorithm (Claude Code + Codex CLI):**
 ```swift
-1. Scan ~/.claude/projects/* for directory names
+1. Scan ~/.claude/projects/* for directory names (Claude Code)
 2. Reverse map directory names to project paths
-   Example: "-Users-rob-code-projects-foo" → "/Users/rob/code/projects/foo"
 3. Validate paths exist on disk
-4. Check for Codex transcripts at <project>/.codex/sessions/*.jsonl
-5. Query database for existing metadata (transcript/entry counts)
-6. Build DiscoveredProject array with providers, stats, isCurrent flag
-7. Filter out excluded projects (from ProjectExclusionManager)
-8. Sort by last activity (most recent first)
+4. Build CodexIndex by scanning ~/.codex/sessions recursively
+   - Parse session_meta.payload.cwd to map sessions → projects
+   - Cache index for 5 minutes with per-project entry caps
+5. Merge Claude and Codex results (provider union, latest activity override)
+6. Query database for existing metadata (transcript/entry counts)
+7. Build DiscoveredProject array with providers, stats, isCurrent flag
+8. Filter out excluded projects (from ProjectExclusionManager)
+9. Sort by display_order if present, otherwise newest activity first
 ```
 
 **Ingestion flow:**
 ```swift
 for each project:
   - Scan Claude Code directory: ~/.claude/projects/<encoded-path>/*.jsonl
-  - Scan Codex directory: <project>/.codex/sessions/*.jsonl
+  - Resolve Codex transcripts via CodexIndex (fallback to legacy <project>/.codex/sessions)
   - Call orchestrator.upsertTranscripts() with DiscoveredTranscript array
-  - Emit progress updates via callback
+  - Emit progress updates via callback + welcome modal progress bars
 ```
 
 **Key methods:**
@@ -655,3 +657,18 @@ f58de73 fix(projects): fix async/throws in ProjectStatsService
 **Implementation Status:** ✅ Complete
 **Build Status:** ✅ Passing
 **Ready for:** User validation → Merge → RAG evaluation
+#### Codex Global Index (New)
+
+**File:** `ProjectDiscoveryService.CodexIndexBuilder`
+
+Purpose-built enumerator for `~/.codex/sessions/**/*`:
+- Runs inside `FolderAccessController.beginAccess(.codex)` security scope
+- Uses `FileManager.enumerator` with date-prefetch to avoid re-stat calls
+- Reads only the first line of each `*.jsonl` to parse `session_meta` payloads
+- Normalizes `cwd` via `PathNormalizer.normalize()` to collapse symlink and case variations
+- Groups `CodexIndex.FileRecord(relativePath, sessionId, mtime)` entries by project
+- Caps each project to the newest 1,000 sessions and records `latestMtime`
+- Returns `CodexIndex` snapshot (projects, total files, error count, duration)
+- Caches snapshot for 5 minutes and invalidates when watchers detect new Codex transcripts or authorization changes
+
+During merge, `CodexIndex` entries union provider badges, override `lastActivity`, and feed ingestion so Codex-only projects appear even if they never mirrored sessions into `.codex/sessions` under the project tree.

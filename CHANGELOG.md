@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Codex Global Discovery** - Contextify now scans `~/.codex/sessions` to index Codex-only projects.
+  - Security-scoped enumeration with cached `CodexIndex` snapshots.
+  - Codex-only projects appear in Welcome modal, ProjectSwitcher, and status bar with 🟡 provider badges.
+  - Fast-path/primer pipelines ingest Codex transcripts without requiring `.codex` folders inside each project.
 - **Timeline Improvements** - Enhanced conversation timeline with provider branding and session management
   - Provider-specific icons for assistant messages (Claude Code: orange, Codex CLI: blue)
   - Timeline entries now persist when switching between conversation sessions
