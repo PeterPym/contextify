@@ -85,7 +85,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
 
     // Required fields - check type first
     guard let type = json["type"] as? String else {
-      throw ParserError.missingRequiredField("type")
+      parserLog.warning("[PARSER-WARN] Missing type field line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     // Skip structural metadata records (no conversation content)
@@ -136,7 +137,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
         throw ParserError.skipEntry
       }
     } else {
-      throw ParserError.missingRequiredField("message.content")
+      parserLog.warning("[PARSER-WARN] Missing message.content line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     // Optional fields
@@ -315,19 +317,23 @@ public struct CodexLineParser: TranscriptLineParser {
     // Required fields
     guard let timestampStr = json["timestamp"] as? String,
           let timestamp = parseISO8601(timestampStr) else {
-      throw ParserError.missingRequiredField("timestamp")
+      parserLog.warning("[PARSER-WARN] Codex line missing timestamp line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     guard let payload = json["payload"] as? [String: Any] else {
-      throw ParserError.missingRequiredField("payload")
+      parserLog.warning("[PARSER-WARN] Codex line missing payload line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
     }
 
     guard let payloadType = payload["type"] as? String, payloadType == "message" else {
-      throw ParserError.invalidFormat("Not a message record")
+      parserLog.debug("[PARSER-SKIP] Codex payload type=\(payload["type"] as? String ?? "nil") line=\(lineNumber, privacy: .public) – non-message entry")
+      throw ParserError.skipEntry
     }
 
     guard let role = payload["role"] as? String else {
-      throw ParserError.missingRequiredField("payload.role")
+      parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
     }
 
     // Extract content

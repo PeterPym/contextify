@@ -597,10 +597,11 @@ struct ContextifyApp: App {
   private func startProjectDirectoryMonitoring(viewModel: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
 
-    #if APPSTORE_BUILD
-    log.info("[INIT] Skipping FSEvents project directory monitoring in App Store build")
-    return
-    #endif
+
+    if Sandbox.isSandboxed {
+      log.info("[INIT] Skipping FSEvents project directory monitoring in App Store build")
+      return
+    }
 
     // Get paths to monitor - Claude Code project directories and Codex CLI session directories
     let claudeProjectsPath = FileManager.default.homeDirectoryForCurrentUser
