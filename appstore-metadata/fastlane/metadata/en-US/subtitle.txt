@@ -1,1 +1,1 @@
-AI Session Manager for Developers
+Session Manager for Developers
