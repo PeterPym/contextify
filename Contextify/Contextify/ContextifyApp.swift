@@ -537,7 +537,18 @@ struct ContextifyApp: App {
           }
           return
         }
-        shouldAutoSelect = true
+        if Sandbox.isSandboxed {
+          log.info("🎯 [AUTOSELECT] Skipping auto-selection (sandbox build requires explicit user choice)")
+          vm.setDiscoveryProgress(DiscoveryProgress(
+            phase: .complete,
+            projectsCompleted: vm.projects.count,
+            projectsTotal: vm.projects.count,
+            message: "Select a project to continue"
+          ))
+          shouldAutoSelect = false
+        } else {
+          shouldAutoSelect = true
+        }
       }
 
       if shouldAutoSelect {
