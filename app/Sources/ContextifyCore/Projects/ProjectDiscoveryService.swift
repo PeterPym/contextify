@@ -9,6 +9,8 @@ public actor ProjectDiscoveryService {
   private let folderAccessController: FolderAccessController?  // Optional for backward compat
   private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
   private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
+  private var codexIndexCache: CachedCodexIndex?
+  private var codexProjectEntries: [String: CodexIndex.ProjectEntry] = [:]
 
   public init(
     db: DatabasePool,
@@ -63,6 +65,26 @@ public actor ProjectDiscoveryService {
     return try await controller.withAccess(auth, operation)
   }
 
+  /// Execute an operation with security-scoped access to ~/.codex/sessions.
+  private func withCodexRoot<T>(
+    _ operation: @Sendable (URL) throws -> T
+  ) async throws -> T where T: Sendable {
+    let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".codex/sessions")
+
+    guard let controller = folderAccessController else {
+      return try operation(defaultRoot)
+    }
+
+    guard let auth = await controller.authorization(for: .codex),
+          auth.status == .authorized else {
+      logger.debug("No Codex authorization (sandboxed build requires user permission)")
+      throw FolderAccessError.securityScopeAccessDenied(defaultRoot)
+    }
+
+    return try await controller.withAccess(auth, operation)
+  }
+
   // MARK: - Public API
 
   /// Discovers all Claude Code and Codex projects
@@ -111,35 +133,104 @@ public actor ProjectDiscoveryService {
       ))
     }
 
-    // 6. Pre-compute mtimes for sorting (async calls required for sandbox access)
-    var mtimeCache: [URL: Date] = [:]
+    // Merge Claude + Codex projects keyed by normalized path
+    var mergedProjects: [String: DiscoveredProject] = [:]
+    var overrideMtimes: [String: Date] = [:]
+
     for project in discovered {
-      mtimeCache[project.path] = await getNewestTranscriptMtime(for: project.path)
+      mergedProjects[normalizedKey(for: project.path.path)] = project
     }
 
-    // 7. Sort by newest transcript file modification time (filesystem-based)
-    // This ensures projects with recent work appear first, even before ingestion
-    let sorted = discovered.sorted { lhs, rhs in
-      // Primary: display_order ascending (if set)
-      if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder {
-        return lOrder < rOrder
-      } else if lhs.displayOrder != nil {
-        return true  // Projects with display_order come first
-      } else if rhs.displayOrder != nil {
-        return false
-      } else {
-        // Secondary: newest transcript file mtime (most recent first)
-        let lhsMtime = mtimeCache[lhs.path] ?? Date.distantPast
-        let rhsMtime = mtimeCache[rhs.path] ?? Date.distantPast
-        return lhsMtime > rhsMtime  // Newest first
+    if let codexIndex = await loadCodexIndex() {
+      for (normalizedPath, entry) in codexIndex.projects {
+        let projectURL = URL(fileURLWithPath: normalizedPath)
+        let metadata = try await getProjectMetadata(projectId: normalizedPath)
+        var providers = metadata.providers
+        providers.insert(.codexCLI)
+        let isCurrent = projectURL.path == currentProjectPath
+
+        if let existing = mergedProjects[normalizedPath] {
+          let combinedProviders = existing.providers.union(providers)
+          let transcriptCount = max(existing.transcriptCount, metadata.transcriptCount)
+          let entryCount = max(existing.entryCount, metadata.entryCount)
+          let lastActivity = maxDate(existing.lastActivity, maxDate(metadata.lastActivity, entry.latestMtime))
+          let displayOrder = existing.displayOrder ?? metadata.displayOrder
+
+          mergedProjects[normalizedPath] = DiscoveredProject(
+            id: existing.id,
+            name: existing.name,
+            path: existing.path,
+            providers: combinedProviders,
+            transcriptCount: transcriptCount,
+            entryCount: entryCount,
+            lastActivity: lastActivity,
+            isCurrent: existing.isCurrent || isCurrent,
+            ingestionError: existing.ingestionError,
+            displayOrder: displayOrder
+          )
+        } else {
+          let project = DiscoveredProject(
+            id: projectURL.path,
+            name: deriveProjectName(from: projectURL),
+            path: projectURL,
+            providers: providers,
+            transcriptCount: metadata.transcriptCount,
+            entryCount: metadata.entryCount,
+            lastActivity: entry.latestMtime ?? metadata.lastActivity,
+            isCurrent: isCurrent,
+            ingestionError: ingestionErrors[projectURL.path],
+            displayOrder: metadata.displayOrder
+          )
+          mergedProjects[normalizedPath] = project
+        }
+
+        if let latest = entry.latestMtime {
+          overrideMtimes[normalizedPath] = latest
+        }
       }
+    } else {
+      codexProjectEntries = [:]
+    }
+
+    let mergedList = Array(mergedProjects.values)
+
+    // Pre-compute mtimes for sorting (async calls required for sandbox access)
+    var mtimeCache: [String: Date] = [:]
+    for project in mergedList {
+      let key = normalizedKey(for: project.path.path)
+      if let override = overrideMtimes[key] {
+        mtimeCache[key] = override
+      } else {
+        mtimeCache[key] = await getNewestTranscriptMtime(for: project.path)
+      }
+    }
+
+    // Sort by display_order, then newest activity, then name
+    let sorted = mergedList.sorted { lhs, rhs in
+      if let lOrder = lhs.displayOrder, let rOrder = rhs.displayOrder, lOrder != rOrder {
+        return lOrder < rOrder
+      }
+
+      let lhsKey = normalizedKey(for: lhs.path.path)
+      let rhsKey = normalizedKey(for: rhs.path.path)
+      let lhsMtime = mtimeCache[lhsKey] ?? Date.distantPast
+      let rhsMtime = mtimeCache[rhsKey] ?? Date.distantPast
+      if lhsMtime != rhsMtime {
+        return lhsMtime > rhsMtime
+      }
+
+      return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
     }
 
     logger.info("Discovery complete: \(sorted.count) projects found")
 
     // Log first 3 projects for debugging
     if !sorted.isEmpty {
-      let top3 = sorted.prefix(3).map { "\($0.name) (mtime: \(mtimeCache[$0.path] ?? Date.distantPast))" }.joined(separator: ", ")
+      let top3 = sorted.prefix(3).map { project -> String in
+        let key = normalizedKey(for: project.path.path)
+        let mtime = mtimeCache[key] ?? Date.distantPast
+        return "\(project.name) (mtime: \(mtime))"
+      }.joined(separator: ", ")
       logger.info("[DISCOVERY-ORDER] Top 3 by activity: \(top3, privacy: .public)")
     }
 
@@ -180,9 +271,14 @@ public actor ProjectDiscoveryService {
         }
 
         // Check if project has Codex transcripts
-        let codexDir = projectPath.appendingPathComponent(".codex/sessions")
-        if FileManager.default.fileExists(atPath: codexDir.path) {
-          try await ingestCodexTranscripts(for: projectPath, codexDir: codexDir)
+        let normalizedProject = normalizedKey(for: projectPath.path)
+        if let codexEntry = codexProjectEntries[normalizedProject], !codexEntry.files.isEmpty {
+          try await ingestCodexTranscripts(for: projectPath, codexFiles: codexEntry.files)
+        } else {
+          let codexDir = projectPath.appendingPathComponent(".codex/sessions")
+          if FileManager.default.fileExists(atPath: codexDir.path) {
+            try await ingestCodexTranscriptsInDirectory(for: projectPath, codexDir: codexDir)
+          }
         }
 
         logger.debug("Ingested project: \(projectName)")
@@ -242,6 +338,55 @@ public actor ProjectDiscoveryService {
       return subdirs.compactMap { dir in
         reversePathMapping(dirURL: dir)
       }
+    }
+  }
+
+  /// Build or return cached Codex discovery index
+  private func loadCodexIndex(forceRefresh: Bool = false) async -> CodexIndex? {
+    if !forceRefresh,
+       let cached = codexIndexCache,
+       Date().timeIntervalSince(cached.timestamp) < 300 {
+      logger.debug("[CODEX-INDEX-CACHE] Using cached Codex index (projects=\(cached.index.projects.count, privacy: .public))")
+      codexProjectEntries = cached.index.projects
+      return cached.index
+    }
+
+    do {
+      let index = try await withCodexRoot { root in
+        try CodexIndexBuilder.build(at: root)
+      }
+
+      codexIndexCache = CachedCodexIndex(index: index, timestamp: Date())
+      codexProjectEntries = index.projects
+
+      if index.projects.isEmpty {
+        logger.debug("[CODEX-INDEX] No Codex sessions discovered")
+        return nil
+      } else {
+        logger.info("[CODEX-INDEX-DONE] projects=\(index.projects.count, privacy: .public) files=\(index.totalFiles, privacy: .public) errors=\(index.errorCount, privacy: .public) duration_ms=\(Int(index.duration * 1000), privacy: .public)")
+        return index
+      }
+    } catch {
+      logger.info("[CODEX-INDEX-SKIP] \(error.localizedDescription, privacy: .public)")
+      codexProjectEntries = [:]
+      return nil
+    }
+  }
+
+  private func normalizedKey(for path: String) -> String {
+    PathNormalizer.normalize(path)
+  }
+
+  private func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {
+    switch (lhs, rhs) {
+    case let (l?, r?):
+      return l > r ? l : r
+    case (let l?, nil):
+      return l
+    case (nil, let r?):
+      return r
+    default:
+      return nil
     }
   }
 
@@ -596,8 +741,49 @@ public actor ProjectDiscoveryService {
     _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
   }
 
-  /// Ingests Codex transcripts for a project
-  private func ingestCodexTranscripts(for projectPath: URL, codexDir: URL) async throws {
+  /// Ingest Codex transcripts discovered via the global ~/.codex/sessions index
+  private func ingestCodexTranscripts(for projectPath: URL, codexFiles: [CodexIndex.FileRecord]) async throws {
+    guard !codexFiles.isEmpty else { return }
+
+    let discovered: [DiscoveredTranscript]
+    do {
+      discovered = try await resolveCodexTranscripts(from: codexFiles)
+    } catch {
+      logger.error("Failed to resolve Codex transcripts for \(projectPath.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return
+    }
+
+    guard !discovered.isEmpty else { return }
+
+    let projectId = try orchestrator.getOrCreateProject(
+      name: deriveProjectName(from: projectPath),
+      rootPath: projectPath.path
+    )
+    logger.info("Ingesting Codex transcripts for project_id: \(projectId, privacy: .public) (path: \(projectPath.path, privacy: .public)) via global index")
+
+    _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+  }
+
+  private func resolveCodexTranscripts(from records: [CodexIndex.FileRecord]) async throws -> [DiscoveredTranscript] {
+    try await withCodexRoot { root in
+      records.compactMap { record in
+        let fileURL = root.appendingPathComponent(record.relativePath)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+          self.logger.debug("[CODEX-INGEST-SKIP] Missing file \(record.relativePath, privacy: .public)")
+          return nil
+        }
+
+        return DiscoveredTranscript(
+          fileURL: fileURL,
+          provider: .codexCLI,
+          sessionId: record.sessionId
+        )
+      }
+    }
+  }
+
+  /// Legacy ingestion path for Codex transcripts stored inside the project directory
+  private func ingestCodexTranscriptsInDirectory(for projectPath: URL, codexDir: URL) async throws {
     let transcriptFiles = try FileManager.default.contentsOfDirectory(
       at: codexDir,
       includingPropertiesForKeys: [.isDirectoryKey],
@@ -621,5 +807,130 @@ public actor ProjectDiscoveryService {
 
     // Batch upsert
     _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+  }
+}
+
+private struct CachedCodexIndex {
+  let index: CodexIndex
+  let timestamp: Date
+}
+
+private enum CodexIndexBuilder {
+  private static let log = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery.CodexIndex")
+
+  static func build(at root: URL) throws -> CodexIndex {
+    guard FileManager.default.fileExists(atPath: root.path) else {
+      log.debug("[CODEX-INDEX] Root not found at \(root.path)")
+      return CodexIndex(projects: [:], totalFiles: 0, errorCount: 0, duration: 0)
+    }
+
+    guard let enumerator = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      log.warning("[CODEX-INDEX] Failed to create enumerator for \(root.path)")
+      return CodexIndex(projects: [:], totalFiles: 0, errorCount: 0, duration: 0)
+    }
+
+    var projects: [String: CodexIndex.ProjectEntry] = [:]
+    var fileCount = 0
+    var parseErrors = 0
+    let start = Date()
+
+    for case let fileURL as URL in enumerator {
+      guard fileURL.pathExtension == "jsonl" else { continue }
+
+      let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
+      guard resourceValues?.isRegularFile == true else { continue }
+
+      fileCount += 1
+
+      guard let firstLine = readFirstLine(of: fileURL),
+            let meta = parseCodexSessionMeta(from: firstLine) else {
+        parseErrors += 1
+        continue
+      }
+
+      let normalizedPath = meta.cwd
+      let relativePath = relativeCodexPath(for: fileURL, root: root)
+      let mtime = resourceValues?.contentModificationDate ?? Date.distantPast
+
+      var entry = projects[normalizedPath] ?? CodexIndex.ProjectEntry()
+      entry.files.append(CodexIndex.FileRecord(relativePath: relativePath, sessionId: meta.sessionId, mtime: mtime))
+      entry.files.sort { $0.mtime > $1.mtime }
+      if entry.files.count > 1000 {
+        entry.files = Array(entry.files.prefix(1000))
+      }
+      if let existingMtime = entry.latestMtime {
+        entry.latestMtime = max(existingMtime, mtime)
+      } else {
+        entry.latestMtime = mtime
+      }
+      projects[normalizedPath] = entry
+    }
+
+    return CodexIndex(
+      projects: projects,
+      totalFiles: fileCount,
+      errorCount: parseErrors,
+      duration: Date().timeIntervalSince(start)
+    )
+  }
+
+  private static func parseCodexSessionMeta(from line: String) -> (cwd: String, sessionId: String)? {
+    guard let data = line.data(using: .utf8) else { return nil }
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    guard let type = json["type"] as? String,
+          type.lowercased() == "session_meta",
+          let payload = json["payload"] as? [String: Any],
+          let rawCwd = payload["cwd"] as? String else {
+      return nil
+    }
+
+    let sessionId = (payload["id"] as? String) ??
+      (payload["sessionId"] as? String) ??
+      UUID().uuidString
+
+    return (cwd: PathNormalizer.normalize(rawCwd), sessionId: sessionId)
+  }
+
+  private static func relativeCodexPath(for file: URL, root: URL) -> String {
+    let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+    var fullPath = file.path
+    if fullPath.hasPrefix(rootPath) {
+      fullPath.removeFirst(rootPath.count)
+    } else if fullPath.hasPrefix(root.path) {
+      fullPath.removeFirst(root.path.count)
+      if fullPath.hasPrefix("/") {
+        fullPath.removeFirst()
+      }
+    }
+    return fullPath
+  }
+
+  private static func readFirstLine(of fileURL: URL) -> String? {
+    guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+    defer { try? handle.close() }
+
+    var buffer = Data()
+    while true {
+      guard let chunk = try? handle.read(upToCount: 4096), !chunk.isEmpty else {
+        break
+      }
+
+      if let newlineIndex = chunk.firstIndex(of: UInt8(ascii: "\n")) {
+        buffer.append(chunk.prefix(upTo: newlineIndex))
+        break
+      } else {
+        buffer.append(chunk)
+        if buffer.count > 262_144 {
+          break
+        }
+      }
+    }
+
+    guard !buffer.isEmpty else { return nil }
+    return String(data: buffer, encoding: .utf8)
   }
 }

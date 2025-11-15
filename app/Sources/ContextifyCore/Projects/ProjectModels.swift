@@ -149,3 +149,47 @@ public struct DiscoveryProgress: Sendable {
     self.transcriptsTotal = transcriptsTotal
   }
 }
+
+// MARK: - Codex Indexing
+
+/// Indexed view of Codex sessions grouped by normalized project path
+public struct CodexIndex: Sendable {
+  public struct FileRecord: Sendable {
+    public let relativePath: String  // Path relative to ~/.codex/sessions
+    public let sessionId: String
+    public let mtime: Date
+
+    public init(relativePath: String, sessionId: String, mtime: Date) {
+      self.relativePath = relativePath
+      self.sessionId = sessionId
+      self.mtime = mtime
+    }
+  }
+
+  public struct ProjectEntry: Sendable {
+    public var files: [FileRecord]
+    public var latestMtime: Date?
+
+    public init(files: [FileRecord] = [], latestMtime: Date? = nil) {
+      self.files = files
+      self.latestMtime = latestMtime
+    }
+  }
+
+  public let projects: [String: ProjectEntry]  // normalized project path → entry
+  public let totalFiles: Int
+  public let errorCount: Int
+  public let duration: TimeInterval
+
+  public init(
+    projects: [String: ProjectEntry],
+    totalFiles: Int,
+    errorCount: Int,
+    duration: TimeInterval
+  ) {
+    self.projects = projects
+    self.totalFiles = totalFiles
+    self.errorCount = errorCount
+    self.duration = duration
+  }
+}
