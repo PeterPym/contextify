@@ -1,0 +1,1 @@
+AI,developer,productivity,Claude,coding,assistant,session,tracking,HUD,developer tools,conversation,timeline,project management,git,transcript,summary,LLM,Swift,macOS,code assistant

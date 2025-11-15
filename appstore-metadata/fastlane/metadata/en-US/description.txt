@@ -1,0 +1,48 @@
+Contextify is a powerful macOS HUD that helps developers stay organized across AI-powered coding sessions. Built specifically for Claude Code and Codex CLI users who need to maintain context across multiple projects and conversations.
+
+⚡ KEY FEATURES
+
+• Real-time Session Tracking – Monitor Claude Code and Codex CLI conversations as they happen
+• AI-Powered Summaries – Automatically generated summaries help you understand conversation flow at a glance
+• Project-Centric Organization – Automatically detects and organizes sessions by project
+• Timestamped Artifacts – Every interaction creates a timestamped Markdown record for future reference
+• Drag & Drop Ingestion – Drop files or URLs directly into Contextify to create instant artifacts
+• Session Checkpoints – Mark important moments in your development workflow
+• Timeline Visualization – See your entire conversation history with visual timeline navigation
+• Git Integration – Automatically tracks git repository context for each session
+
+🎯 PERFECT FOR
+
+• Software developers using AI coding assistants
+• Teams maintaining context across multiple AI conversations
+• Developers who need to review past AI interactions
+• Anyone wanting better organization of their Claude Code sessions
+
+💡 HOW IT WORKS
+
+Contextify runs as a native macOS HUD that monitors your ~/.claude/projects/ and ~/.codex/sessions/ directories. When you start a conversation with Claude Code or Codex, Contextify automatically detects it, tracks the conversation timeline, and generates intelligent summaries using advanced LLM processing.
+
+All data is stored locally in a SQLite database with full support for custom locations (Dropbox, iCloud Drive). Your conversations remain private and under your control.
+
+🔒 PRIVACY & SECURITY
+
+• All data stored locally on your Mac
+• No cloud sync or external servers
+• Security-scoped bookmark system for safe file access
+• Full control over your conversation data
+
+🛠 TECHNICAL DETAILS
+
+• Built with Swift 6 and SwiftUI
+• Native macOS performance
+• Real-time file system monitoring
+• GRDB SQLite backend for fast queries
+• Support for custom database locations
+
+📊 SYSTEM REQUIREMENTS
+
+• macOS 14.0 or later
+• Claude Code or Codex CLI installed
+• 50 MB free disk space
+
+Contextify is the essential companion for developers using AI coding assistants. Keep your sessions organized, searchable, and always accessible.

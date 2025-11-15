@@ -1,0 +1,212 @@
+{
+  "app_info": {
+    "name": "Contextify",
+    "bundle_id": "dev.contextify.Contextify",
+    "sku": "CONTEXTIFY-001",
+    "primary_language": "en-US",
+    "platforms": ["macOS"],
+    "minimum_os_version": "14.0",
+    "release_version": "1.0.0"
+  },
+
+  "metadata": {
+    "en-US": {
+      "name": "Contextify",
+      "subtitle": "AI Session Manager for Developers",
+      "promotional_text": "Track your Claude Code sessions with real-time AI summaries. Never lose context across conversations.",
+      "description": "Contextify is a powerful macOS HUD that helps developers stay organized across AI-powered coding sessions. Built specifically for Claude Code and Codex CLI users who need to maintain context across multiple projects and conversations.\n\n⚡ KEY FEATURES\n\n• Real-time Session Tracking – Monitor Claude Code and Codex CLI conversations as they happen\n• AI-Powered Summaries – Automatically generated summaries help you understand conversation flow at a glance\n• Project-Centric Organization – Automatically detects and organizes sessions by project\n• Timestamped Artifacts – Every interaction creates a timestamped Markdown record for future reference\n• Drag & Drop Ingestion – Drop files or URLs directly into Contextify to create instant artifacts\n• Session Checkpoints – Mark important moments in your development workflow\n• Timeline Visualization – See your entire conversation history with visual timeline navigation\n• Git Integration – Automatically tracks git repository context for each session\n\n🎯 PERFECT FOR\n\n• Software developers using AI coding assistants\n• Teams maintaining context across multiple AI conversations\n• Developers who need to review past AI interactions\n• Anyone wanting better organization of their Claude Code sessions\n\n💡 HOW IT WORKS\n\nContextify runs as a native macOS HUD that monitors your ~/.claude/projects/ and ~/.codex/sessions/ directories. When you start a conversation with Claude Code or Codex, Contextify automatically detects it, tracks the conversation timeline, and generates intelligent summaries using advanced LLM processing.\n\nAll data is stored locally in a SQLite database with full support for custom locations (Dropbox, iCloud Drive). Your conversations remain private and under your control.\n\n🔒 PRIVACY & SECURITY\n\n• All data stored locally on your Mac\n• No cloud sync or external servers\n• Security-scoped bookmark system for safe file access\n• Full control over your conversation data\n\n🛠 TECHNICAL DETAILS\n\n• Built with Swift 6 and SwiftUI\n• Native macOS performance\n• Real-time file system monitoring\n• GRDB SQLite backend for fast queries\n• Support for custom database locations\n\n📊 SYSTEM REQUIREMENTS\n\n• macOS 14.0 or later\n• Claude Code or Codex CLI installed\n• 50 MB free disk space\n\nContextify is the essential companion for developers using AI coding assistants. Keep your sessions organized, searchable, and always accessible.",
+
+      "keywords": "AI,developer,productivity,Claude,coding,assistant,session,tracking,HUD,developer tools,conversation,timeline,project management,git,transcript,summary,LLM,Swift,macOS,code assistant",
+
+      "release_notes": "Initial release of Contextify!\n\n• Real-time conversation monitoring for Claude Code and Codex CLI\n• AI-powered session summaries\n• Project-centric organization with automatic git detection\n• Drag & drop file and URL ingestion\n• Timestamped Markdown artifacts\n• Session checkpoints\n• Timeline visualization\n• Custom database location support (Dropbox, iCloud Drive)\n• Native macOS performance with Swift 6",
+
+      "support_url": "https://contextify.sh/support",
+      "marketing_url": "https://contextify.sh",
+      "privacy_url": "https://contextify.sh/privacy"
+    }
+  },
+
+  "app_store_information": {
+    "copyright": "2025 Contextify",
+    "primary_category": "DEVELOPER_TOOLS",
+    "primary_first_sub_category": "DEVELOPER_TOOLS",
+    "secondary_category": "PRODUCTIVITY",
+    "age_rating": "4+",
+    "universal_app": false
+  },
+
+  "review_information": {
+    "first_name": "[REQUIRED]",
+    "last_name": "[REQUIRED]",
+    "phone_number": "[REQUIRED]",
+    "email_address": "[REQUIRED]",
+    "demo_user": "",
+    "demo_password": "",
+    "notes": "Contextify monitors Claude Code and Codex CLI conversation transcripts. To fully test the app:\n\n1. Install Claude Code CLI (https://github.com/anthropics/claude-code)\n2. Run 'claude' command to start a session\n3. Launch Contextify - it will auto-detect the active session\n4. The app will display real-time conversation timeline and summaries\n\nThe app requires access to:\n• ~/.claude/projects/ (Claude Code transcripts)\n• ~/.codex/sessions/ (Codex transcripts)\n\nThese are standard locations for AI coding assistant conversation logs. No special permissions needed beyond standard file access.\n\nFor sandbox build testing, the app uses security-scoped bookmarks to access these directories."
+  },
+
+  "trade_representative_contact": {
+    "trade_name": "[OPTIONAL]",
+    "first_name": "[OPTIONAL]",
+    "last_name": "[OPTIONAL]",
+    "address_line1": "[OPTIONAL]",
+    "address_line2": "[OPTIONAL]",
+    "city_name": "[OPTIONAL]",
+    "state": "[OPTIONAL]",
+    "country": "[OPTIONAL]",
+    "postal_code": "[OPTIONAL]",
+    "phone_number": "[OPTIONAL]",
+    "email_address": "[OPTIONAL]",
+    "is_displayed_on_app_store": false
+  },
+
+  "app_privacy": {
+    "privacy_policy_url": "https://contextify.sh/privacy",
+    "privacy_policy_text": "See privacy policy URL",
+    "user_privacy_choices_url": "",
+    "data_collection": {
+      "collects_data": false,
+      "data_types": [],
+      "data_usage": "All data is stored locally on the user's Mac. No data is transmitted to external servers. Contextify only reads conversation transcripts from Claude Code and Codex CLI directories on the local filesystem.",
+      "data_linked_to_user": false,
+      "data_used_to_track_user": false
+    }
+  },
+
+  "screenshots": {
+    "macos": {
+      "required_size": "2880x1800",
+      "alternative_sizes": ["1280x800", "1440x900", "2560x1600"],
+      "format": ["PNG", "JPEG"],
+      "max_size_mb": 10,
+      "quantity": {
+        "min": 1,
+        "max": 10,
+        "recommended": 5
+      },
+      "specifications": [
+        {
+          "filename": "01-main-hud.png",
+          "size": "2880x1800",
+          "description": "Hero shot: Main HUD window showing active conversation timeline with project info, real-time entries streaming in, and AI-generated summary visible. Show clean, professional UI with Contextify logo. Background should be a typical developer desktop with terminal/code editor visible but blurred. Emphasize the floating HUD nature of the app."
+        },
+        {
+          "filename": "02-timeline-view.png",
+          "size": "2880x1800",
+          "description": "Timeline visualization: Full conversation timeline showing multiple entries with timestamps, user messages, assistant responses, and tool calls. Highlight the chronological flow and easy navigation. Show the search/filter functionality if available. Include visual indicators for different entry types (user, assistant, tool)."
+        },
+        {
+          "filename": "03-project-switcher.png",
+          "size": "2880x1800",
+          "description": "Project management: Show the project switcher interface with multiple projects listed. Display project names, git branches, last activity timestamps. Demonstrate how users can easily switch between different coding projects. Show at least 3-4 different projects with recognizable names."
+        },
+        {
+          "filename": "04-ai-summaries.png",
+          "size": "2880x1800",
+          "description": "AI-powered summaries: Close-up of an LLM-generated conversation summary. Show the summary text clearly with professional formatting. Highlight how the summary captures key discussion points, decisions made, and action items. Include timestamp and context info. This should demonstrate the AI intelligence of the app."
+        },
+        {
+          "filename": "05-file-ingestion.png",
+          "size": "2880x1800",
+          "description": "Drag & drop demonstration: Show the drag & drop zone active with a file being dragged over the HUD. Include visual feedback (highlight, drop zone indicator). Show the resulting artifact creation with Markdown preview. This demonstrates the file ingestion feature."
+        },
+        {
+          "filename": "06-settings-database.png",
+          "size": "2880x1800",
+          "description": "Settings & customization: Display the settings panel showing database location options (including Dropbox/iCloud Drive support), appearance preferences, and monitoring settings. Show the professional settings UI with clear options. This demonstrates advanced configuration capabilities."
+        },
+        {
+          "filename": "07-git-integration.png",
+          "size": "2880x1800",
+          "description": "Git context awareness: Show how Contextify displays git repository information - branch name, commit hash, repository path. Display this integrated into the conversation context. Demonstrate the automatic git detection feature."
+        }
+      ]
+    }
+  },
+
+  "app_previews": {
+    "macos": {
+      "resolution": "1920x1080",
+      "orientation": "landscape",
+      "format": ["MOV", "MP4", "M4V"],
+      "codec": "H.264",
+      "audio_codec": "AAC",
+      "max_duration_seconds": 30,
+      "min_duration_seconds": 15,
+      "max_size_mb": 500,
+      "quantity": {
+        "max": 3,
+        "recommended": 2
+      },
+      "specifications": [
+        {
+          "filename": "preview-01-overview.mov",
+          "duration_seconds": 30,
+          "description": "Overview preview (30s): Open with Contextify logo, then show a developer launching Claude Code in terminal. Cut to Contextify automatically detecting the new session. Show real-time entries appearing in the timeline as the conversation progresses. Demonstrate quick project switching. Show an AI summary being generated. End with tagline 'Stay in Context with Contextify'. Use smooth transitions, no hands/cursor visible unless necessary. Background music: subtle, tech-focused."
+        },
+        {
+          "filename": "preview-02-features.mov",
+          "duration_seconds": 25,
+          "description": "Feature showcase (25s): Quick feature montage: 1) File drag & drop creating artifact (3s), 2) Timeline navigation and search (4s), 3) Checkpoint creation (3s), 4) AI summary generation (5s), 5) Git integration showing branch context (4s), 6) Settings with database location options (3s), 7) Multiple projects organized (3s). Fast-paced, energetic. Each feature should be clearly labeled with text overlay. No narration needed."
+        }
+      ]
+    }
+  },
+
+  "automation": {
+    "fastlane": {
+      "enabled": true,
+      "metadata_path": "./appstore-metadata/fastlane/metadata",
+      "screenshots_path": "./appstore-metadata/screenshots",
+      "notes": "Use 'fastlane deliver' to upload metadata and screenshots. Use 'fastlane deliver download_metadata --platform osx' to download current metadata from App Store Connect."
+    },
+    "app_store_connect_api": {
+      "enabled": false,
+      "api_key_path": "[PATH_TO_API_KEY_JSON]",
+      "issuer_id": "[ISSUER_ID]",
+      "key_id": "[KEY_ID]"
+    }
+  },
+
+  "localization": {
+    "available_languages": ["en-US"],
+    "planned_languages": ["de-DE", "fr-FR", "ja-JP", "es-ES"],
+    "notes": "Initial release in English only. Plan to add German, French, Japanese, and Spanish in future updates based on user demand."
+  },
+
+  "notes": {
+    "submission_checklist": [
+      "Update review_information with actual contact details",
+      "Generate all 7 screenshots at 2880x1800",
+      "Create at least 1 app preview video (2 recommended)",
+      "Update privacy_url and support_url with actual URLs",
+      "Verify keywords are optimized (100 char limit)",
+      "Test app on macOS 14.0+ before submission",
+      "Prepare demo account if app requires login",
+      "Review App Store Review Guidelines compliance",
+      "Ensure copyright year is current",
+      "Update release_notes for each version"
+    ],
+    "aso_tips": [
+      "App name + subtitle = 60 characters total (30 each)",
+      "Front-load important keywords in name/subtitle",
+      "Use all 100 characters in keywords field",
+      "Update promotional_text for timely announcements without new submission",
+      "First 170 characters of description are visible before 'more' click",
+      "Include social proof in description once available",
+      "Refresh metadata every 4 weeks for optimal ASO",
+      "Monitor competitor keywords and rankings",
+      "A/B test screenshots order based on conversion data"
+    ],
+    "screenshot_tips": [
+      "Use MacBook Pro with Retina display for captures",
+      "Screenshots should tell a story in sequence",
+      "First screenshot is most important (hero shot)",
+      "Use text overlays sparingly, only for clarity",
+      "Maintain consistent visual style across all screenshots",
+      "Show the app in context of developer workflow",
+      "Avoid cluttered backgrounds",
+      "Use high-quality, professional assets only"
+    ]
+  }
+}
