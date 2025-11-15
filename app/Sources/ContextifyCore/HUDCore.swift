@@ -548,7 +548,10 @@ public final class HUDViewModel {
     // Restore security-scoped access to project root. Without this, sandboxed builds
     // cannot monitor .git/HEAD (branch display breaks) or access other project files.
     // The bookmark grants persistent filesystem access across app launches and project switches.
-    if let bookmark = context.bookmark {
+    //
+    // Note: Git monitoring is disabled in sandboxed builds (see updateHeadWatcher()),
+    // so we skip bookmark restoration to avoid error spam.
+    if !Sandbox.isSandboxed, let bookmark = context.bookmark {
       do {
         var isStale = false
         let scopedURL = try URL(
@@ -565,8 +568,6 @@ public final class HUDViewModel {
       } catch {
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
-    } else if Sandbox.isSandboxed {
-      watcherLog.error("[GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)")
     }
 
     // Update file watchers for new project
@@ -942,15 +943,16 @@ public final class HUDViewModel {
   }
 
   public func updateHeadWatcher() {
-    cancelHeadAndRefWatchers()
-
     #if os(macOS)
-    if Sandbox.isSandboxed, securityScopedURL == nil {
-      watcherLog.error("[GIT-BROKEN] Git monitoring failed (no project root access in sandboxed build)")
-      startBranchMonitor()
+    // Git monitoring disabled in sandboxed builds (requires per-project folder access)
+    // Sandboxed builds would need user to grant access to each project root via NSOpenPanel,
+    // which is too complex for initial App Store release. See TODOS.md for future enhancement.
+    guard !Sandbox.isSandboxed else {
       return
     }
     #endif
+
+    cancelHeadAndRefWatchers()
 
     let base: URL = {
       if let current = projectRootURL { return current }

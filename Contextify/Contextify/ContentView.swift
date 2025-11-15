@@ -173,10 +173,15 @@ struct ContentView: View {
 
                     ProjectBadgesContainer(projectPath: projectPath)
                 }
-                Label(model.branchDisplay, systemImage: "arrow.branch")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+
+                // Git branch display (DMG builds only)
+                // Sandboxed builds disable git monitoring to avoid permission complexity
+                if !Sandbox.isSandboxed {
+                    Label(model.branchDisplay, systemImage: "arrow.branch")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 Button("Open project...") {
                     Task {
