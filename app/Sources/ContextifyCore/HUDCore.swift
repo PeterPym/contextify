@@ -497,28 +497,36 @@ public final class HUDViewModel {
       let canonical = await Task.detached {
         bookmark.resolvingSymlinksInPath()
       }.value
-      projectRootURL = canonical
-      lastPersistedPath = canonical.path
-      lastPersistedAt = Date()
-      persistRootIfNeeded(canonical, force: true)
-      updateSecurityScope(for: bookmark, persisted: true)
-      updateGitInfo()
-      updateHeadWatcher()
-      discoveredRoot = canonical
+      if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox container bookmark at \(canonical.path)")
+      } else {
+        projectRootURL = canonical
+        lastPersistedPath = canonical.path
+        lastPersistedAt = Date()
+        persistRootIfNeeded(canonical, force: true)
+        updateSecurityScope(for: bookmark, persisted: true)
+        updateGitInfo()
+        updateHeadWatcher()
+        discoveredRoot = canonical
+      }
     } else if let path = persistedPath, !path.isEmpty {
       let (canonical, scoped) = await Task.detached {
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let scoped = HUDPreferences.resolveBookmark() ?? canonical
         return (canonical, scoped)
       }.value
-      projectRootURL = canonical
-      lastPersistedPath = canonical.path
-      lastPersistedAt = Date()
-      persistRootIfNeeded(canonical, force: true)
-      updateSecurityScope(for: scoped, persisted: true)
-      updateGitInfo()
-      updateHeadWatcher()
-      discoveredRoot = canonical
+      if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path)")
+      } else {
+        projectRootURL = canonical
+        lastPersistedPath = canonical.path
+        lastPersistedAt = Date()
+        persistRootIfNeeded(canonical, force: true)
+        updateSecurityScope(for: scoped, persisted: true)
+        updateGitInfo()
+        updateHeadWatcher()
+        discoveredRoot = canonical
+      }
     }
 
     // Notify observers synchronously on MainActor; startup is @MainActor-isolated
