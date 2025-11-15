@@ -473,7 +473,7 @@ public final class StartupCoordinator {
 
     private func sanitizeResolvedPath(_ candidate: String, source: String) -> String? {
         guard !SandboxPathFilter.isSandboxContainerPath(candidate) else {
-            log.warning("[COORD-FILTER] Ignoring sandbox container path from \(source)")
+            log.warning("[COORD-FILTER] Ignoring sandbox container path from \(source, privacy: .public): \(candidate, privacy: .public)")
             return nil
         }
         return candidate

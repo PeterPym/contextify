@@ -498,7 +498,7 @@ public final class HUDViewModel {
         bookmark.resolvingSymlinksInPath()
       }.value
       if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
-        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox container bookmark at \(canonical.path)")
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox container bookmark at \(canonical.path, privacy: .public)")
       } else {
         projectRootURL = canonical
         lastPersistedPath = canonical.path
@@ -516,7 +516,7 @@ public final class HUDViewModel {
         return (canonical, scoped)
       }.value
       if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
-        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path)")
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path, privacy: .public)")
       } else {
         projectRootURL = canonical
         lastPersistedPath = canonical.path

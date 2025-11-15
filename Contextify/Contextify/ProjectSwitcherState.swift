@@ -193,7 +193,7 @@ public final class ProjectSwitcherState {
       await refreshUnreadCounts()
 
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
-      log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
+      log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil", privacy: .public), projects=\(self.allProjects.count)")
 
     }
 
