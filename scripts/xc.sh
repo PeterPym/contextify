@@ -60,6 +60,12 @@ parse_arg() {
       action="cleanrun"
       fast_clean=1
       ;;
+    ar)
+      # Fast cleanrun for App Store (like dr, but sandboxed)
+      dist="appstore"
+      action="cleanrun"
+      fast_clean=1
+      ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
       echo "This command replaces ~/.claude/projects with test fixtures, causing active transcripts to be lost." >&2
@@ -67,7 +73,7 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
+      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr|ar]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
@@ -83,6 +89,7 @@ parse_arg() {
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
       echo "  da                 Shortcut for DMG cleanrun (full clean: db + perms + GRDB)" >&2
       echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
+      echo "  ar                 Fast App Store cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
@@ -109,9 +116,13 @@ if [[ "$dev_mode" -eq 1 ]]; then
   echo "  Developer Mode: ENABLED"
 fi
 echo ""
-if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" ]]; then
+if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" || "$action" == "dr" || "$action" == "ar" ]]; then
   echo "  ⚠️  This will:"
-  echo "      • Clean build cache (.derived/)"
+  if [[ "$fast_clean" -eq 1 ]]; then
+    echo "      • Clean app artifacts only (preserves GRDB/dependencies)"
+  else
+    echo "      • Clean build cache (.derived/)"
+  fi
   echo "      • Wipe database (all projects/transcripts/entries)"
   echo "      • Reset app preferences and bookmarks"
   echo "      • Reset TCC permissions (folder access, etc.)"
