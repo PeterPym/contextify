@@ -296,12 +296,20 @@ final class ProjectsViewModel {
   }
 
   private func resolveCurrentProjectPath() async throws -> String? {
-    if let path = currentProjectPath { return path }
-    if let ctx = StartupCoordinator.shared.current { return ctx.path }
+    if let path = SandboxPathFilter.sanitizedPath(currentProjectPath) {
+      return path
+    }
+    if let ctxPath = SandboxPathFilter.sanitizedPath(StartupCoordinator.shared.current?.path) {
+      return ctxPath
+    }
     // Last resort: DB MRU (stable and deterministic)
     let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
     let all = try orchestrator.listProjects()
     return all
+      .filter { project in
+        let root = project.rootPath
+        return !SandboxPathFilter.isSandboxContainerPath(root)
+      }
       .sorted { ($0.lastViewedTs ?? 0) > ($1.lastViewedTs ?? 0) }
       .first?.rootPath
   }

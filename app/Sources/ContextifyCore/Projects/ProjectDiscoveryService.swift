@@ -70,6 +70,7 @@ public actor ProjectDiscoveryService {
   /// - Returns: Array of discovered projects with metadata
   public func discoverAllProjects(currentProjectPath: String?) async throws -> [DiscoveredProject] {
     logger.info("Starting project discovery")
+    let sanitizedCurrentPath = SandboxPathFilter.sanitizedPath(currentProjectPath)
 
     // Do not clear ingestionErrors here. We keep prior errors visible until a
     // subsequent successful ingest explicitly replaces them.
@@ -82,6 +83,10 @@ public actor ProjectDiscoveryService {
 
     // 2. For each Claude project, get metadata and providers from database
     for projectPath in claudeProjects {
+      if SandboxPathFilter.isSandboxContainerPath(projectPath.path) {
+        logger.info("[DISCOVERY-FILTER] Skipping sandbox container project: \(projectPath.path, privacy: .public)")
+        continue
+      }
       // Get metadata from database (includes providers from ingested transcripts)
       let metadata = try await getProjectMetadata(projectId: projectPath.path)
 
@@ -105,7 +110,7 @@ public actor ProjectDiscoveryService {
         transcriptCount: metadata.transcriptCount,
         entryCount: metadata.entryCount,
         lastActivity: metadata.lastActivity,
-        isCurrent: projectPath.path == currentProjectPath,
+        isCurrent: projectPath.path == sanitizedCurrentPath,
         ingestionError: ingestionErrors[projectPath.path],
         displayOrder: metadata.displayOrder
       ))

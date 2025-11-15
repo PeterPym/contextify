@@ -342,7 +342,9 @@ public final class StartupCoordinator {
         let persistStart = Date()
         log.info("[UIOPT-COORD-PERSIST-START] Persisting project path to UserDefaults...")
         await Task.detached {
-            HUDPreferences.setPersistedRoot(path)
+            if !SandboxPathFilter.isSandboxContainerPath(path) {
+                HUDPreferences.setPersistedRoot(path)
+            }
         }.value
         log.info("[UIOPT-COORD-PERSIST-DONE] Persistence complete in \(String(format: "%.0f", Date().timeIntervalSince(persistStart) * 1000), privacy: .public)ms")
 
@@ -365,9 +367,10 @@ public final class StartupCoordinator {
     /// Resolve project root using precedence order.
     private func resolveProjectRoot() async throws -> String {
         // Priority 1: Environment variable
-        if let envRoot = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"] {
-            log.debug("📍 Using CONTEXTIFY_PROJECT_ROOT: \(envRoot, privacy: .public)")
-            return envRoot
+        if let envRoot = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"],
+           let sanitized = sanitizeResolvedPath(envRoot, source: "CONTEXTIFY_PROJECT_ROOT") {
+            log.debug("📍 Using CONTEXTIFY_PROJECT_ROOT: \(sanitized, privacy: .public)")
+            return sanitized
         }
 
         // Priority 2: Bookmark (sandboxed builds)
@@ -376,24 +379,28 @@ public final class StartupCoordinator {
         }.value
         if let bookmarkURL {
             let path = bookmarkURL.resolvingSymlinksInPath().path
-            log.debug("📍 Using bookmark: \(path, privacy: .public)")
-            return path
+            if let sanitized = sanitizeResolvedPath(path, source: "bookmark") {
+                log.debug("📍 Using bookmark: \(sanitized, privacy: .public)")
+                return sanitized
+            }
         }
 
         // Priority 3: Persisted path (UserDefaults)
         let persistedPath = await Task.detached {
             return HUDPreferences.getPersistedRoot()
         }.value
-        if let persistedPath, !persistedPath.isEmpty {
-            log.debug("📍 Using persisted path: \(persistedPath, privacy: .public)")
-            return persistedPath
+        if let persistedPath,
+           !persistedPath.isEmpty,
+           let sanitized = sanitizeResolvedPath(persistedPath, source: "persisted path") {
+            log.debug("📍 Using persisted path: \(sanitized, privacy: .public)")
+            return sanitized
         }
 
         // Priority 4: Current working directory
         let cwd = FileManager.default.currentDirectoryPath
-        if cwd != "/" {
-            log.debug("📍 Using CWD: \(cwd, privacy: .public)")
-            return cwd
+        if cwd != "/", let sanitized = sanitizeResolvedPath(cwd, source: "cwd") {
+            log.debug("📍 Using CWD: \(sanitized, privacy: .public)")
+            return sanitized
         }
 
         // No valid root available
@@ -462,6 +469,14 @@ public final class StartupCoordinator {
             self.log.error("❌ Failed to create project: \(message, privacy: .public)")
             throw StartupError.projectCreationFailed(message)
         }
+    }
+
+    private func sanitizeResolvedPath(_ candidate: String, source: String) -> String? {
+        guard !SandboxPathFilter.isSandboxContainerPath(candidate) else {
+            log.warning("[COORD-FILTER] Ignoring sandbox container path from \(source)")
+            return nil
+        }
+        return candidate
     }
 
     /// Resolve git branch for project (if git repository).
