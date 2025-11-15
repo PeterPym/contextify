@@ -9,11 +9,12 @@ public enum TranscriptWatcherError: Error {
 }
 
 /// Watches transcript files for changes and triggers incremental streaming
-public final class TranscriptWatcher {
+public final class TranscriptWatcher: @unchecked Sendable {
   private let hooverEngine: HooverEngine
   private let transcriptRepo: TranscriptRepository
   private var metadataInvalidator: ((String) throws -> Void)?
   private var rehoover: ((String, URL, String, String?) throws -> Void)?
+  private let accessProvider: TranscriptAccessProvider?
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var debounceTimers: [String: Timer] = [:]
   private var lastEventTime: [String: Date] = [:]
@@ -28,11 +29,13 @@ public final class TranscriptWatcher {
   public init(
     hooverEngine: HooverEngine,
     transcriptRepo: TranscriptRepository,
+    accessProvider: TranscriptAccessProvider? = nil,
     metadataInvalidator: ((String) throws -> Void)? = nil,
     rehoover: ((String, URL, String, String?) throws -> Void)? = nil
   ) {
     self.hooverEngine = hooverEngine
     self.transcriptRepo = transcriptRepo
+    self.accessProvider = accessProvider
     self.metadataInvalidator = metadataInvalidator
     self.rehoover = rehoover
   }
@@ -55,7 +58,7 @@ public final class TranscriptWatcher {
   }
 
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
-  public func watch(transcriptId: String, fileURL: URL) throws {
+  public func watch(transcriptId: String, fileURL: URL, provider: String) throws {
     log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
     log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
 
@@ -77,47 +80,14 @@ public final class TranscriptWatcher {
     // before starting watchers, so this was 100% redundant (causing 50% wasted work).
     // Watcher now only monitors FUTURE file changes, not existing content.
 
-    let fileDescriptor = open(fileURL.path, O_EVTONLY)
-    guard fileDescriptor >= 0 else {
-      log.error("Failed to open file for watching: \(fileURL.path, privacy: .public)")
-      return
-    }
-
-    let source = DispatchSource.makeFileSystemObjectSource(
-      fileDescriptor: fileDescriptor,
-      eventMask: [.write, .extend],
-      queue: DispatchQueue.main
-    )
-
-    source.setEventHandler { [weak self] in
-      guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
-      let eventData = source.data
-      self.handleFileChange(transcriptId: transcriptId, fileURL: fileURL, eventData: eventData)
-    }
-
-    source.setCancelHandler {
-      close(fileDescriptor)
-    }
-
-    source.resume()
-
-    // Thread-safe dictionary mutation - double-check inside lock to catch any race
-    // that occurred during ingestion
-    let wasAdded = watcherQueue.sync { () -> Bool in
-      if watchers[transcriptId] != nil {
-        log.warning("[WATCHER-WATCH-RACE] Race detected - watcher was added during ingestion for: \(transcriptId, privacy: .public)")
-        return false
+    if needsSecurityScope(for: provider),
+       let accessProvider {
+      log.debug("[WATCHER-SCOPE] Starting watcher inside security scope for provider=\(provider, privacy: .public)")
+      try accessProvider.withAccess(for: provider) { _ in
+        self.armWatcher(transcriptId: transcriptId, fileURL: fileURL)
       }
-      watchers[transcriptId] = source
-      return true
-    }
-
-    if wasAdded {
-      log.info("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
     } else {
-      // Clean up the source we just created since we didn't use it
-      source.cancel()
-      log.info("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
+      armWatcher(transcriptId: transcriptId, fileURL: fileURL)
     }
   }
 
@@ -194,6 +164,51 @@ public final class TranscriptWatcher {
       }
 
       debounceTimers[transcriptId] = timer
+    }
+  }
+
+  private func armWatcher(transcriptId: String, fileURL: URL) {
+    let fileDescriptor = open(fileURL.path, O_EVTONLY)
+    guard fileDescriptor >= 0 else {
+      log.error("Failed to open file for watching: \(fileURL.path, privacy: .public)")
+      return
+    }
+
+    let source = DispatchSource.makeFileSystemObjectSource(
+      fileDescriptor: fileDescriptor,
+      eventMask: [.write, .extend],
+      queue: DispatchQueue.main
+    )
+
+    source.setEventHandler { [weak self] in
+      guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
+      let eventData = source.data
+      self.handleFileChange(transcriptId: transcriptId, fileURL: fileURL, eventData: eventData)
+    }
+
+    source.setCancelHandler {
+      close(fileDescriptor)
+    }
+
+    source.resume()
+
+    // Thread-safe dictionary mutation - double-check inside lock to catch any race
+    // that occurred during ingestion
+    let wasAdded = watcherQueue.sync { () -> Bool in
+      if watchers[transcriptId] != nil {
+        log.warning("[WATCHER-WATCH-RACE] Race detected - watcher was added during ingestion for: \(transcriptId, privacy: .public)")
+        return false
+      }
+      watchers[transcriptId] = source
+      return true
+    }
+
+    if wasAdded {
+      log.info("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
+    } else {
+      // Clean up the source we just created since we didn't use it
+      source.cancel()
+      log.info("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
     }
   }
 
@@ -276,5 +291,10 @@ public final class TranscriptWatcher {
       let count = self.watchers.count
       log.info("[FSEVENTS-HEARTBEAT] watching=\(count, privacy: .public)")
     }
+  }
+
+  private func needsSecurityScope(for provider: String) -> Bool {
+    guard Sandbox.isSandboxed else { return false }
+    return provider == TranscriptProviderID.claude || provider == TranscriptProviderID.codex
   }
 }

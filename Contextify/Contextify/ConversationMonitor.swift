@@ -2442,7 +2442,11 @@ final class ConversationMonitor {
         // TranscriptWatcher.watch() is idempotent, safe to call multiple times
         do {
             log.info("[SESSION-SWITCH-WATCH-VERIFY] Verifying watcher for: \(t.identifier, privacy: .public)")
-            try orchestrator.startWatchingTranscript(transcriptId: t.identifier, fileURL: t.fileURL)
+            try orchestrator.startWatchingTranscript(
+                transcriptId: t.identifier,
+                fileURL: t.fileURL,
+                provider: t.provider.rawValue
+            )
             log.info("[SESSION-SWITCH-WATCH-OK] ✅ Watcher active for: \(t.identifier, privacy: .public)")
         } catch {
             log.error("[SESSION-SWITCH-WATCH-ERROR] ❌ Failed to start watcher: \(error.localizedDescription, privacy: .public)")
