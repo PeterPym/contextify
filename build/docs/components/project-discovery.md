@@ -670,5 +670,18 @@ Purpose-built enumerator for `~/.codex/sessions/**/*`:
 - Caps each project to the newest 1,000 sessions and records `latestMtime`
 - Returns `CodexIndex` snapshot (projects, total files, error count, duration)
 - Caches snapshot for 5 minutes and invalidates when watchers detect new Codex transcripts or authorization changes
+- Reports chunked progress (every ~2k files) so Welcome modal/status bar can reflect long scans
+- Hard-caps per-project metadata (newest 1,000 sessions) to bound memory and reduce ingestion load
 
 During merge, `CodexIndex` entries union provider badges, override `lastActivity`, and feed ingestion so Codex-only projects appear even if they never mirrored sessions into `.codex/sessions` under the project tree.
+
+#### UX Integration
+- **Welcome Modal:** Progress text switches to “Discovering Codex sessions…” once Claude scan finishes; CTA card prompts for Codex authorization when missing.
+- **Status Bar:** Shows combined queue depth with 🟡 indicator while the global Codex scan runs or when fast-path is ingesting Codex transcripts.
+
+#### Testing Guidance
+- Use the `Fixtures/transcripts/codex-only/` dataset (or `scripts/xc.sh seed-demo --codex-only`) to verify Codex-only projects appear in the Projects window and tabs.
+- QA should exercise both access-denied and access-granted flows (bookmark prompts) plus manual rescans to ensure cache invalidation behaves correctly.
+
+#### Known Limitation
+- Codex enumeration still starts from the main thread (due to `FolderAccessController.withAccess`), so large trees may pause the UI temporarily; progress bars + cancel buttons mitigate this until Phase 1.5 moves enumeration entirely off-main.
