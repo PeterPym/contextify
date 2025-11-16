@@ -15,6 +15,29 @@
 1. Creating a backup branch first
 2. Getting explicit user approval
 
+### Compiler Warnings - Zero Tolerance Policy
+**ALWAYS** maintain zero compiler warnings. Warnings are NOT noise - they are diagnostic data.
+
+**Why this matters:**
+- **Warning fatigue kills your early warning system** - New critical warnings get lost in noise
+- **Swift 6 concurrency warnings point to real bugs** - Actor isolation violations can cause data races, crashes, and the exact refresh/state issues you debug
+- **Dead code warnings reveal disabled features** - Unreachable code may be masking intended behavior
+
+**Policy:**
+1. **Fix warnings immediately** when they appear (same PR/commit)
+2. **Never commit code with new warnings** - Pre-commit hooks should catch this
+3. **Treat warnings as potential bugs** - Especially concurrency/actor isolation warnings in Swift 6
+4. **During debugging:** If warnings exist in code paths you're debugging, **fix the warnings first** - they may be pointing at root causes
+
+**Enforcement:**
+```bash
+# Check for warnings before committing
+bash scripts/xc.sh build 2>&1 | grep -c "warning:"
+# Expected: 0
+```
+
+**Remember:** Persistent warnings in `ConversationMonitor`, `ProjectSwitcherState`, etc. aren't style issues - they're the compiler telling you about concurrency hazards in your most complex state management code.
+
 ---
 
 ## Project Overview
