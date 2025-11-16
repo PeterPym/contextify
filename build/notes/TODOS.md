@@ -6,10 +6,10 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 25 items - Must complete before App Store submission
 - **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 19 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 70 (was 92, removed 22 completed/dropped)
+**Total Active Items:** 71 (was 92, removed 22 completed/dropped, added 1 P2)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -402,7 +402,37 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 19 Items
+# P2 (Medium Priority) - 20 Items
+
+## Timeline Flicker (1 item)
+
+**Status:** Unresolved
+**Priority:** P2 (UX issue, DMG builds only)
+**Effort:** 4-6 hours (investigation + fix)
+
+- [ ] #P2-FLICKER: Fix timeline flicker during DMG startup with clean database
+
+**Problem:** DMG builds show massive visual flicker during startup - timeline re-renders identical 25 entries multiple times. App Store builds appear fine (permission delays mask issue).
+
+**Evidence:** 4 rapid `loadFeedFromSQL()` calls in 19ms during startup, duplicate refreshes with same data.
+
+**Attempts:**
+- ✅ Removed broken P1 entry count check (commit 284bd4c) - didn't fix
+- ❌ P1 check compared total DB (267) vs paginated (25) - fundamentally flawed
+
+**Next Steps:**
+1. Add call site logging to `loadFeedFromSQL()` to track callers
+2. Investigate why 4 loads happen in 19ms during startup
+3. Consider debouncing `loadFeedFromSQL()` itself (not just progress handler)
+4. Check if tab selection triggers refreshes during discovery
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift:1260` (loadFeedFromSQL)
+- `Contextify/Contextify/ConversationMonitor.swift:1640-1666` (progress debounce)
+
+**Reference:** `build/notes/issues/timeline-flicker-dmg-startup.md` (full investigation)
+
+---
 
 ## Database Import (4 items) ⬇️
 
