@@ -370,8 +370,13 @@ public final class ProjectSwitcherState {
   private func scheduleRefresh() {
     refreshDebounceTask?.cancel()
     refreshDebounceTask = Task { [weak self] in
-      try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
-      await self?.refreshProjects()
+      do {
+        try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+        guard !Task.isCancelled else { return }
+        await self?.refreshProjects()
+      } catch {
+        // Task was cancelled, don't refresh
+      }
     }
   }
 
