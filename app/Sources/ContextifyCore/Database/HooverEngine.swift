@@ -401,7 +401,7 @@ public final class HooverEngine {
           if firstParseErrorReason == nil {
             firstParseErrorLine = lineNo
             firstParseErrorReason = error.localizedDescription
-            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) line=\(lineNo, privacy: .public) reason=\(error.localizedDescription)")
+            log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) line=\(lineNo, privacy: .public) reason=\(error.localizedDescription, privacy: .public)")
           } else if !hasLoggedParseErrorOverflow && parseErrorCount == MonitorConfig.parseErrorLogLimit {
             log.warning("[HOOVER-PARSE-ERROR] transcript=\(transcript.id, privacy: .public) path=\(transcript.filePath, privacy: .public) exceeding \(MonitorConfig.parseErrorLogLimit, privacy: .public) parse errors, suppressing additional logs")
             hasLoggedParseErrorOverflow = true
@@ -818,6 +818,25 @@ public enum ParserError: Error {
   case invalidFormat(String)
   case skipEntry  // Indicates entry should be skipped (meta messages, empty content, etc.)
   case corruptedRecord(CorruptionType, details: String)
+}
+
+extension ParserError: LocalizedError {
+  public var errorDescription: String? {
+    switch self {
+    case .invalidJSON:
+      return "Invalid JSON format"
+    case .missingRequiredField(let field):
+      return "Missing required field: \(field)"
+    case .unsupportedProvider(let provider):
+      return "Unsupported provider: \(provider)"
+    case .invalidFormat(let reason):
+      return "Invalid format: \(reason)"
+    case .skipEntry:
+      return "Entry skipped (metadata/empty content)"
+    case .corruptedRecord(let type, let details):
+      return "Corrupted record (\(type.rawValue)): \(details)"
+    }
+  }
 }
 
 /// Types of transcript corruption we can detect and potentially recover from

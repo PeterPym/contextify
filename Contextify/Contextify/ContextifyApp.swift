@@ -537,7 +537,18 @@ struct ContextifyApp: App {
           }
           return
         }
-        shouldAutoSelect = true
+        if Sandbox.isSandboxed {
+          log.info("🎯 [AUTOSELECT] Skipping auto-selection (sandbox build requires explicit user choice)")
+          vm.setDiscoveryProgress(DiscoveryProgress(
+            phase: .complete,
+            projectsCompleted: vm.projects.count,
+            projectsTotal: vm.projects.count,
+            message: "Select a project to continue"
+          ))
+          shouldAutoSelect = false
+        } else {
+          shouldAutoSelect = true
+        }
       }
 
       if shouldAutoSelect {
@@ -597,10 +608,11 @@ struct ContextifyApp: App {
   private func startProjectDirectoryMonitoring(viewModel: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
 
-    #if APPSTORE_BUILD
-    log.info("[INIT] Skipping FSEvents project directory monitoring in App Store build")
-    return
-    #endif
+
+    if Sandbox.isSandboxed {
+      log.info("[INIT] Skipping FSEvents project directory monitoring in App Store build")
+      return
+    }
 
     // Get paths to monitor - Claude Code project directories and Codex CLI session directories
     let claudeProjectsPath = FileManager.default.homeDirectoryForCurrentUser

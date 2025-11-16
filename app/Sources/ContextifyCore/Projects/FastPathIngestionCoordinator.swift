@@ -74,6 +74,25 @@ public actor FastPathIngestionCoordinator {
   private func processProject(projectId: String) async {
     log.info("[FAST-PATH-ENTRY] processProject started for project: \(projectId, privacy: .public)")
 
+    // Check if this is a container path project (should be filtered out)
+    let project: Project
+    do {
+      guard let p = try orchestrator.getProject(id: projectId) else {
+        log.warning("[FAST-PATH] Project not found: \(projectId, privacy: .public)")
+        return
+      }
+      project = p
+    } catch {
+      log.error("[FAST-PATH] Failed to load project \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return
+    }
+
+    // Skip sandbox container paths (defensive check)
+    if SandboxPathFilter.isSandboxContainerPath(project.rootPath) {
+      log.warning("[FAST-PATH-FILTER] Skipping sandbox container path project: \(project.name ?? project.id, privacy: .public) at \(project.rootPath, privacy: .public)")
+      return
+    }
+
     let transcripts: [Transcript]
     do {
       transcripts = try orchestrator.getTranscripts(forProject: projectId)

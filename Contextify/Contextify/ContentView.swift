@@ -172,11 +172,27 @@ struct ContentView: View {
                         .truncationMode(.middle)
 
                     ProjectBadgesContainer(projectPath: projectPath)
+
+                    // Show info icon in sandboxed builds to explain missing git features
+                    if Sandbox.isSandboxed {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                            .font(.footnote)
+                            .help("Git branch monitoring unavailable in App Store builds due to macOS security restrictions. Download the DMG version from contextify.sh for full git integration.")
+                            .accessibilityLabel("Git features limited")
+                            .accessibilityHint("Git branch monitoring unavailable in App Store builds")
+                    }
                 }
-                Label(model.branchDisplay, systemImage: "arrow.branch")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+
+                // Git branch display (DMG builds only)
+                // Sandboxed builds disable git monitoring to avoid permission complexity
+                if !Sandbox.isSandboxed {
+                    Label(model.branchDisplay, systemImage: "arrow.branch")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Git branch: \(model.branchDisplay)")
+                }
             } else {
                 Button("Open project...") {
                     Task {

@@ -65,6 +65,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
   @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
 
+  // Global refresh debounce (prevents spam from system events during discovery)
+  @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
+
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
   @ObservationIgnored private var switchTask: Task<Void, Never>?
@@ -95,6 +98,7 @@ public final class ProjectSwitcherState {
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
     tabOrderFreezeTask?.cancel()
+    refreshDebounceTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -170,30 +174,41 @@ public final class ProjectSwitcherState {
       let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
       for await _ in notifications {
         log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
-        await self.refreshProjects()
+        self.scheduleRefresh()
       }
     }
 
     // Initial discovery & full unread pass based on current DB
     Task {
       // Get initial context from coordinator (guaranteed to be available)
+      var hasContext = false
       if let context = StartupCoordinator.shared.current {
         await handleContextUpdate(context)
+        hasContext = true
       } else {
         // Wait for coordinator to publish first context
         do {
           let context = try await StartupCoordinator.shared.ready()
           await handleContextUpdate(context)
+          hasContext = true
         } catch {
           log.error("Failed to get startup context: \(error.localizedDescription)")
+          log.info("No startup context available - will wait for discovery to complete")
+          // Don't call refreshProjects() here - discovery is still in progress
+          // The .projectsIngestionComplete notification handler will trigger refresh
+          hasContext = false
         }
       }
 
-      await refreshProjects()
-      await refreshUnreadCounts()
+      // Only refresh if we have a context (means DB had projects at startup)
+      // Otherwise, discovery is still running and will trigger refresh via notification
+      if hasContext {
+        await refreshProjects()
+        await refreshUnreadCounts()
+      }
 
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
-      log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil"), projects=\(self.allProjects.count)")
+      log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil", privacy: .public), projects=\(self.allProjects.count)")
 
     }
 
@@ -240,8 +255,8 @@ public final class ProjectSwitcherState {
     // Clear unread count for newly active project (CXT-13)
     unreadCounts[context.id] = 0
 
-    // Refresh project list to update UI
-    await refreshProjects()
+    // Refresh project list to update UI (debounced to avoid spam during discovery)
+    scheduleRefresh()
 
     log.debug("✅ Active project updated to: \(context.id, privacy: .public)")
   }
@@ -266,7 +281,14 @@ public final class ProjectSwitcherState {
       log.info("[SWITCHER-SORT-DEBUG] Projects with display_order: \(withOrder, privacy: .public), without: \(withoutOrder, privacy: .public)")
 
       // Filter out hidden projects (v18)
-      let visibleProjects = projects.filter { !$0.hidden }
+      let visibleProjects = projects.filter { project in
+        guard !project.hidden else { return false }
+        if Sandbox.isSandboxed, SandboxPathFilter.isSandboxContainerPath(project.rootPath) {
+          log.info("[SWITCHER-FILTER] Skipping sandbox container project: \(project.rootPath, privacy: .public)")
+          return false
+        }
+        return true
+      }
       let hiddenCount = projects.count - visibleProjects.count
 
       // SQL already sorts by activity (max entry timestamp) when display_order is NULL
@@ -327,8 +349,34 @@ public final class ProjectSwitcherState {
       }
 
       log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
+
+      // Auto-select first project if none selected and projects are available
+      // This handles the case where discovery just completed on an empty database
+      await MainActor.run {
+        if self.activeProjectId == nil, let firstProject = visibleTabs.first {
+          log.info("[SWITCHER-AUTO-SELECT] No active project, auto-selecting first: \(firstProject.name, privacy: .public)")
+          Task {
+            await self.switchToProject(firstProject.id)
+          }
+        }
+      }
     } catch {
       log.error("[SWITCHER-ERROR] refreshProjects failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  /// Schedule a debounced refresh (for system events like discovery, ingestion)
+  @MainActor
+  private func scheduleRefresh() {
+    refreshDebounceTask?.cancel()
+    refreshDebounceTask = Task { [weak self] in
+      do {
+        try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+        guard !Task.isCancelled else { return }
+        await self?.refreshProjects()
+      } catch {
+        // Task was cancelled, don't refresh
+      }
     }
   }
 
@@ -785,7 +833,8 @@ public final class ProjectSwitcherState {
 
     switch event.kind {
     case .discovered:
-      await refreshProjects()
+      // Use global debounce to prevent refresh spam during rapid discovery
+      scheduleRefresh()
       // let the next transcriptUpdated drive the unread refresh
 
     case .removed:

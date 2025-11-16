@@ -183,7 +183,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Initialize watcher (invalidation callback set after initialization)
     self.watcher = TranscriptWatcher(
       hooverEngine: hooverEngine,
-      transcriptRepo: transcriptRepo
+      transcriptRepo: transcriptRepo,
+      accessProvider: accessProvider
     )
 
     // Initialize validator
@@ -844,7 +845,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Start watching if requested
     if startWatching {
       log.info("[TRANS-DISC-WATCH-START] Starting watcher for transcript: \(transcriptId, privacy: .public)")
-      try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+      try watcher.watch(transcriptId: transcriptId, fileURL: fileURL, provider: provider)
       log.info("[TRANS-DISC-WATCH-DONE] ✅ Watcher started for transcript: \(transcriptId, privacy: .public)")
     }
 
@@ -1648,11 +1649,24 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   ///   - transcriptId: The transcript ID to watch
   ///   - fileURL: The file URL to watch
   /// - Note: Idempotent - skips if already watching
-  public func startWatchingTranscript(transcriptId: String, fileURL: URL) throws {
+  public func startWatchingTranscript(
+    transcriptId: String,
+    fileURL: URL,
+    provider: String? = nil
+  ) throws {
     guard !watcher.isWatching(transcriptId: transcriptId) else {
       return
     }
-    try watcher.watch(transcriptId: transcriptId, fileURL: fileURL)
+    let providerToUse: String
+    if let provider {
+      providerToUse = provider
+    } else if let transcript = try transcriptRepo.get(transcriptId) {
+      providerToUse = transcript.provider
+    } else {
+      log.error("[WATCHER-START-ERROR] Transcript not found while starting watcher: \(transcriptId, privacy: .public)")
+      return
+    }
+    try watcher.watch(transcriptId: transcriptId, fileURL: fileURL, provider: providerToUse)
   }
 
   /// Check if a transcript is being watched
@@ -1704,7 +1718,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
 
       log.info("[WATCHER-RECOVERY-START] Restarting watcher for transcript \(transcript.id, privacy: .public)")
-      try startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL)
+      try startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL, provider: transcript.provider)
       started += 1
       log.info("[WATCHER-RECOVERY-SUCCESS] Watcher active for transcript \(transcript.id, privacy: .public)")
     }

@@ -2,10 +2,22 @@
 
 # Transcript Pipeline Monitor
 # ---------------------------
-# Captures *all* Contextify logs (every subsystem) into /tmp for post-hoc analysis.
-# Restores the original monitor-transcript-queues.sh functionality referenced in the
-# diagnostics playbook. Use this before running analyze-pipeline.sh or analyze-gaps.sh
-# so that File System, Discovery, Watcher, and Hoover events are present.
+# This script captures *every* Contextify subsystem (dev.contextify*, dev.contextify.timeline,
+# dev.contextify.metadata) into a single log file under /tmp. It is the canonical tool referenced
+# by build/docs/guides/timeline-diagnostics.md for gathering ground-truth evidence before running
+# automated analyzers like analyze-pipeline.sh or analyze-gaps.sh.
+#
+# Raison d'être:
+#   • Guarantee that File System, Discovery, Hoover, Watcher, Timeline, and UI logs all land in
+#     the same capture so automated tools have the tags they expect ([FSEVENTS-*], [HOOVER-*],
+#     [TIMELINE-*], [COORD-*], etc.).
+#   • Provide a single command agents/humans can run (even headless) to reproduce the
+#     monitor-transcript-queues.sh workflow mentioned throughout the diagnostics docs.
+#   • Ensure new instrumentation (e.g., `[WATCHER-SCOPE]` from TranscriptWatcher) is recorded
+#     without having to remember which subsystem predicate to use.
+#
+# Usage:
+#   ./monitor-transcript-queues.sh [options] [duration]
 #
 # Usage:
 #   ./monitor-transcript-queues.sh [options] [duration]
@@ -53,13 +65,13 @@ if [[ $QUIET -eq 1 ]]; then
   log stream \
     --predicate "${PREDICATE}" \
     --style "$STYLE" \
-    --level info \
+    --level debug \
     2>&1 | tee "$LOGFILE" >/dev/null &
 else
   log stream \
     --predicate "${PREDICATE}" \
     --style "$STYLE" \
-    --level info \
+    --level debug \
     2>&1 | tee "$LOGFILE" &
 fi
 

@@ -77,17 +77,16 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     provider: String,
     sessionId: String?
   ) throws -> EntryInsert {
-    guard let data = line.data(using: .utf8) else {
-      throw ParserError.invalidFormat("Not valid UTF-8")
-    }
-
-    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    // Convert to Data for JSON parsing (already validated as UTF-8 by HooverEngine)
+    guard let data = line.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw ParserError.invalidJSON
     }
 
     // Required fields - check type first
     guard let type = json["type"] as? String else {
-      throw ParserError.missingRequiredField("type")
+      parserLog.warning("[PARSER-WARN] Missing type field line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     // Skip structural metadata records (no conversation content)
@@ -138,7 +137,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
         throw ParserError.skipEntry
       }
     } else {
-      throw ParserError.missingRequiredField("message.content")
+      parserLog.warning("[PARSER-WARN] Missing message.content line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     // Optional fields
@@ -248,15 +248,8 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       for block in contentBlocks {
         if block["type"] as? String == "tool_result",
            let toolUseId = block["tool_use_id"] as? String {
-          // Orphaned tool_result detected
-          // This is recoverable by skipping the message, but we should log it
-          let details = """
-            Line \(lineNumber): Orphaned tool_result detected (uuid=\(uuid), tool_use_id=\(toolUseId)).
-            This message references a tool_use that doesn't exist in the preceding assistant message.
-            Common cause: Claude Code Web interruption during tool execution.
-            Recovery: Skip this message to allow session continuation.
-            """
-          throw ParserError.corruptedRecord(.orphanedToolResult, details: details)
+          parserLog.warning("[PARSER-WARN] Orphaned tool_result detected line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) tool_use_id=\(toolUseId, privacy: .public) – continuing without throwing")
+          return
         }
       }
     }
@@ -272,15 +265,9 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       }
 
       if stopReason == "tool_use" && !hasToolUse {
-        // Assistant claims to use tools but has no tool_use blocks
         let contentTypes = contentBlocks.compactMap { $0["type"] as? String }.joined(separator: ", ")
-        let details = """
-          Line \(lineNumber): stop_reason mismatch (uuid=\(uuid), stop_reason="tool_use", content=[\(contentTypes)]).
-          Assistant message has stop_reason="tool_use" but contains no tool_use blocks.
-          Common cause: Claude Code Web lost tool_use blocks during conversation teleport.
-          Recovery: Change stop_reason to "end_turn" or null.
-          """
-        throw ParserError.corruptedRecord(.stopReasonMismatch, details: details)
+        parserLog.warning("[PARSER-WARN] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) stop_reason=tool_use content=[\(contentTypes)] – treating as end_turn")
+        return
       }
     }
 
@@ -321,30 +308,32 @@ public struct CodexLineParser: TranscriptLineParser {
     provider: String,
     sessionId: String?
   ) throws -> EntryInsert {
-    guard let data = line.data(using: .utf8) else {
-      throw ParserError.invalidFormat("Not valid UTF-8")
-    }
-
-    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+    // Convert to Data for JSON parsing (already validated as UTF-8 by HooverEngine)
+    guard let data = line.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw ParserError.invalidJSON
     }
 
     // Required fields
     guard let timestampStr = json["timestamp"] as? String,
           let timestamp = parseISO8601(timestampStr) else {
-      throw ParserError.missingRequiredField("timestamp")
+      parserLog.warning("[PARSER-WARN] Codex line missing timestamp line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
+      throw ParserError.skipEntry
     }
 
     guard let payload = json["payload"] as? [String: Any] else {
-      throw ParserError.missingRequiredField("payload")
+      parserLog.warning("[PARSER-WARN] Codex line missing payload line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
     }
 
     guard let payloadType = payload["type"] as? String, payloadType == "message" else {
-      throw ParserError.invalidFormat("Not a message record")
+      parserLog.debug("[PARSER-SKIP] Codex payload type=\(payload["type"] as? String ?? "nil") line=\(lineNumber, privacy: .public) – non-message entry")
+      throw ParserError.skipEntry
     }
 
     guard let role = payload["role"] as? String else {
-      throw ParserError.missingRequiredField("payload.role")
+      parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
     }
 
     // Extract content

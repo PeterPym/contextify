@@ -52,6 +52,8 @@ public struct TranscriptValidationResult {
 /// Validates transcript files before hoovering to prevent bad data ingestion
 public final class TranscriptValidator {
 
+  private let scopeLogger = Logger(subsystem: "dev.contextify", category: "TranscriptValidator")
+
   public init() {}
 
   /// Validate a transcript file before hoovering
@@ -163,6 +165,9 @@ public final class TranscriptValidator {
     linesToCheck: Int = 4
   ) -> TranscriptValidationResult {
     guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+      if Sandbox.isSandboxed {
+        scopeLogger.error("[VALIDATOR-SCOPE] Failed to open transcript for validation (no scope?): \(fileURL.path, privacy: .public)")
+      }
       return .invalid(.invalidFormat(
         file: fileURL.lastPathComponent,
         reason: "Cannot open file for reading"

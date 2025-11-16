@@ -430,9 +430,11 @@ final class ConversationMonitor {
         cancelPrimerRetry(reason: "project-switch")
 
         // Skip if already monitoring this exact project (prevents duplicate calls during startup)
-        if isMonitoring && currentProjectId == projectId {
+        // Also skip if projectId is already set (even if not yet monitoring), which means
+        // a previous call is in progress
+        if (isMonitoring && currentProjectId == projectId) || (currentProjectId == projectId && isInitializing) {
             acknowledgeMonitorReady(projectId: projectId)
-            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId, privacy: .public), skipping")
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring/initializing project \(projectId, privacy: .public), skipping duplicate call")
             return
         }
 
@@ -448,6 +450,11 @@ final class ConversationMonitor {
 
         // Set flag to prevent onProjectOrSessionChange from running during initialization
         isInitializing = true
+
+        // Set currentProjectId immediately (synchronously) to prevent race condition
+        // where UI tries to load sessions before this is set
+        currentProjectId = projectId
+        log.info("📁 Project ID set (sync): \(projectId, privacy: .public)")
 
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId, privacy: .public)")
 
@@ -472,11 +479,6 @@ final class ConversationMonitor {
                         self.log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
                     }
                     orch = newlyCreated
-                }
-
-                await MainActor.run {
-                    self.currentProjectId = projectId
-                    self.log.info("📁 Project ID set: \(projectId, privacy: .public)")
                 }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
@@ -1119,9 +1121,29 @@ final class ConversationMonitor {
     /// Load all sessions from database for transcript inventory
     /// This is called when the transcript inventory window opens to ensure sessions are populated
     @MainActor
-    func loadAllSessionsFromDatabase() async {
+    func loadAllSessionsFromDatabase(retryCount: Int = 0) async {
+        // Check if both projectId and orchestrator are ready
+        // If either is missing, retry with exponential backoff
         guard let projectId = currentProjectId, orchestrator != nil else {
-            log.debug("Cannot load sessions: no project or orchestrator (likely shutting down)")
+            guard retryCount < 3 else {
+                if currentProjectId == nil {
+                    log.error("Cannot load sessions: project ID still nil after \(retryCount) retries")
+                } else {
+                    log.error("Cannot load sessions: orchestrator still nil after \(retryCount) retries")
+                }
+                return
+            }
+
+            let delayMs = UInt64(pow(2.0, Double(retryCount)) * 100_000_000)  // 100ms, 200ms, 400ms
+
+            if currentProjectId == nil {
+                log.debug("Project ID not ready, retry \(retryCount + 1)/3 in \(delayMs / 1_000_000)ms")
+            } else {
+                log.debug("Orchestrator not ready, retry \(retryCount + 1)/3 in \(delayMs / 1_000_000)ms")
+            }
+
+            try? await Task.sleep(nanoseconds: delayMs)
+            await loadAllSessionsFromDatabase(retryCount: retryCount + 1)
             return
         }
 
@@ -2539,7 +2561,11 @@ final class ConversationMonitor {
         // TranscriptWatcher.watch() is idempotent, safe to call multiple times
         do {
             log.info("[SESSION-SWITCH-WATCH-VERIFY] Verifying watcher for: \(t.identifier, privacy: .public)")
-            try orchestrator.startWatchingTranscript(transcriptId: t.identifier, fileURL: t.fileURL)
+            try orchestrator.startWatchingTranscript(
+                transcriptId: t.identifier,
+                fileURL: t.fileURL,
+                provider: t.provider.rawValue
+            )
             log.info("[SESSION-SWITCH-WATCH-OK] ✅ Watcher active for: \(t.identifier, privacy: .public)")
         } catch {
             log.error("[SESSION-SWITCH-WATCH-ERROR] ❌ Failed to start watcher: \(error.localizedDescription, privacy: .public)")

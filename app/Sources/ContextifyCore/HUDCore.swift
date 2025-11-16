@@ -497,28 +497,36 @@ public final class HUDViewModel {
       let canonical = await Task.detached {
         bookmark.resolvingSymlinksInPath()
       }.value
-      projectRootURL = canonical
-      lastPersistedPath = canonical.path
-      lastPersistedAt = Date()
-      persistRootIfNeeded(canonical, force: true)
-      updateSecurityScope(for: bookmark, persisted: true)
-      updateGitInfo()
-      updateHeadWatcher()
-      discoveredRoot = canonical
+      if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox container bookmark at \(canonical.path, privacy: .public)")
+      } else {
+        projectRootURL = canonical
+        lastPersistedPath = canonical.path
+        lastPersistedAt = Date()
+        persistRootIfNeeded(canonical, force: true)
+        updateSecurityScope(for: bookmark, persisted: true)
+        updateGitInfo()
+        updateHeadWatcher()
+        discoveredRoot = canonical
+      }
     } else if let path = persistedPath, !path.isEmpty {
       let (canonical, scoped) = await Task.detached {
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
         let scoped = HUDPreferences.resolveBookmark() ?? canonical
         return (canonical, scoped)
       }.value
-      projectRootURL = canonical
-      lastPersistedPath = canonical.path
-      lastPersistedAt = Date()
-      persistRootIfNeeded(canonical, force: true)
-      updateSecurityScope(for: scoped, persisted: true)
-      updateGitInfo()
-      updateHeadWatcher()
-      discoveredRoot = canonical
+      if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path, privacy: .public)")
+      } else {
+        projectRootURL = canonical
+        lastPersistedPath = canonical.path
+        lastPersistedAt = Date()
+        persistRootIfNeeded(canonical, force: true)
+        updateSecurityScope(for: scoped, persisted: true)
+        updateGitInfo()
+        updateHeadWatcher()
+        discoveredRoot = canonical
+      }
     }
 
     // Notify observers synchronously on MainActor; startup is @MainActor-isolated
@@ -548,6 +556,8 @@ public final class HUDViewModel {
     // Restore security-scoped access to project root. Without this, sandboxed builds
     // cannot monitor .git/HEAD (branch display breaks) or access other project files.
     // The bookmark grants persistent filesystem access across app launches and project switches.
+    // Even though git monitoring is disabled in App Store builds, the restored scope is still
+    // required for Finder reveals, transcript ingestion, and any other scoped I/O.
     if let bookmark = context.bookmark {
       do {
         var isStale = false
@@ -565,8 +575,6 @@ public final class HUDViewModel {
       } catch {
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
-    } else if Sandbox.isSandboxed {
-      watcherLog.error("[GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)")
     }
 
     // Update file watchers for new project
@@ -720,6 +728,9 @@ public final class HUDViewModel {
   }
 
   public func updateGitInfo(env: [String: String]? = nil) {
+    // Defensive guard: git operations disabled in sandboxed builds
+    guard !Sandbox.isSandboxed else { return }
+
     if updating {
       pendingUpdate = true
       if let env { pendingEnvironment = env }
@@ -942,12 +953,15 @@ public final class HUDViewModel {
   }
 
   public func updateHeadWatcher() {
+    // Always cancel existing watchers first (cleanup before early returns)
     cancelHeadAndRefWatchers()
 
     #if os(macOS)
-    if Sandbox.isSandboxed, securityScopedURL == nil {
-      watcherLog.error("[GIT-BROKEN] Git monitoring failed (no project root access in sandboxed build)")
-      startBranchMonitor()
+    // Git monitoring disabled in sandboxed builds (requires per-project folder access)
+    // Sandboxed builds would need user to grant access to each project root via NSOpenPanel,
+    // which is too complex for initial App Store release. See TODOS.md for future enhancement.
+    guard !Sandbox.isSandboxed else {
+      watcherLog.info("Git monitoring disabled (App Store build)")
       return
     }
     #endif
@@ -1007,18 +1021,14 @@ public final class HUDViewModel {
     }
 
     let now = Date()
-    if Sandbox.isSandboxed {
+    // Note: This handler is never called in sandboxed builds (watcher not created)
+    if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
       lastHeadEventAt = now
-      refreshBranchFromHEAD()
+      updateGitInfo()
     } else {
-      if now.timeIntervalSince(lastHeadEventAt) > headEventDebounce {
-        lastHeadEventAt = now
-        updateGitInfo()
-      } else {
-        lastHeadEventAt = now
-        pendingUpdate = true
-        scheduleDrain()
-      }
+      lastHeadEventAt = now
+      pendingUpdate = true
+      scheduleDrain()
     }
 
     if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
@@ -1027,19 +1037,6 @@ public final class HUDViewModel {
         await MainActor.run {
           self?.updateHeadWatcher()
         }
-      }
-    }
-  }
-
-  private func refreshBranchFromHEAD() {
-    guard let root = projectRootURL else { return }
-    if let parsed = GitRepositoryResolver.parseHEAD(at: root) {
-      if parsed != branch { branch = parsed }
-      hasLoggedMissingGit = false
-    } else {
-      branch = "—"
-      if !hasLoggedMissingGit {
-        hasLoggedMissingGit = true
       }
     }
   }

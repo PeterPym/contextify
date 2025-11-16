@@ -13,6 +13,7 @@ action="$default_action"
 dev_mode=0
 quiet_mode=1  # Quiet by default, use --verbose to see full output
 fast_clean=0  # Fast clean mode (preserve dependencies like GRDB)
+preserve_bookmarks=0  # Preserve security-scoped bookmarks during cleanrun
 
 # Distribution mode (dmg vs appstore)
 dist="dmg"
@@ -60,6 +61,19 @@ parse_arg() {
       action="cleanrun"
       fast_clean=1
       ;;
+    ar)
+      # Fast cleanrun for App Store (like dr, but sandboxed)
+      dist="appstore"
+      action="cleanrun"
+      fast_clean=1
+      ;;
+    arp)
+      # Fast cleanrun for App Store preserving bookmarks
+      dist="appstore"
+      action="cleanrun"
+      fast_clean=1
+      preserve_bookmarks=1
+      ;;
     seed-demo)
       echo "ERROR: seed-demo is disabled - it interferes with active Claude Code usage" >&2
       echo "This command replaces ~/.claude/projects with test fixtures, causing active transcripts to be lost." >&2
@@ -67,7 +81,7 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr]" >&2
+      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr|ar|arp]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
@@ -83,6 +97,8 @@ parse_arg() {
       echo "  ca                 Shortcut for App Store cleanrun (db reset + perms + launch)" >&2
       echo "  da                 Shortcut for DMG cleanrun (full clean: db + perms + GRDB)" >&2
       echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
+      echo "  ar                 Fast App Store cleanrun (db + perms + app, preserves GRDB/deps)" >&2
+      echo "  arp                Fast App Store cleanrun PRESERVING BOOKMARKS (for testing)" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
@@ -109,11 +125,19 @@ if [[ "$dev_mode" -eq 1 ]]; then
   echo "  Developer Mode: ENABLED"
 fi
 echo ""
-if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" ]]; then
+if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" || "$action" == "dr" || "$action" == "ar" || "$action" == "arp" ]]; then
   echo "  ⚠️  This will:"
-  echo "      • Clean build cache (.derived/)"
+  if [[ "$fast_clean" -eq 1 ]]; then
+    echo "      • Clean app artifacts only (preserves GRDB/dependencies)"
+  else
+    echo "      • Clean build cache (.derived/)"
+  fi
   echo "      • Wipe database (all projects/transcripts/entries)"
-  echo "      • Reset app preferences and bookmarks"
+  if [[ "$preserve_bookmarks" -eq 1 ]]; then
+    echo "      • Reset app preferences (PRESERVING security-scoped bookmarks)"
+  else
+    echo "      • Reset app preferences and bookmarks"
+  fi
   echo "      • Reset TCC permissions (folder access, etc.)"
   echo "      • Launch fresh app instance"
 elif [[ "$action" == "reset-state" ]]; then
@@ -252,17 +276,42 @@ prefs_paths_for_bid() {
 # Reset app state (DB, caches, preferences, bookmarks)
 reset_state_for_bid() {
   local bid="$1"
+  local preserve_bookmarks="${2:-false}"
   echo "Resetting app state for bundle ID: $bid"
+
+  if [[ "$preserve_bookmarks" == "true" ]]; then
+    echo "  (Preserving security-scoped bookmarks)"
+  fi
 
   quit_running_app
   sleep 0.5
 
-  # Remove Application Support (includes DB and bookmarks)
+  # Remove Application Support (includes DB and optionally bookmarks)
   local as_path
   as_path="$(app_support_path_for_bid "$bid")"
   if [[ -d "$as_path" ]]; then
-    echo "  Removing: $as_path"
-    rm -rf "$as_path" 2>/dev/null || true
+    if [[ "$preserve_bookmarks" == "true" ]]; then
+      # Preserve bookmarks.plist, remove everything else
+      local bookmarks_file="$as_path/bookmarks.plist"
+      local temp_bookmarks="/tmp/contextify-bookmarks-backup-$$.plist"
+
+      if [[ -f "$bookmarks_file" ]]; then
+        echo "  Backing up bookmarks to: $temp_bookmarks"
+        cp "$bookmarks_file" "$temp_bookmarks"
+      fi
+
+      echo "  Removing: $as_path (except bookmarks)"
+      rm -rf "$as_path" 2>/dev/null || true
+
+      if [[ -f "$temp_bookmarks" ]]; then
+        mkdir -p "$as_path"
+        echo "  Restoring bookmarks to: $bookmarks_file"
+        mv "$temp_bookmarks" "$bookmarks_file"
+      fi
+    else
+      echo "  Removing: $as_path"
+      rm -rf "$as_path" 2>/dev/null || true
+    fi
   fi
 
   # Remove caches
@@ -473,7 +522,11 @@ if [[ "$action" == "cleanrun" ]]; then
   echo "Bundle ID: $bundle_id"
 
   echo "♻️  Resetting app state and TCC..."
-  reset_state_for_bid "$bundle_id"
+  if [[ "$preserve_bookmarks" == "1" ]]; then
+    reset_state_for_bid "$bundle_id" "true"
+  else
+    reset_state_for_bid "$bundle_id" "false"
+  fi
   reset_tcc_for_bid "$bundle_id"
 
   echo "🚀 Launching first-run..."
