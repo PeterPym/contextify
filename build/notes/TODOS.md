@@ -445,33 +445,43 @@ CREATE TABLE git_activity (
 
 # P2 (Medium Priority) - 20 Items
 
-## Timeline Flicker (1 item)
+## Timeline Flicker (1 item) ✅ FIXED
 
-**Status:** Unresolved
-**Priority:** P2 (UX issue, DMG builds only)
-**Effort:** 4-6 hours (investigation + fix)
+**Status:** ✅ Fixed (2025-11-16)
+**Commit:** `c69d3c7` - fix(timeline): eliminate flicker by skipping unchanged data updates
+**Branch:** `feature/fix-timeline-flicker`
 
-- [ ] #P2-FLICKER: Fix timeline flicker during DMG startup with clean database
+- [x] #P2-FLICKER: Fix timeline flicker during DMG startup with clean database
 
-**Problem:** DMG builds show massive visual flicker during startup - timeline re-renders identical 25 entries multiple times. App Store builds appear fine (permission delays mask issue).
+**Problem:** Timeline re-rendered identical data multiple times, causing visible flicker during startup and ongoing hoovering.
 
-**Evidence:** 4 rapid `loadFeedFromSQL()` calls in 19ms during startup, duplicate refreshes with same data.
+**Root Cause:** `setEntries()` always updated state and incremented `entriesRevision`, forcing SwiftUI to diff and rerender even when data was unchanged.
 
-**Attempts:**
-- ✅ Removed broken P1 entry count check (commit 284bd4c) - didn't fix
-- ❌ P1 check compared total DB (267) vs paginated (25) - fundamentally flawed
+**Solution:** Added data-changed check to `setEntries()` before updating state:
+```swift
+if state.entries.count == new.count && state.entries == new {
+    log.debug("[TIMELINE-SKIP] Skipping setEntries - data unchanged")
+    return
+}
+```
 
-**Next Steps:**
-1. Add call site logging to `loadFeedFromSQL()` to track callers
-2. Investigate why 4 loads happen in 19ms during startup
-3. Consider debouncing `loadFeedFromSQL()` itself (not just progress handler)
-4. Check if tab selection triggers refreshes during discovery
+**Results (45s test):**
+- Before: 19 loadFeedFromSQL calls → 19 UI updates → constant flicker
+- After:  19 loadFeedFromSQL calls → 1 UI update, 18 skipped → no flicker
+- **95% reduction in unnecessary UI updates**
 
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift:1260` (loadFeedFromSQL)
-- `Contextify/Contextify/ConversationMonitor.swift:1640-1666` (progress debounce)
+**Files Changed:**
+- `Contextify/Contextify/ConversationMonitor.swift` (5 lines added to setEntries)
 
-**Reference:** `build/notes/issues/timeline-flicker-dmg-startup.md` (full investigation)
+**Evidence:**
+- Test log: `/tmp/transcript-queue-monitor-20251116-005710.log`
+- Analysis: `/tmp/flicker-fix-results.md`
+- Root cause analysis: `/tmp/flicker-root-cause-and-solution.md`
+
+**Impact:**
+- Behavioral: No changes (updates still happen when data changes)
+- Performance: Eliminates unnecessary SwiftUI diff operations
+- Visual: Timeline stays stable, no visible flicker
 
 ---
 
