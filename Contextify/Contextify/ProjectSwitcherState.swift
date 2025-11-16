@@ -65,6 +65,9 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
   @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
 
+  // Debounce task for discovery events (prevents refresh spam in DMG builds)
+  @ObservationIgnored private var discoveryDebounceTask: Task<Void, Never>?
+
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
   @ObservationIgnored private var switchTask: Task<Void, Never>?
@@ -95,6 +98,7 @@ public final class ProjectSwitcherState {
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
     tabOrderFreezeTask?.cancel()
+    discoveryDebounceTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -814,7 +818,13 @@ public final class ProjectSwitcherState {
 
     switch event.kind {
     case .discovered:
-      await refreshProjects()
+      // Debounce discovery events to prevent refresh spam when many projects
+      // are discovered rapidly (especially in DMG builds with no permission delays)
+      discoveryDebounceTask?.cancel()
+      discoveryDebounceTask = Task { [weak self] in
+        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms debounce
+        await self?.refreshProjects()
+      }
       // let the next transcriptUpdated drive the unread refresh
 
     case .removed:
