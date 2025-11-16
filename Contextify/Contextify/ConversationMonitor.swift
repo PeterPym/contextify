@@ -1262,21 +1262,6 @@ final class ConversationMonitor {
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
-        // P1 Fix: Skip refresh if entry count hasn't changed (eliminates duplicate refreshes)
-        let dbEntryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
-        let currentCount = state.entries.count
-
-        if dbEntryCount == currentCount && currentCount > 0 {
-            log.debug("[TIMELINE-REFRESH-SKIP] Entry count unchanged: \(currentCount, privacy: .public)")
-            // Update state to ensure UI is correct even though we're skipping
-            phase = .loaded
-            isProcessing = false
-            return nil
-        }
-
-        // Log refresh reason for debugging
-        log.info("[TIMELINE-REFRESH-REASON] Refreshing: db=\(dbEntryCount, privacy: .public), current=\(currentCount, privacy: .public)")
-
         // Set loading phase (tracked by UI)
         phase = .loading
         log.info("[UIOPT-BRANCH] phase → loading")
