@@ -440,6 +440,11 @@ final class ConversationMonitor {
         // Set flag to prevent onProjectOrSessionChange from running during initialization
         isInitializing = true
 
+        // Set currentProjectId immediately (synchronously) to prevent race condition
+        // where UI tries to load sessions before this is set
+        currentProjectId = projectId
+        log.info("📁 Project ID set (sync): \(projectId, privacy: .public)")
+
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId, privacy: .public)")
 
         Task { [weak self] in
@@ -463,11 +468,6 @@ final class ConversationMonitor {
                         self.log.info("[UIOPT-DB-INIT] TranscriptOrchestrator created in \(String(format: "%.0f", Date().timeIntervalSince(dbStart) * 1000), privacy: .public)ms")
                     }
                     orch = newlyCreated
-                }
-
-                await MainActor.run {
-                    self.currentProjectId = projectId
-                    self.log.info("📁 Project ID set: \(projectId, privacy: .public)")
                 }
 
                 // Verify project was persisted (forces read from DB, ensures commit)
