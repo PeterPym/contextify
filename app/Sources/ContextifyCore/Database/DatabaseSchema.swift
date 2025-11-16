@@ -1,15 +1,17 @@
 import Foundation
 import GRDB
+import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v22 (fixed strategy CHECK constraint to include adaptive/signalFirst)
+/// Current version: v26 (removed sandbox container path projects)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 25
+  static let version = 26
+  private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
 
   /// Create migrator for schema evolution
   static func createMigrator() -> DatabaseMigrator {
@@ -506,6 +508,61 @@ enum DatabaseSchema {
       // Note: We keep the preflight columns in transcripts table for now
       // to avoid complex migration. They are now deprecated and will be ignored.
       // Future cleanup: Add migration to drop these columns when safe.
+    }
+
+    // v26: Remove sandbox container path projects
+    // Cleans up orphaned project entries with container paths that can't be accessed
+    migrator.registerMigration("v26_remove_container_projects") { db in
+      // Find all projects with container paths
+      let containerProjects = try Row.fetchAll(db, sql: """
+        SELECT id, root_path, name
+        FROM projects
+        WHERE root_path LIKE '%/Containers/%/Data%'
+      """)
+
+      guard !containerProjects.isEmpty else {
+        // No container projects found, skip cleanup
+        return
+      }
+
+      let projectIds = containerProjects.map { $0["id"] as! String }
+      logger.info("[MIGRATION-v26] Removing \(containerProjects.count, privacy: .public) sandbox container path projects")
+
+      for row in containerProjects {
+        let projectId = row["id"] as! String
+        let rootPath = row["root_path"] as! String
+        let name = row["name"] as! String
+        logger.info("[MIGRATION-v26]   • \(name, privacy: .public) at \(rootPath, privacy: .public)")
+      }
+
+      // Cascade delete: transcripts, entries, preflight cache
+      // Foreign key constraints will automatically delete related records
+
+      try db.execute(sql: """
+        DELETE FROM transcript_entries
+        WHERE transcript_id IN (
+          SELECT id FROM transcripts WHERE project_id IN (\(projectIds.map { "'\($0)'" }.joined(separator: ",")))
+        )
+      """)
+
+      try db.execute(sql: """
+        DELETE FROM transcripts
+        WHERE project_id IN (\(projectIds.map { "'\($0)'" }.joined(separator: ",")))
+      """)
+
+      try db.execute(sql: """
+        DELETE FROM transcript_preflight_cache
+        WHERE file_path IN (
+          SELECT file_path FROM transcripts WHERE project_id IN (\(projectIds.map { "'\($0)'" }.joined(separator: ",")))
+        )
+      """)
+
+      try db.execute(sql: """
+        DELETE FROM projects
+        WHERE id IN (\(projectIds.map { "'\($0)'" }.joined(separator: ",")))
+      """)
+
+      logger.info("[MIGRATION-v26] Cleanup complete - removed \(containerProjects.count, privacy: .public) projects")
     }
 
     return migrator
