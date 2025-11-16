@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 25 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 26 items - Must complete before App Store submission
 - **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 71 (was 92, removed 22 completed/dropped, added 1 P2)
+**Total Active Items:** 72 (was 92, removed 22 completed/dropped, added 1 P0 + 1 P2)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,48 @@
 
 ---
 
-# P0 (Blocking Release) - 25 Items
+# P0 (Blocking Release) - 26 Items
+
+## Timeline Summary Generation (1 item)
+
+**Status:** Broken
+**Priority:** P0 (Core feature failure)
+**Effort:** 4-6 hours (investigation + fix)
+
+- [ ] #P0-SUMM: Fix failure to kick off summarization on initial viewport load
+
+**Problem:** When switching to a project or loading a project for the first time, visible messages in viewport don't get queued for summary generation. User sees empty summaries despite entries being visible.
+
+**Evidence:**
+- Summaries don't appear after project switch
+- Summaries don't appear on first project load
+- Multiple fixes attempted in past several days
+
+**Recent Attempts (commits):**
+- `8ba2c5a`: Eliminated race condition in viewport-aware queueing
+- `a7b65c2`: Improved LLM summary queueing during initial load
+- `6f07f7d`: Added viewport queueing verification
+
+**Root Cause:** Viewport tracking doesn't fire reliably on project switch or initial load.
+
+**Next Steps:**
+1. Review viewport callback timing (replaceVisibleSnapshot)
+2. Check if initial viewport report fires after project switch
+3. Verify needsInitialVisibilitySnapshot logic
+4. Add defensive queueing for visible entries on loadFeedFromSQL completion
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (viewport tracking)
+- `Contextify/Contextify/ConversationMonitor.swift:1260` (loadFeedFromSQL)
+
+**Testing:**
+```bash
+scripts/logging/monitor-viewport-queueing.sh
+# Expected: SUMM-LOAD-DEFER → SUMM-VIEWPORT-INIT within ~100ms
+# Actual: SUMM-VIEWPORT-INIT never fires
+```
+
+---
 
 ## Website (1 item)
 
