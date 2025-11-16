@@ -65,8 +65,8 @@ public final class ProjectSwitcherState {
   @ObservationIgnored private var coalesceTask: Task<Void, Never>?
   @ObservationIgnored private var coordinatorTask: Task<Void, Never>?
 
-  // Debounce task for discovery events (prevents refresh spam in DMG builds)
-  @ObservationIgnored private var discoveryDebounceTask: Task<Void, Never>?
+  // Global refresh debounce (prevents spam from system events during discovery)
+  @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
 
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
@@ -98,7 +98,7 @@ public final class ProjectSwitcherState {
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
     tabOrderFreezeTask?.cancel()
-    discoveryDebounceTask?.cancel()
+    refreshDebounceTask?.cancel()
     // Note: NotificationCenter automatically removes all observers when self is deallocated
   }
 
@@ -174,7 +174,7 @@ public final class ProjectSwitcherState {
       let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
       for await _ in notifications {
         log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
-        await self.refreshProjects()
+        self.scheduleRefresh()
       }
     }
 
@@ -255,8 +255,8 @@ public final class ProjectSwitcherState {
     // Clear unread count for newly active project (CXT-13)
     unreadCounts[context.id] = 0
 
-    // Refresh project list to update UI
-    await refreshProjects()
+    // Refresh project list to update UI (debounced to avoid spam during discovery)
+    scheduleRefresh()
 
     log.debug("✅ Active project updated to: \(context.id, privacy: .public)")
   }
@@ -362,6 +362,16 @@ public final class ProjectSwitcherState {
       }
     } catch {
       log.error("[SWITCHER-ERROR] refreshProjects failed: \(String(describing: error), privacy: .public)")
+    }
+  }
+
+  /// Schedule a debounced refresh (for system events like discovery, ingestion)
+  @MainActor
+  private func scheduleRefresh() {
+    refreshDebounceTask?.cancel()
+    refreshDebounceTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+      await self?.refreshProjects()
     }
   }
 
@@ -818,13 +828,8 @@ public final class ProjectSwitcherState {
 
     switch event.kind {
     case .discovered:
-      // Debounce discovery events to prevent refresh spam when many projects
-      // are discovered rapidly (especially in DMG builds with no permission delays)
-      discoveryDebounceTask?.cancel()
-      discoveryDebounceTask = Task { [weak self] in
-        try? await Task.sleep(nanoseconds: 100_000_000)  // 100ms debounce
-        await self?.refreshProjects()
-      }
+      // Use global debounce to prevent refresh spam during rapid discovery
+      scheduleRefresh()
       // let the next transcriptUpdated drive the unread refresh
 
     case .removed:
