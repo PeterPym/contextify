@@ -1,0 +1,1 @@
+Before proposing code changes, conduct a root-cause walkthrough of the current system: follow the relevant control flow from entry point to effect, cite the files/lines along the way, and call out any assumptions you're making. Only after that analysis should you describe implementation steps, referencing the exact places in the code where those steps will integrate.
