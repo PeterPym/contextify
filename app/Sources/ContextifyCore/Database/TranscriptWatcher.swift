@@ -62,6 +62,13 @@ public final class TranscriptWatcher: @unchecked Sendable {
     log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
     log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
 
+    // Defensive check: refuse to watch files in sandbox container paths
+    // These can't be accessed and will cause recovery loops
+    if SandboxPathFilter.isSandboxContainerPath(fileURL.path) {
+      log.warning("[WATCHER-WATCH-SKIP] Refusing to watch sandbox container path: \(fileURL.path, privacy: .public)")
+      return
+    }
+
     // Combined: start heartbeat on first watch and check if already watching (single sync call)
     let alreadyWatching = watcherQueue.sync { () -> Bool in
       if !heartbeatStarted {
