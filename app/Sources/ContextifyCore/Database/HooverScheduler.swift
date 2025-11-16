@@ -31,6 +31,10 @@ public actor HooverScheduler {
   private var processingPaths: Set<String> = []
   private var skipCount: Int = 0
 
+  // Progress tracking for notifications
+  private var completedByProject: [String: Int] = [:]  // projectId -> completed count
+  private var totalByProject: [String: Int] = [:]      // projectId -> total count
+
   public init(
     orchestrator: TranscriptOrchestrator,
     maxConcurrency: Int = 6
@@ -62,6 +66,9 @@ public actor HooverScheduler {
       sessionId: sessionId
     )
 
+    // Track total transcripts for progress notifications
+    totalByProject[projectId, default: 0] += 1
+
     // Suspend if at capacity (proper continuation-based)
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       if self.activeCount < self.maxConcurrency {
@@ -87,7 +94,7 @@ public actor HooverScheduler {
 
     // Continuation resumed - execute work
     defer {
-      Task { await self.taskCompleted(fileURL: fileURL) }
+      Task { await self.taskCompleted(fileURL: fileURL, projectId: item.projectId) }
     }
 
     try orchestrator.discoverTranscriptInternal(
@@ -100,9 +107,32 @@ public actor HooverScheduler {
     )
   }
 
-  private func taskCompleted(fileURL: URL) {
+  private func taskCompleted(fileURL: URL, projectId: String) {
     processingPaths.remove(fileURL.path)
     activeCount -= 1
+
+    // Track progress per project and post notification if needed
+    completedByProject[projectId, default: 0] += 1
+    let completed = completedByProject[projectId]!
+    let total = totalByProject[projectId] ?? 0
+
+    // Post progress notification at intervals: first 3, then every 10, plus final completion
+    let shouldNotify = completed <= 3 || completed % 10 == 0 || completed == total
+    if shouldNotify {
+      log.info("[HOOVER-PROGRESS] project=\(projectId, privacy: .public) completed=\(completed, privacy: .public)/\(total, privacy: .public)")
+      Task { @MainActor in
+        NotificationCenter.default.post(
+          name: .transcriptHooveringProgress,
+          object: projectId,
+          userInfo: [
+            "transcriptCount": completed,
+            "totalTranscripts": total,
+            "projectId": projectId
+          ]
+        )
+      }
+    }
+
     log.debug("[HOOVER-SCHED-COMPLETE] active=\(self.activeCount, privacy: .public)")
 
     // Resume next pending item if any
