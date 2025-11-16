@@ -813,6 +813,12 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
+        // Skip if data unchanged (prevents unnecessary UI updates and flicker)
+        if state.entries.count == new.count && state.entries == new {
+            log.debug("[TIMELINE-SKIP] Skipping setEntries - data unchanged (\(new.count) entries)")
+            return
+        }
+
         log.info("[TIMELINE-APPEND] setEntries \(new.count) (primer)")
         state.replace(with: new)
         entriesRevision += 1  // Force SwiftUI update
