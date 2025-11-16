@@ -1360,7 +1360,7 @@ final class ConversationMonitor {
             var misses: [CacheMiss] = []
 
             // Get active entry ID from generator (if any)
-            let activeGeneratingID = await cacheMissGenerator?.activeEntryID
+            let activeGeneratingID = cacheMissGenerator?.activeEntryID
 
             let newEntries = feed.map { entry, cache in
                 seenEntryIDs.insert(entry.id)
@@ -1480,7 +1480,7 @@ final class ConversationMonitor {
             let events = try await orchestrator.getRecentSystemSwitchEvents(projectId: pid, since: lastSystemEventTs)
             for ev in events where !seenSystemEventIds.contains(ev.id) {
                 if let content = ev.content {
-                    await appendSystemEntry(summary: content)
+                    appendSystemEntry(summary: content)
                 }
                 seenSystemEventIds.insert(ev.id)
                 // R5: Normalize timestamp to milliseconds (handle legacy seconds-based timestamps)
@@ -1708,21 +1708,25 @@ final class ConversationMonitor {
         ) { [weak self] notification in
             guard let self else { return }
 
-            // Only refresh if notification is for our active project
-            guard let projectId = notification.object as? String,
-                  projectId == self.currentProjectId else {
-                self.log.debug("[TIMELINE-REFRESH-PROGRESS] Ignoring progress notification for different project")
-                return
-            }
-
+            // Extract notification data outside assumeIsolated to avoid data race warnings
+            guard let projectId = notification.object as? String else { return }
             let count = notification.userInfo?["transcriptCount"] as? Int ?? 0
             let total = notification.userInfo?["totalTranscripts"] as? Int ?? 0
-            self.log.info("📨 [TIMELINE-REFRESH-PROGRESS] Received hoovering progress: \(count)/\(total) transcripts")
 
-            // Debounce refresh to reduce flicker (coalesce rapid notifications)
-            // Use a more robust approach: enforce minimum 500ms between actual refreshes
-            self.progressDebounceTask?.cancel()
-            self.progressDebounceTask = Task { @MainActor [weak self] in
+            // Since queue: .main guarantees main thread, access main-actor properties via assumeIsolated
+            MainActor.assumeIsolated {
+                // Only refresh if notification is for our active project
+                guard projectId == self.currentProjectId else {
+                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Ignoring progress notification for different project")
+                    return
+                }
+
+                self.log.info("📨 [TIMELINE-REFRESH-PROGRESS] Received hoovering progress: \(count)/\(total) transcripts")
+
+                // Debounce refresh to reduce flicker (coalesce rapid notifications)
+                // Use a more robust approach: enforce minimum 500ms between actual refreshes
+                self.progressDebounceTask?.cancel()
+                self.progressDebounceTask = Task { @MainActor [weak self] in
                 guard let self else { return }
 
                 // Calculate how long to wait based on last refresh
@@ -1745,6 +1749,7 @@ final class ConversationMonitor {
                 self.lastProgressRefreshTime = Date()
                 await self.loadFeedFromSQL()?.value
                 self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
+            }
             }
         }
     }
@@ -2052,79 +2057,6 @@ final class ConversationMonitor {
     private func handleAppResignActive() async {
         // DISABLED: Only process visible entries via scroll tracking
         log.info("App resigned active - background processing DISABLED")
-        return
-
-        // CXT-102: Guard against torn state
-        guard isMonitoring, let projectId = currentProjectId else {
-            log.debug("App resigned active while not monitoring - skip background fill")
-            return
-        }
-        log.info("App resigned active - starting background fill for unseen entries (project: \(projectId, privacy: .public))")
-
-        // CXT-103: Atomically clear and cancel any existing background fill task
-        let oldTask = backgroundFillTask
-        backgroundFillTask = nil
-        oldTask?.cancel()
-
-        // Find entries in current visible set that user hasn't seen yet
-        let unseenEntries = visibleEntries.filter { entry in
-            entry.action == .unsummarized &&  // Has cache miss
-            !viewedEntryIDs.contains(entry.id)  // Never scrolled into view
-        }
-
-        guard !unseenEntries.isEmpty else {
-            log.info("No unseen entries to summarize in background")
-            return
-        }
-
-        log.info("Found \(unseenEntries.count) unseen entries for background summarization")
-
-        // Create cache misses for unseen entries
-        let misses = unseenEntries.compactMap { entry -> CacheMiss? in
-            guard let content = entry.contentSha256,
-                  let window = entry.windowSha256,
-                  let sourceContent = entry.sourceContent else {
-                return nil
-            }
-
-            return CacheMiss(
-                entryId: entry.id.uuidString,
-                projectId: projectId,
-                contentSha256: content,
-                windowSha256: window,
-                content: sourceContent,
-                context: entry.detail,  // Use detail as context
-                kind: entry.kind.rawValue,
-                provider: entry.sourceContext?.provider.rawValue ?? "other"
-            )
-        }
-
-        guard !misses.isEmpty else { return }
-
-        // Queue for background processing (low priority - not visible to user)
-        backgroundFillTask = Task { [weak self] in
-            guard let self, let generator = await self.cacheMissGenerator else { return }
-
-            // CXT-103: Explicit cancellation handling
-            do {
-                try await Task.sleep(nanoseconds: 500_000_000)  // 500ms
-            } catch is CancellationError {
-                return
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.log.warning("Background fill sleep failed: \(error.localizedDescription, privacy: .public)")
-                }
-                return
-            }
-
-            guard !Task.isCancelled else { return }
-
-            await generator.queueMisses(misses)
-
-            await MainActor.run { [weak self] in
-                self?.log.info("Background fill task queued \(misses.count) misses")
-            }
-        }
     }
 
     /// Handle app becoming active - cancel background tasks to prioritize visible entries
@@ -2245,7 +2177,7 @@ final class ConversationMonitor {
                 log.info("[INCR-UPDATE-FETCH] Fetching new entries after cursor for projectId: \(projectId, privacy: .public)")
                 // Get new entries using keyset pagination (prevents duplicates/skips)
                 let newEntries = try orchestrator.getEntriesAfterCursor(
-                    forProject: projectId,
+                    projectId: projectId,
                     after: cursor
                 )
 
@@ -2263,7 +2195,6 @@ final class ConversationMonitor {
                 }
 
                 // Build transcript path lookup for new entries
-                let transcriptIds = Set(newEntries.map { $0.transcriptId })
                 let transcripts = try orchestrator.getTranscripts(forProject: projectId)
                 let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 

@@ -538,9 +538,7 @@ actor TranscriptMetadataOrchestrator {
         )
 
         // 2. Reset session to ensure clean slate (belt-and-suspenders)
-        if #available(macOS 26, *) {
-          await FoundationLLM.shared.resetSessionById(sessionId)
-        }
+        await FoundationLLM.shared.resetSessionById(sessionId)
 
         // 2. Guided generation with fitted context (routed through FoundationLLM)
         let prompt = """
@@ -613,9 +611,7 @@ actor TranscriptMetadataOrchestrator {
             )
 
             // Reset again after pre-flight
-            if #available(macOS 26, *) {
-              await FoundationLLM.shared.resetSessionById(sessionId)
-            }
+            await FoundationLLM.shared.resetSessionById(sessionId)
 
             let bookendPrompt = """
             CONTEXT: This excerpt shows \(bookendContext.sampledCount) of \(exchanges.count) messages. First 10 and last 10 are always included; the middle is selected for importance.

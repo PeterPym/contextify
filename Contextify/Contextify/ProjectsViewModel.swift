@@ -200,7 +200,7 @@ final class ProjectsViewModel {
       guard let self else { return }
       logger.info("ProjectsViewModel: starting event observation")
 
-      for await event in await self.activityMonitor.observeProjectEvents() {
+      for await event in self.activityMonitor.observeProjectEvents() {
         await self.handleProjectEvent(event)
       }
 
@@ -310,7 +310,7 @@ final class ProjectsViewModel {
         let root = project.rootPath
         return !SandboxPathFilter.isSandboxContainerPath(root)
       }
-      .sorted { ($0.lastViewedTs ?? 0) > ($1.lastViewedTs ?? 0) }
+      .sorted { $0.lastViewedTs > $1.lastViewedTs }
       .first?.rootPath
   }
 }

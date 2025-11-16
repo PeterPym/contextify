@@ -214,9 +214,9 @@ public final class ProjectSwitcherState {
 
     // Single observer loop
     projectObservationTask = Task { @MainActor [weak self] in
-      guard let self, let monitor = await self.activityMonitor else { return }
+      guard let self, let monitor = self.activityMonitor else { return }
       log.info("ProjectSwitcher: observing events")
-      for await event in await monitor.observeProjectEvents() {
+      for await event in monitor.observeProjectEvents() {
         await self.handle(event)
       }
       log.warning("ProjectSwitcher: event stream ended")
@@ -691,7 +691,7 @@ public final class ProjectSwitcherState {
         try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
 
         // Emit reordered event for first project (Projects window will refresh entire list)
-        if let firstProjectId = orderedProjectIds.first, let monitor = await self.activityMonitor {
+        if let firstProjectId = orderedProjectIds.first, let monitor = self.activityMonitor {
           await monitor.emitProjectEvent(ProjectEvent(projectId: firstProjectId, kind: .reordered))
           await MainActor.run {
             log.debug("Emitted .reordered event for project: \(firstProjectId)")
