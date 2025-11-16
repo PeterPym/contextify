@@ -1110,9 +1110,24 @@ final class ConversationMonitor {
     /// Load all sessions from database for transcript inventory
     /// This is called when the transcript inventory window opens to ensure sessions are populated
     @MainActor
-    func loadAllSessionsFromDatabase() async {
-        guard let projectId = currentProjectId, orchestrator != nil else {
-            log.debug("Cannot load sessions: no project or orchestrator (likely shutting down)")
+    func loadAllSessionsFromDatabase(retryCount: Int = 0) async {
+        guard let projectId = currentProjectId else {
+            log.debug("Cannot load sessions: no project ID")
+            return
+        }
+
+        // If orchestrator not ready yet, wait and retry (up to 3 attempts)
+        guard orchestrator != nil else {
+            guard retryCount < 3 else {
+                log.error("Cannot load sessions: orchestrator still nil after \(retryCount) retries")
+                return
+            }
+
+            let delayMs = UInt64(pow(2.0, Double(retryCount)) * 100_000_000)  // 100ms, 200ms, 400ms
+            log.debug("Orchestrator not ready, retry \(retryCount + 1)/3 in \(delayMs / 1_000_000)ms")
+
+            try? await Task.sleep(nanoseconds: delayMs)
+            await loadAllSessionsFromDatabase(retryCount: retryCount + 1)
             return
         }
 
