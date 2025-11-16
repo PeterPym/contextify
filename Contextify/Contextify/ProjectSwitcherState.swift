@@ -334,6 +334,17 @@ public final class ProjectSwitcherState {
       }
 
       log.info("ProjectSwitcher: projects=\(projectInfos.count) (hidden=\(hiddenCount))")
+
+      // Auto-select first project if none selected and projects are available
+      // This handles the case where discovery just completed on an empty database
+      await MainActor.run {
+        if self.activeProjectId == nil, let firstProject = visibleTabs.first {
+          log.info("[SWITCHER-AUTO-SELECT] No active project, auto-selecting first: \(firstProject.name, privacy: .public)")
+          Task {
+            await self.switchToProject(firstProject.id)
+          }
+        }
+      }
     } catch {
       log.error("[SWITCHER-ERROR] refreshProjects failed: \(String(describing: error), privacy: .public)")
     }
