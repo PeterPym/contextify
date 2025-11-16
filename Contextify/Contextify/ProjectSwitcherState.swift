@@ -177,20 +177,31 @@ public final class ProjectSwitcherState {
     // Initial discovery & full unread pass based on current DB
     Task {
       // Get initial context from coordinator (guaranteed to be available)
+      var hasContext = false
       if let context = StartupCoordinator.shared.current {
         await handleContextUpdate(context)
+        hasContext = true
       } else {
         // Wait for coordinator to publish first context
         do {
           let context = try await StartupCoordinator.shared.ready()
           await handleContextUpdate(context)
+          hasContext = true
         } catch {
           log.error("Failed to get startup context: \(error.localizedDescription)")
+          log.info("No startup context available - will wait for discovery to complete")
+          // Don't call refreshProjects() here - discovery is still in progress
+          // The .projectsIngestionComplete notification handler will trigger refresh
+          hasContext = false
         }
       }
 
-      await refreshProjects()
-      await refreshUnreadCounts()
+      // Only refresh if we have a context (means DB had projects at startup)
+      // Otherwise, discovery is still running and will trigger refresh via notification
+      if hasContext {
+        await refreshProjects()
+        await refreshUnreadCounts()
+      }
 
       // activeProjectId is now set by handleContextUpdate, no need to auto-select
       log.info("✅ Startup complete: activeProjectId=\(self.activeProjectId ?? "nil", privacy: .public), projects=\(self.allProjects.count)")
