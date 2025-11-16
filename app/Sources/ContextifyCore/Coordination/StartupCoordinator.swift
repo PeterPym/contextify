@@ -386,6 +386,36 @@ public final class StartupCoordinator {
         }
 
         // Priority 3: Persisted path (UserDefaults)
+        #if APPSTORE_BUILD
+        // Sandbox builds: Skip persisted path if database is empty
+        // This prevents auto-selecting stale projects after clean-db or first install
+        let projectCount = await Task.detached {
+            do {
+                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                return try orchestrator.listProjects().count
+            } catch {
+                return 0
+            }
+        }.value
+
+        if projectCount == 0 {
+            log.info("📍 [STARTUP-SANDBOX] Empty database - skipping persisted path for security")
+            log.info("📍 [STARTUP-SANDBOX] User will manually select project after granting folder access")
+            // Don't use persisted path; fall through to CWD or fail gracefully
+        } else {
+            // Database has projects, use persisted path (existing session)
+            let persistedPath = await Task.detached {
+                return HUDPreferences.getPersistedRoot()
+            }.value
+            if let persistedPath,
+               !persistedPath.isEmpty,
+               let sanitized = sanitizeResolvedPath(persistedPath, source: "persisted path") {
+                log.debug("📍 Using persisted path: \(sanitized, privacy: .public)")
+                return sanitized
+            }
+        }
+        #else
+        // DMG builds: Always use persisted path
         let persistedPath = await Task.detached {
             return HUDPreferences.getPersistedRoot()
         }.value
@@ -395,6 +425,7 @@ public final class StartupCoordinator {
             log.debug("📍 Using persisted path: \(sanitized, privacy: .public)")
             return sanitized
         }
+        #endif
 
         // Priority 4: Current working directory
         let cwd = FileManager.default.currentDirectoryPath
