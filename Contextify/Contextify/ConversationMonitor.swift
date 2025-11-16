@@ -421,9 +421,11 @@ final class ConversationMonitor {
         log.info("[UIOPT-MONITOR-START] ConversationMonitor.startMonitoring() called for project: \(projectId, privacy: .public)")
 
         // Skip if already monitoring this exact project (prevents duplicate calls during startup)
-        if isMonitoring && currentProjectId == projectId {
+        // Also skip if projectId is already set (even if not yet monitoring), which means
+        // a previous call is in progress
+        if (isMonitoring && currentProjectId == projectId) || (currentProjectId == projectId && isInitializing) {
             acknowledgeMonitorReady(projectId: projectId)
-            log.info("⚠️ [MONITOR-SKIP] Already monitoring project \(projectId, privacy: .public), skipping")
+            log.info("⚠️ [MONITOR-SKIP] Already monitoring/initializing project \(projectId, privacy: .public), skipping duplicate call")
             return
         }
 
