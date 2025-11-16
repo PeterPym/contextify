@@ -89,7 +89,7 @@ public actor FastPathIngestionCoordinator {
 
     // Skip sandbox container paths (defensive check)
     if SandboxPathFilter.isSandboxContainerPath(project.rootPath) {
-      log.warning("[FAST-PATH-FILTER] Skipping sandbox container path project: \(project.name, privacy: .public) at \(project.rootPath, privacy: .public)")
+      log.warning("[FAST-PATH-FILTER] Skipping sandbox container path project: \(project.name ?? project.id, privacy: .public) at \(project.rootPath, privacy: .public)")
       return
     }
 
