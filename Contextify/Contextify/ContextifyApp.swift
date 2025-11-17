@@ -498,7 +498,7 @@ struct ContextifyApp: App {
 
         do {
           // Run quick-discovery with 2-second timeout
-          let quickResult = try await withThrowingTaskGroup(of: (path: URL, mtime: Date)?.self) { group in
+          let quickResult = try await withThrowingTaskGroup(of: (projectPath: URL, transcriptFile: URL, mtime: Date)?.self) { group in
             // Quick-discovery task
             group.addTask {
               await vm.discoveryService.quickDiscoverNewest()
@@ -519,27 +519,50 @@ struct ContextifyApp: App {
           let quickDuration = Date().timeIntervalSince(quickStart)
 
           if let newest = quickResult {
-            log.info("[QUICK-DISCOVERY] Found newest: \(newest.path.path, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
+            log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
             // If different from current, switch immediately
             if let currentPath = StartupCoordinator.shared.current?.path,
-               currentPath != newest.path.path {
-              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.path.path, privacy: .public)")
+               currentPath != newest.projectPath.path {
+              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
 
               do {
                 // Ensure project exists in database before switching
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                _ = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.path.path)
+                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
 
                 // Now switch to the project
-                try await StartupCoordinator.shared.switchProject(to: newest.path.path)
-                log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete")
+                try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
+                log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
+
+                // PHASE 2: Upsert transcript record and trigger FastPath
+                await ingestNewestTranscript(
+                  projectId: projectId,
+                  projectPath: newest.projectPath,
+                  transcriptFile: newest.transcriptFile,
+                  orchestrator: orchestrator
+                )
               } catch {
                 log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
                 // Continue with full discovery - not fatal
               }
             } else {
               log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
+
+              // PHASE 2: Even if no switch, still ingest newest transcript for fast timeline
+              do {
+                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                if let currentProject = StartupCoordinator.shared.current {
+                  await ingestNewestTranscript(
+                    projectId: currentProject.id,
+                    projectPath: newest.projectPath,
+                    transcriptFile: newest.transcriptFile,
+                    orchestrator: orchestrator
+                  )
+                }
+              } catch {
+                log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
+              }
             }
           } else {
             log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
@@ -663,6 +686,70 @@ struct ContextifyApp: App {
 
     } catch {
       log.error("❌ Failed to initialize projects system: \(error.localizedDescription)")
+    }
+  }
+
+  /// Ingests the newest transcript found by quick-discovery to enable fast timeline population
+  @MainActor
+  private func ingestNewestTranscript(
+    projectId: String,
+    projectPath: URL,
+    transcriptFile: URL,
+    orchestrator: TranscriptOrchestrator
+  ) async {
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    let startTime = Date()
+
+    do {
+      // Determine provider from file path
+      let provider: DiscoveredProject.Provider
+      if transcriptFile.path.contains("/.claude/projects/") {
+        provider = .claudeCode
+      } else if transcriptFile.path.contains("/.codex/sessions/") {
+        provider = .codexCLI
+      } else {
+        log.warning("[QUICK-DISCOVERY-INGEST] Unknown provider for transcript: \(transcriptFile.path, privacy: .public)")
+        return
+      }
+
+      // Extract session ID from filename
+      let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
+
+      log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
+
+      // Create discovered transcript
+      let discovered = DiscoveredTranscript(
+        fileURL: transcriptFile,
+        provider: provider,
+        sessionId: sessionId
+      )
+
+      // Upsert transcript record
+      let resolved = try orchestrator.upsertTranscripts(
+        projectId: projectId,
+        discovered: [discovered]
+      )
+
+      guard let transcriptId = resolved.first?.transcriptId else {
+        log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
+        return
+      }
+
+      log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
+
+      // Trigger preview ingestion (first 25 entries)
+      try await orchestrator.ingestTranscript(
+        transcriptId: transcriptId,
+        mode: .preview(entries: 25),
+        notifyUI: true
+      )
+
+      let duration = Date().timeIntervalSince(startTime)
+      log.info("[QUICK-DISCOVERY-INGEST] ✅ Preview ingestion complete in \(Int(duration * 1000))ms")
+
+    } catch {
+      let duration = Date().timeIntervalSince(startTime)
+      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(error.localizedDescription)")
     }
   }
 

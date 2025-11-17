@@ -179,20 +179,20 @@ public actor ProjectDiscoveryService {
   /// - Requires security-scoped access in sandboxed builds
   /// - Uses same `withClaudeRoot` pattern as full discovery
   ///
-  /// - Returns: Tuple of (project path, newest mtime) or nil if no transcripts found
-  public func quickDiscoverNewest() async -> (path: URL, mtime: Date)? {
+  /// - Returns: Tuple of (project path, transcript file, newest mtime) or nil if no transcripts found
+  public func quickDiscoverNewest() async -> (projectPath: URL, transcriptFile: URL, mtime: Date)? {
     let startTime = Date()
     logger.info("[QUICK-DISCOVERY-START] Scanning for newest transcript")
 
     do {
-      var allCandidates: [(path: URL, mtime: Date)] = []
+      var allCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
 
       // PART 1: Scan Claude Code projects (~/.claude/projects)
       // IMPORTANT: All FileManager operations must happen synchronously inside this closure
       let claudeCandidates = try await withClaudeRoot { root in
         guard FileManager.default.fileExists(atPath: root.path) else {
           logger.debug("[QUICK-DISCOVERY] Claude projects directory not found")
-          return [(URL, Date)]()
+          return [(projectPath: URL, transcriptFile: URL, mtime: Date)]()
         }
 
         let projectDirs = try FileManager.default.contentsOfDirectory(
@@ -203,8 +203,8 @@ public actor ProjectDiscoveryService {
 
         logger.info("[QUICK-DISCOVERY] Found \(projectDirs.count) Claude project directories")
 
-        // For each directory, find newest .jsonl mtime (synchronously)
-        var results: [(path: URL, mtime: Date)] = []
+        // For each directory, find newest .jsonl file (synchronously)
+        var results: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
 
         for claudeDir in projectDirs {
           // Reverse map to project path
@@ -213,7 +213,7 @@ public actor ProjectDiscoveryService {
             continue
           }
 
-          // Find all .jsonl files and get newest mtime
+          // Find all .jsonl files with mtimes
           guard let files = try? FileManager.default.contentsOfDirectory(
             at: claudeDir,
             includingPropertiesForKeys: [.contentModificationDateKey],
@@ -222,12 +222,16 @@ public actor ProjectDiscoveryService {
             continue
           }
 
-          let mtimes = files.compactMap {
-            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+          // Find the file with newest mtime
+          let filesWithMtimes = files.compactMap { file -> (URL, Date)? in
+            guard let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
+              return nil
+            }
+            return (file, mtime)
           }
 
-          if let newestMtime = mtimes.max() {
-            results.append((projectPath, newestMtime))
+          if let newestFile = filesWithMtimes.max(by: { $0.1 < $1.1 }) {
+            results.append((projectPath, newestFile.0, newestFile.1))
           }
         }
 
@@ -265,8 +269,8 @@ public actor ProjectDiscoveryService {
 
         logger.info("[QUICK-DISCOVERY] Found \(codexFiles.count) Codex transcript files")
 
-        // Group by project path (extracted from cwd field) and find newest per project
-        var codexProjectMtimes: [String: Date] = [:]
+        // Group by project path (extracted from cwd field) and find newest file per project
+        var codexProjectNewest: [String: (file: URL, mtime: Date)] = [:]
 
         for file in codexFiles {
           // Get file mtime
@@ -281,21 +285,23 @@ public actor ProjectDiscoveryService {
              let json = try? JSONSerialization.jsonObject(with: Data(firstLine.utf8), options: []) as? [String: Any],
              let cwd = json["cwd"] as? String {
 
-            // Track newest mtime for this project
-            if let existingMtime = codexProjectMtimes[cwd] {
-              codexProjectMtimes[cwd] = max(existingMtime, mtime)
+            // Track newest file and mtime for this project
+            if let existing = codexProjectNewest[cwd] {
+              if mtime > existing.mtime {
+                codexProjectNewest[cwd] = (file, mtime)
+              }
             } else {
-              codexProjectMtimes[cwd] = mtime
+              codexProjectNewest[cwd] = (file, mtime)
             }
           }
         }
 
         // Convert to candidates
-        for (projectPath, mtime) in codexProjectMtimes {
-          allCandidates.append((URL(fileURLWithPath: projectPath), mtime))
+        for (projectPath, newest) in codexProjectNewest {
+          allCandidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
         }
 
-        logger.info("[QUICK-DISCOVERY] Found \(codexProjectMtimes.count) unique Codex projects")
+        logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
       } else {
         logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
       }
@@ -308,7 +314,7 @@ public actor ProjectDiscoveryService {
       }
 
       let duration = Date().timeIntervalSince(startTime)
-      logger.info("[QUICK-DISCOVERY-DONE] Newest: \(newest.path.lastPathComponent, privacy: .public) mtime=\(newest.mtime, privacy: .public) (duration: \(Int(duration * 1000), privacy: .public)ms)")
+      logger.info("[QUICK-DISCOVERY-DONE] Newest: \(newest.projectPath.lastPathComponent, privacy: .public) transcript=\(newest.transcriptFile.lastPathComponent, privacy: .public) mtime=\(newest.mtime, privacy: .public) (duration: \(Int(duration * 1000), privacy: .public)ms)")
 
       return newest
 
