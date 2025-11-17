@@ -47,7 +47,7 @@ System-level design documents. How the major components fit together.
 
 **Key docs:**
 - [Data Flow](architecture/data-flow.md) - End-to-end data pipeline (discovery → database → UI)
-- [SQL Backend](architecture/sql-backend.md) - Database architecture and schema (current: v23)
+- [SQL Backend](architecture/sql-backend.md) - Database architecture and schema (current: v26)
 - [LLM Processing](architecture/llm-processing.md) - Dual-queue LLM system (FoundationLLM)
 - [Startup Coordinator](architecture/startup-coordinator.md) - Project identity pipeline
 - [Window System](architecture/window-system.md) - 4-window macOS app architecture

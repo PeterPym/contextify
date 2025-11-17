@@ -1,5 +1,5 @@
 Document,File Path,Project Related,Reviewed,Status,Notes,Issues Found
-README.md,build/docs/README.md,Yes,No,Pending,"Index for build/docs structure",
+README.md,build/docs/README.md,Yes,Yes,Fixed,"Index for build/docs structure","Fixed schema version v23->v26 on line 50; plans/ dir exists but undocumented"
 COMPONENTS.md,build/docs/architecture/COMPONENTS.md,Yes,No,Pending,"Database layer and LLM components",
 README.md,build/docs/architecture/README.md,Yes,No,Pending,"Architecture overview index",
 abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,No,Pending,"LLM queue design patterns",
