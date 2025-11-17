@@ -11,7 +11,7 @@ This document provides detailed information about Contextify's architecture and 
 
 ## Database Layer (SQL Backend)
 
-- **Current Schema Version: v23** (see DatabaseSchema.swift for migration history)
+- **Current Schema Version: v26** (see DatabaseSchema.swift for migration history)
 
 ### Recent Migrations
 
@@ -51,7 +51,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v23)
+- SQL schema definitions and versioned migrations (v1-v26)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
