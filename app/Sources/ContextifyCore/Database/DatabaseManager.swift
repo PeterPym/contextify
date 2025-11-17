@@ -13,6 +13,7 @@ public final class DatabaseManager: @unchecked Sendable {
   private var _pool: DatabasePool?
   private var securityScopedDirURL: URL?
   private var isMigrationInProgress = false
+  private let overrideDatabaseURL: URL?
 
   public var pool: DatabasePool {
     get throws {
@@ -37,7 +38,19 @@ public final class DatabaseManager: @unchecked Sendable {
     }
   }
 
-  private init() {}
+  private init(overrideDatabaseURL: URL? = nil) {
+    self.overrideDatabaseURL = overrideDatabaseURL
+  }
+
+  /// Creates an isolated manager for tests with a fixed database location.
+  /// - Parameter databaseURL: Full path to the SQLite file (directory is created if needed).
+  /// - Returns: Dedicated DatabaseManager instance.
+  public static func makeTestingInstance(databaseURL: URL) -> DatabaseManager {
+    // Ensure parent exists eagerly so migrations can run
+    let directory = databaseURL.deletingLastPathComponent()
+    try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return DatabaseManager(overrideDatabaseURL: databaseURL)
+  }
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
@@ -106,6 +119,10 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Returns the path to the database file
   public func databasePath() throws -> URL {
+    if let overrideDatabaseURL {
+      return overrideDatabaseURL
+    }
+
     // Check for custom database location first
     if let customLocation = try customDatabasePath() {
       return customLocation

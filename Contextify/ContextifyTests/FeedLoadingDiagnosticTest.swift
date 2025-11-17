@@ -1,4 +1,5 @@
 import XCTest
+@testable import Contextify
 @testable import ContextifyCore
 
 /// Diagnostic test to understand why UI shows empty entries

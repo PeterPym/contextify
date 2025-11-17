@@ -2,6 +2,22 @@ import XCTest
 @testable import Contextify
 import ContextifyCore
 
+private actor EventRecorder<Value> {
+  private var values: [Value] = []
+
+  func append(_ value: Value) {
+    values.append(value)
+  }
+
+  func snapshot() -> [Value] {
+    values
+  }
+
+  var count: Int {
+    values.count
+  }
+}
+
 /// Tests for multicast stream behavior in ProjectActivityMonitor and FSEventsMonitor
 final class MulticastStreamTests: XCTestCase {
 
@@ -17,15 +33,15 @@ final class MulticastStreamTests: XCTestCase {
       try? FileManager.default.removeItem(at: tempDir)
     }
 
-    let dbPath = tempDir.appendingPathComponent("test.db")
-    let dbManager = try DatabaseManager(location: .custom(directory: dbPath.deletingLastPathComponent()))
-    let orchestrator = TranscriptOrchestrator(dbManager: dbManager)
+    let dbPath = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
     let monitor = ProjectActivityMonitor(orchestrator: orchestrator)
 
     // Create three subscribers
-    var subscriber1Events: [ProjectEvent] = []
-    var subscriber2Events: [ProjectEvent] = []
-    var subscriber3Events: [ProjectEvent] = []
+    let subscriber1Events = EventRecorder<ProjectEvent>()
+    let subscriber2Events = EventRecorder<ProjectEvent>()
+    let subscriber3Events = EventRecorder<ProjectEvent>()
 
     let stream1 = monitor.observeProjectEvents()
     let stream2 = monitor.observeProjectEvents()
@@ -34,22 +50,22 @@ final class MulticastStreamTests: XCTestCase {
     // Start consuming streams
     let task1 = Task {
       for await event in stream1 {
-        subscriber1Events.append(event)
-        if subscriber1Events.count >= 3 { break }
+        await subscriber1Events.append(event)
+        if await subscriber1Events.count >= 3 { break }
       }
     }
 
     let task2 = Task {
       for await event in stream2 {
-        subscriber2Events.append(event)
-        if subscriber2Events.count >= 3 { break }
+        await subscriber2Events.append(event)
+        if await subscriber2Events.count >= 3 { break }
       }
     }
 
     let task3 = Task {
       for await event in stream3 {
-        subscriber3Events.append(event)
-        if subscriber3Events.count >= 3 { break }
+        await subscriber3Events.append(event)
+        if await subscriber3Events.count >= 3 { break }
       }
     }
 
@@ -62,32 +78,36 @@ final class MulticastStreamTests: XCTestCase {
     await monitor.emitProjectEvent(ProjectEvent(projectId: "proj3", kind: .removed))
 
     // Wait for all tasks to complete
-    try await task1.value
-    try await task2.value
-    try await task3.value
+    await task1.value
+    await task2.value
+    await task3.value
 
     // Verify: All subscribers received all events (multicast behavior)
-    XCTAssertEqual(subscriber1Events.count, 3, "Subscriber 1 should receive 3 events")
-    XCTAssertEqual(subscriber2Events.count, 3, "Subscriber 2 should receive 3 events")
-    XCTAssertEqual(subscriber3Events.count, 3, "Subscriber 3 should receive 3 events")
+    let subscriber1Snapshot = await subscriber1Events.snapshot()
+    let subscriber2Snapshot = await subscriber2Events.snapshot()
+    let subscriber3Snapshot = await subscriber3Events.snapshot()
+
+    XCTAssertEqual(subscriber1Snapshot.count, 3, "Subscriber 1 should receive 3 events")
+    XCTAssertEqual(subscriber2Snapshot.count, 3, "Subscriber 2 should receive 3 events")
+    XCTAssertEqual(subscriber3Snapshot.count, 3, "Subscriber 3 should receive 3 events")
 
     // Verify event content (all subscribers get same events)
-    XCTAssertEqual(subscriber1Events[0].projectId, "proj1")
-    XCTAssertEqual(subscriber1Events[0].kind, .discovered)
-    XCTAssertEqual(subscriber2Events[0].projectId, "proj1")
-    XCTAssertEqual(subscriber2Events[0].kind, .discovered)
-    XCTAssertEqual(subscriber3Events[0].projectId, "proj1")
-    XCTAssertEqual(subscriber3Events[0].kind, .discovered)
+    XCTAssertEqual(subscriber1Snapshot[0].projectId, "proj1")
+    XCTAssertEqual(subscriber1Snapshot[0].kind, .discovered)
+    XCTAssertEqual(subscriber2Snapshot[0].projectId, "proj1")
+    XCTAssertEqual(subscriber2Snapshot[0].kind, .discovered)
+    XCTAssertEqual(subscriber3Snapshot[0].projectId, "proj1")
+    XCTAssertEqual(subscriber3Snapshot[0].kind, .discovered)
 
-    XCTAssertEqual(subscriber1Events[1].projectId, "proj2")
-    XCTAssertEqual(subscriber1Events[1].kind, .transcriptUpdated)
-    XCTAssertEqual(subscriber2Events[1].projectId, "proj2")
-    XCTAssertEqual(subscriber3Events[1].projectId, "proj2")
+    XCTAssertEqual(subscriber1Snapshot[1].projectId, "proj2")
+    XCTAssertEqual(subscriber1Snapshot[1].kind, .transcriptUpdated)
+    XCTAssertEqual(subscriber2Snapshot[1].projectId, "proj2")
+    XCTAssertEqual(subscriber3Snapshot[1].projectId, "proj2")
 
-    XCTAssertEqual(subscriber1Events[2].projectId, "proj3")
-    XCTAssertEqual(subscriber1Events[2].kind, .removed)
-    XCTAssertEqual(subscriber2Events[2].projectId, "proj3")
-    XCTAssertEqual(subscriber3Events[2].projectId, "proj3")
+    XCTAssertEqual(subscriber1Snapshot[2].projectId, "proj3")
+    XCTAssertEqual(subscriber1Snapshot[2].kind, .removed)
+    XCTAssertEqual(subscriber2Snapshot[2].projectId, "proj3")
+    XCTAssertEqual(subscriber3Snapshot[2].projectId, "proj3")
   }
 
   func testProjectActivityMonitor_LateSubscriber() async throws {
@@ -100,19 +120,19 @@ final class MulticastStreamTests: XCTestCase {
       try? FileManager.default.removeItem(at: tempDir)
     }
 
-    let dbPath = tempDir.appendingPathComponent("test.db")
-    let dbManager = try DatabaseManager(location: .custom(directory: dbPath.deletingLastPathComponent()))
-    let orchestrator = TranscriptOrchestrator(dbManager: dbManager)
+    let dbPath = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
     let monitor = ProjectActivityMonitor(orchestrator: orchestrator)
 
     // Create early subscriber
-    var earlyEvents: [ProjectEvent] = []
+    let earlyEvents = EventRecorder<ProjectEvent>()
     let stream1 = monitor.observeProjectEvents()
 
     let task1 = Task {
       for await event in stream1 {
-        earlyEvents.append(event)
-        if earlyEvents.count >= 3 { break }
+        await earlyEvents.append(event)
+        if await earlyEvents.count >= 3 { break }
       }
     }
 
@@ -124,13 +144,13 @@ final class MulticastStreamTests: XCTestCase {
     try await Task.sleep(nanoseconds: 50_000_000) // 50ms
 
     // Add late subscriber
-    var lateEvents: [ProjectEvent] = []
+    let lateEvents = EventRecorder<ProjectEvent>()
     let stream2 = monitor.observeProjectEvents()
 
     let task2 = Task {
       for await event in stream2 {
-        lateEvents.append(event)
-        if lateEvents.count >= 2 { break }
+        await lateEvents.append(event)
+        if await lateEvents.count >= 2 { break }
       }
     }
 
@@ -140,19 +160,22 @@ final class MulticastStreamTests: XCTestCase {
     await monitor.emitProjectEvent(ProjectEvent(projectId: "proj2", kind: .transcriptUpdated))
     await monitor.emitProjectEvent(ProjectEvent(projectId: "proj3", kind: .removed))
 
-    try await task1.value
-    try await task2.value
+    await task1.value
+    await task2.value
 
     // Verify: Early subscriber got all 3, late subscriber got last 2
-    XCTAssertEqual(earlyEvents.count, 3, "Early subscriber should receive 3 events")
-    XCTAssertEqual(lateEvents.count, 2, "Late subscriber should receive 2 events")
+    let earlySnapshot = await earlyEvents.snapshot()
+    let lateSnapshot = await lateEvents.snapshot()
 
-    XCTAssertEqual(earlyEvents[0].projectId, "proj1")
-    XCTAssertEqual(earlyEvents[1].projectId, "proj2")
-    XCTAssertEqual(earlyEvents[2].projectId, "proj3")
+    XCTAssertEqual(earlySnapshot.count, 3, "Early subscriber should receive 3 events")
+    XCTAssertEqual(lateSnapshot.count, 2, "Late subscriber should receive 2 events")
 
-    XCTAssertEqual(lateEvents[0].projectId, "proj2")
-    XCTAssertEqual(lateEvents[1].projectId, "proj3")
+    XCTAssertEqual(earlySnapshot[0].projectId, "proj1")
+    XCTAssertEqual(earlySnapshot[1].projectId, "proj2")
+    XCTAssertEqual(earlySnapshot[2].projectId, "proj3")
+
+    XCTAssertEqual(lateSnapshot[0].projectId, "proj2")
+    XCTAssertEqual(lateSnapshot[1].projectId, "proj3")
   }
 
   func testProjectActivityMonitor_SubscriberCleanup() async throws {
@@ -165,18 +188,18 @@ final class MulticastStreamTests: XCTestCase {
       try? FileManager.default.removeItem(at: tempDir)
     }
 
-    let dbPath = tempDir.appendingPathComponent("test.db")
-    let dbManager = try DatabaseManager(location: .custom(directory: dbPath.deletingLastPathComponent()))
-    let orchestrator = TranscriptOrchestrator(dbManager: dbManager)
+    let dbPath = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
     let monitor = ProjectActivityMonitor(orchestrator: orchestrator)
 
     // Create subscriber and cancel it immediately
-    var events: [ProjectEvent] = []
+    let events = EventRecorder<ProjectEvent>()
     let stream = monitor.observeProjectEvents()
 
     let task = Task {
       for await event in stream {
-        events.append(event)
+        await events.append(event)
       }
     }
 
@@ -193,7 +216,8 @@ final class MulticastStreamTests: XCTestCase {
     try await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
     // Verify: No events received after cancellation
-    XCTAssertTrue(events.isEmpty, "Cancelled subscriber should not receive events")
+    let snapshot = await events.snapshot()
+    XCTAssertTrue(snapshot.isEmpty, "Cancelled subscriber should not receive events")
   }
 
   // MARK: - FSEventsMonitor Tests
@@ -214,9 +238,9 @@ final class MulticastStreamTests: XCTestCase {
     let monitor = FSEventsMonitor(paths: [tempDir.path], latency: 0.1)
 
     // Create three subscribers
-    var subscriber1Events: [FSEventChange] = []
-    var subscriber2Events: [FSEventChange] = []
-    var subscriber3Events: [FSEventChange] = []
+    let subscriber1Events = EventRecorder<FSEventChange>()
+    let subscriber2Events = EventRecorder<FSEventChange>()
+    let subscriber3Events = EventRecorder<FSEventChange>()
 
     let stream1 = monitor.start()
     let stream2 = monitor.start()
@@ -224,22 +248,22 @@ final class MulticastStreamTests: XCTestCase {
 
     let task1 = Task {
       for await event in stream1 {
-        subscriber1Events.append(event)
-        if subscriber1Events.count >= 1 { break }
+        await subscriber1Events.append(event)
+        if await subscriber1Events.count >= 1 { break }
       }
     }
 
     let task2 = Task {
       for await event in stream2 {
-        subscriber2Events.append(event)
-        if subscriber2Events.count >= 1 { break }
+        await subscriber2Events.append(event)
+        if await subscriber2Events.count >= 1 { break }
       }
     }
 
     let task3 = Task {
       for await event in stream3 {
-        subscriber3Events.append(event)
-        if subscriber3Events.count >= 1 { break }
+        await subscriber3Events.append(event)
+        if await subscriber3Events.count >= 1 { break }
       }
     }
 
@@ -259,25 +283,29 @@ final class MulticastStreamTests: XCTestCase {
     }
 
     await withTaskGroup(of: Void.self) { group in
-      group.addTask { try? await task1.value }
-      group.addTask { try? await task2.value }
-      group.addTask { try? await task3.value }
+      group.addTask { await task1.value }
+      group.addTask { await task2.value }
+      group.addTask { await task3.value }
       group.addTask { try? await timeout.value }
     }
 
     timeout.cancel()
-    await monitor.stop()
+    monitor.stop()
 
     // Verify: All subscribers received at least one event (multicast behavior)
     // Note: FSEvents may batch/coalesce events, so we check count >= 1
-    XCTAssertGreaterThanOrEqual(subscriber1Events.count, 1, "Subscriber 1 should receive events")
-    XCTAssertGreaterThanOrEqual(subscriber2Events.count, 1, "Subscriber 2 should receive events")
-    XCTAssertGreaterThanOrEqual(subscriber3Events.count, 1, "Subscriber 3 should receive events")
+    let sub1Snapshot = await subscriber1Events.snapshot()
+    let sub2Snapshot = await subscriber2Events.snapshot()
+    let sub3Snapshot = await subscriber3Events.snapshot()
+
+    XCTAssertGreaterThanOrEqual(sub1Snapshot.count, 1, "Subscriber 1 should receive events")
+    XCTAssertGreaterThanOrEqual(sub2Snapshot.count, 1, "Subscriber 2 should receive events")
+    XCTAssertGreaterThanOrEqual(sub3Snapshot.count, 1, "Subscriber 3 should receive events")
 
     // All subscribers should see the same path
-    XCTAssertTrue(subscriber1Events.contains(where: { $0.path.contains("test.txt") }))
-    XCTAssertTrue(subscriber2Events.contains(where: { $0.path.contains("test.txt") }))
-    XCTAssertTrue(subscriber3Events.contains(where: { $0.path.contains("test.txt") }))
+    XCTAssertTrue(sub1Snapshot.contains(where: { $0.path.contains("test.txt") }))
+    XCTAssertTrue(sub2Snapshot.contains(where: { $0.path.contains("test.txt") }))
+    XCTAssertTrue(sub3Snapshot.contains(where: { $0.path.contains("test.txt") }))
     #else
     throw XCTSkip("FSEvents only available on macOS")
     #endif
@@ -298,12 +326,12 @@ final class MulticastStreamTests: XCTestCase {
 
     let monitor = FSEventsMonitor(paths: [tempDir.path], latency: 0.05)
 
-    var events: [FSEventChange] = []
+    let events = EventRecorder<FSEventChange>()
     let stream = monitor.start()
 
     let task = Task {
       for await event in stream {
-        events.append(event)
+        await events.append(event)
       }
     }
 
@@ -320,15 +348,16 @@ final class MulticastStreamTests: XCTestCase {
     // Wait for debounce period + processing
     try await Task.sleep(nanoseconds: 500_000_000) // 500ms
 
-    await monitor.stop()
+    monitor.stop()
     task.cancel()
 
     // Verify: Events were coalesced (fewer events than file writes)
     // Note: FSEvents + debouncing should coalesce multiple rapid changes
-    XCTAssertGreaterThan(events.count, 0, "Should receive at least one event")
-    XCTAssertLessThan(events.count, 10, "Should coalesce events (not 5+ individual events)")
+    let eventsSnapshot = await events.snapshot()
+    XCTAssertGreaterThan(eventsSnapshot.count, 0, "Should receive at least one event")
+    XCTAssertLessThan(eventsSnapshot.count, 10, "Should coalesce events (not 5+ individual events)")
 
-    print("Received \(events.count) coalesced events for 5 rapid file writes")
+    print("Received \(eventsSnapshot.count) coalesced events for 5 rapid file writes")
     #else
     throw XCTSkip("FSEvents only available on macOS")
     #endif

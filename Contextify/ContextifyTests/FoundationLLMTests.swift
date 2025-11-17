@@ -1,6 +1,10 @@
 import XCTest
 @testable import Contextify
 
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
 final class FormattingTests: XCTestCase {
     func testAssistantPrefixAndLength() async {
         let sanitized = await FoundationLLM.shared._testSanitize(String(repeating: "x", count: 200), kind: .assistant)

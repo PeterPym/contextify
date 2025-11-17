@@ -5,7 +5,8 @@ final class ContextifyTests: XCTestCase {
   @MainActor
   func testInitialStateDefaults() throws {
     let viewModel = HUDViewModel()
-    XCTAssertEqual(viewModel.status, "Ready")
+    XCTAssertEqual(viewModel.branch, "—")
+    XCTAssertNil(viewModel.projectRootURL)
     XCTAssertEqual(viewModel.branchDisplay, "—")
   }
 }
