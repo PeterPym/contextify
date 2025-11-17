@@ -552,14 +552,14 @@ struct ContextifyApp: App {
               // PHASE 2: Even if no switch, still ingest newest transcript for fast timeline
               do {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                if let currentProject = StartupCoordinator.shared.current {
-                  await ingestNewestTranscript(
-                    projectId: currentProject.id,
-                    projectPath: newest.projectPath,
-                    transcriptFile: newest.transcriptFile,
-                    orchestrator: orchestrator
-                  )
-                }
+                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+
+                await ingestNewestTranscript(
+                  projectId: projectId,
+                  projectPath: newest.projectPath,
+                  transcriptFile: newest.transcriptFile,
+                  orchestrator: orchestrator
+                )
               } catch {
                 log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
               }
