@@ -9,6 +9,9 @@ public actor ProjectDiscoveryService {
   private let folderAccessController: FolderAccessController?  // Optional for backward compat
   private var ingestionErrors: [String: String] = [:]  // projectPath -> error message
   private let logger = Logger(subsystem: "dev.contextify", category: "ProjectDiscovery")
+  /// Cached map of Codex transcripts grouped by cwd (relative paths from ~/.codex/sessions)
+  private var cachedCodexTranscriptsByProject: [String: [String]] = [:]
+  private var codexScanPerformed = false
 
   public init(
     db: DatabasePool,
@@ -92,6 +95,7 @@ public actor ProjectDiscoveryService {
   /// - Parameter currentProjectPath: Path to the current project (for isCurrent flag)
   /// - Returns: Array of discovered projects with metadata
   public func discoverAllProjects(currentProjectPath: String?) async throws -> [DiscoveredProject] {
+    invalidateCodexCache()
     logger.info("Starting project discovery")
     let sanitizedCurrentPath = SandboxPathFilter.sanitizedPath(currentProjectPath)
 
@@ -388,6 +392,7 @@ public actor ProjectDiscoveryService {
 
     // Clear previous errors
     ingestionErrors.removeAll()
+    try await ensureCodexTranscriptCache()
 
     let total = projects.count
 
@@ -409,10 +414,15 @@ public actor ProjectDiscoveryService {
           try await ingestClaudeCodeTranscripts(for: projectPath, claudeDir: claudeDir)
         }
 
-        // Check if project has Codex transcripts
-        let codexDir = projectPath.appendingPathComponent(".codex/sessions")
-        if FileManager.default.fileExists(atPath: codexDir.path) {
-          try await ingestCodexTranscripts(for: projectPath, codexDir: codexDir)
+        // Check if project has Codex transcripts from canonical ~/.codex/sessions scan
+        if let relativeFiles = cachedCodexTranscriptsByProject[projectPath.path], !relativeFiles.isEmpty {
+          try await ingestCodexTranscripts(for: projectPath, codexRelativePaths: relativeFiles)
+        } else {
+          // Legacy fallback: repo-local .codex/sessions directory
+          let codexDir = projectPath.appendingPathComponent(".codex/sessions")
+          if FileManager.default.fileExists(atPath: codexDir.path) {
+            try await ingestCodexTranscripts(for: projectPath, codexDir: codexDir)
+          }
         }
 
         logger.debug("Ingested project: \(projectName)")
@@ -575,6 +585,77 @@ public actor ProjectDiscoveryService {
       logger.debug("Fallback failed: cannot reverse mangle (\(dirURL.lastPathComponent)): \(error)")
       return nil
     }
+  }
+
+  private func ensureCodexTranscriptCache() async {
+    guard !codexScanPerformed else { return }
+    codexScanPerformed = true
+
+    do {
+      let grouped = try await withCodexRoot { root -> [String: [String]] in
+        guard FileManager.default.fileExists(atPath: root.path) else {
+          logger.debug("[INGEST-CODEX] Codex sessions directory not found at \(root.path)")
+          return [:]
+        }
+
+        let files = enumerateCodexTranscripts(at: root)
+        var grouped: [String: [String]] = [:]
+
+        for file in files {
+          guard let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file) else {
+            continue
+          }
+
+          let relative = relativeCodexPath(root: root, file: file)
+          grouped[cwd, default: []].append(relative)
+        }
+
+        logger.debug("[INGEST-CODEX] Cached \(files.count) Codex transcripts grouped into \(grouped.count) projects")
+        return grouped
+      }
+
+      cachedCodexTranscriptsByProject = grouped
+    } catch {
+      logger.debug("[INGEST-CODEX] Codex scan skipped: \(error.localizedDescription, privacy: .public)")
+      cachedCodexTranscriptsByProject = [:]
+    }
+  }
+
+  private func invalidateCodexCache() {
+    codexScanPerformed = false
+    cachedCodexTranscriptsByProject.removeAll()
+  }
+
+  private nonisolated func relativeCodexPath(root: URL, file: URL) -> String {
+    let rootPath = root.path
+    var path = file.path
+    if path.hasPrefix(rootPath) {
+      path.removeFirst(rootPath.count)
+    }
+    if path.hasPrefix("/") {
+      path.removeFirst()
+    }
+    return path
+  }
+
+  private nonisolated func enumerateCodexTranscripts(at root: URL) -> [URL] {
+    return (try? FileManager.default.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: [.contentModificationDateKey],
+      options: []
+    ).flatMap { yearDir -> [URL] in
+      guard (try? yearDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
+
+      return (try? FileManager.default.contentsOfDirectory(at: yearDir, includingPropertiesForKeys: [.contentModificationDateKey], options: []))?.flatMap { monthDir -> [URL] in
+        guard (try? monthDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
+
+        return (try? FileManager.default.contentsOfDirectory(at: monthDir, includingPropertiesForKeys: [.contentModificationDateKey], options: []))?.flatMap { dayDir -> [URL] in
+          guard (try? dayDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
+
+          return (try? FileManager.default.contentsOfDirectory(at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]))?.filter { $0.pathExtension == "jsonl" } ?? []
+        } ?? []
+      } ?? []
+    }) ?? []
   }
 
   // NOTE: Provider presence is determined from the database (transcripts.provider).
@@ -865,7 +946,28 @@ public actor ProjectDiscoveryService {
     _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
   }
 
-  /// Ingests Codex transcripts for a project
+  /// Ingests Codex transcripts resolved from canonical ~/.codex/sessions scan
+  private func ingestCodexTranscripts(
+    for projectPath: URL,
+    codexRelativePaths: [String]
+  ) async throws {
+    guard !codexRelativePaths.isEmpty else { return }
+
+    let projectName = deriveProjectName(from: projectPath)
+    logger.debug("[INGEST-CODEX] Ingesting \(codexRelativePaths.count) cached Codex transcripts for \(projectName, privacy: .public)")
+
+    let files = try await withCodexRoot { root -> [URL] in
+      codexRelativePaths.map { relative -> URL in
+        if relative.isEmpty { return root }
+        return root.appendingPathComponent(relative)
+      }
+    }
+
+    try await ingestCodexTranscripts(for: projectPath, files: files)
+    logger.info("[INGEST-CODEX] ✅ Ingested \(files.count) Codex transcripts for \(projectName, privacy: .public)")
+  }
+
+  /// Legacy method: Ingests Codex transcripts for a project from a repo-local directory
   private func ingestCodexTranscripts(for projectPath: URL, codexDir: URL) async throws {
     let transcriptFiles = try FileManager.default.contentsOfDirectory(
       at: codexDir,
@@ -873,14 +975,19 @@ public actor ProjectDiscoveryService {
       options: [.skipsHiddenFiles]
     ).filter { $0.pathExtension == "jsonl" }
 
-    // Create project if it doesn't exist
+    try await ingestCodexTranscripts(for: projectPath, files: transcriptFiles)
+  }
+
+  /// Shared ingestion logic once Codex transcript file URLs are available
+  private func ingestCodexTranscripts(for projectPath: URL, files: [URL]) async throws {
+    guard !files.isEmpty else { return }
+
     let projectId = try orchestrator.getOrCreateProject(
       name: deriveProjectName(from: projectPath),
       rootPath: projectPath.path
     )
 
-    // Prepare discovered transcripts
-    let discovered = transcriptFiles.map { file in
+    let discovered = files.map { file in
       DiscoveredTranscript(
         fileURL: file,
         provider: .codexCLI,
@@ -888,7 +995,6 @@ public actor ProjectDiscoveryService {
       )
     }
 
-    // Batch upsert
     _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
   }
 }
