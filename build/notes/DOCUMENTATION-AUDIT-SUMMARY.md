@@ -294,10 +294,11 @@ The documentation in `build/docs/` is **generally high quality** with excellent 
 - Comprehensive guides (DEVELOPMENT, logging, diagnostics)
 - Detailed specifications (claude-code-format, transcript-formats)
 - Excellent operational docs (DATABASE-LOCATIONS, release guides)
+- **README.md updated** to complement AGENTS.md (concise getting started guide, 163 lines down from 369)
 
 ⚠️ **Weaknesses:**
 - **data-flow.md critically outdated** (must be replaced)
-- Some docs lag behind code (schema versions were 3 versions behind)
+- Some docs lag behind code (schema versions were 3 versions behind - now fixed)
 - Complex implementation details underdocumented (data pipeline nitty-gritty)
 - No architecture refactoring analysis
 
