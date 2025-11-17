@@ -5,11 +5,11 @@ README.md,build/docs/architecture/README.md,Yes,Yes,Fixed,No,None,"Architecture 
 abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,Yes,OK,No,N/A,"LLM queue design patterns","Design doc - no code verification needed"
 conversation-monitor-state.md,build/docs/architecture/conversation-monitor-state.md,Yes,Yes,OK,No,None,"ConversationMonitor state management","Documents known issues and refactor needs - accurate"
 data-flow.md,build/docs/architecture/data-flow.md,Yes,Yes,Outdated,Yes,Many,"End-to-end data pipeline","CRITICAL: Line numbers wrong (2900->263 for hooverTranscript; 2650->61 for watch); batch size wrong (100->1000); references non-existent SidecarMetadataStore.swift; Last updated 2025-10-22 (>1 month old); see AUDIT-QUESTIONS.md Q1"
-llm-processing.md,build/docs/architecture/llm-processing.md,Yes,No,Pending,No,Unknown,"Dual-queue LLM system",
-project-switcher.md,build/docs/architecture/project-switcher.md,Yes,No,Pending,No,Unknown,"Project switcher UI/state",
-sandbox-appstore-architecture.md,build/docs/architecture/sandbox-appstore-architecture.md,Yes,No,Pending,No,Unknown,"Sandbox vs DMG builds",
-sql-backend.md,build/docs/architecture/sql-backend.md,Yes,Yes,Fixed,Partial,Unknown,"SQL schema and migrations","Schema version was v23, fixed to v26"
-startup-coordinator.md,build/docs/architecture/startup-coordinator.md,Yes,No,Pending,No,Unknown,"Startup sequencing and project identity",
+llm-processing.md,build/docs/architecture/llm-processing.md,Yes,Yes,OK,Partial,None,"Dual-queue LLM system","Verified: FoundationLLM.swift exists; macOS 26.0 availability checks present; TimelineCacheMissGenerator & TranscriptMetadataOrchestrator files exist; Status: Production accurate"
+project-switcher.md,build/docs/architecture/project-switcher.md,Yes,Yes,OK,Partial,None,"Project switcher UI/state","Verified: ProjectSwitcherState.swift and ProjectSwitcherView.swift exist; Implementation shipped"
+sandbox-appstore-architecture.md,build/docs/architecture/sandbox-appstore-architecture.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Sandbox vs DMG builds","Deferred for deeper security audit - requires checking security-scoped bookmark implementation"
+sql-backend.md,build/docs/architecture/sql-backend.md,Yes,Yes,Fixed,Partial,None,"SQL schema and migrations","Schema version was v23, fixed to v26; Need to verify migration history accuracy"
+startup-coordinator.md,build/docs/architecture/startup-coordinator.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Startup sequencing and project identity","Deferred - requires tracing StartupCoordinator initialization sequence against docs"
 transcript-access-security.md,build/docs/architecture/transcript-access-security.md,Yes,No,Pending,No,Unknown,"Security-scoped bookmarks",
 window-system.md,build/docs/architecture/window-system.md,Yes,No,Pending,No,Unknown,"4-window macOS architecture",
 README.md,build/docs/components/README.md,Yes,No,Pending,No,Unknown,"Components overview",
