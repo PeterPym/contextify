@@ -396,6 +396,11 @@ public final class HooverEngine {
           // Silently skip - this is expected for meta messages, empty content, etc.
           log.debug("[HOOVER-PARSE-SKIP] Line \(lineNo) skipped (meta/empty)")
           // Don't add to batch, don't record as error
+
+          // NEW: Log if this was a large line (diagnostic for hang investigation)
+          if lineData.count > 50_000 {
+            log.info("[HOOVER-SKIP-LARGE] Line \(lineNo) skipped, size: \(lineData.count) bytes")
+          }
         } catch {
           parseErrorCount += 1
           if firstParseErrorReason == nil {
@@ -445,6 +450,11 @@ public final class HooverEngine {
         // Checkpoint every N lines
         if batch.count >= MonitorConfig.batchLines {
           log.info("[HOOVER-BATCH-COMMIT] Committing batch of \(batch.count) entries")
+
+          // NEW: Time the batch insertion (diagnostic for hang investigation)
+          let batchStart = Date()
+          log.info("[HOOVER-BATCH-INSERT-START] Starting batch insertion for \(batch.count) entries at line \(lineNo)")
+
           try commitBatch(
             transcriptId: transcript.id,
             entries: batch,
@@ -454,6 +464,13 @@ public final class HooverEngine {
             lineCount: lineNo,
             previousEntries: &previousEntries
           )
+
+          let duration = Date().timeIntervalSince(batchStart)
+          log.info("[HOOVER-BATCH-INSERT-DONE] Batch insertion completed in \(String(format: "%.0f", duration * 1000))ms")
+          if duration > 5.0 {
+            log.warning("[HOOVER-BATCH-SLOW] Batch insertion took \(String(format: "%.1f", duration))s - may indicate DB lock contention")
+          }
+
           batch.removeAll()
           metadataBatch.clear()
           errors.removeAll()
@@ -462,18 +479,33 @@ public final class HooverEngine {
       }
       log.debug("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
 
+      // NEW: Log inner loop completion with batch state (diagnostic for hang investigation)
+      log.info("[HOOVER-INNER-COMPLETE] Processed \(innerLoopCount) lines in this iteration, batch size: \(batch.count), total lines: \(lineNo)")
+
       if limitReached {
         break outerLoop
       }
 
       // READ MORE DATA - only after draining existing buffer
+      let readStart = Date()
       guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
         log.info("[HOOVER-READ-EOF] Reached EOF at line \(lineNo, privacy: .public), outerLoops=\(outerLoopCount) for transcript: \(transcript.id, privacy: .public)")
         hitEOF = true
         break
       }
+      let readDuration = Date().timeIntervalSince(readStart)
+      if readDuration > 1.0 {
+        log.warning("[HOOVER-READ-SLOW] File read took \(String(format: "%.1f", readDuration))s - file may still be written")
+      }
+
       log.debug("[HOOVER-READ-CHUNK] Read \(chunk.count) bytes, buffer now \(buffer.count + chunk.count) bytes")
       buffer.append(chunk)
+
+      // NEW: Check buffer size for runaway growth (diagnostic for hang investigation)
+      if buffer.count > 10_000_000 {  // 10MB limit
+        log.error("[HOOVER-BUFFER-OVERFLOW] Buffer size: \(buffer.count) bytes at line \(lineNo) - aborting. Line may exceed maximum size.")
+        throw ParserError.invalidFormat("Line \(lineNo) exceeds maximum size (buffer >10MB)")
+      }
     }
 
     // Handle final partial line (no trailing newline)
