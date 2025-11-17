@@ -304,6 +304,9 @@ public final class ProjectSwitcherState {
       log.info("[SWITCHER-SORTED] Tab order (first 10): \(sortedDebug, privacy: .public)")
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
+      let hasAnyEntries = entryCounts.values.contains { $0 > 0 }
+      let currentActiveId = activeProjectId
+
       let projectInfos = sortedProjects.map { project in
         let pathExists = FileManager.default.fileExists(atPath: project.rootPath)
 
@@ -334,9 +337,19 @@ public final class ProjectSwitcherState {
         )
       }
 
-      let visibleTabs = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount > 0 }
-      let zeroEntryHidden = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount == 0 }
-      if !zeroEntryHidden.isEmpty {
+      let visibleTabs: [ProjectInfo]
+      let zeroEntryHidden: [ProjectInfo]
+
+      if hasAnyEntries {
+        visibleTabs = projectInfos.filter { !$0.isOrphaned && ($0.transcriptCount > 0 || $0.id == currentActiveId) }
+        zeroEntryHidden = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount == 0 && $0.id != currentActiveId }
+      } else {
+        visibleTabs = projectInfos.filter { !$0.isOrphaned }
+        zeroEntryHidden = []
+        log.info("[SWITCHER-FILTER-ZERO] No projects have entries yet; skipping zero-entry filter")
+      }
+
+      if hasAnyEntries && !zeroEntryHidden.isEmpty {
         let paths = zeroEntryHidden.prefix(5).map { $0.rootPath }.joined(separator: " | ")
         log.info("[SWITCHER-FILTER-ZERO] Hiding \(zeroEntryHidden.count) project(s) with 0 entries (sample: \(paths, privacy: .public))")
       }
