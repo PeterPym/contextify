@@ -166,7 +166,50 @@ Currently only high-level description exists. Need detailed implementation for:
 
 ## Priority 3: Operational Guides
 
-### 6. Database Migration Runbook
+### 6. Codebase Health Audit
+
+**Proposed Path:** `build/docs/operations/codebase-health-audit.md`
+
+**Justification:**
+Assess the codebase organization and health from the perspective of professional Swift application development best practices. Identify areas where file sizes, module structure, architectural boundaries, and code organization could be improved.
+
+**Scope:**
+- **File Size Analysis**
+  - Identify files exceeding professional norms (e.g., >500 lines)
+  - Flag "god objects" and oversized ViewModels
+  - Suggest refactoring opportunities for large files
+
+- **Module Structure & Boundaries**
+  - Analyze separation of concerns (UI, Business Logic, Data)
+  - Review ContextifyCore vs Contextify app boundary clarity
+  - Identify circular dependencies or tight coupling
+
+- **Swift Best Practices Compliance**
+  - Protocol-oriented design usage
+  - Dependency injection patterns
+  - Testability (protocol abstractions, dependency injection)
+  - Concurrency patterns (Swift 6 strict concurrency)
+
+- **Architecture Patterns**
+  - Coordinator/MVVM/MVC consistency
+  - State management patterns (Observable vs StateObject)
+  - Repository pattern adherence in database layer
+
+- **Code Organization**
+  - Directory structure clarity
+  - Naming conventions consistency
+  - File grouping and logical organization
+
+- **Refactoring Recommendations**
+  - Priority-ordered list of refactoring opportunities
+  - Complexity hotspots (cyclomatic complexity, nesting depth)
+  - Technical debt identification
+
+**Deliverable:** Health score, issue catalog, and refactoring roadmap
+
+---
+
+### 7. Database Migration Runbook
 
 **Proposed Path:** `build/docs/operations/database-migration-runbook.md`
 
@@ -180,7 +223,7 @@ Currently only high-level description exists. Need detailed implementation for:
 
 ---
 
-### 7. Debugging Workflow Guide
+### 8. Debugging Workflow Guide
 
 **Proposed Path:** `build/docs/guides/debugging-workflows.md`
 
@@ -193,7 +236,7 @@ Multiple debugging docs exist (`diagnostics-api.md`, `timeline-diagnostics.md`, 
 
 ---
 
-### 8. Security-Scoped Bookmark Patterns
+### 9. Security-Scoped Bookmark Patterns
 
 **Proposed Path:** `build/docs/guides/security-scoped-bookmarks.md`
 
@@ -209,7 +252,7 @@ Multiple debugging docs exist (`diagnostics-api.md`, `timeline-diagnostics.md`, 
 
 ## Priority 4: Testing & Quality
 
-### 9. Integration Testing Strategy
+### 10. Integration Testing Strategy
 
 **Proposed Path:** `build/docs/testing/integration-testing-guide.md`
 
@@ -223,7 +266,7 @@ Only `first-run-qa-guide.md` exists for testing. Need comprehensive guide for:
 
 ---
 
-### 10. Performance Testing & Benchmarks
+### 11. Performance Testing & Benchmarks
 
 **Proposed Path:** `build/docs/testing/performance-benchmarks.md`
 
@@ -239,7 +282,7 @@ Performance targets mentioned in various docs but no consolidated benchmarks. Ne
 
 ## Priority 5: Design Documentation
 
-### 11. SwiftUI Architecture Patterns
+### 12. SwiftUI Architecture Patterns
 
 **Proposed Path:** `build/docs/design/swiftui-patterns.md`
 
@@ -253,7 +296,7 @@ Inconsistent patterns across codebase. Need to document:
 
 ---
 
-### 12. Error Handling Philosophy
+### 13. Error Handling Philosophy
 
 **Proposed Path:** `build/docs/design/error-handling-philosophy.md`
 
