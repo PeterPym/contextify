@@ -68,9 +68,6 @@ public final class ProjectSwitcherState {
   // Global refresh debounce (prevents spam from system events during discovery)
   @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
 
-  // Discovery completion tracking (for zero-entry filter gating)
-  @ObservationIgnored private var discoveryComplete: Bool = false
-
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
   @ObservationIgnored private var switchTask: Task<Void, Never>?
@@ -176,8 +173,7 @@ public final class ProjectSwitcherState {
       guard let self else { return }
       let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
       for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - marking discovery complete and refreshing projects")
-        self.discoveryComplete = true
+        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
         self.scheduleRefresh()
       }
     }
@@ -308,8 +304,6 @@ public final class ProjectSwitcherState {
       log.info("[SWITCHER-SORTED] Tab order (first 10): \(sortedDebug, privacy: .public)")
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
-      let currentActiveId = activeProjectId
-
       let projectInfos = sortedProjects.map { project in
         let pathExists = FileManager.default.fileExists(atPath: project.rootPath)
 
@@ -340,29 +334,13 @@ public final class ProjectSwitcherState {
         )
       }
 
-      let visibleTabs: [ProjectInfo]
-      let zeroEntryHidden: [ProjectInfo]
-
-      // Only apply zero-entry filter AFTER discovery completes
-      // Before discovery completes, show all projects (they may get entries during discovery)
-      if self.discoveryComplete {
-        visibleTabs = projectInfos.filter { !$0.isOrphaned && ($0.transcriptCount > 0 || $0.id == currentActiveId) }
-        zeroEntryHidden = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount == 0 && $0.id != currentActiveId }
-      } else {
-        visibleTabs = projectInfos.filter { !$0.isOrphaned }
-        zeroEntryHidden = []
-        log.info("[SWITCHER-FILTER-ZERO] Discovery not yet complete; showing all projects")
-      }
-
-      if self.discoveryComplete && !zeroEntryHidden.isEmpty {
-        let paths = zeroEntryHidden.prefix(5).map { $0.rootPath }.joined(separator: " | ")
-        log.info("[SWITCHER-FILTER-ZERO] Hiding \(zeroEntryHidden.count) project(s) with 0 entries (sample: \(paths, privacy: .public))")
-      }
+      // Show all non-orphaned projects (removed zero-entry filtering)
+      let visibleTabs = projectInfos.filter { !$0.isOrphaned }
 
       // Update state on main actor
       await MainActor.run {
         self.allProjects = projectInfos
-        self.hasHiddenProjects = hiddenCount > 0 || !zeroEntryHidden.isEmpty
+        self.hasHiddenProjects = hiddenCount > 0
 
         if self.isTabOrderFrozen {
           self.pendingTabProjects = visibleTabs
@@ -370,11 +348,6 @@ public final class ProjectSwitcherState {
         } else {
           self.pendingTabProjects = nil
           self.updateTabProjects(visibleTabs)
-        }
-        if let activeId = self.activeProjectId,
-           !visibleTabs.contains(where: { $0.id == activeId }) {
-          log.info("[SWITCHER-FILTER-ZERO] Active project (\(activeId, privacy: .public)) has 0 entries; clearing active selection")
-          self.activeProjectId = nil
         }
       }
 
