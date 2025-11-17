@@ -278,21 +278,21 @@ public actor ProjectDiscoveryService {
             continue
           }
 
-          // Extract project path from first JSONL record (read first ~1KB)
-          if let data = try? Data(contentsOf: file, options: .mappedIfSafe).prefix(1024),
-             let text = String(data: data, encoding: .utf8),
-             let firstLine = text.components(separatedBy: CharacterSet.newlines).first,
-             let json = try? JSONSerialization.jsonObject(with: Data(firstLine.utf8), options: []) as? [String: Any],
-             let cwd = json["cwd"] as? String {
+          // Extract project path using same logic as full discovery
+          // This handles both Claude Code (cwd) and Codex (payload.cwd) formats
+          // and reads up to 64KB instead of just 1KB
+          guard let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file) else {
+            logger.debug("[QUICK-DISCOVERY-CODEX] No CWD found in: \(file.lastPathComponent, privacy: .public)")
+            continue
+          }
 
-            // Track newest file and mtime for this project
-            if let existing = codexProjectNewest[cwd] {
-              if mtime > existing.mtime {
-                codexProjectNewest[cwd] = (file, mtime)
-              }
-            } else {
+          // Track newest file and mtime for this project
+          if let existing = codexProjectNewest[cwd] {
+            if mtime > existing.mtime {
               codexProjectNewest[cwd] = (file, mtime)
             }
+          } else {
+            codexProjectNewest[cwd] = (file, mtime)
           }
         }
 
@@ -302,6 +302,11 @@ public actor ProjectDiscoveryService {
         }
 
         logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
+
+        // Log first 3 projects for validation
+        for (projectPath, newest) in codexProjectNewest.prefix(3) {
+          logger.debug("[QUICK-DISCOVERY-CODEX] Project: \(projectPath, privacy: .public) newest: \(newest.file.lastPathComponent, privacy: .public) mtime: \(newest.mtime, privacy: .public)")
+        }
       } else {
         logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
       }
