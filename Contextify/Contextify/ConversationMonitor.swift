@@ -602,11 +602,7 @@ final class ConversationMonitor {
                     self.backgroundTasks = backgroundTasks
                 }
 
-                // 5. Load initial feed (fast - single query)
-                let feedStart = Date()
-                log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
-                await self.loadFeedFromSQL()?.value
-                log.info("[UIOPT-FEED-DONE] Feed loaded in \(String(format: "%.0f", Date().timeIntervalSince(feedStart) * 1000), privacy: .public)ms")
+                // 5. Feed already loaded in reinitialize() - no need to load again here
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
@@ -1277,6 +1273,19 @@ final class ConversationMonitor {
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
+        // Call-site logging for diagnostics
+        let callStack = Thread.callStackSymbols
+        if callStack.count > 1 {
+            let caller = callStack[1]
+            // Extract method name from stack frame
+            if let methodRange = caller.range(of: #"(?<=\s)[^\s]+(?=\s*\+)"#, options: .regularExpression) {
+                let methodName = String(caller[methodRange])
+                log.info("[TIMELINE-LOAD-CALLER] \(methodName, privacy: .public)")
+            } else {
+                log.info("[TIMELINE-LOAD-CALLER] \(caller, privacy: .public)")
+            }
+        }
+
         // Set loading phase (tracked by UI)
         phase = .loading
         log.info("[UIOPT-BRANCH] phase → loading")
@@ -1895,14 +1904,21 @@ final class ConversationMonitor {
     /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
     @MainActor
     func replaceVisibleSnapshot(_ ids: [UUID]) {
-        log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) entries in viewport")
+        // Log raw viewport input for debugging queue pruning
+        log.info("[VIEWPORT-INPUT] Received \(ids.count, privacy: .public) IDs from viewport callback")
+        for (index, id) in ids.prefix(5).enumerated() {
+            log.info("[VIEWPORT-ID-\(index, privacy: .public)] \(id, privacy: .public)")
+        }
 
-        guard !doingProgrammaticScroll else {
-            log.debug("[SUMM-SCROLL] Ignoring visibility update during programmatic scroll")
+        // Skip if viewport unchanged (prevents thrashing from layout engine remeasures)
+        let current = Set(ids)
+        if current == lastVisibleIDs {
+            log.debug("[VIEWPORT-SKIP] Viewport unchanged (\(ids.count) entries), ignoring callback")
             return
         }
 
-        let current = Set(ids)
+        log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) entries in viewport")
+
         let newlyVisible = current.subtracting(lastVisibleIDs)
         if !newlyVisible.isEmpty {
             log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible entries")
@@ -1916,10 +1932,15 @@ final class ConversationMonitor {
             }
         }
 
+        // ALWAYS update viewport tracking (even during programmatic scroll)
+        // This ensures needsInitialVisibilitySnapshot can be captured
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
 
         // First settled snapshot after project switch: queue exactly what's on screen
+        // NOTE: Programmatic scroll gating removed - it was creating a cycle where the flag
+        // kept getting set/cleared and blocking initial snapshot capture. The viewport
+        // stability guard above is sufficient to prevent thrashing.
         if needsInitialVisibilitySnapshot {
             needsInitialVisibilitySnapshot = false
 
@@ -1985,12 +2006,25 @@ final class ConversationMonitor {
     private func pruneQueueToVisible(_ ids: Set<UUID>) async {
         guard let generator = cacheMissGenerator else { return }
 
+        log.info("[SUMM-PRUNE-START] Pruning queue to \(ids.count, privacy: .public) visible entries")
+
+        // Check queue depth before pruning
+        let beforeCount = await generator.getStatus().pending
+        log.info("[SUMM-PRUNE-BEFORE] Queue depth before pruning: \(beforeCount, privacy: .public)")
+
         // Convert UUID set to entry ID strings (sourceIdentifier)
         let visibleEntryIDs = Set(visibleEntries
             .filter { ids.contains($0.id) }
             .map { $0.sourceIdentifier })
 
+        log.info("[SUMM-PRUNE-VISIBLE-IDS] Keeping \(visibleEntryIDs.count, privacy: .public) visible entry IDs")
+
         await generator.pruneQueue(keepOnly: visibleEntryIDs)
+
+        // Check queue depth after pruning
+        let afterCount = await generator.getStatus().pending
+        log.info("[SUMM-PRUNE-AFTER] Queue depth after pruning: \(afterCount, privacy: .public)")
+        log.info("[SUMM-PRUNE-REMOVED] Removed \(beforeCount - afterCount, privacy: .public) items from queue")
     }
 
     /// Queue entries that are both visible and generating summaries
@@ -2032,6 +2066,10 @@ final class ConversationMonitor {
             log.debug("[SUMM-QUEUE] No entries need queueing (all visible entries have summaries)")
             return
         }
+
+        log.info("[SUMM-QUEUE-INITIAL] About to queue visible entries needing summaries")
+        log.info("[SUMM-QUEUE-VISIBLE-COUNT] Visible IDs: \(ids.count, privacy: .public)")
+        log.info("[SUMM-QUEUE-NEEDS-SUMMARY-COUNT] Entries needing summaries: \(misses.count, privacy: .public)")
 
         log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible unsummarized entries:")
         for miss in misses {

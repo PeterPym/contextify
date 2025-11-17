@@ -204,6 +204,14 @@ final class StatusBarViewModel {
 
             log.info("[COORD-UPDATE] UI update - queueDepth: \(self.queueDepth, privacy: .public)→\(totalPending, privacy: .public), isProcessing: \(self.isProcessing)→\(uiProcessing), providers: \(allStats.count, privacy: .public)")
 
+            // Log details when queue depth is high
+            if totalPending > 100 {
+                log.info("[COORD-QUEUE-HIGH] ⚠️ High queue depth: \(totalPending, privacy: .public) items")
+                for stat in allStats where stat.pending > 0 {
+                    log.info("[COORD-QUEUE-PROVIDER] Provider has \(stat.pending, privacy: .public) pending items")
+                }
+            }
+
             queueDepth = totalPending
             isProcessing = uiProcessing
             estimatedSecondsRemaining = uiProcessing ? maxETA : 0
