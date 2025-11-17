@@ -63,6 +63,29 @@ public actor ProjectDiscoveryService {
     return try await controller.withAccess(auth, operation)
   }
 
+  private func withCodexRoot<T>(
+    _ operation: @Sendable (URL) throws -> T
+  ) async throws -> T where T: Sendable {
+    guard let controller = folderAccessController else {
+      // Non-sandboxed build: just call operation on the raw path
+      let root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codex/sessions")
+      return try operation(root)
+    }
+
+    // Sandboxed build: must use security-scoped access
+    guard let auth = await controller.authorization(for: .codex),
+          auth.status == .authorized else {
+      logger.debug("No Codex authorization (sandboxed build requires user permission)")
+      throw FolderAccessError.securityScopeAccessDenied(
+        FileManager.default.homeDirectoryForCurrentUser
+          .appendingPathComponent(".codex/sessions")
+      )
+    }
+
+    return try await controller.withAccess(auth, operation)
+  }
+
   // MARK: - Public API
 
   /// Discovers all Claude Code and Codex projects
@@ -189,7 +212,10 @@ public actor ProjectDiscoveryService {
 
       // PART 1: Scan Claude Code projects (~/.claude/projects)
       // IMPORTANT: All FileManager operations must happen synchronously inside this closure
-      let claudeCandidates = try await withClaudeRoot { root in
+      // Handle authorization errors gracefully (sandboxed builds need user permission first)
+      let claudeCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)]
+      do {
+        claudeCandidates = try await withClaudeRoot { root in
         guard FileManager.default.fileExists(atPath: root.path) else {
           logger.debug("[QUICK-DISCOVERY] Claude projects directory not found")
           return [(projectPath: URL, transcriptFile: URL, mtime: Date)]()
@@ -235,22 +261,32 @@ public actor ProjectDiscoveryService {
           }
         }
 
-        return results
+          return results
+        }
+      } catch {
+        // Authorization not granted yet (sandboxed build during first launch)
+        // This is expected - user will grant permission via welcome modal
+        logger.debug("[QUICK-DISCOVERY] Claude scan skipped (no authorization): \(error.localizedDescription, privacy: .public)")
+        claudeCandidates = []
       }
 
       allCandidates.append(contentsOf: claudeCandidates)
 
       // PART 2: Scan Codex CLI transcripts (~/.codex/sessions/YYYY/MM/DD/*.jsonl)
       // Codex transcripts contain `cwd` field - need to parse JSONL for project path
-      let codexRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions")
+      // Handle authorization errors gracefully (sandboxed builds need user permission first)
+      do {
+        try await withCodexRoot { codexRoot in
+          guard FileManager.default.fileExists(atPath: codexRoot.path) else {
+            logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
+            return
+          }
 
-      if FileManager.default.fileExists(atPath: codexRoot.path) {
-        logger.info("[QUICK-DISCOVERY] Scanning Codex sessions")
+          logger.info("[QUICK-DISCOVERY] Scanning Codex sessions")
 
-        // Recursively find all .jsonl files (up to 3 levels: YYYY/MM/DD)
-        let codexFiles: [URL] = (try? FileManager.default.contentsOfDirectory(
-          at: codexRoot,
+          // Recursively find all .jsonl files (up to 3 levels: YYYY/MM/DD)
+          let codexFiles: [URL] = (try? FileManager.default.contentsOfDirectory(
+            at: codexRoot,
           includingPropertiesForKeys: [.contentModificationDateKey],
           options: []
         ).flatMap { yearDir -> [URL] in
@@ -296,19 +332,22 @@ public actor ProjectDiscoveryService {
           }
         }
 
-        // Convert to candidates
-        for (projectPath, newest) in codexProjectNewest {
-          allCandidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
-        }
+          // Convert to candidates
+          for (projectPath, newest) in codexProjectNewest {
+            allCandidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
+          }
 
-        logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
+          logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
 
-        // Log first 3 projects for validation
-        for (projectPath, newest) in codexProjectNewest.prefix(3) {
-          logger.debug("[QUICK-DISCOVERY-CODEX] Project: \(projectPath, privacy: .public) newest: \(newest.file.lastPathComponent, privacy: .public) mtime: \(newest.mtime, privacy: .public)")
+          // Log first 3 projects for validation
+          for (projectPath, newest) in codexProjectNewest.prefix(3) {
+            logger.debug("[QUICK-DISCOVERY-CODEX] Project: \(projectPath, privacy: .public) newest: \(newest.file.lastPathComponent, privacy: .public) mtime: \(newest.mtime, privacy: .public)")
+          }
         }
-      } else {
-        logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
+      } catch {
+        // Authorization not granted yet (sandboxed build during first launch)
+        // This is expected - user will grant permission via welcome modal
+        logger.debug("[QUICK-DISCOVERY] Codex scan skipped (no authorization): \(error.localizedDescription, privacy: .public)")
       }
 
       // Find global newest across both Claude and Codex
