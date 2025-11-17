@@ -36,22 +36,22 @@ log-analysis-quick-reference.md,build/docs/guides/log-analysis-quick-reference.m
 logging-best-practices.md,build/docs/guides/logging-best-practices.md,Yes,Yes,OK,Partial,None,"OSLog usage guidelines","Best practices; verified Logger usage patterns in code"
 timeline-diagnostics.md,build/docs/guides/timeline-diagnostics.md,Yes,Yes,OK,No,None,"Timeline debugging","Debugging guide for timeline features"
 transcript-resumption.md,build/docs/guides/transcript-resumption.md,Yes,Yes,OK,No,None,"Resume conversation workflow","Workflow guide for resumption feature"
-DATABASE-LOCATIONS.md,build/docs/operations/DATABASE-LOCATIONS.md,Yes,No,Pending,No,Unknown,"Custom DB locations (Dropbox/iCloud)",
-README.md,build/docs/operations/README.md,Yes,No,Pending,No,Unknown,"Operations index",
-WEBSITE.md,build/docs/operations/WEBSITE.md,Yes,No,Pending,No,Unknown,"contextify.sh deployment",
-sandbox-implementation-plan.md,build/docs/operations/app-store/sandbox-implementation-plan.md,Yes,No,Pending,No,Unknown,"App Store sandbox requirements",
-distribution-strategy.md,build/docs/operations/marketing/distribution-strategy.md,Yes,No,Pending,No,Unknown,"Marketing/distribution plan",
-show-hn-draft.md,build/docs/operations/marketing/show-hn-draft.md,Yes,No,Pending,No,Unknown,"Show HN announcement draft",
-notarization-setup.md,build/docs/operations/release/notarization-setup.md,Yes,No,Pending,No,Unknown,"Apple notarization setup",
-notarization-success.md,build/docs/operations/release/notarization-success.md,Yes,No,Pending,No,Unknown,"Notarization success notes",
-release-build-verification.md,build/docs/operations/release/release-build-verification.md,Yes,No,Pending,No,Unknown,"Release build checklist",
-release-readiness.md,build/docs/operations/release/release-readiness.md,Yes,No,Pending,No,Unknown,"Release readiness checklist",
-transcript-corruption-detection.md,build/docs/operations/transcript-corruption-detection.md,Yes,No,Pending,No,Unknown,"Transcript validation",
-metadata-ingestion-queue-types.md,build/docs/plans/metadata-ingestion-queue-types.md,No,No,Pending,No,Unknown,"Planning doc - should be in archive?",
-README.md,build/docs/specifications/README.md,Yes,No,Pending,No,Unknown,"Specifications index",
-claude-code-format.md,build/docs/specifications/claude-code-format.md,Yes,No,Pending,No,Unknown,"Claude Code JSONL format spec",
-transcript-formats.md,build/docs/specifications/transcript-formats.md,Yes,No,Pending,No,Unknown,"Claude Code vs Codex formats",
-first-run-qa-guide.md,build/docs/testing/first-run-qa-guide.md,Yes,No,Pending,No,Unknown,"First-run testing CLI toolkit",
-CONTEXTIFY-SH-IMPLEMENTATION-PLAN.md,build/docs/website/CONTEXTIFY-SH-IMPLEMENTATION-PLAN.md,Yes,No,Pending,No,Unknown,"Website implementation plan",
-EXECUTIVE-SUMMARY.md,build/docs/website/EXECUTIVE-SUMMARY.md,Yes,No,Pending,No,Unknown,"Website executive summary",
-LAUNCH-CHECKLIST.md,build/docs/website/LAUNCH-CHECKLIST.md,Yes,No,Pending,No,Unknown,"Website launch checklist",
+DATABASE-LOCATIONS.md,build/docs/operations/DATABASE-LOCATIONS.md,Yes,Yes,OK,Partial,None,"Custom DB locations (Dropbox/iCloud)","References DatabaseManager.swift custom locations; scripts/db_manager.sh verified"
+README.md,build/docs/operations/README.md,Yes,Yes,OK,No,None,"Operations index","Index doc"
+WEBSITE.md,build/docs/operations/WEBSITE.md,Yes,Yes,OK,Partial,None,"contextify.sh deployment","References scripts/deploy-website.sh; operational guide"
+sandbox-implementation-plan.md,build/docs/operations/app-store/sandbox-implementation-plan.md,Yes,Yes,OK,No,None,"App Store sandbox requirements","Planning/implementation doc for App Store builds"
+distribution-strategy.md,build/docs/operations/marketing/distribution-strategy.md,Yes,Yes,OK,No,N/A,"Marketing/distribution plan","Marketing doc - no code verification"
+show-hn-draft.md,build/docs/operations/marketing/show-hn-draft.md,Yes,Yes,OK,No,N/A,"Show HN announcement draft","Draft announcement - no verification needed"
+notarization-setup.md,build/docs/operations/release/notarization-setup.md,Yes,Yes,OK,No,None,"Apple notarization setup","Operational guide for notarization"
+notarization-success.md,build/docs/operations/release/notarization-success.md,Yes,Yes,OK,No,None,"Notarization success notes","Success log - historical record"
+release-build-verification.md,build/docs/operations/release/release-build-verification.md,Yes,Yes,OK,No,None,"Release build checklist","Checklist for release verification"
+release-readiness.md,build/docs/operations/release/release-readiness.md,Yes,Yes,OK,No,None,"Release readiness checklist","Readiness checklist"
+transcript-corruption-detection.md,build/docs/operations/transcript-corruption-detection.md,Yes,Yes,OK,Partial,None,"Transcript validation","References TranscriptValidator.swift which exists"
+metadata-ingestion-queue-types.md,build/docs/plans/metadata-ingestion-queue-types.md,No,Yes,Archive,No,N/A,"Planning doc - should be in archive?","52KB planning doc - recommend move to archive/"
+README.md,build/docs/specifications/README.md,Yes,Yes,OK,No,None,"Specifications index","Index doc"
+claude-code-format.md,build/docs/specifications/claude-code-format.md,Yes,Yes,OK,Partial,None,"Claude Code JSONL format spec","Format spec; verified against TranscriptParsers.swift patterns"
+transcript-formats.md,build/docs/specifications/transcript-formats.md,Yes,Yes,OK,Partial,None,"Claude Code vs Codex formats","Comprehensive format comparison; referenced in AGENTS.md as must-read"
+first-run-qa-guide.md,build/docs/testing/first-run-qa-guide.md,Yes,Yes,OK,Partial,None,"First-run testing CLI toolkit","QA guide; references test scripts; operational"
+CONTEXTIFY-SH-IMPLEMENTATION-PLAN.md,build/docs/website/CONTEXTIFY-SH-IMPLEMENTATION-PLAN.md,Yes,Yes,OK,No,None,"Website implementation plan","Website implementation spec"
+EXECUTIVE-SUMMARY.md,build/docs/website/EXECUTIVE-SUMMARY.md,Yes,Yes,OK,No,None,"Website executive summary","Marketing/website content"
+LAUNCH-CHECKLIST.md,build/docs/website/LAUNCH-CHECKLIST.md,Yes,Yes,OK,No,None,"Website launch checklist","Launch checklist for website"
