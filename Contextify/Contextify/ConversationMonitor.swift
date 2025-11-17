@@ -2047,6 +2047,7 @@ final class ConversationMonitor {
         // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
         if needsInitialVisibilitySnapshot {
             if doingProgrammaticScroll {
+                pendingInitialVisibleIDs = current
                 log.debug("[SUMM-VIEWPORT-INIT] Programmatic scroll in progress - deferring initial snapshot")
                 return
             }
@@ -2056,29 +2057,7 @@ final class ConversationMonitor {
                 return
             }
 
-            needsInitialVisibilitySnapshot = false
-
-            // Log timing between load completion and first viewport report
-            if let loadTime = lastLoadCompletionTime {
-                let delta = Date().timeIntervalSince(loadTime) * 1000
-                log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
-            }
-
-            // Count how many visible entries need summarization
-            let visibleNeedingSummaries = ids.filter { id in
-                guard let entry = lookup(id) else { return false }
-                return entry.action == .unsummarized
-            }.count
-
-            log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
-
-            Task {
-                await self.pruneQueueToVisible(current)
-                await self.queueVisibleGeneratingEntries(current)
-            }
-            viewedEntryIDs.formUnion(current)
-            lastVisibleIDs = current
-            debugVisibleIDs = current
+            processInitialVisibleSnapshot(current)
             return
         }
 
@@ -2246,6 +2225,33 @@ final class ConversationMonitor {
         log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
         await generator.queueMisses(misses)
         log.debug("[SUMM-QUEUE] generator.queueMisses() completed")
+    }
+
+    @MainActor
+    private func processInitialVisibleSnapshot(_ current: Set<UUID>) {
+        pendingInitialVisibleIDs = nil
+        needsInitialVisibilitySnapshot = false
+
+        if let loadTime = lastLoadCompletionTime {
+            let delta = Date().timeIntervalSince(loadTime) * 1000
+            log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
+        }
+
+        let ids = Array(current)
+        let visibleNeedingSummaries = ids.filter { id in
+            guard let entry = lookup(id) else { return false }
+            return entry.action == .unsummarized
+        }.count
+
+        log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+
+        Task {
+            await self.pruneQueueToVisible(current)
+            await self.queueVisibleGeneratingEntries(current)
+        }
+        viewedEntryIDs.formUnion(current)
+        lastVisibleIDs = current
+        debugVisibleIDs = current
     }
 
     /// Derive entry status for logging (cached/queued/generating/not_queued/error)
