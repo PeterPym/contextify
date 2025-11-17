@@ -696,6 +696,8 @@ struct ContextifyApp: App {
         // Continue with whatever projects were found
       }
 
+      await persistNewestProjectBookmarkIfAvailable(log: log)
+
       // C4.2: Auto-select most recent project if coordinator has no current project
       var shouldAutoSelect = false
       var discoveredProjects: [DiscoveredProject] = []
@@ -840,6 +842,28 @@ struct ContextifyApp: App {
     } catch {
       let duration = Date().timeIntervalSince(startTime)
       log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(error.localizedDescription)")
+    }
+  }
+
+  @MainActor
+  private func persistNewestProjectBookmarkIfAvailable(log: Logger) async {
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      guard let mostRecent = try orchestrator.getProjectWithNewestEntry() else {
+        log.debug("[PERSIST-ROOT] No ingested projects yet; skipping persisted root update")
+        return
+      }
+
+      let rootPath = mostRecent.rootPath
+      if SandboxPathFilter.isSandboxContainerPath(rootPath) {
+        log.debug("[PERSIST-ROOT] Skipping sandbox container path: \(rootPath, privacy: .public)")
+        return
+      }
+
+      HUDPreferences.setPersistedRoot(rootPath)
+      log.notice("[PERSIST-ROOT] 💾 Updated persisted root to newest project: \(rootPath, privacy: .public)")
+    } catch {
+      log.warning("[PERSIST-ROOT] Failed to update persisted root: \(error.localizedDescription)")
     }
   }
 
