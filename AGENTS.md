@@ -89,6 +89,10 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - Use `ActiveProjectContext.id` as stable primary identity (NOT path)
 - Subscribe to `StartupCoordinator.shared.updates` for project changes
 - All FileManager ops on Claude/Codex dirs must use `accessProvider.withAccess()`
+- Cold start pipeline:
+  - **Quick discovery (Phase 2):** Before full discovery/ingestion we synchronously scan `~/.claude/projects` and `~/.codex/sessions/YYYY/MM/DD/*.jsonl`, locate the newest transcript by `mtime`, switch to that repo, and preview-ingest its first 25 entries so the timeline is warm the moment the HUD appears.
+  - **Full discovery (Phase 3):** Once quick discovery finishes, `ProjectDiscoveryService` performs the deep scan/ingest for every repo, still using `~/.claude/projects` for Claude Code and the canonical global `~/.codex/sessions` tree for Codex CLI (with a legacy `<repo>/.codex/sessions` fallback for edge cases).
+  - **Persistence:** After discovery completes we persist the repo with the newest ingested entry so the next launch starts in the correct project even if quick discovery is skipped (e.g., sandbox lacks authorization).
 
 **For detailed architecture:** See `build/docs/architecture/COMPONENTS.md` and `build/docs/architecture/startup-coordinator.md`
 
@@ -199,9 +203,9 @@ try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
 ## Transcript Analysis
 
 **IMPORTANT:** For all transcript work, **ALWAYS consult** `build/docs/specifications/transcript-formats.md` FIRST
-- Storage locations (Claude Code vs Codex)
-  - [Put actual codex storage locaion here to be explicit this is so important]
-  - [same for CC]
+- Storage locations:
+  - **Claude Code:** `~/.claude/projects/<encoded-path>/*.jsonl` (one directory per repo under the Claude sandbox root)
+  - **Codex CLI:** `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (global sessions tree; never mirrored inside the repo)
 
 - Project discovery (directory vs `cwd` field)
 - Record types and content blocks

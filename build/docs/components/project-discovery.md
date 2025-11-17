@@ -29,8 +29,8 @@ Global project discovery automatically finds all Claude Code and Codex CLI proje
 1. Scan ~/.claude/projects/* for directory names (Claude Code)
 2. Reverse map directory names to project paths
 3. Validate paths exist on disk
-4. Build CodexIndex by scanning ~/.codex/sessions recursively
-   - Parse session_meta.payload.cwd to map sessions → projects
+4. Build CodexIndex by scanning the canonical `~/.codex/sessions/YYYY/MM/DD/*.jsonl` tree (global Codex CLI store)
+   - Parse each transcript's `cwd` / `payload.cwd` to map sessions → repos
    - Cache index for 5 minutes with per-project entry caps
 5. Merge Claude and Codex results (provider union, latest activity override)
 6. Query database for existing metadata (transcript/entry counts)
@@ -43,7 +43,7 @@ Global project discovery automatically finds all Claude Code and Codex CLI proje
 ```swift
 for each project:
   - Scan Claude Code directory: ~/.claude/projects/<encoded-path>/*.jsonl
-  - Resolve Codex transcripts via CodexIndex (fallback to legacy <project>/.codex/sessions)
+  - Resolve Codex transcripts via CodexIndex (canonical `~/.codex/sessions` scan; legacy `<project>/.codex/sessions` only if present)
   - Call orchestrator.upsertTranscripts() with DiscoveredTranscript array
   - Emit progress updates via callback + welcome modal progress bars
 ```
@@ -685,3 +685,13 @@ During merge, `CodexIndex` entries union provider badges, override `lastActivity
 
 #### Known Limitation
 - Codex enumeration still starts from the main thread (due to `FolderAccessController.withAccess`), so large trees may pause the UI temporarily; progress bars + cancel buttons mitigate this until Phase 1.5 moves enumeration entirely off-main.
+### Quick Discovery (Phase 2 cold-start fast path)
+
+Cold start now has an upfront "quick discovery" pass that runs before the full discovery/ingestion loop. Key goals:
+
+- **Source of truth:** Scan `~/.claude/projects/*` and `~/.codex/sessions/**/*` synchronously (respecting security scopes) and pick the transcript with the newest `mtime`.
+- **Immediate context switch:** If that transcript belongs to a different repo than the persisted HUD root, instruct `StartupCoordinator` to switch before the Welcome modal closes.
+- **Preview ingest:** Upsert the single newest transcript and ingest the first 25 entries (`.preview`) so ConversationMonitor renders real data while the rest of discovery runs.
+- **Persistence:** After full discovery completes, persist the repo with the newest ingested entry so next launch starts in the correct context even if quick discovery is skipped (e.g., sandbox without authorization yet).
+
+See `ContextifyApp.initializeProjectsSystem()` for orchestration and `ProjectDiscoveryService.quickDiscoverNewest()` / `.ingestPreviewTranscript()` for the implementation.
