@@ -256,6 +256,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
     @ObservationIgnored private var progressDebounceTask: Task<Void, Never>?  // Debounce task for progress notifications
     @ObservationIgnored private var lastProgressRefreshTime: Date?  // Track last progress refresh to enforce minimum interval
+    @ObservationIgnored private var refreshHistory: [(trigger: String, timestamp: Date)] = []  // Track refresh frequency for diagnostics
     @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
     @ObservationIgnored private var pendingCacheKeys: Set<CacheKey> = []  // CXT-13: Accumulated cache keys
     @ObservationIgnored private var primerRetryTask: Task<Void, Never>?
@@ -813,18 +814,31 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
-        // REMOVED skip optimization - it prevented showing newly hoovered entries
-        // when query returned same top-N entries (new entries had older timestamps)
+        // ⚠️ IMPORTANT: DO NOT RE-ADD SKIP OPTIMIZATION HERE! ⚠️
         //
-        // Old logic: Skip if data unchanged (prevents unnecessary UI updates and flicker)
-        // Problem: Query can return same entries even when NEW entries exist in DB
-        // if new entries don't displace current top-N (sorted by message timestamp)
+        // Skip optimization (if entries == new, return early) causes critical bug:
+        // - Query returns top-N entries sorted by MESSAGE TIMESTAMP
+        // - New entries with OLDER timestamps don't displace current top-N
+        // - Skip logic sees "no change" → prevents UI update
+        // - User NEVER sees newly hoovered conversations (data loss from user perspective)
         //
-        // Example: User hoovered conversation with old messages → entries added to DB
-        // but timeline query still returns same top 25 (newer messages exist) →
-        // skip logic prevents UI update → user never sees the hoovered conversation
+        // Example bug scenario:
+        // 1. User hoovered conversation from Nov 14 (old messages)
+        // 2. Entries successfully inserted into DB ✅
+        // 3. Timeline queries top 25 (ORDER BY message timestamp DESC)
+        // 4. Query returns SAME 25 as before (Nov 14 messages older than current top 25)
+        // 5. Skip optimization: "entries == new" → return early ❌
+        // 6. User never sees Nov 14 conversation in timeline ❌
         //
-        // Fix: Always update. If this causes flicker, address with debouncing instead.
+        // Root cause: Message timestamp ≠ Hoovering timestamp
+        // - Timeline sorts by when MESSAGE was sent (e.g., Nov 14)
+        // - NOT by when FILE was modified/hoovered (e.g., Nov 16)
+        //
+        // Fix: ALWAYS update, even if data appears unchanged
+        // - If flicker is an issue, address with debouncing/throttling
+        // - Never suppress updates based on equality check
+        //
+        // See commit 7b6207f for detailed explanation and test case
 
         if state.entries.count == new.count && state.entries == new {
             log.debug("[TIMELINE-SKIP-DISABLED] Data unchanged (\(new.count) entries) but updating anyway (ensures fresh hoovered entries appear)")
@@ -1283,6 +1297,20 @@ final class ConversationMonitor {
     }
 
     @MainActor
+    /// Track refresh rate for diagnostics - logs warning if >5 refreshes in 5 seconds
+    private func recordRefresh(trigger: String) {
+        refreshHistory.append((trigger, Date()))
+        // Keep last 100
+        if refreshHistory.count > 100 {
+            refreshHistory.removeFirst()
+        }
+        // Log warning if >5 refreshes in 5 seconds
+        let recent = refreshHistory.filter { Date().timeIntervalSince($0.timestamp) < 5 }
+        if recent.count > 5 {
+            log.warning("[TIMELINE-REFRESH-RATE] High refresh rate: \(recent.count, privacy: .public) refreshes in 5s (triggers: \(recent.map { $0.trigger }.joined(separator: ", "), privacy: .public))")
+        }
+    }
+
     @discardableResult
     private func loadFeedFromSQL() async -> Task<Void, Never>? {
         guard let projectId = currentProjectId, let orchestrator = orchestrator else { return nil }
@@ -1292,6 +1320,19 @@ final class ConversationMonitor {
             log.debug("[TIMELINE-LOAD] Ignoring primer request; already loading")
             return nil
         }
+
+        // Track refresh frequency for diagnostics
+        #if DEBUG
+        if let caller = Thread.callStackSymbols.dropFirst().first {
+            if let methodRange = caller.range(of: #"(?<=\s)[^\s]+(?=\s*\+)"#, options: .regularExpression) {
+                recordRefresh(trigger: String(caller[methodRange]))
+            } else {
+                recordRefresh(trigger: "unknown")
+            }
+        }
+        #else
+        recordRefresh(trigger: "timeline-load")
+        #endif
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
@@ -1761,6 +1802,27 @@ final class ConversationMonitor {
                 }
 
                 self.log.info("📨 [TIMELINE-REFRESH-PROGRESS] Received hoovering progress: \(count)/\(total) transcripts")
+
+                // Diagnostic logging for first 3 transcripts (verify timeline shows these)
+                if count <= 3, let orchestrator = self.orchestrator {
+                    do {
+                        let transcripts = try orchestrator.getTranscripts(forProject: projectId)
+                        let sortedByRecent = transcripts.sorted { $0.lastModified > $1.lastModified }
+                        let firstThree = sortedByRecent.prefix(3)
+
+                        for (index, transcript) in firstThree.enumerated() {
+                            let date = Date(timeIntervalSince1970: TimeInterval(transcript.lastModified))
+                            let formatter = DateFormatter()
+                            formatter.dateStyle = .medium
+                            formatter.timeStyle = .short
+                            let prettyDate = formatter.string(from: date)
+
+                            self.log.info("[HOOVER-FIRST-3] Transcript #\(index + 1, privacy: .public): \(transcript.filePath, privacy: .public) (modified: \(prettyDate, privacy: .public))")
+                        }
+                    } catch {
+                        self.log.error("[HOOVER-FIRST-3] Failed to get transcripts: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
 
                 // Debounce refresh to reduce flicker (coalesce rapid notifications)
                 // Use a more robust approach: enforce minimum 500ms between actual refreshes
