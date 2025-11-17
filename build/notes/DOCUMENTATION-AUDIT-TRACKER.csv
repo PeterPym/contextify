@@ -1,7 +1,7 @@
 Document,File Path,Project Related,Reviewed,Status,Notes,Issues Found
 README.md,build/docs/README.md,Yes,Yes,Fixed,"Index for build/docs structure","Fixed schema version v23->v26 on line 50; plans/ dir exists but undocumented"
 COMPONENTS.md,build/docs/architecture/COMPONENTS.md,Yes,Yes,Fixed,"Database layer and LLM components","Fixed schema version v23->v26 (lines 14, 54); verified all file paths exist"
-README.md,build/docs/architecture/README.md,Yes,No,Pending,"Architecture overview index",
+README.md,build/docs/architecture/README.md,Yes,Yes,Fixed,"Architecture overview index","Fixed schema version v23->v26 (lines 51, 53)"
 abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,No,Pending,"LLM queue design patterns",
 conversation-monitor-state.md,build/docs/architecture/conversation-monitor-state.md,Yes,No,Pending,"ConversationMonitor state management",
 data-flow.md,build/docs/architecture/data-flow.md,Yes,No,Pending,"End-to-end data pipeline",

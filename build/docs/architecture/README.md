@@ -48,9 +48,9 @@ This directory contains high-level architectural documentation that explains:
 
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
-- Tables, migrations (v1-v23), repositories
+- Tables, migrations (v1-v26), repositories
 - GRDB integration
-- Current schema: v23 (active transcript follow)
+- Current schema: v26 (removed sandbox container path projects)
 
 ### [Startup Coordinator](startup-coordinator.md)
 **Topics:** Deterministic project identity pipeline
