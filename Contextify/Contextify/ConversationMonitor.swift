@@ -986,6 +986,16 @@ final class ConversationMonitor {
         }
     }
 
+    /// Determine whether timeline still needs a full primer reload (e.g., startup).
+    @MainActor
+    private func needsPrimerReload() -> Bool {
+        if isAwaitingPrimer { return true }
+        if state.entries.isEmpty { return true }
+        if phase != .loaded { return true }
+        if !isReadyForUpdates { return true }
+        return false
+    }
+
     /// Public method for user-initiated session switch from transcript inventory
     @MainActor
     func switchToSessionFromUser(_ session: TranscriptSession) async {
@@ -1693,6 +1703,11 @@ final class ConversationMonitor {
                 self.log.info("🔄 [TIMELINE-REFRESH-INGESTION] Metadata discovery complete, reloading timeline (may be empty until hoovering finishes)...")
                 self.log.info("🔍 [TIMELINE-REFRESH-INGESTION] isMonitoring=\(self.isMonitoring) (refreshing regardless)")
 
+                guard self.needsPrimerReload() else {
+                    self.log.debug("[TIMELINE-REFRESH-INGESTION] Skipping reload (primer already loaded)")
+                    return
+                }
+
                 await self.loadFeedFromSQL()?.value
                 self.log.info("✅ [TIMELINE-REFRESH-INGESTION] Timeline feed reloaded (\(self.state.entries.count) entries - hoovering continues in background)")
             }
@@ -1834,29 +1849,34 @@ final class ConversationMonitor {
                 // Use a more robust approach: enforce minimum 500ms between actual refreshes
                 self.progressDebounceTask?.cancel()
                 self.progressDebounceTask = Task { @MainActor [weak self] in
-                guard let self else { return }
+                    guard let self else { return }
 
-                // Calculate how long to wait based on last refresh
-                let now = Date()
-                let minInterval: TimeInterval = 0.5  // 500ms minimum between refreshes
-                let timeSinceLastRefresh = self.lastProgressRefreshTime.map { now.timeIntervalSince($0) } ?? minInterval
+                    // Calculate how long to wait based on last refresh
+                    let now = Date()
+                    let minInterval: TimeInterval = 0.5  // 500ms minimum between refreshes
+                    let timeSinceLastRefresh = self.lastProgressRefreshTime.map { now.timeIntervalSince($0) } ?? minInterval
 
-                if timeSinceLastRefresh < minInterval {
-                    // Wait for remaining time
-                    let remainingWait = minInterval - timeSinceLastRefresh
-                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Waiting \(Int(remainingWait * 1000))ms before refresh (last refresh \(Int(timeSinceLastRefresh * 1000))ms ago)")
-                    try? await Task.sleep(for: .milliseconds(Int(remainingWait * 1000)))
+                    if timeSinceLastRefresh < minInterval {
+                        // Wait for remaining time
+                        let remainingWait = minInterval - timeSinceLastRefresh
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Waiting \(Int(remainingWait * 1000))ms before refresh (last refresh \(Int(timeSinceLastRefresh * 1000))ms ago)")
+                        try? await Task.sleep(for: .milliseconds(Int(remainingWait * 1000)))
+                    }
+
+                    guard !Task.isCancelled else {
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Refresh cancelled before execution")
+                        return
+                    }
+
+                    guard self.needsPrimerReload() else {
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Skipping reload (primer complete, incremental updates active)")
+                        return
+                    }
+
+                    self.lastProgressRefreshTime = Date()
+                    await self.loadFeedFromSQL()?.value
+                    self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
                 }
-
-                guard !Task.isCancelled else {
-                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Refresh cancelled before execution")
-                    return
-                }
-
-                self.lastProgressRefreshTime = Date()
-                await self.loadFeedFromSQL()?.value
-                self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
-            }
             }
         }
     }
