@@ -449,11 +449,15 @@ public final class HooverEngine {
 
         // Checkpoint every N lines
         if batch.count >= MonitorConfig.batchLines {
-          log.info("[HOOVER-BATCH-COMMIT] Committing batch of \(batch.count) entries")
+          #if DEBUG
+          log.debug("[HOOVER-BATCH-COMMIT] Committing batch of \(batch.count) entries")
+          #endif
 
-          // NEW: Time the batch insertion (diagnostic for hang investigation)
+          // Time the batch insertion (diagnostic for hang investigation)
           let batchStart = Date()
-          log.info("[HOOVER-BATCH-INSERT-START] Starting batch insertion for \(batch.count) entries at line \(lineNo)")
+          #if DEBUG
+          log.debug("[HOOVER-BATCH-INSERT-START] Starting batch insertion for \(batch.count) entries at line \(lineNo)")
+          #endif
 
           try commitBatch(
             transcriptId: transcript.id,
@@ -466,7 +470,9 @@ public final class HooverEngine {
           )
 
           let duration = Date().timeIntervalSince(batchStart)
-          log.info("[HOOVER-BATCH-INSERT-DONE] Batch insertion completed in \(String(format: "%.0f", duration * 1000))ms")
+          #if DEBUG
+          log.debug("[HOOVER-BATCH-INSERT-DONE] Batch insertion completed in \(String(format: "%.0f", duration * 1000))ms")
+          #endif
           if duration > 5.0 {
             log.warning("[HOOVER-BATCH-SLOW] Batch insertion took \(String(format: "%.1f", duration))s - may indicate DB lock contention")
           }
@@ -479,8 +485,10 @@ public final class HooverEngine {
       }
       log.debug("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
 
-      // NEW: Log inner loop completion with batch state (diagnostic for hang investigation)
-      log.info("[HOOVER-INNER-COMPLETE] Processed \(innerLoopCount) lines in this iteration, batch size: \(batch.count), total lines: \(lineNo)")
+      #if DEBUG
+      // Log inner loop completion with batch state (diagnostic for hang investigation)
+      log.debug("[HOOVER-INNER-COMPLETE] Processed \(innerLoopCount) lines in this iteration, batch size: \(batch.count), total lines: \(lineNo)")
+      #endif
 
       if limitReached {
         break outerLoop

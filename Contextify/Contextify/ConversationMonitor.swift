@@ -1285,6 +1285,7 @@ final class ConversationMonitor {
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
+        #if DEBUG
         // Call-site logging for diagnostics
         let callStack = Thread.callStackSymbols
         if callStack.count > 1 {
@@ -1292,11 +1293,12 @@ final class ConversationMonitor {
             // Extract method name from stack frame
             if let methodRange = caller.range(of: #"(?<=\s)[^\s]+(?=\s*\+)"#, options: .regularExpression) {
                 let methodName = String(caller[methodRange])
-                log.info("[TIMELINE-LOAD-CALLER] \(methodName, privacy: .public)")
+                log.debug("[TIMELINE-LOAD-CALLER] \(methodName, privacy: .public)")
             } else {
-                log.info("[TIMELINE-LOAD-CALLER] \(caller, privacy: .public)")
+                log.debug("[TIMELINE-LOAD-CALLER] \(caller, privacy: .public)")
             }
         }
+        #endif
 
         // Set loading phase (tracked by UI)
         phase = .loading
@@ -1916,11 +1918,13 @@ final class ConversationMonitor {
     /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
     @MainActor
     func replaceVisibleSnapshot(_ ids: [UUID]) {
+        #if DEBUG
         // Log raw viewport input for debugging queue pruning
-        log.info("[VIEWPORT-INPUT] Received \(ids.count, privacy: .public) IDs from viewport callback")
+        log.debug("[VIEWPORT-INPUT] Received \(ids.count, privacy: .public) IDs from viewport callback")
         for (index, id) in ids.prefix(5).enumerated() {
-            log.info("[VIEWPORT-ID-\(index, privacy: .public)] \(id, privacy: .public)")
+            log.debug("[VIEWPORT-ID-\(index, privacy: .public)] \(id, privacy: .public)")
         }
+        #endif
 
         // Skip if viewport unchanged (prevents thrashing from layout engine remeasures)
         let current = Set(ids)
@@ -1929,20 +1933,24 @@ final class ConversationMonitor {
             return
         }
 
-        log.info("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) entries in viewport")
+        #if DEBUG
+        log.debug("[VIEWPORT-CHANGE] Viewport update: \(ids.count, privacy: .public) entries in viewport")
 
         let newlyVisible = current.subtracting(lastVisibleIDs)
         if !newlyVisible.isEmpty {
-            log.info("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible entries")
+            log.debug("[VIEWPORT-VISIBLE] \(newlyVisible.count, privacy: .public) newly visible entries")
             for id in newlyVisible.prefix(5) {  // Log first 5
                 if let entry = lookup(id) {
-                    log.info("[VIEWPORT-ENTRY] Now visible: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public)")
+                    log.debug("[VIEWPORT-ENTRY] Now visible: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public)")
                 }
             }
             if newlyVisible.count > 5 {
-                log.info("[VIEWPORT-ENTRY] ... and \(newlyVisible.count - 5, privacy: .public) more newly visible entries")
+                log.debug("[VIEWPORT-ENTRY] ... and \(newlyVisible.count - 5, privacy: .public) more newly visible entries")
             }
         }
+        #else
+        let newlyVisible = current.subtracting(lastVisibleIDs)
+        #endif
 
         // ALWAYS update viewport tracking (even during programmatic scroll)
         // This ensures needsInitialVisibilitySnapshot can be captured
@@ -2018,25 +2026,31 @@ final class ConversationMonitor {
     private func pruneQueueToVisible(_ ids: Set<UUID>) async {
         guard let generator = cacheMissGenerator else { return }
 
-        log.info("[SUMM-PRUNE-START] Pruning queue to \(ids.count, privacy: .public) visible entries")
+        #if DEBUG
+        log.debug("[SUMM-PRUNE-START] Pruning queue to \(ids.count, privacy: .public) visible entries")
 
         // Check queue depth before pruning
         let beforeCount = await generator.getStatus().pending
-        log.info("[SUMM-PRUNE-BEFORE] Queue depth before pruning: \(beforeCount, privacy: .public)")
+        log.debug("[SUMM-PRUNE-BEFORE] Queue depth before pruning: \(beforeCount, privacy: .public)")
+        #endif
 
         // Convert UUID set to entry ID strings (sourceIdentifier)
         let visibleEntryIDs = Set(visibleEntries
             .filter { ids.contains($0.id) }
             .map { $0.sourceIdentifier })
 
-        log.info("[SUMM-PRUNE-VISIBLE-IDS] Keeping \(visibleEntryIDs.count, privacy: .public) visible entry IDs")
+        #if DEBUG
+        log.debug("[SUMM-PRUNE-VISIBLE-IDS] Keeping \(visibleEntryIDs.count, privacy: .public) visible entry IDs")
+        #endif
 
         await generator.pruneQueue(keepOnly: visibleEntryIDs)
 
+        #if DEBUG
         // Check queue depth after pruning
         let afterCount = await generator.getStatus().pending
-        log.info("[SUMM-PRUNE-AFTER] Queue depth after pruning: \(afterCount, privacy: .public)")
-        log.info("[SUMM-PRUNE-REMOVED] Removed \(beforeCount - afterCount, privacy: .public) items from queue")
+        log.debug("[SUMM-PRUNE-AFTER] Queue depth after pruning: \(afterCount, privacy: .public)")
+        log.debug("[SUMM-PRUNE-REMOVED] Removed \(beforeCount - afterCount, privacy: .public) items from queue")
+        #endif
     }
 
     /// Queue entries that are both visible and generating summaries

@@ -230,19 +230,15 @@ struct StatusBarView: View {
         } else if let viewModel, viewModel.queueDepth > 0 {
             // Processing state - show spinner whenever queue has items
             // (queue is considered "processing" even during brief idle periods between items)
-            let _ = log.info("[STATUS-BAR-RENDER] 🔄 Rendering processing state (queueDepth: \(viewModel.queueDepth, privacy: .public))")
-
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
 
                 if viewModel.queueDepth > 100 {
-                    let _ = log.info("[STATUS-BAR-TEXT] Showing 'Processing many items...' (queueDepth: \(viewModel.queueDepth, privacy: .public))")
                     Text("Processing many items...")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    let _ = log.info("[STATUS-BAR-TEXT] Showing 'Processing \(viewModel.queueDepth) items'")
                     Text("Processing \(viewModel.queueDepth) \(viewModel.queueDepth == 1 ? "item" : "items")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
