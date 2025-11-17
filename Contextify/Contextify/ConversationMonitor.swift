@@ -845,7 +845,9 @@ final class ConversationMonitor {
             // Fall through to update anyway
         }
 
+        #if DEBUG
         log.info("[TIMELINE-APPEND] setEntries \(new.count) (primer)")
+        #endif
         state.replace(with: new)
         entriesRevision += 1  // Force SwiftUI update
         log.info("[VIEWPORT-UPDATE] visibleEntries.count → \(self.visibleEntries.count)")
@@ -858,7 +860,9 @@ final class ConversationMonitor {
         entriesRevision += 1  // Force SwiftUI update
         let afterCount = state.entries.count
 
+        #if DEBUG
         log.info("[TIMELINE-APPEND] Entry appended: \(e.id, privacy: .public) kind: \(e.kind.rawValue, privacy: .public) timestamp: \(e.timestamp, privacy: .public) timeline_count: \(beforeCount, privacy: .public)→\(afterCount, privacy: .public)")
+        #endif
         log.debug("[TIMELINE-APPEND] Summary: \(e.summary.prefix(60), privacy: .public)...")
     }
 
@@ -1503,9 +1507,8 @@ final class ConversationMonitor {
                 log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
             }
 
-            // P1-1: Initialize cursor from newest entry only if not already set (prevent regression)
-            // Note: feed is ordered DESC (newest first), so feed.first is the most recent entry
-            if let newestEntry = feed.first, lastSeenCursor == nil {
+            // Always seed cursor from the newest entry so incremental updates start from current timeline.
+            if let newestEntry = feed.last {
                 let e = newestEntry.0
                 lastSeenCursor = EntryCursor(from: e)
                 saveCursor()  // P1-4: Persist cursor for project
