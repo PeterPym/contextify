@@ -146,6 +146,10 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 **Primary resource:** `scripts/logging/README.md` - Complete debugging toolkit with automated test harnesses
 
+**Log analysis guides:**
+- `build/docs/guides/log-analysis-methodology.md` - Comprehensive validation methodology
+- `build/docs/guides/log-analysis-quick-reference.md` - One-page troubleshooting guide
+
 **Quick dispatch:**
 - **Feature not appearing** → `scripts/logging/monitor-pipeline-check.sh` (exit 0=pass, 1=fail)
 - **Verify bug fix** → `scripts/logging/monitor-automated-test.sh` (automated test harness)

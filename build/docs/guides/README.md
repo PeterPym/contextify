@@ -39,6 +39,22 @@ This directory contains practical guides for:
 - Privacy annotations and console filters
 - Detailed code examples and anti-patterns
 
+### [Log Analysis Methodology](log-analysis-methodology.md)
+**Topics:** Systematic approach to validating system function using diagnostic logs
+- Quick validation checklist (5 essential checks)
+- Core tag reference with examples
+- Measurement patterns (completion rate, sequence, timing, correlation)
+- Common analysis workflows (feature not appearing, app slow, validate fix)
+- Tag evolution tracking
+
+### [Log Analysis Quick Reference](log-analysis-quick-reference.md)
+**Topics:** One-page rapid troubleshooting guide
+- 30-second health check
+- Essential tags table
+- Common diagnostics (one-liners)
+- Decision tree for timeline issues
+- Performance thresholds
+
 ### [Transcript Resumption](transcript-resumption.md)
 **Topics:** Guide for resuming transcript ingestion
 - HooverEngine checkpointing
