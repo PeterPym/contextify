@@ -1702,7 +1702,6 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
 
 ### Validation
 
-- [ ] No [PARSER-SKIP-METADATA] for stored types
 - [ ] All 3 new tables have rows > 0
 - [ ] JOIN queries work (operation → result)
 - [ ] [META-INGEST] logs show correct types
@@ -1728,7 +1727,6 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
 ✅ **Telemetry operational**
 - [META-INGEST] logs for each type
 - [HOOVER-UPDATE-ROWS] includes queue metadata
-- No [PARSER-SKIP-METADATA] for stored types
 - Monitoring scripts functional
 
 ✅ **Joins functional**

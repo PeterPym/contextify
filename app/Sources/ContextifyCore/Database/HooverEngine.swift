@@ -361,11 +361,9 @@ public final class HooverEngine {
       var innerLoopCount = 0
       while let i = buffer.firstIndex(of: nl) {
         innerLoopCount += 1
-        log.debug("[HOOVER-INNER-LOOP] Iteration \(innerLoopCount): found newline at position \(i), bufferSize=\(buffer.count)")
 
         let lineData = buffer[..<i]
         buffer.removeSubrange(..<buffer.index(after: i))
-        log.debug("[HOOVER-PROCESS-LINE] After removing line: bufferSize=\(buffer.count)")
         lineNo += 1
         transcriptHasher.update(lineData: lineData)
 
@@ -373,10 +371,6 @@ public final class HooverEngine {
           errors.append((lineNo, "<invalid UTF-8>", "Line is not valid UTF-8"))
           continue
         }
-
-        // Log line preview for debugging
-        let linePreview = String(lineString.prefix(80)).replacingOccurrences(of: "\n", with: "\\n")
-        log.debug("[HOOVER-PARSE-START] Line \(lineNo): \(linePreview)...")
 
         var entryId: String? = nil
         do {
@@ -394,7 +388,6 @@ public final class HooverEngine {
           log.debug("[HOOVER-PARSE-SUCCESS] Line \(lineNo) added to batch")
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
-          log.debug("[HOOVER-PARSE-SKIP] Line \(lineNo) skipped (meta/empty)")
           // Don't add to batch, don't record as error
 
           // NEW: Log if this was a large line (diagnostic for hang investigation)

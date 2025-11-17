@@ -91,7 +91,6 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
 
     // Skip structural metadata records (no conversation content)
     if metadataRecordTypes.contains(type) {
-      parserLog.debug("[PARSER-SKIP-METADATA] type=\(type, privacy: .public)")
       throw ParserError.skipEntry
     }
 
@@ -133,7 +132,6 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
       }
 
       if isMetaMessage && !containsCommandContent(content) {
-        parserLog.debug("[PARSER-SKIP-METADATA] meta=true type=\(type, privacy: .public)")
         throw ParserError.skipEntry
       }
     } else {
