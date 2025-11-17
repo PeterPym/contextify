@@ -89,10 +89,6 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - Use `ActiveProjectContext.id` as stable primary identity (NOT path)
 - Subscribe to `StartupCoordinator.shared.updates` for project changes
 - All FileManager ops on Claude/Codex dirs must use `accessProvider.withAccess()`
-- Cold start pipeline:
-  - **Quick discovery (Phase 2):** Before full discovery/ingestion we synchronously scan `~/.claude/projects` and `~/.codex/sessions/YYYY/MM/DD/*.jsonl`, locate the newest transcript by `mtime`, switch to that repo, and preview-ingest its first 25 entries so the timeline is warm the moment the HUD appears.
-  - **Full discovery (Phase 3):** Once quick discovery finishes, `ProjectDiscoveryService` performs the deep scan/ingest for every repo, still using `~/.claude/projects` for Claude Code and the canonical global `~/.codex/sessions` tree for Codex CLI (with a legacy `<repo>/.codex/sessions` fallback for edge cases).
-  - **Persistence:** After discovery completes we persist the repo with the newest ingested entry so the next launch starts in the correct project even if quick discovery is skipped (e.g., sandbox lacks authorization).
 
 **For detailed architecture:** See `build/docs/architecture/COMPONENTS.md` and `build/docs/architecture/startup-coordinator.md`
 
@@ -104,7 +100,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/docs/architecture/sql-backend.md` - Schema, migrations, repositories
 - `build/docs/architecture/COMPONENTS.md` - Database layer components
 - `build/docs/operations/DATABASE-LOCATIONS.md` - Custom locations, discovery
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v23)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift` - Current schema (v26)
 
 **LLM/Timeline work:**
 - `build/docs/architecture/llm-processing.md` - LLM queue architecture (start here)
@@ -174,8 +170,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 **Database:**
 
-- Default (DMG build): `~/Library/Application Support/Contextify/contextify.db`
-- App Store sandbox: `~/Library/Containers/PeterPym.Contextify*/Data/Library/Application Support/Contextify/contextify.db`
+- Default location: `~/Library/Application Support/Contextify/contextify.db`
 - Custom locations supported (Dropbox, iCloud Drive) via Settings > Database tab
 - **ALWAYS use** `scripts/db_manager.sh` for operations (NEVER manual `rm`)
 - Multi-machine conflict detection warns of concurrent access
