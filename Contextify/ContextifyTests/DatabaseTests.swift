@@ -919,8 +919,11 @@ final class DatabaseTests: XCTestCase {
 }
 
 // Helper for testing
-private class NoOpProgressSink: IngestProgressSink {
-  func didStartTranscript(name: String, totalLines: Int) {}
+private final class NoOpProgressSink: IngestProgressSink, @unchecked Sendable {
+  func didStartTranscript(name: String, totalLines: Int?) {}
   func didAdvance(linesProcessed: Int, totalLines: Int?) {}
   func didCompleteTranscript(durationMs: Int) {}
+  func didFailTranscript(error: String) {}
+  func didStartProject(name: String, transcriptCount: Int) {}
+  func didCompleteProject(name: String) {}
 }

@@ -29,7 +29,9 @@ The teleport process frequently creates corrupted transcript files. The transcri
 ## Corruption Patterns
 
 ### 1. Orphaned tool_result
-**Description:** User message contains `tool_result` block but no corresponding `tool_use` in preceding assistant message.
+**Description:** User message contains a `tool_result` block whose `tool_use_id` never appeared anywhere in the transcript.
+
+> **Important:** Claude Code CLI legitimately emits user records containing `tool_result` blocks that reference the prior assistant `tool_use` entry. Those are **not** corruption cases. Treat the record as corrupt only when the referenced `tool_use_id` is missing entirely (common in Claude Code Web teleport dumps).
 
 **Example:**
 ```jsonl
@@ -37,9 +39,9 @@ The teleport process frequently creates corrupted transcript files. The transcri
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_ABC","content":"..."}]}}
 ```
 
-**Cause:** Claude Code Web loses `tool_use` blocks during conversation teleport.
+**Cause:** Claude Code Web loses `tool_use` blocks during conversation teleport or manual edits removed the assistant entry.
 
-**Recovery:** Skip the orphaned `tool_result` message entirely.
+**Recovery:** Skip the orphaned `tool_result` message entirely and log the missing ID (parser now tracks these as `[PARSER-WARN]` with telemetry counters).
 
 ### 2. stop_reason Mismatch
 **Description:** Assistant message has `stop_reason="tool_use"` but contains no `tool_use` content blocks.
@@ -74,7 +76,7 @@ The teleport process frequently creates corrupted transcript files. The transcri
 
 ### Automatic Detection (Ingestion Time)
 
-Contextify automatically validates transcripts during ingestion via `ClaudeCodeLineParser.validateMessageIntegrity()`.
+Contextify automatically validates transcripts during ingestion via `ClaudeCodeLineParser.validateMessageIntegrity()`. The parser tracks assistant `tool_use` IDs and matches them against user `tool_result` blocks, emitting warnings only when the ID was never seen.
 
 **Location:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift:197-286`
 
