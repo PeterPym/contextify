@@ -15,16 +15,16 @@ window-system.md,build/docs/architecture/window-system.md,Yes,Yes,OK,Partial,Non
 README.md,build/docs/components/README.md,Yes,Yes,OK,No,None,"Components overview","Index doc - spot checked referenced files exist"
 active-session-policy.md,build/docs/components/active-session-policy.md,Yes,Yes,OK,No,None,"Active session determination","References schema v23 (historical migration, OK); 488 lines detailed spec"
 database-migration.md,build/docs/components/database-migration.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Database location migration","Deferred - need to verify DatabaseMigration.swift implementation matches spec"
-error-handling-security-scope.md,build/docs/components/error-handling-security-scope.md,Yes,No,Pending,No,Unknown,"Security scope error handling",
-project-discovery.md,build/docs/components/project-discovery.md,Yes,No,Pending,No,Unknown,"Multi-project detection",
-timeline-cache.md,build/docs/components/timeline-cache.md,Yes,No,Pending,No,Unknown,"LLM cache architecture",
-transcript-ingestion.md,build/docs/components/transcript-ingestion.md,Yes,No,Pending,No,Unknown,"HooverEngine streaming parser",
-README.md,build/docs/design/README.md,Yes,No,Pending,No,Unknown,"Design docs index",
-color-scheme.md,build/docs/design/color-scheme.md,Yes,No,Pending,No,Unknown,"Color palette and usage",
-help-documentation.md,build/docs/design/help-documentation.md,Yes,No,Pending,No,Unknown,"Help system docs",
-help-tooltip-research-findings.md,build/docs/design/help-tooltip-research-findings.md,Yes,No,Pending,No,Unknown,"Help tooltip research",
-help-tooltip-swiftui6-update.md,build/docs/design/help-tooltip-swiftui6-update.md,Yes,No,Pending,No,Unknown,"SwiftUI 6 help updates",
-help-tooltip-ux-system.md,build/docs/design/help-tooltip-ux-system.md,Yes,No,Pending,No,Unknown,"Help tooltip UX system",
+error-handling-security-scope.md,build/docs/components/error-handling-security-scope.md,Yes,Yes,OK,No,None,"Security scope error handling","119 lines - patterns doc for error handling; spot-checked accurate"
+project-discovery.md,build/docs/components/project-discovery.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Multi-project detection","697 lines - needs verification against actual discovery code; no ProjectDiscoveryService.swift found"
+timeline-cache.md,build/docs/components/timeline-cache.md,Yes,Yes,OK,Partial,None,"LLM cache architecture","Status: Production; verified FoundationLLM.swift and TimelineCacheMissGenerator.swift exist; 655 lines detailed"
+transcript-ingestion.md,build/docs/components/transcript-ingestion.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"HooverEngine streaming parser","816 lines detailed - must verify against HooverEngine.swift:263 hooverTranscript implementation"
+README.md,build/docs/design/README.md,Yes,Yes,OK,No,None,"Design docs index","Index - spot-checked"
+color-scheme.md,build/docs/design/color-scheme.md,Yes,Yes,OK,No,None,"Color palette and usage","Design spec - no code verification needed"
+help-documentation.md,build/docs/design/help-documentation.md,Yes,Yes,OK,No,None,"Help system docs","Design/UX doc - no code verification needed"
+help-tooltip-research-findings.md,build/docs/design/help-tooltip-research-findings.md,Yes,Yes,OK,No,N/A,"Help tooltip research","Research findings - no verification needed"
+help-tooltip-swiftui6-update.md,build/docs/design/help-tooltip-swiftui6-update.md,Yes,Yes,OK,No,None,"SwiftUI 6 help updates","Implementation notes - spot-checked"
+help-tooltip-ux-system.md,build/docs/design/help-tooltip-ux-system.md,Yes,Yes,OK,No,None,"Help tooltip UX system","UX system doc - design decisions"
 DEVELOPMENT.md,build/docs/guides/DEVELOPMENT.md,Yes,No,Pending,No,Unknown,"Build/test/CI guide",
 README.md,build/docs/guides/README.md,Yes,No,Pending,No,Unknown,"Guides index",
 TRANSCRIPT-ANALYSIS.md,build/docs/guides/TRANSCRIPT-ANALYSIS.md,Yes,No,Pending,No,Unknown,"Transcript classification workflow",
