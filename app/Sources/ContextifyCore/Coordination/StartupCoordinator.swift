@@ -102,13 +102,6 @@ public final class StartupCoordinator {
         installDiscoverySnapshotObserver()
     }
 
-    deinit {
-        // No cleanup needed
-        if let observer = discoverySnapshotObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-
     // MARK: - Public API (Multicast Updates)
 
     /// Create a fresh update stream for each subscriber.
