@@ -490,6 +490,68 @@ struct ContextifyApp: App {
       // Auto-discover all projects at launch with timeout protection (60s max)
       log.info("🔍 Starting auto-discovery at app launch")
 
+      // PHASE 2: Quick-discovery to identify newest project BEFORE full scan
+      // This ensures timeline primes the correct project immediately
+      if let vm = projectsViewModel {
+        log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project")
+        let quickStart = Date()
+
+        do {
+          // Run quick-discovery with 2-second timeout
+          let quickResult = try await withThrowingTaskGroup(of: (path: URL, mtime: Date)?.self) { group in
+            // Quick-discovery task
+            group.addTask {
+              await vm.discoveryService.quickDiscoverNewest()
+            }
+
+            // Timeout task (2 seconds max)
+            group.addTask {
+              try await Task.sleep(for: .seconds(2))
+              return nil
+            }
+
+            // Wait for first to complete
+            let result = try await group.next()
+            group.cancelAll()
+            return result ?? nil
+          }
+
+          let quickDuration = Date().timeIntervalSince(quickStart)
+
+          if let newest = quickResult {
+            log.info("[QUICK-DISCOVERY] Found newest: \(newest.path.path) (took \(Int(quickDuration * 1000))ms)")
+
+            // If different from current, switch immediately
+            if let currentPath = StartupCoordinator.shared.current?.path,
+               currentPath != newest.path.path {
+              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath) to \(newest.path.path)")
+
+              do {
+                // Ensure project exists in database before switching
+                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+                _ = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.path.path)
+
+                // Now switch to the project
+                try await StartupCoordinator.shared.switchProject(to: newest.path.path)
+                log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete")
+              } catch {
+                log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
+                // Continue with full discovery - not fatal
+              }
+            } else {
+              log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
+            }
+          } else {
+            log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
+          }
+        } catch {
+          let quickDuration = Date().timeIntervalSince(quickStart)
+          log.error("[QUICK-DISCOVERY] Error: \(error.localizedDescription) (took \(Int(quickDuration * 1000))ms)")
+          // Continue with full discovery - not fatal
+        }
+      }
+
+      // Continue with full discovery as before
       do {
         try await withThrowingTaskGroup(of: Void.self) { group in
           // Discovery task
