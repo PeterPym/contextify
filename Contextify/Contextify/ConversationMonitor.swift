@@ -290,6 +290,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
     @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
+    @ObservationIgnored private var pendingInitialVisibleIDs: Set<UUID>? = nil  // IDs seen while programmatic scroll is active
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
@@ -2001,6 +2002,7 @@ final class ConversationMonitor {
     @MainActor
     func beginProgrammaticScroll() {
         doingProgrammaticScroll = true
+        pendingInitialVisibleIDs = nil
         log.debug("[SUMM-SCROLL] Programmatic scroll started, gating visibility updates")
     }
 
@@ -2012,6 +2014,13 @@ final class ConversationMonitor {
             if doingProgrammaticScroll {
                 doingProgrammaticScroll = false
                 log.debug("[SUMM-SCROLL] Programmatic scroll completed")
+                if needsInitialVisibilitySnapshot,
+                   let pending = pendingInitialVisibleIDs,
+                   !pending.isEmpty {
+                    log.debug("[SUMM-VIEWPORT-INIT] Processing deferred snapshot after scroll completion (\(pending.count, privacy: .public) IDs)")
+                    pendingInitialVisibleIDs = nil
+                    processInitialVisibleSnapshot(pending)
+                }
             } else if isUserScrollActive {
                 isUserScrollActive = false
                 log.debug("[SUMM-SCROLL] User scroll became idle")
@@ -2037,6 +2046,11 @@ final class ConversationMonitor {
         // Programmatic scroll is allowed once to capture this snapshot; after that, we only
         // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
         if needsInitialVisibilitySnapshot {
+            if doingProgrammaticScroll {
+                log.debug("[SUMM-VIEWPORT-INIT] Programmatic scroll in progress - deferring initial snapshot")
+                return
+            }
+
             guard !current.isEmpty else {
                 log.debug("[SUMM-VIEWPORT-INIT] Ignoring empty initial snapshot - waiting for visible IDs")
                 return

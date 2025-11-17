@@ -100,6 +100,7 @@ final class ProjectsViewModel {
       logger.info("Found \(discovered.count) projects")
       projects = discovered
       lastScanTime = Date()
+      postDiscoverySnapshot(discovered)
 
       // Phase 2: Ingestion
       if !discovered.isEmpty {
@@ -127,6 +128,7 @@ final class ProjectsViewModel {
         projects = refreshed
         logger.info("[PSTATE-INGEST-DONE] Setting isIngesting = false")
         isIngesting = false
+        postDiscoverySnapshot(refreshed)
 
         // Update pipeline readiness (DB has been updated during ingestion)
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true)
@@ -312,5 +314,9 @@ final class ProjectsViewModel {
       }
       .sorted { $0.lastViewedTs > $1.lastViewedTs }
       .first?.rootPath
+  }
+
+  private func postDiscoverySnapshot(_ projects: [DiscoveredProject]) {
+    NotificationCenter.default.post(name: .projectsDiscoverySnapshot, object: projects)
   }
 }
