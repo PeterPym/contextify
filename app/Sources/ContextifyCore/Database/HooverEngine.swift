@@ -14,6 +14,12 @@ public enum MonitorConfig {
   public static let parseErrorRetentionPerTranscript: Int = 500
   public static let parseErrorLogLimit: Int = 25
   public static let parseErrorAbortThreshold: Int = 50
+  public static let enableHooverLoopTracing: Bool = {
+    ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_LOOPS"] == "1"
+  }()
+  public static let enableHooverStorageTracing: Bool = {
+    ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_STORAGE"] == "1"
+  }()
 }
 
 // MARK: - Hoover Limits
@@ -355,7 +361,9 @@ public final class HooverEngine {
     var outerLoopCount = 0
     outerLoop: while true {
       outerLoopCount += 1
-      log.debug("[HOOVER-OUTER-LOOP] Iteration \(outerLoopCount): lineNo=\(lineNo), bufferSize=\(buffer.count) bytes")
+      if MonitorConfig.enableHooverLoopTracing {
+        log.debug("[HOOVER-OUTER-LOOP] Iteration \(outerLoopCount): lineNo=\(lineNo), bufferSize=\(buffer.count) bytes")
+      }
 
       // DRAIN BUFFER FIRST - process all complete lines already in buffer
       var innerLoopCount = 0
@@ -475,11 +483,15 @@ public final class HooverEngine {
           progress.didAdvance(linesProcessed: lineNo, totalLines: nil)
         }
       }
-      log.debug("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
+      if MonitorConfig.enableHooverLoopTracing {
+        log.debug("[HOOVER-INNER-DONE] Inner loop exited after \(innerLoopCount) iterations, bufferSize=\(buffer.count)")
+      }
 
       #if DEBUG
-      // Log inner loop completion with batch state (diagnostic for hang investigation)
-      log.debug("[HOOVER-INNER-COMPLETE] Processed \(innerLoopCount) lines in this iteration, batch size: \(batch.count), total lines: \(lineNo)")
+      if MonitorConfig.enableHooverLoopTracing {
+        // Log inner loop completion with batch state (diagnostic for hang investigation)
+        log.debug("[HOOVER-INNER-COMPLETE] Processed \(innerLoopCount) lines in this iteration, batch size: \(batch.count), total lines: \(lineNo)")
+      }
       #endif
 
       if limitReached {
@@ -498,7 +510,9 @@ public final class HooverEngine {
         log.warning("[HOOVER-READ-SLOW] File read took \(String(format: "%.1f", readDuration))s - file may still be written")
       }
 
-      log.debug("[HOOVER-READ-CHUNK] Read \(chunk.count) bytes, buffer now \(buffer.count + chunk.count) bytes")
+      if MonitorConfig.enableHooverLoopTracing {
+        log.debug("[HOOVER-READ-CHUNK] Read \(chunk.count) bytes, buffer now \(buffer.count + chunk.count) bytes")
+      }
       buffer.append(chunk)
 
       // NEW: Check buffer size for runaway growth (diagnostic for hang investigation)
@@ -667,7 +681,9 @@ public final class HooverEngine {
           """, arguments: [parentId]) ?? false
 
           if !parentExists {
-            log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
+            if MonitorConfig.enableHooverStorageTracing {
+              log.debug("Parent \(parentId) doesn't exist yet, setting parent_id to NULL for entry \(model.id)")
+            }
             model.parentId = nil  // Will be backfilled later if needed
           }
         }
@@ -759,7 +775,9 @@ public final class HooverEngine {
               usage.serviceTier, usage.ephemeral5mTokens, usage.ephemeral1hTokens
             ]
           )
-          log.debug("Staged usage for entry \(usage.entryId) (entry not yet present)")
+          if MonitorConfig.enableHooverStorageTracing {
+            log.debug("Staged usage for entry \(usage.entryId) (entry not yet present)")
+          }
         }
       }
 

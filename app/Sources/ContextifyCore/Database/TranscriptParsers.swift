@@ -30,7 +30,16 @@ nonisolated(unsafe) private let iso8601FormatterStandard = ISO8601DateFormatter(
 
 /// Parser that delegates to provider-specific implementations
 public final class MultiProviderParser: TranscriptLineParser {
-  public init() {}
+  private let claudeParser: ClaudeCodeLineParser
+  private let codexParser: CodexLineParser
+
+  public init(
+    claudeParser: ClaudeCodeLineParser = ClaudeCodeLineParser(),
+    codexParser: CodexLineParser = CodexLineParser()
+  ) {
+    self.claudeParser = claudeParser
+    self.codexParser = codexParser
+  }
 
   public func parse(
     line: String,
@@ -42,7 +51,7 @@ public final class MultiProviderParser: TranscriptLineParser {
   ) throws -> EntryInsert {
     switch provider {
     case "claude.code":
-      return try ClaudeCodeLineParser().parse(
+      return try claudeParser.parse(
         line: line,
         lineNumber: lineNumber,
         transcriptId: transcriptId,
@@ -51,7 +60,7 @@ public final class MultiProviderParser: TranscriptLineParser {
         sessionId: sessionId
       )
     case "codex.cli":
-      return try CodexLineParser().parse(
+      return try codexParser.parse(
         line: line,
         lineNumber: lineNumber,
         transcriptId: transcriptId,
