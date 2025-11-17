@@ -275,11 +275,12 @@ public actor ProjectDiscoveryService {
       // PART 2: Scan Codex CLI transcripts (~/.codex/sessions/YYYY/MM/DD/*.jsonl)
       // Codex transcripts contain `cwd` field - need to parse JSONL for project path
       // Handle authorization errors gracefully (sandboxed builds need user permission first)
+      let codexCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)]
       do {
-        try await withCodexRoot { codexRoot in
+        codexCandidates = try await withCodexRoot { codexRoot in
           guard FileManager.default.fileExists(atPath: codexRoot.path) else {
             logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
-            return
+            return []
           }
 
           logger.info("[QUICK-DISCOVERY] Scanning Codex sessions")
@@ -332,9 +333,10 @@ public actor ProjectDiscoveryService {
           }
         }
 
-          // Convert to candidates
+          // Convert to candidates and return
+          var candidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
           for (projectPath, newest) in codexProjectNewest {
-            allCandidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
+            candidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
           }
 
           logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
@@ -343,12 +345,17 @@ public actor ProjectDiscoveryService {
           for (projectPath, newest) in codexProjectNewest.prefix(3) {
             logger.debug("[QUICK-DISCOVERY-CODEX] Project: \(projectPath, privacy: .public) newest: \(newest.file.lastPathComponent, privacy: .public) mtime: \(newest.mtime, privacy: .public)")
           }
+
+          return candidates
         }
       } catch {
         // Authorization not granted yet (sandboxed build during first launch)
         // This is expected - user will grant permission via welcome modal
         logger.debug("[QUICK-DISCOVERY] Codex scan skipped (no authorization): \(error.localizedDescription, privacy: .public)")
+        codexCandidates = []
       }
+
+      allCandidates.append(contentsOf: codexCandidates)
 
       // Find global newest across both Claude and Codex
       guard let newest = allCandidates.max(by: { $0.mtime < $1.mtime }) else {

@@ -419,9 +419,14 @@ struct WelcomeModalView: View {
                     }
 
                     Button("Continue") {
-                        log.info("User granted permissions, continuing to discovery")
+                        log.info("User granted permissions, running quick-discovery then full discovery")
                         showPermissionsStep = false
                         Task {
+                            // Run quick-discovery first to find and ingest newest transcript
+                            // This ensures timeline shows current conversation immediately
+                            await ContextifyApp.runQuickDiscoveryAndIngest(projectsVM: projectsVM)
+
+                            // Then run full discovery for all other transcripts
                             await projectsVM.discoverProjects()
                         }
                     }

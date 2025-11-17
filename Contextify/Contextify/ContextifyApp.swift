@@ -356,6 +356,89 @@ struct ContextifyApp: App {
     }
   }
 
+  /// Run quick-discovery and ingest newest transcript (called after authorization granted in App Store builds)
+  @MainActor
+  static func runQuickDiscoveryAndIngest(projectsVM: ProjectsViewModel) async {
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project (post-authorization)")
+    let quickStart = Date()
+
+    do {
+      // Run quick-discovery with 2-second timeout
+      let quickResult = try await withThrowingTaskGroup(of: (projectPath: URL, transcriptFile: URL, mtime: Date)?.self) { group in
+        // Quick-discovery task
+        group.addTask {
+          await projectsVM.discoveryService.quickDiscoverNewest()
+        }
+
+        // Timeout task (2 seconds max)
+        group.addTask {
+          try await Task.sleep(for: .seconds(2))
+          return nil
+        }
+
+        // Wait for first to complete
+        let result = try await group.next()
+        group.cancelAll()
+        return result ?? nil
+      }
+
+      let quickDuration = Date().timeIntervalSince(quickStart)
+
+      if let newest = quickResult {
+        log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
+
+        // If different from current, switch immediately
+        if let currentPath = StartupCoordinator.shared.current?.path,
+           currentPath != newest.projectPath.path {
+          log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
+
+          do {
+            // Ensure project exists in database before switching
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+
+            // Now switch to the project
+            try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
+            log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
+
+            // Ingest newest transcript
+            await ingestNewestTranscript(
+              projectId: projectId,
+              projectPath: newest.projectPath,
+              transcriptFile: newest.transcriptFile,
+              orchestrator: orchestrator
+            )
+          } catch {
+            log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
+          }
+        } else {
+          log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
+
+          // Even if no switch, still ingest newest transcript for fast timeline
+          do {
+            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+
+            await ingestNewestTranscript(
+              projectId: projectId,
+              projectPath: newest.projectPath,
+              transcriptFile: newest.transcriptFile,
+              orchestrator: orchestrator
+            )
+          } catch {
+            log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
+          }
+        }
+      } else {
+        log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
+      }
+    } catch {
+      let quickDuration = Date().timeIntervalSince(quickStart)
+      log.error("[QUICK-DISCOVERY] Error: \(error.localizedDescription) (took \(Int(quickDuration * 1000))ms)")
+    }
+  }
+
   @MainActor
   private func initializeProjectsSystem() async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
@@ -492,7 +575,14 @@ struct ContextifyApp: App {
 
       // PHASE 2: Quick-discovery to identify newest project BEFORE full scan
       // This ensures timeline primes the correct project immediately
-      if let vm = projectsViewModel {
+      //
+      // For App Store builds with empty DB: skip quick-discovery now (no authorization yet)
+      // and run it after user grants permissions in welcome modal
+      let shouldSkipQuickDiscovery = Sandbox.isSandboxed && isEmptyDB
+
+      if shouldSkipQuickDiscovery {
+        log.info("[QUICK-DISCOVERY] Skipping quick-discovery (sandboxed build, will run after authorization)")
+      } else if let vm = projectsViewModel {
         log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project")
         let quickStart = Date()
 
@@ -536,7 +626,7 @@ struct ContextifyApp: App {
                 log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
 
                 // PHASE 2: Upsert transcript record and trigger FastPath
-                await ingestNewestTranscript(
+                await Self.ingestNewestTranscript(
                   projectId: projectId,
                   projectPath: newest.projectPath,
                   transcriptFile: newest.transcriptFile,
@@ -554,7 +644,7 @@ struct ContextifyApp: App {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
                 let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
 
-                await ingestNewestTranscript(
+                await Self.ingestNewestTranscript(
                   projectId: projectId,
                   projectPath: newest.projectPath,
                   transcriptFile: newest.transcriptFile,
@@ -691,7 +781,7 @@ struct ContextifyApp: App {
 
   /// Ingests the newest transcript found by quick-discovery to enable fast timeline population
   @MainActor
-  private func ingestNewestTranscript(
+  private static func ingestNewestTranscript(
     projectId: String,
     projectPath: URL,
     transcriptFile: URL,
