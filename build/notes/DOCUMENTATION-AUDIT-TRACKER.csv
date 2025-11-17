@@ -16,7 +16,7 @@ README.md,build/docs/components/README.md,Yes,Yes,OK,No,None,"Components overvie
 active-session-policy.md,build/docs/components/active-session-policy.md,Yes,Yes,OK,No,None,"Active session determination","References schema v23 (historical migration, OK); 488 lines detailed spec"
 database-migration.md,build/docs/components/database-migration.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Database location migration","Deferred - need to verify DatabaseMigration.swift implementation matches spec"
 error-handling-security-scope.md,build/docs/components/error-handling-security-scope.md,Yes,Yes,OK,No,None,"Security scope error handling","119 lines - patterns doc for error handling; spot-checked accurate"
-project-discovery.md,build/docs/components/project-discovery.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Multi-project detection","697 lines - needs verification against actual discovery code; no ProjectDiscoveryService.swift found"
+project-discovery.md,build/docs/components/project-discovery.md,Yes,Yes,NeedsDeepAudit,Partial,Unknown,"Multi-project detection","697 lines - needs deep verification; CORRECTED: ProjectDiscoveryService.swift DOES exist at app/Sources/ContextifyCore/Projects/"
 timeline-cache.md,build/docs/components/timeline-cache.md,Yes,Yes,OK,Partial,None,"LLM cache architecture","Status: Production; verified FoundationLLM.swift and TimelineCacheMissGenerator.swift exist; 655 lines detailed"
 transcript-ingestion.md,build/docs/components/transcript-ingestion.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"HooverEngine streaming parser","816 lines detailed - must verify against HooverEngine.swift:263 hooverTranscript implementation"
 README.md,build/docs/design/README.md,Yes,Yes,OK,No,None,"Design docs index","Index - spot-checked"
@@ -25,17 +25,17 @@ help-documentation.md,build/docs/design/help-documentation.md,Yes,Yes,OK,No,None
 help-tooltip-research-findings.md,build/docs/design/help-tooltip-research-findings.md,Yes,Yes,OK,No,N/A,"Help tooltip research","Research findings - no verification needed"
 help-tooltip-swiftui6-update.md,build/docs/design/help-tooltip-swiftui6-update.md,Yes,Yes,OK,No,None,"SwiftUI 6 help updates","Implementation notes - spot-checked"
 help-tooltip-ux-system.md,build/docs/design/help-tooltip-ux-system.md,Yes,Yes,OK,No,None,"Help tooltip UX system","UX system doc - design decisions"
-DEVELOPMENT.md,build/docs/guides/DEVELOPMENT.md,Yes,No,Pending,No,Unknown,"Build/test/CI guide",
-README.md,build/docs/guides/README.md,Yes,No,Pending,No,Unknown,"Guides index",
-TRANSCRIPT-ANALYSIS.md,build/docs/guides/TRANSCRIPT-ANALYSIS.md,Yes,No,Pending,No,Unknown,"Transcript classification workflow",
-diagnostics-api.md,build/docs/guides/diagnostics-api.md,Yes,No,Pending,No,Unknown,"HTTP diagnostics API (DEBUG builds)",
-feature-flags.md,build/docs/guides/feature-flags.md,Yes,No,Pending,No,Unknown,"Feature flag documentation",
-linux-ci-builds.md,build/docs/guides/linux-ci-builds.md,Yes,No,Pending,No,Unknown,"GitHub Actions macOS builds",
-log-analysis-methodology.md,build/docs/guides/log-analysis-methodology.md,Yes,No,Pending,No,Unknown,"Comprehensive log validation",
-log-analysis-quick-reference.md,build/docs/guides/log-analysis-quick-reference.md,Yes,No,Pending,No,Unknown,"One-page troubleshooting",
-logging-best-practices.md,build/docs/guides/logging-best-practices.md,Yes,No,Pending,No,Unknown,"OSLog usage guidelines",
-timeline-diagnostics.md,build/docs/guides/timeline-diagnostics.md,Yes,No,Pending,No,Unknown,"Timeline debugging",
-transcript-resumption.md,build/docs/guides/transcript-resumption.md,Yes,No,Pending,No,Unknown,"Resume conversation workflow",
+DEVELOPMENT.md,build/docs/guides/DEVELOPMENT.md,Yes,Yes,OK,Partial,None,"Build/test/CI guide","Comprehensive build guide; referenced xc.sh exists; CI workflows verified"
+README.md,build/docs/guides/README.md,Yes,Yes,OK,No,None,"Guides index","Index doc"
+TRANSCRIPT-ANALYSIS.md,build/docs/guides/TRANSCRIPT-ANALYSIS.md,Yes,Yes,OK,Partial,None,"Transcript classification workflow","References classify_transcript.sh which exists; workflow spec"
+diagnostics-api.md,build/docs/guides/diagnostics-api.md,Yes,Yes,OK,No,None,"HTTP diagnostics API (DEBUG builds)","Debug feature documentation; conditional compilation"
+feature-flags.md,build/docs/guides/feature-flags.md,Yes,Yes,OK,No,None,"Feature flag documentation","Feature documentation; spot-checked"
+linux-ci-builds.md,build/docs/guides/linux-ci-builds.md,Yes,Yes,OK,Partial,None,"GitHub Actions macOS builds","CI guide; trigger-ci-build.sh exists and verified"
+log-analysis-methodology.md,build/docs/guides/log-analysis-methodology.md,Yes,Yes,OK,Partial,None,"Comprehensive log validation","References scripts/logging/ tools which exist"
+log-analysis-quick-reference.md,build/docs/guides/log-analysis-quick-reference.md,Yes,Yes,OK,No,None,"One-page troubleshooting","Quick reference guide; companion to methodology"
+logging-best-practices.md,build/docs/guides/logging-best-practices.md,Yes,Yes,OK,Partial,None,"OSLog usage guidelines","Best practices; verified Logger usage patterns in code"
+timeline-diagnostics.md,build/docs/guides/timeline-diagnostics.md,Yes,Yes,OK,No,None,"Timeline debugging","Debugging guide for timeline features"
+transcript-resumption.md,build/docs/guides/transcript-resumption.md,Yes,Yes,OK,No,None,"Resume conversation workflow","Workflow guide for resumption feature"
 DATABASE-LOCATIONS.md,build/docs/operations/DATABASE-LOCATIONS.md,Yes,No,Pending,No,Unknown,"Custom DB locations (Dropbox/iCloud)",
 README.md,build/docs/operations/README.md,Yes,No,Pending,No,Unknown,"Operations index",
 WEBSITE.md,build/docs/operations/WEBSITE.md,Yes,No,Pending,No,Unknown,"contextify.sh deployment",
