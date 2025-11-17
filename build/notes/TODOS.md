@@ -686,6 +686,39 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
+## Project Switch Consolidation (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (code quality, no user-visible impact)
+**Effort:** 4-6 hours
+
+- [ ] #P2-SWITCH: Consolidate 4 overlapping project switch code paths into single unified pipeline
+
+**Problem:** ConversationMonitor has 4 different code paths handling project switching, creating overlaps, potential race conditions, and wasted work during rapid switching.
+
+**Current Paths:**
+1. `startMonitoring()` - Full bootstrap + initial feed load
+2. `onProjectOrSessionChange()` - v23 startup pipeline (policy/sessions/cursor/feed/switch events)
+3. `handleContextUpdate()` - Coordinator-triggered switch
+4. `handleProjectRootChange()` - Legacy notification
+
+**Solution:** Single `switchToProject(_:reason:)` entry point that all 4 paths delegate to.
+
+**Key Requirements:**
+- Preserve v23 startup sequence (policy → sessions → cursor → feed → switch events)
+- Split session switching logic (no timeline reload for session-only changes)
+- Cancel in-flight loads on rapid switching
+- Extract bootstrap infrastructure setup into separate helper
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (primary changes)
+
+**Reference:**
+- Implementation plan: `build/notes/feature-specs/refactor-project-switcher.md`
+- Source code analysis: `/tmp/project-switch-consolidation-SOURCE-CODE.md`
+
+---
+
 ## Features (3 items)
 
 **Status:** Mixed
