@@ -380,6 +380,59 @@ public actor ProjectDiscoveryService {
     }
   }
 
+  /// Ingests the provided transcript in preview mode to seed the timeline during quick discovery.
+  public func ingestPreviewTranscript(
+    projectId: String,
+    projectPath: URL,
+    transcriptFile: URL
+  ) async {
+    let startTime = Date()
+    do {
+      let provider: DiscoveredProject.Provider
+      if transcriptFile.path.contains("/.claude/projects/") {
+        provider = .claudeCode
+      } else if transcriptFile.path.contains("/.codex/sessions/") {
+        provider = .codexCLI
+      } else {
+        logger.warning("[QUICK-DISCOVERY-INGEST] Unknown provider for transcript: \(transcriptFile.path, privacy: .public)")
+        return
+      }
+
+      let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
+      logger.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public) for project \(projectPath.path, privacy: .public)")
+
+      let discovered = DiscoveredTranscript(
+        fileURL: transcriptFile,
+        provider: provider,
+        sessionId: sessionId
+      )
+
+      let resolved = try orchestrator.upsertTranscripts(
+        projectId: projectId,
+        discovered: [discovered]
+      )
+
+      guard let transcriptId = resolved.first?.transcriptId else {
+        logger.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
+        return
+      }
+
+      logger.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
+
+      try await orchestrator.ingestTranscript(
+        transcriptId: transcriptId,
+        mode: .preview(entries: 25),
+        notifyUI: true
+      )
+
+      let duration = Date().timeIntervalSince(startTime)
+      logger.info("[QUICK-DISCOVERY-INGEST] ✅ Preview ingestion complete in \(Int(duration * 1000))ms for \(projectPath.path, privacy: .public)")
+    } catch {
+      let duration = Date().timeIntervalSince(startTime)
+      logger.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms for \(projectPath.path, privacy: .public): \(error.localizedDescription)")
+    }
+  }
+
   /// Ingests all transcripts for all discovered projects
   /// - Parameters:
   ///   - projects: Array of project URLs to ingest
