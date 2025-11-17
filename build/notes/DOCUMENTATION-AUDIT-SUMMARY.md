@@ -24,9 +24,8 @@ Completed systematic code verification audit of all documentation in `build/docs
 **Status Breakdown:**
 - ✅ **OK/Accurate:** 39 files (70%)
 - 🔧 **Fixed (schema v23→v26):** 4 files (7%)
-- ⚠️ **Outdated (needs update):** 1 file (2%)
+- 📦 **Archived:** 2 files (4%) - data-flow.md, metadata-ingestion-queue-types.md
 - 🔍 **Needs Deep Audit:** 6 files (11%)
-- 📦 **Archive (planning doc):** 1 file (2%)
 - 📋 **N/A (design/marketing):** 5 files (9%)
 
 **Code Verification:**
@@ -38,32 +37,36 @@ Completed systematic code verification audit of all documentation in `build/docs
 
 ## Critical Findings
 
-### 🚨 Priority 1: Outdated Documentation
+### ✅ Priority 1: Outdated Documentation (RESOLVED)
 
-**File:** `build/docs/architecture/data-flow.md` (1183 lines)
+**File:** `build/docs/architecture/data-flow.md` → **ARCHIVED** as `build/docs/archive/historical/data-flow-2025-10-22.md`
 **Last Updated:** 2025-10-22 (>1 month ago)
-**Status:** **CRITICAL - Multiple Inaccuracies**
+**Status:** **ARCHIVED 2025-11-17**
 
 **Issues Found:**
 1. **Line numbers completely wrong** (off by thousands):
    - Claims `HooverEngine.hooverTranscript()` at lines 2900-3100
    - **Reality:** Function at line 263 (file is only 898 lines total)
-   - Claims `TranscriptWatcher.watch()` at lines 2650-2730
-   - **Reality:** Function at line 61 (file is only 307 lines total)
+   - Claims `ConversationMonitor.startMonitoring()` at lines 130-213
+   - **Reality:** Function at line 428
 
 2. **Batch size incorrect:**
    - Document claims "100 lines at a time"
    - **Reality:** `batchLines = 1000` (HooverEngine.swift:11)
 
-3. **References non-existent code:**
-   - Extensively discusses `SidecarMetadataStore.swift` (lines 483, 486, 966, 1046, 1117)
-   - **Reality:** File does not exist in codebase
-   - Claims about "transcript inventory gap" appear outdated
+3. **References non-existent components:**
+   - Extensively discusses `SidecarMetadataStore.swift` (lines 483, 486, 966, 1046, 1117) - file doesn't exist
+   - References `discoverNewTranscripts()` function - doesn't exist
+   - References `watchForDebouncedTranscriptUpdates()` function - doesn't exist
 
-**Impact:** HIGH - Document is referenced as "definitive reference" but will mislead developers
-**Recommendation:** Complete rewrite with current code verification OR archive and replace
+4. **Architecture fundamentally changed:**
+   - Major StartupCoordinator commits Nov 12-17 (after doc's Oct 22 date)
+   - Discovery mechanism completely restructured
+   - Core workflows no longer match described patterns
 
-**See:** `build/notes/AUDIT-QUESTIONS.md` Q1 for detailed analysis
+**Resolution:** Document not salvageable - moved to archive. Replacement doc proposed in `PROPOSED-DOCUMENTATION.md` #1.
+
+**See:** `build/notes/AUDIT-QUESTIONS.md` Q1 for full verification details
 
 ---
 
@@ -297,18 +300,16 @@ The documentation in `build/docs/` is **generally high quality** with excellent 
 - **README.md updated** to complement AGENTS.md (concise getting started guide, 163 lines down from 369)
 
 ⚠️ **Weaknesses:**
-- **data-flow.md critically outdated** (must be replaced)
-- Some docs lag behind code (schema versions were 3 versions behind - now fixed)
-- Complex implementation details underdocumented (data pipeline nitty-gritty)
-- No architecture refactoring analysis
+- Complex implementation details underdocumented (data pipeline nitty-gritty - see PROPOSED-DOCUMENTATION.md)
+- No architecture refactoring analysis (see PROPOSED-DOCUMENTATION.md #2)
+- 6 files need deep audit (security, architecture, complex components)
 
-**Overall Grade:** B+ (would be A- after fixing data-flow.md and adding proposed docs)
+**Overall Grade:** A- (major issues resolved; remaining work is enhancement)
 
 **Next Steps:**
-1. Address Q1 in AUDIT-QUESTIONS.md (data-flow.md replacement)
-2. Complete deep audits of 6 flagged files
-3. Create 2 Priority 1 proposed docs (data pipeline, refactoring analysis)
-4. Consider creating remaining 10 proposed docs based on priority
+1. Complete deep audits of 6 flagged files (sandbox, startup-coordinator, etc.)
+2. Create Priority 1 proposed docs (data pipeline replacement, refactoring analysis)
+3. Consider creating remaining proposed docs based on priority
 
 ---
 

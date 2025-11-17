@@ -9,7 +9,7 @@ Questions that block progress on specific documents. Please review and answer so
 
 ## Questions
 
-### Q1: build/docs/architecture/data-flow.md - Outdated Information
+### ✅ Q1: build/docs/architecture/data-flow.md - Outdated Information (RESOLVED)
 
 **Document:** data-flow.md (last updated 2025-10-22, ~1 month old)
 
@@ -28,10 +28,17 @@ Questions that block progress on specific documents. Please review and answer so
    - File `SidecarMetadataStore.swift` does not exist in codebase
    - Claims about "transcript inventory gap" may be outdated
 
-**Questions:**
-- Should data-flow.md be updated with correct line numbers and batch sizes?
-- Is the "transcript inventory gap" still accurate, or was it fixed when SidecarMetadataStore was removed?
-- Should we verify the entire 1183-line document against current code?
-- Or should this be marked as "historical" and moved to archive, replaced with new data pipeline doc?
+**Resolution:** ARCHIVED (2025-11-17)
 
-**Impact:** HIGH - This is referenced as "definitive reference" but contains multiple factual errors that will mislead developers.
+After systematic line-by-line verification, determined document is not salvageable:
+- Architecture fundamentally changed since Oct 22 (StartupCoordinator commits Nov 12-17)
+- Core functions referenced don't exist (`discoverNewTranscripts`, `watchForDebouncedTranscriptUpdates`)
+- Line numbers off by thousands (not hundreds)
+- References non-existent components (SidecarMetadataStore.swift)
+- Described workflows no longer match current implementation
+
+**Action Taken:**
+- Moved to `build/docs/archive/historical/data-flow-2025-10-22.md`
+- Replacement doc proposed: See `PROPOSED-DOCUMENTATION.md` #1 (Complete Data Pipeline Architecture)
+
+**Impact:** Eliminated misleading documentation; replacement doc will be based on current architecture (StartupCoordinator, current ConversationMonitor, actual HooverEngine).
