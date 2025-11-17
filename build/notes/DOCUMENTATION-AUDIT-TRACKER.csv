@@ -4,7 +4,7 @@ COMPONENTS.md,build/docs/architecture/COMPONENTS.md,Yes,Yes,Fixed,Partial,None,"
 README.md,build/docs/architecture/README.md,Yes,Yes,Fixed,No,None,"Architecture overview index","Fixed schema version v23->v26 (lines 51, 53)"
 abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,Yes,OK,No,N/A,"LLM queue design patterns","Design doc - no code verification needed"
 conversation-monitor-state.md,build/docs/architecture/conversation-monitor-state.md,Yes,Yes,OK,No,None,"ConversationMonitor state management","Documents known issues and refactor needs - accurate"
-data-flow.md,build/docs/architecture/data-flow.md,Yes,No,Pending,No,Unknown,"End-to-end data pipeline",
+data-flow.md,build/docs/architecture/data-flow.md,Yes,Yes,Outdated,Yes,Many,"End-to-end data pipeline","CRITICAL: Line numbers wrong (2900->263 for hooverTranscript; 2650->61 for watch); batch size wrong (100->1000); references non-existent SidecarMetadataStore.swift; Last updated 2025-10-22 (>1 month old); see AUDIT-QUESTIONS.md Q1"
 llm-processing.md,build/docs/architecture/llm-processing.md,Yes,No,Pending,No,Unknown,"Dual-queue LLM system",
 project-switcher.md,build/docs/architecture/project-switcher.md,Yes,No,Pending,No,Unknown,"Project switcher UI/state",
 sandbox-appstore-architecture.md,build/docs/architecture/sandbox-appstore-architecture.md,Yes,No,Pending,No,Unknown,"Sandbox vs DMG builds",
