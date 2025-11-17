@@ -208,6 +208,37 @@ API runs on `http://localhost:17329` when app is running
 
 **Use for:** Debugging timeline state, hoover lag, LLM generation issues
 
+### Quick-Discovery Logs (Phase 2)
+
+Quick-discovery runs at app launch to identify the project with newest transcript activity before full discovery begins.
+
+**Log tags to monitor:**
+- `[QUICK-DISCOVERY-START]` - Scan begins
+- `[QUICK-DISCOVERY]` - Found N Claude/Codex directories
+- `[QUICK-DISCOVERY-SCAN]` - Per-project scan details
+- `[QUICK-DISCOVERY-DONE]` - Scan complete with duration (target: <500ms)
+- `[QUICK-DISCOVERY-SWITCH]` - Project switch triggered
+- `[QUICK-DISCOVERY-ERROR]` - Scan failed (graceful fallback to full discovery)
+
+**Troubleshooting:**
+- **Slow scan (>2s):** Check for network shares in `~/.claude/projects` or `~/.codex/sessions`
+- **Wrong project on launch:** Check `[QUICK-DISCOVERY-DONE]` to verify correct project identified
+- **No switch triggered:** Current project already has newest activity (expected behavior)
+- **Switch failed:** Check `[QUICK-DISCOVERY-SWITCH] ❌` error message, likely DB or path issue
+
+**Example logs:**
+```
+[QUICK-DISCOVERY-START] Scanning for newest transcript
+[QUICK-DISCOVERY] Found 17 Claude project directories
+[QUICK-DISCOVERY] Found 142 Codex transcript files
+[QUICK-DISCOVERY] Found 8 unique Codex projects
+[QUICK-DISCOVERY-DONE] Newest: contextify mtime=2025-11-17 16:49:56 (duration: 234ms)
+[QUICK-DISCOVERY-SWITCH] Switching from /Users/rob/old-project to /Users/rob/contextify
+[COORD-START] User-initiated switch to project: /Users/rob/contextify
+[COORD-END] Switched to: contextify (id: 8F78...) in 0.045s
+[QUICK-DISCOVERY-SWITCH] ✅ Switch complete
+```
+
 ## Database Management
 
 ⚠️  **IMPORTANT:** ALWAYS use `scripts/db_manager.sh` for database operations

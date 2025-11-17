@@ -519,12 +519,12 @@ struct ContextifyApp: App {
           let quickDuration = Date().timeIntervalSince(quickStart)
 
           if let newest = quickResult {
-            log.info("[QUICK-DISCOVERY] Found newest: \(newest.path.path) (took \(Int(quickDuration * 1000))ms)")
+            log.info("[QUICK-DISCOVERY] Found newest: \(newest.path.path, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
             // If different from current, switch immediately
             if let currentPath = StartupCoordinator.shared.current?.path,
                currentPath != newest.path.path {
-              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath) to \(newest.path.path)")
+              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.path.path, privacy: .public)")
 
               do {
                 // Ensure project exists in database before switching

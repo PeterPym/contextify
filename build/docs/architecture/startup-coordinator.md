@@ -54,6 +54,16 @@ The **Startup Coordinator** provides a single source of truth for project identi
        ├─→ Create ActiveProjectContext
        └─→ Publish context via AsyncStream
 
+1.5. ContextifyApp.initializeProjectsSystem() [PHASE 2: QUICK-DISCOVERY]
+   └─→ ProjectDiscoveryService.quickDiscoverNewest()
+       ├─→ Lightweight mtime scan (~200-500ms)
+       │   ├─→ Scan ~/.claude/projects for newest .jsonl
+       │   └─→ Scan ~/.codex/sessions for newest transcript with cwd extraction
+       ├─→ IF different from current project:
+       │   ├─→ getOrCreateProject() (ensure DB record exists)
+       │   └─→ StartupCoordinator.shared.switchProject(to: newestPath)
+       └─→ Continue with full discovery (background)
+
 2. ProjectSwitcherState.start() (after coordinator)
    └─→ Subscribe to coordinator.updates
        └─→ handleContextUpdate(context)
@@ -63,6 +73,7 @@ The **Startup Coordinator** provides a single source of truth for project identi
 3. ContentView.task
    └─→ StartupCoordinator.shared.ready()  // Blocks until context available
        └─→ TimelineIntegration.startMonitoring(projectId: context.id)
+           // Timeline now shows CORRECT project (thanks to quick-discovery)
 ```
 
 **User-Initiated Project Switch:**
