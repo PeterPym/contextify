@@ -1503,12 +1503,13 @@ final class ConversationMonitor {
                 log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
             }
 
-            // P1-1: Initialize cursor from tail only if not already set (prevent regression)
-            if let tailEntry = feed.last, lastSeenCursor == nil {
-                let e = tailEntry.0
+            // P1-1: Initialize cursor from newest entry only if not already set (prevent regression)
+            // Note: feed is ordered DESC (newest first), so feed.first is the most recent entry
+            if let newestEntry = feed.first, lastSeenCursor == nil {
+                let e = newestEntry.0
                 lastSeenCursor = EntryCursor(from: e)
                 saveCursor()  // P1-4: Persist cursor for project
-                log.debug("Initialized cursor from tail: \(e.id)")
+                log.debug("Initialized cursor from newest entry: \(e.id)")
             }
 
             lastUpdate = Date()
