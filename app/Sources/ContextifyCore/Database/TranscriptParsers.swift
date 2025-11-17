@@ -325,7 +325,6 @@ public struct CodexLineParser: TranscriptLineParser {
     }
 
     guard let payloadType = payload["type"] as? String, payloadType == "message" else {
-      parserLog.debug("[PARSER-SKIP] Codex payload type=\(payload["type"] as? String ?? "nil") line=\(lineNumber, privacy: .public) – non-message entry")
       throw ParserError.skipEntry
     }
 

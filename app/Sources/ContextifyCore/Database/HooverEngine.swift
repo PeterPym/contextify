@@ -385,7 +385,6 @@ public final class HooverEngine {
           batch.append(entry)
           entryId = entry.id
           lastEntryId = entry.id  // Track for checkpoint
-          log.debug("[HOOVER-PARSE-SUCCESS] Line \(lineNo) added to batch")
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
