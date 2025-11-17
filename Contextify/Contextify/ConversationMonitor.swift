@@ -809,10 +809,22 @@ final class ConversationMonitor {
 
     @MainActor
     private func setEntries(_ new: [TimelineEntry]) {
-        // Skip if data unchanged (prevents unnecessary UI updates and flicker)
+        // REMOVED skip optimization - it prevented showing newly hoovered entries
+        // when query returned same top-N entries (new entries had older timestamps)
+        //
+        // Old logic: Skip if data unchanged (prevents unnecessary UI updates and flicker)
+        // Problem: Query can return same entries even when NEW entries exist in DB
+        // if new entries don't displace current top-N (sorted by message timestamp)
+        //
+        // Example: User hoovered conversation with old messages → entries added to DB
+        // but timeline query still returns same top 25 (newer messages exist) →
+        // skip logic prevents UI update → user never sees the hoovered conversation
+        //
+        // Fix: Always update. If this causes flicker, address with debouncing instead.
+
         if state.entries.count == new.count && state.entries == new {
-            log.debug("[TIMELINE-SKIP] Skipping setEntries - data unchanged (\(new.count) entries)")
-            return
+            log.debug("[TIMELINE-SKIP-DISABLED] Data unchanged (\(new.count) entries) but updating anyway (ensures fresh hoovered entries appear)")
+            // Fall through to update anyway
         }
 
         log.info("[TIMELINE-APPEND] setEntries \(new.count) (primer)")
