@@ -1,15 +1,15 @@
 # Contextify TODO List
 
-**Last Updated:** 2025-11-15
+**Last Updated:** 2025-11-16
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 26 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 27 items - Must complete before App Store submission
 - **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 72 (was 92, removed 22 completed/dropped, added 1 P0 + 1 P2)
+**Total Active Items:** 73 (added 1 P0 for CLI logomark display)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 26 Items
+# P0 (Blocking Release) - 27 Items
 
 ## Timeline Summary Generation (1 item)
 
@@ -60,6 +60,69 @@ scripts/logging/monitor-viewport-queueing.sh
 # Expected: SUMM-LOAD-DEFER → SUMM-VIEWPORT-INIT within ~100ms
 # Actual: SUMM-VIEWPORT-INIT never fires
 ```
+
+---
+
+## CLI Logomark Display (1 item)
+
+**Status:** Not updating during ingestion
+**Priority:** P0 (User-facing visual state issue)
+**Effort:** 2-3 hours (DB query + UI update logic)
+
+- [ ] #P0-LOGOMARK: Fix CLI logomark/brandmark display to update during ingestion and on project switch
+
+**Problem:** The CLI logomark (Claude Code vs Codex indicator) doesn't update at appropriate times:
+1. **During ingestion:** Should update as transcripts are hoovered to reflect which CLI(s) are present
+2. **On project switch:** Should perform efficient DB query to determine which CLI brandmark(s) to show
+
+**Current Behavior:**
+- Logomark may show stale/incorrect state
+- User doesn't know if project has Claude Code, Codex, or both
+- No visual feedback during initial ingestion
+
+**Required Fix:**
+
+1. **During ingestion:** Update logomark at reasonable points during hoovering
+   - After each batch of transcripts hoovered
+   - Or on hoovering progress notifications
+   - Or when ingestion completes
+
+2. **On project switch:** Efficient DB query to resolve CLI presence
+   - Query: `SELECT DISTINCT provider FROM transcripts WHERE project_id = ?`
+   - Expected results: `claude`, `codex`, or both
+   - Update logomark state immediately on project load
+
+**Implementation:**
+
+Files to modify:
+- Project/timeline state management (logomark state)
+- DB query layer (efficient provider resolution)
+- Hoovering progress notifications (trigger logomark update)
+
+DB Query:
+```sql
+-- Efficient query to check which CLIs are present for a project
+SELECT DISTINCT provider
+FROM transcripts
+WHERE project_id = ?
+LIMIT 2;  -- Max 2 values possible (claude, codex)
+```
+
+UI Update Points:
+- `startMonitoring()` - on project switch
+- Hoovering progress notification handler
+- Initial ingestion completion
+
+**Expected Behavior:**
+- User sees correct CLI logomark immediately on project switch
+- Logomark updates during ingestion as new CLI transcripts are discovered
+- No performance impact (single efficient query on project switch)
+
+**Testing:**
+- Switch to project with only Claude Code transcripts → Claude logomark
+- Switch to project with only Codex transcripts → Codex logomark
+- Switch to project with both → Combined logomark
+- Watch logomark during initial ingestion of mixed-CLI project
 
 ---
 
