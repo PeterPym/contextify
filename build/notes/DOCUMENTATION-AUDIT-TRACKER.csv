@@ -10,11 +10,11 @@ project-switcher.md,build/docs/architecture/project-switcher.md,Yes,Yes,OK,Parti
 sandbox-appstore-architecture.md,build/docs/architecture/sandbox-appstore-architecture.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Sandbox vs DMG builds","Deferred for deeper security audit - requires checking security-scoped bookmark implementation"
 sql-backend.md,build/docs/architecture/sql-backend.md,Yes,Yes,Fixed,Partial,None,"SQL schema and migrations","Schema version was v23, fixed to v26; Need to verify migration history accuracy"
 startup-coordinator.md,build/docs/architecture/startup-coordinator.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Startup sequencing and project identity","Deferred - requires tracing StartupCoordinator initialization sequence against docs"
-transcript-access-security.md,build/docs/architecture/transcript-access-security.md,Yes,No,Pending,No,Unknown,"Security-scoped bookmarks",
-window-system.md,build/docs/architecture/window-system.md,Yes,No,Pending,No,Unknown,"4-window macOS architecture",
-README.md,build/docs/components/README.md,Yes,No,Pending,No,Unknown,"Components overview",
-active-session-policy.md,build/docs/components/active-session-policy.md,Yes,No,Pending,No,Unknown,"Active session determination",
-database-migration.md,build/docs/components/database-migration.md,Yes,No,Pending,No,Unknown,"Database location migration",
+transcript-access-security.md,build/docs/architecture/transcript-access-security.md,Yes,Yes,OK,Partial,None,"Security-scoped bookmarks","Status: Implemented 2025-11-12; Verified: app/Sources/ContextifyCore/Security/BookmarkStore.swift exists"
+window-system.md,build/docs/architecture/window-system.md,Yes,Yes,OK,Partial,None,"4-window macOS architecture","Last updated 2025-10-22; Verified: ContentView, ProjectsWindow, TranscriptInventoryWindow exist; Notes iTerm2 removed"
+README.md,build/docs/components/README.md,Yes,Yes,OK,No,None,"Components overview","Index doc - spot checked referenced files exist"
+active-session-policy.md,build/docs/components/active-session-policy.md,Yes,Yes,OK,No,None,"Active session determination","References schema v23 (historical migration, OK); 488 lines detailed spec"
+database-migration.md,build/docs/components/database-migration.md,Yes,Yes,NeedsDeepAudit,No,Unknown,"Database location migration","Deferred - need to verify DatabaseMigration.swift implementation matches spec"
 error-handling-security-scope.md,build/docs/components/error-handling-security-scope.md,Yes,No,Pending,No,Unknown,"Security scope error handling",
 project-discovery.md,build/docs/components/project-discovery.md,Yes,No,Pending,No,Unknown,"Multi-project detection",
 timeline-cache.md,build/docs/components/timeline-cache.md,Yes,No,Pending,No,Unknown,"LLM cache architecture",
