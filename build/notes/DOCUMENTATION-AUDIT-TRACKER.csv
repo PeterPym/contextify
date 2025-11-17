@@ -2,8 +2,8 @@ Document,File Path,Project Related,Reviewed,Status,Notes,Issues Found
 README.md,build/docs/README.md,Yes,Yes,Fixed,"Index for build/docs structure","Fixed schema version v23->v26 on line 50; plans/ dir exists but undocumented"
 COMPONENTS.md,build/docs/architecture/COMPONENTS.md,Yes,Yes,Fixed,"Database layer and LLM components","Fixed schema version v23->v26 (lines 14, 54); verified all file paths exist"
 README.md,build/docs/architecture/README.md,Yes,Yes,Fixed,"Architecture overview index","Fixed schema version v23->v26 (lines 51, 53)"
-abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,No,Pending,"LLM queue design patterns",
-conversation-monitor-state.md,build/docs/architecture/conversation-monitor-state.md,Yes,No,Pending,"ConversationMonitor state management",
+abstract-llm-queue-design.md,build/docs/architecture/abstract-llm-queue-design.md,Yes,Yes,OK,"LLM queue design patterns","Design doc - no code verification needed"
+conversation-monitor-state.md,build/docs/architecture/conversation-monitor-state.md,Yes,Yes,OK,"ConversationMonitor state management","Documents known issues and refactor needs - accurate"
 data-flow.md,build/docs/architecture/data-flow.md,Yes,No,Pending,"End-to-end data pipeline",
 llm-processing.md,build/docs/architecture/llm-processing.md,Yes,No,Pending,"Dual-queue LLM system",
 project-switcher.md,build/docs/architecture/project-switcher.md,Yes,No,Pending,"Project switcher UI/state",
