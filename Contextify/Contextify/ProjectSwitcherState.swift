@@ -294,6 +294,7 @@ public final class ProjectSwitcherState {
       // SQL already sorts by activity (max entry timestamp) when display_order is NULL
       // so we can trust the database order even on first launch.
       let sortedProjects = visibleProjects
+      let entryCounts = try orchestrator.getProjectEntryCounts()
 
       // Log final order with display_order values
       let sortedDebug = sortedProjects.prefix(10).map { p in
@@ -323,21 +324,27 @@ public final class ProjectSwitcherState {
         }
 
         let isOrphaned = project.isOrphaned || !pathExists
+        let entryCount = entryCounts[project.id] ?? 0
         return ProjectInfo(
           id: project.id,
           name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
           rootPath: project.rootPath,
-          transcriptCount: 0,  // TODO: query actual count
+          transcriptCount: entryCount,
           isOrphaned: isOrphaned
         )
       }
 
-      let visibleTabs = projectInfos.filter { !$0.isOrphaned }
+      let visibleTabs = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount > 0 }
+      let zeroEntryHidden = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount == 0 }
+      if !zeroEntryHidden.isEmpty {
+        let paths = zeroEntryHidden.prefix(5).map { $0.rootPath }.joined(separator: " | ")
+        log.info("[SWITCHER-FILTER-ZERO] Hiding \(zeroEntryHidden.count) project(s) with 0 entries (sample: \(paths, privacy: .public))")
+      }
 
       // Update state on main actor
       await MainActor.run {
         self.allProjects = projectInfos
-        self.hasHiddenProjects = hiddenCount > 0
+        self.hasHiddenProjects = hiddenCount > 0 || !zeroEntryHidden.isEmpty
 
         if self.isTabOrderFrozen {
           self.pendingTabProjects = visibleTabs
@@ -345,6 +352,11 @@ public final class ProjectSwitcherState {
         } else {
           self.pendingTabProjects = nil
           self.updateTabProjects(visibleTabs)
+        }
+        if let activeId = self.activeProjectId,
+           !visibleTabs.contains(where: { $0.id == activeId }) {
+          log.info("[SWITCHER-FILTER-ZERO] Active project (\(activeId, privacy: .public)) has 0 entries; clearing active selection")
+          self.activeProjectId = nil
         }
       }
 

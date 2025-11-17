@@ -326,6 +326,25 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Returns a map of project_id -> transcript entry count.
+  public func getProjectEntryCounts() throws -> [String: Int] {
+    try dbManager.pool.read { db in
+      let sql = """
+        SELECT project_id, COUNT(*) AS entry_count
+        FROM transcript_entries
+        GROUP BY project_id
+        """
+      var counts: [String: Int] = [:]
+      for row in try Row.fetchAll(db, sql: sql) {
+        if let projectId: String = row["project_id"],
+           let entryCount: Int = row["entry_count"] {
+          counts[projectId] = entryCount
+        }
+      }
+      return counts
+    }
+  }
+
   /// Get the most recently viewed project (for auto-selection on first launch)
   ///
   /// Returns the project with the highest last_viewed_ts (most recently viewed).
