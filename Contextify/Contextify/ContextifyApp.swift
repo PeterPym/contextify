@@ -403,10 +403,11 @@ struct ContextifyApp: App {
             log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
 
             // Ingest newest transcript
-            await projectsVM.discoveryService.ingestPreviewTranscript(
+            await ingestNewestTranscript(
               projectId: projectId,
               projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile
+              transcriptFile: newest.transcriptFile,
+              orchestrator: orchestrator
             )
           } catch {
             log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
@@ -419,10 +420,11 @@ struct ContextifyApp: App {
             let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
             let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
 
-            await projectsVM.discoveryService.ingestPreviewTranscript(
+            await ingestNewestTranscript(
               projectId: projectId,
               projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile
+              transcriptFile: newest.transcriptFile,
+              orchestrator: orchestrator
             )
           } catch {
             log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
@@ -624,10 +626,11 @@ struct ContextifyApp: App {
                 log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
 
                 // PHASE 2: Upsert transcript record and trigger FastPath
-                await vm.discoveryService.ingestPreviewTranscript(
+                await Self.ingestNewestTranscript(
                   projectId: projectId,
                   projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile
+                  transcriptFile: newest.transcriptFile,
+                  orchestrator: orchestrator
                 )
               } catch {
                 log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
@@ -641,10 +644,11 @@ struct ContextifyApp: App {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
                 let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
 
-                await vm.discoveryService.ingestPreviewTranscript(
+                await Self.ingestNewestTranscript(
                   projectId: projectId,
                   projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile
+                  transcriptFile: newest.transcriptFile,
+                  orchestrator: orchestrator
                 )
               } catch {
                 log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
@@ -774,6 +778,70 @@ struct ContextifyApp: App {
 
     } catch {
       log.error("❌ Failed to initialize projects system: \(error.localizedDescription)")
+    }
+  }
+
+  /// Ingests the newest transcript found by quick-discovery to enable fast timeline population
+  @MainActor
+  private static func ingestNewestTranscript(
+    projectId: String,
+    projectPath: URL,
+    transcriptFile: URL,
+    orchestrator: TranscriptOrchestrator
+  ) async {
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    let startTime = Date()
+
+    do {
+      // Determine provider from file path
+      let provider: DiscoveredProject.Provider
+      if transcriptFile.path.contains("/.claude/projects/") {
+        provider = .claudeCode
+      } else if transcriptFile.path.contains("/.codex/sessions/") {
+        provider = .codexCLI
+      } else {
+        log.warning("[QUICK-DISCOVERY-INGEST] Unknown provider for transcript: \(transcriptFile.path, privacy: .public)")
+        return
+      }
+
+      // Extract session ID from filename
+      let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
+
+      log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
+
+      // Create discovered transcript
+      let discovered = DiscoveredTranscript(
+        fileURL: transcriptFile,
+        provider: provider,
+        sessionId: sessionId
+      )
+
+      // Upsert transcript record
+      let resolved = try orchestrator.upsertTranscripts(
+        projectId: projectId,
+        discovered: [discovered]
+      )
+
+      guard let transcriptId = resolved.first?.transcriptId else {
+        log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
+        return
+      }
+
+      log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
+
+      // Trigger preview ingestion (first 25 entries)
+      try await orchestrator.ingestTranscript(
+        transcriptId: transcriptId,
+        mode: .preview(entries: 25),
+        notifyUI: true
+      )
+
+      let duration = Date().timeIntervalSince(startTime)
+      log.info("[QUICK-DISCOVERY-INGEST] ✅ Preview ingestion complete in \(Int(duration * 1000))ms")
+
+    } catch {
+      let duration = Date().timeIntervalSince(startTime)
+      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(error.localizedDescription)")
     }
   }
 
