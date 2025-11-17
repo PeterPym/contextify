@@ -68,6 +68,9 @@ public final class ProjectSwitcherState {
   // Global refresh debounce (prevents spam from system events during discovery)
   @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?
 
+  // Discovery completion tracking (for zero-entry filter gating)
+  @ObservationIgnored private var discoveryComplete: Bool = false
+
   // Deduplication: track target project ID for in-flight switch
   @ObservationIgnored private var switchInProgress: String?
   @ObservationIgnored private var switchTask: Task<Void, Never>?
@@ -173,7 +176,8 @@ public final class ProjectSwitcherState {
       guard let self else { return }
       let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
       for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
+        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - marking discovery complete and refreshing projects")
+        self.discoveryComplete = true
         self.scheduleRefresh()
       }
     }
@@ -304,7 +308,6 @@ public final class ProjectSwitcherState {
       log.info("[SWITCHER-SORTED] Tab order (first 10): \(sortedDebug, privacy: .public)")
 
       // Map to ProjectInfo (use DB orphaned status as primary, verify with FS check)
-      let hasAnyEntries = entryCounts.values.contains { $0 > 0 }
       let currentActiveId = activeProjectId
 
       let projectInfos = sortedProjects.map { project in
@@ -340,16 +343,18 @@ public final class ProjectSwitcherState {
       let visibleTabs: [ProjectInfo]
       let zeroEntryHidden: [ProjectInfo]
 
-      if hasAnyEntries {
+      // Only apply zero-entry filter AFTER discovery completes
+      // Before discovery completes, show all projects (they may get entries during discovery)
+      if self.discoveryComplete {
         visibleTabs = projectInfos.filter { !$0.isOrphaned && ($0.transcriptCount > 0 || $0.id == currentActiveId) }
         zeroEntryHidden = projectInfos.filter { !$0.isOrphaned && $0.transcriptCount == 0 && $0.id != currentActiveId }
       } else {
         visibleTabs = projectInfos.filter { !$0.isOrphaned }
         zeroEntryHidden = []
-        log.info("[SWITCHER-FILTER-ZERO] No projects have entries yet; skipping zero-entry filter")
+        log.info("[SWITCHER-FILTER-ZERO] Discovery not yet complete; showing all projects")
       }
 
-      if hasAnyEntries && !zeroEntryHidden.isEmpty {
+      if self.discoveryComplete && !zeroEntryHidden.isEmpty {
         let paths = zeroEntryHidden.prefix(5).map { $0.rootPath }.joined(separator: " | ")
         log.info("[SWITCHER-FILTER-ZERO] Hiding \(zeroEntryHidden.count) project(s) with 0 entries (sample: \(paths, privacy: .public))")
       }
