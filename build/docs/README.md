@@ -9,7 +9,7 @@
 
 | Category | Purpose | Key Documents |
 |----------|---------|---------------|
-| **Architecture** | System design & data flow | [Data Flow](architecture/data-flow.md), [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
+| **Architecture** | System design & data flow | [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Startup Coordinator](architecture/startup-coordinator.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
@@ -46,7 +46,6 @@ See [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/HOLISTIC-DOCS-ORGANIZATION-PLA
 System-level design documents. How the major components fit together.
 
 **Key docs:**
-- [Data Flow](architecture/data-flow.md) - End-to-end data pipeline (discovery → database → UI)
 - [SQL Backend](architecture/sql-backend.md) - Database architecture and schema (current: v26)
 - [LLM Processing](architecture/llm-processing.md) - Dual-queue LLM system (FoundationLLM)
 - [Startup Coordinator](architecture/startup-coordinator.md) - Project identity pipeline

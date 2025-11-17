@@ -393,7 +393,8 @@ date
 - **Transcript Watcher:** `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
 - **Conversation Monitor:** `Contextify/Contextify/ConversationMonitor.swift`
 - **Ingestion Pipeline:** `build/docs/components/transcript-ingestion.md`
-- **Data Flow:** `build/docs/architecture/data-flow.md`
+- **Startup Coordinator:** `build/docs/architecture/startup-coordinator.md`
+- **SQL Backend:** `build/docs/architecture/sql-backend.md`
 
 ## API Reference
 
