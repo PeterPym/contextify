@@ -288,6 +288,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
+    @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
@@ -650,6 +651,7 @@ final class ConversationMonitor {
 
         // Reset aggregate visibility tracking state for new project
         doingProgrammaticScroll = false
+        isUserScrollActive = false
         needsInitialVisibilitySnapshot = true
         lastVisibleIDs.removeAll()
         coalesceTask?.cancel()
@@ -1985,9 +1987,24 @@ final class ConversationMonitor {
     /// Called by view when scroll phase changes - enables queueing once scroll is idle
     @MainActor
     func handleScrollPhaseChange(_ phase: ScrollPhase) {
-        if case .idle = phase, doingProgrammaticScroll {
-            doingProgrammaticScroll = false
-            log.debug("[SUMM-SCROLL] Scroll became idle, enabling visibility tracking")
+        switch phase {
+        case .idle:
+            if doingProgrammaticScroll {
+                doingProgrammaticScroll = false
+                log.debug("[SUMM-SCROLL] Programmatic scroll completed")
+            } else if isUserScrollActive {
+                isUserScrollActive = false
+                log.debug("[SUMM-SCROLL] User scroll became idle")
+            }
+        default:
+            if doingProgrammaticScroll {
+                // Ignore non-idle phases triggered by programmatic jumps
+                return
+            }
+            if !isUserScrollActive {
+                isUserScrollActive = true
+                log.debug("[SUMM-SCROLL] User scroll started")
+            }
         }
     }
 
@@ -2033,10 +2050,9 @@ final class ConversationMonitor {
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
 
-        // First settled snapshot after project switch: queue exactly what's on screen
-        // NOTE: Programmatic scroll gating removed - it was creating a cycle where the flag
-        // kept getting set/cleared and blocking initial snapshot capture. The viewport
-        // stability guard above is sufficient to prevent thrashing.
+        // First settled snapshot after project switch: queue exactly what's on screen.
+        // Programmatic scroll is allowed once to capture this snapshot; after that, we only
+        // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
         if needsInitialVisibilitySnapshot {
             needsInitialVisibilitySnapshot = false
 
@@ -2059,6 +2075,12 @@ final class ConversationMonitor {
                 await self.queueVisibleGeneratingEntries(current)
             }
             viewedEntryIDs.formUnion(current)
+            return
+        }
+
+        // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
+        // from auto-scroll and view rebuilds that happen without user intent.
+        guard isUserScrollActive else {
             return
         }
 
