@@ -174,7 +174,8 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 **Database:**
 
-- Default location: `~/Library/Application Support/Contextify/contextify.db`
+- Default (DMG build): `~/Library/Application Support/Contextify/contextify.db`
+- App Store sandbox: `~/Library/Containers/PeterPym.Contextify*/Data/Library/Application Support/Contextify/contextify.db`
 - Custom locations supported (Dropbox, iCloud Drive) via Settings > Database tab
 - **ALWAYS use** `scripts/db_manager.sh` for operations (NEVER manual `rm`)
 - Multi-machine conflict detection warns of concurrent access

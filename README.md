@@ -202,7 +202,8 @@ Real-world test with 723-line Claude Code transcript:
 
 ### Data Layer
 - **Database**: SQLite backend via GRDB.swift
-- **Location**: `~/Library/Application Support/Contextify/transcripts.db`
+- **Location (DMG)**: `~/Library/Application Support/Contextify/contextify.db`
+- **Location (App Store sandbox)**: `~/Library/Containers/PeterPym.Contextify*/Data/Library/Application Support/Contextify/contextify.db`
 - **Features**:
   - Streaming transcript ingestion with `HooverEngine`
   - Real-time file monitoring via `TranscriptWatcher`
