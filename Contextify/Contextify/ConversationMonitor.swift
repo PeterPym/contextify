@@ -602,7 +602,11 @@ final class ConversationMonitor {
                     self.backgroundTasks = backgroundTasks
                 }
 
-                // 5. Feed already loaded in reinitialize() - no need to load again here
+                // 5. Load initial feed (fast - single query) so the timeline is not blank
+                let feedStart = Date()
+                log.info("[UIOPT-FEED-START] Loading initial feed from SQL...")
+                await self.loadFeedFromSQL()?.value
+                log.info("[UIOPT-FEED-DONE] Feed loaded in \(Date().timeIntervalSince(feedStart)*1000, privacy: .public)ms")
 
                 // 6. Subscribe to realtime updates (SQL notifications handled by watchForDebouncedTranscriptUpdates)
                 // self.setupSQLNotifications()  // Disabled: debouncing is handled by background watcher
@@ -1282,6 +1286,12 @@ final class ConversationMonitor {
     @discardableResult
     private func loadFeedFromSQL() async -> Task<Void, Never>? {
         guard let projectId = currentProjectId, let orchestrator = orchestrator else { return nil }
+
+        // Re-entrancy guard: prevent duplicate loads
+        guard phase != .loading else {
+            log.debug("[TIMELINE-LOAD] Ignoring primer request; already loading")
+            return nil
+        }
 
         log.info("[TIMELINE-LOAD] primer start; projectId=\(projectId, privacy: .public)")
 
