@@ -2031,6 +2031,49 @@ final class ConversationMonitor {
     /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
     @MainActor
     func replaceVisibleSnapshot(_ ids: [UUID]) {
+        let current = Set(ids)
+
+        // First settled snapshot after project switch: queue exactly what's on screen.
+        // Programmatic scroll is allowed once to capture this snapshot; after that, we only
+        // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
+        if needsInitialVisibilitySnapshot {
+            guard !current.isEmpty else {
+                log.debug("[SUMM-VIEWPORT-INIT] Ignoring empty initial snapshot - waiting for visible IDs")
+                return
+            }
+
+            needsInitialVisibilitySnapshot = false
+
+            // Log timing between load completion and first viewport report
+            if let loadTime = lastLoadCompletionTime {
+                let delta = Date().timeIntervalSince(loadTime) * 1000
+                log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
+            }
+
+            // Count how many visible entries need summarization
+            let visibleNeedingSummaries = ids.filter { id in
+                guard let entry = lookup(id) else { return false }
+                return entry.action == .unsummarized
+            }.count
+
+            log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+
+            Task {
+                await self.pruneQueueToVisible(current)
+                await self.queueVisibleGeneratingEntries(current)
+            }
+            viewedEntryIDs.formUnion(current)
+            lastVisibleIDs = current
+            debugVisibleIDs = current
+            return
+        }
+
+        // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
+        // from auto-scroll and view rebuilds that happen without user intent.
+        guard isUserScrollActive else {
+            return
+        }
+
         #if DEBUG
         // Log raw viewport input for debugging queue pruning
         log.debug("[VIEWPORT-INPUT] Received \(ids.count, privacy: .public) IDs from viewport callback")
@@ -2040,7 +2083,6 @@ final class ConversationMonitor {
         #endif
 
         // Skip if viewport unchanged (prevents thrashing from layout engine remeasures)
-        let current = Set(ids)
         if current == lastVisibleIDs {
             log.debug("[VIEWPORT-SKIP] Viewport unchanged (\(ids.count) entries), ignoring callback")
             return
@@ -2069,40 +2111,6 @@ final class ConversationMonitor {
         // This ensures needsInitialVisibilitySnapshot can be captured
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
-
-        // First settled snapshot after project switch: queue exactly what's on screen.
-        // Programmatic scroll is allowed once to capture this snapshot; after that, we only
-        // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
-        if needsInitialVisibilitySnapshot {
-            needsInitialVisibilitySnapshot = false
-
-            // Log timing between load completion and first viewport report
-            if let loadTime = lastLoadCompletionTime {
-                let delta = Date().timeIntervalSince(loadTime) * 1000
-                log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
-            }
-
-            // Count how many visible entries need summarization
-            let visibleNeedingSummaries = ids.filter { id in
-                guard let entry = lookup(id) else { return false }
-                return entry.action == .unsummarized
-            }.count
-
-            log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
-
-            Task {
-                await self.pruneQueueToVisible(current)
-                await self.queueVisibleGeneratingEntries(current)
-            }
-            viewedEntryIDs.formUnion(current)
-            return
-        }
-
-        // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
-        // from auto-scroll and view rebuilds that happen without user intent.
-        guard isUserScrollActive else {
-            return
-        }
 
         // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
         coalesceTask?.cancel()
