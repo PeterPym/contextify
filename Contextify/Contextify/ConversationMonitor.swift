@@ -288,7 +288,9 @@ final class ConversationMonitor {
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
+    @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var needsInitialVisibilitySnapshot = true  // First settled snapshot after project switch
+    @ObservationIgnored private var pendingInitialVisibleIDs: Set<UUID>? = nil  // IDs seen while programmatic scroll is active
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
@@ -650,6 +652,7 @@ final class ConversationMonitor {
 
         // Reset aggregate visibility tracking state for new project
         doingProgrammaticScroll = false
+        isUserScrollActive = false
         needsInitialVisibilitySnapshot = true
         lastVisibleIDs.removeAll()
         coalesceTask?.cancel()
@@ -845,7 +848,9 @@ final class ConversationMonitor {
             // Fall through to update anyway
         }
 
+        #if DEBUG
         log.info("[TIMELINE-APPEND] setEntries \(new.count) (primer)")
+        #endif
         state.replace(with: new)
         entriesRevision += 1  // Force SwiftUI update
         log.info("[VIEWPORT-UPDATE] visibleEntries.count → \(self.visibleEntries.count)")
@@ -858,7 +863,9 @@ final class ConversationMonitor {
         entriesRevision += 1  // Force SwiftUI update
         let afterCount = state.entries.count
 
+        #if DEBUG
         log.info("[TIMELINE-APPEND] Entry appended: \(e.id, privacy: .public) kind: \(e.kind.rawValue, privacy: .public) timestamp: \(e.timestamp, privacy: .public) timeline_count: \(beforeCount, privacy: .public)→\(afterCount, privacy: .public)")
+        #endif
         log.debug("[TIMELINE-APPEND] Summary: \(e.summary.prefix(60), privacy: .public)...")
     }
 
@@ -978,6 +985,16 @@ final class ConversationMonitor {
         Task { @MainActor in
             await loadFeedFromSQL()?.value
         }
+    }
+
+    /// Determine whether timeline still needs a full primer reload (e.g., startup).
+    @MainActor
+    private func needsPrimerReload() -> Bool {
+        if isAwaitingPrimer { return true }
+        if state.entries.isEmpty { return true }
+        if phase != .loaded { return true }
+        if !isReadyForUpdates { return true }
+        return false
     }
 
     /// Public method for user-initiated session switch from transcript inventory
@@ -1503,12 +1520,12 @@ final class ConversationMonitor {
                 log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
             }
 
-            // P1-1: Initialize cursor from tail only if not already set (prevent regression)
-            if let tailEntry = feed.last, lastSeenCursor == nil {
-                let e = tailEntry.0
+            // Always seed cursor from the newest entry so incremental updates start from current timeline.
+            if let newestEntry = feed.last {
+                let e = newestEntry.0
                 lastSeenCursor = EntryCursor(from: e)
                 saveCursor()  // P1-4: Persist cursor for project
-                log.debug("Initialized cursor from tail: \(e.id)")
+                log.debug("Initialized cursor from newest entry: \(e.id)")
             }
 
             lastUpdate = Date()
@@ -1687,6 +1704,11 @@ final class ConversationMonitor {
                 self.log.info("🔄 [TIMELINE-REFRESH-INGESTION] Metadata discovery complete, reloading timeline (may be empty until hoovering finishes)...")
                 self.log.info("🔍 [TIMELINE-REFRESH-INGESTION] isMonitoring=\(self.isMonitoring) (refreshing regardless)")
 
+                guard self.needsPrimerReload() else {
+                    self.log.debug("[TIMELINE-REFRESH-INGESTION] Skipping reload (primer already loaded)")
+                    return
+                }
+
                 await self.loadFeedFromSQL()?.value
                 self.log.info("✅ [TIMELINE-REFRESH-INGESTION] Timeline feed reloaded (\(self.state.entries.count) entries - hoovering continues in background)")
             }
@@ -1828,29 +1850,34 @@ final class ConversationMonitor {
                 // Use a more robust approach: enforce minimum 500ms between actual refreshes
                 self.progressDebounceTask?.cancel()
                 self.progressDebounceTask = Task { @MainActor [weak self] in
-                guard let self else { return }
+                    guard let self else { return }
 
-                // Calculate how long to wait based on last refresh
-                let now = Date()
-                let minInterval: TimeInterval = 0.5  // 500ms minimum between refreshes
-                let timeSinceLastRefresh = self.lastProgressRefreshTime.map { now.timeIntervalSince($0) } ?? minInterval
+                    // Calculate how long to wait based on last refresh
+                    let now = Date()
+                    let minInterval: TimeInterval = 0.5  // 500ms minimum between refreshes
+                    let timeSinceLastRefresh = self.lastProgressRefreshTime.map { now.timeIntervalSince($0) } ?? minInterval
 
-                if timeSinceLastRefresh < minInterval {
-                    // Wait for remaining time
-                    let remainingWait = minInterval - timeSinceLastRefresh
-                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Waiting \(Int(remainingWait * 1000))ms before refresh (last refresh \(Int(timeSinceLastRefresh * 1000))ms ago)")
-                    try? await Task.sleep(for: .milliseconds(Int(remainingWait * 1000)))
+                    if timeSinceLastRefresh < minInterval {
+                        // Wait for remaining time
+                        let remainingWait = minInterval - timeSinceLastRefresh
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Waiting \(Int(remainingWait * 1000))ms before refresh (last refresh \(Int(timeSinceLastRefresh * 1000))ms ago)")
+                        try? await Task.sleep(for: .milliseconds(Int(remainingWait * 1000)))
+                    }
+
+                    guard !Task.isCancelled else {
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Refresh cancelled before execution")
+                        return
+                    }
+
+                    guard self.needsPrimerReload() else {
+                        self.log.debug("[TIMELINE-REFRESH-PROGRESS] Skipping reload (primer complete, incremental updates active)")
+                        return
+                    }
+
+                    self.lastProgressRefreshTime = Date()
+                    await self.loadFeedFromSQL()?.value
+                    self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
                 }
-
-                guard !Task.isCancelled else {
-                    self.log.debug("[TIMELINE-REFRESH-PROGRESS] Refresh cancelled before execution")
-                    return
-                }
-
-                self.lastProgressRefreshTime = Date()
-                await self.loadFeedFromSQL()?.value
-                self.log.info("✅ [TIMELINE-REFRESH-PROGRESS] Timeline refreshed (\(self.state.entries.count) entries)")
-            }
             }
         }
     }
@@ -1975,21 +2002,71 @@ final class ConversationMonitor {
     @MainActor
     func beginProgrammaticScroll() {
         doingProgrammaticScroll = true
+        pendingInitialVisibleIDs = nil
         log.debug("[SUMM-SCROLL] Programmatic scroll started, gating visibility updates")
     }
 
     /// Called by view when scroll phase changes - enables queueing once scroll is idle
     @MainActor
     func handleScrollPhaseChange(_ phase: ScrollPhase) {
-        if case .idle = phase, doingProgrammaticScroll {
-            doingProgrammaticScroll = false
-            log.debug("[SUMM-SCROLL] Scroll became idle, enabling visibility tracking")
+        switch phase {
+        case .idle:
+            if doingProgrammaticScroll {
+                doingProgrammaticScroll = false
+                log.debug("[SUMM-SCROLL] Programmatic scroll completed")
+                if needsInitialVisibilitySnapshot,
+                   let pending = pendingInitialVisibleIDs,
+                   !pending.isEmpty {
+                    log.debug("[SUMM-VIEWPORT-INIT] Processing deferred snapshot after scroll completion (\(pending.count, privacy: .public) IDs)")
+                    pendingInitialVisibleIDs = nil
+                    processInitialVisibleSnapshot(pending)
+                }
+            } else if isUserScrollActive {
+                isUserScrollActive = false
+                log.debug("[SUMM-SCROLL] User scroll became idle")
+            }
+        default:
+            if doingProgrammaticScroll {
+                // Ignore non-idle phases triggered by programmatic jumps
+                return
+            }
+            if !isUserScrollActive {
+                isUserScrollActive = true
+                log.debug("[SUMM-SCROLL] User scroll started")
+            }
         }
     }
 
     /// Aggregate snapshot of visible entry IDs from onScrollTargetVisibilityChange
     @MainActor
     func replaceVisibleSnapshot(_ ids: [UUID]) {
+        let current = Set(ids)
+
+        // First settled snapshot after project switch: queue exactly what's on screen.
+        // Programmatic scroll is allowed once to capture this snapshot; after that, we only
+        // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
+        if needsInitialVisibilitySnapshot {
+            if doingProgrammaticScroll {
+                pendingInitialVisibleIDs = current
+                log.debug("[SUMM-VIEWPORT-INIT] Programmatic scroll in progress - deferring initial snapshot")
+                return
+            }
+
+            guard !current.isEmpty else {
+                log.debug("[SUMM-VIEWPORT-INIT] Ignoring empty initial snapshot - waiting for visible IDs")
+                return
+            }
+
+            processInitialVisibleSnapshot(current)
+            return
+        }
+
+        // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
+        // from auto-scroll and view rebuilds that happen without user intent.
+        guard isUserScrollActive else {
+            return
+        }
+
         #if DEBUG
         // Log raw viewport input for debugging queue pruning
         log.debug("[VIEWPORT-INPUT] Received \(ids.count, privacy: .public) IDs from viewport callback")
@@ -1999,7 +2076,6 @@ final class ConversationMonitor {
         #endif
 
         // Skip if viewport unchanged (prevents thrashing from layout engine remeasures)
-        let current = Set(ids)
         if current == lastVisibleIDs {
             log.debug("[VIEWPORT-SKIP] Viewport unchanged (\(ids.count) entries), ignoring callback")
             return
@@ -2028,35 +2104,6 @@ final class ConversationMonitor {
         // This ensures needsInitialVisibilitySnapshot can be captured
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
-
-        // First settled snapshot after project switch: queue exactly what's on screen
-        // NOTE: Programmatic scroll gating removed - it was creating a cycle where the flag
-        // kept getting set/cleared and blocking initial snapshot capture. The viewport
-        // stability guard above is sufficient to prevent thrashing.
-        if needsInitialVisibilitySnapshot {
-            needsInitialVisibilitySnapshot = false
-
-            // Log timing between load completion and first viewport report
-            if let loadTime = lastLoadCompletionTime {
-                let delta = Date().timeIntervalSince(loadTime) * 1000
-                log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
-            }
-
-            // Count how many visible entries need summarization
-            let visibleNeedingSummaries = ids.filter { id in
-                guard let entry = lookup(id) else { return false }
-                return entry.action == .unsummarized
-            }.count
-
-            log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
-
-            Task {
-                await self.pruneQueueToVisible(current)
-                await self.queueVisibleGeneratingEntries(current)
-            }
-            viewedEntryIDs.formUnion(current)
-            return
-        }
 
         // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
         coalesceTask?.cancel()
@@ -2178,6 +2225,33 @@ final class ConversationMonitor {
         log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
         await generator.queueMisses(misses)
         log.debug("[SUMM-QUEUE] generator.queueMisses() completed")
+    }
+
+    @MainActor
+    private func processInitialVisibleSnapshot(_ current: Set<UUID>) {
+        pendingInitialVisibleIDs = nil
+        needsInitialVisibilitySnapshot = false
+
+        if let loadTime = lastLoadCompletionTime {
+            let delta = Date().timeIntervalSince(loadTime) * 1000
+            log.info("[SUMM-VIEWPORT-TIMING] First viewport report \(Int(delta), privacy: .public)ms after load completion")
+        }
+
+        let ids = Array(current)
+        let visibleNeedingSummaries = ids.filter { id in
+            guard let entry = lookup(id) else { return false }
+            return entry.action == .unsummarized
+        }.count
+
+        log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+
+        Task {
+            await self.pruneQueueToVisible(current)
+            await self.queueVisibleGeneratingEntries(current)
+        }
+        viewedEntryIDs.formUnion(current)
+        lastVisibleIDs = current
+        debugVisibleIDs = current
     }
 
     /// Derive entry status for logging (cached/queued/generating/not_queued/error)

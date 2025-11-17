@@ -28,14 +28,7 @@ final class DatabaseTests: XCTestCase {
 
   func testDatabaseSchemaCreation() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    let pool = try makeMigratedPool(at: dbPath)
 
     // Verify tables exist
     let tables = try pool.read { db in
@@ -54,11 +47,7 @@ final class DatabaseTests: XCTestCase {
 
   func testProjectRepository() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let repo = ProjectRepositoryImpl(db: pool)
 
@@ -89,11 +78,7 @@ final class DatabaseTests: XCTestCase {
 
   func testTranscriptRepository() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -137,11 +122,7 @@ final class DatabaseTests: XCTestCase {
 
   func testEntryRepository() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -171,15 +152,15 @@ final class DatabaseTests: XCTestCase {
         timestamp: now,
         content: "Test message 1",
         contentSha256: SHA256Utils.hash("Test message 1"),
-        summary: nil,
-        disposition: nil,
         displayInTimeline: 1,
-        isCompletion: 0,
-        isDirective: 0,
         parentId: nil,
         gitBranch: nil,
         gitCommit: nil,
         cwd: nil,
+        prev1Id: nil,
+        prev2Id: nil,
+        windowSha256: nil,
+        createdTs: Double(now),
         createdAt: now,
         updatedAt: now
       ),
@@ -193,17 +174,17 @@ final class DatabaseTests: XCTestCase {
         timestamp: now + 1,
         content: "Test message 2",
         contentSha256: SHA256Utils.hash("Test message 2"),
-        summary: nil,
-        disposition: nil,
         displayInTimeline: 1,
-        isCompletion: 0,
-        isDirective: 0,
         parentId: nil,
         gitBranch: nil,
         gitCommit: nil,
         cwd: nil,
-        createdAt: now,
-        updatedAt: now
+        prev1Id: nil,
+        prev2Id: nil,
+        windowSha256: nil,
+        createdTs: Double(now + 1),
+        createdAt: now + 1,
+        updatedAt: now + 1
       )
     ]
 
@@ -364,11 +345,7 @@ final class DatabaseTests: XCTestCase {
 
   func testDenormalizationInvariant() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -397,15 +374,15 @@ final class DatabaseTests: XCTestCase {
       timestamp: now,
       content: "Test",
       contentSha256: SHA256Utils.hash("Test"),
-      summary: nil,
-      disposition: nil,
       displayInTimeline: 1,
-      isCompletion: 0,
-      isDirective: 0,
       parentId: nil,
       gitBranch: nil,
       gitCommit: nil,
       cwd: nil,
+      prev1Id: nil,
+      prev2Id: nil,
+      windowSha256: nil,
+      createdTs: Double(now),
       createdAt: now,
       updatedAt: now
     )
@@ -427,11 +404,7 @@ final class DatabaseTests: XCTestCase {
 
   func testCrashRecovery() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -471,19 +444,9 @@ final class DatabaseTests: XCTestCase {
 
   func testMigrationIdempotence() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-
+    let pool = try makeMigratedPool(at: dbPath)
     // Run migration twice - should not error
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
-
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    try applySchema(pool)
 
     // Verify v3 columns exist
     let columns = try pool.read { db in
@@ -539,9 +502,7 @@ final class DatabaseTests: XCTestCase {
     }
 
     // Run v3 migration
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    try applySchema(pool)
 
     // Verify backfill worked
     let result = try pool.read { db in
@@ -563,9 +524,7 @@ final class DatabaseTests: XCTestCase {
     }
 
     // Re-run migration (idempotent)
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    try applySchema(pool)
 
     // Verify mtime_ms was NOT overwritten (backfill only touches NULL values)
     let result2 = try pool.read { db in
@@ -580,11 +539,7 @@ final class DatabaseTests: XCTestCase {
 
   func testSessionIdTakesPrecedence() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -617,11 +572,7 @@ final class DatabaseTests: XCTestCase {
 
   func testPathHashFallback() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -656,11 +607,7 @@ final class DatabaseTests: XCTestCase {
 
   func testWatcherMetadataInvalidation() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in try DatabaseSchema.migrate(db) }
+    let pool = try makeMigratedPool(at: dbPath)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
@@ -699,13 +646,7 @@ final class DatabaseTests: XCTestCase {
 
   func testHooverEnginePreviewLimit() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    let pool = try makeMigratedPool(at: dbPath)
 
     // Create test transcript file with 20 entries
     let transcriptFile = tempDir.appendingPathComponent("test-transcript.jsonl")
@@ -718,9 +659,9 @@ final class DatabaseTests: XCTestCase {
     try lines.joined(separator: "\n").write(to: transcriptFile, atomically: true, encoding: .utf8)
 
     // Setup repositories and engine
-    let transcriptRepo = TranscriptRepositoryImpl(pool: pool)
-    let entryRepo = EntryRepositoryImpl(pool: pool)
-    let errorRepo = ParseErrorRepositoryImpl(pool: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+    let errorRepo = ParseErrorRepositoryImpl(db: pool)
     let parser = ClaudeCodeLineParser()
     let metadataParser = ClaudeCodeMetadataParser()
 
@@ -730,47 +671,25 @@ final class DatabaseTests: XCTestCase {
       entryRepo: entryRepo,
       errorRepo: errorRepo,
       parser: parser,
-      fileSnapshotRepo: FileSnapshotRepositoryImpl(pool: pool),
-      trackedFileRepo: TrackedFileRepositoryImpl(pool: pool),
-      transcriptSummaryRepo: TranscriptSummaryRepositoryImpl(pool: pool),
-      systemEventRepo: SystemEventRepositoryImpl(pool: pool),
-      assistantUsageRepo: AssistantUsageRepositoryImpl(pool: pool),
+      fileSnapshotRepo: FileSnapshotRepositoryImpl(db: pool),
+      trackedFileRepo: TrackedFileRepositoryImpl(db: pool),
+      transcriptSummaryRepo: TranscriptSummaryRepositoryImpl(db: pool),
+      systemEventRepo: SystemEventRepositoryImpl(db: pool),
+      assistantUsageRepo: AssistantUsageRepositoryImpl(db: pool),
       metadataParser: metadataParser
     )
 
     // Create project and transcript records
-    let projectId = "test-project"
-    let projectRepo = ProjectRepositoryImpl(pool: pool)
-    try projectRepo.upsert(
-      id: projectId,
-      name: "Test Project",
-      rootPath: tempDir.path,
-      gitBranch: nil,
-      gitCommit: nil,
-      lastViewedTs: Int(Date().timeIntervalSince1970),
-      bookmarkData: nil,
-      orphanedSince: nil
-    )
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
 
-    let transcriptId = "test-transcript"
-    try transcriptRepo.upsert(
-      id: transcriptId,
+    let transcriptId = try transcriptRepo.upsert(
       projectId: projectId,
-      provider: "claude-code",
+      fileURL: transcriptFile,
+      provider: "claude.code",
       providerSessionId: nil,
-      filePath: transcriptFile.path,
-      lineCount: 20,
-      lastProcessedLine: 0,
-      lastProcessedEntryId: nil,
-      parserVersion: 1,
-      status: "active",
-      ingestState: "complete",
-      lastError: nil,
-      createdAt: Int(Date().timeIntervalSince1970),
-      updatedAt: Int(Date().timeIntervalSince1970),
-      normalizedPath: nil,
-      pathHash: nil,
-      mtimeMs: nil
+      lastModified: Date(),
+      fileSize: lines.joined().count
     )
 
     let transcript = try transcriptRepo.get(transcriptId)!
@@ -817,71 +736,44 @@ final class DatabaseTests: XCTestCase {
     XCTAssertEqual(totalEntries, 20, "Should have ingested all 20 entries")
   }
 
-  func testIngestionLockPreventsParallelIngest() throws {
+  func testIngestionLockPreventsParallelIngest() async throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
+    let pool = try makeMigratedPool(at: dbPath)
 
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
-
-    let orchestrator = try TranscriptOrchestrator(dbManager: DatabaseManager(dbPath: dbPath.path))
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
 
     // Create test project
-    let projectId = "test-project"
-    let projectRepo = ProjectRepositoryImpl(pool: pool)
-    try projectRepo.upsert(
-      id: projectId,
-      name: "Test Project",
-      rootPath: tempDir.path,
-      gitBranch: nil,
-      gitCommit: nil,
-      lastViewedTs: Int(Date().timeIntervalSince1970),
-      bookmarkData: nil,
-      orphanedSince: nil
-    )
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
 
     // Create transcript with partial state
     let transcriptFile = tempDir.appendingPathComponent("test-transcript.jsonl")
     try "".write(to: transcriptFile, atomically: true, encoding: .utf8)
 
-    let transcriptId = "test-transcript"
-    let transcriptRepo = TranscriptRepositoryImpl(pool: pool)
-    try transcriptRepo.upsert(
-      id: transcriptId,
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let transcriptId = try transcriptRepo.upsert(
       projectId: projectId,
-      provider: "claude-code",
+      fileURL: transcriptFile,
+      provider: "claude.code",
       providerSessionId: nil,
-      filePath: transcriptFile.path,
-      lineCount: 0,
-      lastProcessedLine: 0,
-      lastProcessedEntryId: nil,
-      parserVersion: 1,
-      status: "active",
-      ingestState: "partial",
-      lastError: nil,
-      createdAt: Int(Date().timeIntervalSince1970),
-      updatedAt: Int(Date().timeIntervalSince1970),
-      normalizedPath: nil,
-      pathHash: nil,
-      mtimeMs: nil
+      lastModified: Date(),
+      fileSize: 0
     )
 
     // Test lock behavior
-    var firstCallResult: Bool = false
     var secondCallResult: Bool = false
 
     // First call should acquire lock
-    firstCallResult = try orchestrator.ingestTranscript(
+    let firstCallResult = try await orchestrator.ingestTranscript(
       transcriptId: transcriptId,
       mode: .preview(entries: 10),
       notifyUI: false
     )
+    XCTAssertTrue(firstCallResult, "First call should acquire lock")
 
     // Manually acquire lock to simulate concurrent access
-    try pool.write { db in
+    try await pool.write { db in
       try db.execute(sql: """
         INSERT INTO ingestion_locks(transcript_id, locked_at)
         VALUES (?, ?)
@@ -889,7 +781,7 @@ final class DatabaseTests: XCTestCase {
     }
 
     // Second call should fail to acquire lock and return current state
-    secondCallResult = try orchestrator.ingestTranscript(
+    secondCallResult = try await orchestrator.ingestTranscript(
       transcriptId: transcriptId,
       mode: .preview(entries: 10),
       notifyUI: false
@@ -905,9 +797,7 @@ final class DatabaseTests: XCTestCase {
     config.foreignKeysEnabled = true
 
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    try pool.write { db in
-      try DatabaseSchema.migrate(db)
-    }
+    try applySchema(pool)
 
     // Verify index exists
     let indexes = try pool.read { db in
@@ -916,11 +806,29 @@ final class DatabaseTests: XCTestCase {
 
     XCTAssertTrue(indexes.contains("idx_tr_ingest_state_updated_at"), "Index for ingest_state should exist")
   }
+
+  // MARK: - Helpers
+
+  private func makeMigratedPool(at url: URL) throws -> DatabasePool {
+    var config = Configuration()
+    config.foreignKeysEnabled = true
+    let pool = try DatabasePool(path: url.path, configuration: config)
+    try applySchema(pool)
+    return pool
+  }
+
+  private func applySchema(_ writer: DatabaseWriter) throws {
+    let migrator = DatabaseSchema.createMigrator()
+    try migrator.migrate(writer)
+  }
 }
 
 // Helper for testing
-private class NoOpProgressSink: IngestProgressSink {
-  func didStartTranscript(name: String, totalLines: Int) {}
+private final class NoOpProgressSink: IngestProgressSink, @unchecked Sendable {
+  func didStartTranscript(name: String, totalLines: Int?) {}
   func didAdvance(linesProcessed: Int, totalLines: Int?) {}
   func didCompleteTranscript(durationMs: Int) {}
+  func didFailTranscript(error: String) {}
+  func didStartProject(name: String, transcriptCount: Int) {}
+  func didCompleteProject(name: String) {}
 }

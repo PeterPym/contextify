@@ -223,6 +223,7 @@ struct ConversationTimelineView: View {
 
                 guard monitor.autoScroll, !monitor.visibleEntries.isEmpty else { return }
 
+                monitor.beginProgrammaticScroll()
                 // Create new debounced scroll task (150ms delay to coalesce rapid updates)
                 scrollTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 150_000_000)

@@ -63,6 +63,15 @@ public final class StartupCoordinator {
 
     private let log = Logger(subsystem: "dev.contextify", category: "StartupCoordinator")
 
+    private enum ResolutionSource {
+        case envVar
+        case bookmark
+        case persisted
+        case cwd
+        case discovery
+        case none
+    }
+
     /// Current active project context (nil until first resolution).
     ///
     /// Observable property that updates when project switches.
@@ -82,15 +91,15 @@ public final class StartupCoordinator {
 
     /// Last published context signature (for deduplication by id + path).
     @ObservationIgnored private var lastSignature: (id: String, path: String)?
+    @ObservationIgnored private var discoverySnapshotObserver: NSObjectProtocol?
+    @ObservationIgnored private var hasHandledDiscoverySnapshot = false
+    @ObservationIgnored private var initialResolutionSource: ResolutionSource = .none
 
     // MARK: - Initialization
 
     private init() {
         log.info("StartupCoordinator initialized")
-    }
-
-    deinit {
-        // No cleanup needed
+        installDiscoverySnapshotObserver()
     }
 
     // MARK: - Public API (Multicast Updates)
@@ -124,6 +133,63 @@ public final class StartupCoordinator {
             continuation.onTermination = { _ in
                 NotificationCenter.default.removeObserver(token)
             }
+        }
+    }
+
+    private func installDiscoverySnapshotObserver() {
+        guard discoverySnapshotObserver == nil else { return }
+        discoverySnapshotObserver = NotificationCenter.default.addObserver(
+            forName: .projectsDiscoverySnapshot,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            guard let projects = note.object as? [DiscoveredProject], !projects.isEmpty else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.handleDiscoverySnapshot(projects)
+            }
+        }
+    }
+
+    private func handleDiscoverySnapshot(_ projects: [DiscoveredProject]) async {
+        guard !Sandbox.isSandboxed else {
+            log.debug("[COORD-DISCOVERY] Ignoring snapshot in sandbox build")
+            return
+        }
+        guard !hasHandledDiscoverySnapshot else { return }
+        guard initialResolutionSource != .envVar else {
+            log.debug("[COORD-DISCOVERY] Resolution came from env var - respecting explicit override")
+            return
+        }
+
+        guard let candidate = projects.first else { return }
+        let candidatePath = SandboxPathFilter.sanitizedPath(candidate.path.path) ?? candidate.path.path
+
+        if let current = current {
+            if candidatePath == current.path {
+                hasHandledDiscoverySnapshot = true
+                return
+            }
+
+            let candidateActivity = candidate.lastActivity
+            let currentActivity = projects.first(where: { $0.id == current.id })?.lastActivity
+
+            if let currentActivity, let candidateActivity, candidateActivity <= currentActivity {
+                log.debug("[COORD-DISCOVERY] Current project is newer or equal; skipping auto-switch")
+                hasHandledDiscoverySnapshot = true
+                return
+            }
+        }
+
+        do {
+            log.notice("[COORD-DISCOVERY-WINNER] Switching to discovery-ranked project: \(candidate.name, privacy: .public)")
+            try await switchProject(to: candidatePath)
+            hasHandledDiscoverySnapshot = true
+            initialResolutionSource = .discovery
+        } catch {
+            log.error("[COORD-DISCOVERY-WINNER] Auto-switch failed: \(error.localizedDescription, privacy: .public)")
+            hasHandledDiscoverySnapshot = true
         }
     }
 
@@ -370,6 +436,7 @@ public final class StartupCoordinator {
         if let envRoot = ProcessInfo.processInfo.environment["CONTEXTIFY_PROJECT_ROOT"],
            let sanitized = sanitizeResolvedPath(envRoot, source: "CONTEXTIFY_PROJECT_ROOT") {
             log.debug("📍 Using CONTEXTIFY_PROJECT_ROOT: \(sanitized, privacy: .public)")
+            initialResolutionSource = .envVar
             return sanitized
         }
 
@@ -381,6 +448,7 @@ public final class StartupCoordinator {
             let path = bookmarkURL.resolvingSymlinksInPath().path
             if let sanitized = sanitizeResolvedPath(path, source: "bookmark") {
                 log.debug("📍 Using bookmark: \(sanitized, privacy: .public)")
+                initialResolutionSource = .bookmark
                 return sanitized
             }
         }
@@ -411,6 +479,7 @@ public final class StartupCoordinator {
                !persistedPath.isEmpty,
                let sanitized = sanitizeResolvedPath(persistedPath, source: "persisted path") {
                 log.debug("📍 Using persisted path: \(sanitized, privacy: .public)")
+                initialResolutionSource = .persisted
                 return sanitized
             }
         }
@@ -423,6 +492,7 @@ public final class StartupCoordinator {
            !persistedPath.isEmpty,
            let sanitized = sanitizeResolvedPath(persistedPath, source: "persisted path") {
             log.debug("📍 Using persisted path: \(sanitized, privacy: .public)")
+            initialResolutionSource = .persisted
             return sanitized
         }
         #endif
@@ -431,6 +501,7 @@ public final class StartupCoordinator {
         let cwd = FileManager.default.currentDirectoryPath
         if cwd != "/", let sanitized = sanitizeResolvedPath(cwd, source: "cwd") {
             log.debug("📍 Using CWD: \(sanitized, privacy: .public)")
+            initialResolutionSource = .cwd
             return sanitized
         }
 

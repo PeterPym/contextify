@@ -67,6 +67,15 @@ This document contains:
 - Detection script: `scripts/transcript-repair/repair_transcript.py --dry-run`
 - Repair script: `scripts/transcript-repair/repair_transcript.py`
 
+## Tool Call Validation Checklist
+
+When reviewing Claude Code CLI transcripts (provider `claude.code`):
+
+1. **Identify tool call pairs:** Assistant records that contain `tool_use` blocks (with `id`) should be immediately followed by user records whose `message.content` is an array of `tool_result` blocks referencing those IDs.
+2. **Detect corruption:** If a `tool_result` references an ID that never appeared anywhere in the transcript, treat it as corruption (teleport artifact). Otherwise the entry is valid and should be ingested.
+3. **Check parser output:** `[PARSER-WARN] Orphaned tool_result` now indicates only truly missing IDs. `[PARSER-INFO] stop_reason mismatch` logs when the parser coerces `stop_reason` from `tool_use` to `end_turn` because no tool call was actually emitted.
+4. **Record findings:** Note matched vs. missing IDs when running `scripts/logging/monitor-transcript-queues.sh` so we can correlate parser telemetry with real transcripts.
+
 ## Common Pitfalls
 
 ❌ **Don't:**

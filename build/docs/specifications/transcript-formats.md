@@ -107,7 +107,7 @@ Model-generated responses.
 - `uuid` (uuid)
 - `timestamp` (ISO string) — **MUST BE STRICTLY INCREASING**
 
-**Note:** Assistant `message.content` is an **array**, user `message.content` is a **string**.
+**Note:** Assistant `message.content` is always an **array**. User `message.content` is usually a string for plain text input, but Claude Code CLI (v2.0+) emits tool call relays as **arrays** where each block has `type: "tool_result"` referencing an earlier assistant `tool_use` ID.
 
 #### Content Block Types
 
@@ -143,6 +143,15 @@ Assistant messages contain typed content blocks:
   "is_error": false
 }
 ```
+
+**Tool Call Handshake (Claude Code CLI):**
+
+1. Assistant emits a `tool_use` block with a unique `id`.
+2. CLI runs the tool locally.
+3. User record immediately follows with `message.content` = array of `tool_result` blocks, each referencing the originating `tool_use_id`.
+4. Parser must treat these user `tool_result` entries as part of the same logical turn.
+
+Corruption only occurs when a `tool_result` references an ID that never appeared in the transcript (e.g., teleporting from Claude Code Web and losing the assistant line).
 
 **`thinking` Block:**
 ```json

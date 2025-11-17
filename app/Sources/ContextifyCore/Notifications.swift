@@ -24,6 +24,10 @@ extension Notification.Name {
   /// Emitted after first 3 transcripts and every 10 thereafter for real-time timeline updates
   /// userInfo contains: "transcriptCount" (Int), "totalTranscripts" (Int), "projectId" (String)
   public static let transcriptHooveringProgress = Notification.Name("contextify.transcriptHooveringProgress")
+
+  /// Posted when ProjectsViewModel completes a discovery pass (sorted by newest activity)
+  /// Object: [DiscoveredProject] sorted array (newest activity first)
+  public static let projectsDiscoverySnapshot = Notification.Name("contextify.projectsDiscoverySnapshot")
 }
 
 // MARK: - Notification UserInfo Keys

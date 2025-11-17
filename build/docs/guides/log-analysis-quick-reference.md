@@ -42,6 +42,16 @@ echo "Starts: $(grep -c HOOVER-START $LOG) = Dones: $(grep -c HOOVER-DONE $LOG)"
 | `TIMELINE-APPEND` | Timeline updating UI | Should be >0 |
 | `TIMELINE-SKIP` | Skip optimization active | Should be 0 (after fix) |
 
+### Optional Hoover Loop Tracing
+
+The noisy `[HOOVER-OUTER-LOOP]`, `[HOOVER-INNER-*]`, and `[HOOVER-READ-CHUNK]` tags are now gated behind an env var. To re-enable them while debugging ingest loops:
+
+```bash
+CONTEXTIFY_TRACE_HOOVER_LOOPS=1 scripts/xc.sh dr
+```
+
+Release builds ignore the flag; Debug builds default to **off** to keep captures readable.
+
 ---
 
 ## Common Diagnostics

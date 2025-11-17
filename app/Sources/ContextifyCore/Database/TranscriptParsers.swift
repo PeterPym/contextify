@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import os.lock
 
 private let parserLog = Logger(subsystem: "dev.contextify", category: "TranscriptParser")
 private let metadataRecordTypes: Set<String> = [
@@ -29,7 +30,16 @@ nonisolated(unsafe) private let iso8601FormatterStandard = ISO8601DateFormatter(
 
 /// Parser that delegates to provider-specific implementations
 public final class MultiProviderParser: TranscriptLineParser {
-  public init() {}
+  private let claudeParser: ClaudeCodeLineParser
+  private let codexParser: CodexLineParser
+
+  public init(
+    claudeParser: ClaudeCodeLineParser = ClaudeCodeLineParser(),
+    codexParser: CodexLineParser = CodexLineParser()
+  ) {
+    self.claudeParser = claudeParser
+    self.codexParser = codexParser
+  }
 
   public func parse(
     line: String,
@@ -41,7 +51,7 @@ public final class MultiProviderParser: TranscriptLineParser {
   ) throws -> EntryInsert {
     switch provider {
     case "claude.code":
-      return try ClaudeCodeLineParser().parse(
+      return try claudeParser.parse(
         line: line,
         lineNumber: lineNumber,
         transcriptId: transcriptId,
@@ -50,7 +60,7 @@ public final class MultiProviderParser: TranscriptLineParser {
         sessionId: sessionId
       )
     case "codex.cli":
-      return try CodexLineParser().parse(
+      return try codexParser.parse(
         line: line,
         lineNumber: lineNumber,
         transcriptId: transcriptId,
@@ -66,7 +76,9 @@ public final class MultiProviderParser: TranscriptLineParser {
 
 // MARK: - Claude Code Parser
 
-public struct ClaudeCodeLineParser: TranscriptLineParser {
+public final class ClaudeCodeLineParser: TranscriptLineParser {
+  private let trackerLock = OSAllocatedUnfairLock(initialState: ToolCallTrackerState())
+
   public init() {}
 
   public func parse(
@@ -113,9 +125,50 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
     // Extract content and determine if it should be displayed
     let content: String
     let hasTextContent: Bool
-    if let message = json["message"] as? [String: Any] {
-      // VALIDATION: Detect Claude Code Web corruption patterns
-      try validateMessageIntegrity(message: message, type: type, uuid: uuid, lineNumber: lineNumber)
+    if var message = json["message"] as? [String: Any] {
+      let messageId = message["id"] as? String
+
+      if type == "assistant",
+         let msgId = messageId,
+         let buffered = takeBufferedAssistantMessage(transcriptId: transcriptId, messageId: msgId) {
+        if let bufferedBlocks = decodeBufferedContent(buffered) {
+          if let currentBlocks = message["content"] as? [[String: Any]] {
+            message["content"] = bufferedBlocks + currentBlocks
+          } else {
+            message["content"] = bufferedBlocks
+          }
+          if message["stop_reason"] == nil {
+            message["stop_reason"] = buffered.stopReason
+          }
+        }
+      }
+
+      let shouldBuffer = try validateMessageIntegrity(
+        message: message,
+        type: type,
+        uuid: uuid,
+        lineNumber: lineNumber,
+        transcriptId: transcriptId,
+        messageId: messageId
+      )
+
+      if shouldBuffer {
+        if type == "assistant",
+           let msgId = messageId,
+           let blocks = message["content"] as? [[String: Any]],
+           let data = try? JSONSerialization.data(withJSONObject: blocks) {
+          bufferAssistantMessage(
+            transcriptId: transcriptId,
+            messageId: msgId,
+            uuid: uuid,
+            stopReason: message["stop_reason"] as? String,
+            contentData: data
+          )
+        } else if type == "assistant" {
+          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) message_id=none – coercing to end_turn")
+        }
+        throw ParserError.skipEntry
+      }
 
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
@@ -230,25 +283,47 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
   ///   - uuid: Message UUID for error reporting
   ///   - lineNumber: Line number in transcript for error reporting
   /// - Throws: ParserError.corruptedRecord if corruption detected
-  private func validateMessageIntegrity(
+private func validateMessageIntegrity(
     message: [String: Any],
     type: String,
     uuid: String,
-    lineNumber: Int
-  ) throws {
+    lineNumber: Int,
+    transcriptId: String,
+    messageId: String?
+  ) throws -> Bool {
     guard let contentBlocks = message["content"] as? [[String: Any]] else {
       // String content is always valid
-      return
+      return false
     }
+
+    resetTrackerIfNeeded(transcriptId: transcriptId, lineNumber: lineNumber)
 
     // VALIDATION 1: Check for orphaned tool_result (user messages)
     if type == "user" {
+      var validatedCount = 0
+      var missingIds: [String] = []
+
       for block in contentBlocks {
         if block["type"] as? String == "tool_result",
            let toolUseId = block["tool_use_id"] as? String {
-          parserLog.warning("[PARSER-WARN] Orphaned tool_result detected line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) tool_use_id=\(toolUseId, privacy: .public) – continuing without throwing")
-          return
+          if consumeToolUse(id: toolUseId, transcriptId: transcriptId) {
+            validatedCount += 1
+          } else {
+            missingIds.append(toolUseId)
+          }
         }
+      }
+
+      if !missingIds.isEmpty {
+        recordToolResultMissing(count: missingIds.count)
+        let missingList = missingIds.joined(separator: ", ")
+        parserLog.warning("[PARSER-WARN] Orphaned tool_result detected line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) tool_use_id=\(missingList, privacy: .public) – continuing without throwing")
+        return false
+      }
+
+      if validatedCount > 0 {
+        recordToolResultValidated(count: validatedCount)
+        return false
       }
     }
 
@@ -262,10 +337,17 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
         block["type"] as? String == "thinking"
       }
 
+      recordToolUses(in: contentBlocks, transcriptId: transcriptId)
+
       if stopReason == "tool_use" && !hasToolUse {
-        let contentTypes = contentBlocks.compactMap { $0["type"] as? String }.joined(separator: ", ")
-        parserLog.warning("[PARSER-WARN] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) stop_reason=tool_use content=[\(contentTypes)] – treating as end_turn")
-        return
+        recordStopReasonCoercion()
+        if messageId != nil {
+          return true
+        } else {
+          let contentTypes = contentBlocks.compactMap { $0["type"] as? String }.joined(separator: ", ")
+          parserLog.info("[PARSER-INFO] stop_reason mismatch line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) message_id=none stop_reason=tool_use content=[\(contentTypes)] – coercing to end_turn")
+          return false
+        }
       }
     }
 
@@ -290,8 +372,185 @@ public struct ClaudeCodeLineParser: TranscriptLineParser {
         }
       }
     }
+
+    return false
   }
 }
+
+// MARK: - Tool Call Tracking
+
+private struct ToolCallTrackerState {
+  var toolUseBuffers: [String: ToolUseBuffer] = [:]
+  var assistantBuffers: [String: [String: BufferedAssistantMessage]] = [:]
+  var metrics = ParserMetrics()
+}
+
+private struct BufferedAssistantMessage: Sendable {
+  let messageId: String
+  let uuid: String
+  let stopReason: String?
+  let contentData: Data
+}
+
+private struct ToolUseBuffer {
+  private var ids: Set<String> = []
+  private var order: [String] = []
+  private static let maxTrackedIds = 512
+
+  mutating func reset() {
+    ids.removeAll(keepingCapacity: true)
+    order.removeAll(keepingCapacity: true)
+  }
+
+  mutating func insert(_ id: String) {
+    guard ids.insert(id).inserted else { return }
+    order.append(id)
+    pruneIfNeeded()
+  }
+
+  mutating func consume(_ id: String) -> Bool {
+    guard ids.remove(id) != nil else { return false }
+    if let idx = order.firstIndex(of: id) {
+      order.remove(at: idx)
+    }
+    return true
+  }
+
+  private mutating func pruneIfNeeded() {
+    while order.count > Self.maxTrackedIds, let id = order.first {
+      order.removeFirst()
+      ids.remove(id)
+    }
+  }
+}
+
+private struct ParserMetrics {
+  var toolResultValidated: Int = 0
+  var toolResultMissing: Int = 0
+  var stopReasonCoerced: Int = 0
+}
+
+private extension ClaudeCodeLineParser {
+  func resetTrackerIfNeeded(transcriptId: String, lineNumber: Int) {
+    guard lineNumber == 1 else { return }
+    trackerLock.withLock { state in
+      var buffer = state.toolUseBuffers[transcriptId, default: ToolUseBuffer()]
+      buffer.reset()
+      state.toolUseBuffers[transcriptId] = buffer
+      state.assistantBuffers[transcriptId]?.removeAll()
+    }
+  }
+
+  func recordToolUses(in blocks: [[String: Any]], transcriptId: String) {
+    let ids = blocks.compactMap { block -> String? in
+      guard block["type"] as? String == "tool_use" else { return nil }
+      return block["id"] as? String
+    }
+    guard !ids.isEmpty else { return }
+
+    trackerLock.withLock { state in
+      var buffer = state.toolUseBuffers[transcriptId, default: ToolUseBuffer()]
+      for id in ids {
+        buffer.insert(id)
+      }
+      state.toolUseBuffers[transcriptId] = buffer
+    }
+  }
+
+  func consumeToolUse(id: String, transcriptId: String) -> Bool {
+    trackerLock.withLock { state in
+      var buffer = state.toolUseBuffers[transcriptId, default: ToolUseBuffer()]
+      let consumed = buffer.consume(id)
+      state.toolUseBuffers[transcriptId] = buffer
+      return consumed
+    }
+  }
+
+  func recordToolResultValidated(count: Int) {
+    trackerLock.withLock { state in
+      state.metrics.toolResultValidated += count
+    }
+  }
+
+  func recordToolResultMissing(count: Int) {
+    trackerLock.withLock { state in
+      state.metrics.toolResultMissing += count
+    }
+  }
+
+  func recordStopReasonCoercion() {
+    trackerLock.withLock { state in
+      state.metrics.stopReasonCoerced += 1
+    }
+  }
+
+  func bufferAssistantMessage(
+    transcriptId: String,
+    messageId: String,
+    uuid: String,
+    stopReason: String?,
+    contentData: Data
+  ) {
+    trackerLock.withLock { state in
+      var transcriptBuffers = state.assistantBuffers[transcriptId] ?? [:]
+      transcriptBuffers[messageId] = BufferedAssistantMessage(
+        messageId: messageId,
+        uuid: uuid,
+        stopReason: stopReason,
+        contentData: contentData
+      )
+      state.assistantBuffers[transcriptId] = transcriptBuffers
+    }
+  }
+
+  func takeBufferedAssistantMessage(
+    transcriptId: String,
+    messageId: String
+  ) -> BufferedAssistantMessage? {
+    trackerLock.withLock { state in
+      guard var transcriptBuffers = state.assistantBuffers[transcriptId],
+            let buffered = transcriptBuffers.removeValue(forKey: messageId) else {
+        return nil
+      }
+      state.assistantBuffers[transcriptId] = transcriptBuffers
+      return buffered
+    }
+  }
+
+  func decodeBufferedContent(_ message: BufferedAssistantMessage) -> [[String: Any]]? {
+    guard let json = try? JSONSerialization.jsonObject(with: message.contentData) as? [[String: Any]] else {
+      parserLog.warning("[PARSER-WARN] Failed to decode buffered assistant message id=\(message.messageId, privacy: .public)")
+      return nil
+    }
+    return json
+  }
+}
+
+#if DEBUG
+extension ClaudeCodeLineParser {
+  struct TelemetrySnapshot: Equatable {
+    let toolResultValidated: Int
+    let toolResultMissing: Int
+    let stopReasonCoerced: Int
+  }
+
+  func debug_telemetrySnapshot() -> TelemetrySnapshot {
+    trackerLock.withLock { state in
+      TelemetrySnapshot(
+        toolResultValidated: state.metrics.toolResultValidated,
+        toolResultMissing: state.metrics.toolResultMissing,
+        stopReasonCoerced: state.metrics.stopReasonCoerced
+      )
+    }
+  }
+
+  func debug_resetTelemetry() {
+    trackerLock.withLock { state in
+      state.metrics = ParserMetrics()
+    }
+  }
+}
+#endif
 
 // MARK: - Codex CLI Parser
 

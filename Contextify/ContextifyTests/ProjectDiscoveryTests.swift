@@ -12,7 +12,7 @@ final class ProjectDiscoveryTests: XCTestCase {
 
     // When: Attempting to reverse map
     let service = MockDiscoveryService()
-    let result = service.testReversePathMapping(dirName: dirName)
+    _ = service.testReversePathMapping(dirName: dirName)
 
     // Then: Should return nil (path doesn't exist in test env)
     // but the algorithm should generate correct path string

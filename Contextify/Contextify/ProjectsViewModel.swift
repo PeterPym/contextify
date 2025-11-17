@@ -95,7 +95,9 @@ final class ProjectsViewModel {
       // Canonical: coordinator context; last resort DB MRU
       let currentPath = try await resolveCurrentProjectPath()
 
+      logger.info("[DISCOVERY-PHASE] Starting filesystem scan (pre-ingestion)")
       let discovered = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
+      logger.info("[DISCOVERY-PHASE] Filesystem scan complete (pre-ingestion)")
 
       logger.info("Found \(discovered.count) projects")
       projects = discovered
@@ -123,16 +125,20 @@ final class ProjectsViewModel {
         }
 
         // Refresh metadata after ingestion using canonical currentPath
+        logger.info("[DISCOVERY-PHASE] Refreshing project list after ingestion")
         let refreshed = try await discoveryService.discoverAllProjects(currentProjectPath: currentPath)
+        logger.info("[DISCOVERY-PHASE] Refresh complete")
         projects = refreshed
         logger.info("[PSTATE-INGEST-DONE] Setting isIngesting = false")
         isIngesting = false
+        postDiscoverySnapshot(refreshed)
 
         // Update pipeline readiness (DB has been updated during ingestion)
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true)
 
         await warmUpWatchers(for: refreshed)
       } else {
+        logger.info("[DISCOVERY-PHASE] No projects discovered on initial scan")
         welcomePhase = .ready
         isWelcomeReady = true
         // No ingestion needed, but mark as ready
@@ -312,5 +318,9 @@ final class ProjectsViewModel {
       }
       .sorted { $0.lastViewedTs > $1.lastViewedTs }
       .first?.rootPath
+  }
+
+  private func postDiscoverySnapshot(_ projects: [DiscoveredProject]) {
+    NotificationCenter.default.post(name: .projectsDiscoverySnapshot, object: projects)
   }
 }

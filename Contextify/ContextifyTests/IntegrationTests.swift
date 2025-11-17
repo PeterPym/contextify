@@ -32,7 +32,7 @@ final class IntegrationTests: XCTestCase {
     var config = Configuration()
     config.foreignKeysEnabled = true
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    var migrator = DatabaseSchema.createMigrator()
+    let migrator = DatabaseSchema.createMigrator()
     try migrator.migrate(pool)
 
     // 2. Create repositories
@@ -43,12 +43,25 @@ final class IntegrationTests: XCTestCase {
 
     // 3. Create hoover engine with parser
     let parser = MultiProviderParser()
+    let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
+    let trackedFileRepo = TrackedFileRepositoryImpl(db: pool)
+    let transcriptSummaryRepo = TranscriptSummaryRepositoryImpl(db: pool)
+    let systemEventRepo = SystemEventRepositoryImpl(db: pool)
+    let assistantUsageRepo = AssistantUsageRepositoryImpl(db: pool)
+    let metadataParser = MultiProviderMetadataParser()
+
     let hooverEngine = HooverEngine(
       db: pool,
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
-      parser: parser
+      parser: parser,
+      fileSnapshotRepo: fileSnapshotRepo,
+      trackedFileRepo: trackedFileRepo,
+      transcriptSummaryRepo: transcriptSummaryRepo,
+      systemEventRepo: systemEventRepo,
+      assistantUsageRepo: assistantUsageRepo,
+      metadataParser: metadataParser
     )
 
     // 4. Create a test project
@@ -85,14 +98,14 @@ final class IntegrationTests: XCTestCase {
 
     // 8. Kick off the hoover!
     let progress = LoggingProgressSink(log: Logger(subsystem: "test", category: "hoover"))
-    let sha256 = try hooverEngine.hooverTranscript(
+    let outcome = try hooverEngine.hooverTranscript(
       transcript,
       fileURL: transcriptPath,
       progress: progress
     )
 
     // 9. Verify results
-    XCTAssertFalse(sha256.isEmpty, "Should return transcript SHA256")
+    XCTAssertTrue(outcome.reachedEOF, "Should reach EOF for small transcript")
 
     // Check entries were inserted
     let entries = try entryRepo.byTranscript(transcriptId, afterTimestamp: nil)
@@ -118,7 +131,7 @@ final class IntegrationTests: XCTestCase {
 
     print("✅ Initial hoover completed successfully!")
     print("   - Processed \(entries.count) messages")
-    print("   - Transcript SHA256: \(sha256)")
+    print("   - New entries: \(outcome.newEntries)")
     print("   - Last processed line: \(updated?.lastProcessedLine ?? 0)")
   }
 
@@ -174,7 +187,7 @@ final class IntegrationTests: XCTestCase {
     var config = Configuration()
     config.foreignKeysEnabled = true
     let pool = try DatabasePool(path: dbPath.path, configuration: config)
-    var migrator = DatabaseSchema.createMigrator()
+    let migrator = DatabaseSchema.createMigrator()
     try migrator.migrate(pool)
 
     let projectRepo = ProjectRepositoryImpl(db: pool)
@@ -182,12 +195,25 @@ final class IntegrationTests: XCTestCase {
     let entryRepo = EntryRepositoryImpl(db: pool)
     let errorRepo = ParseErrorRepositoryImpl(db: pool)
     let parser = MultiProviderParser()
+    let fileSnapshotRepo = FileSnapshotRepositoryImpl(db: pool)
+    let trackedFileRepo = TrackedFileRepositoryImpl(db: pool)
+    let transcriptSummaryRepo = TranscriptSummaryRepositoryImpl(db: pool)
+    let systemEventRepo = SystemEventRepositoryImpl(db: pool)
+    let assistantUsageRepo = AssistantUsageRepositoryImpl(db: pool)
+    let metadataParser = MultiProviderMetadataParser()
+
     let hooverEngine = HooverEngine(
       db: pool,
       transcriptRepo: transcriptRepo,
       entryRepo: entryRepo,
       errorRepo: errorRepo,
-      parser: parser
+      parser: parser,
+      fileSnapshotRepo: fileSnapshotRepo,
+      trackedFileRepo: trackedFileRepo,
+      transcriptSummaryRepo: transcriptSummaryRepo,
+      systemEventRepo: systemEventRepo,
+      assistantUsageRepo: assistantUsageRepo,
+      metadataParser: metadataParser
     )
 
     // Create project and transcript
