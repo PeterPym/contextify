@@ -310,14 +310,27 @@ final class ProjectsViewModel {
     self.watchersReadyCount = 0
     logger.info("[WELCOME-WATCHERS] Ensuring watchers for \(eligible.count, privacy: .public) projects")
 
-    for project in eligible {
-      do {
-        _ = try await activityMonitor.ensureWatcher(projectId: project.id)
+    // Create watchers in parallel to avoid sequential blocking (P0 #P1-DISCOVERY)
+    await withTaskGroup(of: (String, Result<Void, Error>).self) { group in
+      for project in eligible {
+        group.addTask {
+          do {
+            _ = try await self.activityMonitor.ensureWatcher(projectId: project.id)
+            return (project.id, .success(()))
+          } catch {
+            return (project.id, .failure(error))
+          }
+        }
+      }
+
+      for await (projectId, result) in group {
         self.watchersReadyCount += 1
-        logger.info("[WELCOME-WATCHERS] ready=\(self.watchersReadyCount)/\(self.watcherTargetCount) project=\(project.id, privacy: .public)")
-      } catch {
-        self.watchersReadyCount += 1
-        logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        switch result {
+        case .success:
+          logger.info("[WELCOME-WATCHERS] ready=\(self.watchersReadyCount)/\(self.watcherTargetCount) project=\(projectId, privacy: .public)")
+        case .failure(let error):
+          logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
       }
     }
 
