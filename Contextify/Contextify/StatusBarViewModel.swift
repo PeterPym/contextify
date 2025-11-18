@@ -40,12 +40,14 @@ final class StatusBarViewModel {
     // Hoover status
     private(set) var hooverMessage: String? = nil
     private(set) var hooverLastScan: Date? = nil
+    private(set) var backgroundIngestMessage: String? = nil
 
     // MARK: - Lifecycle State
     private var queueObservationTasks: [Task<Void, Never>] = []
     private var aiHealthCheckTask: Task<Void, Never>?
     private var hooverObservationTask: Task<Void, Never>?
     private var hooverFadeTask: Task<Void, Never>?
+    private var backgroundObservationTask: Task<Void, Never>?
     private var isStarted: Bool = false
     private var aiCancellationEvents: [Date] = []
     private var cancellationBurstActive = false
@@ -119,6 +121,18 @@ final class StatusBarViewModel {
 
         // Observe hoover events from ProjectActivityMonitor
         startHooverObservation()
+
+        backgroundObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stream = NotificationCenter.default.notifications(named: .backgroundIngestProgress)
+            for await note in stream {
+                guard
+                    let total = note.userInfo?["total"] as? Int,
+                    let remaining = note.userInfo?["remaining"] as? Int
+                else { continue }
+                self.handleBackgroundProgress(total: total, remaining: remaining)
+            }
+        }
     }
 
     /// Stop observing (called on view disappear)
@@ -133,6 +147,8 @@ final class StatusBarViewModel {
         hooverObservationTask = nil
         hooverFadeTask?.cancel()
         hooverFadeTask = nil
+        backgroundObservationTask?.cancel()
+        backgroundObservationTask = nil
         isStarted = false
         monitoringActive = false
 
@@ -141,6 +157,7 @@ final class StatusBarViewModel {
         isProcessing = false
         estimatedSecondsRemaining = 0
         hooverMessage = nil
+        backgroundIngestMessage = nil
         aiCancellationEvents.removeAll()
         cancellationBurstActive = false
         lastAIWarningReason = nil
@@ -157,6 +174,19 @@ final class StatusBarViewModel {
 
         // Recompute aggregate state from all providers
         recomputeAggregateState()
+    }
+
+    private func handleBackgroundProgress(total: Int, remaining: Int) {
+        guard total > 0 else {
+            backgroundIngestMessage = nil
+            return
+        }
+        if remaining <= 0 {
+            backgroundIngestMessage = nil
+            return
+        }
+        let processed = total - remaining
+        backgroundIngestMessage = "Indexing \(processed)/\(total) projects…"
     }
 
     /// Recompute aggregate state from all provider stats (Phase 5: True Sum)

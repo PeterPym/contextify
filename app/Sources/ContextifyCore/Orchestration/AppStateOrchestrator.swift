@@ -156,16 +156,27 @@ public final class AppStateOrchestrator: ObservableObject {
 
       log.info("[ORCH-BACKGROUND] Starting background indexing...")
 
+      let activeId: String? = {
+        if case .active(let id) = self.state {
+          return id
+        }
+        return nil
+      }()
+
+      let candidates = self.knownProjects.filter { project in
+        guard let activeId else { return true }
+        return project.id != activeId
+      }
+
+      let total = candidates.count
+      await self.postBackgroundProgress(total: total, remaining: total)
+
       // Ingest projects one at a time, checking for cancellation
-      for project in self.knownProjects {
+      for (index, project) in candidates.enumerated() {
         if Task.isCancelled {
           log.info("[ORCH-BACKGROUND] Indexing cancelled")
+          await self.postBackgroundProgress(total: total, remaining: total - index)
           break
-        }
-
-        // Skip if active (don't re-ingest the project user is viewing)
-        if case .active(let activeId) = self.state, activeId == project.id {
-          continue
         }
 
         // Ingest this project
@@ -176,12 +187,27 @@ public final class AppStateOrchestrator: ObservableObject {
           log.warning("[ORCH-BACKGROUND] Failed to ingest \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
 
+        await self.postBackgroundProgress(total: total, remaining: total - (index + 1))
+
         // Yield between projects
         await Task.yield()
       }
 
       log.info("[ORCH-BACKGROUND] Background indexing complete")
+      await self.postBackgroundProgress(total: total, remaining: 0)
     }
+  }
+
+  @MainActor
+  private func postBackgroundProgress(total: Int, remaining: Int) {
+    NotificationCenter.default.post(
+      name: .backgroundIngestProgress,
+      object: nil,
+      userInfo: [
+        "total": total,
+        "remaining": remaining
+      ]
+    )
   }
 }
 
@@ -220,4 +246,5 @@ public struct LightweightProject: Sendable, Identifiable, Hashable {
 extension Notification.Name {
   public static let projectDidActivate = Notification.Name("projectDidActivate")
   public static let appStateDidChange = Notification.Name("appStateDidChange")
+  public static let backgroundIngestProgress = Notification.Name("backgroundIngestProgress")
 }

@@ -34,6 +34,22 @@ struct StatusBarView: View {
             // Queue status
             queueStatusView
 
+            if let ingestMessage = viewModel?.backgroundIngestMessage {
+                Divider()
+                    .frame(height: 12)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "tray.and.arrow.down")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+
+                    Text(ingestMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .transition(.opacity.combined(with: .scale))
+            }
+
             // Hoover status (if active)
             if let message = viewModel?.hooverMessage {
                 Divider()
