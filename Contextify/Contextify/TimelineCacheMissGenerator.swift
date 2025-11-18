@@ -396,19 +396,29 @@ actor TimelineCacheMissGenerator {
             let entryStart = Date()
             log.info("[SUMM-GENERATOR-START] entry=\(miss.entryId, privacy: .public) provider=\(miss.provider, privacy: .public)")
             do {
-                try await runWithTimeout(seconds: entryTimeoutSeconds) {
-                    try await self.processMissWithRetry(miss, onSkip: { skipCount += 1 })
+                let result = try await runWithTimeout(seconds: entryTimeoutSeconds) {
+                    try await self.processMissWithRetry(miss)
                 }
-                successCount += 1
-                successfulMisses.append(miss)
-                consecutiveFailures = 0  // Reset on success
-                trackSuccess()  // Track success for error auto-clearing
-                let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
-                log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=success elapsed_ms=\(elapsedMs, privacy: .public)")
-                markProgress()
 
-                // Post immediate UI update for this entry (don't wait for batch to complete)
-                await postCacheUpdateNotification(for: [miss])
+                switch result {
+                case .generated:
+                    successCount += 1
+                    successfulMisses.append(miss)
+                    consecutiveFailures = 0  // Reset on success
+                    trackSuccess()  // Track success for error auto-clearing
+                    let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
+                    log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=success elapsed_ms=\(elapsedMs, privacy: .public)")
+                    markProgress()
+
+                    // Post immediate UI update for this entry (don't wait for batch to complete)
+                    await postCacheUpdateNotification(for: [miss])
+
+                case .skipped:
+                    skipCount += 1
+                    let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
+                    log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=skipped elapsed_ms=\(elapsedMs, privacy: .public)")
+                    markProgress()
+                }
             } catch is SummaryTimeoutError {
                 let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
                 log.error("[SUMM-GENERATOR-TIMEOUT] entry=\(miss.entryId, privacy: .public) provider=\(miss.provider, privacy: .public) elapsed_ms=\(elapsedMs, privacy: .public)")
@@ -451,7 +461,7 @@ actor TimelineCacheMissGenerator {
     }
 
     /// Process a single cache miss with exponential backoff retry
-    private func processMissWithRetry(_ miss: CacheMiss, maxAttempts: Int = 3, onSkip: () -> Void) async throws {
+    private func processMissWithRetry(_ miss: CacheMiss, maxAttempts: Int = 3) async throws -> MissProcessingResult {
         var attempt = 0
         var lastError: Error?
 
@@ -465,8 +475,7 @@ actor TimelineCacheMissGenerator {
                 // Skip if user edited
                 if let existing = existing, existing.userEdited == 1 {
                     log.debug("Skipping - user edited entry exists")
-                    onSkip()
-                    return
+                    return .skipped
                 }
 
                 // Skip if already fresh (same generator signature) - P0.10
@@ -474,8 +483,7 @@ actor TimelineCacheMissGenerator {
                    existing.userEdited == 0,
                    existing.generatorSignature == timelineGeneratorSignature() {
                     log.debug("Skipping - cache already fresh with matching signature")
-                    onSkip()
-                    return
+                    return .skipped
                 }
 
                 // Generate summary using LLM
@@ -485,7 +493,7 @@ actor TimelineCacheMissGenerator {
                 try await upsertCache(miss: miss, summary: summary)
 
                 // Success!
-                return
+                return .generated
             } catch let timelineError as TimelineError {
                 // Check if it's a guardrail violation
                 if case .guardrailViolation = timelineError {
@@ -520,7 +528,7 @@ actor TimelineCacheMissGenerator {
                     await postCacheUpdateNotification(for: [miss])
 
                     // Treat as success - no retry needed
-                    return
+                    return .generated
                 }
 
                 // Check for other permanent failures - write tombstone and don't retry
@@ -528,21 +536,21 @@ actor TimelineCacheMissGenerator {
                     log.error("Context overflow for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "overflow", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return  // No retry
+                    return .generated  // Treat as handled
                 }
 
                 if case .decodingFailure = timelineError {
                     log.error("Decoding failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "decoding", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return  // No retry
+                    return .generated
                 }
 
                 if case .unexpected = timelineError {
                     log.error("Unexpected error for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "unexpected", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return  // No retry
+                    return .generated
                 }
 
                 if case .databaseError = timelineError {
@@ -865,6 +873,11 @@ actor TimelineCacheMissGenerator {
 }
 
 private struct SummaryTimeoutError: Error, Sendable {}
+
+private enum MissProcessingResult {
+    case generated
+    case skipped
+}
 
 extension TimelineCacheMissGenerator {
     private func runWithTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
