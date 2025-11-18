@@ -234,32 +234,10 @@ final class ProjectsViewModel {
       // Map provider string to enum
       let provider: DiscoveredProject.Provider = light.provider == "claude.code" ? .claudeCode : .codexCLI
 
-      // PATCH A: Derive meaningful display name
-      let displayName: String
-      if light.provider == "claude.code" {
-        // Claude hash folders encode the project path (e.g., "-Users-rob-code-projects-contextify")
-        // Decode: Remove leading "-", replace "-" with "/"
-        let hashFolder = light.path.lastPathComponent
-        if hashFolder.hasPrefix("-") {
-          let decodedPath = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
-          displayName = URL(fileURLWithPath: decodedPath).lastPathComponent
-        } else {
-          // Fallback for unexpected format
-          displayName = "Claude Project (\(hashFolder.prefix(8)))"
-        }
-      } else {
-        // Codex has CWD available - use the project folder name
-        if let cwd = light.cwd {
-          displayName = URL(fileURLWithPath: cwd).lastPathComponent
-        } else {
-          // Fallback if CWD somehow missing
-          displayName = "Codex Project"
-        }
-      }
-
+      // Phase 3: Use displayName populated during discovery (no need to derive it here)
       return DiscoveredProject(
         id: light.id,
-        name: displayName,
+        name: light.displayName,  // Already derived by LightweightDiscoveryService
         path: light.path,
         providers: [provider],
         transcriptCount: light.transcriptCount,

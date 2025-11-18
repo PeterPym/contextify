@@ -54,23 +54,19 @@ public actor LightweightDiscoveryService {
         options: [.skipsHiddenFiles]
       ))?.filter { $0.pathExtension == "jsonl" } ?? []
 
-      // Claude folder names are hashed paths - decode to get real project path
-      // Hash format: "-Users-rob-code-projects-contextify" → "/Users/rob/code/projects/contextify"
       let hashFolder = dir.lastPathComponent
-      let decodedPath: String
-      if hashFolder.hasPrefix("-") {
-        decodedPath = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
-      } else {
-        decodedPath = hashFolder  // Fallback if unexpected format
-      }
+      let realPath = resolveClaudeProjectPath(hashFolder: hashFolder, directory: dir, transcripts: files)
+      let displayName = realPath.map { URL(fileURLWithPath: $0).lastPathComponent }
+        ?? fallbackDisplayName(for: hashFolder)
 
       return LightweightProject(
         id: hashFolder,  // Keep hash as ID for consistency
         path: dir,  // Keep original hash folder path for filesystem ops
+        displayName: displayName,  // Friendly name for UI (validated)
         transcriptCount: files.count,
         lastActivity: mtime,
         provider: "claude.code",
-        cwd: decodedPath,  // Store decoded real project path for display and switching
+        cwd: realPath,  // Store decoded real path (may not exist if orphaned)
         transcriptFiles: files  // Store file URLs for JIT ingestion
       )
     }
@@ -160,12 +156,86 @@ public actor LightweightDiscoveryService {
       return LightweightProject(
         id: id,
         path: data.path,
+        displayName: URL(fileURLWithPath: cwd).lastPathComponent,  // Derive name from CWD
         transcriptCount: data.files.count,
         lastActivity: data.maxDate,
         provider: "codex.cli",
-        cwd: cwd,  // Store CWD for name derivation
+        cwd: cwd,
         transcriptFiles: data.files  // Pass file URLs for JIT ingestion
       )
     }
+  }
+
+  // MARK: - Helper Functions
+
+  /// Intelligently decode Claude hash folder to real filesystem path
+  /// Handles hyphenated folder names by trying progressive combinations
+  private func findRealPath(hashFolder: String) -> String? {
+    guard hashFolder.hasPrefix("-") else { return nil }
+
+    let base = "/" + hashFolder.dropFirst()
+    let components = base.components(separatedBy: "-")
+
+    for mergeCount in 0..<components.count {
+      var testComponents = components
+
+      if mergeCount > 0 {
+        let mergeStart = max(0, testComponents.count - mergeCount - 1)
+        let merged = testComponents[mergeStart...].joined(separator: "-")
+        testComponents = Array(testComponents[..<mergeStart]) + [merged]
+      }
+
+      let testPath = testComponents.joined(separator: "/")
+      if FileManager.default.fileExists(atPath: testPath) {
+        log.debug("[DISC-LIGHT] Found real path via validation: \(testPath) (mergeCount: \(mergeCount))")
+        return testPath
+      }
+    }
+
+    return nil
+  }
+
+  /// Attempt to resolve the actual project path using transcript metadata, even for orphaned projects.
+  private func resolveClaudeProjectPath(hashFolder: String, directory: URL, transcripts: [URL]) -> String? {
+    guard hashFolder.hasPrefix("-") else { return nil }
+
+    if let path = try? ProjectIdentity.reverseManglePath(provider: "claude.code", directory: directory) {
+      return path
+    }
+
+    if let transcriptPath = inferPathFromTranscripts(transcripts) {
+      return transcriptPath
+    }
+
+    return findRealPath(hashFolder: hashFolder)
+  }
+
+  private func inferPathFromTranscripts(_ transcripts: [URL]) -> String? {
+    guard !transcripts.isEmpty else { return nil }
+
+    let sorted = transcripts.sorted { lhs, rhs in
+      let lhsSize = (try? lhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+      let rhsSize = (try? rhs.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+      return lhsSize > rhsSize
+    }
+
+    for file in sorted {
+      if let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file),
+         !cwd.isEmpty {
+        return PathUtils.canonicalizePath(cwd)
+      }
+    }
+
+    return nil
+  }
+
+  private func fallbackDisplayName(for hashFolder: String) -> String {
+    guard hashFolder.hasPrefix("-") else {
+      return "Claude (\(String(hashFolder.prefix(8))))"
+    }
+
+    let simpleDecoded = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
+    let last = URL(fileURLWithPath: simpleDecoded).lastPathComponent
+    return last.isEmpty ? hashFolder : last
   }
 }

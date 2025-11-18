@@ -110,17 +110,19 @@ public final class AppStateOrchestrator: ObservableObject {
 
     do {
       // 3. JIT Ingestion (FastPath with batching)
-      // This will ingest ONLY this project's transcripts on demand
-      try await fastPath.ingestProjectJIT(project)
+      // This will: Ensure DB Project Row -> Populate Transcripts Table -> Process Entries
+      let dbProjectId = try await fastPath.ingestProjectJIT(project)
+      log.debug("[ORCH-SELECT] JIT ingestion complete, DB project ID: \(dbProjectId, privacy: .public)")
 
-      // 4. PATCH B: Wire ConversationMonitor via StartupCoordinator
-      // This updates ActiveProjectContext and triggers timeline loading
-      let projectPath = project.cwd ?? project.path.path
+      // 4. Legacy Compatibility Wiring
+      // Tell StartupCoordinator about the switch so it can notify ConversationMonitor and other legacy components
+      // CRITICAL: Use real project path (cwd) if available, NOT hash folder path
       do {
-        try await StartupCoordinator.shared.switchProject(to: projectPath)
-        log.debug("[ORCH-SELECT] StartupCoordinator updated with path: \(projectPath, privacy: .public)")
+        let realPath = project.cwd ?? project.path.path
+        try await StartupCoordinator.shared.handleExternalProjectSwitch(id: dbProjectId, path: realPath)
+        log.debug("[ORCH-SELECT] StartupCoordinator notified with path: \(realPath, privacy: .public)")
       } catch {
-        log.warning("[ORCH-SELECT] Failed to update StartupCoordinator: \(error.localizedDescription, privacy: .public)")
+        log.warning("[ORCH-SELECT] Failed to notify StartupCoordinator: \(error.localizedDescription, privacy: .public)")
         // Non-fatal - continue with activation
       }
 
@@ -161,9 +163,8 @@ public final class AppStateOrchestrator: ObservableObject {
           break
         }
 
-        // Skip if already ingested
-        let hasTranscripts = (try? await self.orchestrator.getTranscripts(forProject: project.id).isEmpty) == false
-        if hasTranscripts {
+        // Skip if active (don't re-ingest the project user is viewing)
+        if case .active(let activeId) = self.state, activeId == project.id {
           continue
         }
 
@@ -190,20 +191,27 @@ public final class AppStateOrchestrator: ObservableObject {
 public struct LightweightProject: Sendable, Identifiable, Hashable {
   public let id: String
   public let path: URL
+  public let displayName: String  // Friendly name derived during discovery
   public let transcriptCount: Int
   public let lastActivity: Date
   public let provider: String
-  public let cwd: String?  // Current working directory (for Codex) or repo path (for Claude)
+  public let cwd: String?  // Real project path (for Codex) or decoded path (for Claude)
   public let transcriptFiles: [URL]  // File paths discovered during scan (for JIT ingestion)
 
-  public init(id: String, path: URL, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil, transcriptFiles: [URL] = []) {
+  public init(id: String, path: URL, displayName: String, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil, transcriptFiles: [URL] = []) {
     self.id = id
     self.path = path
+    self.displayName = displayName
     self.transcriptCount = transcriptCount
     self.lastActivity = lastActivity
     self.provider = provider
     self.cwd = cwd
     self.transcriptFiles = transcriptFiles
+  }
+
+  /// Canonical root path used for database identity (defaults to filesystem path if decoding fails).
+  public var canonicalRootPath: String {
+    PathUtils.canonicalizePath(cwd ?? path.path)
   }
 }
 

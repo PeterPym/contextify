@@ -48,15 +48,18 @@ public actor FastPathIngestionCoordinator {
 
   /// Just-in-time ingestion for a single project (Phase 3 lazy loading)
   /// Ingests ALL transcripts for this project synchronously
-  public func ingestProjectJIT(_ project: LightweightProject) async throws {
+  /// Returns the database project ID (UUID) for use by caller
+  public func ingestProjectJIT(_ project: LightweightProject) async throws -> String {
     let startTime = Date()
-    log.info("[JIT-INGEST] Starting JIT ingestion for project: \(project.id, privacy: .public)")
+    log.info("[JIT-INGEST] Starting JIT ingestion for project: \(project.displayName, privacy: .public)")
 
-    // 1. Ensure project exists in DB
+    let canonicalRootPath = project.canonicalRootPath
+
+    // 1. Ensure project exists in DB (mapping Path → UUID)
     let projectId: String
     do {
-      projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: project.path.path)
-      log.debug("[JIT-INGEST] Project ID: \(projectId, privacy: .public)")
+      projectId = try orchestrator.getOrCreateProject(name: project.displayName, rootPath: canonicalRootPath)
+      log.debug("[JIT-INGEST] Project ID: \(projectId, privacy: .public) rootPath: \(canonicalRootPath, privacy: .public)")
     } catch {
       log.error("[JIT-INGEST] Failed to get/create project: \(error.localizedDescription, privacy: .public)")
       throw error
@@ -93,7 +96,9 @@ public actor FastPathIngestionCoordinator {
     await runFastPath(projectIds: [projectId], activeProjectId: projectId)
 
     let duration = Date().timeIntervalSince(startTime)
-    log.info("[JIT-INGEST] Complete in \(String(format: "%.3f", duration), privacy: .public)s for project: \(project.id, privacy: .public)")
+    log.info("[JIT-INGEST] Complete in \(String(format: "%.3f", duration), privacy: .public)s for project: \(project.displayName, privacy: .public)")
+
+    return projectId  // Return DB ID for caller to use
   }
 
   public func runFastPath(projectIds: [String], activeProjectId: String?) async {

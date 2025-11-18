@@ -558,15 +558,15 @@ public final class ProjectSwitcherState {
         let dbElapsed = Date().timeIntervalSince(dbStart)
         logger.info("[UIOPT-SWITCH-DB-DONE] Database lookup completed in \(String(format: "%.0f", dbElapsed * 1000), privacy: .public)ms")
 
-        // Call coordinator to switch (will publish updates to all subscribers)
+        // Phase 3: Route through AppStateOrchestrator for JIT ingestion
         let coordStart = Date()
-        logger.info("[SUMM-SWITCH] Calling StartupCoordinator.switchProject(to: \(project.rootPath))")
-        logger.info("[UIOPT-SWITCH-COORD-START] Calling StartupCoordinator.switchProject()...")
+        logger.info("[SUMM-SWITCH] Calling AppStateOrchestrator.selectProject(id: \(projectId))")
+        logger.info("[UIOPT-SWITCH-COORD-START] Calling AppStateOrchestrator.selectProject()...")
 
-        try await StartupCoordinator.shared.switchProject(to: project.rootPath)
+        await AppStateOrchestrator.shared.selectProject(id: projectId)
 
         let coordElapsed = Date().timeIntervalSince(coordStart)
-        logger.info("[UIOPT-SWITCH-COORD-DONE] StartupCoordinator.switchProject() completed in \(String(format: "%.0f", coordElapsed * 1000), privacy: .public)ms")
+        logger.info("[UIOPT-SWITCH-COORD-DONE] AppStateOrchestrator.selectProject() completed in \(String(format: "%.0f", coordElapsed * 1000), privacy: .public)ms")
 
         let totalElapsed = Date().timeIntervalSince(taskStart)
         logger.info("[UIOPT-SWITCH-TASK-DONE] Detached task completed in \(String(format: "%.0f", totalElapsed * 1000), privacy: .public)ms")

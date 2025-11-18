@@ -334,28 +334,66 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       let nowSec = Int(Date().timeIntervalSince1970)
 
       for project in lightweightProjects {
-        // Upsert project record (no transcripts)
-        let canonPath = PathUtils.canonicalizePath(project.path.path)
+        // Prefer decoded filesystem path when available.
+        let canonicalRootPath = project.canonicalRootPath
+        let hashedRootPath = PathUtils.canonicalizePath(project.path.path)
 
-        // Check if exists
-        let existing = try Row.fetchOne(db, sql: "SELECT id FROM projects WHERE root_path = ?", arguments: [canonPath])
-
-        if existing == nil {
-          // CRITICAL FIX: Use LightweightProject.id (not random UUID) for consistency
-          // This ensures orchestrator state IDs match DB IDs
-          let projectId = project.id
+        // Case 1: Canonical row already exists (UUID or previously upgraded hash ID)
+        if let canonicalRow = try Row.fetchOne(
+          db,
+          sql: "SELECT id FROM projects WHERE root_path = ?",
+          arguments: [canonicalRootPath]
+        ), let canonicalId: String = canonicalRow["id"] {
           try db.execute(sql: """
-            INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
-            VALUES (?, ?, ?, ?, ?, ?)
-          """, arguments: [projectId, nil, canonPath, nowSec, nowSec, nowSec])
+            UPDATE projects
+            SET name = ?, updated_at = ?, hidden = 0
+            WHERE id = ?
+          """, arguments: [project.displayName, nowSec, canonicalId])
 
-          log.debug("[METADATA-ONLY] Created project: \(projectId, privacy: .public)")
-        } else {
-          // Update existing (just touch updated_at)
-          try db.execute(sql: """
-            UPDATE projects SET updated_at = ? WHERE root_path = ?
-          """, arguments: [nowSec, canonPath])
+          // Hide hash-based duplicate rows pointing at .claude folder paths.
+          if hashedRootPath != canonicalRootPath,
+             let hashRow = try Row.fetchOne(
+               db,
+               sql: "SELECT id FROM projects WHERE id = ? AND root_path = ?",
+               arguments: [project.id, hashedRootPath]
+             ),
+             let hashId: String = hashRow["id"],
+             hashId != canonicalId {
+            try db.execute(sql: """
+              UPDATE projects
+              SET hidden = 1, updated_at = ?
+              WHERE id = ?
+            """, arguments: [nowSec, hashId])
+            log.warning("[METADATA-ONLY] Hid duplicate hash project \(hashId, privacy: .public) (canonical: \(canonicalId, privacy: .public))")
+          }
+          continue
         }
+
+        // Case 2: Only hash-path row exists – upgrade it to canonical root path.
+        if hashedRootPath != canonicalRootPath,
+           let hashRow = try Row.fetchOne(
+             db,
+             sql: "SELECT id FROM projects WHERE root_path = ?",
+             arguments: [hashedRootPath]
+           ),
+           let hashId: String = hashRow["id"] {
+          try db.execute(sql: """
+            UPDATE projects
+            SET root_path = ?, name = ?, updated_at = ?, hidden = 0
+            WHERE id = ?
+          """, arguments: [canonicalRootPath, project.displayName, nowSec, hashId])
+          log.info("[METADATA-ONLY] Canonicalized project \(hashId, privacy: .public) to \(canonicalRootPath, privacy: .public)")
+          continue
+        }
+
+        // Case 3: Brand-new project – insert deterministic record
+        let projectId = project.id
+        try db.execute(sql: """
+          INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+          VALUES (?, ?, ?, ?, ?, ?)
+        """, arguments: [projectId, project.displayName, canonicalRootPath, nowSec, nowSec, nowSec])
+
+        log.debug("[METADATA-ONLY] Created project: \(projectId, privacy: .public) with name: \(project.displayName, privacy: .public)")
       }
 
       log.info("[METADATA-ONLY] Updated \(lightweightProjects.count, privacy: .public) projects (metadata only, no transcripts)")

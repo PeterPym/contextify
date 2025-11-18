@@ -428,6 +428,32 @@ public final class StartupCoordinator {
         log.info("[UIOPT-COORD-DONE] Total switchProject() time: \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
     }
 
+    /// Handle external project switch from AppStateOrchestrator (Phase 3 integration point)
+    /// This allows the orchestrator to drive StartupCoordinator for legacy component compatibility
+    public func handleExternalProjectSwitch(id: String, path: String) async throws {
+        log.info("[COORD-EXTERNAL] Handling external project switch: \(path, privacy: .public)")
+
+        // Resolve git branch for the project
+        let branch = await resolveGitBranch(path: path)
+
+        // Create context manually to satisfy legacy observers
+        // Note: Bookmark is nil - assuming DMG build or handled elsewhere
+        let context = ActiveProjectContext(
+            id: id,
+            path: path,
+            displayName: URL(fileURLWithPath: path).lastPathComponent,
+            branch: branch,
+            bookmark: nil
+        )
+
+        // Directly set current context and post notification
+        // (bypassing full publishContext flow for Phase 3 simplicity)
+        self.current = context
+        NotificationCenter.default.post(name: .activeProjectContextDidChange, object: context)
+
+        log.info("[COORD-EXTERNAL] Context published for: \(context.displayName, privacy: .public)")
+    }
+
     // MARK: - Private Helpers
 
     /// Resolve project root using precedence order.
