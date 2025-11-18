@@ -86,24 +86,7 @@ public final class DatabaseManager: @unchecked Sendable {
 
     var config = Configuration()
     config.foreignKeysEnabled = true
-    config.busyMode = .callback { (numberOfRetries: Int) -> Bool in
-      if numberOfRetries == 0 {
-        // First busy event - log at info level to track contention
-        log.info("[DB-BUSY] Database locked, will retry (first attempt)")
-      } else if numberOfRetries >= 10 {
-        // After 10 retries, escalate to warning (indicates significant contention)
-        log.warning("[DB-BUSY] Database still locked after \(numberOfRetries) retries - indicates high write contention")
-      }
-
-      // Retry for up to 5 seconds (10ms per retry = ~500 retries)
-      if numberOfRetries < 500 {
-        Thread.sleep(forTimeInterval: 0.01) // 10ms
-        return true // Keep retrying
-      } else {
-        log.error("[DB-BUSY] Database lock timeout after 5s (\(numberOfRetries) retries) - giving up")
-        return false // Give up
-      }
-    }
+    config.busyMode = .timeout(5.0)
     config.prepareDatabase { db in
       try db.execute(sql: "PRAGMA journal_mode=WAL")
       try db.execute(sql: "PRAGMA synchronous=NORMAL")

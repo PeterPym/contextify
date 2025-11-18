@@ -71,9 +71,6 @@ public actor ProjectActivityMonitor {
     let startTime = Date()
     log.info("[INIT] ProjectActivityMonitor: starting global monitoring")
 
-    // Log baseline FD usage for performance monitoring
-    FileDescriptorMonitor.logFileDescriptorStats()
-
     // Check if projects were already discovered and ingested by ProjectsViewModel
     // If so, skip the expensive discoverAllProjects() call (P0 #P1-DISCOVERY optimization)
     let projectCount = (try? orchestrator.listProjects().count) ?? 0
