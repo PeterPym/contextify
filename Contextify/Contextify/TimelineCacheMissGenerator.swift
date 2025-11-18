@@ -557,7 +557,7 @@ actor TimelineCacheMissGenerator {
                     log.error("Database error for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "database", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return  // No retry
+                    return .generated  // Treat as handled
                 }
 
                 // Transient errors (timeout, unavailable, cancelled) - continue to retry logic
