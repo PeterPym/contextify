@@ -37,6 +37,14 @@ public final class AppStateOrchestrator: ObservableObject {
     self.fastPath = FastPathIngestionCoordinator(orchestrator: orchestrator)
   }
 
+  /// Update state and notify observers
+  private func setState(_ newState: AppState) {
+    self.state = newState
+    // Post notification for compatibility with NotificationCenter observers
+    NotificationCenter.default.post(name: .appStateDidChange, object: newState)
+    log.debug("[ORCH-STATE] State changed to: \(String(describing: newState))")
+  }
+
   // MARK: - Startup Flow
 
   /// Performs lightweight startup: filesystem scan only, NO DB writes
@@ -45,7 +53,7 @@ public final class AppStateOrchestrator: ObservableObject {
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()
 
-    state = .discovering
+    setState(.discovering)
 
     // 1. Lightweight Scan (stat-only, no file reads, no DB writes)
     let projects = await discovery.discoverProjectsLightweight()
@@ -61,7 +69,7 @@ public final class AppStateOrchestrator: ObservableObject {
     }
 
     // 3. Show UI immediately
-    state = .idle(projects: projects)
+    setState(.idle(projects: projects))
 
     let duration = Date().timeIntervalSince(startTime)
     log.info("[ORCH-STARTUP] Startup complete in \(String(format: "%.3f", duration), privacy: .public)s. UI ready.")
@@ -83,12 +91,12 @@ public final class AppStateOrchestrator: ObservableObject {
 
     guard let project = knownProjects.first(where: { $0.id == id }) else {
       log.error("[ORCH-SELECT] Project not found: \(id, privacy: .public)")
-      state = .error("Project not found")
+      setState(.error("Project not found"))
       return
     }
 
     // 2. UI Loading State
-    state = .loading(projectId: id)
+    setState(.loading(projectId: id))
 
     let startTime = Date()
     log.info("[ORCH-SELECT] Loading project: \(project.path.lastPathComponent, privacy: .public)")
@@ -99,7 +107,7 @@ public final class AppStateOrchestrator: ObservableObject {
       try await fastPath.ingestProjectJIT(project)
 
       // 4. Activate
-      state = .active(projectId: id)
+      setState(.active(projectId: id))
 
       let duration = Date().timeIntervalSince(startTime)
       log.info("[ORCH-SELECT] Project ready in \(String(format: "%.3f", duration), privacy: .public)s")
@@ -109,7 +117,7 @@ public final class AppStateOrchestrator: ObservableObject {
 
     } catch {
       log.error("[ORCH-SELECT] Failed to load project: \(error.localizedDescription, privacy: .public)")
-      state = .error("Failed to load project: \(error.localizedDescription)")
+      setState(.error("Failed to load project: \(error.localizedDescription)"))
     }
 
     // 6. Resume background work
@@ -180,5 +188,6 @@ public struct LightweightProject: Sendable, Identifiable, Hashable {
 // MARK: - Notifications
 
 extension Notification.Name {
-  static let projectDidActivate = Notification.Name("projectDidActivate")
+  public static let projectDidActivate = Notification.Name("projectDidActivate")
+  public static let appStateDidChange = Notification.Name("appStateDidChange")
 }
