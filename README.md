@@ -115,19 +115,32 @@ Contextify uses a SQL backend (GRDB.swift) with real-time transcript monitoring 
 
 ### Documentation
 
-**For contributors:** See `AGENTS.md` for repository guidelines, coding style, and development workflow
+**For contributors:** See `CLAUDE.md` for repository guidelines, coding style, and development workflow
 
 **Architecture deep-dives:**
+- Data Pipeline: `build/docs/architecture/data-pipeline-architecture.md` (comprehensive 5-level overview)
+- Architecture Refactoring: `build/docs/architecture/architecture-refactoring-analysis.md` (technical debt analysis)
 - SQL Backend: `build/docs/architecture/sql-backend.md`
 - Timeline & LLM: `build/docs/components/timeline-cache.md`
 - State Management: `build/docs/architecture/conversation-monitor-state.md`
 - Components Index: `build/docs/architecture/COMPONENTS.md`
 - Database Usage: `app/Sources/ContextifyCore/Database/README.md`
 
+**Design & Patterns:**
+- SwiftUI Patterns: `build/docs/design/swiftui-patterns.md` (@Observable, @State, @Environment usage)
+- Error Handling: `build/docs/design/error-handling-philosophy.md` (throws vs Result<>, recovery strategies)
+
+**Testing & Performance:**
+- Integration Testing: `build/docs/testing/integration-testing-guide.md` (database, LLM, UI tests)
+- Performance Benchmarks: `build/docs/testing/performance-benchmarks.md` (targets, profiling, optimization)
+
 **Operations:**
 - Build Guide: `build/docs/guides/DEVELOPMENT.md`
-- Debugging: `scripts/logging/README.md` (automated test harnesses)
+- Debugging Workflows: `build/docs/guides/debugging-workflows.md` (decision trees, common issues)
+- Debugging Tools: `scripts/logging/README.md` (automated test harnesses)
 - Database Management: `build/docs/operations/DATABASE-LOCATIONS.md`
+- Database Migration: `build/docs/operations/database-migration-runbook.md` (step-by-step procedures)
+- Security-Scoped Bookmarks: `build/docs/guides/security-scoped-bookmarks.md` (sandbox patterns)
 - Release Process: `scripts/RELEASE.md`
 
 ## Troubleshooting
