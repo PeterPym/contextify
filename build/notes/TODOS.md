@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 27 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 26 items - Must complete before App Store submission
 - **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 73 (added 2 P0 items for CLI logomark issues)
+**Total Active Items:** 72 (added 2 P0 items for CLI logomark issues)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -82,70 +82,6 @@ UI Update Points:
 - Switch to project with only Codex transcripts → Codex logomark
 - Switch to project with both → Combined logomark
 - Watch logomark during initial ingestion of mixed-CLI project
-
----
-
-## CLI Logomark Info Button (1 item)
-
-**Status:** Non-functional UI element
-**Priority:** P0 (Broken UX - confusing/incomplete)
-**Effort:** 1-2 hours (implement tooltip or remove)
-
-- [ ] #P0-LOGOMARK-INFO: Fix or remove non-functional (i) info icon next to CLI logomarks
-
-**Problem:** The (i) icon next to the CLI logomarks is not clickable and has no apparent function.
-
-**Current Behavior:**
-- Info icon is visible in the UI
-- User expects it to be interactive (show tooltip, help text, etc.)
-- Clicking does nothing
-- Purpose/intent unclear
-
-**Decision Required:**
-
-**Option A: Implement functionality** (preferred if there's useful info to show)
-- Add click handler to show tooltip/popover
-- Content ideas:
-  - "This project uses Claude Code" / "This project uses Codex" / "Both"
-  - Brief explanation of what the CLI tools are
-  - Link to documentation?
-  - Last sync/update time?
-
-**Option B: Remove the icon** (if no useful info to display)
-- Clean up UI by removing non-functional element
-- Simpler, less confusing for users
-- Logomark alone is sufficient visual indicator
-
-**Recommendation:**
-1. First determine: what information would be useful to show?
-2. If useful info exists → implement tooltip with that content
-3. If no useful info → remove the (i) icon entirely
-
-**Implementation (if keeping):**
-```swift
-// Add .help() modifier or custom popover
-.help("This project uses Claude Code for AI-assisted development")
-// or
-.popover(isPresented: $showLogomarkInfo) {
-    // Info content
-}
-```
-
-**Implementation (if removing):**
-- Remove (i) icon from logomark view
-- Logomark stands alone as visual indicator
-
-**Files to check:**
-- Logomark/brandmark view component
-- Project header/toolbar where logomarks appear
-
-**Testing:**
-- If keeping: Verify (i) icon shows useful tooltip/popover on click/hover
-- If removing: Verify logomark display still clear without info icon
-
-**Priority:** P0 (broken/incomplete UX element - either make it work or remove it before release)
-
----
 
 ## Website (1 item)
 
@@ -798,6 +734,7 @@ if state.entries.count == new.count && state.entries == new {
 - [x] #17: Replace invalid project root modal with warning icons
 - [x] #18: Validate paths before persisting to database
 - [x] #P0-SUMM: Fix failure to kick off summarization on initial viewport load (2025-11-17)
+- [x] #P0-LOGOMARK-INFO: Remove non-functional CLI logomark info icon (2025-11-17)
 
 ---
 
