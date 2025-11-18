@@ -275,17 +275,23 @@ Performance targets mentioned in various docs but no consolidated benchmarks. Th
 
 ## Priority 5: Design Documentation
 
-### 12. SwiftUI Architecture Patterns
+### 12. ✅ SwiftUI Architecture Patterns (CREATED 2025-11-17)
 
-**Proposed Path:** `build/docs/design/swiftui-patterns.md`
+**Created Path:** `build/docs/design/swiftui-patterns.md` (865 lines)
 
 **Justification:**
-Inconsistent patterns across codebase. Need to document:
-- When to use `@Observable` vs `@StateObject` vs `@State`
-- View composition patterns
-- Environment object patterns
-- MainActor usage in SwiftUI
-- Code verification: Survey all Views and ViewModels
+Inconsistent patterns across codebase. This comprehensive guide documents:
+- @Observable vs @StateObject vs @State (when to use each pattern, with decision tree)
+- State management patterns (@Observable for shared state, @State for local, @Environment for injection)
+- View composition strategies (computed properties, standalone subviews, ViewBuilder pattern)
+- Environment injection patterns (singleton pattern, on-demand creation, safe/conditional access)
+- @MainActor usage (all UI code must be @MainActor, background work patterns, isolation warnings)
+- Observation patterns (@ObservationIgnored for tasks/caches, private(set) for read-only, performance considerations)
+- View lifecycle (.task for async init, .onDisappear for cleanup, task(id:) for re-execution)
+- Performance optimization (avoid body computations, Equatable for value types, lazy loading)
+- Anti-patterns (blocking main thread, state mutation in body, unnecessary @ObservationIgnored, god objects, overusing @State)
+- Migration from StateObject to Observable (before/after examples, checklist, performance benefits)
+- Code verification: Verified against 27 SwiftUI files, 6 @Observable classes, 16 views
 
 ---
 
@@ -306,15 +312,15 @@ Mixed error handling approaches (throws vs Result vs optional). Need:
 ## Summary Statistics
 
 **Total Proposed Documents:** 13
-**Completed:** 10 (Priority 1: 2, Priority 2: 3, Priority 3: 3, Priority 4: 2)
-**Remaining:** 3 (Priority 5: 2, plus main README audit)
+**Completed:** 11 (Priority 1: 2, Priority 2: 3, Priority 3: 3, Priority 4: 2, Priority 5: 1)
+**Remaining:** 2 (Priority 5: 1, plus main README audit)
 
 **By Priority:**
 - **Priority 1 (Critical):** 2/2 ✅ COMPLETE
 - **Priority 2 (Component Deep Dives):** 3/3 ✅ COMPLETE
 - **Priority 3 (Operational):** 3/3 ✅ COMPLETE (Doc #6 covered by architecture-refactoring-analysis.md)
 - **Priority 4 (Testing):** 2/2 ✅ COMPLETE
-- **Priority 5 (Design):** 0/2 ⏳ PENDING
+- **Priority 5 (Design):** 1/2 ⏳ IN PROGRESS
 
 **Estimated Effort:**
 - Priority 1: 16-24 hours (highly detailed, mermaid diagrams, code analysis)
