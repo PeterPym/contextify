@@ -194,14 +194,16 @@ public struct LightweightProject: Sendable, Identifiable, Hashable {
   public let lastActivity: Date
   public let provider: String
   public let cwd: String?  // Current working directory (for Codex) or repo path (for Claude)
+  public let transcriptFiles: [URL]  // File paths discovered during scan (for JIT ingestion)
 
-  public init(id: String, path: URL, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil) {
+  public init(id: String, path: URL, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil, transcriptFiles: [URL] = []) {
     self.id = id
     self.path = path
     self.transcriptCount = transcriptCount
     self.lastActivity = lastActivity
     self.provider = provider
     self.cwd = cwd
+    self.transcriptFiles = transcriptFiles
   }
 }
 

@@ -62,8 +62,34 @@ public actor FastPathIngestionCoordinator {
       throw error
     }
 
-    // 2. Use existing runFastPath for this single project
-    // TODO: Optimize to batch all transcripts, not just preview limit (5)
+    // 2. [CRITICAL FIX] Populate transcripts table BEFORE calling FastPath
+    // FastPath queries DB for transcripts - if table is empty, it finds nothing
+    if !project.transcriptFiles.isEmpty {
+      log.info("[JIT-INGEST] Populating DB with \(project.transcriptFiles.count, privacy: .public) transcript records...")
+
+      let providerEnum: DiscoveredProject.Provider = project.provider == "claude.code" ? .claudeCode : .codexCLI
+
+      let discovered = project.transcriptFiles.map { url in
+        DiscoveredTranscript(
+          fileURL: url,
+          provider: providerEnum,
+          sessionId: url.deletingPathExtension().lastPathComponent
+        )
+      }
+
+      // Bulk insert transcript records into DB
+      do {
+        _ = try orchestrator.upsertTranscripts(projectId: projectId, discovered: discovered)
+        log.info("[JIT-INGEST] Upserted \(discovered.count, privacy: .public) transcript records to DB")
+      } catch {
+        log.error("[JIT-INGEST] Failed to upsert transcripts: \(error.localizedDescription, privacy: .public)")
+        // Continue anyway - FastPath will just find fewer transcripts
+      }
+    } else {
+      log.debug("[JIT-INGEST] No transcript files to upsert (empty project)")
+    }
+
+    // 3. Now run FastPath (which queries the DB we just populated)
     await runFastPath(projectIds: [projectId], activeProjectId: projectId)
 
     let duration = Date().timeIntervalSince(startTime)

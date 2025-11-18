@@ -47,8 +47,12 @@ public actor LightweightDiscoveryService {
       // This avoids opening/reading individual files (saves syscalls)
       let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
 
-      // Quick count via stat (fast - just counts directory entries)
-      let count = (try? FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".jsonl") }.count) ?? 0
+      // Scan for .jsonl files (need full URLs for JIT ingestion)
+      let files = (try? FileManager.default.contentsOfDirectory(
+        at: dir,
+        includingPropertiesForKeys: nil,
+        options: [.skipsHiddenFiles]
+      ))?.filter { $0.pathExtension == "jsonl" } ?? []
 
       // Claude folder names are hashed paths - decode to get real project path
       // Hash format: "-Users-rob-code-projects-contextify" → "/Users/rob/code/projects/contextify"
@@ -63,10 +67,11 @@ public actor LightweightDiscoveryService {
       return LightweightProject(
         id: hashFolder,  // Keep hash as ID for consistency
         path: dir,  // Keep original hash folder path for filesystem ops
-        transcriptCount: count,
+        transcriptCount: files.count,
         lastActivity: mtime,
         provider: "claude.code",
-        cwd: decodedPath  // Store decoded real project path for display and switching
+        cwd: decodedPath,  // Store decoded real project path for display and switching
+        transcriptFiles: files  // Store file URLs for JIT ingestion
       )
     }
   }
@@ -78,7 +83,8 @@ public actor LightweightDiscoveryService {
       .appendingPathComponent(".codex/sessions")
 
     // Aggregate by CWD (current working directory)
-    var projects: [String: (count: Int, maxDate: Date, path: URL)] = [:]
+    // Store file URLs per project (not just count)
+    var projects: [String: (files: [URL], maxDate: Date, path: URL)] = [:]
 
     // Helper to peek first line for CWD
     // This is the ONLY file read we do - just first 256 bytes for header
@@ -121,24 +127,24 @@ public actor LightweightDiscoveryService {
 
     // Parallel process headers to extract CWD
     // This is the only place we read file contents (first line only)
-    await withTaskGroup(of: (String, Date)?.self) { group in
+    await withTaskGroup(of: (String, Date, URL)?.self) { group in
       for url in files {
         group.addTask {
           guard let cwd = getCWD(url: url) else { return nil }
           let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
-          return (cwd, date)
+          return (cwd, date, url)
         }
       }
 
       for await result in group {
-        if let (cwd, date) = result {
-          // Aggregate by CWD
+        if let (cwd, date, url) = result {
+          // Aggregate by CWD - collect file URLs
           if var p = projects[cwd] {
-            p.count += 1
+            p.files.append(url)  // Accumulate file list
             p.maxDate = max(p.maxDate, date)
             projects[cwd] = p
           } else {
-            projects[cwd] = (1, date, URL(fileURLWithPath: cwd))
+            projects[cwd] = ([url], date, URL(fileURLWithPath: cwd))
           }
         }
       }
@@ -154,10 +160,11 @@ public actor LightweightDiscoveryService {
       return LightweightProject(
         id: id,
         path: data.path,
-        transcriptCount: data.count,
+        transcriptCount: data.files.count,
         lastActivity: data.maxDate,
         provider: "codex.cli",
-        cwd: cwd  // Store CWD for name derivation
+        cwd: cwd,  // Store CWD for name derivation
+        transcriptFiles: data.files  // Pass file URLs for JIT ingestion
       )
     }
   }
