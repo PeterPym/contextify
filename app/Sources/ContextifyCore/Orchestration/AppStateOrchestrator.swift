@@ -28,6 +28,7 @@ public final class AppStateOrchestrator: ObservableObject {
   // State
   @Published public private(set) var state: AppState = .startup
   private var knownProjects: [LightweightProject] = []
+  private var projectLookup: [String: LightweightProject] = [:]
   private var backgroundTask: Task<Void, Never>?
 
   private init() {
@@ -58,12 +59,14 @@ public final class AppStateOrchestrator: ObservableObject {
     // 1. Lightweight Scan (stat-only, no file reads, no DB writes)
     let projects = await discovery.discoverProjectsLightweight()
     self.knownProjects = projects
+    rebuildProjectLookup(with: projects)
     log.info("[ORCH-STARTUP] Discovered \(projects.count, privacy: .public) projects")
 
     // 2. Update projects table metadata ONLY (single transaction, no transcripts)
     do {
       try await orchestrator.updateProjectsMetadataOnly(projects)
       log.debug("[ORCH-STARTUP] Updated projects table metadata")
+      try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
     } catch {
       log.error("[ORCH-STARTUP] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
     }
@@ -96,8 +99,33 @@ public final class AppStateOrchestrator: ObservableObject {
     backgroundTask?.cancel()
     await fastPath.cancel()
 
-    guard let project = knownProjects.first(where: { $0.id == id }) else {
-      log.error("[ORCH-SELECT] Project not found: \(id, privacy: .public)")
+    var project = projectLookup[id]
+    if project == nil {
+      log.warning("[ORCH-SELECT-MISS] Project ID \(id, privacy: .public) not in cache; attempting DB fallback")
+      do {
+        if let dbProject = try orchestrator.getProject(id: id) {
+          let cwd = dbProject.rootPath
+          let name = dbProject.name ?? URL(fileURLWithPath: cwd).lastPathComponent
+          project = LightweightProject(
+            id: dbProject.id,
+            path: URL(fileURLWithPath: cwd),
+            displayName: name,
+            transcriptCount: 0,
+            lastActivity: Date(),
+            provider: "db_fallback",
+            cwd: cwd,
+            transcriptFiles: []
+          )
+          cacheProject(project!)
+          log.info("[ORCH-SELECT-DB-PATCH] Hydrated project \(id, privacy: .public) from DB")
+        }
+      } catch {
+        log.error("[ORCH-SELECT-DB-PATCH] DB lookup failed: \(error.localizedDescription, privacy: .public)")
+      }
+    }
+
+    guard let project else {
+      log.error("[ORCH-SELECT] Project not found after DB fallback: \(id, privacy: .public)")
       setState(.error("Project not found"))
       return
     }
@@ -208,6 +236,18 @@ public final class AppStateOrchestrator: ObservableObject {
         "remaining": remaining
       ]
     )
+  }
+
+  private func rebuildProjectLookup(with projects: [LightweightProject]) {
+    var map: [String: LightweightProject] = [:]
+    for project in projects {
+      map[project.id] = project
+    }
+    projectLookup = map
+  }
+
+  private func cacheProject(_ project: LightweightProject) {
+    projectLookup[project.id] = project
   }
 }
 

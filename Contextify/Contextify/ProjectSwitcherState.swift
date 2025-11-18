@@ -272,7 +272,7 @@ public final class ProjectSwitcherState {
     do {
       // Query all projects sorted by activity (newest entry first)
       log.info("[SWITCHER-SORT-START] Querying projects sorted by activity")
-      let projects = try orchestrator.listProjectsSortedByActivity()
+      let projects = try orchestrator.listProjectsForSwitcher()
       log.info("[SWITCHER-SORT-QUERY] Got \(projects.count, privacy: .public) projects from DB")
 
       // Log display_order status for debugging
@@ -701,6 +701,7 @@ public final class ProjectSwitcherState {
       do {
         // Atomically update all display_order values in a single transaction
         try orchestrator.setProjectDisplayOrderBulk(orderedProjectIds)
+        log.info("[SWITCHER-ORDER-PERSIST] ids=\(orderedProjectIds.prefix(5)) … total=\(orderedProjectIds.count, privacy: .public)")
 
         // Emit reordered event for first project (Projects window will refresh entire list)
         if let firstProjectId = orderedProjectIds.first, let monitor = self.activityMonitor {

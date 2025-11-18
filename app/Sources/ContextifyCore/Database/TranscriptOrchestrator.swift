@@ -304,9 +304,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.list()
   }
 
-  /// List projects sorted by activity (most recent entry first)
-  /// When display_order is NULL, sorts by newest entry timestamp
-  public func listProjectsSortedByActivity() throws -> [Project] {
+  /// List projects for the tab switcher: display_order first, then activity.
+  public func listProjectsForSwitcher() throws -> [Project] {
     try dbManager.pool.read { db in
       let sql = """
         SELECT p.*
@@ -317,12 +316,43 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           GROUP BY project_id
         ) e ON p.id = e.project_id
         ORDER BY
-          CASE WHEN p.display_order IS NOT NULL THEN 0 ELSE 1 END,
+          (p.display_order IS NULL) ASC,
           p.display_order ASC,
           COALESCE(e.max_entry_ts, 0) DESC,
           p.created_at DESC
         """
       return try Project.fetchAll(db, sql: sql)
+    }
+  }
+
+  /// Seed display_order for projects that do not yet have a persisted order.
+  public func seedDisplayOrderFromDiscoveryIfUnset(_ lightweightProjects: [LightweightProject]) throws {
+    guard !lightweightProjects.isEmpty else { return }
+    let pool = try dbManager.pool
+    try pool.write { db in
+      var seeded = 0
+      var skipped = 0
+      for (index, project) in lightweightProjects.enumerated() {
+        let rootPath = project.canonicalRootPath
+        try db.execute(sql: """
+          UPDATE projects
+          SET display_order = ?
+          WHERE root_path = ?
+            AND display_order IS NULL
+        """, arguments: [index, rootPath])
+
+        if db.changesCount > 0 {
+          seeded += 1
+        } else {
+          skipped += 1
+        }
+      }
+
+      if seeded > 0 {
+        log.info("[DISPLAY-ORDER-SEED] seeded=\(seeded, privacy: .public) alreadySet=\(skipped, privacy: .public)")
+      } else {
+        log.info("[DISPLAY-ORDER-SEED] No projects required seeding (alreadySet=\(skipped, privacy: .public))")
+      }
     }
   }
 
