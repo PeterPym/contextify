@@ -160,23 +160,22 @@ private func handleCoordinatorUpdate(_ context: ActiveProjectContext) {
 
 ---
 
-## Current Bugs (as of 2025-11-12)
+## Bug History & Known Issues
 
-### Bug 1: Git Watchers Fail in Sandbox (P0)
+### ✅ Bug 1: Git Watchers Fail in Sandbox (RESOLVED 2025-11-12)
 
-**Symptom:**
-```
-error  13:18:27.178488  Contextify  Sandboxed without security scope; skipping watcher arm
-```
+**Status:** FIXED in commit 8cf56b2 (2025-11-12 14:32:34)
 
-**Root Cause:** `handleCoordinatorUpdate()` never calls `updateSecurityScope()`.
+**Was:** `handleCoordinatorUpdate()` didn't restore security-scoped access from bookmarks, causing git watchers to fail silently in sandboxed builds.
 
-**Fix:** Restore bookmark before calling `updateHeadWatcher()`:
+**Fix Applied:**
+`handleCoordinatorUpdate()` now restores security scope from `context.bookmark` before calling `updateHeadWatcher()` (HUDCore.swift:561-578):
+
 ```swift
 private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
     projectRootURL = URL(fileURLWithPath: context.path)
 
-    // NEW: Restore security scope from bookmark
+    // Restore security-scoped access from bookmark
     if let bookmark = context.bookmark {
         do {
             var isStale = false
@@ -186,9 +185,10 @@ private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
-            await updateSecurityScope(scopedURL)
+            updateSecurityScope(for: scopedURL, persisted: true)
+            // ...
         } catch {
-            watcherLog.error("Failed to resolve bookmark: \(error)")
+            watcherLog.error("Failed to resolve bookmark: ...")
         }
     }
 
@@ -196,20 +196,15 @@ private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
 }
 ```
 
-**Files to Change:**
-- `app/Sources/ContextifyCore/HUDCore.swift` (handleCoordinatorUpdate)
-
-**Testing:**
-```bash
-# Build sandboxed version
-bash scripts/xc.sh --dist=appstore Debug build
-
-# Monitor logs for the error
-log stream --predicate 'subsystem == "dev.contextify" AND category == "GitWatcher"' --level debug
-
-# Expected: No "skipping watcher arm" errors
-# Expected: "Watching .git/HEAD" logs appear
+**Note on Git Monitoring:** As of 2025-11-12, git monitoring is **disabled entirely** in App Store builds (HUDCore.swift:963-966):
+```swift
+guard !Sandbox.isSandboxed else {
+    watcherLog.info("Git monitoring disabled (App Store build)")
+    return
+}
 ```
+
+This was a deliberate decision to avoid complexity with App Store sandbox restrictions. Even with security-scoped bookmarks restored, git file watchers do not run in sandboxed builds.
 
 ### Bug 2: Transcript Hoovering Fails After Welcome Modal (P0)
 
@@ -304,8 +299,8 @@ let isSandboxed: Bool = {
 ```
 
 **Build-Time Configuration:**
-- DMG: `Contextify-DMG.entitlements` (no sandbox key)
-- App Store: `Contextify.entitlements` (includes `com.apple.security.app-sandbox = true`)
+- DMG: `Contextify/Contextify.entitlements` (no sandbox key)
+- App Store: `Contextify/Contextify-AppStore.entitlements` (includes `com.apple.security.app-sandbox = true`)
 
 **Capabilities Required (App Store):**
 - `com.apple.security.app-sandbox` - Enable sandbox

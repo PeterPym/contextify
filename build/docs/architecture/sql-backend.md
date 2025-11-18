@@ -1,9 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v23 current)
+**Status:** Post-Implementation (v26 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 23 (v21-v23: access metadata, strategy constraint fix, active transcript follow)
+**Schema Version:** 26 (latest: removed sandbox container path projects)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
+
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v26 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v26).
 
 ---
 

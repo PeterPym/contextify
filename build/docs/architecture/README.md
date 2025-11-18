@@ -18,11 +18,10 @@ This directory contains high-level architectural documentation that explains:
 - Entry filtering and session management
 - System message handling
 
-### [Data Flow](data-flow.md)
-**Topics:** End-to-end data pipeline from filesystem → database → UI
-- 5-stage pipeline: Discovery, Persistence, Streaming, Monitoring, Rendering
-- Component interactions and data transformations
-- Current state as of 2025-10-22
+### ~~Data Flow~~ (ARCHIVED)
+**Status:** Archived to `../archive/historical/data-flow-2025-10-22.md` (2025-11-17)
+**Reason:** Not salvageable - architecture fundamentally changed since Oct 22
+**Replacement:** See `../../notes/PROPOSED-DOCUMENTATION.md` #1 (Complete Data Pipeline Architecture)
 
 ### [LLM Processing](llm-processing.md)
 **Topics:** Dual-queue LLM architecture (FoundationLLM)
@@ -48,9 +47,9 @@ This directory contains high-level architectural documentation that explains:
 
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
-- Tables, migrations (v1-v23), repositories
+- Tables, migrations (v1-v26), repositories
 - GRDB integration
-- Current schema: v23 (active transcript follow)
+- Current schema: v26 (removed sandbox container path projects)
 
 ### [Startup Coordinator](startup-coordinator.md)
 **Topics:** Deterministic project identity pipeline

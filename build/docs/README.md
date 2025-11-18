@@ -1,6 +1,6 @@
 # Contextify Documentation
 
-**Last Updated:** 2025-11-08
+**Last Updated:** 2025-11-18
 **Purpose:** Current state documentation, architectural decisions, operational guides
 
 ---
@@ -9,7 +9,7 @@
 
 | Category | Purpose | Key Documents |
 |----------|---------|---------------|
-| **Architecture** | System design & data flow | [Data Flow](architecture/data-flow.md), [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
+| **Architecture** | System design & data flow | [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Startup Coordinator](architecture/startup-coordinator.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
 | **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
@@ -46,8 +46,9 @@ See [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/HOLISTIC-DOCS-ORGANIZATION-PLA
 System-level design documents. How the major components fit together.
 
 **Key docs:**
-- [Data Flow](architecture/data-flow.md) - End-to-end data pipeline (discovery → database → UI)
-- [SQL Backend](architecture/sql-backend.md) - Database architecture and schema (current: v23)
+- [Data Pipeline Architecture](architecture/data-pipeline-architecture.md) - **NEW** Comprehensive 5-level overview (executive → technical debt)
+- [Architecture Refactoring Analysis](architecture/architecture-refactoring-analysis.md) - **NEW** Technical debt analysis, god objects, refactoring roadmap
+- [SQL Backend](architecture/sql-backend.md) - Database architecture and schema (current: v26)
 - [LLM Processing](architecture/llm-processing.md) - Dual-queue LLM system (FoundationLLM)
 - [Startup Coordinator](architecture/startup-coordinator.md) - Project identity pipeline
 - [Window System](architecture/window-system.md) - 4-window macOS app architecture
@@ -57,6 +58,9 @@ System-level design documents. How the major components fit together.
 Component-specific implementation details. How individual subsystems work.
 
 **Key docs:**
+- [Startup Coordinator Implementation](components/startup-coordinator-implementation.md) - **NEW** AsyncStream patterns, threading, testing
+- [Project Discovery Service Implementation](components/project-discovery-service-implementation.md) - **NEW** Security-scoped access, multi-provider scanning
+- [Timeline Cache Invalidation](components/timeline-cache-invalidation.md) - **NEW** Cache invalidation strategy, generator versioning
 - [Transcript Ingestion](components/transcript-ingestion.md) - HooverEngine streaming parser
 - [Timeline Cache](components/timeline-cache.md) - LLM-generated summary caching
 - [Project Discovery](components/project-discovery.md) - Multi-project detection
@@ -71,6 +75,8 @@ External dependency formats. Claude Code transcripts, Codex transcripts, etc.
 Operational how-to docs. How to use diagnostics API, build on Linux, etc.
 
 **Key docs:**
+- [Debugging Workflows](guides/debugging-workflows.md) - **NEW** Decision trees, 7 workflows, common issues quick reference
+- [Security-Scoped Bookmarks](guides/security-scoped-bookmarks.md) - **NEW** Bookmark usage patterns, anti-patterns, testing
 - [Diagnostics API](guides/diagnostics-api.md) - HTTP API for debugging (DEBUG builds)
 - [Linux CI Builds](guides/linux-ci-builds.md) - Building from non-macOS environments
 - [Logging Best Practices](guides/logging-best-practices.md) - OSLog usage guidelines
@@ -80,6 +86,8 @@ Operational how-to docs. How to use diagnostics API, build on Linux, etc.
 QA workflows and testing procedures.
 
 **Key docs:**
+- [Integration Testing Guide](testing/integration-testing-guide.md) - **NEW** Database, ingestion, LLM tests with fixtures
+- [Performance Benchmarks](testing/performance-benchmarks.md) - **NEW** Performance targets, XCTest metrics, Instruments profiling
 - [First-Run QA Guide](testing/first-run-qa-guide.md) - CLI toolkit for testing onboarding flows (DMG vs App Store)
 
 **See also:**
@@ -89,11 +97,16 @@ QA workflows and testing procedures.
 Design decisions. Color scheme, typography, help system UX.
 
 **Key docs:**
+- [SwiftUI Patterns](design/swiftui-patterns.md) - **NEW** @Observable, @Environment, @MainActor, view composition
+- [Error Handling Philosophy](design/error-handling-philosophy.md) - **NEW** throws vs Result<>, error types, recovery strategies
 - [Color Scheme](design/color-scheme.md) - Color palette and usage
 - [Help System](design/help-tooltip-ux-system.md) - Help tooltip UX system
 
 ### operations/
 Release management, app store submission, marketing materials.
+
+**Key docs:**
+- [Database Migration Runbook](operations/database-migration-runbook.md) - **NEW** Migration procedures, rollback, multi-machine conflicts
 
 **Subdirectories:**
 - `app-store/` - Sandbox requirements, submission checklist

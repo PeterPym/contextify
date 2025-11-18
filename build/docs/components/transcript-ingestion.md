@@ -1,7 +1,8 @@
 # Transcript Ingestion Pipeline - Technical Reference
 
-**Status:** Production Investigation (2025-10-28)
-**Purpose:** Complete flow diagram and root cause analysis for timeline update issues
+**Status:** Historical Troubleshooting Reference & Architecture Doc (2025-10-28)
+**Updated:** 2025-11-17 (marked historical issue as likely resolved)
+**Purpose:** Complete flow diagram, root cause analysis, and technical architecture
 
 ---
 
@@ -13,9 +14,18 @@ Contextify's transcript ingestion pipeline has **three independent systems** for
 2. **TranscriptWatcher** - Per-file DispatchSource monitoring (real-time)
 3. **Discovery Polling** - Periodic transcript discovery (5-minute intervals)
 
-**Current Issue:** New messages written to transcript files are not appearing in the timeline UI.
+**Historical Issue (Oct 28, 2025):** New messages written to transcript files were not appearing in the timeline UI.
 
-**Root Cause:** Event system mismatch - ProjectActivityMonitor emits events via AsyncStream, but ConversationMonitor listens to NotificationCenter. TranscriptWatcher (which uses NotificationCenter) is not being reliably started for active transcripts.
+**Root Cause Analysis:** Event system mismatch - ProjectActivityMonitor emitted events via AsyncStream, but ConversationMonitor listened to NotificationCenter. TranscriptWatcher (which uses NotificationCenter) was not being reliably started for active transcripts.
+
+**Status:** Likely RESOLVED by multiple timeline fixes on Nov 16-17, 2025:
+- fix(timeline): restore missing initial timeline load on project switch
+- fix(timeline): remove skip optimization that prevented showing fresh entries
+- feat(quick-discovery): ingest newest transcript for immediate timeline
+- fix(timeline): initialize cursor from newest entry to prevent historical data flood
+- ~15 additional timeline-related commits
+
+**Note:** This document serves as historical troubleshooting reference and technical architecture documentation. The "Current Issue" section describes the problem state as of Oct 28, 2025.
 
 ---
 
