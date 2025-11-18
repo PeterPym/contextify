@@ -148,7 +148,10 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   }
 
   func dropExited(info: DropInfo) {
-    // Intentionally left blank. We don't clear here to avoid flicker during minor layout/scroll changes.
+    // Clear drag state when cursor exits the drop zone entirely
+    // This prevents ghost entries when dragging outside the window
+    draggingProject = nil
+    insertionIndex = nil
   }
 
   func performDrop(info: DropInfo) -> Bool {
@@ -290,7 +293,9 @@ struct ProjectSwitcherView: View {
           }
 
           // Insertion indicator after last tab
-          if let insertionIndex, insertionIndex == state.tabProjects.count, let draggingProject {
+          if let insertionIndex,
+             insertionIndex == state.tabProjects.count,
+             let draggingProject {
             // Gap before insertion indicator
             Gap(width: baseSpacing)
 

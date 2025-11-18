@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 28 items - Must complete before App Store submission
-- **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
+- **P0 (Blocking Release):** 24 items - Must complete before App Store submission
+- **P1 (High Priority):** 13 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 74 (added 2 P0 items for CLI logomark issues)
+**Total Active Items:** 62 (promoted welcome modal hang to P0)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,173 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 28 Items
-
-## Timeline Summary Generation (1 item)
-
-**Status:** Broken
-**Priority:** P0 (Core feature failure)
-**Effort:** 4-6 hours (investigation + fix)
-
-- [ ] #P0-SUMM: Fix failure to kick off summarization on initial viewport load
-
-**Problem:** When switching to a project or loading a project for the first time, visible messages in viewport don't get queued for summary generation. User sees empty summaries despite entries being visible.
-
-**Evidence:**
-- Summaries don't appear after project switch
-- Summaries don't appear on first project load
-- Multiple fixes attempted in past several days
-
-**Recent Attempts (commits):**
-- `8ba2c5a`: Eliminated race condition in viewport-aware queueing
-- `a7b65c2`: Improved LLM summary queueing during initial load
-- `6f07f7d`: Added viewport queueing verification
-
-**Root Cause:** Viewport tracking doesn't fire reliably on project switch or initial load.
-
-**Next Steps:**
-1. Review viewport callback timing (replaceVisibleSnapshot)
-2. Check if initial viewport report fires after project switch
-3. Verify needsInitialVisibilitySnapshot logic
-4. Add defensive queueing for visible entries on loadFeedFromSQL completion
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift` (viewport tracking)
-- `Contextify/Contextify/ConversationMonitor.swift:1260` (loadFeedFromSQL)
-
-**Testing:**
-```bash
-scripts/logging/monitor-viewport-queueing.sh
-# Expected: SUMM-LOAD-DEFER → SUMM-VIEWPORT-INIT within ~100ms
-# Actual: SUMM-VIEWPORT-INIT never fires
-```
-
----
-
-## CLI Logomark Display (1 item)
-
-**Status:** Not updating during ingestion
-**Priority:** P0 (User-facing visual state issue)
-**Effort:** 2-3 hours (DB query + UI update logic)
-
-- [ ] #P0-LOGOMARK: Fix CLI logomark/brandmark display to update during ingestion and on project switch
-
-**Problem:** The CLI logomark (Claude Code vs Codex indicator) doesn't update at appropriate times:
-1. **During ingestion:** Should update as transcripts are hoovered to reflect which CLI(s) are present
-2. **On project switch:** Should perform efficient DB query to determine which CLI brandmark(s) to show
-
-**Current Behavior:**
-- Logomark may show stale/incorrect state
-- User doesn't know if project has Claude Code, Codex, or both
-- No visual feedback during initial ingestion
-
-**Required Fix:**
-
-1. **During ingestion:** Update logomark at reasonable points during hoovering
-   - After each batch of transcripts hoovered
-   - Or on hoovering progress notifications
-   - Or when ingestion completes
-
-2. **On project switch:** Efficient DB query to resolve CLI presence
-   - Query: `SELECT DISTINCT provider FROM transcripts WHERE project_id = ?`
-   - Expected results: `claude`, `codex`, or both
-   - Update logomark state immediately on project load
-
-**Implementation:**
-
-Files to modify:
-- Project/timeline state management (logomark state)
-- DB query layer (efficient provider resolution)
-- Hoovering progress notifications (trigger logomark update)
-
-DB Query:
-```sql
--- Efficient query to check which CLIs are present for a project
-SELECT DISTINCT provider
-FROM transcripts
-WHERE project_id = ?
-LIMIT 2;  -- Max 2 values possible (claude, codex)
-```
-
-UI Update Points:
-- `startMonitoring()` - on project switch
-- Hoovering progress notification handler
-- Initial ingestion completion
-
-**Expected Behavior:**
-- User sees correct CLI logomark immediately on project switch
-- Logomark updates during ingestion as new CLI transcripts are discovered
-- No performance impact (single efficient query on project switch)
-
-**Testing:**
-- Switch to project with only Claude Code transcripts → Claude logomark
-- Switch to project with only Codex transcripts → Codex logomark
-- Switch to project with both → Combined logomark
-- Watch logomark during initial ingestion of mixed-CLI project
-
----
-
-## CLI Logomark Info Button (1 item)
-
-**Status:** Non-functional UI element
-**Priority:** P0 (Broken UX - confusing/incomplete)
-**Effort:** 1-2 hours (implement tooltip or remove)
-
-- [ ] #P0-LOGOMARK-INFO: Fix or remove non-functional (i) info icon next to CLI logomarks
-
-**Problem:** The (i) icon next to the CLI logomarks is not clickable and has no apparent function.
-
-**Current Behavior:**
-- Info icon is visible in the UI
-- User expects it to be interactive (show tooltip, help text, etc.)
-- Clicking does nothing
-- Purpose/intent unclear
-
-**Decision Required:**
-
-**Option A: Implement functionality** (preferred if there's useful info to show)
-- Add click handler to show tooltip/popover
-- Content ideas:
-  - "This project uses Claude Code" / "This project uses Codex" / "Both"
-  - Brief explanation of what the CLI tools are
-  - Link to documentation?
-  - Last sync/update time?
-
-**Option B: Remove the icon** (if no useful info to display)
-- Clean up UI by removing non-functional element
-- Simpler, less confusing for users
-- Logomark alone is sufficient visual indicator
-
-**Recommendation:**
-1. First determine: what information would be useful to show?
-2. If useful info exists → implement tooltip with that content
-3. If no useful info → remove the (i) icon entirely
-
-**Implementation (if keeping):**
-```swift
-// Add .help() modifier or custom popover
-.help("This project uses Claude Code for AI-assisted development")
-// or
-.popover(isPresented: $showLogomarkInfo) {
-    // Info content
-}
-```
-
-**Implementation (if removing):**
-- Remove (i) icon from logomark view
-- Logomark stands alone as visual indicator
-
-**Files to check:**
-- Logomark/brandmark view component
-- Project header/toolbar where logomarks appear
-
-**Testing:**
-- If keeping: Verify (i) icon shows useful tooltip/popover on click/hover
-- If removing: Verify logomark display still clear without info icon
-
-**Priority:** P0 (broken/incomplete UX element - either make it work or remove it before release)
-
----
+# P0 (Blocking Release) - 24 Items
 
 ## Website (1 item)
 
@@ -245,26 +79,32 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical Bugs - Drag & Drop (2 items) ⬆️
+## Critical Bugs - Drag & Drop (2 items) ✅ COMPLETE
 
-**Status:** Not Started
-**Priority:** Promoted from P1 (no workaround except restart)
-**Effort:** 2-3 hours
+**Status:** ✅ Complete (2025-11-18)
+**Commit:** `0bbe383` - fix(drag-drop): clear ghost entries when dragging outside window
+**Branch:** `fix/drag-drop-ghost-entries`
 
-- [ ] #29: Fix drag-drop cancellation when cursor exits window
-- [ ] #30: Add state validation after drag operations
+- [x] #29: Fix drag-drop cancellation when cursor exits window ✅
+- [x] #30: Add state validation after drag operations ✅
 
-**Problem:** Dragging project tab outside window creates ghost dashed-line entry that cannot be removed. Only fix is app restart.
+**Problem:** Dragging project tab outside window created ghost dashed-line entry that persisted indefinitely. Only fix was app restart.
+
+**Root Cause:** `dropExited()` was intentionally blank to avoid flicker, but this prevented clearing drag state when cursor left the window.
+
+**Solution:**
+1. Clear drag state in `dropExited()` when cursor exits drop zone
+2. Add validation before rendering insertion indicators
+3. Add validation in `onDrag` to detect stale state
 
 **Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift`
-- `Contextify/Contextify/ProjectSwitcherState.swift`
+- `Contextify/Contextify/ProjectSwitcherView.swift` (4 changes)
 
-**Acceptance Criteria:**
-- Dragging project outside window cancels cleanly
-- No ghost entries persist
-- Project returns to original position on cancel
-- UI state always consistent with data
+**Testing:**
+- ✅ Dragging outside window cancels cleanly
+- ✅ No ghost entries persist
+- ✅ Project returns to original position
+- ✅ UI state consistent with data
 
 ---
 
@@ -368,67 +208,108 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical - Transcript Repair MVP (2 items) 🔗⬆️
-
-**Status:** Instrumentation complete, UI not started
-**Priority:** Promoted from P1 (87 corrupt transcripts discovered 2025-11-13)
-**Effort:** 8-10 hours
-
-- [ ] #58: Provide automated repair option for corrupt transcripts
-- [ ] #59: Ensure repaired transcripts flip back to active status
-
-**Background:**
-- 87 fresh Claude Code transcripts fail parser (missing uuid, timestamp)
-- Hoover logs `[HOOVER-CORRUPT]` and marks `status = "error"`
-- CLI tool exists (`swift run TranscriptValidatorCLI`) but no in-app workflow
-
-**Tasks:**
-- Surface corrupt transcripts in Transcript window (warning chip)
-- Add "Validate in CLI" / "Reveal in Finder" actions
-- Provide automated repair (truncate/re-parse/editor)
-- Auto-flip repaired transcripts to `status = "active"`
-
-**Files:**
-- `Contextify/Contextify/TranscriptInventoryView.swift`
-- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
-- `Sources/TranscriptValidatorCLI/main.swift`
-
-**Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025-11-11 16:35)`
-
-**Note:** Phase 2 enhancements (auto-repair mode, metrics tracking) moved to P1 as #85-88 (see Git Activity section)
-
----
-
-# P1 (High Priority) - 18 Items
-
-## Build Warnings (5 items)
+## Critical - Welcome Modal Hang (1 item) 🔗⬆️
 
 **Status:** Not Started
+**Priority:** Promoted from P1 (11-second UI freeze during onboarding)
 **Effort:** 4-6 hours
+**Evidence:** `/private/tmp/transcript-queue-monitor-20251118-002852.log`
 
-- [ ] #19: Fix ConversationMonitor.swift warnings (9 warnings: lines 1320, 1440, 1585, 1596, 1597, 1930, 1978, 2119, 2138)
-- [ ] #20: Fix TranscriptMetadataOrchestrator.swift availability checks (2 warnings: lines 541, 616)
-- [ ] #21: Fix ProjectsViewModel.swift warnings (3 warnings: lines 204, 306)
-- [ ] #22: Fix ProjectSwitcherState.swift warnings (3 warnings: lines 195, 197, 643)
-- [ ] #23: Verify clean build with zero warnings
+- [ ] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal
 
-**Problem:** Build produces ~40+ compiler warnings. Potential concurrency bugs, future Swift versions may promote to errors.
+**Problem:** Welcome modal shows "1/19 projects" for **11+ seconds** before completing discovery. UI appears frozen/broken to users during first-run experience.
 
-**Warnings include:**
-- Unnecessary `await` expressions
-- Main actor isolation violations in Sendable closures
-- Deprecated API usage (getEntriesAfterCursor)
-- Unreachable code after returns
+**Root Cause (from log analysis):**
+
+Timeline breakdown:
+```
+00:29:16.348-16.479: ProjectsViewModel.discoverAllProjects() completes (131ms) ✅
+00:29:16.479-18.285: Ingestion completes (1.8s) ✅
+00:29:18.285-29.966: 11.8 SECOND GAP - waiting for ProjectActivityMonitor ⚠️
+00:29:29.966: ProjectActivityMonitor.start() finally runs
+00:29:30.342+: Processes 602 transcripts synchronously (blocks UI)
+```
+
+**Architectural Issues:**
+
+1. **Duplicate discovery:** ProjectActivityMonitor runs its own `discoverAllProjects()` **after** ProjectsViewModel already completed discovery
+2. **Late initialization:** ProjectActivityMonitor.start() doesn't begin until 13+ seconds after modal appears
+3. **Synchronous processing:** Processes 602 transcripts on main thread with debug logging for each file
+4. **UI blocking:** Modal progress bar stuck at "1/19" while waiting for background discovery
+
+**Solution:**
+
+1. **Deduplicate discovery:** ProjectActivityMonitor should reuse ProjectsViewModel's discovery results instead of re-scanning
+2. **Earlier initialization:** Start ProjectActivityMonitor in parallel with ProjectsViewModel, not after
+3. **Background processing:** Move transcript enumeration off main thread
+4. **Reduce logging:** Don't log every individual file at debug level (602 log lines!)
 
 **Files:**
-- `Contextify/Contextify/ConversationMonitor.swift`
-- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift`
-- `Contextify/Contextify/ProjectsViewModel.swift`
-- `Contextify/Contextify/ProjectSwitcherState.swift`
+- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:74` - Remove duplicate `discoverAllProjects()` call
+- `Contextify/Contextify/ProjectsViewModel.swift` - Coordinate with ProjectActivityMonitor
+- Consider: Shared discovery coordinator to eliminate duplication
 
-**Acceptance Criteria:** `scripts/xc.sh dr` produces zero warnings
+**Acceptance Criteria:**
+- Welcome modal completes discovery in <3 seconds (currently 14s)
+- Progress bar updates smoothly (no 11s freeze at "1/19")
+- No duplicate filesystem scans
+- ProjectActivityMonitor reuses existing discovery data
+
+**References:**
+- Investigation: `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
+- Log evidence: Lines showing "11.8 second gap" between ingestion completion and ProjectActivityMonitor start
 
 ---
+
+
+# P1 (High Priority) - 13 Items
+
+## CLI Logomark Display (1 item) ⬇️
+
+**Status:** Partially complete (project switch works, ingestion updates missing)
+**Priority:** Demoted from P0 (project switch already works via database)
+**Effort:** 1-2 hours (add hoover notification subscription)
+
+- [ ] #P0-LOGOMARK: Add real-time logomark updates during transcript ingestion
+
+**Already Working (commit `0ab0d79`):**
+- ✅ Database-backed provider detection
+- ✅ Updates on project switch via `.task(id: projectPath)`
+- ✅ Efficient SQL query for providers
+
+**Missing:**
+- ❌ Real-time updates during initial ingestion/hoovering
+- ProjectBadgesContainer needs to subscribe to hoover notifications
+
+**Implementation:**
+- Subscribe to hoover/ingestion completion notifications
+- Trigger `loadProviders()` refresh when transcripts are added
+- No UI changes needed, just notification wiring
+
+**Files:**
+- `Contextify/Contentify/ProjectBadgesContainer.swift`
+
+---
+
+## Build Warnings (5 items) ✅ COMPLETE
+
+**Status:** ✅ Complete (verified 2025-11-18)
+**Validation:** `bash scripts/xc.sh build 2>&1 | grep -c "warning:"` → **0**
+
+- [x] #19: Fix ConversationMonitor.swift warnings ✅
+- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks ✅
+- [x] #21: Fix ProjectsViewModel.swift warnings ✅
+- [x] #22: Fix ProjectSwitcherState.swift warnings ✅
+- [x] #23: Verify clean build with zero warnings ✅
+
+**Result:** Build produces **zero warnings** - all previously reported warnings have been resolved.
+
+**Tested:**
+- `bash scripts/xc.sh build` → BUILD SUCCEEDED, 0 warnings
+- Meets zero-tolerance policy from CLAUDE.md
+
+---
+
 
 ## Compatibility (1 item)
 
@@ -568,7 +449,38 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 20 Items
+# P2 (Medium Priority) - 22 Items
+
+## Transcript Repair MVP (2 items) ⬇️
+
+**Status:** Instrumentation complete, UI not started
+**Priority:** Demoted from P0 (user-requested, CLI workaround exists)
+**Effort:** 8-10 hours
+
+- [ ] #58: Provide automated repair option for corrupt transcripts
+- [ ] #59: Ensure repaired transcripts flip back to active status
+
+**Background:**
+- 87 fresh Claude Code transcripts fail parser (missing uuid, timestamp)
+- Hoover logs `[HOOVER-CORRUPT]` and marks `status = "error"`
+- CLI tool exists (`swift run TranscriptValidatorCLI`) - manual workaround available
+
+**Tasks:**
+- Surface corrupt transcripts in Transcript window (warning chip)
+- Add "Validate in CLI" / "Reveal in Finder" actions
+- Provide automated repair (truncate/re-parse/editor)
+- Auto-flip repaired transcripts to `status = "active"`
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift`
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
+- `Sources/TranscriptValidatorCLI/main.swift`
+
+**Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025-11-11 16:35)`
+
+**Note:** Phase 2 enhancements (auto-repair mode, metrics tracking) in P1 as #85-88 (see Git Activity section)
+
+---
 
 ## Timeline Flicker (1 item) ✅ FIXED
 
@@ -838,11 +750,20 @@ if state.entries.count == new.count && state.entries == new {
 - [x] #15: Remove "Run in Background" button from welcome modal
 - [x] #17: Replace invalid project root modal with warning icons
 - [x] #18: Validate paths before persisting to database
+- [x] #29: Fix drag-drop cancellation when cursor exits window (2025-11-18, commit `0bbe383`)
+- [x] #30: Add state validation after drag operations (2025-11-18, commit `0bbe383`)
+- [x] #P0-SUMM: Fix failure to kick off summarization on initial viewport load (2025-11-17)
+- [x] #P0-LOGOMARK-INFO: Remove non-functional CLI logomark info icon (2025-11-17)
 
 ---
 
 ## P1 Completed Items ✅
 
+- [x] #19: Fix ConversationMonitor.swift warnings (verified 2025-11-18)
+- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks (verified 2025-11-18)
+- [x] #21: Fix ProjectsViewModel.swift warnings (verified 2025-11-18)
+- [x] #22: Fix ProjectSwitcherState.swift warnings (verified 2025-11-18)
+- [x] #23: Verify clean build with zero warnings (verified 2025-11-18)
 - [x] #31: Auto-refresh Projects tab on FSEvents detection
 - [x] #33: Debounce rapid filesystem events (2s)
 - [x] #34: Add failed transcript tracking with error states

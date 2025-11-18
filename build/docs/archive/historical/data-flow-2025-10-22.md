@@ -555,6 +555,8 @@ ConversationTimelineView
   └─ ForEach(monitor.visibleEntries) { entry in
        TimelineEntryRow(entry: entry)
      }
+
+> **2025-11-17 update:** `ConversationMonitor` now arms the initial viewport snapshot only after `finishFeedLoad` detects cache misses *and* the timeline cache generator for the new project is ready. Any early callbacks from the previous project are ignored, pending snapshots are replayed once the generator spins up, and a 500 ms fallback queues the newest IDs if SwiftUI never reports visibility. This guarantees summarization starts automatically after each project switch.
 ```
 
 **Session Switching Flow**:

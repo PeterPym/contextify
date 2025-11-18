@@ -23,6 +23,90 @@ public actor ProjectDiscoveryService {
     self.folderAccessController = folderAccessController
   }
 
+  nonisolated private func quickExtractCodexProjectPath(from transcript: URL) -> URL? {
+    struct RecordWithCwd: Codable { let cwd: String? }
+    struct CodexPayload: Codable { let cwd: String? }
+    struct CodexRecord: Codable { let payload: CodexPayload? }
+
+    guard let firstLine = readCodexSessionHeaderLine(from: transcript),
+          let jsonData = firstLine.data(using: .utf8) else {
+      return nil
+    }
+
+    if let directRecord = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
+       let cwd = directRecord.cwd {
+      return URL(fileURLWithPath: cwd)
+    }
+
+    if let payloadRecord = try? JSONDecoder().decode(CodexRecord.self, from: jsonData),
+       let cwd = payloadRecord.payload?.cwd {
+      return URL(fileURLWithPath: cwd)
+    }
+
+    return nil
+  }
+
+  nonisolated private func readCodexSessionHeaderLine(
+    from transcript: URL,
+    maxBytes: Int = 1_048_576
+  ) -> String? {
+    guard let handle = try? FileHandle(forReadingFrom: transcript) else {
+      return nil
+    }
+    defer { try? handle.close() }
+
+    var buffer = Data()
+    let chunkSize = 131_072
+    let newline: UInt8 = 0x0A
+
+    while buffer.count < maxBytes {
+      guard let chunk = try? handle.read(upToCount: min(chunkSize, maxBytes - buffer.count)),
+            !chunk.isEmpty else {
+        break
+      }
+      buffer.append(chunk)
+
+      while let newlineIndex = buffer.firstIndex(of: newline) {
+        let lineSlice = buffer[..<newlineIndex]
+        let nextIndex = buffer.index(after: newlineIndex)
+        buffer.removeSubrange(..<nextIndex)
+
+        if lineSlice.isEmpty {
+          continue
+        }
+
+        var lineData = Data(lineSlice)
+        while lineData.last == 0x0D {  // Trim trailing CR if present
+          lineData.removeLast()
+        }
+
+        if let line = String(data: lineData, encoding: .utf8) {
+          return line
+        }
+      }
+    }
+
+    guard !buffer.isEmpty,
+          let line = String(data: buffer, encoding: .utf8),
+          !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+
+    return line
+  }
+
+  nonisolated private func sortedDirectories(at url: URL) -> [URL] {
+    guard let entries = try? FileManager.default.contentsOfDirectory(
+      at: url,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else { return [] }
+
+    return entries
+      .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+      .sorted { lhs, rhs in lhs.lastPathComponent > rhs.lastPathComponent }
+  }
+
   // MARK: - Security-Scoped Access Helpers
 
   /// Execute an operation with security-scoped access to ~/.claude/projects.
@@ -211,158 +295,197 @@ public actor ProjectDiscoveryService {
     let startTime = Date()
     logger.info("[QUICK-DISCOVERY-START] Scanning for newest transcript")
 
+    struct Candidate {
+      let projectPath: URL
+      let transcriptFile: URL
+      let mtime: Date
+      let provider: DiscoveredProject.Provider
+    }
+
     do {
-      var allCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
+      var candidateByProject: [String: Candidate] = [:]
+
+      func recordCandidate(_ candidate: Candidate) {
+        let key = candidate.projectPath.path
+        if let existing = candidateByProject[key], existing.mtime >= candidate.mtime {
+          return
+        }
+        candidateByProject[key] = candidate
+      }
 
       // PART 1: Scan Claude Code projects (~/.claude/projects)
-      // IMPORTANT: All FileManager operations must happen synchronously inside this closure
-      // Handle authorization errors gracefully (sandboxed builds need user permission first)
       let claudeCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)]
       do {
         claudeCandidates = try await withClaudeRoot { root in
-        guard FileManager.default.fileExists(atPath: root.path) else {
-          logger.debug("[QUICK-DISCOVERY] Claude projects directory not found")
-          return [(projectPath: URL, transcriptFile: URL, mtime: Date)]()
-        }
-
-        let projectDirs = try FileManager.default.contentsOfDirectory(
-          at: root,
-          includingPropertiesForKeys: [.isDirectoryKey],
-          options: [.skipsHiddenFiles]
-        ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
-
-        logger.info("[QUICK-DISCOVERY] Found \(projectDirs.count) Claude project directories")
-
-        // For each directory, find newest .jsonl file (synchronously)
-        var results: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
-
-        for claudeDir in projectDirs {
-          // Reverse map to project path
-          guard let projectPath = reversePathMapping(dirURL: claudeDir) else {
-            logger.debug("[QUICK-DISCOVERY-SCAN] Could not reverse map: \(claudeDir.lastPathComponent)")
-            continue
+          guard FileManager.default.fileExists(atPath: root.path) else {
+            logger.debug("[QUICK-DISCOVERY] Claude projects directory not found")
+            return []
           }
 
-          // Find all .jsonl files with mtimes
-          guard let files = try? FileManager.default.contentsOfDirectory(
-            at: claudeDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+          let projectDirs = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
-          ).filter({ $0.pathExtension == "jsonl" }), !files.isEmpty else {
-            continue
-          }
+          ).filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
-          // Find the file with newest mtime
-          let filesWithMtimes = files.compactMap { file -> (URL, Date)? in
-            guard let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
-              return nil
+          logger.info("[QUICK-DISCOVERY] Found \(projectDirs.count) Claude project directories")
+
+          var results: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
+
+          for claudeDir in projectDirs {
+            guard let projectPath = reversePathMapping(dirURL: claudeDir) else {
+              logger.debug("[QUICK-DISCOVERY-SCAN] Could not reverse map: \(claudeDir.lastPathComponent)")
+              continue
             }
-            return (file, mtime)
-          }
 
-          if let newestFile = filesWithMtimes.max(by: { $0.1 < $1.1 }) {
-            results.append((projectPath, newestFile.0, newestFile.1))
+            guard let files = try? FileManager.default.contentsOfDirectory(
+              at: claudeDir,
+              includingPropertiesForKeys: [.contentModificationDateKey],
+              options: [.skipsHiddenFiles]
+            ).filter({ $0.pathExtension == "jsonl" }), !files.isEmpty else {
+              continue
+            }
+
+            let filesWithMtimes = files.compactMap { file -> (URL, Date)? in
+              guard let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
+                return nil
+              }
+              return (file, mtime)
+            }
+
+            if let newestFile = filesWithMtimes.max(by: { $0.1 < $1.1 }) {
+              results.append((projectPath, newestFile.0, newestFile.1))
+            }
           }
-        }
 
           return results
         }
       } catch {
-        // Authorization not granted yet (sandboxed build during first launch)
-        // This is expected - user will grant permission via welcome modal
         logger.debug("[QUICK-DISCOVERY] Claude scan skipped (no authorization): \(error.localizedDescription, privacy: .public)")
         claudeCandidates = []
       }
 
-      allCandidates.append(contentsOf: claudeCandidates)
+      claudeCandidates.forEach {
+        recordCandidate(Candidate(projectPath: $0.projectPath, transcriptFile: $0.transcriptFile, mtime: $0.mtime, provider: .claudeCode))
+      }
+      let claudeBaseline = Dictionary(uniqueKeysWithValues: claudeCandidates.map { ($0.projectPath.path, $0.mtime) })
+      logger.info("[QUICK-DISCOVERY] Claude scan found \(claudeCandidates.count) projects")
 
       // PART 2: Scan Codex CLI transcripts (~/.codex/sessions/YYYY/MM/DD/*.jsonl)
-      // Codex transcripts contain `cwd` field - need to parse JSONL for project path
-      // Handle authorization errors gracefully (sandboxed builds need user permission first)
-      let codexCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)]
+      let codexBudget: TimeInterval = 5
+      let codexScanStart = Date()
+
       do {
-        codexCandidates = try await withCodexRoot { codexRoot in
+        let codexResult = try await withCodexRoot { codexRoot -> ([Candidate], Int, Int) in
           guard FileManager.default.fileExists(atPath: codexRoot.path) else {
             logger.debug("[QUICK-DISCOVERY] Codex sessions directory not found")
-            return []
+            return ([], 0, 0)
           }
 
-          logger.info("[QUICK-DISCOVERY] Scanning Codex sessions")
+          logger.info("[QUICK-DISCOVERY] Scanning Codex sessions (budget=\(Int(codexBudget * 1000))ms)")
 
-          // Recursively find all .jsonl files (up to 3 levels: YYYY/MM/DD)
-          let codexFiles: [URL] = (try? FileManager.default.contentsOfDirectory(
-            at: codexRoot,
-          includingPropertiesForKeys: [.contentModificationDateKey],
-          options: []
-        ).flatMap { yearDir -> [URL] in
-          guard (try? yearDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
+          var localCandidates: [String: Candidate] = [:]
+          var processed = 0
+          var projectSet = Set<String>()
+          var codexProjectsSeen = Set<String>()
 
-          return (try? FileManager.default.contentsOfDirectory(at: yearDir, includingPropertiesForKeys: [.contentModificationDateKey], options: []))?.flatMap { monthDir -> [URL] in
-            guard (try? monthDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
-
-            return (try? FileManager.default.contentsOfDirectory(at: monthDir, includingPropertiesForKeys: [.contentModificationDateKey], options: []))?.flatMap { dayDir -> [URL] in
-              guard (try? dayDir.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return [] }
-
-              return (try? FileManager.default.contentsOfDirectory(at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]))?.filter { $0.pathExtension == "jsonl" } ?? []
-            } ?? []
-          } ?? []
-        }) ?? []
-
-        logger.info("[QUICK-DISCOVERY] Found \(codexFiles.count) Codex transcript files")
-
-        // Group by project path (extracted from cwd field) and find newest file per project
-        var codexProjectNewest: [String: (file: URL, mtime: Date)] = [:]
-
-        for file in codexFiles {
-          // Get file mtime
-          guard let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
-            continue
-          }
-
-          // Extract project path using same logic as full discovery
-          // This handles both Claude Code (cwd) and Codex (payload.cwd) formats
-          // and reads up to 64KB instead of just 1KB
-          guard let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file) else {
-            logger.debug("[QUICK-DISCOVERY-CODEX] No CWD found in: \(file.lastPathComponent, privacy: .public)")
-            continue
-          }
-
-          // Track newest file and mtime for this project
-          if let existing = codexProjectNewest[cwd] {
-            if mtime > existing.mtime {
-              codexProjectNewest[cwd] = (file, mtime)
+          let yearDirs = sortedDirectories(at: codexRoot)
+          outerLoop: for yearDir in yearDirs {
+            try Task.checkCancellation()
+            if Date().timeIntervalSince(codexScanStart) > codexBudget {
+              logger.info("[QUICK-DISCOVERY] Codex scan budget exceeded during year \(yearDir.lastPathComponent)")
+              break
             }
-          } else {
-            codexProjectNewest[cwd] = (file, mtime)
+
+            let monthDirs = sortedDirectories(at: yearDir)
+            for monthDir in monthDirs {
+              try Task.checkCancellation()
+              if Date().timeIntervalSince(codexScanStart) > codexBudget {
+                logger.info("[QUICK-DISCOVERY] Codex scan budget exceeded during month \(monthDir.lastPathComponent)")
+                break outerLoop
+              }
+
+              let dayDirs = sortedDirectories(at: monthDir)
+              for dayDir in dayDirs {
+                try Task.checkCancellation()
+                if Date().timeIntervalSince(codexScanStart) > codexBudget {
+                  logger.info("[QUICK-DISCOVERY] Codex scan budget exceeded during day \(dayDir.lastPathComponent)")
+                  break outerLoop
+                }
+
+                guard let transcripts = try? FileManager.default.contentsOfDirectory(
+                  at: dayDir,
+                  includingPropertiesForKeys: [.contentModificationDateKey],
+                  options: [.skipsHiddenFiles]
+                ).filter({ $0.pathExtension == "jsonl" }) else {
+                  continue
+                }
+
+                let sortedTranscripts = transcripts.sorted {
+                  let lhs = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                  let rhs = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                  return lhs > rhs
+                }
+
+                for transcript in sortedTranscripts {
+                  try Task.checkCancellation()
+                  if Date().timeIntervalSince(codexScanStart) > codexBudget {
+                    logger.info("[QUICK-DISCOVERY] Codex scan budget exceeded while processing \(transcript.lastPathComponent)")
+                    break outerLoop
+                  }
+
+                  guard let mtime = (try? transcript.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
+                    continue
+                  }
+
+                  processed += 1
+
+                  guard let projectPath = quickExtractCodexProjectPath(from: transcript) else {
+                    logger.debug("[QUICK-DISCOVERY-CODEX] No CWD found in \(transcript.lastPathComponent, privacy: .public)")
+                    continue
+                  }
+
+                  let projectKey = projectPath.path
+
+                  if codexProjectsSeen.contains(projectKey) {
+                    continue
+                  }
+                  codexProjectsSeen.insert(projectKey)
+                  projectSet.insert(projectKey)
+
+                  if let baseline = claudeBaseline[projectKey], baseline >= mtime {
+                    continue
+                  }
+
+                  if let existing = localCandidates[projectKey], existing.mtime >= mtime {
+                    continue
+                  }
+
+                  localCandidates[projectKey] = Candidate(
+                    projectPath: projectPath,
+                    transcriptFile: transcript,
+                    mtime: mtime,
+                    provider: .codexCLI
+                  )
+                }
+              }
+            }
           }
+
+          return (Array(localCandidates.values), processed, projectSet.count)
         }
 
-          // Convert to candidates and return
-          var candidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)] = []
-          for (projectPath, newest) in codexProjectNewest {
-            candidates.append((URL(fileURLWithPath: projectPath), newest.file, newest.mtime))
-          }
-
-          logger.info("[QUICK-DISCOVERY] Found \(codexProjectNewest.count) unique Codex projects")
-
-          // Log first 3 projects for validation
-          for (projectPath, newest) in codexProjectNewest.prefix(3) {
-            logger.debug("[QUICK-DISCOVERY-CODEX] Project: \(projectPath, privacy: .public) newest: \(newest.file.lastPathComponent, privacy: .public) mtime: \(newest.mtime, privacy: .public)")
-          }
-
-          return candidates
-        }
+        codexResult.0.forEach { recordCandidate($0) }
+        let codexElapsed = Date().timeIntervalSince(codexScanStart)
+        logger.info("[QUICK-DISCOVERY] Codex scan processed \(codexResult.1) transcripts across \(codexResult.2) projects in \(Int(codexElapsed * 1000))ms")
+      } catch is CancellationError {
+        logger.info("[QUICK-DISCOVERY] Codex scan cancelled")
       } catch {
-        // Authorization not granted yet (sandboxed build during first launch)
-        // This is expected - user will grant permission via welcome modal
         logger.debug("[QUICK-DISCOVERY] Codex scan skipped (no authorization): \(error.localizedDescription, privacy: .public)")
-        codexCandidates = []
       }
 
-      allCandidates.append(contentsOf: codexCandidates)
-
       // Find global newest across both Claude and Codex
-      guard let newest = allCandidates.max(by: { $0.mtime < $1.mtime }) else {
+      guard let newest = candidateByProject.values.max(by: { $0.mtime < $1.mtime }) else {
         let duration = Date().timeIntervalSince(startTime)
         logger.info("[QUICK-DISCOVERY-DONE] No transcripts found in any project (duration: \(Int(duration * 1000), privacy: .public)ms)")
         return nil
@@ -371,7 +494,7 @@ public actor ProjectDiscoveryService {
       let duration = Date().timeIntervalSince(startTime)
       logger.info("[QUICK-DISCOVERY-DONE] Newest: \(newest.projectPath.lastPathComponent, privacy: .public) transcript=\(newest.transcriptFile.lastPathComponent, privacy: .public) mtime=\(newest.mtime, privacy: .public) (duration: \(Int(duration * 1000), privacy: .public)ms)")
 
-      return newest
+      return (newest.projectPath, newest.transcriptFile, newest.mtime)
 
     } catch {
       let duration = Date().timeIntervalSince(startTime)
