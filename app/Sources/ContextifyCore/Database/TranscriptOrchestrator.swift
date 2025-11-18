@@ -429,35 +429,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
-  /// Delete projects that have neither transcripts nor entries (legacy ghosts).
-  @discardableResult
-  public func deleteProjectsWithoutData() throws -> Int {
-    let pool = try dbManager.pool
-    return try pool.write { db in
-      let rows = try Row.fetchAll(db, sql: """
-        SELECT p.id
-        FROM projects p
-        LEFT JOIN transcripts t ON t.project_id = p.id
-        LEFT JOIN transcript_entries e ON e.project_id = p.id
-        GROUP BY p.id
-        HAVING COUNT(t.id) = 0 AND COUNT(e.id) = 0
-      """)
-
-      let ids = rows.compactMap { $0["id"] as? String }
-      guard !ids.isEmpty else {
-        log.info("[PROJECT-CLEANUP] No ghost projects found")
-        return 0
-      }
-
-      for chunk in ids {
-        try db.execute(sql: "DELETE FROM projects WHERE id = ?", arguments: [chunk])
-      }
-
-      log.info("[PROJECT-CLEANUP] Deleted \(ids.count, privacy: .public) ghost project(s)")
-      return ids.count
-    }
-  }
-
   /// Returns a map of project_id -> transcript entry count.
   public func getProjectEntryCounts() throws -> [String: Int] {
     try dbManager.pool.read { db in

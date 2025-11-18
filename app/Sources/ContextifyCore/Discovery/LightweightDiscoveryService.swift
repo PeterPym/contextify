@@ -42,7 +42,7 @@ public actor LightweightDiscoveryService {
       return []
     }
 
-    return dirs.compactMap { dir -> LightweightProject? in
+    return dirs.map { dir -> LightweightProject in
       // Optimization: Use directory mtime as proxy for activity
       // This avoids opening/reading individual files (saves syscalls)
       let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
@@ -54,12 +54,8 @@ public actor LightweightDiscoveryService {
         options: [.skipsHiddenFiles]
       ))?.filter { $0.pathExtension == "jsonl" } ?? []
 
-      guard !files.isEmpty else {
-        log.info("[DISC-LIGHT-SKIP-EMPTY] id=\(hashFolder, privacy: .public) reason=no-transcripts")
-        return nil
-      }
-
       let hashFolder = dir.lastPathComponent
+
       let realPath = resolveClaudeProjectPath(hashFolder: hashFolder, directory: dir, transcripts: files)
       let displayName = realPath.map { URL(fileURLWithPath: $0).lastPathComponent }
         ?? fallbackDisplayName(for: hashFolder)
@@ -152,16 +148,11 @@ public actor LightweightDiscoveryService {
     }
 
     // Convert to LightweightProject array
-    return projects.compactMap { cwd, data in
+    return projects.map { cwd, data in
       // Generate stable ID from path (base64 encoding)
       let id = cwd.data(using: .utf8)!.base64EncodedString()
         .replacingOccurrences(of: "/", with: "_")
         .replacingOccurrences(of: "+", with: "-")
-
-      guard !data.files.isEmpty else {
-        log.info("[DISC-LIGHT-SKIP-EMPTY] id=\(id, privacy: .public) reason=no-transcripts")
-        return nil
-      }
 
       return LightweightProject(
         id: id,
