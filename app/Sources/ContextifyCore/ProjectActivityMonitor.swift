@@ -68,10 +68,19 @@ public actor ProjectActivityMonitor {
     }
 
     isMonitoring = true
+    let startTime = Date()
     log.info("[INIT] ProjectActivityMonitor: starting global monitoring")
 
-    // Discover all projects from transcript roots
-    try await discoverAllProjects()
+    // Check if projects were already discovered and ingested by ProjectsViewModel
+    // If so, skip the expensive discoverAllProjects() call (P0 #P1-DISCOVERY optimization)
+    let projectCount = (try? orchestrator.listProjects().count) ?? 0
+    if projectCount > 0 {
+      log.info("[INIT-SKIP-DISCOVERY] Projects already ingested (count: \(projectCount, privacy: .public)) - skipping duplicate discovery")
+    } else {
+      log.info("[INIT-FULL-DISCOVERY] No projects in database - running full discovery")
+      // Discover all projects from transcript roots
+      try await discoverAllProjects()
+    }
 
     #if !APPSTORE_BUILD
     // Start FSEvents monitoring for live transcript updates (DMG builds only)
@@ -107,6 +116,10 @@ public actor ProjectActivityMonitor {
     #else
     log.info("[INIT] ProjectActivityMonitor: sandbox mode (no global discovery FSEvents; app layer handles discovery)")
     #endif
+
+    // Log total startup time for monitoring
+    let duration = Date().timeIntervalSince(startTime)
+    log.info("[INIT-COMPLETE] ProjectActivityMonitor startup complete in \(Int(duration * 1000), privacy: .public)ms")
   }
 
   /// Stop all monitoring and watchers

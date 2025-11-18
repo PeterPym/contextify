@@ -727,8 +727,10 @@ public final class ProjectSwitcherState {
 
     monitorStartTask = Task { [weak self] in
       guard let self else { return }
+      log.info("[SWITCHER-MONITOR] Waiting for .projectsDiscoveryComplete notification...")
       let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
       for await _ in notifications {
+        log.info("[SWITCHER-MONITOR] ✅ Received .projectsDiscoveryComplete notification - starting monitor")
         await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
         return
       }
@@ -736,7 +738,9 @@ public final class ProjectSwitcherState {
 
     monitorFallbackTask = Task { [weak self] in
       guard let self else { return }
+      log.info("[SWITCHER-MONITOR] Fallback timer: will start monitor after 5s if notification not received")
       try? await Task.sleep(nanoseconds: 5_000_000_000)
+      log.warning("[SWITCHER-MONITOR] ⚠️ Fallback timeout triggered - notification was NOT received in 5s")
       await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
     }
   }

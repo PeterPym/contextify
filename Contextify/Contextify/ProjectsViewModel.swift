@@ -83,6 +83,8 @@ final class ProjectsViewModel {
       return
     }
 
+    let overallStartTime = Date()
+    logger.info("[DISCOVERY-START] Beginning full project discovery and ingestion")
     logger.debug("discoverProjects() invoked")
     isDiscovering = true
     errorMessage = nil
@@ -145,9 +147,19 @@ final class ProjectsViewModel {
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true, watchersReady: true)
       }
 
+      let totalDuration = Date().timeIntervalSince(overallStartTime)
+      logger.info("[DISCOVERY-COMPLETE] Full discovery and ingestion complete in \(Int(totalDuration * 1000), privacy: .public)ms")
       logger.info("Discovery and ingestion complete")
       // Update pipeline readiness (discovery complete)
       StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+
+      // POST .projectsDiscoveryComplete notification to unblock ProjectSwitcherState
+      // This was previously missing, causing a 5-second timeout delay before
+      // ProjectActivityMonitor could start. See P0 #P1-DISCOVERY for details.
+      await MainActor.run {
+        NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+      }
+      logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification")
 
     } catch {
       logger.error("Discovery failed: \(error.localizedDescription)")
@@ -156,6 +168,12 @@ final class ProjectsViewModel {
       isWelcomeReady = true
       // Even on failure, mark discovery as complete
       StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+
+      // POST .projectsDiscoveryComplete even on failure to unblock monitor
+      await MainActor.run {
+        NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+      }
+      logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (after error)")
     }
 
     isDiscovering = false
