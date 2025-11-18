@@ -138,6 +138,20 @@ final class ProjectsViewModel {
         // Update pipeline readiness (DB has been updated during ingestion)
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true)
 
+        // POST .projectsDiscoveryComplete notification BEFORE warming up watchers
+        // This unblocks ProjectActivityMonitor to start immediately while watchers warm up in parallel
+        // Previously, warmUpWatchers() blocked for 60+ seconds before notification was posted
+        let ingestionDuration = Date().timeIntervalSince(overallStartTime)
+        logger.info("[DISCOVERY-INGEST-DONE] Ingestion complete in \(Int(ingestionDuration * 1000), privacy: .public)ms")
+        await MainActor.run {
+          NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+        }
+        logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (before watcher warmup)")
+
+        // Update pipeline readiness (discovery complete)
+        StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+
+        // Now warm up watchers in parallel with ProjectActivityMonitor startup
         await warmUpWatchers(for: refreshed)
       } else {
         logger.info("[DISCOVERY-PHASE] No projects discovered on initial scan")
@@ -145,21 +159,17 @@ final class ProjectsViewModel {
         isWelcomeReady = true
         // No ingestion needed, but mark as ready
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true, watchersReady: true)
+
+        // Post notification even with no projects
+        await MainActor.run {
+          NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+        }
+        logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (no projects)")
+        StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
       }
 
       let totalDuration = Date().timeIntervalSince(overallStartTime)
-      logger.info("[DISCOVERY-COMPLETE] Full discovery and ingestion complete in \(Int(totalDuration * 1000), privacy: .public)ms")
-      logger.info("Discovery and ingestion complete")
-      // Update pipeline readiness (discovery complete)
-      StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
-
-      // POST .projectsDiscoveryComplete notification to unblock ProjectSwitcherState
-      // This was previously missing, causing a 5-second timeout delay before
-      // ProjectActivityMonitor could start. See P0 #P1-DISCOVERY for details.
-      await MainActor.run {
-        NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
-      }
-      logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification")
+      logger.info("[DISCOVERY-COMPLETE] Full discovery and watcher warmup complete in \(Int(totalDuration * 1000), privacy: .public)ms")
 
     } catch {
       logger.error("Discovery failed: \(error.localizedDescription)")
