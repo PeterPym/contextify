@@ -5,11 +5,11 @@
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 23 items - Must complete before App Store submission
-- **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 14 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 67 (demoted transcript repair #58-59 to P2)
+**Total Active Items:** 62 (build warnings #19-23 already fixed)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -209,7 +209,7 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 ---
 
 
-# P1 (High Priority) - 19 Items
+# P1 (High Priority) - 14 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
@@ -238,32 +238,22 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Build Warnings (5 items)
+## Build Warnings (5 items) ✅ COMPLETE
 
-**Status:** Not Started
-**Effort:** 4-6 hours
+**Status:** ✅ Complete (verified 2025-11-18)
+**Validation:** `bash scripts/xc.sh build 2>&1 | grep -c "warning:"` → **0**
 
-- [ ] #19: Fix ConversationMonitor.swift warnings (9 warnings: lines 1320, 1440, 1585, 1596, 1597, 1930, 1978, 2119, 2138)
-- [ ] #20: Fix TranscriptMetadataOrchestrator.swift availability checks (2 warnings: lines 541, 616)
-- [ ] #21: Fix ProjectsViewModel.swift warnings (3 warnings: lines 204, 306)
-- [ ] #22: Fix ProjectSwitcherState.swift warnings (3 warnings: lines 195, 197, 643)
-- [ ] #23: Verify clean build with zero warnings
+- [x] #19: Fix ConversationMonitor.swift warnings ✅
+- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks ✅
+- [x] #21: Fix ProjectsViewModel.swift warnings ✅
+- [x] #22: Fix ProjectSwitcherState.swift warnings ✅
+- [x] #23: Verify clean build with zero warnings ✅
 
-**Problem:** Build produces ~40+ compiler warnings. Potential concurrency bugs, future Swift versions may promote to errors.
+**Result:** Build produces **zero warnings** - all previously reported warnings have been resolved.
 
-**Warnings include:**
-- Unnecessary `await` expressions
-- Main actor isolation violations in Sendable closures
-- Deprecated API usage (getEntriesAfterCursor)
-- Unreachable code after returns
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift`
-- `Contextify/Contextify/TranscriptMetadataOrchestrator.swift`
-- `Contextify/Contextify/ProjectsViewModel.swift`
-- `Contextify/Contextify/ProjectSwitcherState.swift`
-
-**Acceptance Criteria:** `scripts/xc.sh dr` produces zero warnings
+**Tested:**
+- `bash scripts/xc.sh build` → BUILD SUCCEEDED, 0 warnings
+- Meets zero-tolerance policy from CLAUDE.md
 
 ---
 
@@ -734,6 +724,11 @@ if state.entries.count == new.count && state.entries == new {
 
 ## P1 Completed Items ✅
 
+- [x] #19: Fix ConversationMonitor.swift warnings (verified 2025-11-18)
+- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks (verified 2025-11-18)
+- [x] #21: Fix ProjectsViewModel.swift warnings (verified 2025-11-18)
+- [x] #22: Fix ProjectSwitcherState.swift warnings (verified 2025-11-18)
+- [x] #23: Verify clean build with zero warnings (verified 2025-11-18)
 - [x] #31: Auto-refresh Projects tab on FSEvents detection
 - [x] #33: Debounce rapid filesystem events (2s)
 - [x] #34: Add failed transcript tracking with error states
