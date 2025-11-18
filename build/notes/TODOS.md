@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 23 items - Must complete before App Store submission
-- **P1 (High Priority):** 14 items - Important for quality/UX, ship soon after launch
+- **P0 (Blocking Release):** 24 items - Must complete before App Store submission
+- **P1 (High Priority):** 13 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 62 (build warnings #19-23 already fixed)
+**Total Active Items:** 62 (promoted welcome modal hang to P0)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 23 Items
+# P0 (Blocking Release) - 24 Items
 
 ## Website (1 item)
 
@@ -208,8 +208,61 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
+## Critical - Welcome Modal Hang (1 item) 🔗⬆️
 
-# P1 (High Priority) - 14 Items
+**Status:** Not Started
+**Priority:** Promoted from P1 (11-second UI freeze during onboarding)
+**Effort:** 4-6 hours
+**Evidence:** `/private/tmp/transcript-queue-monitor-20251118-002852.log`
+
+- [ ] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal
+
+**Problem:** Welcome modal shows "1/19 projects" for **11+ seconds** before completing discovery. UI appears frozen/broken to users during first-run experience.
+
+**Root Cause (from log analysis):**
+
+Timeline breakdown:
+```
+00:29:16.348-16.479: ProjectsViewModel.discoverAllProjects() completes (131ms) ✅
+00:29:16.479-18.285: Ingestion completes (1.8s) ✅
+00:29:18.285-29.966: 11.8 SECOND GAP - waiting for ProjectActivityMonitor ⚠️
+00:29:29.966: ProjectActivityMonitor.start() finally runs
+00:29:30.342+: Processes 602 transcripts synchronously (blocks UI)
+```
+
+**Architectural Issues:**
+
+1. **Duplicate discovery:** ProjectActivityMonitor runs its own `discoverAllProjects()` **after** ProjectsViewModel already completed discovery
+2. **Late initialization:** ProjectActivityMonitor.start() doesn't begin until 13+ seconds after modal appears
+3. **Synchronous processing:** Processes 602 transcripts on main thread with debug logging for each file
+4. **UI blocking:** Modal progress bar stuck at "1/19" while waiting for background discovery
+
+**Solution:**
+
+1. **Deduplicate discovery:** ProjectActivityMonitor should reuse ProjectsViewModel's discovery results instead of re-scanning
+2. **Earlier initialization:** Start ProjectActivityMonitor in parallel with ProjectsViewModel, not after
+3. **Background processing:** Move transcript enumeration off main thread
+4. **Reduce logging:** Don't log every individual file at debug level (602 log lines!)
+
+**Files:**
+- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:74` - Remove duplicate `discoverAllProjects()` call
+- `Contextify/Contextify/ProjectsViewModel.swift` - Coordinate with ProjectActivityMonitor
+- Consider: Shared discovery coordinator to eliminate duplication
+
+**Acceptance Criteria:**
+- Welcome modal completes discovery in <3 seconds (currently 14s)
+- Progress bar updates smoothly (no 11s freeze at "1/19")
+- No duplicate filesystem scans
+- ProjectActivityMonitor reuses existing discovery data
+
+**References:**
+- Investigation: `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
+- Log evidence: Lines showing "11.8 second gap" between ingestion completion and ProjectActivityMonitor start
+
+---
+
+
+# P1 (High Priority) - 13 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
@@ -257,24 +310,6 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Project Discovery (1 item)
-
-**Status:** Newly identified from DMG hang investigation  
-**Reference:** `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
-
-- [ ] #P1-DISCOVERY: Modernize `discoverAllProjects()` Codex scan (stage on background task, use session metadata, newest-first traversal, incremental resume, and progress logging)
-
-**Problem:** DMG builds block for 60 s+ while `discoverAllProjects()` synchronously walks every Codex transcript (`~/.codex/sessions`). Startup feels frozen, especially with empty databases.
-
-**Scope:**
-1. Move the Codex scan to a cancellable background task so onboarding/UI remain responsive.
-2. Prefer lightweight `session.json` metadata over re-reading entire transcripts.
-3. Traverse newest-first with a 5 s budget and persist a watermark to avoid full rescans each launch.
-4. Add progress + cancellation logging for observability.
-
-**Acceptance:** DMG startup no longer stalls; log shows progress events and total Codex scan duration <1 s for the provided dataset.
-
----
 
 ## Compatibility (1 item)
 
