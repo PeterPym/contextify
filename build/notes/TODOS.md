@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 25 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 23 items - Must complete before App Store submission
 - **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 69 (completed drag-drop fixes #29-30)
+**Total Active Items:** 67 (demoted transcript repair #58-59 to P2)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 25 Items
+# P0 (Blocking Release) - 23 Items
 
 ## Website (1 item)
 
@@ -208,36 +208,6 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical - Transcript Repair MVP (2 items) 🔗⬆️
-
-**Status:** Instrumentation complete, UI not started
-**Priority:** Promoted from P1 (87 corrupt transcripts discovered 2025-11-13)
-**Effort:** 8-10 hours
-
-- [ ] #58: Provide automated repair option for corrupt transcripts
-- [ ] #59: Ensure repaired transcripts flip back to active status
-
-**Background:**
-- 87 fresh Claude Code transcripts fail parser (missing uuid, timestamp)
-- Hoover logs `[HOOVER-CORRUPT]` and marks `status = "error"`
-- CLI tool exists (`swift run TranscriptValidatorCLI`) but no in-app workflow
-
-**Tasks:**
-- Surface corrupt transcripts in Transcript window (warning chip)
-- Add "Validate in CLI" / "Reveal in Finder" actions
-- Provide automated repair (truncate/re-parse/editor)
-- Auto-flip repaired transcripts to `status = "active"`
-
-**Files:**
-- `Contextify/Contextify/TranscriptInventoryView.swift`
-- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
-- `Sources/TranscriptValidatorCLI/main.swift`
-
-**Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025-11-11 16:35)`
-
-**Note:** Phase 2 enhancements (auto-repair mode, metrics tracking) moved to P1 as #85-88 (see Git Activity section)
-
----
 
 # P1 (High Priority) - 19 Items
 
@@ -454,7 +424,38 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 20 Items
+# P2 (Medium Priority) - 22 Items
+
+## Transcript Repair MVP (2 items) ⬇️
+
+**Status:** Instrumentation complete, UI not started
+**Priority:** Demoted from P0 (user-requested, CLI workaround exists)
+**Effort:** 8-10 hours
+
+- [ ] #58: Provide automated repair option for corrupt transcripts
+- [ ] #59: Ensure repaired transcripts flip back to active status
+
+**Background:**
+- 87 fresh Claude Code transcripts fail parser (missing uuid, timestamp)
+- Hoover logs `[HOOVER-CORRUPT]` and marks `status = "error"`
+- CLI tool exists (`swift run TranscriptValidatorCLI`) - manual workaround available
+
+**Tasks:**
+- Surface corrupt transcripts in Transcript window (warning chip)
+- Add "Validate in CLI" / "Reveal in Finder" actions
+- Provide automated repair (truncate/re-parse/editor)
+- Auto-flip repaired transcripts to `status = "active"`
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift`
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift`
+- `Sources/TranscriptValidatorCLI/main.swift`
+
+**Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025-11-11 16:35)`
+
+**Note:** Phase 2 enhancements (auto-repair mode, metrics tracking) in P1 as #85-88 (see Git Activity section)
+
+---
 
 ## Timeline Flicker (1 item) ✅ FIXED
 
