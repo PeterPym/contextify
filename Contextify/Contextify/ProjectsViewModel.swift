@@ -194,8 +194,13 @@ final class ProjectsViewModel {
   /// Sets a project as the current project
   func setAsCurrent(_ project: DiscoveredProject) {
     logger.info("[VIEWMODEL-SWITCH] Switching to project: \(project.name, privacy: .public) path: \(project.path.path, privacy: .public)")
+
     let pathString = project.path.path
     Task {
+      // Cancel any running FastPath to free DB write lock immediately
+      await fastPathCoordinator?.cancel()
+      logger.info("[VIEWMODEL-SWITCH] Cancelled FastPath to free DB resources")
+
       do {
         try await StartupCoordinator.shared.switchProject(to: pathString)
         // isCurrent will update via coordinator subscription; do a lightweight refresh for responsiveness

@@ -6,6 +6,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "TranscriptWatch
 /// Errors that can occur during transcript watching
 public enum TranscriptWatcherError: Error {
   case transcriptNotFound
+  case fileDescriptorLimitExceeded(current: Int, limit: Int)
 }
 
 /// Watches transcript files for changes and triggers incremental streaming
@@ -25,6 +26,10 @@ public final class TranscriptWatcher: @unchecked Sendable {
   // Event deduplication: filter events within 50ms of previous event for same transcript
   private let minEventInterval: TimeInterval = 0.05
   private let heartbeatInterval: TimeInterval = 60.0
+
+  // File descriptor limit: Hard cutoff to prevent file descriptor exhaustion
+  // With 12,000 transcripts, we need a reasonable limit (200 is ~2% active monitoring)
+  private static let MAX_FILE_DESCRIPTORS = 200
 
   public init(
     hooverEngine: HooverEngine,
@@ -69,18 +74,24 @@ public final class TranscriptWatcher: @unchecked Sendable {
       return
     }
 
-    // Combined: start heartbeat on first watch and check if already watching (single sync call)
-    let alreadyWatching = watcherQueue.sync { () -> Bool in
+    // Combined: start heartbeat on first watch, check if already watching, and enforce FD limit
+    let (alreadyWatching, currentFDCount) = watcherQueue.sync { () -> (Bool, Int) in
       if !heartbeatStarted {
         heartbeatStarted = true
         startHeartbeat()
       }
-      return watchers[transcriptId] != nil
+      return (watchers[transcriptId] != nil, watchers.count)
     }
 
     if alreadyWatching {
       log.info("[WATCHER-WATCH-SKIP] Already watching transcript: \(transcriptId, privacy: .public) - skipping")
       return
+    }
+
+    // Enforce file descriptor limit
+    if currentFDCount >= Self.MAX_FILE_DESCRIPTORS {
+      log.warning("[WATCHER-FD-LIMIT] File descriptor limit reached: \(currentFDCount, privacy: .public)/\(Self.MAX_FILE_DESCRIPTORS, privacy: .public) - refusing to watch \(transcriptId, privacy: .public)")
+      throw TranscriptWatcherError.fileDescriptorLimitExceeded(current: currentFDCount, limit: Self.MAX_FILE_DESCRIPTORS)
     }
 
     // NOTE: Initial ingestion removed - orchestrator always hoovers during discovery
