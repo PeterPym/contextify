@@ -731,6 +731,10 @@ public final class ProjectSwitcherState {
       let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
       for await _ in notifications {
         log.info("[SWITCHER-MONITOR] ✅ Received .projectsDiscoveryComplete notification - starting monitor")
+        // Cancel fallback timer since we got the notification
+        await MainActor.run {
+          self.cancelMonitorStartTasks()
+        }
         await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
         return
       }
