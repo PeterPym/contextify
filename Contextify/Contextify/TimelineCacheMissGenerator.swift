@@ -269,9 +269,9 @@ actor TimelineCacheMissGenerator {
         log.debug("processQueue: start (pending: \(self.pendingMisses.count))")
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }
-            if Date().timeIntervalSince(lastProgress) > stallThresholdSeconds && !stallLogged {
-                log.warning("[STATUSBAR-SUMM-STALL] pending=\(self.pendingMisses.count + self.inFlightCount) elapsed=\(Int(Date().timeIntervalSince(lastProgress)))s")
-                stallLogged = true
+            if Date().timeIntervalSince(self.lastProgress) > stallThresholdSeconds && !self.stallLogged {
+                log.warning("[STATUSBAR-SUMM-STALL] pending=\(self.pendingMisses.count + self.inFlightCount) elapsed=\(Int(Date().timeIntervalSince(self.lastProgress)))s")
+                self.stallLogged = true
             }
             isProcessing = true
             notifyQueueChanged()  // Notify that processing started
@@ -864,10 +864,10 @@ actor TimelineCacheMissGenerator {
     }
 }
 
-private struct SummaryTimeoutError: Error {}
+private struct SummaryTimeoutError: Error, Sendable {}
 
 extension TimelineCacheMissGenerator {
-    private func runWithTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+    private func runWithTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
                 return try await operation()
