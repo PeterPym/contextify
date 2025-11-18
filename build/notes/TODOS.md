@@ -325,6 +325,25 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
+## Project Discovery (1 item)
+
+**Status:** Newly identified from DMG hang investigation  
+**Reference:** `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
+
+- [ ] #P1-DISCOVERY: Modernize `discoverAllProjects()` Codex scan (stage on background task, use session metadata, newest-first traversal, incremental resume, and progress logging)
+
+**Problem:** DMG builds block for 60 s+ while `discoverAllProjects()` synchronously walks every Codex transcript (`~/.codex/sessions`). Startup feels frozen, especially with empty databases.
+
+**Scope:**
+1. Move the Codex scan to a cancellable background task so onboarding/UI remain responsive.
+2. Prefer lightweight `session.json` metadata over re-reading entire transcripts.
+3. Traverse newest-first with a 5 s budget and persist a watermark to avoid full rescans each launch.
+4. Add progress + cancellation logging for observability.
+
+**Acceptance:** DMG startup no longer stalls; log shows progress events and total Codex scan duration <1 s for the provided dataset.
+
+---
+
 ## Compatibility (1 item)
 
 **Status:** Not Started
