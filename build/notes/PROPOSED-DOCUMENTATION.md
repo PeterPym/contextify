@@ -251,17 +251,25 @@ Only `first-run-qa-guide.md` exists for testing. This comprehensive guide docume
 
 ---
 
-### 11. Performance Testing & Benchmarks
+### 11. ✅ Performance Testing & Benchmarks (CREATED 2025-11-17)
 
-**Proposed Path:** `build/docs/testing/performance-benchmarks.md`
+**Created Path:** `build/docs/testing/performance-benchmarks.md` (1084 lines)
 
 **Justification:**
-Performance targets mentioned in various docs but no consolidated benchmarks. Need:
-- Current performance baselines (database queries, LLM latency, UI frame rate)
-- Regression testing strategy
-- Profiling workflows (Instruments, XCTest performance tests)
-- Known performance bottlenecks
-- Code verification: Measure actual performance
+Performance targets mentioned in various docs but no consolidated benchmarks. This comprehensive guide provides:
+- Performance targets for all categories (database <20ms, ingestion <500ms/1000 lines, LLM <1s, UI 60 FPS, startup <500ms, real-time <350ms)
+- Benchmark examples with XCTest metrics (XCTClockMetric, XCTCPUMetric, XCTMemoryMetric, XCTApplicationLaunchMetric)
+- Database performance (query benchmarks, index verification, WAL mode, migration performance)
+- Transcript ingestion performance (HooverEngine throughput >2000 lines/s, preview <100ms, checkpoint overhead <5ms)
+- LLM performance (session creation <2ms, timeline summary ~200ms, metadata 2-8s)
+- UI rendering performance (timeline scroll 60 FPS, project switcher <100ms, state update <50ms)
+- Startup performance (cold start <500ms breakdown, coordinator <100ms, quick discovery <500ms)
+- Real-time monitoring (FSEvents ~100-200ms, TranscriptWatcher <150ms, end-to-end ~165ms)
+- Instruments profiling workflows (Time Profiler, Allocations, Leaks, System Trace, SwiftUI)
+- CI regression testing with performance gates (GitHub Actions, baseline comparison, 10% threshold)
+- Known bottlenecks (ConversationMonitor P0 3054 lines, timeline cache miss P0 500-1000ms, full discovery P2)
+- Optimization roadmap (3 phases, 6-9 weeks: baselines → regression testing → optimization)
+- Code verification: Targets verified from 8 documentation files + 3 test files (FoundationLLMTests session benchmark, DatabaseTests patterns)
 
 ---
 
@@ -298,14 +306,14 @@ Mixed error handling approaches (throws vs Result vs optional). Need:
 ## Summary Statistics
 
 **Total Proposed Documents:** 13
-**Completed:** 9 (Priority 1: 2, Priority 2: 3, Priority 3: 3, Priority 4: 1)
-**Remaining:** 4 (Priority 4: 1, Priority 5: 2)
+**Completed:** 10 (Priority 1: 2, Priority 2: 3, Priority 3: 3, Priority 4: 2)
+**Remaining:** 3 (Priority 5: 2, plus main README audit)
 
 **By Priority:**
 - **Priority 1 (Critical):** 2/2 ✅ COMPLETE
 - **Priority 2 (Component Deep Dives):** 3/3 ✅ COMPLETE
 - **Priority 3 (Operational):** 3/3 ✅ COMPLETE (Doc #6 covered by architecture-refactoring-analysis.md)
-- **Priority 4 (Testing):** 1/2 ⏳ IN PROGRESS
+- **Priority 4 (Testing):** 2/2 ✅ COMPLETE
 - **Priority 5 (Design):** 0/2 ⏳ PENDING
 
 **Estimated Effort:**
