@@ -181,7 +181,7 @@ struct ContextifyApp: App {
 
   init() {
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
-    startupLog.notice("🚀 Contextify launched")
+    startupLog.notice("🚀 Contextify launched (Phase 3 Lazy Loading)")
 
     // Pre-warm expensive framework initialization off main thread
     // (Unified logging, Security.framework, CoreFoundation, Bundle parsing)
@@ -206,7 +206,7 @@ struct ContextifyApp: App {
       #endif
     }
 
-    // Start coordinator and ProjectSwitcherState from app init for deterministic startup
+    // Phase 3: Start AppStateOrchestrator (replaces old startup logic)
     Task { @MainActor in
       // PHASE 0: Pre-warm LLM health check (makes first StatusBarViewModel instant)
       #if canImport(FoundationModels)
@@ -217,18 +217,14 @@ struct ContextifyApp: App {
       }
       #endif
 
-      // PHASE 1: Start coordinator FIRST (establishes project identity)
-      // Note: start() now gracefully handles "no project" state (never throws)
+      // PHASE 1: Lightweight startup via AppStateOrchestrator (<200ms target)
+      await AppStateOrchestrator.shared.startup()
+      startupLog.info("✅ AppStateOrchestrator startup complete")
+
+      // PHASE 2: Start legacy coordinators (for now - will migrate later)
       await StartupCoordinator.shared.start()
-      startupLog.info("✅ StartupCoordinator started successfully")
-
-      // PHASE 2: Start dependent systems (now safe - coordinator has published context)
       ProjectSwitcherState.shared.start()
-      startupLog.info("✅ ProjectSwitcherState started")
-
-      // PHASE 3: Subscribe to welcome modal trigger (C3.3)
-      // Note: Using onReceive in view body instead of manual NotificationCenter
-      // to work with SwiftUI's state management (@State cannot be mutated from closure)
+      startupLog.info("✅ Legacy coordinators started")
     }
   }
 
