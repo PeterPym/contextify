@@ -9,6 +9,7 @@ public actor FastPathIngestionCoordinator {
   private let previewLimit: Int
   private let maxPreviewConcurrency: Int
   private let maxTranscriptsPerProject: Int
+  private let forcedPreviewCount: Int
   private var enqueuedCompletions: Set<String> = []
   private var notifiedProjects: Set<String> = []
   private var pendingNotificationTokens: Set<String> = []
@@ -18,12 +19,14 @@ public actor FastPathIngestionCoordinator {
     orchestrator: TranscriptOrchestrator,
     previewLimit: Int = 25,
     maxPreviewConcurrency: Int = 4,
-    maxTranscriptsPerProject: Int = 5
+    maxTranscriptsPerProject: Int = 5,
+    forcedPreviewCount: Int = 25
   ) {
     self.orchestrator = orchestrator
     self.previewLimit = previewLimit
     self.maxPreviewConcurrency = max(1, maxPreviewConcurrency)
     self.maxTranscriptsPerProject = max(1, maxTranscriptsPerProject)
+    self.forcedPreviewCount = max(1, forcedPreviewCount)
   }
 
   public func resumePendingCompletions() async {
@@ -166,7 +169,28 @@ public actor FastPathIngestionCoordinator {
     log.info("[FAST-PATH-TRANSCRIPT] Found \(transcripts.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
 
     // Filter for transcripts that still need processing (ingest_state != complete)
-    let targets = transcripts.filter { $0.ingestState != "complete" && $0.status == "active" }
+    var targets = transcripts.filter { $0.ingestState != "complete" && $0.status == "active" }
+    log.info("[FAST-PATH-FILTER-STATS] project=\(projectId, privacy: .public) total=\(transcripts.count, privacy: .public) partial=\(targets.count, privacy: .public)")
+
+    if targets.isEmpty, !transcripts.isEmpty {
+      let entryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
+      if entryCount == 0 {
+        do {
+          let forcedIds = try orchestrator.forceResetIngestState(projectId: projectId, limit: forcedPreviewCount)
+          if !forcedIds.isEmpty {
+            log.warning("[FAST-PATH-RESET] project=\(projectId, privacy: .public) forced=\(forcedIds.count, privacy: .public)")
+            let forcedSet = Set(forcedIds)
+            targets = transcripts.filter { forcedSet.contains($0.id) }
+          } else {
+            log.warning("[FAST-PATH-RESET] project=\(projectId, privacy: .public) reason=no-eligible-transcripts")
+          }
+        } catch {
+          log.error("[FAST-PATH-RESET] Failed to reset ingest state for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+      } else {
+        log.info("[FAST-PATH-FILTER-NO-TARGETS] project=\(projectId, privacy: .public) entryCount=\(entryCount, privacy: .public)")
+      }
+    }
 
     // Log filter results
     log.info("[FAST-PATH-FILTER] Filtered \(targets.count, privacy: .public) targets from \(transcripts.count, privacy: .public) total transcripts for project \(projectId, privacy: .public)")

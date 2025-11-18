@@ -64,6 +64,16 @@ public final class AppStateOrchestrator: ObservableObject {
     do {
       try await orchestrator.updateProjectsMetadataOnly(projects)
       log.debug("[ORCH-STARTUP] Updated projects table metadata")
+      Task.detached(priority: .utility) {
+        do {
+          let deleted = try orchestrator.deleteProjectsWithoutData()
+          if deleted > 0 {
+            log.info("[ORCH-CLEANUP] Deleted \(deleted) ghost project(s) post-startup")
+          }
+        } catch {
+          log.warning("[ORCH-CLEANUP] Failed to delete ghost projects: \(error.localizedDescription)")
+        }
+      }
     } catch {
       log.error("[ORCH-STARTUP] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
     }

@@ -324,10 +324,19 @@ public final class ProjectSwitcherState {
         }
 
         let isOrphaned = project.isOrphaned || !pathExists
+        let displayName: String
+        if let storedName = project.name, !storedName.isEmpty {
+          displayName = storedName
+        } else {
+          let fallback = URL(fileURLWithPath: project.rootPath).lastPathComponent
+          log.warning("[SWITCHER-NAME-FALLBACK] project=\(project.id, privacy: .public) rootPath=\(project.rootPath, privacy: .public)")
+          displayName = fallback
+        }
+
         let entryCount = entryCounts[project.id] ?? 0
         return ProjectInfo(
           id: project.id,
-          name: project.name ?? URL(fileURLWithPath: project.rootPath).lastPathComponent,
+          name: displayName,
           rootPath: project.rootPath,
           transcriptCount: entryCount,
           isOrphaned: isOrphaned

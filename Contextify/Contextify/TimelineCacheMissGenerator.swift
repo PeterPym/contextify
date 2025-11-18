@@ -60,6 +60,10 @@ actor TimelineCacheMissGenerator {
 
     // In-flight tracking for accurate ETA
     private var inFlightCount: Int = 0
+    private let entryTimeoutSeconds: TimeInterval = 15
+    private let stallThresholdSeconds: TimeInterval = 30
+    private var lastProgress: Date = Date()
+    private var stallLogged = false
 
     // Error tracking (5-minute sliding window with auto-clear on success)
     private var recentErrors: [(timestamp: Date, reason: String)] = []
@@ -265,6 +269,10 @@ actor TimelineCacheMissGenerator {
         log.debug("processQueue: start (pending: \(self.pendingMisses.count))")
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }
+            if Date().timeIntervalSince(lastProgress) > stallThresholdSeconds && !stallLogged {
+                log.warning("[STATUSBAR-SUMM-STALL] pending=\(self.pendingMisses.count + self.inFlightCount) elapsed=\(Int(Date().timeIntervalSince(lastProgress)))s")
+                stallLogged = true
+            }
             isProcessing = true
             notifyQueueChanged()  // Notify that processing started
 
@@ -349,6 +357,7 @@ actor TimelineCacheMissGenerator {
         notifyQueueChanged()  // Notify that processing finished
         generationTask = nil
         log.info("Cache miss generation queue empty")
+        markProgress()
     }
 
     /// Process a batch of cache misses with retry logic and circuit breaker
@@ -384,15 +393,29 @@ actor TimelineCacheMissGenerator {
                 log.debug("[STAB-DELAY] Stabilization delay disabled (would wait \(750)ms if enabled)")
             }
 
+            let entryStart = Date()
+            log.info("[SUMM-GENERATOR-START] entry=\(miss.entryId, privacy: .public) provider=\(miss.provider, privacy: .public)")
             do {
-                try await processMissWithRetry(miss, onSkip: { skipCount += 1 })
+                try await runWithTimeout(seconds: entryTimeoutSeconds) {
+                    try await self.processMissWithRetry(miss, onSkip: { skipCount += 1 })
+                }
                 successCount += 1
                 successfulMisses.append(miss)
                 consecutiveFailures = 0  // Reset on success
                 trackSuccess()  // Track success for error auto-clearing
+                let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
+                log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=success elapsed_ms=\(elapsedMs, privacy: .public)")
+                markProgress()
 
                 // Post immediate UI update for this entry (don't wait for batch to complete)
                 await postCacheUpdateNotification(for: [miss])
+            } catch is SummaryTimeoutError {
+                let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
+                log.error("[SUMM-GENERATOR-TIMEOUT] entry=\(miss.entryId, privacy: .public) provider=\(miss.provider, privacy: .public) elapsed_ms=\(elapsedMs, privacy: .public)")
+                trackError(reason: "timeout")
+                errorCount += 1
+                consecutiveFailures += 1
+                markProgress()
             } catch {
                 let reason: String
                 if let tErr = error as? TimelineError {
@@ -404,6 +427,7 @@ actor TimelineCacheMissGenerator {
                 trackError(reason: reason)  // Track error for status bar
                 errorCount += 1
                 consecutiveFailures += 1
+                markProgress()
 
                 // Circuit breaker: stop batch on sustained failures
                 // NOTE: With maxBatchSize=1, this only breaks out of the current single-entry batch,
@@ -837,6 +861,32 @@ actor TimelineCacheMissGenerator {
         await postCacheUpdateNotification(for: [miss])
 
         log.info("Error tombstone written for \(miss.entryId.prefix(8)) - will not retry")
+    }
+}
+
+private struct SummaryTimeoutError: Error {}
+
+extension TimelineCacheMissGenerator {
+    private func runWithTimeout<T>(seconds: TimeInterval, operation: @escaping () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                return try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw SummaryTimeoutError()
+            }
+            guard let result = try await group.next() else {
+                throw SummaryTimeoutError()
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func markProgress() {
+        lastProgress = Date()
+        stallLogged = false
     }
 }
 

@@ -400,6 +400,64 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Reset newest transcripts to partial to bootstrap FastPath when timeline is empty.
+  public func forceResetIngestState(projectId: String, limit: Int) throws -> [String] {
+    guard limit > 0 else { return [] }
+    let pool = try dbManager.pool
+    return try pool.write { db in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT id FROM transcripts
+        WHERE project_id = ?
+          AND status = 'active'
+        ORDER BY updated_at DESC
+        LIMIT ?
+      """, arguments: [projectId, limit])
+
+      let ids = rows.compactMap { $0["id"] as? String }
+      guard !ids.isEmpty else { return [] }
+
+      let placeholders = Array(repeating: "?", count: ids.count).joined(separator: ",")
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET ingest_state = 'partial',
+            last_error = NULL
+        WHERE id IN (\(placeholders))
+      """, arguments: StatementArguments(ids))
+
+      log.info("[INGEST-STATE-RESET] project=\(projectId, privacy: .public) count=\(ids.count, privacy: .public)")
+      return ids
+    }
+  }
+
+  /// Delete projects that have neither transcripts nor entries (legacy ghosts).
+  @discardableResult
+  public func deleteProjectsWithoutData() throws -> Int {
+    let pool = try dbManager.pool
+    return try pool.write { db in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT p.id
+        FROM projects p
+        LEFT JOIN transcripts t ON t.project_id = p.id
+        LEFT JOIN transcript_entries e ON e.project_id = p.id
+        GROUP BY p.id
+        HAVING COUNT(t.id) = 0 AND COUNT(e.id) = 0
+      """)
+
+      let ids = rows.compactMap { $0["id"] as? String }
+      guard !ids.isEmpty else {
+        log.info("[PROJECT-CLEANUP] No ghost projects found")
+        return 0
+      }
+
+      for chunk in ids {
+        try db.execute(sql: "DELETE FROM projects WHERE id = ?", arguments: [chunk])
+      }
+
+      log.info("[PROJECT-CLEANUP] Deleted \(ids.count, privacy: .public) ghost project(s)")
+      return ids.count
+    }
+  }
+
   /// Returns a map of project_id -> transcript entry count.
   public func getProjectEntryCounts() throws -> [String: Int] {
     try dbManager.pool.read { db in
