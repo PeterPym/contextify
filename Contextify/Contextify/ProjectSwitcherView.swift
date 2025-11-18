@@ -148,7 +148,10 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   }
 
   func dropExited(info: DropInfo) {
-    // Intentionally left blank. We don't clear here to avoid flicker during minor layout/scroll changes.
+    // Clear drag state when cursor exits the drop zone entirely
+    // This prevents ghost entries when dragging outside the window
+    draggingProject = nil
+    insertionIndex = nil
   }
 
   func performDrop(info: DropInfo) -> Bool {
@@ -232,7 +235,10 @@ struct ProjectSwitcherView: View {
         HStack(spacing: 0) {  // No global spacing - use explicit Gap views
           ForEach(Array(state.tabProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
-            if insertionIndex == index, let draggingProject {
+            // Validation: only show if dragging project still exists in tab list
+            if insertionIndex == index,
+               let draggingProject,
+               state.tabProjects.contains(where: { $0.id == draggingProject.id }) {
               // Gap before insertion indicator (unless at start)
               if index > 0 {
                 Gap(width: baseSpacing)
@@ -276,6 +282,14 @@ struct ProjectSwitcherView: View {
             }
             .onDrag {
               self.draggingProject = project
+
+              // Validation: ensure dragged project exists in current tab list
+              if !state.tabProjects.contains(where: { $0.id == project.id }) {
+                log.warning("[DRAG-VALIDATION] Dragged project '\(project.name)' not found in tab list - resetting drag state")
+                self.draggingProject = nil
+                self.insertionIndex = nil
+              }
+
               return NSItemProvider(object: project.id as NSString)
             }
 
@@ -290,7 +304,11 @@ struct ProjectSwitcherView: View {
           }
 
           // Insertion indicator after last tab
-          if let insertionIndex, insertionIndex == state.tabProjects.count, let draggingProject {
+          // Validation: only show if dragging project still exists in tab list
+          if let insertionIndex,
+             insertionIndex == state.tabProjects.count,
+             let draggingProject,
+             state.tabProjects.contains(where: { $0.id == draggingProject.id }) {
             // Gap before insertion indicator
             Gap(width: baseSpacing)
 
