@@ -727,16 +727,34 @@ public final class ProjectSwitcherState {
 
     monitorStartTask = Task { [weak self] in
       guard let self else { return }
+      log.info("[SWITCHER-MONITOR] Waiting for .projectsDiscoveryComplete notification...")
       let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
       for await _ in notifications {
+        log.info("[SWITCHER-MONITOR] ✅ Received .projectsDiscoveryComplete notification - starting monitor")
+        // Cancel fallback timer since we got the notification
+        await MainActor.run {
+          self.cancelMonitorStartTasks()
+        }
         await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
         return
       }
     }
 
+    // Start fallback timer only AFTER ingestion begins (not immediately at app launch)
+    // This prevents timeout during App Store build permissions flow
     monitorFallbackTask = Task { [weak self] in
       guard let self else { return }
-      try? await Task.sleep(nanoseconds: 5_000_000_000)
+
+      // Wait for ingestion to actually start before starting fallback timer
+      let ingestionNotifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
+      for await _ in ingestionNotifications {
+        log.info("[SWITCHER-MONITOR] Ingestion started - beginning 30s fallback timer")
+        break // Exit after first notification
+      }
+
+      // Now start the fallback timer (30s to account for large projects)
+      try? await Task.sleep(nanoseconds: 30_000_000_000)
+      log.warning("[SWITCHER-MONITOR] ⚠️ Fallback timeout triggered - notification was NOT received in 30s")
       await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
     }
   }

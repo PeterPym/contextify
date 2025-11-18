@@ -83,6 +83,8 @@ final class ProjectsViewModel {
       return
     }
 
+    let overallStartTime = Date()
+    logger.info("[DISCOVERY-START] Beginning full project discovery and ingestion")
     logger.debug("discoverProjects() invoked")
     isDiscovering = true
     errorMessage = nil
@@ -136,6 +138,20 @@ final class ProjectsViewModel {
         // Update pipeline readiness (DB has been updated during ingestion)
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true)
 
+        // POST .projectsDiscoveryComplete notification BEFORE warming up watchers
+        // This unblocks ProjectActivityMonitor to start immediately while watchers warm up in parallel
+        // Previously, warmUpWatchers() blocked for 60+ seconds before notification was posted
+        let ingestionDuration = Date().timeIntervalSince(overallStartTime)
+        logger.info("[DISCOVERY-INGEST-DONE] Ingestion complete in \(Int(ingestionDuration * 1000), privacy: .public)ms")
+        await MainActor.run {
+          NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+        }
+        logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (before watcher warmup)")
+
+        // Update pipeline readiness (discovery complete)
+        StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+
+        // Now warm up watchers in parallel with ProjectActivityMonitor startup
         await warmUpWatchers(for: refreshed)
       } else {
         logger.info("[DISCOVERY-PHASE] No projects discovered on initial scan")
@@ -143,11 +159,17 @@ final class ProjectsViewModel {
         isWelcomeReady = true
         // No ingestion needed, but mark as ready
         StartupCoordinator.shared.updatePipelineReadiness(dbUpdated: true, watchersReady: true)
+
+        // Post notification even with no projects
+        await MainActor.run {
+          NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+        }
+        logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (no projects)")
+        StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
       }
 
-      logger.info("Discovery and ingestion complete")
-      // Update pipeline readiness (discovery complete)
-      StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+      let totalDuration = Date().timeIntervalSince(overallStartTime)
+      logger.info("[DISCOVERY-COMPLETE] Full discovery and watcher warmup complete in \(Int(totalDuration * 1000), privacy: .public)ms")
 
     } catch {
       logger.error("Discovery failed: \(error.localizedDescription)")
@@ -156,6 +178,12 @@ final class ProjectsViewModel {
       isWelcomeReady = true
       // Even on failure, mark discovery as complete
       StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
+
+      // POST .projectsDiscoveryComplete even on failure to unblock monitor
+      await MainActor.run {
+        NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+      }
+      logger.info("[DISCOVERY-NOTIFICATION] Posted .projectsDiscoveryComplete notification (after error)")
     }
 
     isDiscovering = false
@@ -282,14 +310,27 @@ final class ProjectsViewModel {
     self.watchersReadyCount = 0
     logger.info("[WELCOME-WATCHERS] Ensuring watchers for \(eligible.count, privacy: .public) projects")
 
-    for project in eligible {
-      do {
-        _ = try await activityMonitor.ensureWatcher(projectId: project.id)
+    // Create watchers in parallel to avoid sequential blocking (P0 #P1-DISCOVERY)
+    await withTaskGroup(of: (String, Result<Void, Error>).self) { group in
+      for project in eligible {
+        group.addTask {
+          do {
+            _ = try await self.activityMonitor.ensureWatcher(projectId: project.id)
+            return (project.id, .success(()))
+          } catch {
+            return (project.id, .failure(error))
+          }
+        }
+      }
+
+      for await (projectId, result) in group {
         self.watchersReadyCount += 1
-        logger.info("[WELCOME-WATCHERS] ready=\(self.watchersReadyCount)/\(self.watcherTargetCount) project=\(project.id, privacy: .public)")
-      } catch {
-        self.watchersReadyCount += 1
-        logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        switch result {
+        case .success:
+          logger.info("[WELCOME-WATCHERS] ready=\(self.watchersReadyCount)/\(self.watcherTargetCount) project=\(projectId, privacy: .public)")
+        case .failure(let error):
+          logger.error("[WELCOME-WATCHERS] Failed to start watcher for \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
       }
     }
 
