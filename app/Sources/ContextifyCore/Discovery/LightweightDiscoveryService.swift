@@ -50,15 +50,23 @@ public actor LightweightDiscoveryService {
       // Quick count via stat (fast - just counts directory entries)
       let count = (try? FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".jsonl") }.count) ?? 0
 
-      // Claude folder names are hashed paths - use as stable ID
-      // TODO: Could parse .claude/project_config.json for actual project path if needed
+      // Claude folder names are hashed paths - decode to get real project path
+      // Hash format: "-Users-rob-code-projects-contextify" → "/Users/rob/code/projects/contextify"
+      let hashFolder = dir.lastPathComponent
+      let decodedPath: String
+      if hashFolder.hasPrefix("-") {
+        decodedPath = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
+      } else {
+        decodedPath = hashFolder  // Fallback if unexpected format
+      }
+
       return LightweightProject(
-        id: dir.lastPathComponent,
-        path: dir,
+        id: hashFolder,  // Keep hash as ID for consistency
+        path: dir,  // Keep original hash folder path for filesystem ops
         transcriptCount: count,
         lastActivity: mtime,
         provider: "claude.code",
-        cwd: nil  // Claude uses hash folders, no direct CWD available
+        cwd: decodedPath  // Store decoded real project path for display and switching
       )
     }
   }

@@ -109,6 +109,41 @@ final class ProjectsViewModel {
       selectedProjectId = projectId
       logger.info("[VM-UPDATE] Active project: \(projectId)")
 
+      // Update projects array to mark the active one as current
+      for i in projects.indices {
+        if projects[i].id == projectId {
+          let current = projects[i]
+          // DiscoveredProject is a struct, need to create a new instance
+          projects[i] = DiscoveredProject(
+            id: current.id,
+            name: current.name,
+            path: current.path,
+            providers: current.providers,
+            transcriptCount: current.transcriptCount,
+            entryCount: current.entryCount,
+            lastActivity: current.lastActivity,
+            isCurrent: true,  // Mark as current
+            ingestionError: current.ingestionError,
+            displayOrder: current.displayOrder
+          )
+        } else if projects[i].isCurrent {
+          // Unmark previously current project
+          let prev = projects[i]
+          projects[i] = DiscoveredProject(
+            id: prev.id,
+            name: prev.name,
+            path: prev.path,
+            providers: prev.providers,
+            transcriptCount: prev.transcriptCount,
+            entryCount: prev.entryCount,
+            lastActivity: prev.lastActivity,
+            isCurrent: false,  // Unmark
+            ingestionError: prev.ingestionError,
+            displayOrder: prev.displayOrder
+          )
+        }
+      }
+
     case .error(let message):
       isLoading = false
       errorMessage = message
@@ -202,10 +237,16 @@ final class ProjectsViewModel {
       // PATCH A: Derive meaningful display name
       let displayName: String
       if light.provider == "claude.code" {
-        // Claude uses hash folders. Best effort: use hash prefix
-        // TODO: Could read .claude/project_config.json for actual project path if it exists
-        let hash = light.path.lastPathComponent
-        displayName = "Claude Project (\(hash.prefix(8)))"
+        // Claude hash folders encode the project path (e.g., "-Users-rob-code-projects-contextify")
+        // Decode: Remove leading "-", replace "-" with "/"
+        let hashFolder = light.path.lastPathComponent
+        if hashFolder.hasPrefix("-") {
+          let decodedPath = "/" + hashFolder.dropFirst().replacingOccurrences(of: "-", with: "/")
+          displayName = URL(fileURLWithPath: decodedPath).lastPathComponent
+        } else {
+          // Fallback for unexpected format
+          displayName = "Claude Project (\(hashFolder.prefix(8)))"
+        }
       } else {
         // Codex has CWD available - use the project folder name
         if let cwd = light.cwd {
