@@ -89,6 +89,15 @@ final class ProjectsViewModel {
       self.projects = convertToDiscoveredProjects(lightweightProjects)
       logger.info("[VM-UPDATE] Showing \(self.projects.count) projects (idle)")
 
+      // Phase 3: Update pipeline readiness for welcome modal button
+      // Discovery is complete, DB has been updated, watchers will be ready
+      StartupCoordinator.shared.updatePipelineReadiness(
+        discoveryComplete: true,
+        dbUpdated: true,
+        watchersReady: true
+      )
+      logger.info("[VM-UPDATE] Pipeline readiness updated (all ready)")
+
     case .loading(let projectId):
       isLoading = true
       selectedProjectId = projectId
