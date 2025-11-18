@@ -341,14 +341,15 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         let existing = try Row.fetchOne(db, sql: "SELECT id FROM projects WHERE root_path = ?", arguments: [canonPath])
 
         if existing == nil {
-          // Create new project record
-          let projectId = UUID().uuidString
+          // CRITICAL FIX: Use LightweightProject.id (not random UUID) for consistency
+          // This ensures orchestrator state IDs match DB IDs
+          let projectId = project.id
           try db.execute(sql: """
             INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
             VALUES (?, ?, ?, ?, ?, ?)
           """, arguments: [projectId, nil, canonPath, nowSec, nowSec, nowSec])
 
-          log.debug("[METADATA-ONLY] Created project: \(projectId)")
+          log.debug("[METADATA-ONLY] Created project: \(projectId, privacy: .public)")
         } else {
           // Update existing (just touch updated_at)
           try db.execute(sql: """

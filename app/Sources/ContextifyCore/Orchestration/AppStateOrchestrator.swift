@@ -74,8 +74,15 @@ public final class AppStateOrchestrator: ObservableObject {
     let duration = Date().timeIntervalSince(startTime)
     log.info("[ORCH-STARTUP] Startup complete in \(String(format: "%.3f", duration), privacy: .public)s. UI ready.")
 
-    // 4. Optional: Start background indexing (low priority)
-    startBackgroundIndexing()
+    // 4. PATCH C: Auto-select most recent project (projects are already sorted by activity)
+    if let mostRecent = projects.first {
+      log.info("[ORCH-STARTUP] Auto-selecting most recent project: \(mostRecent.id, privacy: .public)")
+      await selectProject(id: mostRecent.id)
+    } else {
+      log.info("[ORCH-STARTUP] No projects found - showing empty state")
+      // 5. Optional: Start background indexing (low priority)
+      startBackgroundIndexing()
+    }
   }
 
   // MARK: - User Selection Flow
@@ -106,13 +113,24 @@ public final class AppStateOrchestrator: ObservableObject {
       // This will ingest ONLY this project's transcripts on demand
       try await fastPath.ingestProjectJIT(project)
 
-      // 4. Activate
+      // 4. PATCH B: Wire ConversationMonitor via StartupCoordinator
+      // This updates ActiveProjectContext and triggers timeline loading
+      let projectPath = project.cwd ?? project.path.path
+      do {
+        try await StartupCoordinator.shared.switchProject(to: projectPath)
+        log.debug("[ORCH-SELECT] StartupCoordinator updated with path: \(projectPath, privacy: .public)")
+      } catch {
+        log.warning("[ORCH-SELECT] Failed to update StartupCoordinator: \(error.localizedDescription, privacy: .public)")
+        // Non-fatal - continue with activation
+      }
+
+      // 5. Activate
       setState(.active(projectId: id))
 
       let duration = Date().timeIntervalSince(startTime)
       log.info("[ORCH-SELECT] Project ready in \(String(format: "%.3f", duration), privacy: .public)s")
 
-      // 5. Notify other components (Timeline, etc.)
+      // 6. Notify other components (Timeline, etc.)
       NotificationCenter.default.post(name: .projectDidActivate, object: id)
 
     } catch {
@@ -175,13 +193,15 @@ public struct LightweightProject: Sendable, Identifiable, Hashable {
   public let transcriptCount: Int
   public let lastActivity: Date
   public let provider: String
+  public let cwd: String?  // Current working directory (for Codex) or repo path (for Claude)
 
-  public init(id: String, path: URL, transcriptCount: Int, lastActivity: Date, provider: String) {
+  public init(id: String, path: URL, transcriptCount: Int, lastActivity: Date, provider: String, cwd: String? = nil) {
     self.id = id
     self.path = path
     self.transcriptCount = transcriptCount
     self.lastActivity = lastActivity
     self.provider = provider
+    self.cwd = cwd
   }
 }
 

@@ -51,12 +51,14 @@ public actor LightweightDiscoveryService {
       let count = (try? FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".jsonl") }.count) ?? 0
 
       // Claude folder names are hashed paths - use as stable ID
+      // TODO: Could parse .claude/project_config.json for actual project path if needed
       return LightweightProject(
         id: dir.lastPathComponent,
         path: dir,
         transcriptCount: count,
         lastActivity: mtime,
-        provider: "claude.code"
+        provider: "claude.code",
+        cwd: nil  // Claude uses hash folders, no direct CWD available
       )
     }
   }
@@ -146,7 +148,8 @@ public actor LightweightDiscoveryService {
         path: data.path,
         transcriptCount: data.count,
         lastActivity: data.maxDate,
-        provider: "codex.cli"
+        provider: "codex.cli",
+        cwd: cwd  // Store CWD for name derivation
       )
     }
   }

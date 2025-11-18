@@ -199,9 +199,26 @@ final class ProjectsViewModel {
       // Map provider string to enum
       let provider: DiscoveredProject.Provider = light.provider == "claude.code" ? .claudeCode : .codexCLI
 
+      // PATCH A: Derive meaningful display name
+      let displayName: String
+      if light.provider == "claude.code" {
+        // Claude uses hash folders. Best effort: use hash prefix
+        // TODO: Could read .claude/project_config.json for actual project path if it exists
+        let hash = light.path.lastPathComponent
+        displayName = "Claude Project (\(hash.prefix(8)))"
+      } else {
+        // Codex has CWD available - use the project folder name
+        if let cwd = light.cwd {
+          displayName = URL(fileURLWithPath: cwd).lastPathComponent
+        } else {
+          // Fallback if CWD somehow missing
+          displayName = "Codex Project"
+        }
+      }
+
       return DiscoveredProject(
         id: light.id,
-        name: light.path.lastPathComponent,
+        name: displayName,
         path: light.path,
         providers: [provider],
         transcriptCount: light.transcriptCount,
