@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 27 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 25 items - Must complete before App Store submission
 - **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 71 (demoted #P0-LOGOMARK to P1)
+**Total Active Items:** 69 (completed drag-drop fixes #29-30)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 27 Items
+# P0 (Blocking Release) - 25 Items
 
 ## Website (1 item)
 
@@ -79,26 +79,32 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical Bugs - Drag & Drop (2 items) ⬆️
+## Critical Bugs - Drag & Drop (2 items) ✅ COMPLETE
 
-**Status:** Not Started
-**Priority:** Promoted from P1 (no workaround except restart)
-**Effort:** 2-3 hours
+**Status:** ✅ Complete (2025-11-18)
+**Commit:** `0bbe383` - fix(drag-drop): clear ghost entries when dragging outside window
+**Branch:** `fix/drag-drop-ghost-entries`
 
-- [ ] #29: Fix drag-drop cancellation when cursor exits window
-- [ ] #30: Add state validation after drag operations
+- [x] #29: Fix drag-drop cancellation when cursor exits window ✅
+- [x] #30: Add state validation after drag operations ✅
 
-**Problem:** Dragging project tab outside window creates ghost dashed-line entry that cannot be removed. Only fix is app restart.
+**Problem:** Dragging project tab outside window created ghost dashed-line entry that persisted indefinitely. Only fix was app restart.
+
+**Root Cause:** `dropExited()` was intentionally blank to avoid flicker, but this prevented clearing drag state when cursor left the window.
+
+**Solution:**
+1. Clear drag state in `dropExited()` when cursor exits drop zone
+2. Add validation before rendering insertion indicators
+3. Add validation in `onDrag` to detect stale state
 
 **Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift`
-- `Contextify/Contextify/ProjectSwitcherState.swift`
+- `Contextify/Contextify/ProjectSwitcherView.swift` (4 changes)
 
-**Acceptance Criteria:**
-- Dragging project outside window cancels cleanly
-- No ghost entries persist
-- Project returns to original position on cancel
-- UI state always consistent with data
+**Testing:**
+- ✅ Dragging outside window cancels cleanly
+- ✅ No ghost entries persist
+- ✅ Project returns to original position
+- ✅ UI state consistent with data
 
 ---
 
@@ -718,6 +724,8 @@ if state.entries.count == new.count && state.entries == new {
 - [x] #15: Remove "Run in Background" button from welcome modal
 - [x] #17: Replace invalid project root modal with warning icons
 - [x] #18: Validate paths before persisting to database
+- [x] #29: Fix drag-drop cancellation when cursor exits window (2025-11-18, commit `0bbe383`)
+- [x] #30: Add state validation after drag operations (2025-11-18, commit `0bbe383`)
 - [x] #P0-SUMM: Fix failure to kick off summarization on initial viewport load (2025-11-17)
 - [x] #P0-LOGOMARK-INFO: Remove non-functional CLI logomark info icon (2025-11-17)
 
