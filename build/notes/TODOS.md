@@ -4,12 +4,12 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 26 items - Must complete before App Store submission
-- **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
+- **P0 (Blocking Release):** 27 items - Must complete before App Store submission
+- **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 20 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 72 (added 2 P0 items for CLI logomark issues)
+**Total Active Items:** 71 (demoted #P0-LOGOMARK to P1)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,68 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 28 Items
-
-## CLI Logomark Display (1 item)
-
-**Status:** Not updating during ingestion
-**Priority:** P0 (User-facing visual state issue)
-**Effort:** 2-3 hours (DB query + UI update logic)
-
-- [ ] #P0-LOGOMARK: Fix CLI logomark/brandmark display to update during ingestion and on project switch
-
-**Problem:** The CLI logomark (Claude Code vs Codex indicator) doesn't update at appropriate times:
-1. **During ingestion:** Should update as transcripts are hoovered to reflect which CLI(s) are present
-2. **On project switch:** Should perform efficient DB query to determine which CLI brandmark(s) to show
-
-**Current Behavior:**
-- Logomark may show stale/incorrect state
-- User doesn't know if project has Claude Code, Codex, or both
-- No visual feedback during initial ingestion
-
-**Required Fix:**
-
-1. **During ingestion:** Update logomark at reasonable points during hoovering
-   - After each batch of transcripts hoovered
-   - Or on hoovering progress notifications
-   - Or when ingestion completes
-
-2. **On project switch:** Efficient DB query to resolve CLI presence
-   - Query: `SELECT DISTINCT provider FROM transcripts WHERE project_id = ?`
-   - Expected results: `claude`, `codex`, or both
-   - Update logomark state immediately on project load
-
-**Implementation:**
-
-Files to modify:
-- Project/timeline state management (logomark state)
-- DB query layer (efficient provider resolution)
-- Hoovering progress notifications (trigger logomark update)
-
-DB Query:
-```sql
--- Efficient query to check which CLIs are present for a project
-SELECT DISTINCT provider
-FROM transcripts
-WHERE project_id = ?
-LIMIT 2;  -- Max 2 values possible (claude, codex)
-```
-
-UI Update Points:
-- `startMonitoring()` - on project switch
-- Hoovering progress notification handler
-- Initial ingestion completion
-
-**Expected Behavior:**
-- User sees correct CLI logomark immediately on project switch
-- Logomark updates during ingestion as new CLI transcripts are discovered
-- No performance impact (single efficient query on project switch)
-
-**Testing:**
-- Switch to project with only Claude Code transcripts → Claude logomark
-- Switch to project with only Codex transcripts → Codex logomark
-- Switch to project with both → Combined logomark
-- Watch logomark during initial ingestion of mixed-CLI project
+# P0 (Blocking Release) - 27 Items
 
 ## Website (1 item)
 
@@ -294,7 +233,34 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-# P1 (High Priority) - 18 Items
+# P1 (High Priority) - 19 Items
+
+## CLI Logomark Display (1 item) ⬇️
+
+**Status:** Partially complete (project switch works, ingestion updates missing)
+**Priority:** Demoted from P0 (project switch already works via database)
+**Effort:** 1-2 hours (add hoover notification subscription)
+
+- [ ] #P0-LOGOMARK: Add real-time logomark updates during transcript ingestion
+
+**Already Working (commit `0ab0d79`):**
+- ✅ Database-backed provider detection
+- ✅ Updates on project switch via `.task(id: projectPath)`
+- ✅ Efficient SQL query for providers
+
+**Missing:**
+- ❌ Real-time updates during initial ingestion/hoovering
+- ProjectBadgesContainer needs to subscribe to hoover notifications
+
+**Implementation:**
+- Subscribe to hoover/ingestion completion notifications
+- Trigger `loadProviders()` refresh when transcripts are added
+- No UI changes needed, just notification wiring
+
+**Files:**
+- `Contextify/Contentify/ProjectBadgesContainer.swift`
+
+---
 
 ## Build Warnings (5 items)
 
