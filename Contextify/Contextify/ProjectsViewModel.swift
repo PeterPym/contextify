@@ -151,17 +151,8 @@ final class ProjectsViewModel {
         // Update pipeline readiness (discovery complete)
         StartupCoordinator.shared.updatePipelineReadiness(discoveryComplete: true)
 
-        // Skip watcher warmup during welcome modal - it triggers FastPathIngestion
-        // for all projects which blocks project switching for 30+ seconds
-        // ProjectActivityMonitor will create watchers lazily as needed
-        logger.info("[WELCOME-WATCHERS] Skipping watcher warmup (causes FastPathIngestion blocking)")
-
-        // Mark welcome as ready immediately
-        self.welcomePhase = .ready
-        self.isWelcomeReady = true
-
-        // Update pipeline readiness (watchers will be created lazily)
-        StartupCoordinator.shared.updatePipelineReadiness(watchersReady: true)
+        // Now warm up watchers in parallel with ProjectActivityMonitor startup
+        await warmUpWatchers(for: refreshed)
       } else {
         logger.info("[DISCOVERY-PHASE] No projects discovered on initial scan")
         welcomePhase = .ready
