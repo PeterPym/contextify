@@ -166,87 +166,67 @@ Currently only high-level description exists. Need detailed implementation for:
 
 ## Priority 3: Operational Guides
 
-### 6. Codebase Health Audit
+### 6. ✅ Codebase Health Audit (COVERED 2025-11-17)
 
-**Proposed Path:** `build/docs/operations/codebase-health-audit.md`
+**Covered By:** `build/docs/architecture/architecture-refactoring-analysis.md` (Doc #2)
 
 **Justification:**
-Assess the codebase organization and health from the perspective of professional Swift application development best practices. Identify areas where file sizes, module structure, architectural boundaries, and code organization could be improved.
+The architecture refactoring analysis document (Doc #2) comprehensively covers all aspects of codebase health:
+- File size analysis with god object identification (ConversationMonitor 3054 lines, HUDCore 1196 lines, ProjectDiscoveryService 1000 lines)
+- Module structure and boundaries (coupling analysis, dependency graphs)
+- Swift best practices compliance (concurrency patterns, testability ~15-20% coverage)
+- Architecture patterns (coordinator/orchestrator/monitor analysis)
+- Code organization (directory structure, separation of concerns)
+- Refactoring recommendations with priority ordering (P0-P3) and 4-phase migration roadmap
 
-**Scope:**
-- **File Size Analysis**
-  - Identify files exceeding professional norms (e.g., >500 lines)
-  - Flag "god objects" and oversized ViewModels
-  - Suggest refactoring opportunities for large files
-
-- **Module Structure & Boundaries**
-  - Analyze separation of concerns (UI, Business Logic, Data)
-  - Review ContextifyCore vs Contextify app boundary clarity
-  - Identify circular dependencies or tight coupling
-
-- **Swift Best Practices Compliance**
-  - Protocol-oriented design usage
-  - Dependency injection patterns
-  - Testability (protocol abstractions, dependency injection)
-  - Concurrency patterns (Swift 6 strict concurrency)
-
-- **Architecture Patterns**
-  - Coordinator/MVVM/MVC consistency
-  - State management patterns (Observable vs StateObject)
-  - Repository pattern adherence in database layer
-
-- **Code Organization**
-  - Directory structure clarity
-  - Naming conventions consistency
-  - File grouping and logical organization
-
-- **Refactoring Recommendations**
-  - Priority-ordered list of refactoring opportunities
-  - Complexity hotspots (cyclomatic complexity, nesting depth)
-  - Technical debt identification
-
-**Deliverable:** Health score, issue catalog, and refactoring roadmap
+**Note:** Creating a separate codebase health audit document would be redundant given the comprehensive coverage in architecture-refactoring-analysis.md.
 
 ---
 
-### 7. Database Migration Runbook
+### 7. ✅ Database Migration Runbook (CREATED 2025-11-17)
 
-**Proposed Path:** `build/docs/operations/database-migration-runbook.md`
+**Created Path:** `build/docs/operations/database-migration-runbook.md` (675 lines)
 
 **Justification:**
-`database-migration.md` documents the component but not the operational procedure. Need:
-- Step-by-step migration procedure for users
-- Rollback procedure if migration fails
-- Backup/restore process
-- Multi-machine conflict resolution
-- Code verification against: `DatabaseMigration.swift`, `DatabaseAccessMetadata.swift`
+`database-migration.md` documents the component but not the operational procedure. This runbook provides:
+- Step-by-step migration procedure for users (UI and CLI methods)
+- Rollback procedures (failed migration, accidental deletion)
+- Backup/restore process with launchd scheduling
+- Multi-machine conflict resolution (sequential access, separate DBs)
+- Troubleshooting guide (6 common issues with symptoms/cause/resolution)
+- Code verification against: DatabaseMigration.swift (155 lines), DatabaseManager.swift (WAL mode)
 
 ---
 
-### 8. Debugging Workflow Guide
+### 8. ✅ Debugging Workflow Guide (CREATED 2025-11-17)
 
-**Proposed Path:** `build/docs/guides/debugging-workflows.md`
+**Created Path:** `build/docs/guides/debugging-workflows.md` (747 lines)
 
 **Justification:**
-Multiple debugging docs exist (`diagnostics-api.md`, `timeline-diagnostics.md`, `log-analysis-*`) but no unified workflow guide. Need:
-- Decision tree: "I'm seeing X, what should I check?"
-- Tool selection guide (logs vs diagnostics API vs database inspection)
-- Common failure modes and diagnostics
-- Code paths to investigate for common issues
+Multiple debugging docs exist (`diagnostics-api.md`, `timeline-diagnostics.md`, `log-analysis-*`) but no unified workflow guide. This document provides:
+- Quick decision tree (7 issue types with diagnostic routing)
+- Workflow 1-7 (pipeline completeness, performance, state, database, sandbox, testing, exploratory)
+- Tool selection matrix (when to use logs vs diagnostics API vs database inspection)
+- Diagnostic API reference (endpoints, payloads, interpretation)
+- Common issues quick reference
+- Ties together entire logging toolkit and debugging documentation
 
 ---
 
-### 9. Security-Scoped Bookmark Patterns
+### 9. ✅ Security-Scoped Bookmark Patterns (CREATED 2025-11-17)
 
-**Proposed Path:** `build/docs/guides/security-scoped-bookmarks.md`
+**Created Path:** `build/docs/guides/security-scoped-bookmarks.md` (697 lines)
 
 **Justification:**
-`transcript-access-security.md` documents architecture but not practical usage patterns. Need:
-- When to use `accessProvider.withAccess()` (every FileManager call? cached?)
-- Performance implications (bookmark resolution cost)
-- Error handling patterns (bookmark stale, permission revoked)
-- Testing in sandbox vs non-sandbox
-- Code verification against: `app/Sources/ContextifyCore/Security/`
+`transcript-access-security.md` documents architecture but not practical usage patterns. This guide provides:
+- Decision tree for when to use scoped access
+- Pattern 1: Protocol-based provider (recommended - TranscriptAccessProvider)
+- Pattern 2: Direct bookmark management (legacy/special cases)
+- Pattern 3: Actor-based async access (future concurrency model)
+- Common pitfalls with fixes (4 anti-patterns: forgotten stop, nested access, stale bookmarks, wrong scope)
+- Performance implications (bookmark resolution cost, access nesting overhead)
+- Testing strategies (sandbox vs DMG builds, permission simulation)
+- Troubleshooting guide (authorization failures, stale bookmarks)
 
 ---
 
@@ -313,12 +293,15 @@ Mixed error handling approaches (throws vs Result vs optional). Need:
 ## Summary Statistics
 
 **Total Proposed Documents:** 13
-**Completed:** 5 (Priority 1: 2, Priority 2: 3)
-**Priority 1 (Critical):** 2
-**Priority 2 (Component Deep Dives):** 3
-**Priority 3 (Operational):** 3
-**Priority 4 (Testing):** 2
-**Priority 5 (Design):** 2
+**Completed:** 8 (Priority 1: 2, Priority 2: 3, Priority 3: 3)
+**Remaining:** 5 (Priority 4: 2, Priority 5: 2)
+
+**By Priority:**
+- **Priority 1 (Critical):** 2/2 ✅ COMPLETE
+- **Priority 2 (Component Deep Dives):** 3/3 ✅ COMPLETE
+- **Priority 3 (Operational):** 3/3 ✅ COMPLETE (Doc #6 covered by architecture-refactoring-analysis.md)
+- **Priority 4 (Testing):** 0/2 ⏳ PENDING
+- **Priority 5 (Design):** 0/2 ⏳ PENDING
 
 **Estimated Effort:**
 - Priority 1: 16-24 hours (highly detailed, mermaid diagrams, code analysis)
