@@ -22,12 +22,11 @@ Completed systematic code verification audit of all documentation in `build/docs
 
 **Total Files Audited:** 56 (Initial) + 5 Deep Audits = **61 total**
 **Status Breakdown:**
-- ✅ **OK/Accurate:** 41 files (67%) - includes 2 from deep audits
+- ✅ **OK/Accurate:** 44 files (72%) - includes all 5 deep audits (updated 2025-11-17)
 - 🔧 **Fixed (schema v23→v26):** 4 files (7%)
 - 📦 **Archived:** 2 files (3%) - data-flow.md, metadata-ingestion-queue-types.md
-- ⚠️ **Needs Update:** 3 files (5%) - from deep audits (sandbox, project-discovery, transcript-ingestion)
 - 📋 **N/A (design/marketing):** 5 files (8%)
-- 🎯 **Deep Audits Completed:** 5 files (100% of flagged files)
+- 🎯 **Deep Audits:** 5 files (**100% complete, all corrections applied**)
 
 **Code Verification:**
 - Full verification: 8 files (14%)
@@ -300,22 +299,25 @@ The documentation in `build/docs/` is **generally high quality** with excellent 
 - Excellent operational docs (DATABASE-LOCATIONS, release guides)
 - **README.md updated** to complement AGENTS.md (concise getting started guide, 163 lines down from 369)
 
-⚠️ **Weaknesses:**
-- 3 files need updates (sandbox bug section, project-discovery exclusions, transcript-ingestion issue tracking)
+⚠️ **Minor Gaps (Optional Future Work):**
 - Complex implementation details underdocumented (data pipeline nitty-gritty - see PROPOSED-DOCUMENTATION.md)
 - No architecture refactoring analysis (see PROPOSED-DOCUMENTATION.md #2)
+- Some recent features undocumented (PipelineReadiness tracking, sandbox container filtering)
 
-**Overall Grade:** A (all audits complete, documentation quality high)
+**Overall Grade:** A+ (all audits complete, all corrections applied, documentation quality excellent)
 
-**Grades Distribution (Deep Audits):**
-- A: 1 file (database-migration)
-- A-: 1 file (startup-coordinator)
-- B+: 2 files (sandbox, transcript-ingestion)
-- B: 1 file (project-discovery)
+**Grades Distribution (Deep Audits - After Updates):**
+- A+: 2 files (database-migration, startup-coordinator)
+- A: 3 files (sandbox-appstore-architecture, project-discovery, transcript-ingestion) - all updated 2025-11-17
 
-**Next Steps:**
+**All Corrections Applied (2025-11-17):**
+1. ✅ **sandbox-appstore-architecture.md** - Bug 1 marked RESOLVED, entitlements filenames fixed
+2. ✅ **project-discovery.md** - ProjectExclusionManager marked NOT IMPLEMENTED
+3. ✅ **transcript-ingestion.md** - Oct 28 issue marked likely RESOLVED
+
+**Next Steps (Optional):**
 1. ✅ ~~Complete deep audits~~ (DONE - 5/5 complete)
-2. Update 3 files with minor corrections (sandbox Bug 1, project-discovery exclusions, transcript-ingestion issue)
+2. ✅ ~~Update 3 files with corrections~~ (DONE - all 3 updated 2025-11-17)
 3. Create Priority 1 proposed docs (data pipeline replacement, refactoring analysis)
 4. Consider creating remaining proposed docs based on priority
 
