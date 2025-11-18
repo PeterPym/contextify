@@ -172,6 +172,7 @@ struct ContentView: View {
                         .truncationMode(.middle)
 
                     ProjectBadgesContainer(projectPath: projectPath)
+                        .padding(.trailing, 6)
 
                 }
 
