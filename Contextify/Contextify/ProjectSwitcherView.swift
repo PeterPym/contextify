@@ -235,10 +235,7 @@ struct ProjectSwitcherView: View {
         HStack(spacing: 0) {  // No global spacing - use explicit Gap views
           ForEach(Array(state.tabProjects.enumerated()), id: \.element.id) { index, project in
             // Insertion indicator before this tab
-            // Validation: only show if dragging project still exists in tab list
-            if insertionIndex == index,
-               let draggingProject,
-               state.tabProjects.contains(where: { $0.id == draggingProject.id }) {
+            if insertionIndex == index, let draggingProject {
               // Gap before insertion indicator (unless at start)
               if index > 0 {
                 Gap(width: baseSpacing)
@@ -282,14 +279,6 @@ struct ProjectSwitcherView: View {
             }
             .onDrag {
               self.draggingProject = project
-
-              // Validation: ensure dragged project exists in current tab list
-              if !state.tabProjects.contains(where: { $0.id == project.id }) {
-                log.warning("[DRAG-VALIDATION] Dragged project '\(project.name)' not found in tab list - resetting drag state")
-                self.draggingProject = nil
-                self.insertionIndex = nil
-              }
-
               return NSItemProvider(object: project.id as NSString)
             }
 
@@ -304,11 +293,9 @@ struct ProjectSwitcherView: View {
           }
 
           // Insertion indicator after last tab
-          // Validation: only show if dragging project still exists in tab list
           if let insertionIndex,
              insertionIndex == state.tabProjects.count,
-             let draggingProject,
-             state.tabProjects.contains(where: { $0.id == draggingProject.id }) {
+             let draggingProject {
             // Gap before insertion indicator
             Gap(width: baseSpacing)
 
