@@ -29,13 +29,13 @@ Global project discovery automatically finds all Claude Code and Codex CLI proje
 1. Scan ~/.claude/projects/* for directory names (Claude Code)
 2. Reverse map directory names to project paths
 3. Validate paths exist on disk
-4. Build CodexIndex by scanning the canonical `~/.codex/sessions/YYYY/MM/DD/*.jsonl` tree (global Codex CLI store)
+4. Scan Codex transcripts in canonical `~/.codex/sessions/YYYY/MM/DD/*.jsonl` tree (global Codex CLI store)
    - Parse each transcript's `cwd` / `payload.cwd` to map sessions → repos
-   - Cache index for 5 minutes with per-project entry caps
+   - Build index of Codex sessions by project
 5. Merge Claude and Codex results (provider union, latest activity override)
 6. Query database for existing metadata (transcript/entry counts)
 7. Build DiscoveredProject array with providers, stats, isCurrent flag
-8. Filter out excluded projects (from ProjectExclusionManager)
+8. ~~Filter out excluded projects~~ (exclusion feature not implemented)
 9. Sort by display_order if present, otherwise newest activity first
 ```
 
@@ -43,28 +43,30 @@ Global project discovery automatically finds all Claude Code and Codex CLI proje
 ```swift
 for each project:
   - Scan Claude Code directory: ~/.claude/projects/<encoded-path>/*.jsonl
-  - Resolve Codex transcripts via CodexIndex (canonical `~/.codex/sessions` scan; legacy `<project>/.codex/sessions` only if present)
+  - Resolve Codex transcripts (canonical `~/.codex/sessions` scan; legacy `<project>/.codex/sessions` if present)
   - Call orchestrator.upsertTranscripts() with DiscoveredTranscript array
   - Emit progress updates via callback + welcome modal progress bars
 ```
 
 **Key methods:**
-- `discoverAllProjects(currentProjectPath:)` → `[DiscoveredProject]`
-- `ingestAllProjects(projects:progressHandler:)`
-- `excludeProject(_:)` / `includeProject(_:)`
+- `discoverAllProjects(currentProjectPath:)` → `[DiscoveredProject]` (line 97)
+- `ingestAllProjects(projects:progressHandler:)` (line 387)
+- `quickDiscoverNewest()` → `(projectPath, transcriptFile, mtime)?` (line 210)
 
-#### 2. ProjectExclusionManager
-**File:** `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift`
+#### 2. ~~ProjectExclusionManager~~ (NOT IMPLEMENTED)
+**File:** `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` ❌ **DOES NOT EXIST**
 
-Manages excluded projects via UserDefaults:
-- **Key:** `contextify.excludedProjects`
-- **Storage:** Array of full project paths
-- **Actor-isolated:** Safe concurrent access
+**Status:** Planned but not implemented. The exclusion feature was documented during design but never built.
 
-**Methods:**
-- `getExcludedProjects()` → `Set<String>`
-- `excludeProject(_:)` / `includeProject(_:)`
-- `isExcluded(_:)` → `Bool`
+**Documented (but missing) methods:**
+- ~~`excludeProject(_:)`~~ - does not exist
+- ~~`includeProject(_:)`~~ - does not exist
+- ~~`getExcludedProjects()`~~ - does not exist
+- ~~`isExcluded(_:)`~~ - does not exist
+
+**Impact:** Users cannot currently exclude projects from discovery. All discovered projects appear in the UI.
+
+**Future Work:** If project exclusion is needed, implement ProjectExclusionManager or add exclusion logic directly to ProjectDiscoveryService.
 
 #### 3. ProjectStatsService
 **File:** `app/Sources/ContextifyCore/Projects/ProjectStatsService.swift`
