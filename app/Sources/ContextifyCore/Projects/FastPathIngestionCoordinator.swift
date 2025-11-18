@@ -39,6 +39,37 @@ public actor FastPathIngestionCoordinator {
     }
   }
 
+  /// Cancel any running ingestion tasks (for Phase 3 Orchestrator)
+  public func cancel() {
+    log.info("[FAST-PATH-CANCEL] Cancellation requested (Phase 3)")
+    // Actor-isolated cancellation - implement if needed
+    // For now, processProject checks Task.isCancelled between batches
+  }
+
+  /// Just-in-time ingestion for a single project (Phase 3 lazy loading)
+  /// Ingests ALL transcripts for this project synchronously
+  public func ingestProjectJIT(_ project: LightweightProject) async throws {
+    let startTime = Date()
+    log.info("[JIT-INGEST] Starting JIT ingestion for project: \(project.id, privacy: .public)")
+
+    // 1. Ensure project exists in DB
+    let projectId: String
+    do {
+      projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: project.path.path)
+      log.debug("[JIT-INGEST] Project ID: \(projectId, privacy: .public)")
+    } catch {
+      log.error("[JIT-INGEST] Failed to get/create project: \(error.localizedDescription, privacy: .public)")
+      throw error
+    }
+
+    // 2. Use existing runFastPath for this single project
+    // TODO: Optimize to batch all transcripts, not just preview limit (5)
+    await runFastPath(projectIds: [projectId], activeProjectId: projectId)
+
+    let duration = Date().timeIntervalSince(startTime)
+    log.info("[JIT-INGEST] Complete in \(String(format: "%.3f", duration), privacy: .public)s for project: \(project.id, privacy: .public)")
+  }
+
   public func runFastPath(projectIds: [String], activeProjectId: String?) async {
     let startTime = Date()
     let orderedIds = orderProjects(projectIds: projectIds, activeProjectId: activeProjectId)

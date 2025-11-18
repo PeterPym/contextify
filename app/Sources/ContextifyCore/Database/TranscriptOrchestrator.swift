@@ -326,6 +326,41 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Update projects table with lightweight metadata (NO transcript ingestion)
+  /// Used by Phase 3 lazy loading architecture for fast startup
+  /// This ONLY updates the projects table, not transcripts or entries
+  public func updateProjectsMetadataOnly(_ lightweightProjects: [LightweightProject]) async throws {
+    try await dbManager.pool.write { db in
+      let nowSec = Int(Date().timeIntervalSince1970)
+
+      for project in lightweightProjects {
+        // Upsert project record (no transcripts)
+        let canonPath = PathUtils.canonicalizePath(project.path.path)
+
+        // Check if exists
+        let existing = try Row.fetchOne(db, sql: "SELECT id FROM projects WHERE root_path = ?", arguments: [canonPath])
+
+        if existing == nil {
+          // Create new project record
+          let projectId = UUID().uuidString
+          try db.execute(sql: """
+            INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+            VALUES (?, ?, ?, ?, ?, ?)
+          """, arguments: [projectId, nil, canonPath, nowSec, nowSec, nowSec])
+
+          log.debug("[METADATA-ONLY] Created project: \(projectId)")
+        } else {
+          // Update existing (just touch updated_at)
+          try db.execute(sql: """
+            UPDATE projects SET updated_at = ? WHERE root_path = ?
+          """, arguments: [nowSec, canonPath])
+        }
+      }
+
+      log.info("[METADATA-ONLY] Updated \(lightweightProjects.count, privacy: .public) projects (metadata only, no transcripts)")
+    }
+  }
+
   /// Returns a map of project_id -> transcript entry count.
   public func getProjectEntryCounts() throws -> [String: Int] {
     try dbManager.pool.read { db in
