@@ -660,36 +660,28 @@ struct ContextifyApp: App {
         }
       }
 
-      // Continue with full discovery as before
-      do {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-          // Discovery task
-          group.addTask {
-            await vm.discoverProjects()
-          }
+      // Phase 3: Old discovery system disabled - AppStateOrchestrator handles all discovery
+      // The orchestrator already ran in ContextifyApp.init() and completed lightweight scan
+      log.info("✅ Phase 3: Skipping old discovery system (orchestrator already ran)")
 
-          // Timeout task (60 seconds max)
-          group.addTask {
-            try await Task.sleep(for: .seconds(60))
-            throw DiscoveryError.timeout
-          }
+      // LEGACY: This would run the old eager-loading discovery
+      // do {
+      //   try await withThrowingTaskGroup(of: Void.self) { group in
+      //     group.addTask {
+      //       await vm.discoverProjects()
+      //     }
+      //     try await group.next()
+      //   }
+      // }
 
-          // Wait for first to complete
-          try await group.next()
-          group.cancelAll()
+      // Phase 3: Seed display order if needed (after orchestrator discovery)
+      if shouldResetDisplayOrder {
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          try orchestrator.seedDisplayOrderFromTranscriptActivityIfUnset()
+        } catch {
+          log.warning("Failed to seed display_order from transcript activity: \(error.localizedDescription)")
         }
-        log.info("✅ Auto-discovery complete")
-        if shouldResetDisplayOrder {
-          do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            try orchestrator.seedDisplayOrderFromTranscriptActivityIfUnset()
-          } catch {
-            log.warning("Failed to seed display_order from transcript activity: \(error.localizedDescription)")
-          }
-        }
-      } catch is DiscoveryError {
-        log.error("❌ Discovery timed out after 60s")
-        // Continue with whatever projects were found
       }
 
       await persistNewestProjectBookmarkIfAvailable(log: log)

@@ -145,7 +145,15 @@ final class ProjectsViewModel {
 
   /// Legacy property for welcome modal compatibility
   var discoveryProgress: DiscoveryProgress? {
-    if isDiscovering {
+    // Phase 3: If we have projects and welcome is ready, show complete
+    if isWelcomeReady && !projects.isEmpty {
+      return DiscoveryProgress(
+        phase: .complete,
+        projectsCompleted: projects.count,
+        projectsTotal: projects.count,
+        message: "✅ Found \(projects.count) projects"
+      )
+    } else if isDiscovering {
       return DiscoveryProgress(
         phase: .scanning,
         projectsCompleted: 0,
@@ -153,8 +161,9 @@ final class ProjectsViewModel {
         message: "Scanning filesystem..."
       )
     } else if !projects.isEmpty {
+      // Interim state: have projects but not fully ready
       return DiscoveryProgress(
-        phase: .complete,
+        phase: .ingesting,
         projectsCompleted: projects.count,
         projectsTotal: projects.count,
         message: "Found \(projects.count) projects"
