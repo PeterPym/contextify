@@ -70,9 +70,9 @@ Before submission, you MUST update these files in `fastlane/metadata/review_info
 - `email_address.txt` - Email address for App Review contact
 
 Also verify these URLs are live:
-- Support URL: https://contextify.sh/support
+- Support URL: https://contextify.sh/support.html
 - Marketing URL: https://contextify.sh
-- Privacy Policy URL: https://contextify.sh/privacy
+- Privacy Policy URL: https://contextify.sh/privacy.html
 
 ### 3. Create Screenshots
 

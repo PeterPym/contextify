@@ -1,4 +1,6 @@
-Contextify monitors Claude Code and Codex CLI conversation transcripts. To fully test the app:
+Contextify monitors Claude Code and Codex CLI conversation transcripts. 
+
+To fully test the app:
 
 1. Install Claude Code CLI (https://github.com/anthropics/claude-code)
 2. Run 'claude' command to start a session

@@ -20,9 +20,9 @@
 
       "release_notes": "Initial release of Contextify!\n\n• Real-time conversation monitoring for Claude Code and Codex CLI\n• AI-powered session summaries\n• Project-centric organization with automatic git detection\n• Drag & drop file and URL ingestion\n• Timestamped Markdown artifacts\n• Session checkpoints\n• Timeline visualization\n• Custom database location support (Dropbox, iCloud Drive)\n• Native macOS performance with Swift 6",
 
-      "support_url": "https://contextify.sh/support",
+      "support_url": "https://contextify.sh/support.html",
       "marketing_url": "https://contextify.sh",
-      "privacy_url": "https://contextify.sh/privacy"
+      "privacy_url": "https://contextify.sh/privacy.html"
     }
   },
 
@@ -61,7 +61,7 @@
   },
 
   "app_privacy": {
-    "privacy_policy_url": "https://contextify.sh/privacy",
+    "privacy_policy_url": "https://contextify.sh/privacy.html",
     "privacy_policy_text": "See privacy policy URL",
     "user_privacy_choices_url": "",
     "data_collection": {
