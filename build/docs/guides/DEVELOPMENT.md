@@ -2,6 +2,12 @@
 
 Complete build, test, and development commands for Contextify.
 
+## Phase 3 Architecture Note (Nov 2025)
+
+**Lazy Loading:** Contextify now uses lazy loading architecture for 10-35x faster startup.
+**Key Components:** AppStateOrchestrator, LightweightDiscoveryService, FastPathIngestionCoordinator
+**See:** `build/docs/architecture/COMPONENTS.md` for Phase 3 details
+
 ## Quick Reference
 
 **Primary build script:** `bash scripts/xc.sh build` (auto-detects Xcode-beta if installed)
