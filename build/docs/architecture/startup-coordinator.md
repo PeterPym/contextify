@@ -261,6 +261,31 @@ private func ensureProjectInDatabase(path: String) async throws -> String {
 
 ---
 
+## Phase 3 Role: Legacy Compatibility Shim
+
+**Primary Responsibilities (Phase 3):**
+
+1. **Receive External Notifications**
+   - `handleExternalProjectSwitch(id:path:)` called by AppStateOrchestrator
+   - Creates `ActiveProjectContext` from notification
+
+2. **Publish to Legacy Subscribers**
+   - ConversationMonitor still uses `StartupCoordinator.shared.updates`
+   - Other pre-Phase 3 components may still subscribe
+
+3. **Maintain Backward Compatibility**
+   - Keeps existing APIs working during Phase 3 transition
+   - Allows incremental migration to AppStateOrchestrator
+
+**Deprecated Responsibilities (Moved to AppStateOrchestrator):**
+
+1. ~~**Project Discovery**~~ → `LightweightDiscoveryService.discoverProjectsLightweight()`
+2. ~~**Ingestion Orchestration**~~ → `FastPathIngestionCoordinator.ingestProjectJIT()`
+3. ~~**State Management**~~ → `AppStateOrchestrator.state` (state machine)
+4. ~~**Primary Coordinator**~~ → `AppStateOrchestrator` is now central coordinator
+
+---
+
 ## API Reference
 
 ### ActiveProjectContext
@@ -492,13 +517,127 @@ func testFullStartupSequence() async throws {
 
 ---
 
+## Phase 4 Migration Guide
+
+### Refactoring Plan
+
+**When:** Phase 4 (after ConversationMonitor split)
+**Estimated:** Q1 2026 (2-4 months after Phase 3 production release)
+
+**Steps:**
+
+1. **Refactor ConversationMonitor** (P0 - Critical, 3-4 weeks)
+   - Split into 4 focused components (TimelineLoader, MonitoringCoordinator, TimelineCacheCoordinator, ConversationMonitor)
+   - Update to use AppStateOrchestrator directly (not StartupCoordinator)
+
+2. **Audit Legacy Subscribers** (1 week)
+   - Find all uses of `StartupCoordinator.shared.updates`
+   - Migrate to `AppStateOrchestrator.state` observation
+   - Remove AsyncStream subscriptions
+
+3. **Remove StartupCoordinator** (1 week)
+   - Delete `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`
+   - Remove from ContextifyApp initialization
+   - Update documentation
+
+4. **Consolidate to AppStateOrchestrator** (1 week)
+   - Move any remaining unique functionality to AppStateOrchestrator
+   - Verify no regressions via integration tests
+
+### Migration Patterns
+
+**Before (Phase 3 - StartupCoordinator):**
+```swift
+// Legacy pattern
+for await context in StartupCoordinator.shared.updates {
+    self.activeProjectId = context.id
+    self.projectPath = context.path
+    await refreshTimeline()
+}
+```
+
+**After (Phase 4 - AppStateOrchestrator):**
+```swift
+// New pattern
+for await _ in NotificationCenter.default.notifications(named: .appStateDidChange) {
+    let state = AppStateOrchestrator.shared.state
+
+    switch state {
+    case .active(let projectId):
+        self.activeProjectId = projectId
+        await refreshTimeline()
+    default:
+        break
+    }
+}
+```
+
+**Alternative (Observation Framework):**
+```swift
+// Using Swift Observation
+@Observable
+class MyViewModel {
+    init() {
+        // Observe published state directly
+        // (SwiftUI will automatically subscribe)
+    }
+
+    func observeOrchestrator() {
+        let orchestrator = AppStateOrchestrator.shared
+
+        // Access via published property
+        if case .active(let projectId) = orchestrator.state {
+            self.activeProjectId = projectId
+        }
+    }
+}
+```
+
+### Benefits of Migration
+
+✅ **Simplified Architecture**
+- One central coordinator (AppStateOrchestrator) instead of two
+- Clear ownership of state
+- State machine pattern enforces valid transitions
+
+✅ **Reduced Coupling**
+- No more StartupCoordinator → AppStateOrchestrator → StartupCoordinator roundtrip
+- Direct observation of AppStateOrchestrator
+
+✅ **Better Performance**
+- Eliminate intermediate notification layer
+- Fewer allocations (no ActiveProjectContext creation)
+
+✅ **Type Safety**
+- AppState enum provides compile-time guarantees
+- Pattern matching catches unhandled states
+
+---
+
 ## Related Documentation
+
+### Original Documentation
 
 - **Original design spec:** `build/docs/archive/feature-specs/startup-coordinator.md`
 - **SQL Backend:** `build/docs/architecture/sql-backend.md`
 - **State Management:** `build/docs/architecture/conversation-monitor-state.md`
 - **ProjectSwitcher integration:** `build/docs/architecture/project-switcher.md`
 - **Implementation:** `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`
+
+### Phase 3 Cross-References
+
+**AppStateOrchestrator:**
+- Architecture: `build/docs/architecture/COMPONENTS.md` - "Application State Coordination"
+- Data flow: `build/docs/architecture/data-pipeline-architecture.md`
+- Implementation: `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
+
+**Phase 3 Comparison:**
+- Refactor analysis: `build/notes/phase3-refactor-comparison-analysis.md`
+- Documentation tracker: `build/notes/phase3-documentation-update-master-list.md`
+
+**Phase 4 Planning:**
+- Refactoring roadmap: `build/docs/architecture/architecture-refactoring-analysis.md`
+- ConversationMonitor split: `architecture-refactoring-analysis.md` (lines 489-601)
 
 ---
 
