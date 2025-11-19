@@ -25,10 +25,14 @@ CONTEXTIFY_HEIGHT=700
 CONTEXTIFY_X=$((SCREEN_WIDTH - CONTEXTIFY_WIDTH - 40))
 CONTEXTIFY_Y=80
 
-# Position Terminal
+# Position Terminal (create window if none exists)
 osascript <<EOF
 tell application "Terminal"
     activate
+    if (count of windows) is 0 then
+        do script ""
+        delay 0.5
+    end if
     set position of front window to {$TERMINAL_X, $TERMINAL_Y}
     set size of front window to {$TERMINAL_WIDTH, $TERMINAL_HEIGHT}
 end tell
