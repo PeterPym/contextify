@@ -558,7 +558,7 @@ public final class ProjectSwitcherState {
         let dbStart = Date()
         logger.info("[UIOPT-SWITCH-DB-START] Looking up project in database...")
 
-        guard let project = try orchestrator.getProject(id: projectId) else {
+        guard try orchestrator.getProject(id: projectId) != nil else {
           logger.error("Project not found: \(projectId, privacy: .public)")
           logger.error("[UIOPT-SWITCH-ERROR] Project \(projectId, privacy: .public) not found in database")
           return

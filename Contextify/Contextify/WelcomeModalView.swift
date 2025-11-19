@@ -127,10 +127,6 @@ struct WelcomeModalView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 48))
-                .foregroundStyle(.blue.gradient)
-
             Text("Welcome to Contextify")
                 .font(.title)
                 .fontWeight(.semibold)

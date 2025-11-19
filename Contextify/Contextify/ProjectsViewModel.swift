@@ -195,7 +195,7 @@ final class ProjectsViewModel {
         phase: .complete,
         projectsCompleted: projects.count,
         projectsTotal: projects.count,
-        message: "✅ Found \(projects.count) projects"
+        message: "Found \(projects.count) projects"
       )
     } else if isDiscovering {
       return DiscoveryProgress(
