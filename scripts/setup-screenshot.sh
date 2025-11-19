@@ -1,6 +1,7 @@
 #!/bin/bash
 # Setup windows for Contextify screenshots
 # Positions Terminal and Contextify for optimal screenshot composition
+# within App Store screenshot dimensions
 
 set -e
 
@@ -12,18 +13,25 @@ SCREEN_HEIGHT=$(system_profiler SPDisplaysDataType | grep Resolution | awk '{pri
 
 echo "Screen resolution: ${SCREEN_WIDTH}x${SCREEN_HEIGHT}"
 
-# Calculate positions
-# Terminal: Left side, 60% width
-TERMINAL_WIDTH=$((SCREEN_WIDTH * 6 / 10))
-TERMINAL_HEIGHT=$((SCREEN_HEIGHT - 100))
-TERMINAL_X=20
-TERMINAL_Y=50
+# Target screenshot size (App Store requirement)
+SHOT_WIDTH=1440
+SHOT_HEIGHT=900
 
-# Contextify: Right side, smaller HUD
-CONTEXTIFY_WIDTH=600
+# Center the capture area on screen
+CAPTURE_X=$(( (SCREEN_WIDTH - SHOT_WIDTH) / 2 ))
+CAPTURE_Y=$(( (SCREEN_HEIGHT - SHOT_HEIGHT) / 2 ))
+
+# Terminal: Left side of capture area, ~55% of screenshot width
+TERMINAL_WIDTH=800
+TERMINAL_HEIGHT=880
+TERMINAL_X=$((CAPTURE_X + 20))
+TERMINAL_Y=$((CAPTURE_Y + 10))
+
+# Contextify: Right side of capture area
+CONTEXTIFY_WIDTH=590
 CONTEXTIFY_HEIGHT=700
-CONTEXTIFY_X=$((SCREEN_WIDTH - CONTEXTIFY_WIDTH - 40))
-CONTEXTIFY_Y=80
+CONTEXTIFY_X=$((CAPTURE_X + SHOT_WIDTH - CONTEXTIFY_WIDTH - 20))
+CONTEXTIFY_Y=$((CAPTURE_Y + 100))
 
 # Position Terminal (create window if none exists)
 osascript <<EOF
@@ -57,7 +65,10 @@ EOF
 
 echo "✅ Windows positioned!"
 echo ""
-echo "Terminal:   ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
-echo "Contextify: ${CONTEXTIFY_WIDTH}x${CONTEXTIFY_HEIGHT} at (${CONTEXTIFY_X}, ${CONTEXTIFY_Y})"
+echo "Screenshot area: ${SHOT_WIDTH}x${SHOT_HEIGHT} centered at (${CAPTURE_X}, ${CAPTURE_Y})"
+echo "Terminal:        ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
+echo "Contextify:      ${CONTEXTIFY_WIDTH}x${CONTEXTIFY_HEIGHT} at (${CONTEXTIFY_X}, ${CONTEXTIFY_Y})"
 echo ""
-echo "Ready for screenshot! Press Cmd+Shift+3 for full screen or Cmd+Shift+4 to select area."
+echo "Ready for screenshot!"
+echo "Press Cmd+Shift+4, then drag to select the ${SHOT_WIDTH}x${SHOT_HEIGHT} area containing both windows."
+echo "Or use ./scripts/capture-screenshot.sh to auto-capture the region."
