@@ -35,7 +35,12 @@ public final class AppStateOrchestrator: ObservableObject {
     let db = DatabaseManager.shared
     self.orchestrator = try! TranscriptOrchestrator(dbManager: db)
     self.discovery = LightweightDiscoveryService()
-    self.fastPath = FastPathIngestionCoordinator(orchestrator: orchestrator)
+    let fastPath = FastPathIngestionCoordinator(orchestrator: orchestrator)
+    self.fastPath = fastPath
+
+    Task(priority: .background) {
+      await fastPath.resumePendingCompletions()
+    }
   }
 
   /// Update state and notify observers

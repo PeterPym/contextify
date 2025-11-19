@@ -13,6 +13,7 @@ public actor FastPathIngestionCoordinator {
   private var enqueuedCompletions: Set<String> = []
   private var notifiedProjects: Set<String> = []
   private var pendingNotificationTokens: Set<String> = []
+  private var cancelled = false
   private let log = Logger(subsystem: "dev.contextify", category: "FastPathIngestion")
 
   public init(
@@ -45,8 +46,7 @@ public actor FastPathIngestionCoordinator {
   /// Cancel any running ingestion tasks (for Phase 3 Orchestrator)
   public func cancel() {
     log.info("[FAST-PATH-CANCEL] Cancellation requested (Phase 3)")
-    // Actor-isolated cancellation - implement if needed
-    // For now, processProject checks Task.isCancelled between batches
+    cancelled = true
   }
 
   /// Just-in-time ingestion for a single project (Phase 3 lazy loading)
@@ -105,12 +105,17 @@ public actor FastPathIngestionCoordinator {
   }
 
   public func runFastPath(projectIds: [String], activeProjectId: String?) async {
+    cancelled = false
     let startTime = Date()
     let orderedIds = orderProjects(projectIds: projectIds, activeProjectId: activeProjectId)
 
     log.info("[FAST-PATH-PREVIEW-START] projects=\(projectIds.count, privacy: .public) active=\(activeProjectId ?? "none", privacy: .public)")
 
     for projectId in orderedIds {
+      if cancelled || Task.isCancelled {
+        log.info("[FAST-PATH] Aborting runFastPath due to cancellation")
+        break
+      }
       await processProject(projectId: projectId)
     }
 
@@ -137,6 +142,10 @@ public actor FastPathIngestionCoordinator {
   }
 
   private func processProject(projectId: String) async {
+    if cancelled || Task.isCancelled {
+      log.info("[FAST-PATH] Skipping project \(projectId, privacy: .public) due to cancellation")
+      return
+    }
     log.info("[FAST-PATH-ENTRY] processProject started for project: \(projectId, privacy: .public)")
 
     // Check if this is a container path project (should be filtered out)

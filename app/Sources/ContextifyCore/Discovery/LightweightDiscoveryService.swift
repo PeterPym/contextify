@@ -122,29 +122,38 @@ public actor LightweightDiscoveryService {
 
     log.debug("[DISC-LIGHT] Found \(files.count, privacy: .public) Codex transcripts")
 
-    // Parallel process headers to extract CWD
-    // This is the only place we read file contents (first line only)
-    await withTaskGroup(of: (String, Date, URL)?.self) { group in
-      for url in files {
-        group.addTask {
-          guard let cwd = getCWD(url: url) else { return nil }
-          let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
-          return (cwd, date, url)
-        }
-      }
+    // Parallel process headers to extract CWD, but cap concurrency to avoid FD pressure.
+    let batchSize = 64
+    var index = 0
 
-      for await result in group {
-        if let (cwd, date, url) = result {
-          // Aggregate by CWD - collect file URLs
-          if var p = projects[cwd] {
-            p.files.append(url)  // Accumulate file list
-            p.maxDate = max(p.maxDate, date)
-            projects[cwd] = p
-          } else {
-            projects[cwd] = ([url], date, URL(fileURLWithPath: cwd))
+    while index < files.count {
+      let end = min(index + batchSize, files.count)
+      let slice = files[index..<end]
+
+      await withTaskGroup(of: (String, Date, URL)?.self) { group in
+        for url in slice {
+          group.addTask {
+            guard let cwd = getCWD(url: url) else { return nil }
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
+            return (cwd, date, url)
+          }
+        }
+
+        for await result in group {
+          if let (cwd, date, url) = result {
+            // Aggregate by CWD - collect file URLs
+            if var p = projects[cwd] {
+              p.files.append(url)  // Accumulate file list
+              p.maxDate = max(p.maxDate, date)
+              projects[cwd] = p
+            } else {
+              projects[cwd] = ([url], date, URL(fileURLWithPath: cwd))
+            }
           }
         }
       }
+
+      index = end
     }
 
     // Convert to LightweightProject array
