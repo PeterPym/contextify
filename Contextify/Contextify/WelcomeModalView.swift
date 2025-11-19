@@ -205,10 +205,6 @@ struct WelcomeModalView: View {
 
     private var completedContent: some View {
         VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.green)
-
             if let progress = projectsVM.discoveryProgress {
                 Text(progress.message)
                     .font(.headline)
