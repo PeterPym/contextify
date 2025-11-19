@@ -1,0 +1,14 @@
+Contextify monitors Claude Code and Codex CLI conversation transcripts. To fully test the app:
+
+1. Install Claude Code CLI (https://github.com/anthropics/claude-code)
+2. Run 'claude' command to start a session
+3. Launch Contextify - it will auto-detect the active session
+4. The app will display real-time conversation timeline and summaries
+
+The app requires access to:
+• ~/.claude/projects/ (Claude Code transcripts)
+• ~/.codex/sessions/ (Codex transcripts)
+
+These are standard locations for AI coding assistant conversation logs. No special permissions needed beyond standard file access.
+
+For sandbox build testing, the app uses security-scoped bookmarks to access these directories.

@@ -1,0 +1,75 @@
+Never lose valuable AI coding conversations again. Contextify creates a permanent, searchable archive of ALL your Claude Code and Codex sessions - across every project, unified in one timeline.
+
+⚡ CORE BENEFITS
+
+• **Permanent Archive** – Every conversation saved forever in a searchable database. Find solutions from weeks or months ago in seconds, even across different projects.
+
+• **Unified Claude Code + Codex Support** – See all conversations in one timeline regardless of which tool you use. Switch between Claude Code and Codex without losing context.
+
+• **Cross-Project Search** – Build a personal knowledge base over time. "How did I solve authentication 2 months ago?" - search across ALL projects, not just your current one.
+
+• **AI-Powered Summaries** – Understand a 2-hour conversation in 30 seconds. Intelligent summaries highlight key decisions and solutions without re-reading everything.
+
+• **Zero Configuration** – Automatically detects projects, git branches, and conversation sessions. No manual setup required - just launch and it works.
+
+• **Multi-Machine Sync** – Store database in iCloud Drive or Dropbox. Work on your iMac at the office, continue on your MacBook at home - same history everywhere.
+
+🔥 KEY FEATURES
+
+• **Real-time Monitoring** – See live status updates as conversations progress. Know what the AI is working on without watching terminal scroll.
+
+• **Timeline Visualization** – Chronological view of every message, tool call, and decision. Jump to any point in conversation history instantly.
+
+• **Transcript Inventory** – Browse ALL past sessions across all projects. Filter by date, provider (Claude/Codex), duration, or project.
+
+• **Git Integration** – Automatically tracks which branch each conversation happened on. Perfect for code reviews and debugging.
+
+• **File & URL Ingestion** – Drag files or URLs to create timestamped Markdown artifacts. Capture important context without leaving your workflow.
+
+• **Instant Startup** – Timeline caching means no waiting. Open Contextify, see your timeline immediately - even works offline.
+
+💡 HOW IT WORKS
+
+Contextify monitors your ~/.claude/projects/ and ~/.codex/sessions/ directories in real-time. When you start a conversation with Claude Code or Codex, it automatically ingests the transcript, generates intelligent summaries, and adds everything to your permanent database.
+
+All data lives in a local SQLite database with full support for custom locations (Dropbox, iCloud Drive, or custom path). Your conversations remain private and under your control—nothing is transmitted to external servers.
+
+🎯 PERFECT FOR
+
+• Developers using AI coding assistants daily who need to reference past solutions
+• Teams using both Claude Code and Codex who want a unified view
+• Anyone who's lost valuable solutions because conversations weren't saved
+• Developers working on multiple projects who need cross-project search
+• Teams who want to review AI-assisted development decisions during code review
+
+🔒 PRIVACY & SECURITY
+
+• All data stored locally on your Mac—never transmitted to external servers
+• No cloud sync unless YOU choose it (iCloud/Dropbox optional)
+• No analytics, no tracking, no telemetry
+• Security-scoped bookmarks for App Store sandbox compliance
+• Full control over your data with exportable Markdown artifacts
+
+🛠 TECHNICAL DETAILS
+
+• Built with Swift 6 and SwiftUI for native macOS performance
+• Lightweight background monitoring with minimal CPU impact (~1-2% idle)
+• Real-time file system monitoring using FSEvents API
+• GRDB SQLite backend for fast queries and efficient storage
+• Timeline caching reduces LLM API calls by 95% (1-2 vs 20-50 on startup)
+• Universal binary for both Intel and Apple Silicon Macs
+• Support for git worktrees and complex repository structures
+
+📊 SYSTEM REQUIREMENTS
+
+• macOS 14.0 (Sonoma) or later
+• Claude Code or Codex CLI installed and configured
+• 50 MB free disk space (database grows ~1-2 MB per week of typical usage)
+
+---
+
+**The Problem:** You have brilliant AI coding conversations, solve complex bugs, make important architectural decisions - then a week later you can't find the solution. Terminal history is gone, transcripts are scattered across projects, you can't remember which conversation had that critical insight.
+
+**The Solution:** Contextify creates a permanent, searchable archive. Every conversation saved forever. Search across all projects. Review decisions from months ago. Build a personal knowledge base of AI-assisted development insights that grows more valuable over time.
+
+Download Contextify today and never lose context again. Join developers building better software with AI coding assistants. All data stays private on your Mac—try it risk-free.
