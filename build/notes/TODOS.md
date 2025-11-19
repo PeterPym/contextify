@@ -264,7 +264,7 @@ Timeline breakdown:
 ---
 
 
-# P1 (High Priority) - 14 Items
+# P1 (High Priority) - 15 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
@@ -343,6 +343,62 @@ Timeline breakdown:
 **Related:**
 - Builds on fix for welcome modal discovery (commit `199072e`)
 - Needed for pre-launch App Store testing
+
+---
+
+## Timeline UX - Queued Messages (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical UX bug - timeline shows incomplete conversation)
+**Effort:** 3-4 hours
+
+- [ ] #P1-QUEUE-MESSAGES: Parse and display queue-operation records as user messages in timeline
+
+**Problem:**
+User messages sent while Claude is working (tools executing) are stored as `queue-operation` records with `operation: "enqueue"`. These are currently skipped by the parser, creating a broken timeline where Claude appears to be "talking to himself" with no user prompts visible.
+
+**Example from logs:**
+```
+10:05:13 AM - Claude: checked spec in docs
+10:05:19 AM - Claude: searched for queue-operation documentation
+(missing) YOU: did you check claude code spec specifically in docs
+```
+
+**Impact:**
+- 1,724 queue-operation records across all sessions (significant data)
+- Timeline shows Claude responses without visible user messages
+- Confusing UX - appears like Claude is randomly taking actions
+- User thinks their messages aren't being received
+
+**Solution:**
+
+1. **Parser Extension** (1-2 hours)
+   - Extend `ClaudeCodeMetadataParser` to handle `queue-operation` records
+   - Only parse records where `operation: "enqueue"` (ignore "remove" and "popAll")
+   - Create timeline entries with `kind: user` and `provider: claude.code`
+   - Extract timestamp, content, sessionId from record
+
+2. **Timeline Display** (1 hour)
+   - Display with 🐝 bee emoji indicator (shows "sent while working")
+   - Add InfoButton (ⓘ) with popover explanation:
+     - Title: "Queued Message"
+     - Message: "Sent while Claude was working. Received via system reminder and addressed in response."
+   - Use existing InfoButton component (`Contextify/Contextify/InfoButton.swift`)
+
+3. **Testing** (1 hour)
+   - Verify 1,724 existing queue-operation records are ingested correctly
+   - Check timeline ordering with queued messages interspersed
+   - Test InfoButton popover appears and explains context
+   - Verify no duplicate entries for same message
+
+**Files:**
+- Parser: `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- Timeline: `Contextify/Contextify/TimelineEntryRow.swift`
+- UI: Reuse existing `InfoButton.swift` and `InfoPopoverContent.swift`
+
+**Reference:**
+- Existing metadata plan: `build/docs/plans/metadata-ingestion-queue-types.md`
+- Queue-operation format: `{"type":"queue-operation","operation":"enqueue","content":"...","timestamp":"..."}`
 
 ---
 
