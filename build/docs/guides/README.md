@@ -2,9 +2,9 @@
 
 How-to documentation for using, debugging, and extending Contextify.
 
-## Phase 3 Updates (Nov 2025)
+## Key Debugging Areas
 
-**New debugging areas:** AppStateOrchestrator state transitions, lazy loading flows
+**Focus areas:** AppStateOrchestrator state transitions, lazy loading flows
 **Log prefixes:** `[ORCH-*]`, `[DISC-LIGHT]`, `[INGEST-JIT]`, `[BG-INDEX]`
 
 ## Purpose

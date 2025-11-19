@@ -2,14 +2,14 @@
 
 System-level design documents describing how Contextify's major components fit together.
 
-## Phase 3 Status (Nov 2025)
+## Current Architecture Status
 
-**Major architectural improvements implemented:**
+**Key architectural features:**
 - ✅ Lazy loading architecture (10-35x faster startup)
 - ✅ AppStateOrchestrator central coordinator
 - ✅ Two-tier discovery (LightweightDiscoveryService + ProjectDiscoveryService)
 
-**Architecture grade:** A- (up from B+)
+**Architecture grade:** A-
 
 ## Purpose
 

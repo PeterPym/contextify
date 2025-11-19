@@ -2,10 +2,10 @@
 
 Component-specific implementation details for Contextify's individual subsystems.
 
-## Phase 3 Components (Nov 2025)
+## Component Categories
 
-**New:** AppStateOrchestrator, LightweightDiscoveryService, FastPathIngestionCoordinator
-**Legacy:** StartupCoordinator (compatibility shim, will be removed in Phase 4)
+**Current:** AppStateOrchestrator, LightweightDiscoveryService, FastPathIngestionCoordinator
+**Legacy:** StartupCoordinator (compatibility shim, planned for refactor)
 
 ## Purpose
 
