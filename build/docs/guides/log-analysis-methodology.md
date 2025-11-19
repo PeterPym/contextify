@@ -4,9 +4,9 @@
 
 **Target audience:** Future debugging sessions, new contributors, documentation authors.
 
-## Phase 3 Log Categories (Nov 2025)
+## Log Categories
 
-**New:** `[ORCH-STARTUP]`, `[ORCH-SELECT]`, `[DISC-LIGHT]`, `[INGEST-JIT]`, `[BG-INDEX]`
+**Key prefixes:** `[ORCH-STARTUP]`, `[ORCH-SELECT]`, `[DISC-LIGHT]`, `[INGEST-JIT]`, `[BG-INDEX]`
 
 **Related documentation:**
 - **Debugging toolkit:** `../../scripts/logging/README.md` - Scripts for capture and analysis
