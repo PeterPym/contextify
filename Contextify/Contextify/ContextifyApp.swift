@@ -353,7 +353,44 @@ struct ContextifyApp: App {
   }
 
   /// Run quick-discovery and ingest newest transcript (called after authorization granted in App Store builds)
+
+  /// Reconfigures the access provider after permissions are granted.
+  /// This rebuilds the SandboxTranscriptAccessProvider with newly granted URLs
+  /// and reconfigures AppStateOrchestrator so discovery can succeed.
   @MainActor
+  static func reconfigureAccessProvider(folderAccessController: FolderAccessController) async {
+    #if APPSTORE_BUILD
+    let log = Logger(subsystem: "dev.contextify", category: "Projects")
+    log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
+
+    // Read fresh authorizations from FolderAccessController
+    let claudeAuth = await folderAccessController.authorization(for: .claude)
+    let codexAuth = await folderAccessController.authorization(for: .codex)
+
+    var claudeURL: URL? = nil
+    if let auth = claudeAuth, auth.status == .authorized {
+      claudeURL = try? await folderAccessController.resolve(auth).url
+    }
+
+    var codexURL: URL? = nil
+    if let auth = codexAuth, auth.status == .authorized {
+      codexURL = try? await folderAccessController.resolve(auth).url
+    }
+
+    log.info("[RECONFIG-ACCESS] Claude: \(claudeURL != nil ? "authorized" : "nil"), Codex: \(codexURL != nil ? "authorized" : "nil")")
+
+    // Create new provider with fresh URLs
+    let newProvider = SandboxTranscriptAccessProvider(
+      claudeRoot: claudeURL,
+      codexRoot: codexURL
+    )
+
+    // Reconfigure orchestrator
+    await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
+    log.info("[RECONFIG-ACCESS] ✅ AppStateOrchestrator reconfigured with new access provider")
+    #endif
+  }
+
   static func runQuickDiscoveryAndIngest(projectsVM: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project (post-authorization)")

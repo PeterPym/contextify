@@ -419,9 +419,13 @@ struct WelcomeModalView: View {
                     }
 
                     Button("Continue") {
-                        log.info("User granted permissions, running quick-discovery then full discovery")
+                        log.info("User granted permissions, reconfiguring access provider then running discovery")
                         showPermissionsStep = false
                         Task {
+                            // Reconfigure access provider with newly granted permissions
+                            // This rebuilds SandboxTranscriptAccessProvider with fresh URLs
+                            await ContextifyApp.reconfigureAccessProvider(folderAccessController: folderAccessController)
+
                             // Run quick-discovery first to find and ingest newest transcript
                             // This ensures timeline shows current conversation immediately
                             await ContextifyApp.runQuickDiscoveryAndIngest(projectsVM: projectsVM)
