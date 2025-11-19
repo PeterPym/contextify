@@ -81,7 +81,7 @@ Once Namecheap forwarding is disabled, these URLs are ready to use:
 Marketing URL:      https://contextify.sh
 Privacy Policy URL: https://contextify.sh/privacy.html
 Support URL:        https://contextify.sh/support.html
-Contact Email:      hello@contextify.sh (setup pending)
+Contact Email:      support@contextify.sh (setup pending)
 ```
 
 ---
@@ -94,7 +94,8 @@ Contact Email:      hello@contextify.sh (setup pending)
 - [ ] Go to iCloud Settings → Custom Email Domain
 - [ ] Add contextify.sh domain
 - [ ] Follow Apple's instructions to add DNS records (TXT, MX)
-- [ ] Create hello@contextify.sh email alias
+- [ ] Create support@contextify.sh email address
+- [ ] Create rob@contextify.sh email address
 - [ ] Test sending and receiving
 
 **Why:** App Store requires working support email

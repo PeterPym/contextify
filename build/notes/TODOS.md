@@ -24,7 +24,9 @@
 
 ## Website (1 item)
 
-- [ ] #2: Setup hello@contextify.sh email (15 min)
+- [ ] #2: Setup support@contextify.sh email (15 min)
+
+**Note:** Using support@ as primary contact (standard for customer support)
 
 **Note:** URL forwarding completed (#1: ✅ complete 2025-11-11)
 

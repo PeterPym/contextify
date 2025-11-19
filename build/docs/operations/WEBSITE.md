@@ -22,7 +22,8 @@ Rsync-based, one-command deployment to production server.
 - **Nameservers:** ns1/2/3.digitalocean.com
 
 **Email:** Apple Custom Email via iCloud+
-- **Address:** hello@contextify.sh
+- **Address:** support@contextify.sh
+- **Setup Guide:** `build/docs/operations/customer-support.md`
 
 ## Technical Details
 
