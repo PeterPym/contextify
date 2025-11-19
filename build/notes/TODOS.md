@@ -1,15 +1,15 @@
 # Contextify TODO List
 
-**Last Updated:** 2025-11-16
+**Last Updated:** 2025-11-19
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 24 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 21 items remaining (3 completed) - Must complete before App Store submission
 - **P1 (High Priority):** 13 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 62 (promoted welcome modal hang to P0)
+**Total Active Items:** 59 (3 P0 items completed: drag-drop fixes, welcome modal hang)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,7 +20,7 @@
 
 ---
 
-# P0 (Blocking Release) - 24 Items
+# P0 (Blocking Release) - 21 Items Remaining
 
 ## Website (1 item)
 
@@ -208,14 +208,14 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical - Welcome Modal Hang (1 item) 🔗⬆️
+## Critical - Welcome Modal Hang (1 item) ✅ COMPLETE
 
-**Status:** Not Started
+**Status:** ✅ Complete (2025-11-19)
 **Priority:** Promoted from P1 (11-second UI freeze during onboarding)
 **Effort:** 4-6 hours
 **Evidence:** `/private/tmp/transcript-queue-monitor-20251118-002852.log`
 
-- [ ] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal
+- [x] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal ✅
 
 **Problem:** Welcome modal shows "1/19 projects" for **11+ seconds** before completing discovery. UI appears frozen/broken to users during first-run experience.
 
