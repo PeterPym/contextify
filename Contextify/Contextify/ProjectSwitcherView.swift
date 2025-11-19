@@ -393,11 +393,13 @@ struct ProjectTabView: View {
     .padding(.vertical, 6)
     .frame(minHeight: 44)  // Accessibility: Minimum touch target height
     .contentShape(Rectangle())  // Expand tap area to full frame
-    .background(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
-    .cornerRadius(6)
+    .background(
+      RoundedRectangle(cornerRadius: 6)
+        .fill(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
+    )
     .overlay(
       RoundedRectangle(cornerRadius: 6)
-        .stroke(
+        .strokeBorder(
           isActive ? Color.accentColor : Color.secondary.opacity(0.3),
           lineWidth: 1
         )
