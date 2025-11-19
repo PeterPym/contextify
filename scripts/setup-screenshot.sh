@@ -17,21 +17,25 @@ echo "Screen resolution: ${SCREEN_WIDTH}x${SCREEN_HEIGHT}"
 SHOT_WIDTH=1440
 SHOT_HEIGHT=900
 
-# Center the capture area on screen
+# Center the capture area on screen (for screencapture -R)
 CAPTURE_X=$(( (SCREEN_WIDTH - SHOT_WIDTH) / 2 ))
 CAPTURE_Y=$(( (SCREEN_HEIGHT - SHOT_HEIGHT) / 2 ))
 
-# Terminal: Left side of capture area, ~55% of screenshot width
+# Window positions use top-left origin (AppleScript coordinates)
+# Position windows to fit within the 1440x900 capture area
+
+# Terminal: Left side, ~55% of screenshot width
 TERMINAL_WIDTH=800
 TERMINAL_HEIGHT=880
+# Convert to top-left coordinates: start from capture area top
 TERMINAL_X=$((CAPTURE_X + 20))
-TERMINAL_Y=$((CAPTURE_Y + 10))
+TERMINAL_Y=$(( (SCREEN_HEIGHT - CAPTURE_Y - SHOT_HEIGHT) + 10 ))
 
-# Contextify: Right side of capture area
+# Contextify: Right side
 CONTEXTIFY_WIDTH=590
 CONTEXTIFY_HEIGHT=700
-CONTEXTIFY_X=$((CAPTURE_X + SHOT_WIDTH - CONTEXTIFY_WIDTH - 20))
-CONTEXTIFY_Y=$((CAPTURE_Y + 100))
+CONTEXTIFY_X=$((CAPTURE_X + SHOT_WIDTH - CONTEXTIFY_WIDTH - 30))
+CONTEXTIFY_Y=$(( (SCREEN_HEIGHT - CAPTURE_Y - SHOT_HEIGHT) + 100 ))
 
 # Position Terminal (create window if none exists)
 osascript <<EOF
