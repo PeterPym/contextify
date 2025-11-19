@@ -2,14 +2,17 @@
 //  InfoButton.swift
 //  Contextify
 //
-//  Reusable info button component for help/tooltip system.
-//  Displays info.circle icon that triggers a popover when clicked.
+//  Reusable (i) icon / info button component for help/tooltip system.
+//  Displays (ⓘ) info.circle icon that triggers a popover when clicked.
+//  Also known as: info icon, help icon, tooltip icon, (i) button.
 //  Includes SwiftUI 6 symbol effects and accessibility support.
 //
 
 import SwiftUI
 
-/// Reusable info button that displays an info icon and triggers a popover
+/// Reusable (i) icon / info button that displays an (ⓘ) info icon and triggers a popover
+///
+/// **Search terms:** info icon, help icon, tooltip icon, (i) button, (i) icon, ⓘ
 ///
 /// Features:
 /// - Smooth hover transitions (info.circle → info.circle.fill)
