@@ -56,6 +56,9 @@ struct WelcomeModalView: View {
     @State private var retryCount = 0
     private let maxRetries = 3
 
+    // Dismissal confirmation
+    @State private var showDismissalConfirmation = false
+
     var body: some View {
         VStack(spacing: 24) {
             // Header
@@ -86,6 +89,24 @@ struct WelcomeModalView: View {
         .padding(32)
         .frame(width: 500)
         .background(Color(nsColor: .windowBackgroundColor))
+        .interactiveDismissDisabled(isProcessingActive)
+        .alert(
+            "Still Loading",
+            isPresented: $showDismissalConfirmation
+        ) {
+            Button("Keep Loading", role: .cancel) { }
+            Button("Close Anyway", role: .destructive) {
+                dismiss()
+            }
+        } message: {
+            Text("Contextify is still finding your projects and conversations. If you close now, you'll need to wait for this process to complete the next time you open the app.")
+        }
+        .onChange(of: isProcessingActive) { _, newValue in
+            // When user tries to dismiss during processing, show confirmation
+            if !newValue && showDismissalConfirmation {
+                showDismissalConfirmation = false
+            }
+        }
         .task {
             // Check if we need to show permissions on App Store builds
             await loadAuthorizations()
@@ -125,7 +146,7 @@ struct WelcomeModalView: View {
                 // Project-level progress
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text(progress.currentProject ?? "Processing...")
+                        Text(progress.currentProject ?? "Finding your projects...")
                             .font(.headline)
                             .lineLimit(1)
                         Spacer()
@@ -142,12 +163,12 @@ struct WelcomeModalView: View {
                     // Transcript-level progress (if available)
                     if progress.transcriptsTotal > 0 {
                         HStack {
-                            Text(progress.currentTranscript ?? "Loading transcripts...")
+                            Text(progress.currentTranscript ?? "Reading conversation history...")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                             Spacer()
-                            Text("\(progress.transcriptsCompleted)/\(progress.transcriptsTotal) files")
+                            Text("\(progress.transcriptsCompleted)/\(progress.transcriptsTotal) conversations")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
@@ -170,7 +191,7 @@ struct WelcomeModalView: View {
                     ProgressView()
                         .scaleEffect(1.2)
 
-                    Text("Scanning for Claude Code and Codex projects...")
+                    Text("Finding your AI conversations...")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -200,7 +221,7 @@ struct WelcomeModalView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 } else {
-                    Text("Almost there—warming up transcript watchers...")
+                    Text("Almost there—setting up real-time updates...")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -215,7 +236,7 @@ struct WelcomeModalView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.orange)
 
-            Text("Discovery Error")
+            Text("Unable to Load Projects")
                 .font(.headline)
 
             Text(message)
@@ -325,6 +346,12 @@ struct WelcomeModalView: View {
 
     // MARK: - Helper Computed Properties
 
+    /// Returns true if Contextify is actively processing (discovering/ingesting).
+    /// Used to prevent accidental dismissal during long-running operations.
+    private var isProcessingActive: Bool {
+        projectsVM.isDiscovering || projectsVM.isIngesting || (projectsVM.welcomePhase == .watchers && !projectsVM.isWelcomeReady)
+    }
+
     /// Determines if the permissions step should be shown in the welcome modal.
     ///
     /// **Decision Logic:**
@@ -376,7 +403,7 @@ struct WelcomeModalView: View {
             Text("Preparing timelines")
                 .font(.headline)
 
-            Text("We’re verifying watchers so Contextify can update your transcripts in real time. This only happens on first launch.")
+            Text("Setting up real-time monitoring so your conversation timelines update automatically as you work. This only happens on first launch.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -390,7 +417,7 @@ struct WelcomeModalView: View {
                     )
                     .progressViewStyle(.linear)
 
-                    Text("Watchers ready: \(projectsVM.watchersReadyCount)/\(projectsVM.watcherTargetCount)")
+                    Text("Projects ready: \(projectsVM.watchersReadyCount)/\(projectsVM.watcherTargetCount)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
