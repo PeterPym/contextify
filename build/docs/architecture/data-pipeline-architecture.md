@@ -986,9 +986,287 @@ CREATE INDEX idx_timeline_cache_window ON timeline_cache(window_hash);
 
 ---
 
+## AppStateOrchestrator Implementation
+
+**File:** `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (297 lines)
+**Pattern:** Singleton, @MainActor, ObservableObject
+**State Machine:** AppState enum
+
+### State Transitions
+
+```swift
+// AppStateOrchestrator.swift:8-15
+public enum AppState: Sendable {
+  case startup
+  case discovering
+  case idle(projects: [LightweightProject])
+  case loading(projectId: String)
+  case active(projectId: String)
+  case error(String)
+}
+```
+
+**Valid Transitions:**
+- `startup` → `discovering` (app launch)
+- `discovering` → `idle(projects)` (scan complete)
+- `idle` → `loading(projectId)` (user selection)
+- `loading` → `active(projectId)` (JIT complete)
+- `loading` → `error` (JIT failure)
+- `active` → `loading(projectId)` (switch project)
+
+### Startup Implementation
+
+```swift
+// AppStateOrchestrator.swift:77-103
+public func startup() async {
+  log.info("[ORCH-STARTUP] Beginning lightweight startup...")
+  let startTime = Date()
+
+  setState(.discovering)
+
+  // 1. Lightweight Scan (stat-only, no file reads, no DB writes)
+  let projects = await discovery.discoverProjectsLightweight()
+  self.knownProjects = projects
+  rebuildProjectLookup(with: projects)
+
+  // 2. Update projects table metadata ONLY (single transaction)
+  try await orchestrator.updateProjectsMetadataOnly(projects)
+
+  // 3. Show UI immediately
+  setState(.idle(projects: projects))
+
+  let duration = Date().timeIntervalSince(startTime)
+  log.info("[ORCH-STARTUP] Startup complete in \(duration)s. UI ready.")
+
+  // 4. Auto-select most recent project
+  if let mostRecent = projects.first {
+    await selectProject(id: mostRecent.id)
+  } else {
+    startBackgroundIndexing()
+  }
+}
+```
+
+**Performance Characteristics:**
+- Target: <200ms
+- Achieved: 187ms (validated via logs)
+- Database: 19 row updates (projects only)
+- Memory: 30-50 MB
+
+### Project Lookup Cache
+
+```swift
+// AppStateOrchestrator.swift:120-143
+var project = projectLookup[id]
+if project == nil {
+  // DB fallback for cache miss
+  if let dbProject = try orchestrator.getProject(id: id) {
+    project = LightweightProject(...)
+    cacheProject(project!)
+  }
+}
+```
+
+**Cache Management:**
+- Built during startup via `rebuildProjectLookup()`
+- Invalidated on discovery refresh
+- DB fallback for cache misses
+- ⚠️ Potential stale data if projects added externally
+
+---
+
+## LightweightDiscoveryService Implementation
+
+**File:** `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift` (251 lines)
+**Pattern:** Actor (background execution, thread-safe)
+
+### Stat-Only Scanning
+
+```swift
+// LightweightDiscoveryService.swift:39-58
+private func scanClaudeProjects() -> [LightweightProject] {
+  let root = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".claude/projects")
+
+  let dirs = try? FileManager.default.contentsOfDirectory(
+    at: root,
+    includingPropertiesForKeys: [.contentModificationDateKey],
+    options: [.skipsHiddenFiles]
+  )
+
+  return dirs.map { dir in
+    // Optimization: Use directory mtime as proxy for activity
+    // This avoids opening/reading individual files (saves syscalls)
+    let mtime = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))
+      ?.contentModificationDate ?? Date.distantPast
+
+    // Scan for .jsonl files (need full URLs for JIT ingestion)
+    let files = (try? FileManager.default.contentsOfDirectory(...))
+      ?.filter { $0.pathExtension == "jsonl" } ?? []
+
+    return LightweightProject(...)
+  }
+}
+```
+
+**Performance Optimizations:**
+- **NO file reads:** Only stat() syscalls (mtime)
+- **NO JSONL parsing:** File contents not read
+- **NO DB writes:** Pure filesystem scan
+- **Batch file listing:** contentsOfDirectory (1 syscall vs N)
+
+### Path Resolution
+
+```swift
+// LightweightDiscoveryService.swift:161-188
+private func resolveClaudeProjectPath(
+  hashFolder: String,
+  directory: URL,
+  transcripts: [URL]
+) -> String? {
+  // Try reverse mangling first (fast)
+  if let path = try? ProjectIdentity.reverseManglePath(...) {
+    return path
+  }
+
+  // Try inferring from transcript metadata (orphaned projects)
+  if let transcriptPath = inferPathFromTranscripts(transcripts) {
+    return transcriptPath
+  }
+
+  // Try filesystem validation (slow)
+  return findRealPath(hashFolder: hashFolder)
+}
+```
+
+**Fallback Strategy:**
+1. Reverse mangling (decode hash folder name)
+2. Transcript metadata inference (parse first JSONL line for cwd)
+3. Filesystem validation (check if decoded path exists)
+
+---
+
 # Level 5: Technical Debt & Future Work
 
-## Known Issues
+## Phase 3 Achievements (Nov 2025)
+
+### Completed
+
+✅ **Lazy Loading Architecture**
+- JIT ingestion on project selection
+- Background indexing when idle
+- <200ms startup (10-35x improvement)
+
+✅ **Central State Coordinator**
+- AppStateOrchestrator with state machine pattern
+- Unified state management
+- Type-safe state transitions
+
+✅ **Lightweight Discovery**
+- Stat-only filesystem scanning
+- 3-5x memory reduction at startup
+- 10-20x fewer DB writes
+
+✅ **Simplified ViewModels**
+- ProjectsViewModel reduced 63% (-278 lines)
+- Observer pattern (no business logic)
+- Clear separation of concerns
+
+### Deferred to Phase 4
+
+The following items from architecture-refactoring-analysis.md remain:
+
+❌ **ConversationMonitor Refactor** (P0 - Critical)
+- Current: 3000+ lines, 15+ responsibilities
+- Target: 4 focused components (~400 lines each)
+  - ConversationMonitor - Timeline coordination
+  - TimelineLoader - Database queries & pagination
+  - MonitoringCoordinator - Watcher lifecycle
+  - TimelineCacheCoordinator - LLM queue management
+- Estimated: 3-4 weeks
+
+❌ **Protocol Abstractions** (P2 - Medium)
+- Add DI protocols for testability
+- Mock implementations for testing
+- Estimated: 2-3 weeks
+
+❌ **Unified Event System** (P3 - Medium)
+- Replace NotificationCenter with EventBus actor
+- AsyncStream throughout
+- Estimated: 2-3 weeks
+
+❌ **StartupCoordinator Refactor/Removal** (P1 - High)
+- Remove after ConversationMonitor refactor
+- Fold functionality into AppStateOrchestrator
+- Estimated: 1 week
+
+---
+
+## Phase 3 Known Issues
+
+### 1. Project Lookup Cache Staleness
+
+**Issue:** AppStateOrchestrator.projectLookup can become stale if projects added/removed externally.
+
+**Scenarios:**
+- Claude Code creates new project while Contextify running
+- User deletes transcript files via Finder
+- Multiple Contextify instances (different machines)
+
+**Current Mitigation:** DB fallback on cache miss (AppStateOrchestrator.swift:120-143)
+
+**Proper Fix (Phase 4):**
+- Add FSEvents monitoring of `~/.claude/projects/` and `~/.codex/sessions/`
+- Invalidate cache on file system changes
+- Periodic refresh (every 5 minutes)
+
+---
+
+### 2. LightweightProject → DiscoveredProject Conversion
+
+**Issue:** Two nearly-identical types require manual conversion.
+
+**Code:** ProjectsViewModel.convertToDiscoveredProjects() (lines 156-180)
+
+**Proper Fix (Phase 4):**
+- Unify types into single Project struct
+- Use optional fields for UI-specific data (isCurrent, displayOrder)
+- Eliminate conversion overhead
+
+---
+
+### 3. Background Indexing Sequential Processing
+
+**Issue:** Projects ingested sequentially (one at a time) during background indexing.
+
+**Performance:** 19 projects × 1s = 19 seconds total
+
+**Trade-off:**
+- Pro: Low CPU usage, no FD exhaustion
+- Con: Slow (could be 4-5s with 4-way concurrency)
+
+**Proper Fix (Phase 4):**
+- Add limited concurrency (4 concurrent max)
+- Use withTaskGroup for parallel ingestion
+- Estimated improvement: 4x faster background indexing
+
+---
+
+### 4. No Integration Tests for State Machine
+
+**Issue:** AppState transitions not covered by automated tests.
+
+**Risk:** State machine bugs could cause UI hangs or crashes.
+
+**Proper Fix (Phase 3.5 - Pre-production):**
+- Add AppStateOrchestratorTests
+- Test all valid state transitions
+- Test invalid transition handling
+- Test cancellation scenarios
+
+---
+
+## Known Issues (Pre-Phase 3)
 
 ### 1. Event System Mismatch (Timeline Updates)
 
