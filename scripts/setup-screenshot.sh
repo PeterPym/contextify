@@ -34,14 +34,16 @@ CONTEXTIFY_HEIGHT=700
 CONTEXTIFY_X=$((CAPTURE_X + 830))  # 10px gap between windows
 CONTEXTIFY_Y=$((CAPTURE_Y + 100))  # Vertically centered: (900 - 700) / 2 = 100
 
-# Position Terminal (create window if none exists)
+# Position Terminal (use whichever window is currently frontmost)
+# NOTE: Click on the Terminal window/tab you want BEFORE running this script
 osascript <<EOF
 tell application "Terminal"
-    activate
     if (count of windows) is 0 then
+        activate
         do script ""
         delay 0.5
     end if
+    # Don't activate - use whichever window user selected
     set position of front window to {$TERMINAL_X, $TERMINAL_Y}
     set size of front window to {$TERMINAL_WIDTH, $TERMINAL_HEIGHT}
 end tell
