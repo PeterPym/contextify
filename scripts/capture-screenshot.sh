@@ -17,15 +17,11 @@ mkdir -p "$OUTPUT_DIR"
 # Run setup script first
 ./scripts/setup-screenshot.sh
 
-# Calculate capture region (must match setup script)
-SCREEN_WIDTH=$(system_profiler SPDisplaysDataType | grep Resolution | awk '{print $2}' | head -1)
-SCREEN_HEIGHT=$(system_profiler SPDisplaysDataType | grep Resolution | awk '{print $4}' | head -1)
-
+# Capture region (must match setup script exactly)
 SHOT_WIDTH=1440
 SHOT_HEIGHT=900
-
-CAPTURE_X=$(( (SCREEN_WIDTH - SHOT_WIDTH) / 2 ))
-CAPTURE_Y=$(( (SCREEN_HEIGHT - SHOT_HEIGHT) / 2 ))
+CAPTURE_X=200
+CAPTURE_Y=100
 
 echo ""
 echo "📸 Taking screenshot in 3 seconds..."
