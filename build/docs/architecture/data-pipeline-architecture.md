@@ -492,6 +492,166 @@ sequenceDiagram
 
 ---
 
+## Phase 3 Data Flow Sequences (Lazy Loading)
+
+### Sequence 1: Lightweight Startup (< 200ms)
+
+```mermaid
+sequenceDiagram
+    participant App as ContextifyApp
+    participant ASO as AppStateOrchestrator
+    participant LDS as LightweightDiscoveryService
+    participant TO as TranscriptOrchestrator
+    participant DB as Database
+    participant UI as ProjectsViewModel
+
+    App->>ASO: startup()
+    ASO->>ASO: setState(.discovering)
+    ASO->>LDS: discoverProjectsLightweight()
+
+    LDS->>LDS: scanClaudeProjects() [stat-only]
+    LDS->>LDS: scanCodexSessions() [stat-only]
+    LDS->>LDS: sort by lastActivity
+    LDS-->>ASO: [LightweightProject] (19 projects)
+
+    ASO->>TO: updateProjectsMetadataOnly(projects)
+    TO->>DB: UPDATE projects SET name=?, last_activity=? [19 rows]
+    DB-->>TO: OK
+    TO-->>ASO: OK
+
+    ASO->>ASO: setState(.idle(projects))
+    ASO->>UI: NotificationCenter: .appStateDidChange
+    UI->>UI: updateFromOrchestrator()
+    UI->>UI: projects = convert(lightweightProjects)
+
+    Note over UI: UI ready in <200ms!
+    Note over ASO: No transcripts ingested yet (lazy)
+
+    ASO->>ASO: Auto-select mostRecent project
+    ASO->>ASO: selectProject(id: mostRecent.id)
+```
+
+**Key Points:**
+- Total time: <200ms (achieved: 187ms)
+- Database writes: 19 rows (projects metadata only)
+- Memory footprint: 30-50 MB
+- NO transcript ingestion (deferred to JIT)
+- NO JSONL parsing (stat-only)
+
+---
+
+### Sequence 2: JIT Ingestion on Project Selection
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as ProjectsViewModel
+    participant ASO as AppStateOrchestrator
+    participant FPI as FastPathIngestionCoordinator
+    participant HE as HooverEngine
+    participant TO as TranscriptOrchestrator
+    participant DB as Database
+    participant SC as StartupCoordinator
+    participant CM as ConversationMonitor
+
+    User->>UI: Click project
+    UI->>ASO: selectProject(id: "ABC123")
+
+    ASO->>ASO: Cancel background work
+    ASO->>FPI: cancel()
+
+    ASO->>ASO: setState(.loading(projectId: "ABC123"))
+    ASO->>UI: NotificationCenter: .appStateDidChange
+    UI->>UI: isLoading = true
+
+    ASO->>FPI: ingestProjectJIT(project)
+    FPI->>TO: ensureProject(id, path)
+    TO->>DB: INSERT OR IGNORE INTO projects
+    DB-->>TO: project_id
+
+    FPI->>TO: getTranscripts(projectId)
+    TO->>DB: SELECT * FROM transcripts WHERE project_id=?
+    DB-->>TO: [] (empty - not ingested yet)
+
+    FPI->>TO: upsertTranscripts([transcript URLs])
+    TO->>DB: INSERT INTO transcripts (30 rows)
+    DB-->>TO: OK
+
+    loop For each transcript
+        FPI->>HE: hooverTranscript(url, checkpoint)
+        HE->>HE: Parse JSONL (1000 line batches)
+        HE->>DB: INSERT INTO entries (500-1000 rows)
+    end
+
+    FPI-->>ASO: dbProjectId
+
+    ASO->>SC: handleExternalProjectSwitch(id, path)
+    Note over SC: Legacy compatibility shim
+    SC->>CM: AsyncStream: ActiveProjectContext
+    CM->>CM: startMonitoring(projectId)
+
+    ASO->>ASO: setState(.active(projectId: "ABC123"))
+    ASO->>UI: NotificationCenter: .appStateDidChange
+    UI->>UI: isLoading = false, selectedProjectId = "ABC123"
+
+    ASO->>ASO: Post: .projectDidActivate
+    ASO->>ASO: startBackgroundIndexing() [low priority]
+```
+
+**Key Points:**
+- Total time: <1s for typical project
+- Database writes: ~30 transcripts + 500-1000 entries per transcript
+- Only selected project is ingested (not all)
+- Background work cancelled during selection (user responsiveness)
+- Legacy StartupCoordinator notified for ConversationMonitor compatibility
+
+---
+
+### Sequence 3: Background Indexing (Low Priority)
+
+```mermaid
+sequenceDiagram
+    participant ASO as AppStateOrchestrator
+    participant FPI as FastPathIngestionCoordinator
+    participant DB as Database
+    participant UI as StatusBar
+
+    Note over ASO: User idle for 5+ seconds
+
+    ASO->>ASO: startBackgroundIndexing()
+    ASO->>ASO: Task(priority: .utility)
+    ASO->>ASO: sleep(5s)
+
+    loop For each inactive project
+        ASO->>ASO: Check Task.isCancelled
+        alt Cancelled
+            ASO->>ASO: Break loop
+        else Not cancelled
+            ASO->>FPI: ingestProjectJIT(project)
+            FPI->>DB: INSERT transcripts, entries
+            DB-->>FPI: OK
+            FPI-->>ASO: OK
+
+            ASO->>UI: Post: .backgroundIngestProgress
+            UI->>UI: Update progress (17/19)
+
+            ASO->>ASO: await Task.yield()
+        end
+    end
+
+    ASO->>UI: Post: .backgroundIngestProgress (complete)
+    Note over ASO: All projects pre-ingested
+```
+
+**Key Points:**
+- Priority: Task.priority.utility (low)
+- Wait time: 5 seconds after user activity
+- Cancellable: User interaction cancels immediately
+- Sequential: One project at a time (no CPU spike)
+- Progress: NotificationCenter updates for status bar
+
+---
+
 # Level 4: Implementation Details
 
 ## HooverEngine Deep Dive
