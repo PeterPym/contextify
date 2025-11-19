@@ -22,17 +22,17 @@ SHOT_HEIGHT=900
 CAPTURE_X=200
 CAPTURE_Y=50
 
-# Terminal: Left side within capture area
+# Terminal: Left side within capture area, vertically centered
 TERMINAL_WIDTH=800
 TERMINAL_HEIGHT=850
 TERMINAL_X=$((CAPTURE_X + 10))
-TERMINAL_Y=$((CAPTURE_Y + 5))
+TERMINAL_Y=$((CAPTURE_Y + 25))  # Vertically centered: (900 - 850) / 2 = 25
 
-# Contextify: Right side within capture area
+# Contextify: Right side within capture area, vertically centered
 CONTEXTIFY_WIDTH=580
 CONTEXTIFY_HEIGHT=700
 CONTEXTIFY_X=$((CAPTURE_X + 830))  # 10px gap between windows
-CONTEXTIFY_Y=$((CAPTURE_Y + 100))
+CONTEXTIFY_Y=$((CAPTURE_Y + 100))  # Vertically centered: (900 - 700) / 2 = 100
 
 # Position Terminal (create window if none exists)
 osascript <<EOF
