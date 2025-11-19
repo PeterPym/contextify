@@ -137,44 +137,54 @@ graph TB
     CM --> UI
 ```
 
-## Component Responsibilities
+## Component Responsibilities (Phase 3)
 
-### Discovery Layer
+### State Coordination Layer (Phase 3 - NEW)
+
+**AppStateOrchestrator** (`app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`, 297 lines)
+- **Purpose:** Central state coordinator for app lifecycle
+- **Replaced:** Fragmented responsibilities from StartupCoordinator, ProjectActivityMonitor, ProjectsViewModel
+- **State Machine:** AppState enum (startup → discovering → idle → loading → active → error)
+- **Key Methods:**
+  - `startup()` (line 77) - Lightweight app launch (<200ms target)
+  - `selectProject(id:)` (line 106) - JIT ingestion on user selection
+  - `startBackgroundIndexing()` (line 166) - Low-priority pre-ingestion
+- **Published State:** `@Published var state: AppState`
+- **Notifications:** `.appStateDidChange` for legacy subscribers
+
+**LightweightDiscoveryService** (`app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`, 251 lines)
+- **Purpose:** Fast filesystem scanner (NO file reads, NO DB writes)
+- **Performance:** <200ms for typical setup (19 projects, 663 transcripts)
+- **Strategy:** Stat-only (mtime as activity proxy)
+- **Key Method:**
+  - `discoverProjectsLightweight()` (line 17) → `[LightweightProject]`
+- **Returns:** Sorted by last activity (newest first)
+- **Actor:** Thread-safe background execution
+
+**FastPathIngestionCoordinator** (`app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`)
+- **Purpose:** JIT ingestion for selected projects
+- **Key Method:**
+  - `ingestProjectJIT(_ project: LightweightProject)` → DB project ID
+- **Batching:** Processes transcripts with progress tracking
+- **Resume:** Pending completions restored on app restart
+
+### Discovery Layer (Legacy - Phase 3)
+
+**⚠️ Phase 3 Note:** StartupCoordinator and ProjectDiscoveryService are now legacy components. New architecture uses AppStateOrchestrator + LightweightDiscoveryService.
 
 **StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`, 735 lines)
-- **Purpose:** Single source of truth for active project
+- **Purpose (Phase 3):** Legacy compatibility shim for ConversationMonitor
+- **Integration:** Receives handleExternalProjectSwitch() calls from AppStateOrchestrator
 - **Publishes:** `ActiveProjectContext` (id, path, branch, bookmark) via AsyncStream
-- **Key Methods:**
-  - `start()` (line 213) - Initial project resolution
-  - `ready()` (line 308) - Blocking wait for context
-  - `switchProject(to:)` (line 350) - User-initiated project change
-- **Resolution Order:** env var → bookmark → persisted path → CWD
-
-**Quick Discovery** (`ProjectDiscoveryService.quickDiscoverNewest()`, line 210)
-- **Purpose:** Fast cold-start timeline (<500ms)
-- **Strategy:** Lightweight mtime scan of newest .jsonl files
-- **Added:** 2025-11-17 to address 47.5s UI freeze
-- **Workflow:**
-  1. Scan `~/.claude/projects/` for newest .jsonl (mtime)
-  2. Scan `~/.codex/sessions/` for newest transcript with cwd extraction
-  3. If newer than current project → switch via StartupCoordinator
-  4. Ingest single newest transcript for immediate timeline
-  5. Continue with full discovery in background
+- **Phase 4:** Will be refactored/removed when ConversationMonitor is split
 
 **ProjectDiscoveryService** (`app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`, 1000 lines)
-- **Purpose:** Comprehensive multi-project discovery
+- **Purpose (Phase 3):** Full discovery with DB writes (used by legacy code paths)
 - **Key Methods:**
   - `discoverAllProjects(currentProjectPath:)` (line 97) → `[DiscoveredProject]`
   - `ingestAllProjects(projects:progressHandler:)` (line 387)
-- **Discovery Algorithm:**
-  1. Scan `~/.claude/projects/*` directory names
-  2. Reverse-map encoded directory names to project paths
-  3. Validate paths exist on disk
-  4. Scan `~/.codex/sessions/YYYY/MM/DD/*.jsonl` tree
-  5. Parse `cwd` fields to map sessions → repos
-  6. Merge Claude + Codex results (provider union)
-  7. Query database for metadata (transcript/entry counts)
-  8. Sort by newest activity first
+- **Phase 3 Usage:** Background indexing, manual refresh
+- **Phase 4:** May be deprecated in favor of LightweightDiscoveryService + FastPathIngestionCoordinator
 
 ### Ingestion Layer
 
@@ -229,12 +239,22 @@ graph TB
 - **Location:** `~/Library/Application Support/Contextify/contextify.db`
 - **Custom Locations:** Supported (Dropbox, iCloud Drive, external drives)
 
-### Presentation Layer
+### Presentation Layer (Phase 3 Updates)
+
+**ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`, 163 lines)
+- **Purpose:** Simplified observer view model (Phase 3 refactor: -278 lines, 63% reduction)
+- **Pattern:** "Dumb" observer that watches AppStateOrchestrator
+- **Key Methods:**
+  - `updateFromOrchestrator()` (line 52) - Sync state from orchestrator
+  - `convertToDiscoveredProjects()` (line 156) - Convert LightweightProject → UI model
+- **Responsibilities:** State observation, UI model conversion, action delegation (no business logic)
 
 **ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`, 3054 lines)
 - **Purpose:** Timeline state management and real-time updates
 - **Key Method:** `startMonitoring()` (line 428)
 - **Architecture:** @MainActor @Observable
+- **⚠️ Phase 4:** Will be refactored into 4 focused components (see architecture-refactoring-analysis.md)
+- **Current:** Still uses legacy StartupCoordinator integration
 - **Subscribes To:**
   - StartupCoordinator.updates (AsyncStream) - project switches
   - NotificationCenter (`.transcriptDidUpdate`) - file changes
