@@ -1,15 +1,17 @@
 # Contextify TODO List
 
-**Last Updated:** 2025-11-19 (git branch tracking investigation + summarizer fixes)
-**Status:** Active - Reorganized based on user feedback review
+**Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
+
+**Last Updated:** 2025-11-19
+**Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 6 items remaining (3 completed) - Must complete before App Store submission
+- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
 - **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
-**Total Active Items:** 66 (3 P0 items completed: drag-drop fixes, welcome modal hang)
+**Total Active Items:** 63
 
 **Change Log (2025-11-19):**
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
@@ -713,7 +715,37 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 26 Items
+# P2 (Medium Priority) - 27 Items
+
+## Liquid Glass Design System (1 item)
+
+**Status:** Research complete, implementation not started
+**Effort:** 9-14 weeks for full adoption (can do incrementally)
+**Documentation:** `build/docs/audits/liquid-glass-audit-v2.md`
+
+- [ ] #P2-LIQUID-GLASS: Implement Liquid Glass design system for macOS 26
+
+**Current State:**
+- Zero code-level adoption (automatic visual updates only when rebuilt with SDK)
+- No NavigationSplitView, no .toolbar usage, no glass APIs
+- Custom backgrounds interfere with system effects
+- 16 files require changes
+
+**Implementation Phases:**
+1. Foundation (2-3 weeks): Remove backgrounds, add toolbars, glass buttons
+2. Navigation (3-4 weeks): NavigationSplitView with floating sidebar
+3. Custom Glass (1-2 weeks): Selective glass effects on key elements only
+4. Enhancements (2-3 weeks): Search, app icon, accessibility
+
+**Decision Required:**
+- Defer to post-1.0? (9-14 weeks is significant effort)
+- Do Phase 1 only? (2-3 weeks, quick wins)
+- Skip entirely? (automatic visual updates may be sufficient)
+
+**Files:** 16 files requiring changes (see audit for details)
+**Reference:** `build/docs/audits/liquid-glass-audit-v2.md`
+
+---
 
 ## Transcript Repair MVP (2 items) ⬇️
 
