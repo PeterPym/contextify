@@ -44,6 +44,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
   let activeProjectId: String?
   let onReorder: ([String]) -> Void
   let onActivate: (String) -> Void
+  let onDragActivate: () -> Void  // Called before auto-activating via drag-drop
 
   // Hysteresis and stickiness to avoid boundary jitter
   private let hysteresis: CGFloat = 8.0
@@ -190,6 +191,7 @@ private struct ProjectTabsDropDelegate: DropDelegate {
 
     // Auto-activate reordered project if it's not already active
     if dragging.id != activeProjectId {
+      onDragActivate()  // Signal that next activation is from drag-drop
       onActivate(dragging.id)
     }
 
@@ -217,6 +219,7 @@ struct ProjectSwitcherView: View {
   @State private var draggingProject: ProjectInfo?
   @State private var insertionIndex: Int?
   @State private var tabPositions: [String: CGRect] = [:]
+  @State private var skipNextAutoScroll = false
 
   private let baseSpacing: CGFloat = 8
 
@@ -327,6 +330,9 @@ struct ProjectSwitcherView: View {
             },
             onActivate: { projectId in
               Task { await state.switchToProject(projectId) }
+            },
+            onDragActivate: {
+              skipNextAutoScroll = true
             }
           )
         )
@@ -336,10 +342,16 @@ struct ProjectSwitcherView: View {
         log.info("[UIOPT-TABS-UPDATE] Active project changed from \(oldValue ?? "nil", privacy: .public) to \(newValue ?? "nil", privacy: .public)")
 
         // Auto-scroll to active project when it changes (especially for keyboard nav)
-        if let newValue {
+        // Skip if activation was triggered by drag-drop (user can already see the tab)
+        if let newValue, !skipNextAutoScroll {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
             proxy.scrollTo(newValue, anchor: .center)
           }
+        }
+
+        // Reset flag for next activation
+        if skipNextAutoScroll {
+          skipNextAutoScroll = false
         }
       }
       .task {
