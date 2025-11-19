@@ -6,6 +6,13 @@
 
 ---
 
+## Key Components and Log Prefixes
+
+**Components:** AppStateOrchestrator state transitions, LightweightDiscoveryService, JIT ingestion
+**Log prefixes:** `[ORCH-*]` for orchestrator, `[DISC-LIGHT]` for lightweight discovery, `[INGEST-JIT]` for JIT ingestion
+
+---
+
 ## Executive Summary
 
 This document provides **decision trees and workflows** for debugging Contextify issues. Use this when:

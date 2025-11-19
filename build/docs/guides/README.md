@@ -1,6 +1,18 @@
 # Operational Guides
 
+**Last Updated:** 2025-11-18
+**Context:** Updated to reflect lazy loading architecture refactor
+
+**For Debugging:** See [debugging-workflows.md](debugging-workflows.md) for systematic troubleshooting
+
+---
+
 How-to documentation for using, debugging, and extending Contextify.
+
+## Key Debugging Areas
+
+**Focus areas:** AppStateOrchestrator state transitions, lazy loading flows
+**Log prefixes:** `[ORCH-*]`, `[DISC-LIGHT]`, `[INGEST-JIT]`, `[BG-INDEX]`
 
 ## Purpose
 
@@ -10,7 +22,18 @@ This directory contains practical guides for:
 - Build and CI processes
 - Operational best practices
 
-## Documents
+## Development
+
+### [DEVELOPMENT.md](DEVELOPMENT.md)
+**Topics:** Build commands, workflows, and development setup
+- Quick build, test, clean commands
+- Database management
+- Pre-commit hooks
+- Architecture overview and performance expectations
+
+---
+
+## Debugging
 
 ### Debugging Toolkit
 **Primary resource:** [`../../scripts/logging/README.md`](../../scripts/logging/README.md)
@@ -20,32 +43,18 @@ This directory contains practical guides for:
 - Interactive monitoring with color-coded output
 - LLM-optimized dispatch table
 
-### [Diagnostics API](diagnostics-api.md)
-**Topics:** HTTP API for debugging (DEBUG builds only)
-- Endpoints: `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`
-- Entry fields and formats
-- Use cases for debugging timeline state, hoover lag, LLM generation
-
-### [Linux CI Builds](linux-ci-builds.md)
-**Topics:** Building Contextify from non-macOS environments
-- On-demand GitHub Actions with macOS runners
-- Artifact downloads and result bundles
-- Workflow features and troubleshooting
-
-### [Logging Best Practices](logging-best-practices.md)
-**Topics:** OSLog usage guidelines
-- Log levels (debug, info, warning, error)
-- Two-phase approach (development vs pre-merge)
-- Privacy annotations and console filters
-- Detailed code examples and anti-patterns
+### [Debugging Workflows](debugging-workflows.md)
+**Topics:** Decision trees and systematic troubleshooting
+- 7 comprehensive workflows (pipeline check, performance, state sync, database, sandbox, bug verification, custom investigation)
+- Covers lazy loading issues, AppStateOrchestrator state transitions, JIT ingestion debugging
+- Automated tool recommendations
 
 ### [Log Analysis Methodology](log-analysis-methodology.md)
 **Topics:** Systematic approach to validating system function using diagnostic logs
 - Quick validation checklist (5 essential checks)
-- Core tag reference with examples
+- Core tag reference with examples ([ORCH-*], [DISC-LIGHT], state machine logs)
 - Measurement patterns (completion rate, sequence, timing, correlation)
-- Common analysis workflows (feature not appearing, app slow, validate fix)
-- Tag evolution tracking
+- Common analysis workflows
 
 ### [Log Analysis Quick Reference](log-analysis-quick-reference.md)
 **Topics:** One-page rapid troubleshooting guide
@@ -53,7 +62,31 @@ This directory contains practical guides for:
 - Essential tags table
 - Common diagnostics (one-liners)
 - Decision tree for timeline issues
-- Performance thresholds
+
+### [Logging Best Practices](logging-best-practices.md)
+**Topics:** OSLog usage guidelines
+- Log levels (debug, info, warning, error)
+- Two-phase approach (development vs pre-merge)
+- Privacy annotations and console filters
+
+### [Diagnostics API](diagnostics-api.md)
+**Topics:** HTTP API for debugging (DEBUG builds only)
+- Endpoints: `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`
+- Entry fields and formats
+
+### [Timeline Diagnostics](timeline-diagnostics.md)
+**Topics:** Timeline diagnostics framework
+- HTTP endpoints for timeline inspection
+- Integration with diagnostics API
+
+---
+
+## Transcript Analysis
+
+### [TRANSCRIPT-ANALYSIS.md](TRANSCRIPT-ANALYSIS.md)
+**Topics:** Workflow for analyzing and classifying transcript formats
+- Format detection
+- Provider identification
 
 ### [Transcript Resumption](transcript-resumption.md)
 **Topics:** Guide for resuming transcript ingestion
@@ -61,17 +94,60 @@ This directory contains practical guides for:
 - Manual checkpoint reset
 - Recovery from incomplete ingestion
 
-### [Timeline Diagnostics](timeline-diagnostics.md)
-**Topics:** Timeline diagnostics framework
-- HTTP endpoints for timeline inspection
-- Integration with diagnostics API
-- Real-time monitoring
+---
+
+## Operations
+
+### [Security-Scoped Bookmarks](security-scoped-bookmarks.md)
+**Topics:** Bookmark management for App Store builds
+- Bookmark lifecycle
+- Permission grants
 
 ### [Feature Flags](feature-flags.md)
 **Topics:** Feature flag documentation
 - Available flags and their purposes
 - How to enable/disable features
-- Developer mode flags
+
+### [Linux CI Builds](linux-ci-builds.md)
+**Topics:** Building Contextify from non-macOS environments
+- On-demand GitHub Actions with macOS runners
+- Artifact downloads and result bundles
+
+---
+
+## Quick Reference
+
+**Slow Startup?**
+→ [debugging-workflows.md](debugging-workflows.md) - Lazy loading issues
+→ [log-analysis-methodology.md](log-analysis-methodology.md) - Check [DISC-LIGHT] logs
+
+**Project Not Appearing?**
+→ [debugging-workflows.md](debugging-workflows.md) - Feature not appearing workflow
+→ Check discovery count vs filesystem
+
+**Timeline Blank?**
+→ [debugging-workflows.md](debugging-workflows.md) - Performance investigation
+→ Check [ORCH-SELECT] logs for JIT ingestion errors
+
+**Background Indexing Stuck?**
+→ [debugging-workflows.md](debugging-workflows.md) - State management debugging
+→ Check [BG-INDEX] logs
+
+---
+
+## Related Documentation
+
+**Architecture:**
+- [../architecture/COMPONENTS.md](../architecture/COMPONENTS.md) - AppStateOrchestrator, LightweightDiscoveryService
+- [../architecture/data-pipeline-architecture.md](../architecture/data-pipeline-architecture.md) - Data flow with lazy loading
+
+**Components:**
+- [../components/project-discovery-service-implementation.md](../components/project-discovery-service-implementation.md) - Two-tier discovery
+- [../components/startup-coordinator-implementation.md](../components/startup-coordinator-implementation.md) - Legacy integration
+
+**Testing:**
+- [../testing/integration-testing-guide.md](../testing/integration-testing-guide.md) - Integration testing patterns
+- [../testing/performance-benchmarks.md](../testing/performance-benchmarks.md) - Performance metrics and targets
 
 ---
 

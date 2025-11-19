@@ -4,6 +4,10 @@
 
 **Target audience:** Future debugging sessions, new contributors, documentation authors.
 
+## Log Categories
+
+**Key prefixes:** `[ORCH-STARTUP]`, `[ORCH-SELECT]`, `[DISC-LIGHT]`, `[INGEST-JIT]`, `[BG-INDEX]`
+
 **Related documentation:**
 - **Debugging toolkit:** `../../scripts/logging/README.md` - Scripts for capture and analysis
 - **Quick reference:** `log-analysis-quick-reference.md` - One-page troubleshooting guide

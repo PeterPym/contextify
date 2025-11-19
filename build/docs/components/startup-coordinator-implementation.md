@@ -6,6 +6,19 @@
 
 ---
 
+## ⚠️ Legacy Component Notice
+
+**StartupCoordinator is a legacy compatibility shim.** For new development, use `AppStateOrchestrator`.
+
+**Integration with AppStateOrchestrator:**
+- Receives `handleExternalProjectSwitch(id:path:)` calls from AppStateOrchestrator
+- Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
+- Planned for refactor/removal when ConversationMonitor is split
+
+**See:** `build/docs/architecture/startup-coordinator.md` for migration guide
+
+---
+
 ## Executive Summary
 
 This document provides implementation-level details for **StartupCoordinator** that go beyond the architectural overview. Read this when:

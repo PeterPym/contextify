@@ -6,6 +6,66 @@
 
 ---
 
+## Two-Tier Discovery Architecture
+
+Contextify uses a **two-tier discovery architecture** for optimal performance:
+
+### Tier 1: Lightweight Discovery (Startup)
+
+**Component:** `LightweightDiscoveryService`
+**Purpose:** Fast startup without blocking UI (<200ms)
+**Strategy:** Stat-only filesystem scanning (NO file reads, NO DB writes)
+**Used By:** AppStateOrchestrator.startup()
+
+**Performance:**
+- **Target:** <200ms
+- **Achieved:** 143-187ms (validated)
+- **Memory:** Minimal (just file metadata)
+- **DB Impact:** Zero (no database operations)
+
+**Returns:** `[LightweightProject]` - Lightweight metadata structures
+
+### Tier 2: Full Discovery (JIT or Background)
+
+**Component:** `ProjectDiscoveryService`
+**Purpose:** Complete ingestion with database writes
+**Strategy:** Full JSONL parsing and database population
+**Used By:**
+- FastPathIngestionCoordinator.ingestProjectJIT() - on-demand
+- Background indexing (low priority)
+
+**Performance:**
+- **Duration:** 1-5s depending on project size
+- **Memory:** Higher (JSONL parsing, batching)
+- **DB Impact:** Inserts projects, transcripts, entries
+
+**Returns:** `[DiscoveredProject]` - Full database-backed models
+
+### When to Use Which Service
+
+**Use LightweightDiscoveryService when:**
+- ✅ App startup (need instant UI)
+- ✅ Refresh project list (quick scan)
+- ✅ Background polling (low overhead)
+
+**Use ProjectDiscoveryService when:**
+- ✅ User selects specific project (JIT ingestion needed)
+- ✅ Manual "Refresh All" action (full re-scan)
+- ✅ Background indexing (pre-ingest inactive projects)
+
+**Architecture Pattern:**
+```swift
+// Startup flow
+let lightweight = await LightweightDiscoveryService().discoverProjectsLightweight()
+// Show UI immediately with lightweight data
+
+// Later: JIT ingestion when user selects project
+await FastPathIngestionCoordinator().ingestProjectJIT(lightweight[0])
+// Now database has full data for selected project
+```
+
+---
+
 ## Executive Summary
 
 This document provides implementation-level details for **ProjectDiscoveryService** beyond the component overview. Read this when:
@@ -265,7 +325,7 @@ Providers: [.claudeCode, .codex]
 
 ## Quick Discovery vs Full Discovery
 
-### Quick Discovery (Phase 2 - Cold Start)
+### Quick Discovery
 
 **Goal:** Find newest project **without** parsing JSONL or writing to database.
 
@@ -335,7 +395,7 @@ public func quickDiscoverNewest() async -> (projectPath: URL, transcriptFile: UR
 
 **Use Case:** `StartupCoordinator` calls this to switch to newest project before timeline loads.
 
-### Full Discovery (Phase 3 - Background)
+### Full Discovery
 
 **Goal:** Enumerate all projects with metadata (transcript count, providers, last activity).
 

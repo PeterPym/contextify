@@ -6,6 +6,26 @@
 
 ---
 
+## Lazy Loading Architecture
+
+Project discovery uses a **two-tier lazy loading architecture**:
+
+**Tier 1 (Startup):** `LightweightDiscoveryService`
+- Stat-only filesystem scan (<200ms)
+- NO JSONL parsing, NO database writes
+- Returns `LightweightProject` metadata for instant UI
+
+**Tier 2 (JIT/Background):** `ProjectDiscoveryService`
+- Full JSONL ingestion when user selects project
+- Database writes (projects, transcripts, entries)
+- Returns `DiscoveredProject` with complete data
+
+**Performance:** 10-35x faster startup, 3-5x lower memory footprint
+
+**See:** `build/docs/architecture/data-pipeline-architecture.md` for architecture diagrams
+
+---
+
 ## Overview
 
 Global project discovery automatically finds all Claude Code and Codex CLI projects on the user's machine, ingests their transcripts, and provides a UI for browsing and managing them. This enables:

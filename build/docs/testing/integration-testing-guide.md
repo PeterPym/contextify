@@ -1,8 +1,19 @@
 # Integration Testing Strategy
 
-**Last Updated:** 2025-11-17
-**Status:** ✅ Active
+**Last Updated:** 2025-11-18
+**Context:** Added lazy loading architecture testing patterns
+
 **Audience:** Developers writing integration tests for Contextify
+
+---
+
+## Testing Scope
+
+**Key components requiring integration tests:**
+- AppStateOrchestrator state machine transitions
+- LightweightDiscoveryService (<200ms validation)
+- JIT ingestion flows (FastPathIngestionCoordinator)
+- Background indexing cancellation
 
 ---
 
@@ -13,12 +24,16 @@
 3. [Database Integration Tests](#database-integration-tests)
 4. [Transcript Ingestion Tests](#transcript-ingestion-tests)
 5. [LLM Integration Tests](#llm-integration-tests)
-6. [UI Integration Tests](#ui-integration-tests)
-7. [Fixture Management](#fixture-management)
-8. [Test Isolation & Cleanup](#test-isolation--cleanup)
-9. [Performance Testing](#performance-testing)
-10. [CI/CD Integration](#cicd-integration)
-11. [Troubleshooting Tests](#troubleshooting-tests)
+6. [AppStateOrchestrator Testing](#appstateorchestrator-testing)
+7. [Lazy Loading Integration Tests](#lazy-loading-integration-tests)
+8. [Mock Implementations](#mock-implementations)
+9. [Test Fixtures](#test-fixtures)
+10. [UI Integration Tests](#ui-integration-tests)
+11. [Fixture Management](#fixture-management)
+12. [Test Isolation & Cleanup](#test-isolation--cleanup)
+13. [Performance Testing](#performance-testing)
+14. [CI/CD Integration](#cicd-integration)
+15. [Troubleshooting Tests](#troubleshooting-tests)
 
 ---
 
@@ -1207,6 +1222,647 @@ func testEpochTracking() async throws {
 ```
 
 **Rule:** Epoch increments on each `reset()`. Used to invalidate stale waiter continuations.
+
+---
+
+## AppStateOrchestrator Testing
+
+### Overview
+
+AppStateOrchestrator is the central state coordinator managing startup, project discovery, JIT ingestion, and background indexing. Tests verify state machine correctness, performance targets, cancellation behavior, and cache coherency.
+
+### Test Goals
+
+1. **State Machine Correctness** - All valid transitions work, invalid transitions handled gracefully
+2. **Performance** - Startup <200ms, JIT ingestion <1s
+3. **Cancellation** - Background work cancels gracefully on user interaction
+4. **Error Handling** - Failures transition to error state with user-facing messages
+5. **Cache Coherency** - Project lookup cache stays synchronized with database
+
+### Test Infrastructure
+
+**Setup Pattern:**
+
+```swift
+@MainActor
+class AppStateOrchestratorTests: XCTestCase {
+  var orchestrator: AppStateOrchestrator!
+  var tempDB: URL!
+
+  override func setUp() async throws {
+    try await super.setUp()
+
+    // Create temporary database
+    tempDB = FileManager.default.temporaryDirectory
+      .appendingPathComponent(UUID().uuidString)
+      .appendingPathExtension("db")
+
+    // Initialize orchestrator
+    // Note: Full DI will be added in Phase 4
+    // For now, tests use real services with temp DB
+    orchestrator = AppStateOrchestrator.shared
+
+    // Reset to clean state
+    await orchestrator.reset()  // Requires test API addition
+  }
+
+  override func tearDown() async throws {
+    try await super.tearDown()
+    if let tempDB = tempDB {
+      try? FileManager.default.removeItem(at: tempDB)
+    }
+  }
+}
+```
+
+**Note:** Full dependency injection requires Phase 4 refactor. Current tests use real services with temporary database.
+
+---
+
+### State Machine Transition Tests
+
+**Test 1: Startup Flow**
+
+Verify normal startup sequence (startup → discovering → idle):
+
+```swift
+@MainActor
+func testStartupFlow() async throws {
+  // Given: Fresh app state
+  XCTAssertEqual(orchestrator.state, .startup)
+
+  // When: Call startup
+  await orchestrator.startup()
+
+  // Then: Should transition to idle with discovered projects
+  await Task.yield()  // Let async work complete
+
+  guard case .idle(let projects) = orchestrator.state else {
+    XCTFail("Expected idle state, got: \(orchestrator.state)")
+    return
+  }
+
+  XCTAssertFalse(projects.isEmpty, "Should discover projects")
+}
+```
+
+**Test 2: Project Selection (JIT)**
+
+Verify JIT ingestion on project selection (idle → loading → active):
+
+```swift
+@MainActor
+func testProjectSelectionJIT() async throws {
+  // Given: Idle state with projects
+  await orchestrator.startup()
+  await Task.yield()
+
+  guard case .idle(let projects) = orchestrator.state,
+        let firstProject = projects.first else {
+    XCTFail("No projects available")
+    return
+  }
+
+  // When: Select project
+  await orchestrator.selectProject(id: firstProject.id)
+
+  // Then: Should transition through loading to active
+  await Task.yield()
+
+  guard case .active(let projectId) = orchestrator.state else {
+    XCTFail("Expected active state, got: \(orchestrator.state)")
+    return
+  }
+
+  XCTAssertEqual(projectId, firstProject.id)
+}
+```
+
+**Test 3: Invalid Transition Prevention**
+
+Verify graceful handling of invalid state transitions:
+
+```swift
+@MainActor
+func testInvalidTransitionPrevention() async throws {
+  // Given: Startup state (before discovery)
+  XCTAssertEqual(orchestrator.state, .startup)
+
+  // When: Try to select project before discovery completes
+  let fakeId = "nonexistent-project-id"
+  await orchestrator.selectProject(id: fakeId)
+  await Task.yield()
+
+  // Then: Should transition to error state (not crash)
+  guard case .error(let message) = orchestrator.state else {
+    XCTFail("Expected error state for invalid transition, got: \(orchestrator.state)")
+    return
+  }
+
+  XCTAssertFalse(message.isEmpty, "Error message should be present")
+}
+```
+
+**Test 4: Error State Transition**
+
+Verify error handling during ingestion failures:
+
+```swift
+@MainActor
+func testErrorStateOnIngestionFailure() async throws {
+  // Given: Idle state
+  await orchestrator.startup()
+  await Task.yield()
+
+  // When: Select project that will fail ingestion
+  // (Requires corrupt test fixture or mock that throws)
+  let corruptProjectId = "corrupt-project"
+  await orchestrator.selectProject(id: corruptProjectId)
+  await Task.yield()
+
+  // Then: Should be in error state with user-facing message
+  guard case .error(let message) = orchestrator.state else {
+    XCTFail("Expected error state after ingestion failure")
+    return
+  }
+
+  XCTAssertFalse(message.isEmpty, "Error message should explain failure")
+}
+```
+
+---
+
+### Performance Tests
+
+**Test 5: Startup Performance**
+
+Measure startup time (target: <200ms):
+
+```swift
+@MainActor
+func testStartupPerformance() async throws {
+  measure(metrics: [XCTClockMetric()]) {
+    Task { @MainActor in
+      await orchestrator.startup()
+    }
+  }
+
+  // XCTest baseline will track regressions
+  // Manual assertion (if baseline not set):
+  // XCTAssertLessThan(duration, 0.2, "Startup too slow")
+}
+```
+
+**Test 6: JIT Ingestion Performance**
+
+Measure project selection time (target: <1s for typical project):
+
+```swift
+@MainActor
+func testJITIngestionPerformance() async throws {
+  // Given: Idle state with projects
+  await orchestrator.startup()
+
+  guard case .idle(let projects) = orchestrator.state,
+        let firstProject = projects.first else {
+    XCTFail("No projects available")
+    return
+  }
+
+  // When: Measure project selection duration
+  let start = Date()
+  await orchestrator.selectProject(id: firstProject.id)
+  let duration = Date().timeIntervalSince(start)
+
+  // Then: Should complete in <1s for typical project
+  XCTAssertLessThan(duration, 1.0,
+    "JIT ingestion too slow: \(duration)s")
+}
+```
+
+---
+
+### Cancellation Tests
+
+**Test 7: Background Work Cancellation**
+
+Verify background indexing cancels when user selects project:
+
+```swift
+@MainActor
+func testBackgroundWorkCancellation() async throws {
+  // Given: Background indexing running
+  await orchestrator.startup()
+  await Task.yield()
+
+  // Background indexing starts automatically after idle timeout (5s)
+  // For testing, verify cancellation on user action
+
+  guard case .idle(let projects) = orchestrator.state,
+        let project = projects.first else {
+    XCTFail("No projects available")
+    return
+  }
+
+  // When: User selects project (should cancel background work)
+  await orchestrator.selectProject(id: project.id)
+
+  // Then: Background work should be cancelled
+  // Note: Requires test API to inspect backgroundTask state
+  // Phase 4: Add cancellation verification methods
+}
+```
+
+---
+
+### Cache Coherency Tests
+
+**Test 8: Project Lookup Cache Hit**
+
+Verify project lookup cache works correctly:
+
+```swift
+@MainActor
+func testProjectLookupCacheHit() async throws {
+  // Given: Projects discovered and cached
+  await orchestrator.startup()
+
+  guard case .idle(let projects) = orchestrator.state,
+        let firstProject = projects.first else {
+    XCTFail("No projects available")
+    return
+  }
+
+  // When: Select project by ID (should hit cache)
+  await orchestrator.selectProject(id: firstProject.id)
+
+  // Then: Should resolve from cache (fast, no DB query)
+  // Verify via logs showing cache hit
+  // Phase 4: Add cache metrics for assertion
+}
+```
+
+**Test 9: Cache Miss Fallback**
+
+Verify cache miss falls back to database correctly:
+
+```swift
+@MainActor
+func testCacheMissFallbackToDatabase() async throws {
+  // Given: Project exists in DB but not in cache
+  // (Simulate by inserting project directly via DB)
+
+  let testProjectId = "cache-miss-test"
+
+  // Insert project to database...
+  // (Requires database access in test)
+
+  // When: Select project not in cache
+  await orchestrator.selectProject(id: testProjectId)
+
+  // Then: Should fall back to DB and succeed
+  guard case .active(let projectId) = orchestrator.state else {
+    XCTFail("Expected active state after cache miss, got: \(orchestrator.state)")
+    return
+  }
+
+  XCTAssertEqual(projectId, testProjectId)
+}
+```
+
+---
+
+## Lazy Loading Integration Tests
+
+### Overview
+
+Lazy loading architecture defers transcript ingestion until project selection. Tests verify startup stays lightweight (no ingestion), JIT ingestion works correctly, and background indexing functions as expected.
+
+### Test Goals
+
+1. **Startup Lightweight** - No ingestion at startup (0 transcripts written)
+2. **JIT Ingestion** - Only selected project ingested (not others)
+3. **Background Indexing** - Inactive projects ingested in background
+4. **Memory Efficiency** - Startup memory 3-5x lower than eager loading
+
+---
+
+### Database State Tests
+
+**Test 1: Startup Does Not Ingest**
+
+Verify startup only updates project metadata (no transcript ingestion):
+
+```swift
+func testStartupDoesNotIngestTranscripts() async throws {
+  // Given: Fresh database
+  let db = try DatabaseManager(path: tempDB)
+  let transcriptCountBefore = try db.read { db in
+    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
+  }
+
+  // When: App starts
+  await orchestrator.startup()
+  await Task.yield()
+
+  // Then: No transcripts ingested (only project metadata updated)
+  let transcriptCountAfter = try db.read { db in
+    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
+  }
+
+  XCTAssertEqual(transcriptCountBefore, transcriptCountAfter,
+    "Startup should not ingest transcripts")
+
+  // Verify project metadata was updated
+  let projectCount = try db.read { db in
+    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
+  }
+  XCTAssertGreaterThan(projectCount, 0,
+    "Projects metadata should be created/updated")
+}
+```
+
+**Test 2: JIT Ingests Only Selected Project**
+
+Verify JIT ingestion affects only selected project:
+
+```swift
+func testJITIngestsOnlySelectedProject() async throws {
+  // Given: Multiple projects, none ingested
+  await orchestrator.startup()
+
+  guard case .idle(let projects) = orchestrator.state,
+        projects.count >= 2 else {
+    XCTFail("Need at least 2 projects for this test")
+    return
+  }
+
+  let selectedProject = projects[0]
+  let otherProject = projects[1]
+
+  // When: Select first project only
+  await orchestrator.selectProject(id: selectedProject.id)
+  await Task.yield()
+
+  // Then: First project has transcripts, second doesn't
+  let db = try DatabaseManager(path: tempDB)
+
+  let selectedTranscripts = try db.read { db in
+    try Int.fetchOne(db, sql:
+      "SELECT COUNT(*) FROM transcripts WHERE project_id = ?",
+      arguments: [selectedProject.id]
+    ) ?? 0
+  }
+  XCTAssertGreaterThan(selectedTranscripts, 0,
+    "Selected project should have ingested transcripts")
+
+  let otherTranscripts = try db.read { db in
+    try Int.fetchOne(db, sql:
+      "SELECT COUNT(*) FROM transcripts WHERE project_id = ?",
+      arguments: [otherProject.id]
+    ) ?? 0
+  }
+  XCTAssertEqual(otherTranscripts, 0,
+    "Other project should NOT have transcripts yet (lazy loading)")
+}
+```
+
+---
+
+### Memory Efficiency Tests
+
+**Test 3: Startup Memory Footprint**
+
+Verify startup memory increase is minimal:
+
+```swift
+func testStartupMemoryFootprint() async throws {
+  // Measure memory before startup
+  let memoryBefore = getMemoryUsage()
+
+  // When: App starts
+  await orchestrator.startup()
+  await Task.yield()
+
+  // Then: Memory increase should be <50 MB
+  let memoryAfter = getMemoryUsage()
+  let increase = memoryAfter - memoryBefore
+
+  XCTAssertLessThan(increase, 50_000_000,  // 50 MB
+    "Startup memory increase too high: \(increase / 1_000_000) MB")
+}
+
+private func getMemoryUsage() -> UInt64 {
+  var info = mach_task_basic_info()
+  var count = mach_msg_type_number_t(
+    MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size
+  )
+
+  let result = withUnsafeMutablePointer(to: &info) {
+    $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+      task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO),
+        $0, &count)
+    }
+  }
+
+  return result == KERN_SUCCESS ? info.resident_size : 0
+}
+```
+
+---
+
+### Background Indexing Tests
+
+**Test 4: Background Indexing After Idle**
+
+Verify background indexing starts after idle timeout:
+
+```swift
+func testBackgroundIndexingAfterIdle() async throws {
+  // Given: Idle state with multiple projects
+  await orchestrator.startup()
+
+  guard case .idle(let projects) = orchestrator.state,
+        projects.count > 1 else {
+    XCTFail("Need multiple projects for background indexing test")
+    return
+  }
+
+  // When: Wait for background indexing to start
+  // (Background indexing has 5s delay after idle)
+  try await Task.sleep(nanoseconds: 6_000_000_000)  // 6 seconds
+
+  // Then: Some projects should be ingested in background
+  let db = try DatabaseManager(path: tempDB)
+  let ingestedProjectCount = try db.read { db in
+    try Int.fetchOne(db, sql:
+      "SELECT COUNT(DISTINCT project_id) FROM transcripts"
+    ) ?? 0
+  }
+
+  XCTAssertGreaterThan(ingestedProjectCount, 0,
+    "Background indexing should have ingested projects")
+}
+```
+
+---
+
+## Mock Implementations
+
+**Note:** Full mocking requires dependency injection (planned for Phase 4). These are proposed patterns for future implementation.
+
+### MockLightweightDiscoveryService
+
+```swift
+actor MockLightweightDiscoveryService {
+  var mockProjects: [LightweightProject] = []
+  var scanDelay: TimeInterval = 0.1  // Simulated delay
+
+  func discoverProjectsLightweight() async -> [LightweightProject] {
+    try? await Task.sleep(nanoseconds: UInt64(scanDelay * 1_000_000_000))
+    return mockProjects
+  }
+
+  // Test helper
+  func addMockProject(id: String, name: String) {
+    mockProjects.append(LightweightProject(
+      id: id,
+      path: URL(fileURLWithPath: "/mock/\(name)"),
+      displayName: name,
+      transcriptCount: 5,
+      lastActivity: Date(),
+      provider: "mock",
+      cwd: "/mock/\(name)",
+      transcriptFiles: []
+    ))
+  }
+}
+```
+
+### MockFastPathIngestionCoordinator
+
+```swift
+actor MockFastPathIngestionCoordinator {
+  var shouldFail = false
+  var ingestionDelay: TimeInterval = 0.5
+
+  func ingestProjectJIT(_ project: LightweightProject) async throws -> String {
+    try await Task.sleep(nanoseconds: UInt64(ingestionDelay * 1_000_000_000))
+
+    if shouldFail {
+      throw IngestionError.mockFailure
+    }
+
+    return project.id
+  }
+
+  func cancel() async {
+    // Mock cancellation
+  }
+}
+
+enum IngestionError: Error {
+  case mockFailure
+}
+```
+
+### Usage Example (Phase 4)
+
+```swift
+@MainActor
+func testWithMocks() async throws {
+  let mockDiscovery = MockLightweightDiscoveryService()
+  mockDiscovery.addMockProject(id: "test1", name: "Test Project 1")
+  mockDiscovery.addMockProject(id: "test2", name: "Test Project 2")
+
+  let mockIngestion = MockFastPathIngestionCoordinator()
+
+  // Inject mocks (requires DI refactor in Phase 4)
+  let orchestrator = AppStateOrchestrator(
+    discovery: mockDiscovery,
+    ingestion: mockIngestion
+  )
+
+  // Test with controlled environment
+  await orchestrator.startup()
+  // Assertions...
+}
+```
+
+---
+
+## Test Fixtures
+
+### Lightweight Project Fixtures
+
+**Location:** `ContextifyTests/Fixtures/LightweightProjects.swift`
+
+```swift
+struct LightweightProjectFixtures {
+  static let typical = LightweightProject(
+    id: "test-project-1",
+    path: URL(fileURLWithPath: "/tmp/test-project-1"),
+    displayName: "Test Project 1",
+    transcriptCount: 5,
+    lastActivity: Date(),
+    provider: "claude.code",
+    cwd: "/Users/test/repos/project-1",
+    transcriptFiles: [
+      URL(fileURLWithPath: "/tmp/test-project-1/transcript1.jsonl"),
+      URL(fileURLWithPath: "/tmp/test-project-1/transcript2.jsonl")
+    ]
+  )
+
+  static let empty = LightweightProject(
+    id: "test-project-empty",
+    path: URL(fileURLWithPath: "/tmp/test-project-empty"),
+    displayName: "Empty Project",
+    transcriptCount: 0,
+    lastActivity: Date().addingTimeInterval(-86400),  // 1 day ago
+    provider: "claude.code",
+    cwd: nil,
+    transcriptFiles: []
+  )
+
+  static let large = LightweightProject(
+    id: "test-project-large",
+    path: URL(fileURLWithPath: "/tmp/test-project-large"),
+    displayName: "Large Project",
+    transcriptCount: 100,
+    lastActivity: Date(),
+    provider: "codex.cli",
+    cwd: "/Users/test/repos/large-project",
+    transcriptFiles: (0..<100).map { i in
+      URL(fileURLWithPath: "/tmp/test-project-large/transcript\(i).jsonl")
+    }
+  )
+}
+```
+
+### AppState Fixtures
+
+```swift
+extension AppState {
+  static var fixtureIdle: AppState {
+    .idle(projects: [
+      LightweightProjectFixtures.typical,
+      LightweightProjectFixtures.empty
+    ])
+  }
+
+  static var fixtureLoading: AppState {
+    .loading(projectId: "test-project-1")
+  }
+
+  static var fixtureActive: AppState {
+    .active(projectId: "test-project-1")
+  }
+
+  static var fixtureError: AppState {
+    .error("Test error message")
+  }
+}
+```
 
 ---
 

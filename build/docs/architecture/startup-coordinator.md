@@ -1,21 +1,37 @@
 # Startup Coordinator Architecture
 
-**Status:** Implemented (2025-11-05)
-**Version:** 1.0
-**Related:** `implementation-plan.md`, `sql-backend-architecture.md`
+**Status:** Legacy compatibility component
+**Related:** `sql-backend-architecture.md`, `COMPONENTS.md`
+
+---
+
+## ⚠️ Legacy Component Notice
+
+**StartupCoordinator** is a legacy compatibility shim maintained for backward compatibility with ConversationMonitor and other legacy components.
+
+**Primary Coordinator:** `AppStateOrchestrator`
+- Central state coordinator with state machine pattern
+- Owns project selection, discovery, and ingestion orchestration
+- See: `build/docs/architecture/COMPONENTS.md` - "Application State Coordination"
+
+**StartupCoordinator (Legacy):**
+- Receives project switch notifications from AppStateOrchestrator via `handleExternalProjectSwitch()`
+- Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
+- **Note:** Planned for refactor/removal when ConversationMonitor is split (see architecture-refactoring-analysis.md)
+
+**For New Development:** Use AppStateOrchestrator directly. Only use StartupCoordinator if integrating with legacy components that haven't been migrated to current patterns.
 
 ---
 
 ## Executive Summary
 
-The **Startup Coordinator** provides a single source of truth for project identity and deterministic startup sequencing across Contextify's subsystems (HUD, Project Switcher, Timeline Monitor).
+The **Startup Coordinator** provides a single source of truth for project identity via the ActiveProjectContext struct, which is published to legacy components that haven't yet migrated to AppStateOrchestrator.
 
-**Key Benefits:**
-- Eliminates race conditions from multiple async initialization pipelines
-- Guarantees project exists in database before monitoring starts
+**Key Role:**
+- Receives notifications from AppStateOrchestrator about project changes
+- Publishes ActiveProjectContext updates via AsyncStream for legacy subscribers
 - Provides stable project ID as primary identity (not filesystem path)
-- Coordinates startup ordering: Coordinator → Switcher → Timeline
-- Foundation for multi-window support and project templates
+- Maintains backward compatibility during architectural transition
 
 ---
 
@@ -27,7 +43,7 @@ The **Startup Coordinator** provides a single source of truth for project identi
 ┌─────────────────────────────────────────────────────────────┐
 │                   StartupCoordinator                         │
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │  Single Source of Truth: ActiveProjectContext         │ │
+│  │  ActiveProjectContext (for legacy subscribers)        │ │
 │  │  - id: String (stable DB primary key)                │ │
 │  │  - path: String (filesystem location)                │ │
 │  │  - displayName, branch, bookmark                     │ │
@@ -36,68 +52,89 @@ The **Startup Coordinator** provides a single source of truth for project identi
 │  Published via AsyncStream<ActiveProjectContext>            │
 └─────────────────────────────────────────────────────────────┘
                               │
-                              ├──→ ProjectSwitcherState (updates activeProjectId)
                               ├──→ ConversationMonitor (starts monitoring with projectId)
-                              └──→ HUDViewModel (user-initiated switches)
+                              └──→ Other legacy subscribers using StartupCoordinator.shared.updates
 ```
 
-### Data Flow
+### Integration with AppStateOrchestrator
 
-**App Launch Sequence:**
+```mermaid
+sequenceDiagram
+    participant User
+    participant ASO as AppStateOrchestrator
+    participant SC as StartupCoordinator
+    participant CM as ConversationMonitor
+    participant TO as TranscriptOrchestrator
 
-```
-1. ContextifyApp.init()
-   └─→ StartupCoordinator.shared.start()
-       ├─→ Resolve project root (env var > bookmark > persisted path > CWD)
-       ├─→ Ensure project in database (getOrCreateProject)
-       ├─→ Resolve git branch (optional)
-       ├─→ Create ActiveProjectContext
-       └─→ Publish context via AsyncStream
+    User->>ASO: selectProject(id: "ABC123")
+    ASO->>ASO: JIT ingestion...
+    ASO->>TO: getProject(id: "ABC123")
+    TO-->>ASO: Project(id, path, name)
 
-1.5. ContextifyApp.initializeProjectsSystem() [PHASE 2: QUICK-DISCOVERY]
-   └─→ ProjectDiscoveryService.quickDiscoverNewest()
-       ├─→ Lightweight mtime scan (~200-500ms)
-       │   ├─→ Scan ~/.claude/projects for newest .jsonl
-       │   └─→ Scan ~/.codex/sessions for newest transcript with cwd extraction
-       ├─→ IF different from current project:
-       │   ├─→ getOrCreateProject() (ensure DB record exists)
-       │   └─→ StartupCoordinator.shared.switchProject(to: newestPath)
-       └─→ Continue with full discovery (background)
+    ASO->>SC: handleExternalProjectSwitch(id: "ABC123", path: "/path/to/repo")
+    Note over SC: Legacy compatibility shim
 
-2. ProjectSwitcherState.start() (after coordinator)
-   └─→ Subscribe to coordinator.updates
-       └─→ handleContextUpdate(context)
-           ├─→ activeProjectId = context.id
-           └─→ refreshProjects()
+    SC->>SC: Create ActiveProjectContext
+    SC->>SC: Publish via AsyncStream
+    SC->>CM: updates.yield(context)
+    CM->>CM: startMonitoring(projectId: context.id)
 
-3. ContentView.task
-   └─→ StartupCoordinator.shared.ready()  // Blocks until context available
-       └─→ TimelineIntegration.startMonitoring(projectId: context.id)
-           // Timeline now shows CORRECT project (thanks to quick-discovery)
+    Note over CM: Legacy component still uses StartupCoordinator
+    Note over ASO: New components use AppStateOrchestrator directly
 ```
 
-**User-Initiated Project Switch:**
+### handleExternalProjectSwitch Method
 
-```
-User action (e.g., "Set Project Root")
-   └─→ HUDViewModel.setProjectRoot(url:)
-       ├─→ Update local state (projectRootURL, branch)
-       ├─→ StartupCoordinator.shared.switchProject(to: path)
-       │   ├─→ Ensure project in database
-       │   ├─→ Create new ActiveProjectContext
-       │   └─→ Publish via AsyncStream
-       └─→ Post .projectRootDidChange (legacy)
+Bridge method that allows AppStateOrchestrator to notify StartupCoordinator of project changes:
 
-Coordinator publishes context
-   ├─→ ProjectSwitcherState.handleContextUpdate(context)
-   │   ├─→ activeProjectId = context.id
-   │   └─→ refreshProjects()
-   │
-   └─→ ConversationMonitor.handleContextUpdate(context)
-       ├─→ stopMonitoring()
-       ├─→ clearEntries()
-       └─→ startMonitoring(projectId: context.id)
+```swift
+// StartupCoordinator.swift
+public func handleExternalProjectSwitch(id: String, path: String) async throws {
+  // Create ActiveProjectContext from AppStateOrchestrator notification
+  let context = ActiveProjectContext(
+    id: id,
+    path: path,
+    displayName: URL(fileURLWithPath: path).lastPathComponent,
+    branch: nil, // Git detection handled separately
+    bookmark: nil
+  )
+
+  // Notify legacy subscribers
+  updates.yield(context)
+}
 ```
+
+**Purpose:** Bridge between current architecture (AppStateOrchestrator) and legacy components (ConversationMonitor).
+
+**When to Use:**
+- ✅ ConversationMonitor integration (required until refactor)
+- ✅ Other legacy components using `StartupCoordinator.shared.updates`
+- ❌ New components (use AppStateOrchestrator directly)
+
+---
+
+## Current Role: Legacy Compatibility
+
+**Primary Responsibilities:**
+
+1. **Receive External Notifications**
+   - `handleExternalProjectSwitch(id:path:)` called by AppStateOrchestrator
+   - Creates `ActiveProjectContext` from notification
+
+2. **Publish to Legacy Subscribers**
+   - ConversationMonitor still uses `StartupCoordinator.shared.updates`
+   - Other legacy components may still subscribe
+
+3. **Maintain Backward Compatibility**
+   - Keeps existing APIs working during transition
+   - Allows incremental migration to AppStateOrchestrator
+
+**Responsibilities Moved to AppStateOrchestrator:**
+
+1. **Project Discovery** → `LightweightDiscoveryService.discoverProjectsLightweight()`
+2. **Ingestion Orchestration** → `FastPathIngestionCoordinator.ingestProjectJIT()`
+3. **State Management** → `AppStateOrchestrator.state` (state machine)
+4. **Primary Coordinator** → `AppStateOrchestrator` is central coordinator
 
 ---
 
@@ -105,26 +142,20 @@ Coordinator publishes context
 
 ### 1. Project ID as Primary Identity
 
-**Before:**
-- Multiple sources of truth: HUD path vs Switcher ID vs Monitor recomputation
-- Path-dependent lookups created races (DB query may not reflect latest write)
-- Filesystem paths are unstable (user can move/rename project)
-
-**After:**
+**Architecture:**
 - Coordinator owns `getOrCreateProject()` database call
 - Publishes stable `context.id` to all subscribers
 - Filesystem path is metadata only
 - All subsystems use ID for database queries
 
+**Benefits:**
+- Stable identity (filesystem paths can change)
+- No race conditions from path-dependent lookups
+- Single source of truth for project identity
+
 ### 2. AsyncStream Instead of NotificationCenter
 
-**Before:**
-```swift
-// Notification-based (timing-dependent, no ordering guarantees)
-NotificationCenter.default.post(name: .projectRootDidChange, object: path)
-```
-
-**After:**
+**Implementation:**
 ```swift
 // Typed stream with guaranteed ordering
 for await context in StartupCoordinator.shared.updates {
@@ -138,30 +169,7 @@ for await context in StartupCoordinator.shared.updates {
 - Explicit dependencies (see who subscribes)
 - No suppression logic needed (coordinator deduplicates)
 
-### 3. Deterministic Startup Order
-
-**Before:**
-```swift
-// Racing tasks - no ordering guarantee
-Task { await model.startup() }
-Task { ProjectSwitcherState.shared.start() }
-Task { await initializeProjectsSystem() }
-```
-
-**After:**
-```swift
-// Sequential startup with explicit dependencies
-Task {
-    try await StartupCoordinator.shared.start()  // Phase 1: identity
-    ProjectSwitcherState.shared.start()          // Phase 2: depends on identity
-}
-
-// ContentView.task waits for coordinator
-let context = try await StartupCoordinator.shared.ready()
-await timeline.startMonitoring(projectId: context.id)
-```
-
-### 4. Off-Main-Thread Database Operations
+### 3. Off-Main-Thread Database Operations
 
 All database operations run on background threads:
 
@@ -225,25 +233,28 @@ public final class StartupCoordinator {
 
     // Switch to new project (user action)
     public func switchProject(to path: String) async throws
+
+    // Receive notification from AppStateOrchestrator (legacy bridge)
+    public func handleExternalProjectSwitch(id: String, path: String) async throws
 }
 ```
 
 **Usage Patterns:**
 
 ```swift
-// Pattern 1: Start coordinator (app init)
+// Pattern 1: Start coordinator (app init) - Legacy path
 try await StartupCoordinator.shared.start()
 
-// Pattern 2: Block until ready (ContentView.task)
+// Pattern 2: Block until ready (ContentView.task) - Legacy path
 let context = try await StartupCoordinator.shared.ready()
 
-// Pattern 3: Subscribe to updates (ProjectSwitcherState)
+// Pattern 3: Subscribe to updates (ConversationMonitor) - Legacy path
 for await context in StartupCoordinator.shared.updates {
     await handleContextUpdate(context)
 }
 
-// Pattern 4: User-initiated switch (HUDViewModel)
-try await StartupCoordinator.shared.switchProject(to: "/path/to/project")
+// Pattern 4: AppStateOrchestrator notification (current architecture)
+try await StartupCoordinator.shared.handleExternalProjectSwitch(id: projectId, path: projectPath)
 ```
 
 ---
@@ -254,76 +265,44 @@ try await StartupCoordinator.shared.switchProject(to: "/path/to/project")
 
 **DO:**
 ```swift
-// Subscribe to coordinator updates
+// Use AppStateOrchestrator directly
 Task {
-    for await context in StartupCoordinator.shared.updates {
-        self.activeProjectId = context.id
-        await refreshData()
+    for await _ in NotificationCenter.default.notifications(named: .appStateDidChange) {
+        let state = AppStateOrchestrator.shared.state
+        if case .active(let projectId) = state {
+            self.activeProjectId = projectId
+            await refreshData()
+        }
     }
 }
-
-// Use project ID from context
-let context = try await StartupCoordinator.shared.ready()
-await startWork(projectId: context.id)
 ```
 
 **DON'T:**
 ```swift
-// Query HUDViewModel for path (stale)
+// Don't use StartupCoordinator for new code
+for await context in StartupCoordinator.shared.updates {
+    self.activeProjectId = context.id
+}
+
+// Don't query HUDViewModel for path (stale)
 let path = HUDViewModel.shared.projectRootURL
 
-// Call getOrCreateProject directly (coordinator owns this)
+// Don't call getOrCreateProject directly (coordinator owns this)
 let projectId = try orchestrator.getOrCreateProject(...)
-
-// Use NotificationCenter for startup (timing-dependent)
-NotificationCenter.default.addObserver(forName: .projectRootDidChange ...)
 ```
 
-### For Existing Code
+### For Existing Legacy Code
 
 **NotificationCenter observers are kept for backward compatibility:**
 - `.projectRootDidChange` still fires (legacy consumers)
-- New code should use coordinator AsyncStream
-- Notifications will be deprecated in future version
+- New code should use AppStateOrchestrator directly
+- StartupCoordinator bridges AppStateOrchestrator to legacy components
 
 **HUDViewModel still manages:**
 - Git branch detection and watchers
 - Security-scoped bookmarks
 - Persisting paths to UserDefaults
 - **But:** Coordinator calls `getOrCreateProject()` (not HUD)
-
----
-
-## Extension Points
-
-### Future Features Enabled by Coordinator
-
-1. **Multi-Window Support**
-   - Each window subscribes to same coordinator stream
-   - All windows show same active project
-   - Single switchProject() updates all windows
-
-2. **Project Templates**
-   ```swift
-   extension StartupCoordinator {
-       func createProjectFromTemplate(name: String, template: ProjectTemplate) async throws -> ActiveProjectContext
-   }
-   ```
-
-3. **Recent Projects List**
-   ```swift
-   extension StartupCoordinator {
-       var recentProjects: [ActiveProjectContext] { ... }
-   }
-   ```
-
-4. **Project Bookmarks (Favorites)**
-   ```swift
-   extension StartupCoordinator {
-       func addBookmark(_ context: ActiveProjectContext) async throws
-       var bookmarkedProjects: [ActiveProjectContext] { ... }
-   }
-   ```
 
 ---
 
@@ -355,7 +334,7 @@ func testFullStartupSequence() async throws {
     // 1. Start coordinator
     try await StartupCoordinator.shared.start()
 
-    // 2. Verify switcher receives context
+    // 2. Verify legacy subscribers receive context
     XCTAssertNotNil(ProjectSwitcherState.shared.activeProjectId)
 
     // 3. Verify timeline starts
@@ -374,9 +353,9 @@ func testFullStartupSequence() async throws {
 **Cause:** No persisted path, no env var, CWD is root
 **Fix:** Set `CONTEXTIFY_PROJECT_ROOT` env var or select project in UI
 
-**Issue:** Switcher shows stale project after switch
-**Cause:** Switcher not subscribed to coordinator updates
-**Fix:** Ensure `subscribeToContextUpdates()` called in `start()`
+**Issue:** Legacy components show stale project after switch
+**Cause:** Legacy component not subscribed to coordinator updates
+**Fix:** Ensure `subscribeToContextUpdates()` called in component initialization
 
 **Issue:** Timeline starts before project selected
 **Cause:** `ready()` called before `start()` completes
@@ -392,7 +371,7 @@ func testFullStartupSequence() async throws {
 
 ### Startup Time
 
-**Target:** <100ms coordinator overhead (measured on Intel Mac, 2019)
+**Target:** <100ms coordinator overhead
 
 **Breakdown:**
 - Resolve project root: <10ms (UserDefaults read)
@@ -413,20 +392,134 @@ func testFullStartupSequence() async throws {
 
 ---
 
+## Future Refactoring
+
+### Planned Refactoring
+
+**When:** After ConversationMonitor split
+
+**Steps:**
+
+1. **Refactor ConversationMonitor** (P0 - Critical, 3-4 weeks)
+   - Split into 4 focused components (TimelineLoader, MonitoringCoordinator, TimelineCacheCoordinator, ConversationMonitor)
+   - Update to use AppStateOrchestrator directly (not StartupCoordinator)
+
+2. **Audit Legacy Subscribers** (1 week)
+   - Find all uses of `StartupCoordinator.shared.updates`
+   - Migrate to `AppStateOrchestrator.state` observation
+   - Remove AsyncStream subscriptions
+
+3. **Remove StartupCoordinator** (1 week)
+   - Delete `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`
+   - Remove from ContextifyApp initialization
+   - Update documentation
+
+4. **Consolidate to AppStateOrchestrator** (1 week)
+   - Move any remaining unique functionality to AppStateOrchestrator
+   - Verify no regressions via integration tests
+
+### Migration Patterns
+
+**Current (Legacy Pattern):**
+```swift
+// Legacy pattern (StartupCoordinator)
+for await context in StartupCoordinator.shared.updates {
+    self.activeProjectId = context.id
+    self.projectPath = context.path
+    await refreshTimeline()
+}
+```
+
+**Future (AppStateOrchestrator):**
+```swift
+// New pattern (AppStateOrchestrator)
+for await _ in NotificationCenter.default.notifications(named: .appStateDidChange) {
+    let state = AppStateOrchestrator.shared.state
+
+    switch state {
+    case .active(let projectId):
+        self.activeProjectId = projectId
+        await refreshTimeline()
+    default:
+        break
+    }
+}
+```
+
+**Alternative (Observation Framework):**
+```swift
+// Using Swift Observation
+@Observable
+class MyViewModel {
+    init() {
+        // Observe published state directly
+        // (SwiftUI will automatically subscribe)
+    }
+
+    func observeOrchestrator() {
+        let orchestrator = AppStateOrchestrator.shared
+
+        // Access via published property
+        if case .active(let projectId) = orchestrator.state {
+            self.activeProjectId = projectId
+        }
+    }
+}
+```
+
+### Benefits of Future Migration
+
+✅ **Simplified Architecture**
+- One central coordinator (AppStateOrchestrator) instead of two
+- Clear ownership of state
+- State machine pattern enforces valid transitions
+
+✅ **Reduced Coupling**
+- No more StartupCoordinator → AppStateOrchestrator → StartupCoordinator roundtrip
+- Direct observation of AppStateOrchestrator
+
+✅ **Better Performance**
+- Eliminate intermediate notification layer
+- Fewer allocations (no ActiveProjectContext creation)
+
+✅ **Type Safety**
+- AppState enum provides compile-time guarantees
+- Pattern matching catches unhandled states
+
+---
+
 ## Related Documentation
 
-- **Original design spec:** `build/docs/archive/feature-specs/startup-coordinator.md`
+### Architecture Documentation
+
 - **SQL Backend:** `build/docs/architecture/sql-backend.md`
 - **State Management:** `build/docs/architecture/conversation-monitor-state.md`
 - **ProjectSwitcher integration:** `build/docs/architecture/project-switcher.md`
 - **Implementation:** `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`
 
+### Current Architecture
+
+**AppStateOrchestrator:**
+- Architecture: `build/docs/architecture/COMPONENTS.md` - "Application State Coordination"
+- Data flow: `build/docs/architecture/data-pipeline-architecture.md`
+- Implementation: `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
+
+**Future Refactoring:**
+- Refactoring roadmap: `build/docs/architecture/architecture-refactoring-analysis.md`
+- ConversationMonitor split: `architecture-refactoring-analysis.md` (ConversationMonitor section)
+
 ---
 
 ## Changelog
 
-**v1.0 (2025-11-05):**
+**Current:**
+- Legacy compatibility shim for ConversationMonitor
+- Receives notifications from AppStateOrchestrator via handleExternalProjectSwitch()
+- Publishes ActiveProjectContext to legacy subscribers
+- Planned for removal after ConversationMonitor refactor
+
+**v1.0:**
 - Initial implementation
-- Replaces notification-based startup with typed AsyncStream
+- Replaced notification-based startup with typed AsyncStream
 - Coordinator owns `getOrCreateProject()` database call
 - Project ID as stable primary identity
