@@ -127,7 +127,8 @@ struct WelcomeModalView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
-            if let appIcon = NSImage(named: "AppIcon") {
+            if let iconName = Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String,
+               let appIcon = NSImage(named: iconName) {
                 Image(nsImage: appIcon)
                     .resizable()
                     .frame(width: 64, height: 64)
