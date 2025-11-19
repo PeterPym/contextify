@@ -6,12 +6,12 @@
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 64
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -34,7 +34,11 @@
 
 ---
 
-# P0 (Blocking Release) - 4 Items Remaining
+# P0 (Blocking Release) - 5 Items Remaining
+
+## UI Polish (1 item)
+
+- [ ] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners when selected (possibly unselected too)
 
 ## App Store Submission (4 items)
 
