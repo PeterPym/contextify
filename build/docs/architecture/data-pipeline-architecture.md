@@ -33,11 +33,21 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 
 ## Key Metrics
 
-**Performance:**
-- **Cold Start:** ~200-500ms (quick discovery)
-- **Full Discovery:** ~2-5s (all projects)
-- **Streaming Ingestion:** 1000 lines/batch
+**Performance (Phase 3 Lazy Loading - Nov 2025):**
+- **Cold Start:** <200ms (achieved: 187ms) - stat-only scan, no ingestion
+- **UI Ready:** Immediate after lightweight scan (no blocking)
+- **JIT Ingestion:** <1s per project (on-demand when user selects)
+- **Background Indexing:** Low-priority pre-ingestion of inactive projects
+- **Streaming Ingestion:** 1000 lines/batch (unchanged)
 - **Real-time Monitoring:** <150ms latency (DispatchSource + FSEvents)
+
+**Memory Footprint (Phase 3):**
+- **At startup:** 30-50 MB (Phase 3) vs 150-300 MB (Phase 2) - 3-5x reduction
+- **After first project load:** 60-100 MB
+
+**Database Operations (Phase 3):**
+- **At startup:** 19 row updates (projects metadata only)
+- **Phase 2 baseline:** 5000-15000 rows - 10-20x reduction
 
 **Scale:**
 - Supports multiple projects simultaneously
@@ -46,11 +56,14 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 
 ## Critical Design Decisions
 
-1. **StartupCoordinator** - Single source of truth for project identity (Nov 2025)
-2. **Quick Discovery** - Lightweight mtime scan for immediate timeline (Nov 17, 2025)
-3. **Streaming Ingestion** - HooverEngine processes 1000 lines at a time (memory efficient)
-4. **Dual Monitoring** - FSEvents (global) + DispatchSource (per-file) for reliability
-5. **SQL Backend** - GRDB with schema v26, WAL mode for concurrent access
+1. **Lazy Loading (Phase 3, Nov 2025)** - JIT ingestion on project selection, not at startup
+2. **AppStateOrchestrator (Phase 3)** - Central state coordinator with state machine pattern
+3. **LightweightDiscoveryService (Phase 3)** - Stat-only scanning (<200ms), no file reads
+4. **Background Indexing (Phase 3)** - Low-priority pre-ingestion when idle
+5. **StartupCoordinator (Legacy)** - Now compatibility shim for ConversationMonitor
+6. **Streaming Ingestion** - HooverEngine processes 1000 lines at a time (memory efficient)
+7. **Dual Monitoring** - FSEvents (global) + DispatchSource (per-file) for reliability
+8. **SQL Backend** - GRDB with schema v26, WAL mode for concurrent access
 
 ---
 
@@ -65,10 +78,15 @@ graph TB
         CX[Codex CLI<br/>~/.codex/sessions/]
     end
 
-    subgraph "Discovery Layer"
-        SC[StartupCoordinator<br/>Project Identity]
-        QD[Quick Discovery<br/>Newest Transcript]
-        PDS[ProjectDiscoveryService<br/>All Projects]
+    subgraph "State Coordination Layer (Phase 3)"
+        ASO[AppStateOrchestrator<br/>Central Coordinator]
+        LDS[LightweightDiscoveryService<br/>Stat-Only Scan]
+        FPI[FastPathIngestionCoordinator<br/>JIT Ingestion]
+    end
+
+    subgraph "Discovery Layer (Legacy)"
+        SC[StartupCoordinator<br/>Legacy Shim]
+        PDS[ProjectDiscoveryService<br/>Full Discovery]
     end
 
     subgraph "Ingestion Layer"
@@ -83,17 +101,26 @@ graph TB
     end
 
     subgraph "Presentation Layer"
+        PVM[ProjectsViewModel<br/>Observer Pattern]
         CM[ConversationMonitor<br/>Timeline State]
         TCMG[TimelineCacheMissGenerator<br/>LLM Summaries]
         UI[Timeline UI<br/>SwiftUI]
     end
 
-    CC --> QD
-    CX --> QD
+    CC --> LDS
+    CX --> LDS
+
+    LDS --> ASO
+    ASO --> FPI
+    ASO --> SC
+    FPI --> HE
+    FPI --> TO
+
+    ASO --> PVM
+    PVM --> UI
+
     CC --> PDS
     CX --> PDS
-
-    QD --> SC
     PDS --> SC
 
     SC --> PAM
