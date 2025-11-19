@@ -9,11 +9,12 @@
 - **P0 (Blocking Release):** 4 items - Must complete before App Store submission
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 9 items - Future enhancements
+- **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 62
+**Total Active Items:** 63
 
 **Change Log (2025-11-19):**
+- Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
 - Demoted 8 P0 items based on pre-submission priorities:
   - #32, #43 (Discovery UX) → P1
@@ -721,35 +722,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 27 Items
-
-## Liquid Glass Design System (1 item)
-
-**Status:** Research complete, implementation not started
-**Effort:** 9-14 weeks for full adoption (can do incrementally)
-**Documentation:** `build/docs/audits/liquid-glass-audit-v2.md`
-
-- [ ] #P2-LIQUID-GLASS: Implement Liquid Glass design system for macOS 26
-
-**Current State:**
-- Zero code-level adoption (automatic visual updates only when rebuilt with SDK)
-- No NavigationSplitView, no .toolbar usage, no glass APIs
-- Custom backgrounds interfere with system effects
-- 16 files require changes
-
-**Implementation Phases:**
-1. Foundation (2-3 weeks): Remove backgrounds, add toolbars, glass buttons
-2. Navigation (3-4 weeks): NavigationSplitView with floating sidebar
-3. Custom Glass (1-2 weeks): Selective glass effects on key elements only
-4. Enhancements (2-3 weeks): Search, app icon, accessibility
-
-**Decision Required:**
-- Defer to post-1.0? (9-14 weeks is significant effort)
-- Do Phase 1 only? (2-3 weeks, quick wins)
-- Skip entirely? (automatic visual updates may be sufficient)
-
-**Files:** 16 files requiring changes (see audit for details)
-**Reference:** `build/docs/audits/liquid-glass-audit-v2.md`
+# P2 (Medium Priority) - 26 Items
 
 ---
 
@@ -1015,7 +988,44 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
-# P3 (Low Priority / Deferred) - 9 Items
+# P3 (Low Priority / Deferred) - 10 Items
+
+## Liquid Glass Design System (1 item) ⬇️
+
+**Status:** Partially implemented, toolbar translucency deferred
+**Priority:** Demoted from P2 (SwiftUI toolbar API limitations, diminishing returns)
+**Effort:** Unknown (requires AppKit or future SwiftUI improvements)
+**Documentation:** `build/docs/audits/liquid-glass-status.md`
+
+- [ ] #P3-LIQUID-GLASS: Complete Liquid Glass toolbar translucency for macOS 26
+
+**What Shipped (~40%):**
+- ✅ Glass button effects (`.glassEffect()` on macOS 26)
+- ✅ Lightened menu icons for contrast
+- ✅ Reduced opacity backgrounds
+- ✅ Horizontal project tabs with glass effect
+- ✅ NavigationStack infrastructure
+
+**What's Deferred:**
+- ❌ Toolbar translucency (content blurring under toolbar)
+- ❌ Tabs fixed in toolbar (vs scrolling)
+
+**Blocker:**
+SwiftUI's `.navigationTitle()` conflicts with `.principal` toolbar placement. Tabs either:
+1. Render in toolbar but disappear after initial paint (SwiftUI lifecycle bug)
+2. Scroll beneath toolbar (defeats visual purpose)
+
+**Options for Future:**
+1. Drop to AppKit NSToolbar (full control, significant effort)
+2. Build custom window chrome (lose system integration)
+3. Wait for SwiftUI improvements in macOS 27+
+
+**Decision:** Ship current partial implementation (~40% visual improvement). Re-evaluate post-launch based on user feedback.
+
+**Reference:** `build/docs/audits/liquid-glass-status.md` (full implementation history)
+**Branch:** `feat/liquid-glass-implementation` (commit 60ca32e)
+
+---
 
 ## Performance & Monitoring (4 items) ⬇️
 
