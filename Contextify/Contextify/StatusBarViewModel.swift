@@ -185,8 +185,9 @@ final class StatusBarViewModel {
             backgroundIngestMessage = nil
             return
         }
-        let processed = total - remaining
-        backgroundIngestMessage = "Indexing \(processed)/\(total) projects…"
+        let completed = total - remaining
+        let currentlyProcessing = completed + 1
+        backgroundIngestMessage = "Indexing \(currentlyProcessing)/\(total) projects…"
     }
 
     /// Recompute aggregate state from all provider stats (Phase 5: True Sum)
