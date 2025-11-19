@@ -487,6 +487,9 @@ struct ContextifyApp: App {
         log.info("[INIT] Created passthrough access provider (DMG build)")
         #endif
 
+        // Configure AppStateOrchestrator with access provider
+        await AppStateOrchestrator.shared.configureAccessProvider(accessProvider)
+
         // Initialize orchestrator with access provider
         let orchestrator = try TranscriptOrchestrator(
           dbManager: .shared,

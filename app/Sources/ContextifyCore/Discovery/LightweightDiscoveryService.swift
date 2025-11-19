@@ -7,7 +7,16 @@ private let log = Logger(subsystem: "dev.contextify", category: "LightweightDisc
 /// Goal: <200ms for typical setup (19 projects, 663 transcripts)
 public actor LightweightDiscoveryService {
 
-  public init() {}
+  private var accessProvider: TranscriptAccessProvider?
+
+  public init(accessProvider: TranscriptAccessProvider? = nil) {
+    self.accessProvider = accessProvider
+  }
+
+  /// Configure the access provider (allows late binding for App Store builds)
+  public func configure(accessProvider: TranscriptAccessProvider) {
+    self.accessProvider = accessProvider
+  }
 
   /// Scans filesystem for project metadata. NO DB SIDE EFFECTS.
   /// Returns projects sorted by last activity (newest first)
@@ -30,15 +39,31 @@ public actor LightweightDiscoveryService {
   // MARK: - Claude Projects (~/.claude/projects/HASH/*.jsonl)
 
   private func scanClaudeProjects() -> [LightweightProject] {
-    let root = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".claude/projects")
+    // Use access provider if available (App Store builds), otherwise fallback to direct access (DMG builds)
+    if let provider = accessProvider {
+      do {
+        return try provider.withAccess(for: TranscriptProviderID.claude) { root in
+          return scanClaudeDirectory(at: root)
+        }
+      } catch {
+        log.debug("[DISC-LIGHT] No Claude access authorized: \(error.localizedDescription, privacy: .public)")
+        return []
+      }
+    } else {
+      // DMG build: direct filesystem access
+      let root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects")
+      return scanClaudeDirectory(at: root)
+    }
+  }
 
+  nonisolated private func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
     guard let dirs = try? FileManager.default.contentsOfDirectory(
       at: root,
       includingPropertiesForKeys: [.contentModificationDateKey],
       options: [.skipsHiddenFiles]
     ) else {
-      log.debug("[DISC-LIGHT] No Claude projects directory found")
+      log.debug("[DISC-LIGHT] No Claude projects directory found at \(root.path, privacy: .public)")
       return []
     }
 
@@ -76,9 +101,31 @@ public actor LightweightDiscoveryService {
   // MARK: - Codex Sessions (~/.codex/sessions/YYYY/MM/DD/*.jsonl)
 
   private func scanCodexSessions() async -> [LightweightProject] {
-    let root = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".codex/sessions")
+    // Get root URL - either from access provider (App Store) or direct (DMG)
+    let root: URL
 
+    if let provider = accessProvider {
+      // For sandboxed builds, verify we have access and get the root URL
+      do {
+        root = try provider.withAccess(for: TranscriptProviderID.codex) { url in
+          return url
+        }
+      } catch {
+        log.debug("[DISC-LIGHT] No Codex access authorized: \(error.localizedDescription, privacy: .public)")
+        return []
+      }
+    } else {
+      // DMG build: direct filesystem access
+      root = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codex/sessions")
+    }
+
+    // Security-scoped access is already established by the bookmark resolution in ContextifyApp
+    // We can now safely do async scanning
+    return await scanCodexDirectory(at: root)
+  }
+
+  private func scanCodexDirectory(at root: URL) async -> [LightweightProject] {
     // Aggregate by CWD (current working directory)
     // Store file URLs per project (not just count)
     var projects: [String: (files: [URL], maxDate: Date, path: URL)] = [:]
@@ -108,7 +155,7 @@ public actor LightweightDiscoveryService {
       includingPropertiesForKeys: [.contentModificationDateKey],
       options: [.skipsHiddenFiles]
     ) else {
-      log.debug("[DISC-LIGHT] No Codex sessions directory found")
+      log.debug("[DISC-LIGHT] No Codex sessions directory found at \(root.path, privacy: .public)")
       return []
     }
 
@@ -180,7 +227,7 @@ public actor LightweightDiscoveryService {
 
   /// Intelligently decode Claude hash folder to real filesystem path
   /// Handles hyphenated folder names by trying progressive combinations
-  private func findRealPath(hashFolder: String) -> String? {
+  nonisolated private func findRealPath(hashFolder: String) -> String? {
     guard hashFolder.hasPrefix("-") else { return nil }
 
     let base = "/" + hashFolder.dropFirst()
@@ -206,7 +253,7 @@ public actor LightweightDiscoveryService {
   }
 
   /// Attempt to resolve the actual project path using transcript metadata, even for orphaned projects.
-  private func resolveClaudeProjectPath(hashFolder: String, directory: URL, transcripts: [URL]) -> String? {
+  nonisolated private func resolveClaudeProjectPath(hashFolder: String, directory: URL, transcripts: [URL]) -> String? {
     guard hashFolder.hasPrefix("-") else { return nil }
 
     if let path = try? ProjectIdentity.reverseManglePath(provider: "claude.code", directory: directory) {
@@ -220,7 +267,7 @@ public actor LightweightDiscoveryService {
     return findRealPath(hashFolder: hashFolder)
   }
 
-  private func inferPathFromTranscripts(_ transcripts: [URL]) -> String? {
+  nonisolated private func inferPathFromTranscripts(_ transcripts: [URL]) -> String? {
     guard !transcripts.isEmpty else { return nil }
 
     let sorted = transcripts.sorted { lhs, rhs in
@@ -239,7 +286,7 @@ public actor LightweightDiscoveryService {
     return nil
   }
 
-  private func fallbackDisplayName(for hashFolder: String) -> String {
+  nonisolated private func fallbackDisplayName(for hashFolder: String) -> String {
     guard hashFolder.hasPrefix("-") else {
       return "Claude (\(String(hashFolder.prefix(8))))"
     }

@@ -45,6 +45,13 @@ public final class AppStateOrchestrator: ObservableObject {
     }
   }
 
+  /// Configure the access provider for sandbox builds
+  /// Must be called before startup() in App Store builds
+  public func configureAccessProvider(_ provider: TranscriptAccessProvider) async {
+    await discovery.configure(accessProvider: provider)
+    log.info("[ORCH-CONFIG] Access provider configured")
+  }
+
   /// Update state and notify observers
   private func setState(_ newState: AppState) {
     self.state = newState

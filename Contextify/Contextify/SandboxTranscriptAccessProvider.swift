@@ -3,6 +3,9 @@ import ContextifyCore
 
 /// Concrete provider for App Store (sandboxed) builds.
 /// Built once during app initialization with security-scoped URLs.
+///
+/// Note: Security-scoped access is started when bookmarks are resolved
+/// and remains active for the lifetime of the URL references.
 struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
   let claudeRoot: URL?
   let codexRoot: URL?
@@ -10,6 +13,11 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
   init(claudeRoot: URL?, codexRoot: URL?) {
     self.claudeRoot = claudeRoot
     self.codexRoot = codexRoot
+
+    // Start security-scoped access for both roots if available
+    // This keeps access open for the lifetime of the provider
+    _ = claudeRoot?.startAccessingSecurityScopedResource()
+    _ = codexRoot?.startAccessingSecurityScopedResource()
   }
 
   func withAccess<T>(
@@ -41,11 +49,7 @@ struct SandboxTranscriptAccessProvider: TranscriptAccessProvider {
       root = FileManager.default.homeDirectoryForCurrentUser
     }
 
-    guard root.startAccessingSecurityScopedResource() else {
-      throw FolderAccessError.securityScopeAccessDenied(root)
-    }
-    defer { root.stopAccessingSecurityScopedResource() }
-
+    // Security scope already started in init, just return URL
     return try body(root)
   }
 }
