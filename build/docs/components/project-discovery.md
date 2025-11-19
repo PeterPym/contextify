@@ -6,9 +6,9 @@
 
 ---
 
-## Phase 3 Overview: Lazy Loading Architecture
+## Lazy Loading Architecture
 
-**As of Nov 2025**, project discovery uses a **two-tier lazy loading architecture**:
+Project discovery uses a **two-tier lazy loading architecture**:
 
 **Tier 1 (Startup):** `LightweightDiscoveryService`
 - Stat-only filesystem scan (<200ms)

@@ -6,9 +6,9 @@
 
 ---
 
-## Phase 3 Architecture: Two-Tier Discovery
+## Two-Tier Discovery Architecture
 
-**As of Nov 2025**, Contextify uses a **two-tier discovery architecture** for optimal performance:
+Contextify uses a **two-tier discovery architecture** for optimal performance:
 
 ### Tier 1: Lightweight Discovery (Startup)
 
@@ -55,7 +55,7 @@
 
 **Architecture Pattern:**
 ```swift
-// Phase 3 startup flow
+// Startup flow
 let lightweight = await LightweightDiscoveryService().discoverProjectsLightweight()
 // Show UI immediately with lightweight data
 
@@ -325,7 +325,7 @@ Providers: [.claudeCode, .codex]
 
 ## Quick Discovery vs Full Discovery
 
-### Quick Discovery (Phase 2 - Cold Start)
+### Quick Discovery
 
 **Goal:** Find newest project **without** parsing JSONL or writing to database.
 
@@ -395,7 +395,7 @@ public func quickDiscoverNewest() async -> (projectPath: URL, transcriptFile: UR
 
 **Use Case:** `StartupCoordinator` calls this to switch to newest project before timeline loads.
 
-### Full Discovery (Phase 3 - Background)
+### Full Discovery
 
 **Goal:** Enumerate all projects with metadata (transcript count, providers, last activity).
 
