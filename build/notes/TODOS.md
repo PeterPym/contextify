@@ -6,12 +6,12 @@
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 62
 
 **Change Log (2025-11-19):**
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
@@ -33,32 +33,12 @@
 
 ---
 
-# P0 (Blocking Release) - 5 Items Remaining
-
-
-## Welcome Modal Copy (1 item)
-
-**Status:** Not Started
-**Effort:** 1-2 hours
-**Note:** Must complete BEFORE App Store submission (code changes)
-
-- [ ] #16: Polish welcome modal copy & progress messaging
-
-**Tasks:**
-- Remove "Run in Background" button (✅ complete if already done)
-- Review and improve welcome text clarity
-- Polish progress messaging
-- Add dismissal confirmation if user closes during ingestion
-
-**Files:** `Contextify/Contextify/WelcomeModalView.swift`
-
----
+# P0 (Blocking Release) - 4 Items Remaining
 
 ## App Store Submission (4 items)
 
-**Status:** Not Started
+**Status:** Not Started (Ready to begin - welcome modal polish complete)
 **Effort:** 8-12 hours
-**Note:** Must complete AFTER welcome modal polish (#16)
 
 - [ ] #6: App Store Connect setup (metadata, screenshots, description)
 - [ ] #7: Build Release binary (sign, archive, validate, upload)
