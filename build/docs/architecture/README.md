@@ -1,8 +1,9 @@
 # Architecture Documentation
 
-**Status:** Updated for Phase 3 lazy loading architecture (Nov 2025)
+**Last Updated:** 2025-11-18
+**Context:** Updated to reflect lazy loading architecture refactor
 
-**Start Here for Phase 3:** [COMPONENTS.md](COMPONENTS.md) - "Application State Coordination" section
+**Start Here:** [COMPONENTS.md](COMPONENTS.md) - "Application State Coordination" section
 
 ---
 
@@ -25,29 +26,29 @@ This directory contains high-level architectural documentation that explains:
 - Fundamental design decisions
 - System-wide patterns and conventions
 
-## Core Architecture (Phase 3)
+## Core Architecture
 
 ### [COMPONENTS.md](COMPONENTS.md)
 **Topics:** Architecture overview and key components
-- **✨ Updated for Phase 3:** AppStateOrchestrator (central coordinator), LightweightDiscoveryService, lazy loading architecture
+- AppStateOrchestrator (central coordinator), LightweightDiscoveryService, lazy loading architecture
 - **Start here** for understanding the system
 - Performance summary: <200ms startup, 30-50 MB memory, 19 DB row updates
 
 ### [Data Pipeline Architecture](data-pipeline-architecture.md)
 **Topics:** Complete data flow reference (5 levels of detail)
-- **✨ Updated for Phase 3:** Lightweight startup flow, JIT ingestion, background indexing
+- Lightweight startup flow, JIT ingestion, background indexing
 - Comprehensive with mermaid diagrams (1568 lines)
 - Covers discovery → ingestion → database → timeline UI
 
 ### [Architecture Refactoring Analysis](architecture-refactoring-analysis.md)
 **Topics:** Refactoring opportunities and roadmap
-- **✨ Updated for Phase 3:** 85% alignment achieved, architecture grade A- (up from B+)
+- Current state: 85% alignment achieved, architecture grade A- (up from B+)
 - Phase 4 planning document
 - Commits 080bb3c through 8a57385 analyzed
 
 ### [Startup Coordinator](startup-coordinator.md)
 **Topics:** Startup sequencing and project identity
-- **⚠️ Phase 3 Note:** StartupCoordinator now legacy compatibility shim (AppStateOrchestrator is primary)
+- StartupCoordinator is a legacy compatibility shim (AppStateOrchestrator is primary)
 - Will be removed in Phase 4
 - ActiveProjectContext design still relevant
 
@@ -60,7 +61,6 @@ This directory contains high-level architectural documentation that explains:
 - TimelineCacheMissGenerator (queue #1: entry summaries)
 - TranscriptMetadataOrchestrator (queue #2: document metadata)
 - Status aggregation and monitoring
-- Unchanged in Phase 3 (ConversationMonitor not refactored)
 
 ### [Project Switcher](project-switcher.md)
 **Topics:** Multi-project tab navigation and state management
@@ -68,14 +68,12 @@ This directory contains high-level architectural documentation that explains:
 - Unread badge calculation and display
 - Keyboard shortcuts and navigation
 - Event-driven discovery and updates
-- Unchanged in Phase 3
 
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
 - Tables, migrations (v1-v26), repositories
 - GRDB integration
 - Current schema: v26
-- Unchanged in Phase 3 (database layer stable)
 
 ### [Sandbox & App Store Architecture](sandbox-appstore-architecture.md)
 **Topics:** Sandboxed vs unsandboxed builds, security-scoped bookmarks
@@ -83,14 +81,12 @@ This directory contains high-level architectural documentation that explains:
 - DMG (unsandboxed) vs App Store (sandboxed) code paths
 - Testing procedures and permission management
 - **Critical for:** App Store builds, release testing
-- Unchanged in Phase 3
 
 ### [Window System](window-system.md)
 **Topics:** 4-window macOS app architecture
 - Main HUD, Transcript Inventory, Projects, Settings
 - Window management patterns
 - **Note:** iTerm2 integration removed in commit 35ce380
-- Unchanged in Phase 3
 
 ---
 
@@ -100,7 +96,7 @@ This directory contains high-level architectural documentation that explains:
 **Topics:** Timeline state management and real-time updates
 - TimelineState observable model
 - Entry filtering and session management
-- **Phase 4:** Will be refactored when ConversationMonitor is split
+- Planned refactor: ConversationMonitor will be split in Phase 4
 
 ### ~~Data Flow~~ (ARCHIVED)
 **Status:** Archived to `../archive/historical/data-flow-2025-10-22.md` (2025-11-17)
@@ -111,35 +107,34 @@ This directory contains high-level architectural documentation that explains:
 
 ## Recommended Reading Order
 
-### For Understanding Phase 3 Architecture
+### For Understanding Current Architecture
 
-1. **[COMPONENTS.md](COMPONENTS.md)** - Start with "Application State Coordination (Phase 3 Lazy Loading)" section
+1. **[COMPONENTS.md](COMPONENTS.md)** - Start with "Application State Coordination" section
 2. **[Data Pipeline Architecture](data-pipeline-architecture.md)** - Level 1-3 (Executive → Component → Flow Sequences)
-3. **[Architecture Refactoring Analysis](architecture-refactoring-analysis.md)** - Read "Phase 3 Implementation Update" section
+3. **[Architecture Refactoring Analysis](architecture-refactoring-analysis.md)** - Current state and roadmap
 
 ### For Deep Dive
 
 4. **[Data Pipeline Architecture](data-pipeline-architecture.md)** - Level 4-5 (Implementation Details → Technical Debt)
-5. **[Startup Coordinator](startup-coordinator.md)** - Legacy integration patterns (how old components integrate with Phase 3)
+5. **[Startup Coordinator](startup-coordinator.md)** - Legacy integration patterns
 6. **[LLM Processing](llm-processing.md)** - Timeline cache and dual LLM queues
 
-### For Phase 4 Planning
+### For Future Planning
 
 7. **[Architecture Refactoring Analysis](architecture-refactoring-analysis.md)** - Full roadmap and deferred items
-8. **[Conversation Monitor State](conversation-monitor-state.md)** - What will be refactored next
+8. **[Conversation Monitor State](conversation-monitor-state.md)** - Planned refactoring work
 
 ---
 
-## Phase 3 References
+## Related Implementation Guides
 
-**Implementation Guides:**
 - [Project Discovery Service Implementation](../components/project-discovery-service-implementation.md) - Two-tier discovery (lightweight + full)
 - [Startup Coordinator Implementation](../components/startup-coordinator-implementation.md) - Legacy integration patterns
 - [Project Discovery](../components/project-discovery.md) - Lazy loading architecture overview
 
-**Analysis & Tracking:**
-- `../../notes/phase3-refactor-comparison-analysis.md` - Detailed comparison with recommendations (1458 lines)
-- `../../notes/phase3-documentation-update-master-list.md` - Documentation update tracker
+**Analysis Documents:**
+- `../../notes/phase3-refactor-comparison-analysis.md` - Detailed architecture comparison (1458 lines)
+- `../../notes/phase3-documentation-update-master-list.md` - Documentation tracking
 
 
 ## Relationship to Other Docs

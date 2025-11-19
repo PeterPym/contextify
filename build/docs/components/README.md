@@ -1,8 +1,9 @@
 # Component Documentation
 
-**Status:** Updated for Phase 3 lazy loading architecture (Nov 2025)
+**Last Updated:** 2025-11-18
+**Context:** Updated to reflect lazy loading architecture refactor
 
-**New in Phase 3:**
+**Key Components:**
 - AppStateOrchestrator (see `../architecture/COMPONENTS.md` - "Application State Coordination")
 - LightweightDiscoveryService (two-tier discovery pattern)
 
@@ -26,7 +27,7 @@ This directory contains focused documentation on specific components:
 ### [Project Discovery](project-discovery.md)
 **Component:** ConversationSources + Discovery Services
 **Topics:** Multi-project detection and monitoring
-- **✨ Phase 3:** Two-tier architecture (lightweight + full discovery)
+- Two-tier architecture (lightweight + full discovery)
 - Provider-specific scanners (Claude Code, Codex CLI)
 - FSEvents-based file watching
 - Worktree support
@@ -34,18 +35,18 @@ This directory contains focused documentation on specific components:
 ### [Project Discovery Service Implementation](project-discovery-service-implementation.md)
 **Components:** LightweightDiscoveryService + ProjectDiscoveryService
 **Topics:** Implementation guide for discovery services
-- **✨ Phase 3:** Two-tier discovery patterns
+- Two-tier discovery patterns
 - **Tier 1:** LightweightDiscoveryService (stat-only scanning, <200ms)
 - **Tier 2:** ProjectDiscoveryService (full ingestion, JIT)
 - Security-scoped access patterns
 
 ### [Startup Coordinator Implementation](startup-coordinator-implementation.md)
 **Component:** StartupCoordinator
-**Topics:** Startup coordination and project identity
-- **⚠️ Phase 3 Note:** StartupCoordinator now legacy compatibility shim
+**Topics:** Startup coordination and project identity (legacy)
+- StartupCoordinator is a legacy compatibility shim
 - Integration with AppStateOrchestrator
 - handleExternalProjectSwitch() patterns
-- See AppStateOrchestrator for new architecture
+- See AppStateOrchestrator for current architecture
 
 ---
 
@@ -58,7 +59,6 @@ This directory contains focused documentation on specific components:
 - Follow mode persistence (schema v23)
 - Switch reasons and notifications
 - User-visible pin/unpin behavior
-- Unchanged in Phase 3
 
 ### [Timeline Cache](timeline-cache.md)
 **Component:** TimelineCacheMissGenerator + TranscriptMetadataOrchestrator
@@ -66,13 +66,11 @@ This directory contains focused documentation on specific components:
 - Cache keys (content + window SHA256)
 - Miss detection and batch generation
 - Integration with FoundationLLM
-- Unchanged in Phase 3 (ConversationMonitor not refactored)
 
 ### [Timeline Cache Invalidation](timeline-cache-invalidation.md)
 **Topics:** Cache invalidation strategies and edge cases
 - Invalidation triggers
 - Partial vs full invalidation
-- Unchanged in Phase 3
 
 ---
 
@@ -85,7 +83,6 @@ This directory contains focused documentation on specific components:
 - Security-scoped bookmarks for sandbox
 - Multi-machine conflict detection
 - Dropbox/iCloud sync support
-- Unchanged in Phase 3
 
 ### [Transcript Ingestion](transcript-ingestion.md)
 **Component:** HooverEngine
@@ -93,7 +90,6 @@ This directory contains focused documentation on specific components:
 - Batch processing and checkpointing
 - Window tracking
 - Crash-safe ingestion with resume support
-- Unchanged in Phase 3 (HooverEngine stable)
 
 ---
 
@@ -103,23 +99,22 @@ This directory contains focused documentation on specific components:
 **Topics:** Error handling for security-scoped bookmarks
 - Bookmark stale detection
 - User-friendly error messages
-- Unchanged in Phase 3
 
 ---
 
-## Phase 3 Architecture
+## Current Architecture Reference
 
-**For AppStateOrchestrator:**
-- **Architecture Doc:** `../architecture/COMPONENTS.md` - "Application State Coordination (Phase 3 Lazy Loading)" section
+**AppStateOrchestrator:**
+- **Architecture Doc:** `../architecture/COMPONENTS.md` - "Application State Coordination" section
 - **Code:** `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
-- **Role:** Central coordinator replacing fragmented startup responsibilities
+- **Role:** Central coordinator for startup and project state
 
-**For LightweightDiscoveryService:**
+**LightweightDiscoveryService:**
 - **Implementation Guide:** [project-discovery-service-implementation.md](project-discovery-service-implementation.md) - "Tier 1: Lightweight Discovery" section
 - **Code:** `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`
 - **Role:** Stat-only scanning for <200ms startup
 
-**For FastPathIngestionCoordinator:**
+**FastPathIngestionCoordinator:**
 - **Architecture Doc:** `../architecture/COMPONENTS.md`
 - **Code:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 - **Role:** JIT ingestion on project selection

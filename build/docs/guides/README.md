@@ -1,8 +1,9 @@
 # Operational Guides
 
-**Status:** Updated for Phase 3 lazy loading architecture (Nov 2025)
+**Last Updated:** 2025-11-18
+**Context:** Updated to reflect lazy loading architecture refactor
 
-**Phase 3 Debugging:** See [debugging-workflows.md](debugging-workflows.md) - "Phase 3 Debugging" section
+**For Debugging:** See [debugging-workflows.md](debugging-workflows.md) for systematic troubleshooting
 
 ---
 
@@ -25,10 +26,10 @@ This directory contains practical guides for:
 
 ### [DEVELOPMENT.md](DEVELOPMENT.md)
 **Topics:** Build commands, workflows, and development setup
-- **✨ Updated for Phase 3:** Architecture overview, debugging lazy loading, performance expectations
 - Quick build, test, clean commands
 - Database management
 - Pre-commit hooks
+- Architecture overview and performance expectations
 
 ---
 
@@ -44,15 +45,14 @@ This directory contains practical guides for:
 
 ### [Debugging Workflows](debugging-workflows.md)
 **Topics:** Decision trees and systematic troubleshooting
-- **✨ Updated for Phase 3:** Lazy loading issues, AppStateOrchestrator state transitions, JIT ingestion debugging
 - 7 comprehensive workflows (pipeline check, performance, state sync, database, sandbox, bug verification, custom investigation)
+- Covers lazy loading issues, AppStateOrchestrator state transitions, JIT ingestion debugging
 - Automated tool recommendations
 
 ### [Log Analysis Methodology](log-analysis-methodology.md)
 **Topics:** Systematic approach to validating system function using diagnostic logs
-- **✨ Updated for Phase 3:** [ORCH-*] and [DISC-LIGHT] prefixes, state machine log examples
 - Quick validation checklist (5 essential checks)
-- Core tag reference with examples
+- Core tag reference with examples ([ORCH-*], [DISC-LIGHT], state machine logs)
 - Measurement patterns (completion rate, sequence, timing, correlation)
 - Common analysis workflows
 
@@ -68,19 +68,16 @@ This directory contains practical guides for:
 - Log levels (debug, info, warning, error)
 - Two-phase approach (development vs pre-merge)
 - Privacy annotations and console filters
-- Consider updating for Phase 3 categories
 
 ### [Diagnostics API](diagnostics-api.md)
 **Topics:** HTTP API for debugging (DEBUG builds only)
 - Endpoints: `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`
 - Entry fields and formats
-- Unchanged in Phase 3
 
 ### [Timeline Diagnostics](timeline-diagnostics.md)
 **Topics:** Timeline diagnostics framework
 - HTTP endpoints for timeline inspection
 - Integration with diagnostics API
-- Unchanged in Phase 3
 
 ---
 
@@ -90,14 +87,12 @@ This directory contains practical guides for:
 **Topics:** Workflow for analyzing and classifying transcript formats
 - Format detection
 - Provider identification
-- Unchanged in Phase 3
 
 ### [Transcript Resumption](transcript-resumption.md)
 **Topics:** Guide for resuming transcript ingestion
 - HooverEngine checkpointing
 - Manual checkpoint reset
 - Recovery from incomplete ingestion
-- Unchanged in Phase 3
 
 ---
 
@@ -107,38 +102,35 @@ This directory contains practical guides for:
 **Topics:** Bookmark management for App Store builds
 - Bookmark lifecycle
 - Permission grants
-- Unchanged in Phase 3
 
 ### [Feature Flags](feature-flags.md)
 **Topics:** Feature flag documentation
 - Available flags and their purposes
 - How to enable/disable features
-- Unchanged in Phase 3
 
 ### [Linux CI Builds](linux-ci-builds.md)
 **Topics:** Building Contextify from non-macOS environments
 - On-demand GitHub Actions with macOS runners
 - Artifact downloads and result bundles
-- Unchanged in Phase 3
 
 ---
 
-## Quick Reference (Phase 3)
+## Quick Reference
 
 **Slow Startup?**
-→ [debugging-workflows.md](debugging-workflows.md) - "Debugging Lazy Loading Issues"
+→ [debugging-workflows.md](debugging-workflows.md) - Lazy loading issues
 → [log-analysis-methodology.md](log-analysis-methodology.md) - Check [DISC-LIGHT] logs
 
 **Project Not Appearing?**
-→ [debugging-workflows.md](debugging-workflows.md) - "Feature Not Appearing"
+→ [debugging-workflows.md](debugging-workflows.md) - Feature not appearing workflow
 → Check discovery count vs filesystem
 
 **Timeline Blank?**
-→ [debugging-workflows.md](debugging-workflows.md) - "Workflow 2: Performance Investigation"
+→ [debugging-workflows.md](debugging-workflows.md) - Performance investigation
 → Check [ORCH-SELECT] logs for JIT ingestion errors
 
 **Background Indexing Stuck?**
-→ [debugging-workflows.md](debugging-workflows.md) - "Workflow 3: State Management Debugging"
+→ [debugging-workflows.md](debugging-workflows.md) - State management debugging
 → Check [BG-INDEX] logs
 
 ---
@@ -154,8 +146,8 @@ This directory contains practical guides for:
 - [../components/startup-coordinator-implementation.md](../components/startup-coordinator-implementation.md) - Legacy integration
 
 **Testing:**
-- [../testing/integration-testing-guide.md](../testing/integration-testing-guide.md) - Phase 3 testing patterns (TBD)
-- [../testing/performance-benchmarks.md](../testing/performance-benchmarks.md) - Phase 3 validated metrics (TBD)
+- [../testing/integration-testing-guide.md](../testing/integration-testing-guide.md) - Integration testing patterns
+- [../testing/performance-benchmarks.md](../testing/performance-benchmarks.md) - Performance metrics and targets
 
 ---
 
