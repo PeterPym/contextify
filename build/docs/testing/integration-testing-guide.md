@@ -6,15 +6,13 @@
 
 ---
 
-## Phase 3 Testing Scope (Nov 2025)
+## Testing Scope
 
-**New components requiring tests:**
+**Key components requiring integration tests:**
 - AppStateOrchestrator state machine transitions
 - LightweightDiscoveryService (<200ms validation)
 - JIT ingestion flows (FastPathIngestionCoordinator)
 - Background indexing cancellation
-
-**See:** Phase 3.5 testing plan for pre-production validation
 
 ---
 

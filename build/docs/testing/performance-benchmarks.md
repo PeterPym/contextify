@@ -6,15 +6,15 @@
 
 ---
 
-## Phase 3 Performance Achievements (Nov 2025)
+## Performance Achievements
 
 **✅ Validated:**
-- Startup: <200ms (achieved 187ms) - 10-35x improvement
+- Startup: <200ms (achieved 187ms) - 10-35x improvement over previous implementation
 - Memory: 30-50 MB at startup - 3-5x reduction
 - DB writes: 19 rows - 10-20x reduction
 - JIT ingestion: <1s per project
 
-**Updated targets reflect Phase 3 lazy loading architecture.**
+**Targets reflect current lazy loading architecture.**
 
 ---
 
