@@ -1,8 +1,7 @@
 # Data Pipeline Architecture - Complete Reference
 
-**Status:** Current as of 2025-11-17
-**Replaces:** `data-flow.md` (archived 2025-11-17)
-**Version:** 2.0 (reflects Nov 2025 architecture)
+**Status:** Current architecture documentation
+**Purpose:** Complete reference for Contextify's data pipeline
 
 ---
 
@@ -33,21 +32,20 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 
 ## Key Metrics
 
-**Performance (Phase 3 Lazy Loading - Nov 2025):**
+**Performance:**
 - **Cold Start:** <200ms (achieved: 187ms) - stat-only scan, no ingestion
 - **UI Ready:** Immediate after lightweight scan (no blocking)
 - **JIT Ingestion:** <1s per project (on-demand when user selects)
 - **Background Indexing:** Low-priority pre-ingestion of inactive projects
-- **Streaming Ingestion:** 1000 lines/batch (unchanged)
+- **Streaming Ingestion:** 1000 lines/batch
 - **Real-time Monitoring:** <150ms latency (DispatchSource + FSEvents)
 
-**Memory Footprint (Phase 3):**
-- **At startup:** 30-50 MB (Phase 3) vs 150-300 MB (Phase 2) - 3-5x reduction
+**Memory Footprint:**
+- **At startup:** 30-50 MB
 - **After first project load:** 60-100 MB
 
-**Database Operations (Phase 3):**
+**Database Operations:**
 - **At startup:** 19 row updates (projects metadata only)
-- **Phase 2 baseline:** 5000-15000 rows - 10-20x reduction
 
 **Scale:**
 - Supports multiple projects simultaneously
@@ -56,11 +54,11 @@ Transcript Files → Discovery → Ingestion → Database → Timeline UI
 
 ## Critical Design Decisions
 
-1. **Lazy Loading (Phase 3, Nov 2025)** - JIT ingestion on project selection, not at startup
-2. **AppStateOrchestrator (Phase 3)** - Central state coordinator with state machine pattern
-3. **LightweightDiscoveryService (Phase 3)** - Stat-only scanning (<200ms), no file reads
-4. **Background Indexing (Phase 3)** - Low-priority pre-ingestion when idle
-5. **StartupCoordinator (Legacy)** - Now compatibility shim for ConversationMonitor
+1. **Lazy Loading** - JIT ingestion on project selection, not at startup
+2. **AppStateOrchestrator** - Central state coordinator with state machine pattern
+3. **LightweightDiscoveryService** - Stat-only scanning (<200ms), no file reads
+4. **Background Indexing** - Low-priority pre-ingestion when idle
+5. **StartupCoordinator (Legacy)** - Compatibility shim for ConversationMonitor
 6. **Streaming Ingestion** - HooverEngine processes 1000 lines at a time (memory efficient)
 7. **Dual Monitoring** - FSEvents (global) + DispatchSource (per-file) for reliability
 8. **SQL Backend** - GRDB with schema v26, WAL mode for concurrent access
@@ -78,7 +76,7 @@ graph TB
         CX[Codex CLI<br/>~/.codex/sessions/]
     end
 
-    subgraph "State Coordination Layer (Phase 3)"
+    subgraph "State Coordination Layer"
         ASO[AppStateOrchestrator<br/>Central Coordinator]
         LDS[LightweightDiscoveryService<br/>Stat-Only Scan]
         FPI[FastPathIngestionCoordinator<br/>JIT Ingestion]
@@ -137,13 +135,12 @@ graph TB
     CM --> UI
 ```
 
-## Component Responsibilities (Phase 3)
+## Component Responsibilities
 
-### State Coordination Layer (Phase 3 - NEW)
+### State Coordination Layer
 
 **AppStateOrchestrator** (`app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`, 297 lines)
 - **Purpose:** Central state coordinator for app lifecycle
-- **Replaced:** Fragmented responsibilities from StartupCoordinator, ProjectActivityMonitor, ProjectsViewModel
 - **State Machine:** AppState enum (startup → discovering → idle → loading → active → error)
 - **Key Methods:**
   - `startup()` (line 77) - Lightweight app launch (<200ms target)
@@ -168,23 +165,20 @@ graph TB
 - **Batching:** Processes transcripts with progress tracking
 - **Resume:** Pending completions restored on app restart
 
-### Discovery Layer (Legacy - Phase 3)
-
-**⚠️ Phase 3 Note:** StartupCoordinator and ProjectDiscoveryService are now legacy components. New architecture uses AppStateOrchestrator + LightweightDiscoveryService.
+### Discovery Layer (Legacy)
 
 **StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`, 735 lines)
-- **Purpose (Phase 3):** Legacy compatibility shim for ConversationMonitor
+- **Purpose:** Legacy compatibility shim for ConversationMonitor
 - **Integration:** Receives handleExternalProjectSwitch() calls from AppStateOrchestrator
 - **Publishes:** `ActiveProjectContext` (id, path, branch, bookmark) via AsyncStream
-- **Phase 4:** Will be refactored/removed when ConversationMonitor is split
+- **Note:** Planned for refactor/removal when ConversationMonitor is split (see architecture-refactoring-analysis.md)
 
 **ProjectDiscoveryService** (`app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`, 1000 lines)
-- **Purpose (Phase 3):** Full discovery with DB writes (used by legacy code paths)
+- **Purpose:** Full discovery with DB writes (used by legacy code paths)
 - **Key Methods:**
   - `discoverAllProjects(currentProjectPath:)` (line 97) → `[DiscoveredProject]`
   - `ingestAllProjects(projects:progressHandler:)` (line 387)
-- **Phase 3 Usage:** Background indexing, manual refresh
-- **Phase 4:** May be deprecated in favor of LightweightDiscoveryService + FastPathIngestionCoordinator
+- **Usage:** Background indexing, manual refresh
 
 ### Ingestion Layer
 
@@ -235,14 +229,14 @@ graph TB
 - **Configuration:**
   - WAL mode: `PRAGMA journal_mode=WAL` (line 91)
   - Foreign keys: Enabled
-  - Schema: v26 (current as of Nov 2025)
+  - Schema: v26 (current)
 - **Location:** `~/Library/Application Support/Contextify/contextify.db`
 - **Custom Locations:** Supported (Dropbox, iCloud Drive, external drives)
 
-### Presentation Layer (Phase 3 Updates)
+### Presentation Layer
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`, 163 lines)
-- **Purpose:** Simplified observer view model (Phase 3 refactor: -278 lines, 63% reduction)
+- **Purpose:** Simplified observer view model
 - **Pattern:** "Dumb" observer that watches AppStateOrchestrator
 - **Key Methods:**
   - `updateFromOrchestrator()` (line 52) - Sync state from orchestrator
@@ -253,7 +247,7 @@ graph TB
 - **Purpose:** Timeline state management and real-time updates
 - **Key Method:** `startMonitoring()` (line 428)
 - **Architecture:** @MainActor @Observable
-- **⚠️ Phase 4:** Will be refactored into 4 focused components (see architecture-refactoring-analysis.md)
+- **Note:** Planned refactoring into 4 focused components (see architecture-refactoring-analysis.md)
 - **Current:** Still uses legacy StartupCoordinator integration
 - **Subscribes To:**
   - StartupCoordinator.updates (AsyncStream) - project switches
@@ -275,226 +269,9 @@ graph TB
 
 # Level 3: Data Flow Sequences
 
-## Flow 1: Cold Start (App Launch)
+## Flow 1: Lightweight Startup (<200ms)
 
-**Goal:** Get timeline visible as fast as possible
-
-```mermaid
-sequenceDiagram
-    participant App as ContextifyApp
-    participant SC as StartupCoordinator
-    participant QD as Quick Discovery
-    participant HE as HooverEngine
-    participant DB as Database
-    participant CM as ConversationMonitor
-    participant UI as Timeline UI
-
-    App->>SC: start()
-    activate SC
-    SC->>SC: resolveProjectRoot()
-    Note over SC: env var > bookmark > persisted > CWD
-    SC->>DB: getOrCreateProject(path)
-    DB-->>SC: projectId
-    SC->>SC: Create ActiveProjectContext
-    SC->>App: Publish context (AsyncStream)
-    deactivate SC
-
-    App->>QD: quickDiscoverNewest()
-    activate QD
-    QD->>QD: Scan ~/.claude for newest .jsonl (mtime)
-    QD->>QD: Scan ~/.codex for newest transcript
-    QD-->>QD: Found newer than current?
-    alt Newer transcript found
-        QD->>SC: switchProject(to: newerPath)
-        SC->>App: Publish updated context
-    end
-    QD->>HE: Ingest ONLY newest transcript (fast path)
-    HE->>DB: Commit entries
-    deactivate QD
-
-    App->>CM: Subscribe to coordinator.updates
-    CM->>CM: handleContextUpdate()
-    CM->>DB: loadFeedFromSQL(projectId)
-    DB-->>CM: [TimelineEntry]
-    CM->>UI: Update @Published entries
-    UI->>UI: Render timeline
-
-    Note over UI: Timeline visible in <500ms!
-
-    App->>App: Continue full discovery (background)
-```
-
-**Timeline:**
-- **0-200ms:** StartupCoordinator resolves project identity
-- **200-500ms:** Quick discovery finds newest transcript + ingests
-- **500ms:** Timeline UI renders with newest entries
-- **500ms-5s:** Full discovery continues in background
-
-## Flow 2: Full Discovery (Background)
-
-**Goal:** Discover all projects and transcripts across machine
-
-```mermaid
-sequenceDiagram
-    participant App as ContextifyApp
-    participant PDS as ProjectDiscoveryService
-    participant HE as HooverEngine
-    participant TO as TranscriptOrchestrator
-    participant DB as Database
-
-    App->>PDS: discoverAllProjects(currentPath)
-    activate PDS
-
-    PDS->>PDS: Scan ~/.claude/projects/*
-    PDS->>PDS: Decode directory names
-    PDS->>PDS: Validate paths exist
-
-    PDS->>PDS: Scan ~/.codex/sessions/*/*/*.jsonl
-    PDS->>PDS: Parse cwd fields
-    PDS->>PDS: Map sessions → repos
-
-    PDS->>PDS: Merge Claude + Codex (union providers)
-    PDS->>DB: Query transcript/entry counts
-    DB-->>PDS: Metadata for each project
-
-    PDS->>PDS: Build [DiscoveredProject]
-    PDS->>PDS: Sort by newest activity
-    PDS-->>App: [DiscoveredProject]
-    deactivate PDS
-
-    App->>PDS: ingestAllProjects(projects)
-    activate PDS
-
-    loop For each project
-        PDS->>PDS: Find .jsonl files for project
-        PDS->>TO: upsertTranscripts([DiscoveredTranscript])
-        TO->>DB: Register transcripts
-
-        loop For each transcript
-            TO->>HE: hooverTranscript(transcriptId)
-            activate HE
-            HE->>HE: Read 1000 lines
-            HE->>HE: Parse JSONL records
-            HE->>DB: Commit batch (atomic)
-            HE->>DB: Update checkpoint
-            deactivate HE
-        end
-
-        PDS->>App: Emit progress update
-    end
-
-    deactivate PDS
-```
-
-**Performance:**
-- **~2-5 seconds** for typical setup (3-5 projects, 10-20 transcripts)
-- **Scales linearly** with number of transcripts
-- **Memory efficient:** Streaming parser uses fixed 1MB buffer
-
-## Flow 3: Real-Time Updates (Live Monitoring)
-
-**Goal:** Detect new transcript entries as Claude Code writes them
-
-```mermaid
-sequenceDiagram
-    participant CC as Claude Code
-    participant FS as File System
-    participant PAM as ProjectActivityMonitor
-    participant TW as TranscriptWatcher
-    participant HE as HooverEngine
-    participant DB as Database
-    participant CM as ConversationMonitor
-    participant UI as Timeline UI
-
-    Note over CC: User types message
-    CC->>FS: Append to session.jsonl
-
-    par FSEvents Path
-        FS->>PAM: FSEvent (directory modified)
-        Note over PAM: ~100-200ms latency
-        PAM->>PAM: Emit AsyncStream event
-        Note over PAM: ConversationMonitor doesn't subscribe
-        PAM->>PAM: Event dropped (mismatch)
-    and DispatchSource Path
-        FS->>TW: File modified event
-        Note over TW: <150ms latency
-        TW->>TW: Debounce 150ms
-        TW->>TW: NotificationCenter.post(.transcriptDidUpdate)
-    end
-
-    TW-->>CM: .transcriptDidUpdate notification
-    CM->>HE: hooverTranscript(transcriptId, fromCheckpoint)
-    activate HE
-    HE->>FS: Read from last checkpoint
-    HE->>HE: Parse new lines (batch 1000)
-    HE->>DB: Commit new entries
-    HE->>DB: Update checkpoint
-    deactivate HE
-
-    CM->>DB: Query new entries (since cursor)
-    DB-->>CM: [TimelineEntry]
-    CM->>UI: Update @Published entries
-    UI->>UI: Render new entries
-
-    Note over UI: New message visible in ~200-350ms
-```
-
-**Latency Breakdown:**
-- **File write → DispatchSource:** <150ms
-- **Debounce:** 150ms
-- **Parse + DB commit:** ~50-100ms
-- **UI update:** ~10-50ms
-- **Total:** ~200-350ms end-to-end
-
-## Flow 4: Project Switch
-
-**Goal:** User manually switches to different project
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant HUD as HUDViewModel
-    participant SC as StartupCoordinator
-    participant CM as ConversationMonitor
-    participant DB as Database
-    participant UI as Timeline UI
-
-    User->>HUD: Set Project Root
-    HUD->>HUD: Update local state (projectRootURL)
-    HUD->>SC: switchProject(to: path)
-
-    activate SC
-    SC->>DB: getOrCreateProject(path)
-    DB-->>SC: projectId
-    SC->>SC: Resolve git branch
-    SC->>SC: Create bookmark (sandboxed)
-    SC->>SC: Create ActiveProjectContext(new)
-    SC->>SC: Deduplicate vs last context
-    SC->>SC: Publish via AsyncStream
-    deactivate SC
-
-    SC-->>CM: Context update (AsyncStream)
-    activate CM
-    CM->>CM: stopMonitoring() (old project)
-    CM->>CM: Clear entries
-    CM->>CM: Clear watchers
-    CM->>DB: loadFeedFromSQL(newProjectId)
-    DB-->>CM: [TimelineEntry]
-    CM->>CM: startMonitoring(newProjectId)
-    CM->>CM: Start watchers for transcripts
-    deactivate CM
-
-    CM->>UI: Update @Published entries
-    UI->>UI: Render new project timeline
-
-    Note over UI: Switch complete in ~100-200ms
-```
-
----
-
-## Phase 3 Data Flow Sequences (Lazy Loading)
-
-### Sequence 1: Lightweight Startup (< 200ms)
+**Goal:** Get UI ready as quickly as possible
 
 ```mermaid
 sequenceDiagram
@@ -540,7 +317,9 @@ sequenceDiagram
 
 ---
 
-### Sequence 2: JIT Ingestion on Project Selection
+## Flow 2: JIT Ingestion on Project Selection
+
+**Goal:** Load selected project on-demand
 
 ```mermaid
 sequenceDiagram
@@ -607,7 +386,9 @@ sequenceDiagram
 
 ---
 
-### Sequence 3: Background Indexing (Low Priority)
+## Flow 3: Background Indexing (Low Priority)
+
+**Goal:** Pre-ingest inactive projects when idle
 
 ```mermaid
 sequenceDiagram
@@ -649,6 +430,109 @@ sequenceDiagram
 - Cancellable: User interaction cancels immediately
 - Sequential: One project at a time (no CPU spike)
 - Progress: NotificationCenter updates for status bar
+
+---
+
+## Flow 4: Real-Time Updates (Live Monitoring)
+
+**Goal:** Detect new transcript entries as Claude Code writes them
+
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant FS as File System
+    participant PAM as ProjectActivityMonitor
+    participant TW as TranscriptWatcher
+    participant HE as HooverEngine
+    participant DB as Database
+    participant CM as ConversationMonitor
+    participant UI as Timeline UI
+
+    Note over CC: User types message
+    CC->>FS: Append to session.jsonl
+
+    par FSEvents Path
+        FS->>PAM: FSEvent (directory modified)
+        Note over PAM: ~100-200ms latency
+        PAM->>PAM: Emit AsyncStream event
+        Note over PAM: ConversationMonitor doesn't subscribe
+        PAM->>PAM: Event dropped (mismatch)
+    and DispatchSource Path
+        FS->>TW: File modified event
+        Note over TW: <150ms latency
+        TW->>TW: Debounce 150ms
+        TW->>TW: NotificationCenter.post(.transcriptDidUpdate)
+    end
+
+    TW-->>CM: .transcriptDidUpdate notification
+    CM->>HE: hooverTranscript(transcriptId, fromCheckpoint)
+    activate HE
+    HE->>FS: Read from last checkpoint
+    HE->>HE: Parse new lines (batch 1000)
+    HE->>DB: Commit new entries
+    HE->>DB: Update checkpoint
+    deactivate HE
+
+    CM->>DB: Query new entries (since cursor)
+    DB-->>CM: [TimelineEntry]
+    CM->>UI: Update @Published entries
+    UI->>UI: Render new entries
+
+    Note over UI: New message visible in ~200-350ms
+```
+
+**Latency Breakdown:**
+- **File write → DispatchSource:** <150ms
+- **Debounce:** 150ms
+- **Parse + DB commit:** ~50-100ms
+- **UI update:** ~10-50ms
+- **Total:** ~200-350ms end-to-end
+
+---
+
+## Flow 5: Project Switch
+
+**Goal:** User manually switches to different project
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant HUD as HUDViewModel
+    participant SC as StartupCoordinator
+    participant CM as ConversationMonitor
+    participant DB as Database
+    participant UI as Timeline UI
+
+    User->>HUD: Set Project Root
+    HUD->>HUD: Update local state (projectRootURL)
+    HUD->>SC: switchProject(to: path)
+
+    activate SC
+    SC->>DB: getOrCreateProject(path)
+    DB-->>SC: projectId
+    SC->>SC: Resolve git branch
+    SC->>SC: Create bookmark (sandboxed)
+    SC->>SC: Create ActiveProjectContext(new)
+    SC->>SC: Deduplicate vs last context
+    SC->>SC: Publish via AsyncStream
+    deactivate SC
+
+    SC-->>CM: Context update (AsyncStream)
+    activate CM
+    CM->>CM: stopMonitoring() (old project)
+    CM->>CM: Clear entries
+    CM->>CM: Clear watchers
+    CM->>DB: loadFeedFromSQL(newProjectId)
+    DB-->>CM: [TimelineEntry]
+    CM->>CM: startMonitoring(newProjectId)
+    CM->>CM: Start watchers for transcripts
+    deactivate CM
+
+    CM->>UI: Update @Published entries
+    UI->>UI: Render new project timeline
+
+    Note over UI: Switch complete in ~100-200ms
+```
 
 ---
 
@@ -801,11 +685,6 @@ deinit {
 }
 ```
 
-**Issue:** TranscriptWatcher not always reliably created
-- **Symptom:** Timeline doesn't update for some transcripts
-- **Root Cause:** Event system mismatch (AsyncStream vs NotificationCenter)
-- **Status:** Likely resolved by Nov 16-17 timeline fixes
-
 ## ConversationMonitor Deep Dive
 
 ### State Management
@@ -875,10 +754,7 @@ NotificationCenter.default.addObserver(
 }
 ```
 
-**Mismatch Issue:**
-- ProjectActivityMonitor emits via AsyncStream
-- ConversationMonitor listens to NotificationCenter
-- Result: Some events dropped
+**Note:** Event system mismatch can occur - ProjectActivityMonitor emits via AsyncStream but ConversationMonitor listens to NotificationCenter.
 
 ### Timeline Cursor & Pagination
 
@@ -895,12 +771,6 @@ struct TimelineCursor {
 - Initial load: 50 most recent entries
 - Scroll to top: Load next 50 older
 - Scroll to bottom: Auto-load new entries (if monitoring active)
-
-**Recent Fixes (Nov 16-17, 2025):**
-- Initialize cursor from newest entry (prevent historical flood)
-- Gate pruning to user scroll (keep all entries during monitoring)
-- Skip primer reloads once feed ready (avoid duplicate loads)
-- Restore missing initial timeline load on project switch
 
 ## Database Schema (v26)
 
@@ -971,7 +841,7 @@ CREATE INDEX idx_timeline_cache_window ON timeline_cache(window_hash);
 
 ### Schema Evolution
 
-**Current Version:** v26 (as of Nov 2025)
+**Current Version:** v26
 
 **Recent Changes:**
 - **v26:** Removed `sandbox_container_path` column (projects table)
@@ -1148,125 +1018,7 @@ private func resolveClaudeProjectPath(
 
 # Level 5: Technical Debt & Future Work
 
-## Phase 3 Achievements (Nov 2025)
-
-### Completed
-
-✅ **Lazy Loading Architecture**
-- JIT ingestion on project selection
-- Background indexing when idle
-- <200ms startup (10-35x improvement)
-
-✅ **Central State Coordinator**
-- AppStateOrchestrator with state machine pattern
-- Unified state management
-- Type-safe state transitions
-
-✅ **Lightweight Discovery**
-- Stat-only filesystem scanning
-- 3-5x memory reduction at startup
-- 10-20x fewer DB writes
-
-✅ **Simplified ViewModels**
-- ProjectsViewModel reduced 63% (-278 lines)
-- Observer pattern (no business logic)
-- Clear separation of concerns
-
-### Deferred to Phase 4
-
-The following items from architecture-refactoring-analysis.md remain:
-
-❌ **ConversationMonitor Refactor** (P0 - Critical)
-- Current: 3000+ lines, 15+ responsibilities
-- Target: 4 focused components (~400 lines each)
-  - ConversationMonitor - Timeline coordination
-  - TimelineLoader - Database queries & pagination
-  - MonitoringCoordinator - Watcher lifecycle
-  - TimelineCacheCoordinator - LLM queue management
-- Estimated: 3-4 weeks
-
-❌ **Protocol Abstractions** (P2 - Medium)
-- Add DI protocols for testability
-- Mock implementations for testing
-- Estimated: 2-3 weeks
-
-❌ **Unified Event System** (P3 - Medium)
-- Replace NotificationCenter with EventBus actor
-- AsyncStream throughout
-- Estimated: 2-3 weeks
-
-❌ **StartupCoordinator Refactor/Removal** (P1 - High)
-- Remove after ConversationMonitor refactor
-- Fold functionality into AppStateOrchestrator
-- Estimated: 1 week
-
----
-
-## Phase 3 Known Issues
-
-### 1. Project Lookup Cache Staleness
-
-**Issue:** AppStateOrchestrator.projectLookup can become stale if projects added/removed externally.
-
-**Scenarios:**
-- Claude Code creates new project while Contextify running
-- User deletes transcript files via Finder
-- Multiple Contextify instances (different machines)
-
-**Current Mitigation:** DB fallback on cache miss (AppStateOrchestrator.swift:120-143)
-
-**Proper Fix (Phase 4):**
-- Add FSEvents monitoring of `~/.claude/projects/` and `~/.codex/sessions/`
-- Invalidate cache on file system changes
-- Periodic refresh (every 5 minutes)
-
----
-
-### 2. LightweightProject → DiscoveredProject Conversion
-
-**Issue:** Two nearly-identical types require manual conversion.
-
-**Code:** ProjectsViewModel.convertToDiscoveredProjects() (lines 156-180)
-
-**Proper Fix (Phase 4):**
-- Unify types into single Project struct
-- Use optional fields for UI-specific data (isCurrent, displayOrder)
-- Eliminate conversion overhead
-
----
-
-### 3. Background Indexing Sequential Processing
-
-**Issue:** Projects ingested sequentially (one at a time) during background indexing.
-
-**Performance:** 19 projects × 1s = 19 seconds total
-
-**Trade-off:**
-- Pro: Low CPU usage, no FD exhaustion
-- Con: Slow (could be 4-5s with 4-way concurrency)
-
-**Proper Fix (Phase 4):**
-- Add limited concurrency (4 concurrent max)
-- Use withTaskGroup for parallel ingestion
-- Estimated improvement: 4x faster background indexing
-
----
-
-### 4. No Integration Tests for State Machine
-
-**Issue:** AppState transitions not covered by automated tests.
-
-**Risk:** State machine bugs could cause UI hangs or crashes.
-
-**Proper Fix (Phase 3.5 - Pre-production):**
-- Add AppStateOrchestratorTests
-- Test all valid state transitions
-- Test invalid transition handling
-- Test cancellation scenarios
-
----
-
-## Known Issues (Pre-Phase 3)
+## Known Issues
 
 ### 1. Event System Mismatch (Timeline Updates)
 
@@ -1276,8 +1028,6 @@ The following items from architecture-refactoring-analysis.md remain:
 - ProjectActivityMonitor emits via AsyncStream
 - ConversationMonitor subscribes to NotificationCenter
 - TranscriptWatcher (which posts to NotificationCenter) not always created
-
-**Status:** Likely resolved by Nov 16-17 fixes, but architecture remains fragile
 
 **Proper Fix:**
 - **Option A:** Standardize on AsyncStream throughout
@@ -1289,7 +1039,69 @@ The following items from architecture-refactoring-analysis.md remain:
 
 **Impact:** Medium - Real-time updates work most of the time, but edge cases exist
 
-### 2. Quick Discovery Heuristic
+### 2. Project Lookup Cache Staleness
+
+**Issue:** AppStateOrchestrator.projectLookup can become stale if projects added/removed externally.
+
+**Scenarios:**
+- Claude Code creates new project while Contextify running
+- User deletes transcript files via Finder
+- Multiple Contextify instances (different machines)
+
+**Current Mitigation:** DB fallback on cache miss (AppStateOrchestrator.swift:120-143)
+
+**Proper Fix:**
+- Add FSEvents monitoring of `~/.claude/projects/` and `~/.codex/sessions/`
+- Invalidate cache on file system changes
+- Periodic refresh (every 5 minutes)
+
+---
+
+### 3. LightweightProject → DiscoveredProject Conversion
+
+**Issue:** Two nearly-identical types require manual conversion.
+
+**Code:** ProjectsViewModel.convertToDiscoveredProjects() (lines 156-180)
+
+**Proper Fix:**
+- Unify types into single Project struct
+- Use optional fields for UI-specific data (isCurrent, displayOrder)
+- Eliminate conversion overhead
+
+---
+
+### 4. Background Indexing Sequential Processing
+
+**Issue:** Projects ingested sequentially (one at a time) during background indexing.
+
+**Performance:** 19 projects × 1s = 19 seconds total
+
+**Trade-off:**
+- Pro: Low CPU usage, no FD exhaustion
+- Con: Slow (could be 4-5s with 4-way concurrency)
+
+**Proper Fix:**
+- Add limited concurrency (4 concurrent max)
+- Use withTaskGroup for parallel ingestion
+- Estimated improvement: 4x faster background indexing
+
+---
+
+### 5. No Integration Tests for State Machine
+
+**Issue:** AppState transitions not covered by automated tests.
+
+**Risk:** State machine bugs could cause UI hangs or crashes.
+
+**Proper Fix:**
+- Add AppStateOrchestratorTests
+- Test all valid state transitions
+- Test invalid transition handling
+- Test cancellation scenarios
+
+---
+
+### 6. Quick Discovery Heuristic
 
 **Current Approach:** Find newest file by mtime
 
@@ -1305,7 +1117,7 @@ The following items from architecture-refactoring-analysis.md remain:
 
 **Impact:** Low - Works 95% of the time, but occasionally switches to stale project
 
-### 3. ProjectExclusionManager Not Implemented
+### 7. ProjectExclusionManager Not Implemented
 
 **Status:** Documented but not built (see project-discovery.md)
 
@@ -1322,7 +1134,7 @@ The following items from architecture-refactoring-analysis.md remain:
 
 **Impact:** Low - Nice to have, but users can work around by deleting projects
 
-### 4. Memory Usage During Full Discovery
+### 8. Memory Usage During Full Discovery
 
 **Current Behavior:** Loads all DiscoveredProject metadata in memory
 
@@ -1335,7 +1147,7 @@ The following items from architecture-refactoring-analysis.md remain:
 
 **Impact:** Low - Only affects power users with many projects
 
-### 5. HooverEngine Parse Errors
+### 9. HooverEngine Parse Errors
 
 **Current Behavior:** Skip unparseable lines, log warning
 
@@ -1401,6 +1213,56 @@ LIMIT 50
 
 **Current:** 2-5s
 **Optimized:** <1s (incremental after first run)
+
+## Planned Refactoring
+
+### 1. ConversationMonitor Split (P0 - Critical)
+
+**Current:** 3000+ lines, 15+ responsibilities
+
+**Target:** 4 focused components (~400 lines each)
+- ConversationMonitor - Timeline coordination
+- TimelineLoader - Database queries & pagination
+- MonitoringCoordinator - Watcher lifecycle
+- TimelineCacheCoordinator - LLM queue management
+
+**Estimated:** 3-4 weeks
+
+### 2. Protocol Abstractions (P2 - Medium)
+
+**Goal:** Add DI protocols for testability
+
+**Benefits:**
+- Mock implementations for testing
+- Clear contracts between components
+- Easier integration testing
+
+**Estimated:** 2-3 weeks
+
+### 3. Unified Event System (P3 - Medium)
+
+**Goal:** Replace NotificationCenter with EventBus actor
+
+**Implementation:**
+```swift
+actor EventBus {
+    func publish<T: Event>(_ event: T) async
+    func subscribe<T: Event>(_ type: T.Type) -> AsyncStream<T>
+}
+```
+
+**Estimated:** 2-3 weeks
+
+### 4. StartupCoordinator Refactor/Removal (P1 - High)
+
+**Goal:** Remove after ConversationMonitor refactor
+
+**Plan:**
+- Fold functionality into AppStateOrchestrator
+- Update all subscribers to use AppStateOrchestrator directly
+- Remove legacy compatibility layer
+
+**Estimated:** 1 week
 
 ## Architectural Improvements
 
@@ -1550,7 +1412,6 @@ Here's how to create security-scoped bookmarks...
 
 ## Document Maintenance
 
-**Last Updated:** 2025-11-17
 **Maintainer:** See CLAUDE.md for contribution guidelines
 **Review Schedule:** Update after major architecture changes
 
@@ -1560,9 +1421,13 @@ Here's how to create security-scoped bookmarks...
 - ConversationMonitor.swift:428 (startMonitoring)
 - ProjectDiscoveryService.swift:97 (discoverAllProjects)
 - TranscriptWatcher.swift:61 (watch)
+- AppStateOrchestrator.swift:77 (startup)
+- LightweightDiscoveryService.swift:17 (discoverProjectsLightweight)
 
 **Related Documentation:**
 - `build/docs/architecture/startup-coordinator.md` - Project identity pipeline
 - `build/docs/components/transcript-ingestion.md` - Historical troubleshooting
 - `build/docs/architecture/sql-backend.md` - Database schema details
 - `build/docs/components/timeline-cache.md` - LLM summarization
+- `build/docs/architecture/COMPONENTS.md` - Component overview
+- `build/docs/architecture/architecture-refactoring-analysis.md` - Future improvements

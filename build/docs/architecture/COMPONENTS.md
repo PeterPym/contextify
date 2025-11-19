@@ -9,20 +9,19 @@ This document provides detailed information about Contextify's architecture and 
 
 ---
 
-## Performance Summary (Phase 3 - Nov 2025)
+## Performance Summary
 
 **Startup Performance:**
-- **Cold start:** <200ms (target) | 187ms (achieved) - 10-35x faster than Phase 2
+- **Cold start:** <200ms (target) | 187ms (achieved)
 - **UI ready:** Immediate after lightweight scan (no ingestion blocking)
 - **First project selection:** <1s (JIT ingestion)
 
 **Memory Footprint:**
-- **At startup:** 30-50 MB (Phase 3) vs 150-300 MB (Phase 2) - 3-5x reduction
+- **At startup:** 30-50 MB
 - **After first project load:** 60-100 MB
 
 **Database Operations:**
 - **At startup:** 19 row updates (projects metadata only)
-- **Phase 2 baseline:** 5000-15000 rows (all projects/transcripts/entries) - 10-20x reduction
 
 **Lazy Loading:**
 - **Discovery:** Stat-only filesystem scan (no JSONL parsing)
@@ -115,7 +114,7 @@ Contextify uses **two independent LLM processing queues** for content generation
 - Main `@Observable` `@MainActor` component for timeline display
 - Manages TimelineState, visible entries, and session filtering
 - Integrates with SQL backend via TranscriptOrchestrator
-- **⚠️ Phase 4:** Will be refactored into 4 focused components (see architecture-refactoring-analysis.md)
+- **Note:** Planned future refactoring into 4 focused components (see architecture-refactoring-analysis.md):
   - ConversationMonitor (400 lines) - Timeline coordination only
   - TimelineLoader (300 lines) - Database queries & pagination
   - MonitoringCoordinator (250 lines) - Watcher lifecycle
@@ -175,13 +174,10 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 ---
 
-## Application State Coordination (Phase 3 Lazy Loading)
-
-**As of 2025-11-18:** Phase 3 introduces lazy loading architecture with central state coordination.
+## Application State Coordination
 
 **AppStateOrchestrator** (`app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`):
 - Central coordinator for all app state transitions
-- Replaces fragmented responsibilities of StartupCoordinator, ProjectActivityMonitor, and ProjectsViewModel ingestion logic
 - Implements state machine pattern via AppState enum
 - Manages lazy loading: JIT (Just-In-Time) ingestion on project selection
 - Coordinates background indexing of inactive projects
@@ -214,26 +210,18 @@ Contextify uses **two independent LLM processing queues** for content generation
 - Called by AppStateOrchestrator.selectProject()
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified "dumb" observer view model (Phase 3 refactor: -278 lines, 63% reduction)
+- Simplified observer view model (163 lines)
 - Observes AppStateOrchestrator state transitions
 - Converts state to UI-compatible models (LightweightProject → DiscoveredProject)
 - Delegates all actions to AppStateOrchestrator (no direct discovery or ingestion)
 
-### Key Principles (Phase 3)
+### Key Principles
 
 - **AppStateOrchestrator** is the central coordinator - all state flows through it
 - **Startup is lightweight** - stat-only scan, NO ingestion (target: <200ms)
 - **Ingestion is lazy (JIT)** - projects ingested only when user selects them
 - **Background indexing** - inactive projects pre-ingested at low priority
 - **State machine pattern** - explicit state transitions with type safety
-
-### Performance Metrics (Phase 3)
-
-- **Cold start:** <200ms (achieved: 187ms) - 10-35x faster than Phase 2
-- **Memory at startup:** 30-50 MB - 3-5x lower than Phase 2 (150-300 MB)
-- **DB writes at startup:** 19 rows (projects metadata only) - 10-20x fewer than Phase 2 (5000-15000 rows)
-- **JIT ingestion:** <1s per project (typical)
-- **Background indexing:** Low priority (Task.priority.utility), cancellable
 
 ### Architecture Flow
 
@@ -261,31 +249,23 @@ Contextify uses **two independent LLM processing queues** for content generation
 ### Documentation
 
 - **Architecture overview:** `build/docs/architecture/data-pipeline-architecture.md`
-- **Phase 3 comparison:** `build/notes/phase3-refactor-comparison-analysis.md`
 - **Implementation guide:** `build/docs/components/project-discovery-service-implementation.md`
 
 ---
 
-## Startup Coordination (Legacy - Phase 3)
-
-**IMPORTANT (Phase 3):** StartupCoordinator is now a **legacy compatibility shim**. AppStateOrchestrator is the central coordinator for project state.
+## Startup Coordination (Legacy)
 
 **StartupCoordinator** (`app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift`):
-- Legacy coordinator for backward compatibility with ConversationMonitor and other pre-Phase 3 components
+- Legacy coordinator for backward compatibility with ConversationMonitor and other legacy components
 - Receives notifications from AppStateOrchestrator via handleExternalProjectSwitch()
 - Publishes ActiveProjectContext updates for legacy subscribers
-- Will be refactored/removed in Phase 4 when ConversationMonitor is split
+- **Note:** Planned for refactor/removal when ConversationMonitor is split (see architecture-refactoring-analysis.md)
 
 **ActiveProjectContext** (`app/Sources/ContextifyCore/Models/ActiveProjectContext.swift`):
 - Immutable value type representing active project identity
 - Contains stable project ID (primary key), filesystem path (metadata), display name, git branch, and security-scoped bookmark
 
-### Phase 3 Role Change
-
-**Before Phase 3:** StartupCoordinator was primary project identity coordinator
-**After Phase 3:** AppStateOrchestrator owns state, StartupCoordinator notifies legacy components
-
-### Integration Pattern (Phase 3)
+### Integration Pattern
 
 ```swift
 // New components: Subscribe to AppStateOrchestrator
@@ -299,7 +279,7 @@ for await context in StartupCoordinator.shared.updates {
 }
 ```
 
-### Key Principles (Legacy Pattern - Will Change in Phase 4)
+### Key Principles
 
 - `ActiveProjectContext.id` is the **stable primary identity** - use for all database queries
 - `ActiveProjectContext.path` is **metadata only** - do not use for lookups
@@ -309,7 +289,7 @@ for await context in StartupCoordinator.shared.updates {
 
 - **Architecture:** `build/docs/architecture/startup-coordinator.md`
 - **Implementation:** `build/docs/components/startup-coordinator-implementation.md`
-- **Phase 4 refactoring plan:** `build/docs/architecture/architecture-refactoring-analysis.md`
+- **Future refactoring plan:** `build/docs/architecture/architecture-refactoring-analysis.md`
 
 **⚠️ Note:** This section documents legacy behavior. For new development, see "Application State Coordination" above.
 
@@ -336,7 +316,7 @@ for await context in StartupCoordinator.shared.updates {
 - `@Observable` state management for project list, active project, and unread counts
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):
-- Simplified observer view model for Projects window (Phase 3 refactor: 163 lines, down from 441)
+- Simplified observer view model for Projects window (163 lines)
 - Observes AppStateOrchestrator state transitions
 - Converts LightweightProject → DiscoveredProject for UI display
 - Delegates all actions (project selection, refresh) to AppStateOrchestrator
@@ -416,29 +396,3 @@ python3 scripts/transcript-repair/repair_transcript.py <transcript>
 - Full guide: `build/docs/operations/transcript-corruption-detection.md`
 - Script README: `scripts/transcript-repair/README.md`
 - Format spec: `build/docs/specifications/claude-code-format.md`
-
----
-
-## Phase 3 Architecture Documentation
-
-**Phase 3 Lazy Loading** (implemented Nov 2025):
-- **Comparison with recommendations:** `build/notes/phase3-refactor-comparison-analysis.md`
-- **Documentation update tracker:** `build/notes/phase3-documentation-update-master-list.md`
-- **Data pipeline updates:** `build/docs/architecture/data-pipeline-architecture.md`
-
-**Key Phase 3 Components:**
-- AppStateOrchestrator - Central state coordinator
-- LightweightDiscoveryService - Stat-only scanning (<200ms)
-- ProjectsViewModel - Simplified observer pattern
-- FastPathIngestionCoordinator - JIT ingestion
-
-**Performance Achievements:**
-- ✅ Startup: 10-35x faster (<200ms)
-- ✅ Memory: 3-5x lower (30-50 MB)
-- ✅ DB writes: 10-20x fewer (19 rows)
-
-**Phase 4 Planned Work:**
-- ConversationMonitor refactor (3000+ lines → 4 components)
-- Protocol abstractions for testability
-- Unified event system (replace NotificationCenter)
-- StartupCoordinator refactor/removal
