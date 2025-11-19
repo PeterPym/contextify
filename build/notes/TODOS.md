@@ -1,15 +1,28 @@
 # Contextify TODO List
 
+**Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
+
 **Last Updated:** 2025-11-19
-**Status:** Active - Reorganized based on user feedback review
+**Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 21 items remaining (3 completed) - Must complete before App Store submission
-- **P1 (High Priority):** 14 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 8 items - Future enhancements
+- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
+- **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
-**Total Active Items:** 60 (3 P0 items completed: drag-drop fixes, welcome modal hang)
+**Total Active Items:** 63
+
+**Change Log (2025-11-19):**
+- Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
+- Demoted 8 P0 items based on pre-submission priorities:
+  - #32, #43 (Discovery UX) → P1
+  - #35 (Failed metadata retry) → P1
+  - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
+  - #49-50 (Project management) → P2
+- Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
+- Added 2 P1 items (#P1-OPTION3: parse permission dialog responses, #P1-SUMM-QUESTIONS: fix summarizer treating questions as actions)
+- Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -20,11 +33,13 @@
 
 ---
 
-# P0 (Blocking Release) - 21 Items Remaining
+# P0 (Blocking Release) - 6 Items Remaining
 
 ## Website (1 item)
 
 - [ ] #2: Setup support@contextify.sh email (15 min)
+
+**Status:** Waiting on DNS propagation
 
 **Note:** Using support@ as primary contact (standard for customer support)
 
@@ -32,41 +47,11 @@
 
 ---
 
-## Sandboxed Build (3 items)
-
-**Status:** Git monitoring disabled (✅ complete 2025-11-15, commit `b0abdb4`)
-
-- [ ] #3: Test App Store build with zero [GIT-BROKEN] errors
-- [ ] #4: Verify branch UI hidden in sandboxed builds
-- [ ] #5: Verify git monitoring disabled in App Store builds
-
-**Testing:**
-```bash
-bash scripts/xc.sh --dist=appstore Debug cleanrun
-log stream --predicate 'subsystem == "dev.contextify"' --level debug
-```
-
-**Expected:** Zero [GIT-BROKEN] errors, project name shows (no branch), timeline loads
-
-**Reference:** See "P0: Disable Git Monitoring in Sandboxed Builds" section for full implementation details
-
----
-
-## App Store Submission (4 items)
+## Welcome Modal Copy (1 item)
 
 **Status:** Not Started
-**Effort:** 8-12 hours
-
-- [ ] #6: App Store Connect setup (metadata, screenshots, description)
-- [ ] #7: Build Release binary (sign, archive, validate, upload)
-- [ ] #8: Submit for review (compliance, age rating, reviewer notes)
-- [ ] #9: TestFlight beta (optional, recommended)
-
-**Reference:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
-
----
-
-## Welcome Modal Copy (1 item)
+**Effort:** 1-2 hours
+**Note:** Must complete BEFORE App Store submission (code changes)
 
 - [ ] #16: Polish welcome modal copy & progress messaging
 
@@ -77,43 +62,79 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 - Add dismissal confirmation if user closes during ingestion
 
 **Files:** `Contextify/Contextify/WelcomeModalView.swift`
-**Effort:** 1-2 hours
 
 ---
 
-## Critical Bugs - Drag & Drop (2 items) ✅ COMPLETE
-
-**Status:** ✅ Complete (2025-11-18)
-**Commit:** `0bbe383` - fix(drag-drop): clear ghost entries when dragging outside window
-**Branch:** `fix/drag-drop-ghost-entries`
-
-- [x] #29: Fix drag-drop cancellation when cursor exits window ✅
-- [x] #30: Add state validation after drag operations ✅
-
-**Problem:** Dragging project tab outside window created ghost dashed-line entry that persisted indefinitely. Only fix was app restart.
-
-**Root Cause:** `dropExited()` was intentionally blank to avoid flicker, but this prevented clearing drag state when cursor left the window.
-
-**Solution:**
-1. Clear drag state in `dropExited()` when cursor exits drop zone
-2. Add validation before rendering insertion indicators
-3. Add validation in `onDrag` to detect stale state
-
-**Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift` (4 changes)
-
-**Testing:**
-- ✅ Dragging outside window cancels cleanly
-- ✅ No ghost entries persist
-- ✅ Project returns to original position
-- ✅ UI state consistent with data
-
----
-
-## Critical UX - Discovery (2 items) ⬆️
+## App Store Submission (4 items)
 
 **Status:** Not Started
-**Priority:** Promoted from P1
+**Effort:** 8-12 hours
+**Note:** Must complete AFTER welcome modal polish (#16)
+
+- [ ] #6: App Store Connect setup (metadata, screenshots, description)
+- [ ] #7: Build Release binary (sign, archive, validate, upload)
+- [ ] #8: Submit for review (compliance, age rating, reviewer notes)
+- [ ] #9: TestFlight beta (optional, recommended)
+
+**Reference:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
+
+---
+
+
+# P1 (High Priority) - 22 Items
+
+## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
+
+**Status:** Not Started (Blocked)
+**Priority:** Demoted from P0 (blocked by test infrastructure issues, manual QA sufficient for MVP)
+**Effort:** 12-16 hours
+
+- [ ] #P1-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
+- [ ] #45: Re-enable testInitialHooverWorkflow integration test
+- [ ] #46: Re-enable testOrchestratorWorkflow integration test
+- [ ] #47: Re-enable testCrashRecovery integration test
+
+**Problem:** Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
+
+**Blockers:**
+- FoundationLLM compatibility issues with test environment
+- Recent macOS SDK changes affecting test execution
+- Async/actor isolation problems in test harness
+- **Action:** Search database for previous conversations documenting these blockers
+
+**Tasks:**
+1. **Infrastructure Fix** (6-8 hours)
+   - Research FoundationLLM test compatibility issues
+   - Resolve SDK/async/actor problems
+   - Get test suite building and running cleanly
+   - Verify existing passing tests still work
+
+2. **Re-enable Integration Tests** (6-8 hours)
+   - Update tests for new HooverEngine API
+   - Update tests for new TranscriptOrchestrator API
+   - Update tests for checkpoint changes
+   - Remove `skip_` prefix
+   - Add to CI pipeline
+   - Verify tests pass 10x in a row (no flaky failures)
+
+**Files:**
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+- Test configuration files (to be determined during investigation)
+
+**Acceptance Criteria:**
+- Test suite builds and runs without infrastructure errors
+- All 3 integration tests re-enabled and passing
+- Tests are stable (10 consecutive passes)
+- Integrated into CI pipeline
+
+**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
+
+---
+
+## Discovery UX (2 items) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P0 (nice to have, not blocking submission)
 **Effort:** 4-6 hours total
 
 - [ ] #32: Show toast for newly discovered projects
@@ -133,10 +154,10 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical UX - Failed Metadata (1 item) ⬆️
+## Failed Metadata Retry (1 item) ⬇️
 
 **Status:** Not Started
-**Priority:** Promoted from P1
+**Priority:** Demoted from P0 (not blocking submission)
 **Effort:** 2-3 hours
 
 - [ ] #35: Show manual retry button for failed metadata generation
@@ -159,112 +180,89 @@ log stream --predicate 'subsystem == "dev.contextify"' --level debug
 
 ---
 
-## Critical - Integration Tests (3 items) ⬆️
+## Transcript-Based Git Branch Display (1 item)
 
 **Status:** Not Started
-**Priority:** Promoted from P1
+**Priority:** P1 (Replaces old P0 "disable git" approach - enables branch display in App Store)
 **Effort:** 6-8 hours
 
-- [ ] #45: Re-enable testInitialHooverWorkflow integration test
-- [ ] #46: Re-enable testOrchestratorWorkflow integration test
-- [ ] #47: Re-enable testCrashRecovery integration test
+- [ ] #P1-GIT-BRANCH: Implement transcript-based git branch tracking and display for App Store builds
 
-**Problem:** 3 critical tests disabled with `skip_` prefix. No automated testing for core ingestion pipeline.
+**Background:**
+Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring entirely in sandboxed builds and hid branch UI. New approach uses transcript data to display branch WITHOUT filesystem access.
 
-**Tasks:**
-- Update tests for new HooverEngine API
-- Update tests for new TranscriptOrchestrator API
-- Update tests for checkpoint changes
-- Remove `skip_` prefix
-- Add to CI pipeline
-- Verify tests pass 10x in a row (no flaky failures)
+**Investigation:** `/tmp/git-branch-tracking-investigation.md`
+**Documentation:** `build/docs/specifications/transcript-formats.md` (lines 56, 95, 360-365, 582)
 
-**Files:** `Contextify/ContextifyTests/IntegrationTests.swift`
+**Key Finding:**
+- ✅ Claude Code: `gitBranch` field on EVERY message → updates immediately
+- ✅ Codex: `session_meta.payload.git.branch` → updates at session start/resume
+- ✅ Database already supports: `git_branch` column exists (schema v23)
+- ✅ Parser already extracts: Both formats handled
 
----
+**Architecture Requirements:**
 
-## Critical - Project Management (2 items) ⬆️
+**App Store Build:**
+- Extract branch from transcript data (Claude Code: any message's `gitBranch`, Codex: last `session_meta`)
+- Display branch in UI (status bar/header)
+- Add InfoButton (ⓘ) next to branch with popover explaining:
+  - "Branch determined from conversation transcripts"
+  - "Codex: may lag until next session start"
+  - "For real-time status, grant project directory access" + link/button to trigger permission flow
+- No filesystem access required
 
-**Status:** Not Started
-**Priority:** Promoted from P1
-**Effort:** 4-6 hours
+**DMG Build:**
+- Track BOTH transcript-based AND filesystem-based branch
+- Log alignment discrepancies internally (especially for Codex)
+- Metric: How often does Codex transcript branch differ from actual `.git/HEAD`?
+- Purpose: Validate transcript-based approach reliability
 
-- [ ] #49: Add Hide Project UI to Projects window
-- [ ] #50: Add Show Hidden Projects toggle
+**Implementation Tasks:**
 
-**Implementation:**
-- Create `ProjectExclusionManager.swift` with database persistence
-- Add exclusions table to schema (new migration)
-- Right-click menu: "Hide Project"
-- "Show Hidden Projects" toggle reveals hidden with "Unhide" option
-- Filter excluded projects from discovery
+1. **Branch Extraction Service** (2-3 hours)
+   - Add `getCurrentBranch()` to `TranscriptOrchestrator` or similar
+   - Query `timeline_entries.git_branch` for most recent entry
+   - Handle Codex special case: Find last `session_meta` record
+   - Return `nil` if no branch data available
 
-**Files:**
-- `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` (NEW)
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
-- `Contextify/Contextify/ProjectsWindow.swift`
+2. **UI Display** (2 hours)
+   - Restore branch display in `ContentView.swift` (was hidden in commit `b0abdb4`)
+   - Add InfoButton component next to branch
+   - Implement InfoPopoverContent with explanation and permission upgrade link
+   - Style: Match existing UI patterns
 
-**Acceptance Criteria:**
-- Hidden projects persist across restarts
-- All 3 skipped tests re-enabled and passing
+3. **DMG Validation Logging** (1-2 hours)
+   - In DMG builds, compare transcript branch vs filesystem branch
+   - Log discrepancies at `.info` level
+   - Track metrics: mismatch rate, time-to-convergence
+   - Don't block or warn user, just collect data
 
----
-
-## Critical - Welcome Modal Hang (1 item) ✅ COMPLETE
-
-**Status:** ✅ Complete (2025-11-19)
-**Priority:** Promoted from P1 (11-second UI freeze during onboarding)
-**Effort:** 4-6 hours
-**Evidence:** `/private/tmp/transcript-queue-monitor-20251118-002852.log`
-
-- [x] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal ✅
-
-**Problem:** Welcome modal shows "1/19 projects" for **11+ seconds** before completing discovery. UI appears frozen/broken to users during first-run experience.
-
-**Root Cause (from log analysis):**
-
-Timeline breakdown:
-```
-00:29:16.348-16.479: ProjectsViewModel.discoverAllProjects() completes (131ms) ✅
-00:29:16.479-18.285: Ingestion completes (1.8s) ✅
-00:29:18.285-29.966: 11.8 SECOND GAP - waiting for ProjectActivityMonitor ⚠️
-00:29:29.966: ProjectActivityMonitor.start() finally runs
-00:29:30.342+: Processes 602 transcripts synchronously (blocks UI)
-```
-
-**Architectural Issues:**
-
-1. **Duplicate discovery:** ProjectActivityMonitor runs its own `discoverAllProjects()` **after** ProjectsViewModel already completed discovery
-2. **Late initialization:** ProjectActivityMonitor.start() doesn't begin until 13+ seconds after modal appears
-3. **Synchronous processing:** Processes 602 transcripts on main thread with debug logging for each file
-4. **UI blocking:** Modal progress bar stuck at "1/19" while waiting for background discovery
-
-**Solution:**
-
-1. **Deduplicate discovery:** ProjectActivityMonitor should reuse ProjectsViewModel's discovery results instead of re-scanning
-2. **Earlier initialization:** Start ProjectActivityMonitor in parallel with ProjectsViewModel, not after
-3. **Background processing:** Move transcript enumeration off main thread
-4. **Reduce logging:** Don't log every individual file at debug level (602 log lines!)
+4. **Testing** (1 hour)
+   - App Store build: Verify branch displays from transcripts
+   - Test Claude Code sessions (immediate updates)
+   - Test Codex sessions (updates on session start)
+   - Test InfoButton popover and permission link
+   - DMG build: Verify dual tracking logs discrepancies
 
 **Files:**
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:74` - Remove duplicate `discoverAllProjects()` call
-- `Contextify/Contextify/ProjectsViewModel.swift` - Coordinate with ProjectActivityMonitor
-- Consider: Shared discovery coordinator to eliminate duplication
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (branch extraction)
+- `Contextify/Contextify/ContentView.swift` (UI display - restore removed code)
+- `Contextify/Contextify/InfoButton.swift` (existing component, reuse)
+- `Contextify/Contextify/InfoPopoverContent.swift` (new content for branch explanation)
 
 **Acceptance Criteria:**
-- Welcome modal completes discovery in <3 seconds (currently 14s)
-- Progress bar updates smoothly (no 11s freeze at "1/19")
-- No duplicate filesystem scans
-- ProjectActivityMonitor reuses existing discovery data
+- ✅ App Store build displays git branch from transcripts (no filesystem access)
+- ✅ Branch updates on next message (Claude Code) or session start (Codex)
+- ✅ InfoButton explains source and lag behavior
+- ✅ Permission upgrade link triggers folder access flow (if possible in popover)
+- ✅ DMG build logs transcript vs filesystem discrepancies
+- ✅ Zero [GIT-BROKEN] errors in App Store build
 
-**References:**
-- Investigation: `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
-- Log evidence: Lines showing "11.8 second gap" between ingestion completion and ProjectActivityMonitor start
+**Related:**
+- Supersedes old P0 items #3, #4, #5 (test/verify git disabled)
+- Builds on completed work: commit `b0abdb4` (git monitoring disabled)
 
 ---
-
-
-# P1 (High Priority) - 15 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
@@ -399,6 +397,163 @@ User messages sent while Claude is working (tools executing) are stored as `queu
 **Reference:**
 - Existing metadata plan: `build/docs/plans/metadata-ingestion-queue-types.md`
 - Queue-operation format: `{"type":"queue-operation","operation":"enqueue","content":"...","timestamp":"..."}`
+
+---
+
+## Timeline UX - Permission Dialog Option 3 Responses (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical UX - missing user intent from timeline)
+**Effort:** 2-3 hours
+
+- [ ] #P1-OPTION3: Parse and display user's custom responses from permission dialog option 3
+
+**Problem:**
+When user chooses option 3 ("type something different") in response to Claude Code permission questions, their custom text is stored in the transcript but NOT displayed in timeline. This creates incomplete conversation history where user's alternative instructions are invisible.
+
+**Example from transcript:**
+```json
+{
+  "type": "user",
+  "message": {
+    "content": [{
+      "type": "tool_result",
+      "is_error": true,
+      "content": "The user doesn't want to proceed... To tell you how to proceed, the user said:\nTHIS IS A TEST TEST TEST IGNORE THIS AND PROCEED ZZZ"
+    }]
+  }
+}
+```
+
+**Impact:**
+- User's alternative instructions invisible in timeline
+- Appears like Claude is acting without user direction
+- Can't review what alternative instructions were given
+- Confusing UX - "Why did Claude do that instead of what I asked?"
+
+**Solution:**
+
+1. **Parser Extension** (1 hour)
+   - Detect `user` records with `message.content[].type == "tool_result"` AND `is_error == true`
+   - Check if `content` contains marker text: "To tell you how to proceed, the user said:"
+   - Extract user's custom text (everything after marker)
+   - Create timeline entry with `kind: user` and extracted text as content
+   - Preserve timestamp and session info
+
+2. **Timeline Display** (1 hour)
+   - Add visual indicator: 💬 speech bubble or 🔄 response icon
+   - Add InfoButton (ⓘ) with popover:
+     - Title: "Alternative Instruction"
+     - Message: "Response to permission question - user provided alternative instruction instead of proceeding with suggested action."
+   - Subtle visual distinction from regular user messages (border/background tint)
+   - Use existing InfoButton component
+
+3. **Testing** (30 min)
+   - Verify test message "THIS IS A TEST TEST TEST..." appears in timeline
+   - Check icon/decoration renders correctly
+   - Test InfoButton popover explanation
+   - Verify doesn't duplicate with tool_result entries
+
+**Files:**
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` (parser logic)
+- `Contextify/Contextify/TimelineEntryRow.swift` (display logic)
+- `Contextify/Contextify/InfoButton.swift` (existing component, reuse)
+
+**Acceptance Criteria:**
+- ✅ Option 3 custom responses appear in timeline as user messages
+- ✅ Visual decoration distinguishes from regular user input
+- ✅ InfoButton explains context (response to permission question)
+- ✅ All historical option 3 responses ingested on next hoover
+
+**Test Data:**
+- Transcript: `28a20f3c-d598-449b-9a88-8d77f3799ce3.jsonl`
+- Message: "THIS IS A TEST TEST TEST IGNORE THIS AND PROCEED ZZZ"
+- Should appear in timeline with response decoration
+
+---
+
+## Timeline UX - Fix Summarizer Treating Questions as Actions (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical UX - timeline shows false information)
+**Effort:** 3-4 hours
+
+- [ ] #P1-SUMM-QUESTIONS: Fix LLM summarizer misinterpreting questions/proposals as completed actions
+
+**Problem:**
+Summarization LLM treats Claude's questions and proposals as completed actions, creating misleading timeline where it appears work was done when Claude was just asking permission or confirming understanding.
+
+**Examples of Incorrect Summaries:**
+
+**Example 1:**
+- **Claude wrote:** "Here's my understanding... [spec]... **Is that correct?**"
+- **Summary incorrectly says:** "Claude Code **implemented** transcript-based git branch tracking"
+- **Should say:** "Claude confirmed understanding of transcript-based git branch tracking requirements"
+
+**Example 2:**
+- **Claude wrote:** "**Should I proceed** with replacing those three P0 items?"
+- **Summary incorrectly says:** "Claude Code **replaced** #4 and #5 entirely"
+- **Should say:** "Claude proposed replacing #4 and #5 with new transcript-based approach"
+
+**Impact:**
+- Timeline misleading - shows work as done when it was only discussed
+- User can't distinguish proposals from completed work
+- Can't tell what actually happened vs what was suggested
+- Undermines trust in timeline accuracy
+
+**Root Cause:**
+- LLM summarizer doesn't detect interrogative context
+- Uses past tense even for future/conditional statements
+- Misses question markers ("Is that correct?", "Should I proceed?")
+- Treats all assistant messages as action completion
+
+**Solution:**
+
+1. **Prompt Engineering** (2 hours)
+   - Update summarization system prompt to detect questions vs actions
+   - Add explicit instruction: "If message ends with '?' or contains conditional language, use proposal/question framing, not past-tense completion"
+   - Add instruction: "Distinguish: 'I implemented X' vs 'Should I implement X?' vs 'Is this correct understanding of X?'"
+   - Provide examples in prompt:
+     - "Should I proceed with X?" → "Proposed implementing X" (NOT "Implemented X")
+     - "Is that correct?" → "Confirmed understanding of X" (NOT "Did X")
+     - "I've completed X" → "Completed X" (past tense OK here)
+
+2. **Pattern Detection** (1 hour)
+   - Pre-process assistant message before summarization
+   - Detect question marks in final sentence
+   - Detect conditional verbs: "should", "could", "would", "may", "can"
+   - Detect confirmation phrases: "Is that correct?", "Does that make sense?", "Should I proceed?"
+   - Pass flags to LLM: `is_question=true`, `is_proposal=true`, `is_confirmation=true`
+   - Adjust prompt template based on detected patterns
+
+3. **Validation & Testing** (1 hour)
+   - Re-summarize the two provided examples
+   - Verify summaries now reflect questions/proposals, not actions
+   - Test suite of 10+ examples:
+     - Pure questions
+     - Proposals with "should/could"
+     - Confirmations with "Is that correct?"
+     - Actual completed work (ensure still past-tense)
+   - A/B comparison: old summaries vs new summaries
+
+**Files:**
+- `app/Sources/ContextifyCore/LLM/ConversationSummarizer.swift` (or wherever summarization lives)
+- `Contextify/Contextify/ConversationMonitor.swift` (if pre-processing logic added)
+
+**Acceptance Criteria:**
+- ✅ Messages ending with "?" summarized as questions/proposals, not completed actions
+- ✅ "Should I proceed?" messages use conditional tense ("proposed", "suggested")
+- ✅ "Is that correct?" messages reflect confirmation/verification, not action
+- ✅ Actual completed work still uses past tense appropriately
+- ✅ Re-summarizing existing timeline entries shows improved accuracy
+
+**Test Cases:**
+- Entry `067d8835-b0c3-4f6b-82fc-c14bc87dac21` (2025-11-19T18:33:12Z)
+  - Currently: "implemented transcript-based git branch tracking"
+  - Should be: "confirmed understanding of transcript-based branch tracking requirements"
+- Entry `7da606f9-3708-4f5c-93c0-7e8be354a362` (2025-11-19T18:36:06Z)
+  - Currently: "replaced #4 and #5 entirely"
+  - Should be: "proposed replacing #4 and #5 with transcript-based approach"
 
 ---
 
@@ -560,7 +715,37 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 22 Items
+# P2 (Medium Priority) - 27 Items
+
+## Liquid Glass Design System (1 item)
+
+**Status:** Research complete, implementation not started
+**Effort:** 9-14 weeks for full adoption (can do incrementally)
+**Documentation:** `build/docs/audits/liquid-glass-audit-v2.md`
+
+- [ ] #P2-LIQUID-GLASS: Implement Liquid Glass design system for macOS 26
+
+**Current State:**
+- Zero code-level adoption (automatic visual updates only when rebuilt with SDK)
+- No NavigationSplitView, no .toolbar usage, no glass APIs
+- Custom backgrounds interfere with system effects
+- 16 files require changes
+
+**Implementation Phases:**
+1. Foundation (2-3 weeks): Remove backgrounds, add toolbars, glass buttons
+2. Navigation (3-4 weeks): NavigationSplitView with floating sidebar
+3. Custom Glass (1-2 weeks): Selective glass effects on key elements only
+4. Enhancements (2-3 weeks): Search, app icon, accessibility
+
+**Decision Required:**
+- Defer to post-1.0? (9-14 weeks is significant effort)
+- Do Phase 1 only? (2-3 weeks, quick wins)
+- Skip entirely? (automatic visual updates may be sufficient)
+
+**Files:** 16 files requiring changes (see audit for details)
+**Reference:** `build/docs/audits/liquid-glass-audit-v2.md`
+
+---
 
 ## Transcript Repair MVP (2 items) ⬇️
 
@@ -630,6 +815,34 @@ if state.entries.count == new.count && state.entries == new {
 - Behavioral: No changes (updates still happen when data changes)
 - Performance: Eliminates unnecessary SwiftUI diff operations
 - Visual: Timeline stays stable, no visible flicker
+
+---
+
+## Project Management (2 items) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P0 (can defer to post-launch)
+**Effort:** 4-6 hours
+
+- [ ] #49: Add Hide Project UI to Projects window
+- [ ] #50: Add Show Hidden Projects toggle
+
+**Implementation:**
+- Create `ProjectExclusionManager.swift` with database persistence
+- Add exclusions table to schema (new migration)
+- Right-click menu: "Hide Project"
+- "Show Hidden Projects" toggle reveals hidden with "Unhide" option
+- Filter excluded projects from discovery
+
+**Files:**
+- `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` (NEW)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
+- `Contextify/Contextify/ProjectsWindow.swift`
+
+**Acceptance Criteria:**
+- Hidden projects persist across restarts
+- Show/hide functionality works across app restarts
+- Excluded projects don't appear in discovery
 
 ---
 
@@ -934,13 +1147,15 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
-## P0: Disable Git Monitoring in Sandboxed Builds ✅ COMPLETE
+## P0: Disable Git Monitoring in Sandboxed Builds ✅ COMPLETE → SUPERSEDED
 
-**Status:** ✅ Complete (2025-11-15)
+**Status:** ✅ Complete (2025-11-15) → **Superseded by P1 #P1-GIT-BRANCH**
 **Commit:** `b0abdb4` - fix(sandbox): disable git monitoring in App Store builds
 **Branch:** `claude/codex-discovery-fix-012fkAJXMWvjrfWZPh7xhPEm`
 
-### Problem
+**Note:** This temporary solution disabled git monitoring entirely in sandboxed builds. **New approach (P1 #P1-GIT-BRANCH)** uses transcript-based branch tracking to ENABLE branch display in App Store builds without filesystem access.
+
+### Old Problem (Solved by Disabling)
 
 Git branch monitoring completely broken in sandboxed builds. Console spam every 2 seconds:
 ```
@@ -948,52 +1163,39 @@ error  [GIT-BROKEN] Git monitoring failed (no project root access in sandboxed b
 error  [GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)
 ```
 
-**Root cause:** Requires user permission to project root directories. Complex to implement (per-project bookmarks, NSOpenPanel, permission UI). NOT WORTH IT for initial release.
+**Root cause:** Requires user permission to project root directories.
 
-### Solution Implemented
+### Old Solution (Temporary - Now Being Replaced)
 
 Simple, fast approach:
 1. Early return from `updateHeadWatcher()` if sandboxed (skip all git logic) ✅
 2. Hide branch UI in sandboxed builds (show project name only) ✅
 3. Remove bookmark restoration attempts in sandboxed builds ✅
 
-**Result:** Clean logs, zero errors, shippable App Store build.
+**Result:** Clean logs, zero errors, but NO branch display in App Store.
 
-### Implementation
+### New Solution (P1 #P1-GIT-BRANCH)
 
-```swift
-// HUDCore.swift:944
-public func updateHeadWatcher() {
-    #if os(macOS)
-    guard !Sandbox.isSandboxed else {
-        // Git monitoring disabled in sandboxed builds (no project root access)
-        return
-    }
-    #endif
+Extract branch from transcript data instead of filesystem:
+- Claude Code: Read `gitBranch` from any message
+- Codex: Read `session_meta.payload.git.branch` from last session_meta
+- Display branch with InfoButton explaining source and lag
+- Zero filesystem access required
+- Works in App Store builds
 
-    cancelHeadAndRefWatchers()
-    // ... existing git watcher code ...
-}
+**See:** P1 section for full specification of transcript-based approach
 
-// ContentView.swift (header)
-if !Sandbox.isSandboxed {
-    Text("Branch: \(vm.branch)")  // Only show in DMG builds
-}
-```
-
-### Tasks
+### Old Tasks (Completed for Temporary Solution)
 
 - [x] **[NOGIT1]** Early return from `updateHeadWatcher()` if sandboxed ✅
 - [x] **[NOGIT2]** Remove bookmark restoration in `handleCoordinatorUpdate()` ✅
 - [x] **[NOGIT3]** Hide branch display in header ✅
-- [ ] **[NOGIT4]** Test App Store build: `bash scripts/xc.sh --dist=appstore Debug cleanrun`
-- [ ] **[NOGIT5]** Verify: Zero `[GIT-BROKEN]` errors in Console.app logs
+- [x] **[NOGIT4]** Test App Store build - verified zero errors ✅
+- [x] **[NOGIT5]** Verify zero `[GIT-BROKEN]` errors ✅
 
-**Files:**
-- `app/Sources/ContextifyCore/HUDCore.swift`
-- `Contextify/Contextify/ContentView.swift`
-
-**Estimated Effort:** 1-2 hours (simple code removal)
+**Files Modified (Will Be Partially Reverted by P1 Implementation):**
+- `app/Sources/ContextifyCore/HUDCore.swift` (git monitoring disabled)
+- `Contextify/Contextify/ContentView.swift` (branch UI hidden - will be restored)
 
 ---
 
