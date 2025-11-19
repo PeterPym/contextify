@@ -18,9 +18,9 @@ SHOT_WIDTH=1440
 SHOT_HEIGHT=900
 
 # Position the capture area in upper-left region (easier to see)
-# Not centered - put it where it's visible and comfortable
+# Start from top of screen (Y=0)
 CAPTURE_X=200
-CAPTURE_Y=100
+CAPTURE_Y=0
 
 # Terminal: Left side within capture area
 TERMINAL_WIDTH=800
