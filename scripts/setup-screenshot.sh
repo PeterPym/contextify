@@ -18,15 +18,15 @@ SHOT_WIDTH=1440
 SHOT_HEIGHT=900
 
 # Position the capture area in upper-left region (easier to see)
-# Start from top of screen (Y=0)
+# Leave room at top for Terminal title bar (starts at Y=50)
 CAPTURE_X=200
-CAPTURE_Y=0
+CAPTURE_Y=50
 
 # Terminal: Left side within capture area
 TERMINAL_WIDTH=800
 TERMINAL_HEIGHT=850
 TERMINAL_X=$((CAPTURE_X + 10))
-TERMINAL_Y=$((CAPTURE_Y + 10))
+TERMINAL_Y=$((CAPTURE_Y + 5))
 
 # Contextify: Right side within capture area
 CONTEXTIFY_WIDTH=580

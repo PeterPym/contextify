@@ -21,7 +21,7 @@ mkdir -p "$OUTPUT_DIR"
 SHOT_WIDTH=1440
 SHOT_HEIGHT=900
 CAPTURE_X=200
-CAPTURE_Y=0
+CAPTURE_Y=50
 
 echo ""
 echo "📸 Taking screenshot in 3 seconds..."
