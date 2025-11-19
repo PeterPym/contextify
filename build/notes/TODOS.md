@@ -7,11 +7,11 @@
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 6 items - Must complete before App Store submission
-- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 64
 
 **Change Log (2025-11-19):**
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
@@ -81,7 +81,44 @@
 ---
 
 
-# P1 (High Priority) - 22 Items
+# P1 (High Priority) - 23 Items
+
+## Git Worktree Conversation Display (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Potential bug affecting developer workflow)
+**Effort:** 2-4 hours
+
+- [ ] #P1-WORKTREE: Investigate bug where conversations from git worktrees may not display properly
+
+**Problem:**
+When working in a git worktree (e.g., `../contextify-liquid-glass`), Contextify may not properly display or discover conversations. This could affect developer workflow when using worktrees for feature development.
+
+**Potential Root Causes:**
+- Project path detection may not handle worktree `.git` file (points to main repo)
+- Transcript discovery may use git working directory incorrectly
+- Project identity (hash/path encoding) may differ between main repo and worktrees
+- Database lookups may fail to match worktree paths to project records
+
+**Investigation Steps:**
+1. Create test worktree and verify bug reproduction
+2. Check how `ProjectIdentity` resolves paths for worktrees
+3. Verify transcript discovery scans worktree correctly
+4. Test if conversations appear in timeline when working from worktree
+5. Check git status detection (branch, HEAD) in worktree context
+
+**Files to Review:**
+- `app/Sources/ContextifyCore/Projects/ProjectIdentity.swift`
+- `app/Sources/ContextifyCore/Discovery/ProjectDiscoveryService.swift`
+- Git detection logic in HUDCore/HUDViewModel
+
+**Acceptance Criteria:**
+- Conversations display correctly when working from worktree
+- Project identity resolves consistently between main repo and worktrees
+- Timeline shows proper conversations for worktree context
+- Git branch/status displays correctly in worktree
+
+---
 
 ## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
 
