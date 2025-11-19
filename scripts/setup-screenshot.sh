@@ -6,6 +6,19 @@
 set -e
 
 echo "Setting up windows for screenshot..."
+echo ""
+echo "⏱️  You have 3 seconds to click on the Terminal window you want to use..."
+echo "   (The frontmost Terminal window will be positioned)"
+echo ""
+
+# Countdown to let user select the correct Terminal window
+for i in 3 2 1; do
+    echo "   $i..."
+    sleep 1
+done
+
+echo ""
+echo "Positioning windows..."
 
 # Get screen dimensions
 SCREEN_WIDTH=$(system_profiler SPDisplaysDataType | grep Resolution | awk '{print $2}' | head -1)
@@ -51,8 +64,7 @@ EOF
 
 sleep 0.5
 
-# Position Terminal (use whichever window is currently frontmost)
-# NOTE: Click on the Terminal window/tab you want BEFORE running this script
+# Position Terminal (uses whichever window became frontmost during countdown)
 osascript <<EOF
 tell application "Terminal"
     if (count of windows) is 0 then
