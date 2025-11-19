@@ -38,6 +38,26 @@ bash scripts/xc.sh build 2>&1 | grep -c "warning:"
 
 **Remember:** Persistent warnings in `ConversationMonitor`, `ProjectSwitcherState`, etc. aren't style issues - they're the compiler telling you about concurrency hazards in your most complex state management code.
 
+### Documentation Writing - Present Tense, No Meta-Commentary
+
+**Documentation should describe the current state of the system, not narrate its own update history.**
+
+**Forbidden patterns:**
+- ❌ "Status: Updated for Phase 3 lazy loading architecture (Nov 2025)"
+- ❌ "✨ Updated for Phase 3: AppStateOrchestrator..."
+- ❌ "Unchanged in Phase 3" scattered throughout
+- ❌ "⚠️ Phase 3 Note:" banners
+- ❌ Beating the reader over the head with "this doc was updated"
+
+**Allowed patterns:**
+- ✅ "Last Updated: 2025-11-18" (terse date stamp at top)
+- ✅ "Context: Updated to reflect lazy loading architecture refactor" (one sentence explaining what drove the update)
+- ✅ "StartupCoordinator is a legacy compatibility shim" (explains current implementation naturally)
+- ✅ "Will be refactored in Phase 4" (relevant context for current design decisions)
+- ✅ Brief historical section if it meaningfully explains current implementation
+
+**Principle:** Write docs in the present tense. Explain legacy components matter-of-factly when it helps understand the current system. Don't make the documentation about the documentation updates.
+
 ---
 
 ## Project Overview
