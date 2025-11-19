@@ -2280,13 +2280,13 @@ final class ConversationMonitor {
         }
 
         // Debug: check what's available
-        let allVisibleIDs = Set(self.visibleEntries.map { $0.id })
-        let requestedIDs = ids
-        let matchingIDs = allVisibleIDs.intersection(requestedIDs)
-        let unsummarizedEntries = self.visibleEntries.filter { $0.action == .unsummarized }
+        // Note: ids = actually visible on screen (viewport tracking)
+        //       visibleEntries = buffered entries (up to 25, may not all be visible)
+        let bufferedEntries = self.visibleEntries.filter { ids.contains($0.id) }
+        let unsummarizedVisible = bufferedEntries.filter { $0.action == .unsummarized }
 
-        log.debug("[SUMM-QUEUE] Checking \(ids.count) requested IDs against \(self.visibleEntries.count) visible entries")
-        log.debug("[SUMM-QUEUE] Matching IDs: \(matchingIDs.count), Unsummarized entries: \(unsummarizedEntries.count)")
+        log.debug("[SUMM-QUEUE] Checking \(ids.count) actually-visible IDs (buffered: \(self.visibleEntries.count))")
+        log.debug("[SUMM-QUEUE] Matching in buffer: \(bufferedEntries.count), Unsummarized: \(unsummarizedVisible.count)")
 
         let misses: [CacheMiss] = visibleEntries
             .filter { ids.contains($0.id) && $0.action == .unsummarized }
