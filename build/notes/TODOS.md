@@ -5,11 +5,11 @@
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 21 items remaining (3 completed) - Must complete before App Store submission
-- **P1 (High Priority):** 13 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 14 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 8 items - Future enhancements
 
-**Total Active Items:** 59 (3 P0 items completed: drag-drop fixes, welcome modal hang)
+**Total Active Items:** 60 (3 P0 items completed: drag-drop fixes, welcome modal hang)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -264,7 +264,7 @@ Timeline breakdown:
 ---
 
 
-# P1 (High Priority) - 13 Items
+# P1 (High Priority) - 14 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
@@ -290,6 +290,59 @@ Timeline breakdown:
 
 **Files:**
 - `Contextify/Contentify/ProjectBadgesContainer.swift`
+
+---
+
+## Project Auto-Discovery & QA Setup (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical for launch QA)
+**Effort:** 6-8 hours
+
+- [ ] #P1-DISCOVERY-QA: Clean up and QA project auto-discovery with DevOps tooling
+
+**Scope:**
+
+1. **UI Polish** (1 hour)
+   - Remove "open project" link from empty/no-project state
+   - Clean up messaging for better first-run experience
+
+2. **QA Test Scenarios** (2-3 hours)
+   - **Scenario A:** First project ever (user has no transcripts)
+     - Start first Claude Code/Codex session
+     - Verify app auto-discovers and switches to new project immediately
+   - **Scenario B:** Adding second project (user has 1 existing project)
+     - Start new session in different project
+     - Verify app auto-discovers and switches to newest project automatically
+
+3. **DevOps Tooling** (3-4 hours)
+   - Design safe transcript-swapping mechanism for QA testing
+   - Previous symlink approach caused confusion (all transcripts disappeared)
+   - **Requirements:**
+     - Temporarily swap real transcripts with test transcripts
+     - Run QA scenarios without destroying real data
+     - Merge QA-generated transcripts back to real projects (e.g., Contextify dev transcripts)
+     - Clear documentation on what's real vs test
+   - **Possible approaches:**
+     - Scripted symlink swap with clear state tracking
+     - Separate database for QA mode
+     - Transcript directory cloning/restore mechanism
+
+**Acceptance Criteria:**
+- Empty state UI is clean (no broken/confusing links)
+- First project auto-discovery works reliably
+- Multi-project auto-discovery switches to newest correctly
+- Safe QA workflow documented and tested
+- Can swap transcripts, run QA, and restore without data loss
+
+**Files:**
+- UI: `Contextify/Contextify/ContentView.swift` or empty state view
+- Scripts: New QA tooling (to be created)
+- Docs: QA workflow documentation
+
+**Related:**
+- Builds on fix for welcome modal discovery (commit `199072e`)
+- Needed for pre-launch App Store testing
 
 ---
 
