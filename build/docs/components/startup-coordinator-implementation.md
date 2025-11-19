@@ -6,6 +6,19 @@
 
 ---
 
+## ⚠️ Phase 3 Role Change (Nov 2025)
+
+**StartupCoordinator is now a legacy compatibility shim.** For new development, use `AppStateOrchestrator`.
+
+**Integration with AppStateOrchestrator:**
+- Receives `handleExternalProjectSwitch(id:path:)` calls from AppStateOrchestrator
+- Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
+- Will be refactored/removed in Phase 4
+
+**See:** `build/docs/architecture/startup-coordinator.md` for Phase 4 migration guide
+
+---
+
 ## Executive Summary
 
 This document provides implementation-level details for **StartupCoordinator** that go beyond the architectural overview. Read this when:
