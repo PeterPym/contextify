@@ -6,12 +6,12 @@
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
-**Total Active Items:** 64
+**Total Active Items:** 63
 
 **Change Log (2025-11-19):**
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
@@ -33,19 +33,8 @@
 
 ---
 
-# P0 (Blocking Release) - 6 Items Remaining
+# P0 (Blocking Release) - 5 Items Remaining
 
-## Website (1 item)
-
-- [ ] #2: Setup support@contextify.sh email (15 min)
-
-**Status:** Waiting on DNS propagation
-
-**Note:** Using support@ as primary contact (standard for customer support)
-
-**Note:** URL forwarding completed (#1: ✅ complete 2025-11-11)
-
----
 
 ## Welcome Modal Copy (1 item)
 
