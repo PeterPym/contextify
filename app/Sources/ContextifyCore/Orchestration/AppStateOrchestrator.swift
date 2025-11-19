@@ -39,7 +39,9 @@ public final class AppStateOrchestrator: ObservableObject {
     self.fastPath = fastPath
 
     Task(priority: .background) {
+      log.info("[ORCH-FASTPATH-RESUME] Starting resumePendingCompletions()")
       await fastPath.resumePendingCompletions()
+      log.info("[ORCH-FASTPATH-RESUME] Finished resumePendingCompletions()")
     }
   }
 
