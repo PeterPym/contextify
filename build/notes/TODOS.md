@@ -45,22 +45,11 @@
 
 ---
 
-
-## App Store Submission (4 items)
+## Welcome Modal Copy (1 item)
 
 **Status:** Not Started
-**Effort:** 8-12 hours
-
-- [ ] #6: App Store Connect setup (metadata, screenshots, description)
-- [ ] #7: Build Release binary (sign, archive, validate, upload)
-- [ ] #8: Submit for review (compliance, age rating, reviewer notes)
-- [ ] #9: TestFlight beta (optional, recommended)
-
-**Reference:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
-
----
-
-## Welcome Modal Copy (1 item)
+**Effort:** 1-2 hours
+**Note:** Must complete BEFORE App Store submission (code changes)
 
 - [ ] #16: Polish welcome modal copy & progress messaging
 
@@ -71,89 +60,21 @@
 - Add dismissal confirmation if user closes during ingestion
 
 **Files:** `Contextify/Contextify/WelcomeModalView.swift`
-**Effort:** 1-2 hours
 
 ---
 
-## Critical Bugs - Drag & Drop (2 items) ✅ COMPLETE
+## App Store Submission (4 items)
 
-**Status:** ✅ Complete (2025-11-18)
-**Commit:** `0bbe383` - fix(drag-drop): clear ghost entries when dragging outside window
-**Branch:** `fix/drag-drop-ghost-entries`
+**Status:** Not Started
+**Effort:** 8-12 hours
+**Note:** Must complete AFTER welcome modal polish (#16)
 
-- [x] #29: Fix drag-drop cancellation when cursor exits window ✅
-- [x] #30: Add state validation after drag operations ✅
+- [ ] #6: App Store Connect setup (metadata, screenshots, description)
+- [ ] #7: Build Release binary (sign, archive, validate, upload)
+- [ ] #8: Submit for review (compliance, age rating, reviewer notes)
+- [ ] #9: TestFlight beta (optional, recommended)
 
-**Problem:** Dragging project tab outside window created ghost dashed-line entry that persisted indefinitely. Only fix was app restart.
-
-**Root Cause:** `dropExited()` was intentionally blank to avoid flicker, but this prevented clearing drag state when cursor left the window.
-
-**Solution:**
-1. Clear drag state in `dropExited()` when cursor exits drop zone
-2. Add validation before rendering insertion indicators
-3. Add validation in `onDrag` to detect stale state
-
-**Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift` (4 changes)
-
-**Testing:**
-- ✅ Dragging outside window cancels cleanly
-- ✅ No ghost entries persist
-- ✅ Project returns to original position
-- ✅ UI state consistent with data
-
----
-
-## Welcome Modal Hang ✅ COMPLETE
-
-**Status:** ✅ Complete (2025-11-19)
-**Priority:** Promoted from P1 (11-second UI freeze during onboarding)
-**Effort:** 4-6 hours
-**Evidence:** `/private/tmp/transcript-queue-monitor-20251118-002852.log`
-
-- [x] #P1-DISCOVERY: Fix ProjectActivityMonitor causing 11s hang during welcome modal ✅
-
-**Problem:** Welcome modal shows "1/19 projects" for **11+ seconds** before completing discovery. UI appears frozen/broken to users during first-run experience.
-
-**Root Cause (from log analysis):**
-
-Timeline breakdown:
-```
-00:29:16.348-16.479: ProjectsViewModel.discoverAllProjects() completes (131ms) ✅
-00:29:16.479-18.285: Ingestion completes (1.8s) ✅
-00:29:18.285-29.966: 11.8 SECOND GAP - waiting for ProjectActivityMonitor ⚠️
-00:29:29.966: ProjectActivityMonitor.start() finally runs
-00:29:30.342+: Processes 602 transcripts synchronously (blocks UI)
-```
-
-**Architectural Issues:**
-
-1. **Duplicate discovery:** ProjectActivityMonitor runs its own `discoverAllProjects()` **after** ProjectsViewModel already completed discovery
-2. **Late initialization:** ProjectActivityMonitor.start() doesn't begin until 13+ seconds after modal appears
-3. **Synchronous processing:** Processes 602 transcripts on main thread with debug logging for each file
-4. **UI blocking:** Modal progress bar stuck at "1/19" while waiting for background discovery
-
-**Solution:**
-
-1. **Deduplicate discovery:** ProjectActivityMonitor should reuse ProjectsViewModel's discovery results instead of re-scanning
-2. **Earlier initialization:** Start ProjectActivityMonitor in parallel with ProjectsViewModel, not after
-3. **Background processing:** Move transcript enumeration off main thread
-4. **Reduce logging:** Don't log every individual file at debug level (602 log lines!)
-
-**Files:**
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:74` - Remove duplicate `discoverAllProjects()` call
-- `Contextify/Contextify/ProjectsViewModel.swift` - Coordinate with ProjectActivityMonitor
-- Consider: Shared discovery coordinator to eliminate duplication
-
-**Acceptance Criteria:**
-- Welcome modal completes discovery in <3 seconds (currently 14s)
-- Progress bar updates smoothly (no 11s freeze at "1/19")
-- No duplicate filesystem scans
-- ProjectActivityMonitor reuses existing discovery data
-
-**References:**
-- Investigation: `build/docs/archive/investigations/2025-11-17-discoverallprojects-fastpath.md`
-- Log evidence: Lines showing "11.8 second gap" between ingestion completion and ProjectActivityMonitor start
+**Reference:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
 
 ---
 
