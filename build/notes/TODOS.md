@@ -4,17 +4,23 @@
 **Status:** Active - Reorganized based on user feedback review
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 18 items remaining (3 completed) - Must complete before App Store submission
-- **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 22 items - Nice to have, can defer to future releases
+- **P0 (Blocking Release):** 6 items remaining (3 completed) - Must complete before App Store submission
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 9 items - Future enhancements
 
 **Total Active Items:** 66 (3 P0 items completed: drag-drop fixes, welcome modal hang)
 
 **Change Log (2025-11-19):**
 - Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
+- Demoted 8 P0 items based on pre-submission priorities:
+  - #32, #43 (Discovery UX) → P1
+  - #35 (Failed metadata retry) → P1
+  - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
+  - #49-50 (Project management) → P2
 - Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
 - Added 2 P1 items (#P1-OPTION3: parse permission dialog responses, #P1-SUMM-QUESTIONS: fix summarizer treating questions as actions)
+- Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
 
 **Change Log (2025-11-15):**
 - Removed 19 completed items, 5 dropped items (diagnostics server feature)
@@ -25,11 +31,13 @@
 
 ---
 
-# P0 (Blocking Release) - 21 Items Remaining
+# P0 (Blocking Release) - 6 Items Remaining
 
 ## Website (1 item)
 
 - [ ] #2: Setup support@contextify.sh email (15 min)
+
+**Status:** Waiting on DNS propagation
 
 **Note:** Using support@ as primary contact (standard for customer support)
 
@@ -96,107 +104,7 @@
 
 ---
 
-## Critical UX - Discovery (2 items) ⬆️
-
-**Status:** Not Started
-**Priority:** Promoted from P1
-**Effort:** 4-6 hours total
-
-- [ ] #32: Show toast for newly discovered projects
-- [ ] #43: Stress test discovery with 10, 50, 100 projects
-
-**#32 - Toast Notifications:**
-- Format: "New project discovered: [project-name]"
-- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
-- Debounce rapid events (2-second window)
-
-**#43 - Stress Testing:**
-- Benchmark discovery time with varying project counts
-- Document P95 targets (goal: <30 seconds for 50 projects)
-- Test edge cases: missing directories, renamed projects, moved transcripts
-
-**Files:** `Contextify/Contextify/ContextifyApp.swift`, `ProjectsViewModel.swift`
-
----
-
-## Critical UX - Failed Metadata (1 item) ⬆️
-
-**Status:** Not Started
-**Priority:** Promoted from P1
-**Effort:** 2-3 hours
-
-- [ ] #35: Show manual retry button for failed metadata generation
-
-**Problem:** Silent failures after circuit breaker opens. Users see endless loading spinners.
-
-**Implementation:**
-- Add `failedTranscripts: Set<String>` state
-- Show orange warning icon in session rows
-- Add "Retry Metadata Generation" button
-- Persist failed set to UserDefaults
-
-**Files:** `Contextify/Contextify/TranscriptInventoryView.swift`
-
-**Acceptance Criteria:**
-- Failed generations show warning icon
-- Retry button appears in detail view
-- Success removes from failed set
-- Failed transcripts persist across restarts
-
----
-
-## Critical - Integration Tests (3 items) ⬆️
-
-**Status:** Not Started
-**Priority:** Promoted from P1
-**Effort:** 6-8 hours
-
-- [ ] #45: Re-enable testInitialHooverWorkflow integration test
-- [ ] #46: Re-enable testOrchestratorWorkflow integration test
-- [ ] #47: Re-enable testCrashRecovery integration test
-
-**Problem:** 3 critical tests disabled with `skip_` prefix. No automated testing for core ingestion pipeline.
-
-**Tasks:**
-- Update tests for new HooverEngine API
-- Update tests for new TranscriptOrchestrator API
-- Update tests for checkpoint changes
-- Remove `skip_` prefix
-- Add to CI pipeline
-- Verify tests pass 10x in a row (no flaky failures)
-
-**Files:** `Contextify/ContextifyTests/IntegrationTests.swift`
-
----
-
-## Critical - Project Management (2 items) ⬆️
-
-**Status:** Not Started
-**Priority:** Promoted from P1
-**Effort:** 4-6 hours
-
-- [ ] #49: Add Hide Project UI to Projects window
-- [ ] #50: Add Show Hidden Projects toggle
-
-**Implementation:**
-- Create `ProjectExclusionManager.swift` with database persistence
-- Add exclusions table to schema (new migration)
-- Right-click menu: "Hide Project"
-- "Show Hidden Projects" toggle reveals hidden with "Unhide" option
-- Filter excluded projects from discovery
-
-**Files:**
-- `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` (NEW)
-- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
-- `Contextify/Contextify/ProjectsWindow.swift`
-
-**Acceptance Criteria:**
-- Hidden projects persist across restarts
-- All 3 skipped tests re-enabled and passing
-
----
-
-## Critical - Welcome Modal Hang (1 item) ✅ COMPLETE
+## Welcome Modal Hang ✅ COMPLETE
 
 **Status:** ✅ Complete (2025-11-19)
 **Priority:** Promoted from P1 (11-second UI freeze during onboarding)
@@ -250,7 +158,104 @@ Timeline breakdown:
 ---
 
 
-# P1 (High Priority) - 17 Items
+# P1 (High Priority) - 22 Items
+
+## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
+
+**Status:** Not Started (Blocked)
+**Priority:** Demoted from P0 (blocked by test infrastructure issues, manual QA sufficient for MVP)
+**Effort:** 12-16 hours
+
+- [ ] #P1-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
+- [ ] #45: Re-enable testInitialHooverWorkflow integration test
+- [ ] #46: Re-enable testOrchestratorWorkflow integration test
+- [ ] #47: Re-enable testCrashRecovery integration test
+
+**Problem:** Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
+
+**Blockers:**
+- FoundationLLM compatibility issues with test environment
+- Recent macOS SDK changes affecting test execution
+- Async/actor isolation problems in test harness
+- **Action:** Search database for previous conversations documenting these blockers
+
+**Tasks:**
+1. **Infrastructure Fix** (6-8 hours)
+   - Research FoundationLLM test compatibility issues
+   - Resolve SDK/async/actor problems
+   - Get test suite building and running cleanly
+   - Verify existing passing tests still work
+
+2. **Re-enable Integration Tests** (6-8 hours)
+   - Update tests for new HooverEngine API
+   - Update tests for new TranscriptOrchestrator API
+   - Update tests for checkpoint changes
+   - Remove `skip_` prefix
+   - Add to CI pipeline
+   - Verify tests pass 10x in a row (no flaky failures)
+
+**Files:**
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+- Test configuration files (to be determined during investigation)
+
+**Acceptance Criteria:**
+- Test suite builds and runs without infrastructure errors
+- All 3 integration tests re-enabled and passing
+- Tests are stable (10 consecutive passes)
+- Integrated into CI pipeline
+
+**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
+
+---
+
+## Discovery UX (2 items) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P0 (nice to have, not blocking submission)
+**Effort:** 4-6 hours total
+
+- [ ] #32: Show toast for newly discovered projects
+- [ ] #43: Stress test discovery with 10, 50, 100 projects
+
+**#32 - Toast Notifications:**
+- Format: "New project discovered: [project-name]"
+- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
+- Debounce rapid events (2-second window)
+
+**#43 - Stress Testing:**
+- Benchmark discovery time with varying project counts
+- Document P95 targets (goal: <30 seconds for 50 projects)
+- Test edge cases: missing directories, renamed projects, moved transcripts
+
+**Files:** `Contextify/Contextify/ContextifyApp.swift`, `ProjectsViewModel.swift`
+
+---
+
+## Failed Metadata Retry (1 item) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P0 (not blocking submission)
+**Effort:** 2-3 hours
+
+- [ ] #35: Show manual retry button for failed metadata generation
+
+**Problem:** Silent failures after circuit breaker opens. Users see endless loading spinners.
+
+**Implementation:**
+- Add `failedTranscripts: Set<String>` state
+- Show orange warning icon in session rows
+- Add "Retry Metadata Generation" button
+- Persist failed set to UserDefaults
+
+**Files:** `Contextify/Contextify/TranscriptInventoryView.swift`
+
+**Acceptance Criteria:**
+- Failed generations show warning icon
+- Retry button appears in detail view
+- Success removes from failed set
+- Failed transcripts persist across restarts
+
+---
 
 ## Transcript-Based Git Branch Display (1 item)
 
@@ -787,7 +792,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 22 Items
+# P2 (Medium Priority) - 26 Items
 
 ## Transcript Repair MVP (2 items) ⬇️
 
@@ -857,6 +862,34 @@ if state.entries.count == new.count && state.entries == new {
 - Behavioral: No changes (updates still happen when data changes)
 - Performance: Eliminates unnecessary SwiftUI diff operations
 - Visual: Timeline stays stable, no visible flicker
+
+---
+
+## Project Management (2 items) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P0 (can defer to post-launch)
+**Effort:** 4-6 hours
+
+- [ ] #49: Add Hide Project UI to Projects window
+- [ ] #50: Add Show Hidden Projects toggle
+
+**Implementation:**
+- Create `ProjectExclusionManager.swift` with database persistence
+- Add exclusions table to schema (new migration)
+- Right-click menu: "Hide Project"
+- "Show Hidden Projects" toggle reveals hidden with "Unhide" option
+- Filter excluded projects from discovery
+
+**Files:**
+- `app/Sources/ContextifyCore/Projects/ProjectExclusionManager.swift` (NEW)
+- `app/Sources/ContextifyCore/Database/DatabaseSchema.swift`
+- `Contextify/Contextify/ProjectsWindow.swift`
+
+**Acceptance Criteria:**
+- Hidden projects persist across restarts
+- Show/hide functionality works across app restarts
+- Excluded projects don't appear in discovery
 
 ---
 
