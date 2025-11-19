@@ -439,9 +439,10 @@ run_xcodebuild() {
   # In quiet mode, filter to only show Swift compilation errors/warnings, build milestones, and build status
   # EXCEPT for tests - always show full output for tests
   if [[ $quiet_mode -eq 1 && "$action" != "test" ]]; then
-    pipeline="$pipeline | grep -E '(\\.swift:[0-9]+:[0-9]+: (error|warning):|BUILD SUCCEEDED|BUILD FAILED|Built:|Launching|^\\([0-9]+ failures?\\)|^Ld |Linking Contextify|Signing|CodeSign.*Contextify|CompileAssetCatalog|ProcessInfoPlistFile)' || true"
+    pipeline="$pipeline | grep -E '(\\.swift:[0-9]+:[0-9]+: (error|warning):|BUILD SUCCEEDED|BUILD FAILED|Built:|Launching|^\\([0-9]+ failures?\\)|Linking Contextify|Signing|CodeSign.*Contextify)' || true"
   fi
 
+  echo "Running xcodebuild (this may take 1-2 minutes on first build)..."
   xcodebuild "$@" 2>&1 | eval "$pipeline"
 }
 
