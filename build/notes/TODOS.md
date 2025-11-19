@@ -740,7 +740,7 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
-# P3 (Low Priority / Deferred) - 8 Items
+# P3 (Low Priority / Deferred) - 9 Items
 
 ## Performance & Monitoring (4 items) ⬇️
 
@@ -780,6 +780,22 @@ if state.entries.count == new.count && state.entries == new {
 **#89-90 - Parser Metadata:**
 - Extend parser for additional debugging data
 - **Effort:** 2-3 hours each
+
+## Code Quality (1 item)
+
+**Status:** Not Started
+**Priority:** P3 (low priority refactoring)
+**Effort:** 1-2 hours
+
+- [ ] #91: Remove hardcoded magic number 25 for timeline entry limits
+
+**Details:**
+- Currently hardcoded in 3 places:
+  - `ConversationMonitor.swift:185` - `visibleEntryLimit = 25`
+  - `TimelineModels.swift:252` - `maxEntries: Int = 25`
+  - `TranscriptMetadataFormatters.swift:21` - `fullStrategyLimit = 25`
+- Should be centralized constant or user preference
+- Low priority: current value works fine, just poor code hygiene
 
 ---
 
