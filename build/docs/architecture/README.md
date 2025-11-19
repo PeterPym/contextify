@@ -1,5 +1,11 @@
 # Architecture Documentation
 
+**Status:** Updated for Phase 3 lazy loading architecture (Nov 2025)
+
+**Start Here for Phase 3:** [COMPONENTS.md](COMPONENTS.md) - "Application State Coordination" section
+
+---
+
 System-level design documents describing how Contextify's major components fit together.
 
 ## Current Architecture Status
@@ -19,24 +25,42 @@ This directory contains high-level architectural documentation that explains:
 - Fundamental design decisions
 - System-wide patterns and conventions
 
-## Documents
+## Core Architecture (Phase 3)
 
-### [Conversation Monitor State](conversation-monitor-state.md)
-**Topics:** Timeline state management and real-time updates
-- TimelineState observable model
-- Entry filtering and session management
-- System message handling
+### [COMPONENTS.md](COMPONENTS.md)
+**Topics:** Architecture overview and key components
+- **✨ Updated for Phase 3:** AppStateOrchestrator (central coordinator), LightweightDiscoveryService, lazy loading architecture
+- **Start here** for understanding the system
+- Performance summary: <200ms startup, 30-50 MB memory, 19 DB row updates
 
-### ~~Data Flow~~ (ARCHIVED)
-**Status:** Archived to `../archive/historical/data-flow-2025-10-22.md` (2025-11-17)
-**Reason:** Not salvageable - architecture fundamentally changed since Oct 22
-**Replacement:** See `../../notes/PROPOSED-DOCUMENTATION.md` #1 (Complete Data Pipeline Architecture)
+### [Data Pipeline Architecture](data-pipeline-architecture.md)
+**Topics:** Complete data flow reference (5 levels of detail)
+- **✨ Updated for Phase 3:** Lightweight startup flow, JIT ingestion, background indexing
+- Comprehensive with mermaid diagrams (1568 lines)
+- Covers discovery → ingestion → database → timeline UI
+
+### [Architecture Refactoring Analysis](architecture-refactoring-analysis.md)
+**Topics:** Refactoring opportunities and roadmap
+- **✨ Updated for Phase 3:** 85% alignment achieved, architecture grade A- (up from B+)
+- Phase 4 planning document
+- Commits 080bb3c through 8a57385 analyzed
+
+### [Startup Coordinator](startup-coordinator.md)
+**Topics:** Startup sequencing and project identity
+- **⚠️ Phase 3 Note:** StartupCoordinator now legacy compatibility shim (AppStateOrchestrator is primary)
+- Will be removed in Phase 4
+- ActiveProjectContext design still relevant
+
+---
+
+## Specialized Topics
 
 ### [LLM Processing](llm-processing.md)
 **Topics:** Dual-queue LLM architecture (FoundationLLM)
 - TimelineCacheMissGenerator (queue #1: entry summaries)
 - TranscriptMetadataOrchestrator (queue #2: document metadata)
 - Status aggregation and monitoring
+- Unchanged in Phase 3 (ConversationMonitor not refactored)
 
 ### [Project Switcher](project-switcher.md)
 **Topics:** Multi-project tab navigation and state management
@@ -44,36 +68,79 @@ This directory contains high-level architectural documentation that explains:
 - Unread badge calculation and display
 - Keyboard shortcuts and navigation
 - Event-driven discovery and updates
-- **Implementation:** Shipped (ProjectSwitcherState + ProjectSwitcherView)
+- Unchanged in Phase 3
+
+### [SQL Backend](sql-backend.md)
+**Topics:** SQLite database architecture and schema design
+- Tables, migrations (v1-v26), repositories
+- GRDB integration
+- Current schema: v26
+- Unchanged in Phase 3 (database layer stable)
 
 ### [Sandbox & App Store Architecture](sandbox-appstore-architecture.md)
 **Topics:** Sandboxed vs unsandboxed builds, security-scoped bookmarks
 - Security-scoped bookmark lifecycle and patterns
 - DMG (unsandboxed) vs App Store (sandboxed) code paths
 - Testing procedures and permission management
-- Known sandbox-specific bugs and limitations
-- **Critical for:** App Store builds, release testing, distribution
-
-### [SQL Backend](sql-backend.md)
-**Topics:** SQLite database architecture and schema design
-- Tables, migrations (v1-v26), repositories
-- GRDB integration
-- Current schema: v26 (removed sandbox container path projects)
-
-### [Startup Coordinator](startup-coordinator.md)
-**Topics:** Deterministic project identity pipeline
-- ActiveProjectContext design
-- Startup sequencing
-- AsyncStream-based updates
-- **Implementation:** Shipped in commit 531ac70
+- **Critical for:** App Store builds, release testing
+- Unchanged in Phase 3
 
 ### [Window System](window-system.md)
 **Topics:** 4-window macOS app architecture
 - Main HUD, Transcript Inventory, Projects, Settings
 - Window management patterns
 - **Note:** iTerm2 integration removed in commit 35ce380
+- Unchanged in Phase 3
 
 ---
+
+## Legacy Documents
+
+### [Conversation Monitor State](conversation-monitor-state.md)
+**Topics:** Timeline state management and real-time updates
+- TimelineState observable model
+- Entry filtering and session management
+- **Phase 4:** Will be refactored when ConversationMonitor is split
+
+### ~~Data Flow~~ (ARCHIVED)
+**Status:** Archived to `../archive/historical/data-flow-2025-10-22.md` (2025-11-17)
+**Reason:** Architecture fundamentally changed since Oct 22
+**Replacement:** See [Data Pipeline Architecture](data-pipeline-architecture.md)
+
+---
+
+## Recommended Reading Order
+
+### For Understanding Phase 3 Architecture
+
+1. **[COMPONENTS.md](COMPONENTS.md)** - Start with "Application State Coordination (Phase 3 Lazy Loading)" section
+2. **[Data Pipeline Architecture](data-pipeline-architecture.md)** - Level 1-3 (Executive → Component → Flow Sequences)
+3. **[Architecture Refactoring Analysis](architecture-refactoring-analysis.md)** - Read "Phase 3 Implementation Update" section
+
+### For Deep Dive
+
+4. **[Data Pipeline Architecture](data-pipeline-architecture.md)** - Level 4-5 (Implementation Details → Technical Debt)
+5. **[Startup Coordinator](startup-coordinator.md)** - Legacy integration patterns (how old components integrate with Phase 3)
+6. **[LLM Processing](llm-processing.md)** - Timeline cache and dual LLM queues
+
+### For Phase 4 Planning
+
+7. **[Architecture Refactoring Analysis](architecture-refactoring-analysis.md)** - Full roadmap and deferred items
+8. **[Conversation Monitor State](conversation-monitor-state.md)** - What will be refactored next
+
+---
+
+## Phase 3 References
+
+**Implementation Guides:**
+- [Project Discovery Service Implementation](../components/project-discovery-service-implementation.md) - Two-tier discovery (lightweight + full)
+- [Startup Coordinator Implementation](../components/startup-coordinator-implementation.md) - Legacy integration patterns
+- [Project Discovery](../components/project-discovery.md) - Lazy loading architecture overview
+
+**Analysis & Tracking:**
+- `../../notes/phase3-refactor-comparison-analysis.md` - Detailed comparison with recommendations (1458 lines)
+- `../../notes/phase3-documentation-update-master-list.md` - Documentation update tracker
+
 
 ## Relationship to Other Docs
 
