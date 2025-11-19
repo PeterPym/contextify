@@ -127,6 +127,12 @@ struct WelcomeModalView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
+            if let appIcon = NSImage(named: "AppIcon") {
+                Image(nsImage: appIcon)
+                    .resizable()
+                    .frame(width: 64, height: 64)
+            }
+
             Text("Welcome to Contextify")
                 .font(.title)
                 .fontWeight(.semibold)
