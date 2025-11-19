@@ -6,6 +6,26 @@
 
 ---
 
+## ⚠️ Phase 3 Architecture Change (Nov 2025)
+
+**Role Changed:** StartupCoordinator is now a **legacy compatibility shim** for backward compatibility with ConversationMonitor and other pre-Phase 3 components.
+
+**Primary Coordinator (Phase 3):** `AppStateOrchestrator`
+- Central state coordinator with state machine pattern
+- Owns project selection, discovery, and ingestion orchestration
+- See: `build/docs/architecture/COMPONENTS.md` - "Application State Coordination"
+
+**StartupCoordinator (Legacy):**
+- Receives project switch notifications from AppStateOrchestrator via `handleExternalProjectSwitch()`
+- Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
+- Will be refactored/removed in Phase 4 when ConversationMonitor is split
+
+**For New Development:** Use AppStateOrchestrator directly. Only use StartupCoordinator if integrating with legacy components that haven't been updated to Phase 3 patterns.
+
+**Phase 4 Plan:** Remove StartupCoordinator after ConversationMonitor refactor completes (see `build/docs/architecture/architecture-refactoring-analysis.md`).
+
+---
+
 ## Executive Summary
 
 The **Startup Coordinator** provides a single source of truth for project identity and deterministic startup sequencing across Contextify's subsystems (HUD, Project Switcher, Timeline Monitor).
@@ -98,6 +118,65 @@ Coordinator publishes context
        ├─→ clearEntries()
        └─→ startMonitoring(projectId: context.id)
 ```
+
+---
+
+## Integration with AppStateOrchestrator (Phase 3)
+
+### Architecture Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ASO as AppStateOrchestrator
+    participant SC as StartupCoordinator
+    participant CM as ConversationMonitor
+    participant TO as TranscriptOrchestrator
+
+    User->>ASO: selectProject(id: "ABC123")
+    ASO->>ASO: JIT ingestion...
+    ASO->>TO: getProject(id: "ABC123")
+    TO-->>ASO: Project(id, path, name)
+
+    ASO->>SC: handleExternalProjectSwitch(id: "ABC123", path: "/path/to/repo")
+    Note over SC: Legacy compatibility shim
+
+    SC->>SC: Create ActiveProjectContext
+    SC->>SC: Publish via AsyncStream
+    SC->>CM: updates.yield(context)
+    CM->>CM: startMonitoring(projectId: context.id)
+
+    Note over CM: Legacy component still uses StartupCoordinator
+    Note over ASO: New components use AppStateOrchestrator directly
+```
+
+### handleExternalProjectSwitch Method
+
+**Added in Phase 3** to allow AppStateOrchestrator to notify StartupCoordinator of project changes:
+
+```swift
+// StartupCoordinator.swift (Phase 3 addition)
+public func handleExternalProjectSwitch(id: String, path: String) async throws {
+  // Create ActiveProjectContext from AppStateOrchestrator notification
+  let context = ActiveProjectContext(
+    id: id,
+    path: path,
+    displayName: URL(fileURLWithPath: path).lastPathComponent,
+    branch: nil, // Git detection handled separately
+    bookmark: nil
+  )
+
+  // Notify legacy subscribers
+  updates.yield(context)
+}
+```
+
+**Purpose:** Bridge between Phase 3 architecture (AppStateOrchestrator) and legacy components (ConversationMonitor).
+
+**When to Use:**
+- ✅ ConversationMonitor integration (required until Phase 4 refactor)
+- ✅ Other legacy components using `StartupCoordinator.shared.updates`
+- ❌ New components (use AppStateOrchestrator directly)
 
 ---
 
