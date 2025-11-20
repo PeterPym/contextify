@@ -55,7 +55,7 @@ Y_OFFSET=100  # Pixels from top
 
 # Make the text box span ~90% of the image width to avoid clipping long titles
 OVERLAY_WIDTH=$(( IMG_WIDTH * 90 / 100 ))
-OVERLAY_HEIGHT=250  # Taller to accommodate wrapped text
+OVERLAY_HEIGHT=300  # Tall enough for wrapped text with descenders (g, y, q, p)
 
 # Add text overlay with automatic wrapping for long headlines
 magick "$INPUT_IMAGE" \

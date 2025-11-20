@@ -205,7 +205,8 @@ EOF
 
     settings)
         SHOT_NAME="05-settings"
-        TEXT="Centralize scattered transcripts into one queryable database"
+        TEXT="Centralize scattered transcripts
+into one queryable database"
         echo "Setting up settings window..."
 
         # Save window positions for restoration
@@ -262,7 +263,8 @@ tell application "System Events"
             if wName contains "Settings" then
                 -- Center in 1440x900 capture area at (200, 50)
                 -- Settings window: 480x432 (retina-adjusted), centered: 680 (920 - 240)
-                set position of w to {680, 250}
+                -- Positioned lower (Y=300) to accommodate two-line headline
+                set position of w to {680, 300}
                 set size of w to {480, 432}
             else if wName is "Contextify" then
                 -- Move main HUD to the right (beyond capture frame)
@@ -270,16 +272,14 @@ tell application "System Events"
             end if
         end repeat
 
-        -- Give focus to settings window
-        repeat with w in (every window)
-            if name of w contains "Settings" then
-                set frontmost to true
-                perform action "AXRaise" of w
-                exit repeat
-            end if
-        end repeat
     end tell
 end tell
+
+-- Give focus to settings window by activating Contextify
+tell application "Contextify"
+    activate
+end tell
+delay 0.5
 
 -- Move specified iTerm2 window to the right (beyond capture frame)
 tell application "iTerm2"
