@@ -7,14 +7,16 @@
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 6 items - Must complete before App Store submission
-- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 29 items - Nice to have, can defer to future releases
+- **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 69
+**Total Active Items:** 72
 
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
+- Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
+- Added 2 P2 items (#P2-TIMELINE-FONT: Increase timeline font size, #P2-STATUSBAR-HEIGHT: Reduce status bar padding)
 - Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
 - Root cause analysis reveals watchers never restart after project switches, not that they crash
 
@@ -168,7 +170,53 @@ Based on Phase 1 findings, likely fixes:
 ---
 
 
-# P1 (High Priority) - 24 Items
+# P1 (High Priority) - 25 Items
+
+## Window Sizing (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (First impression - default window size affects App Store impression)
+**Effort:** 30 minutes - 1 hour
+
+- [ ] #P1-WINDOW-WIDTH: Reduce default application window width to match HUD-01 screenshot dimensions
+
+**Problem:**
+Default window opens too wide, creating unnecessary horizontal scrolling and poor space utilization. Screenshot HUD-01 demonstrates optimal width that fits content perfectly.
+
+**Implementation:**
+1. Measure window width in `appstore-metadata/screenshots/releases/01-main-hud.png`
+2. Locate default window size setting (likely in `ContextifyApp.swift` or window configuration)
+3. Update default width to match screenshot dimensions
+4. Ensure minimum width constraints still allow resize
+5. Test that content doesn't clip at new default width
+6. Verify window remembers user-adjusted size (don't override saved preferences)
+
+**Current vs Target:**
+- Current: Unknown (likely too wide)
+- Target: Width from HUD-01 screenshot (appears to be ~800-900pt)
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift` (likely `.frame()` or window configuration)
+- Possibly SwiftUI `.defaultSize()` modifier
+- Check for WindowGroup configuration
+
+**Acceptance Criteria:**
+- ✅ Default window width matches HUD-01 screenshot
+- ✅ Content fits without horizontal scrolling
+- ✅ Window remains resizable
+- ✅ User preferences for window size are preserved
+- ✅ Minimum width constraint prevents over-shrinking
+
+**Testing:**
+1. Delete app preferences/saved state
+2. Launch app fresh
+3. Verify default window width matches target
+4. Resize window, quit, relaunch
+5. Verify custom size is preserved
+
+**Note:** This affects first-run user experience and App Store reviewer impression. Getting the default size right is important for perceived polish.
+
+---
 
 ## Apple Intelligence Blinking Out (1 item)
 
@@ -933,7 +981,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 29 Items
+# P2 (Medium Priority) - 31 Items
 
 ---
 
@@ -1320,6 +1368,72 @@ Multiple branches created during late-night token burn session with speculative 
 - Experimental APIs → Requires architecture review
 
 **Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
+
+---
+
+## UI Typography & Spacing (2 items)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish - readability improvements)
+**Effort:** 2-3 hours total
+
+- [ ] #P2-TIMELINE-FONT: Increase font size in conversation timeline for better readability
+- [ ] #P2-STATUSBAR-HEIGHT: Reduce status bar vertical height by decreasing padding
+
+**#P2-TIMELINE-FONT - Timeline Font Size:**
+
+**Problem:**
+Timeline conversation text is too small, making it harder to read during normal use. Users frequently lean in to read summaries and details.
+
+**Implementation:**
+1. Locate timeline text rendering (likely `TimelineEntryRow.swift`)
+2. Increase base font size from current value (likely 13-14pt) to 15-16pt
+3. Ensure proper line height scaling
+4. Test with long/short entries to verify layout doesn't break
+5. Verify scrolling performance isn't impacted
+
+**Files:**
+- `Contextify/Contextify/TimelineEntryRow.swift`
+- Possibly `Contextify/Contextify/TimelineModels.swift` if font constants defined there
+
+**Acceptance Criteria:**
+- ✅ Timeline text is comfortably readable at normal viewing distance
+- ✅ Layout remains clean with longer text
+- ✅ No performance degradation
+- ✅ Font size consistent across summary and detail views
+
+**Effort:** 1-1.5 hours
+
+---
+
+**#P2-STATUSBAR-HEIGHT - Reduce Status Bar Padding:**
+
+**Problem:**
+Status bar at top of window takes up too much vertical space due to excessive padding, reducing available space for timeline content.
+
+**Implementation:**
+1. Locate status bar view (likely `StatusBarView.swift` or similar)
+2. Reduce vertical padding (top/bottom insets)
+3. Ensure icons/text remain vertically centered
+4. Test with different window sizes
+5. Verify doesn't look cramped or cut off
+
+**Current vs Target:**
+- Current: Likely 12-16pt total vertical padding
+- Target: 6-10pt total vertical padding (50% reduction)
+
+**Files:**
+- `Contextify/Contextify/StatusBarView.swift` (or similar)
+- May need to adjust `.padding()` modifiers in SwiftUI
+
+**Acceptance Criteria:**
+- ✅ Status bar height reduced by ~30-40%
+- ✅ Content remains vertically centered
+- ✅ Icons and text don't appear cramped
+- ✅ More screen real estate for timeline
+- ✅ Maintains visual hierarchy
+
+**Effort:** 30min - 1 hour
 
 ---
 
