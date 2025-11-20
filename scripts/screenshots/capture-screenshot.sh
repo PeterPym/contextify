@@ -17,10 +17,11 @@ FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}.png"
 mkdir -p "$OUTPUT_DIR"
 
 # Run setup script first, passing window index if provided
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -n "$WINDOW_INDEX" ]; then
-    ./scripts/setup-screenshot.sh "$WINDOW_INDEX"
+    "$SCRIPT_DIR/setup-screenshot.sh" "$WINDOW_INDEX"
 else
-    ./scripts/setup-screenshot.sh
+    "$SCRIPT_DIR/setup-screenshot.sh"
 fi
 
 # Capture region (must match setup script exactly)
