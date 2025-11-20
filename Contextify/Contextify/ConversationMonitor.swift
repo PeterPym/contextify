@@ -609,7 +609,7 @@ final class ConversationMonitor {
 
                         // Task 2: Health monitoring with auto-recovery
                         group.addTask { [weak self] in
-                            await self?.runHealthMonitoring(projectId: projectId, orchestrator: orchestrator)
+                            await self?.runHealthMonitoring(orchestrator: orchestrator)
                         }
                     }
                 }
@@ -3047,7 +3047,7 @@ final class ConversationMonitor {
 
     /// Health monitoring loop - runs every 30s
     /// Detects stalls and attempts auto-recovery
-    private func runHealthMonitoring(projectId: String, orchestrator: TranscriptOrchestrator) async {
+    private func runHealthMonitoring(orchestrator: TranscriptOrchestrator) async {
         log.info("🏥 Health monitoring started")
 
         while !Task.isCancelled {
@@ -3061,7 +3061,7 @@ final class ConversationMonitor {
                 }
 
                 if shouldRunImmediateCheck {
-                    await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "restart-guard")
+                    await performHealthCheck(orchestrator: orchestrator, trigger: "restart-guard")
                     continue
                 }
 
@@ -3069,7 +3069,7 @@ final class ConversationMonitor {
                 try await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
 
-                await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "interval")
+                await performHealthCheck(orchestrator: orchestrator, trigger: "interval")
 
             } catch is CancellationError {
                 break
@@ -3083,9 +3083,16 @@ final class ConversationMonitor {
         log.info("🏥 Health monitoring stopped")
     }
 
-    private func performHealthCheck(projectId: String, orchestrator: TranscriptOrchestrator, trigger: String) async {
+    private func performHealthCheck(orchestrator: TranscriptOrchestrator, trigger: String) async {
         await MainActor.run { [weak self] in
             self?.lastHealthCheck = Date()
+        }
+
+        // Get current project ID from state (may have changed since task started)
+        let projectId = await MainActor.run { self.currentProjectId }
+        guard let projectId else {
+            log.debug("🏥 Health check skipped (no current project)")
+            return
         }
 
         // Capture diagnostic snapshot
