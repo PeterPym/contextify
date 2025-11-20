@@ -8,10 +8,10 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 26 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 64
+**Total Active Items:** 65
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -726,7 +726,64 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 26 Items
+# P2 (Medium Priority) - 27 Items
+
+---
+
+## Empty Project Detection (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish - avoid showing spinner for empty projects)
+**Effort:** 2-3 hours
+
+- [ ] #P2-EMPTY-PROJECTS: Detect and immediately show empty state for projects with no conversation entries
+
+**Problem:**
+When switching to a project with no conversations, users see a "searching for conversations" spinner that then transitions to a "no conversations" view. This creates unnecessary loading state when we could determine emptiness immediately.
+
+**Impact:**
+- Confusing UX - spinner implies search is happening when result is predetermined
+- Wasted time - users wait for spinner when answer is instant
+- May indicate filtering bug - we previously tried to hide projects with 0 messages from tab bar
+
+**Investigation Required:**
+Add logging to verify SQL query filtering behavior:
+- Log count of conversation entries per project during tab rendering
+- Verify if projects with 0 entries should appear in tab bar at all
+- Check if SQL query to filter projects with 0 entries was implemented incorrectly
+- Determine if issue is detection logic vs display logic
+
+**Solution:**
+
+1. **Add SQL Query Logging** (1 hour)
+   - Add `.info` level logs showing entry count per project in tab bar
+   - Log SQL query used to filter projects: `SELECT project_id, COUNT(*) FROM timeline_entries GROUP BY project_id`
+   - Verify if zero-entry projects are intentionally shown or filtering failed
+   - Log to category: "ProjectFiltering" for easy grep
+
+2. **Immediate Empty Detection** (1 hour)
+   - Query entry count before showing spinner: `SELECT COUNT(*) FROM timeline_entries WHERE project_id = ?`
+   - If count = 0, skip loading state and show empty view immediately
+   - Add `hasAnyEntries` check to project switch logic
+   - Cache result to avoid repeated queries
+
+3. **Decision on Zero-Entry Projects** (30 min)
+   - Review logs to determine if zero-entry projects should be hidden from tab bar
+   - If filtering intended: Fix SQL query and hide from tabs
+   - If intentional display: Keep immediate empty state (faster UX)
+   - Document decision in code comments
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (project switch logic)
+- `Contextify/Contextify/ProjectSwitcherView.swift` (tab bar rendering with logging)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (entry count query)
+
+**Acceptance Criteria:**
+- ✅ Logs show entry count for each project in tab bar
+- ✅ SQL query for filtering projects with 0 entries is logged and verified
+- ✅ Projects with no conversations show empty state immediately (no spinner)
+- ✅ Decision documented: hide zero-entry projects from tabs OR show with instant empty state
+- ✅ No "searching" spinner when switching to empty project
 
 ---
 
