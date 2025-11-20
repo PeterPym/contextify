@@ -93,9 +93,10 @@ echo ""
 echo "🔍 Analyzing pipeline completeness..."
 echo ""
 
-declare -a ACTIVE_STAGES
-declare -a BROKEN_STAGES
-declare -A STAGE_COUNTS
+ACTIVE_STAGES=()
+BROKEN_STAGES=()
+STAGE_NAMES=()
+STAGE_COUNTS=()
 
 for stage_def in "${PIPELINE_STAGES[@]}"; do
     stage_name="${stage_def%%:*}"
@@ -105,8 +106,14 @@ for stage_def in "${PIPELINE_STAGES[@]}"; do
     pattern=$(echo "$tags" | tr ',' '|')
 
     # Count occurrences
-    count=$(grep -cE "\[($pattern)\]" "$LOGFILE" 2>/dev/null || echo "0")
-    STAGE_COUNTS["$stage_name"]=$count
+    count=$(grep -cE "\[($pattern)\]" "$LOGFILE" 2>/dev/null || true)
+    count=${count:-0}
+    count=$(printf "%s" "$count" | tr -dc '0-9')
+    if [ -z "$count" ]; then
+        count=0
+    fi
+    STAGE_NAMES+=("$stage_name")
+    STAGE_COUNTS+=("$count")
 
     if [ "$count" -gt 0 ]; then
         ACTIVE_STAGES+=("$stage_name")
@@ -135,9 +142,9 @@ Log: $LOGFILE
 
 EOF
 
-    for stage_def in "${PIPELINE_STAGES[@]}"; do
-        stage_name="${stage_def%%:*}"
-        count="${STAGE_COUNTS[$stage_name]}"
+    for i in "${!STAGE_NAMES[@]}"; do
+        stage_name="${STAGE_NAMES[$i]}"
+        count="${STAGE_COUNTS[$i]}"
 
         if [ "$count" -eq 0 ]; then
             printf "❌ %-30s %5d events  PIPELINE BROKEN HERE\n" "$stage_name:" "$count"
@@ -176,10 +183,9 @@ EOF
         # Identify first broken stage
         first_broken=""
         last_working=""
-        for stage_def in "${PIPELINE_STAGES[@]}"; do
-            stage_name="${stage_def%%:*}"
-            count="${STAGE_COUNTS[$stage_name]}"
-
+        for i in "${!STAGE_NAMES[@]}"; do
+            stage_name="${STAGE_NAMES[$i]}"
+            count="${STAGE_COUNTS[$i]}"
             if [ "$count" -eq 0 ] && [ -z "$first_broken" ]; then
                 first_broken="$stage_name"
                 break
