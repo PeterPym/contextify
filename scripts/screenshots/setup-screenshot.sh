@@ -46,17 +46,29 @@ SHOT_HEIGHT=900
 CAPTURE_X=200
 CAPTURE_Y=50
 
-# Contextify: Left side within capture area, vertically centered (showcase the app!)
-CONTEXTIFY_WIDTH=580
-CONTEXTIFY_HEIGHT=700
-CONTEXTIFY_X=$((CAPTURE_X + 10))
-CONTEXTIFY_Y=$((CAPTURE_Y + 100))  # Vertically centered: (900 - 700) / 2 = 100
+# Window dimensions and positions (Apple marketing style: compact HUD + context)
+# Contextify: Compact HUD design (~420px wide, stays out of the way)
+CONTEXTIFY_WIDTH=420
+CONTEXTIFY_HEIGHT=550
+CONTEXTIFY_X=480
+CONTEXTIFY_Y=360
 
-# Terminal: Right side within capture area, vertically centered
-TERMINAL_WIDTH=800
-TERMINAL_HEIGHT=850
-TERMINAL_X=$((CAPTURE_X + 610))  # 10 + 580 + 20 gap
-TERMINAL_Y=$((CAPTURE_Y + 25))  # Vertically centered: (900 - 850) / 2 = 25
+# iTerm2: Terminal for context (shows real development workflow)
+# Positioned with 50px gap, bottoms aligned at Y=910
+TERMINAL_WIDTH=550
+TERMINAL_HEIGHT=400
+TERMINAL_X=950
+TERMINAL_Y=510
+
+# OLD DIMENSIONS (split-screen style, equal emphasis):
+# CONTEXTIFY_WIDTH=580
+# CONTEXTIFY_HEIGHT=700
+# CONTEXTIFY_X=$((CAPTURE_X + 10))  # 210
+# CONTEXTIFY_Y=$((CAPTURE_Y + 100))  # 150
+# TERMINAL_WIDTH=800
+# TERMINAL_HEIGHT=850
+# TERMINAL_X=$((CAPTURE_X + 610))  # 810
+# TERMINAL_Y=$((CAPTURE_Y + 25))  # 75
 
 # Position Contextify first (on the left, showcasing the app!)
 osascript <<EOF

@@ -47,7 +47,12 @@ CAPTURE_Y=50
 
 echo ""
 echo "📸 Taking screenshot in 3 seconds..."
-sleep 3
+
+# Ensure Contextify has focus for the shot
+osascript -e 'tell application "Contextify" to activate' > /dev/null 2>&1
+sleep 0.5
+
+sleep 2.5  # Remaining countdown
 
 # Capture specific region (x, y, width, height)
 screencapture -x -R"${CAPTURE_X},${CAPTURE_Y},${SHOT_WIDTH},${SHOT_HEIGHT}" "$FILENAME"
