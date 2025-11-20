@@ -277,7 +277,7 @@ EOF
 Once CI build succeeds, manually test these features:
 
 ### File Extraction
-- [ ] Open transcript inventory window
+- [ ] Open transcripts window
 - [ ] Select a transcript
 - [ ] Verify detail view displays correctly
 - [ ] Test "Regenerate" button in detail view
@@ -291,7 +291,7 @@ Once CI build succeeds, manually test these features:
 - [ ] Check that low-confidence metadata shows info icon
 
 ### Status Bar Aggregation
-- [ ] Open transcript inventory (triggers metadata queue)
+- [ ] Open transcripts (triggers metadata queue)
 - [ ] Open conversation log (triggers timeline queue)
 - [ ] Verify status bar shows sum of both queues
 - [ ] Example: Timeline 10 + Transcript 5 = Status shows 15
@@ -300,7 +300,7 @@ Once CI build succeeds, manually test these features:
 
 ### Integration
 - [ ] No regressions in conversation log (timeline view)
-- [ ] Transcript inventory loads quickly
+- [ ] Transcripts loads quickly
 - [ ] Search/filter works in inventory
 - [ ] Context menus work (export, delete)
 - [ ] Developer mode features work (if enabled)

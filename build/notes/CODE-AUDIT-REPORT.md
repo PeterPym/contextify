@@ -436,7 +436,7 @@ The 300-line target was ambitious. Achieving 1019 lines (−32.7% reduction) is 
 ### Long-Term (Future Work)
 1. Implement abstract LLM queue design (Phase 1 deferred)
 2. Further reduce TranscriptInventoryView if needed (extract view model)
-3. Add integration tests for transcript inventory flow
+3. Add integration tests for transcripts flow
 
 ---
 

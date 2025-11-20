@@ -84,7 +84,7 @@ This directory contains high-level architectural documentation that explains:
 
 ### [Window System](window-system.md)
 **Topics:** 4-window macOS app architecture
-- Main HUD, Transcript Inventory, Projects, Settings
+- Main HUD, Transcripts, Projects, Settings
 - Window management patterns
 - **Note:** iTerm2 integration removed in commit 35ce380
 

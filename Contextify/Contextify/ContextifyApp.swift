@@ -17,7 +17,7 @@ struct WindowCommands: Commands {
 
   var body: some Commands {
     CommandMenu("Window") {
-      Button("Show Transcript Inventory") {
+      Button("Show Transcripts") {
         openWindow(id: "transcript-inventory")
       }
       .keyboardShortcut("i", modifiers: [.command, .control])
@@ -295,7 +295,7 @@ struct ContextifyApp: App {
     .defaultSize(width: 500, height: 350)
     .windowResizability(.contentSize)
 
-    Window("Transcript Inventory", id: "transcript-inventory") {
+    Window("Transcripts", id: "transcript-inventory") {
       TranscriptInventoryWindow()
         .environment(HUDViewModel.shared)
         .environment(ConversationMonitor.shared)

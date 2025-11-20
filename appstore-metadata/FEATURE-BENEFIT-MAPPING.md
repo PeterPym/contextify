@@ -75,7 +75,7 @@
 
 ---
 
-## Feature 5: Transcript Inventory (Session Browser)
+## Feature 5: Transcripts (Session Browser)
 
 **Feature**: Browse ALL past conversations across all projects
 
@@ -86,7 +86,7 @@
 4. **Audit trail** - Know exactly when you worked on what
 5. **Learning resource** - Review how you approached similar problems in the past
 
-**User Story**: "My coworker asks 'How did you implement that caching layer?' I open Transcript Inventory, filter by 'caching', find the session from 6 weeks ago, and share the approach."
+**User Story**: "My coworker asks 'How did you implement that caching layer?' I open Transcripts, filter by 'caching', find the session from 6 weeks ago, and share the approach."
 
 ---
 

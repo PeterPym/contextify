@@ -26,7 +26,7 @@ Questions that block progress on specific documents. Please review and answer so
 3. **References non-existent file**:
    - Document extensively discusses `SidecarMetadataStore` as in-memory cache (lines 483, 486, 966, 1046, 1117)
    - File `SidecarMetadataStore.swift` does not exist in codebase
-   - Claims about "transcript inventory gap" may be outdated
+   - Claims about "transcripts gap" may be outdated
 
 **Resolution:** ARCHIVED (2025-11-17)
 

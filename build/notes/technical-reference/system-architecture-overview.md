@@ -59,7 +59,7 @@ Project (Workspace)
 
 - **Session**: UI representation of a transcript
   - Includes: `provider` (Claude Code/Codex), `identifier`, `fileURL`, `lastActivity`, `entryCount`
-  - Displayed in transcript inventory view
+  - Displayed in transcripts view
   - User can switch between sessions within a project
 
 **Multiple sessions per project:** User might have:
@@ -542,7 +542,7 @@ User clicks "Pin to Session" in inventory
 - UI concept (how we talk about transcripts in the app)
 - SwiftUI representation with display properties
 - Struct: `TranscriptSession(provider, identifier, fileURL, lastActivity, entryCount)`
-- What user sees in "Transcript Inventory" view
+- What user sees in "Transcripts" view
 
 **They're the same thing, different layers:**
 - Transcript = storage layer

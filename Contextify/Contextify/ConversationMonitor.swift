@@ -1012,7 +1012,7 @@ final class ConversationMonitor {
         return false
     }
 
-    /// Public method for user-initiated session switch from transcript inventory
+    /// Public method for user-initiated session switch from transcripts
     @MainActor
     func switchToSessionFromUser(_ session: TranscriptSession) async {
         guard orchestrator != nil else {
@@ -1182,8 +1182,8 @@ final class ConversationMonitor {
         }
     }
 
-    /// Load all sessions from database for transcript inventory
-    /// This is called when the transcript inventory window opens to ensure sessions are populated
+    /// Load all sessions from database for transcripts
+    /// This is called when the transcripts window opens to ensure sessions are populated
     @MainActor
     func loadAllSessionsFromDatabase(retryCount: Int = 0) async {
         // Check if both projectId and orchestrator are ready
@@ -1231,7 +1231,7 @@ final class ConversationMonitor {
 
             allSessions = sessions
             allSessionsLastUpdate = Date()
-            log.info("Loaded \(sessions.count) sessions from database for transcript inventory")
+            log.info("Loaded \(sessions.count) sessions from database for transcripts")
         } catch {
             log.error("Failed to load sessions from database: \(error.localizedDescription, privacy: .public)")
         }

@@ -165,13 +165,13 @@ Use `NSCursor.contextualMenuCursor` (question mark pointer) **only for Tier 2 in
 | **ConversationTimelineView.swift** |
 | Line 36 | Retry button | "Timeline fetch failed. Retry now." | ✅ Good | Keep as-is |
 | Line 72 | Project manager button | "Manage Projects" | ✅ Good | Keep as-is |
-| Line 83 | Transcript inventory | "Show All Transcripts (N)" | ✅ Good | Keep as-is |
+| Line 83 | Transcripts | "Show All Transcripts (N)" | ✅ Good | Keep as-is |
 | Line 112 | Collapse toggle | "Expand/Compact timeline" | ✅ Good | Keep as-is |
 | **TimelineEntryRow.swift** |
 | Line 96 | Pending summary icon | "Summary not yet generated" | ✅ Good | Keep as-is |
 | Line 102 | No summary icon | "No summary available..." | 🤔 Could improve | Add info button for "why?" |
 | Line 129 | Jump to request link | "Jump to original request" | ✅ Good | Keep as-is |
-| Line 139 | Reveal in inventory | "Reveal in transcript inventory" | ✅ Good | Keep as-is |
+| Line 139 | Reveal in inventory | "Reveal in transcripts" | ✅ Good | Keep as-is |
 | **ProjectRowView.swift** |
 | Line 38 | Error indicator | "Ingestion error: [details]" | ⚠️ Could be complex | Review error messages |
 | Line 74 | Follow mode chip | "Configure active session following" | 🤔 Terse | Add info button explaining modes |
@@ -573,7 +573,7 @@ StatusBarView.swift:174 - Not monitoring state
 StatusBarView.swift:189 - Error badge
 ConversationTimelineView.swift:36 - Retry button
 ConversationTimelineView.swift:72 - Project manager button
-ConversationTimelineView.swift:83 - Transcript inventory button
+ConversationTimelineView.swift:83 - Transcripts button
 ConversationTimelineView.swift:112 - Collapse toggle
 TimelineEntryRow.swift:96 - Pending summary
 TimelineEntryRow.swift:102 - No summary available

@@ -208,7 +208,7 @@ All target patterns successfully adopted in Phase 3:
 ### File Extraction (Phase 2)
 - ✅ Verify TranscriptInventoryView compiles
 - ✅ Verify TranscriptDetailView compiles
-- ✅ Open transcript inventory window
+- ✅ Open transcripts window
 - ✅ Select a transcript and verify detail view displays
 - ✅ Check that all detail view features work (regenerate, actions, etc.)
 
@@ -220,7 +220,7 @@ All target patterns successfully adopted in Phase 3:
 - ✅ Verify loading state shows hourglass during generation
 
 ### Status Bar Aggregation (Phase 5)
-- ✅ Open transcript inventory (triggers metadata queue)
+- ✅ Open transcripts (triggers metadata queue)
 - ✅ Open conversation log (triggers timeline queue)
 - ✅ Verify status bar shows sum of both queues (not just one)
 - ✅ Watch count decrease as each queue finishes

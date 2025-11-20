@@ -104,7 +104,7 @@ The screenshots tell a story about Contextify's value proposition:
 - Magnifier callout or just clear visibility of badges?
 - What's the best text overlay to emphasize the multi-project + notification value?
 
-### 4. Transcript Inventory (04-transcript-inventory)
+### 4. Transcripts (04-transcript-inventory)
 
 **Shows:** Transcript browser window with list of past conversations
 **Illustrates:** Deep exploration capability - review and gain insights from history

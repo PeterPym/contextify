@@ -106,7 +106,7 @@ Comprehensive refactoring of TranscriptInventoryView to improve maintainability,
 2. Select a transcript and verify TranscriptDetailView shows all sections
 3. Force a metadata generation error (e.g., disconnect network)
 4. Verify error state appears with retry button
-5. Open transcript inventory + conversation log simultaneously
+5. Open transcripts + conversation log simultaneously
 6. Verify status bar shows sum of both queues (not just one)
 
 ## Related Documentation

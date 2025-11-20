@@ -31,10 +31,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - Timeline icon placement corrected to assistant messages (semantic accuracy)
 
-## 2025-10-10 - Timeline Caching & Transcript Inventory
+## 2025-10-10 - Timeline Caching & Transcripts
 
 ### Added
-- **Transcript Inventory** - Browse and switch between conversation sessions
+- **Transcripts** - Browse and switch between conversation sessions
   - Independent window UI with session list
   - Worktree support for git repositories
   - Session metadata display (provider, duration, message count)

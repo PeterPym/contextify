@@ -199,7 +199,7 @@ So that I can quickly access the project directory.
 Window
   Bring All to Front
   ──────────────────
-  Transcript Inventory    ⌘1
+  Transcripts    ⌘1
   Projects                ⌘⇧P  ← NEW
   ──────────────────
   [Open windows list]
@@ -1249,9 +1249,9 @@ do {
 
 **Decision:** ❌ Rejected - Dedicated window provides better UX
 
-### Alternative 3: Transcript Inventory Integration
+### Alternative 3: Transcripts Integration
 
-**Approach:** Add project grouping to existing Transcript Inventory
+**Approach:** Add project grouping to existing Transcripts
 
 **Pros:**
 - Reuses existing UI

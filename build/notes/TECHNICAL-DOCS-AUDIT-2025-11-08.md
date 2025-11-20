@@ -39,7 +39,7 @@ Audit of 20 technical reference documents (totaling 409KB) reveals:
 
 #### 1. `transcript-inventory-db-integration-gap.md` (91KB)
 **Status:** ⚠️ **NEEDS BREAKING DOWN**
-- **Current:** Analysis doc for unresolved feature (Transcript Inventory SQL integration)
+- **Current:** Analysis doc for unresolved feature (Transcripts SQL integration)
 - **Issue:** Still relevant - feature NOT implemented yet
 - **Size:** 2,723 lines - WAY too large
 - **Action:** Break into:
@@ -274,7 +274,7 @@ build/notes/technical-reference/
 ### Window System
 **File:** `architecture/window-system.md`
 **Purpose:** 4-window macOS app architecture
-**Topics:** Main HUD, Transcript Inventory, Projects, Settings
+**Topics:** Main HUD, Transcripts, Projects, Settings
 
 ---
 

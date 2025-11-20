@@ -2,7 +2,7 @@ import SwiftUI
 import ContextifyCore
 import OSLog
 
-/// Scope filter for transcript inventory
+/// Scope filter for transcripts
 enum InventoryScope: String, CaseIterable, Identifiable {
   case conversations = "conversations"
   case metadata = "metadata"
@@ -50,7 +50,7 @@ struct TranscriptInventoryView: View {
   @State private var showMetadataInfo: [String: Bool] = [:]  // Track info popover state per session
   @State private var showErrorInfo: [String: Bool] = [:]  // Track error info popover state per session
 
-  private let log = Logger(subsystem: "dev.contextify", category: "TranscriptInventoryView")
+  private let log = Logger(subsystem: "dev.contextify", category: "Transcripts")
 
   var body: some View {
     Group {

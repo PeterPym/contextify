@@ -17,7 +17,7 @@ Contextify uses **two independent LLM processing queues** for different content 
 
 2. **Transcript Metadata Generation** (TranscriptMetadataOrchestrator)
    - Generates titles, descriptions, and topics for entire transcripts
-   - Triggered: When viewing transcript inventory
+   - Triggered: When viewing transcripts
    - Queue: LIFO with viewport-aware pruning (sequential processing, newest first)
 
 Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
@@ -107,7 +107,7 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 **Location:** `Contextify/Contextify/TranscriptMetadataOrchestrator.swift`
 
 **Triggered By:**
-- Opening transcript inventory view
+- Opening transcripts view
 - Viewing transcript details
 - Manual refresh/regeneration
 

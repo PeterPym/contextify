@@ -25,7 +25,7 @@
 Contextify consists of **four primary windows**, each with distinct purposes, data sources, and architectural patterns:
 
 1. **Main HUD Window** - Real-time conversation timeline ~~+ iTerm2 compose panel~~ (removed 2025-11-01)
-2. **Transcript Inventory Window** - Session browser with metadata
+2. **Transcripts Window** - Session browser with metadata
 3. **Projects Window** - Multi-project discovery and switching
 4. **Settings Window** - User preferences (standard macOS Settings)
 
@@ -57,8 +57,8 @@ struct ContextifyApp: App {
     }
     .defaultSize(width: 940, height: 360)
 
-    // Window 2: Transcript Inventory (on-demand)
-    Window("Transcript Inventory", id: "transcript-inventory") {
+    // Window 2: Transcripts (on-demand)
+    Window("Transcripts", id: "transcript-inventory") {
       TranscriptInventoryWindow()
         .environment(HUDViewModel.shared)
         .environment(ConversationMonitor.shared)
@@ -92,7 +92,7 @@ struct WindowCommands: Commands {
 
   var body: some Commands {
     CommandMenu("Window") {
-      Button("Show Transcript Inventory") {
+      Button("Show Transcripts") {
         openWindow(id: "transcript-inventory")
       }
       .keyboardShortcut("i", modifiers: [.command, .control])
@@ -349,11 +349,11 @@ var visibleEntries: [TimelineEntry] {
 
 ---
 
-## Window 2: Transcript Inventory
+## Window 2: Transcripts
 
 ### Purpose
 
-The Transcript Inventory window provides:
+The Transcripts window provides:
 - Browse all discovered transcript sessions (across all providers)
 - View session metadata (title, description, topics)
 - Switch between sessions (updates Main HUD timeline)
@@ -363,7 +363,7 @@ The Transcript Inventory window provides:
 ### Component Hierarchy
 
 ```
-Window("Transcript Inventory", id: "transcript-inventory")
+Window("Transcripts", id: "transcript-inventory")
   ├─ TranscriptInventoryWindow
   │   └─ TranscriptInventoryView
   │       ├─ HSplitView (macOS native sidebar + detail)
@@ -941,7 +941,7 @@ struct ContextifyApp: App {
         .environment(timeline)   // ← Shared
     }
 
-    Window("Transcript Inventory", id: "transcript-inventory") {
+    Window("Transcripts", id: "transcript-inventory") {
       TranscriptInventoryWindow()
         .environment(HUDViewModel.shared)        // ← Same instance
         .environment(ConversationMonitor.shared) // ← Same instance
@@ -1027,7 +1027,7 @@ NSApp.keyWindow?.close()
 
 ## Comparison Matrix: All Windows
 
-| Aspect | Main HUD | Transcript Inventory | Projects | Settings |
+| Aspect | Main HUD | Transcripts | Projects | Settings |
 |--------|----------|----------------------|----------|----------|
 | **Window ID** | `"main"` | `"transcript-inventory"` | `"projects"` | N/A |
 | **Default Size** | 940×360 | 1000×700 | 800×600 | System |
@@ -1205,7 +1205,7 @@ Inventory Window (if open):
 - `ConversationMonitor.swift` (lines 130-1050): State management
 - `HUDViewModel.swift` (app/Sources/ContextifyCore/HUDCore.swift): Project + git
 
-### Transcript Inventory Window
+### Transcripts Window
 - `ContextifyApp.swift` (lines 79-84): Window declaration
 - `TranscriptInventoryView.swift` (lines 1-500): Inventory UI
 - `TranscriptInventoryWindow.swift`: Window wrapper
@@ -1230,9 +1230,9 @@ Contextify's window architecture follows a **shared singleton pattern** with:
 - ✅ Single source of truth (SQL for most data)
 - ✅ Reactive updates (SwiftUI Observation)
 - ✅ Efficient cross-window communication (shared environment)
-- ⚠️ **One known gap**: Transcript Inventory metadata persistence
+- ⚠️ **One known gap**: Transcripts metadata persistence
 
-**Fixing the Inventory gap** requires:
+**Fixing the gap** requires:
 1. Add `persistDiscoveredSessions()` method
 2. Migrate `SidecarMetadataStore` to SQL backend
 3. Update metadata loading to use SQL instead of in-memory cache

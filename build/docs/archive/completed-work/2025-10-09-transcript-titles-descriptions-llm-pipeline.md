@@ -26,12 +26,12 @@ Be specific about:
 **Date:** 2025-10-09
 **Author:** System (via ultrathinking mode)
 **Status:** Proposal / Design Phase
-**Related Feature:** Transcript Inventory Enhancement
+**Related Feature:** Transcripts Enhancement
 
 ## 1. Problem Statement
 
 ### Current State
-The Transcript Inventory View (`TranscriptInventoryView.swift`) displays a list of AI conversation transcripts with minimal metadata:
+The Transcripts View (`TranscriptInventoryView.swift`) displays a list of AI conversation transcripts with minimal metadata:
 
 - **Identifier**: Filename (UUID-based, e.g., `16093e60-2cf4-4501-b841-ee7a6d072e88.jsonl`)
 - **Provider**: "Claude Code" or "Codex CLI" with icon
@@ -45,7 +45,7 @@ This provides no insight into conversation content. Users must:
 ### Desired State
 Each transcript should display:
 
-- **Title**: Concise summary (≤60 chars) like "Transcript Inventory Window Migration"
+- **Title**: Concise summary (≤60 chars) like "Transcripts Window Migration"
 - **Description**: Brief overview (≤200 chars) like "Converted modal sheet to independent window. Fixed Swift 6 Sendable violations. Added public APIs for session management."
 
 These should be:
@@ -1979,7 +1979,7 @@ struct TranscriptInventoryView: View {
     VStack(spacing: 0) {
       // Header
       HStack {
-        Text("Transcript Inventory")
+        Text("Transcripts")
           .font(.headline)
         Spacer()
         Button {
@@ -2398,7 +2398,7 @@ final class ConversationMonitor {
         }
     }
 
-    /// Public method for user-initiated session switch from transcript inventory
+    /// Public method for user-initiated session switch from transcripts
     func switchToSessionFromUser(_ session: TranscriptSession) async {
         await switchToSession(session, reason: .userSelection)
     }

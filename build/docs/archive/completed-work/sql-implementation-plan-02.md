@@ -127,7 +127,7 @@ App-->>User: Show live timeline
 
 ---
 
-### Flow B — User Browses Transcript Inventory → Switches Session
+### Flow B — User Browses Transcripts → Switches Session
 
 ```mermaid
 sequenceDiagram
@@ -263,7 +263,7 @@ Error --> Idle: Tear down watcher
   R: `ConversationMonitor.visibleEntries` (filtered to current session)
   W: None (read-only view)
 
-* **Transcript Inventory:**
+* **Transcripts:**
   R: `ConversationMonitor.allSessions` (current: in-memory; future: DB query)
   W: Session selection triggers `switchToSessionFromUser(_:)`
 

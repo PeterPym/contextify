@@ -20,7 +20,7 @@ Never lose valuable AI coding conversations again. Contextify creates a permanen
 
 • **Timeline Visualization** – Chronological view of every message and decision. Jump to any point instantly.
 
-• **Transcript Inventory** – Browse ALL past sessions across all projects. Filter by date, provider, or project.
+• **Transcripts** – Browse ALL past sessions across all projects. Filter by date, provider, or project.
 
 • **Git Integration** – Automatically tracks which branch each conversation happened on. Perfect for code reviews.
 

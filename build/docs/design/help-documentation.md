@@ -12,7 +12,7 @@ Contextify is a macOS app that monitors your Claude Code and Codex CLI sessions 
 - Live timeline of conversation activity
 - AI-powered summaries of each interaction
 - Multi-project support with automatic discovery
-- Searchable transcript inventory
+- Searchable transcripts
 - Cross-machine database sync (optional)
 
 ### Quick Setup
@@ -126,7 +126,7 @@ Contextify can follow sessions in two ways:
 
 **Navigation:**
 - Click entry badges to jump between related requests/responses
-- Use "Reveal in transcript inventory" to see full session context
+- Use "Reveal in transcripts" to see full session context
 - Scroll freely — auto-scroll won't interrupt you
 
 **Manual Refresh:**
@@ -433,7 +433,7 @@ Contextify will warn you if it detects recent access from another machine.
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘⇧I | Show Transcript Inventory |
+| ⌘⇧I | Show Transcripts |
 | ⌘⇧P | Show Projects Window |
 | ⌘, | Open Settings |
 

@@ -421,7 +421,7 @@ func generateMetadata(for transcriptId: String) async throws -> TranscriptMetada
 
 #### Testing Steps for TranscriptMetadataOrchestrator:
 1. Clear `transcript_metadata` table: `DELETE FROM transcript_metadata`
-2. Open transcript inventory, verify metadata generation triggers
+2. Open transcripts, verify metadata generation triggers
 3. Check logs: should see "Generating metadata" (not "Parsing transcript file")
 4. Verify DB: `SELECT * FROM transcript_metadata` should have records
 5. Verify no `.metadata.json` sidecar files created next to transcripts
@@ -861,7 +861,7 @@ func testFullTimelineFlow() async throws {
    - [ ] Check DB: `SELECT COUNT(*) FROM timeline_cache` > 0
 
 4. **Transcript Metadata**
-   - [ ] Open transcript inventory
+   - [ ] Open transcripts
    - [ ] Verify metadata generation triggers for uncached sessions
    - [ ] Check logs: "Generating metadata for {session}"
    - [ ] Verify DB: `SELECT * FROM transcript_metadata` has records
