@@ -8,10 +8,10 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 28 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 29 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 67
+**Total Active Items:** 68
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -820,7 +820,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 28 Items
+# P2 (Medium Priority) - 29 Items
 
 ---
 
@@ -1207,6 +1207,79 @@ Multiple branches created during late-night token burn session with speculative 
 - Experimental APIs → Requires architecture review
 
 **Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
+
+---
+
+## Timeline Display Enhancement (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish - improved code readability in timeline)
+**Effort:** 2-3 hours
+
+- [ ] #P2-MONOSPACE: Render backtick-enclosed text in monospace font in timeline entries
+
+**Problem:**
+Timeline entries display inline code (backtick-enclosed text) in the same proportional font as regular text, making code snippets, function names, and technical terms harder to read and identify at a glance.
+
+**Example:**
+Current display uses proportional font for all text including backticked content:
+```
+Claude Code suggested creating `todos.md` in `/Users/rob/code/projects/contextify/`.
+```
+
+Should render backticked text in monospace for better readability:
+- `todos.md` → rendered in monospace
+- `/Users/rob/code/projects/contextify/` → rendered in monospace
+- Regular text → rendered in system font
+
+**Implementation:**
+
+1. **Text Parsing** (1 hour)
+   - Parse timeline entry text (summary, detail fields) for backtick patterns
+   - Detect inline code: single backticks `` `code` ``
+   - Handle edge cases: escaped backticks, nested backticks, unclosed backticks
+   - Split text into segments: regular text vs code spans
+
+2. **SwiftUI Rendering** (1 hour)
+   - Use `Text` concatenation with `.font(.system(.body, design: .monospaced))`
+   - Build attributed text with mixed fonts:
+     - Regular segments: system font
+     - Code segments: monospace font
+   - Preserve existing styling (color, size, weight)
+   - Ensure proper spacing and line breaks
+
+3. **Testing** (30 min)
+   - Test with various backtick patterns:
+     - Single word: `` `todos.md` ``
+     - Path: `` `/Users/rob/path` ``
+     - Multiple in one line: `` `file.swift` and `other.swift` ``
+     - Edge cases: unclosed backticks, escaped backticks
+   - Verify rendering in timeline rows (summary and detail views)
+   - Check performance with long text containing many code spans
+
+**Files:**
+- `Contextify/Contextify/TimelineEntryRow.swift` (entry display)
+- `Contextify/Contextify/ConversationMonitor.swift` (if text preprocessing needed)
+- Possibly new helper: `Contextify/Contextify/Views/FormattedText.swift` (reusable component)
+
+**Acceptance Criteria:**
+- ✅ Backtick-enclosed text renders in monospace font
+- ✅ Regular text remains in system font
+- ✅ Proper handling of multiple code spans in one entry
+- ✅ Edge cases handled gracefully (unclosed, escaped backticks)
+- ✅ No performance degradation with long text
+- ✅ Styling preserved (colors, emphasis)
+
+**Benefits:**
+- Improved readability of technical content in timeline
+- Easier to spot file paths, function names, code snippets
+- More professional appearance matching developer tools
+- Consistent with markdown rendering conventions
+
+**Example Timeline Entries to Test:**
+- "Claude Code suggested creating `todos.md` in `/Users/rob/code/projects/contextify/`."
+- "Fixed `ConversationMonitor.swift` warnings in `startWatchingTranscript()`"
+- "Updated `README.md` with `npm install` instructions"
 
 ---
 
