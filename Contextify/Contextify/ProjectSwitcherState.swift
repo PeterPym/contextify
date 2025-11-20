@@ -735,28 +735,15 @@ public final class ProjectSwitcherState {
 
     cancelMonitorStartTasks()
 
-    // Check if discovery already completed (race condition fix)
+    // Always start monitoring when orchestrator is available, regardless of project count
+    // This fixes race condition where discovery completes with 0 projects AND notification
+    // was already posted before we subscribed (we would wait forever for a notification
+    // that already fired). The monitoring system gracefully handles 0 projects.
     monitorStartTask = Task { [weak self] in
-      guard let self,  let orchestrator = self.orchestrator else { return }
+      guard let self, let orchestrator = self.orchestrator else { return }
       let projectCount = (try? await orchestrator.listProjects().count) ?? 0
-      if projectCount > 0 {
-        // Discovery already completed before we started listening - start monitoring immediately
-        log.info("[SWITCHER-MONITOR] Discovery already complete (projects: \(projectCount)) - starting monitor immediately")
-        await self.startGlobalMonitoringIfNeeded(reason: "discovery-already-complete")
-        return
-      }
-      // No projects yet - wait for notification
-      log.info("[SWITCHER-MONITOR] Waiting for .projectsDiscoveryComplete notification...")
-      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
-      for await _ in notifications {
-        log.info("[SWITCHER-MONITOR] ✅ Received .projectsDiscoveryComplete notification - starting monitor")
-        // Cancel fallback timer since we got the notification
-        await MainActor.run {
-          self.cancelMonitorStartTasks()
-        }
-        await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
-        return
-      }
+      log.info("[SWITCHER-MONITOR] Starting monitoring (projects: \(projectCount))")
+      await self.startGlobalMonitoringIfNeeded(reason: "startup-or-discovery")
     }
 
     // Start fallback timer only AFTER ingestion begins (not immediately at app launch)

@@ -1838,7 +1838,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     log.info("[ENSURE-WATCHER-START] Entered ensureProjectWatcher for project=\(projectId, privacy: .public) target=\(targetTranscriptId ?? "all", privacy: .public)")
 
     let transcripts = try getTranscripts(forProject: projectId)
-    log.info("[ENSURE-WATCHER-QUERY] Found \(transcripts.count) transcripts for project=\(projectId, privacy: .public)")
+    log.debug("[ENSURE-WATCHER-QUERY] Found \(transcripts.count) transcripts for project=\(projectId, privacy: .public)")
 
     guard !transcripts.isEmpty else {
       log.warning("[WATCHER-RECOVERY] No transcripts found for project \(projectId, privacy: .public)")
@@ -1877,10 +1877,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         continue
       }
 
-      log.info("[WATCHER-RECOVERY-START] Restarting watcher for transcript \(transcript.id, privacy: .public)")
+      log.debug("[WATCHER-RECOVERY-START] Restarting watcher for transcript \(transcript.id, privacy: .public)")
       try startWatchingTranscript(transcriptId: transcript.id, fileURL: fileURL, provider: transcript.provider)
       started += 1
-      log.info("[WATCHER-RECOVERY-SUCCESS] Watcher active for transcript \(transcript.id, privacy: .public)")
+      log.debug("[WATCHER-RECOVERY-SUCCESS] Watcher active for transcript \(transcript.id, privacy: .public)")
     }
 
     log.info("[ENSURE-WATCHER-DONE] Completed for project=\(projectId, privacy: .public) started=\(started) already=\(already) missing=\(missing)")

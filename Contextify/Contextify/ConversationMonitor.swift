@@ -3135,7 +3135,7 @@ final class ConversationMonitor {
         log.info("[WATCHER-RECOVERY-START] Attempting recovery for project=\(projectId, privacy: .public) target=\(targetTranscriptId ?? "all", privacy: .public)")
 
         do {
-            log.info("[WATCHER-RECOVERY-CALL] Calling orchestrator.ensureProjectWatcher...")
+            log.debug("[WATCHER-RECOVERY-CALL] Calling orchestrator.ensureProjectWatcher...")
             let summary = try orchestrator.ensureProjectWatcher(
                 projectId: projectId,
                 targetTranscriptId: targetTranscriptId

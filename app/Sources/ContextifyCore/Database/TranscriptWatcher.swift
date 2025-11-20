@@ -217,11 +217,11 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     if wasAdded {
-      log.info("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
+      log.debug("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
     } else {
       // Clean up the source we just created since we didn't use it
       source.cancel()
-      log.info("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
+      log.debug("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
     }
   }
 
