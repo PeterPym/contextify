@@ -38,7 +38,7 @@ done
 # Set defaults
 SHOT_NAME="${SHOT_NAME:-screenshot}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-OUTPUT_DIR="appstore-metadata/screenshots"
+OUTPUT_DIR="appstore-metadata/screenshots/drafts"
 FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}.png"
 
 # Ensure output directory exists
@@ -101,10 +101,10 @@ if [ -n "$OVERLAY_TEXT" ]; then
     echo ""
     echo "📝 Adding text overlay..."
 
-    # Generate final filename
-    FINAL_DIR="appstore-metadata/screenshots/final"
+    # Generate final filename (still in drafts, user moves to releases when ready)
+    FINAL_DIR="appstore-metadata/screenshots/drafts"
     mkdir -p "$FINAL_DIR"
-    FINAL_FILENAME="${FINAL_DIR}/${SHOT_NAME}-${TIMESTAMP}-final.png"
+    FINAL_FILENAME="${FINAL_DIR}/${SHOT_NAME}-${TIMESTAMP}-with-text.png"
 
     # Call text overlay script (suppress auto-open, we handle it here)
     NO_AUTO_OPEN=1 "$SCRIPT_DIR/add-text-overlay.sh" "$FILENAME" "$OVERLAY_TEXT" "$FINAL_FILENAME" > /dev/null

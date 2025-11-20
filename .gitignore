@@ -69,6 +69,10 @@ build/logs/
 build/ResultBundles/
 build/demo-videos/
 build/db-backups/
+build/screenshots-and-video/
+
+# App Store assets
+appstore-metadata/screenshots/drafts/
 
 # Environment variables (contains secrets)
 .env

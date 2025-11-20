@@ -32,9 +32,9 @@ fi
 if [ -z "$OUTPUT_IMAGE" ]; then
     # Extract filename without extension
     BASENAME=$(basename "$INPUT_IMAGE" .png)
-    OUTPUT_DIR="appstore-metadata/screenshots/final"
+    OUTPUT_DIR="appstore-metadata/screenshots/drafts"
     mkdir -p "$OUTPUT_DIR"
-    OUTPUT_IMAGE="${OUTPUT_DIR}/${BASENAME}-final.png"
+    OUTPUT_IMAGE="${OUTPUT_DIR}/${BASENAME}-with-text.png"
 fi
 
 echo "Adding text overlay to screenshot..."
