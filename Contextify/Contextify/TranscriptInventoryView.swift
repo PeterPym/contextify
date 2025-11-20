@@ -222,7 +222,7 @@ struct TranscriptInventoryView: View {
       .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
         replaceVisibleSnapshot(visibleIDs)
       }
-      .searchable(text: $searchText, prompt: "Search transcripts")
+      .searchable(text: $searchText, prompt: "Search")
       .onChange(of: searchText) { _, newValue in
         // Debounce search input (300ms)
         debounceTask?.cancel()
