@@ -2,16 +2,21 @@
 
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 
-**Last Updated:** 2025-11-19
+**Last Updated:** 2025-11-20
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
 - **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 29 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 68
+**Total Active Items:** 69
+
+**Change Log (2025-11-20):**
+- Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
+- Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
+- Root cause analysis reveals watchers never restart after project switches, not that they crash
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -34,11 +39,119 @@
 
 ---
 
-# P0 (Blocking Release) - 5 Items Remaining
+# P0 (Blocking Release) - 6 Items Remaining
 
 ## UI Polish (1 item)
 
 - [ ] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners when selected (possibly unselected too)
+
+---
+
+## Watcher Initialization Failure (1 item) 🚨
+
+**Status:** Not Started (Critical - Users experiencing missing real-time updates)
+**Priority:** P0 (Blocking - Core functionality broken)
+**Effort:** 2-4 hours
+
+- [ ] #P0-WATCHER-INIT: Fix watcher initialization failure causing missing real-time transcript updates
+
+**Problem:**
+Watchers are never initialized during certain app lifecycle events (project switches, discovery re-runs), causing transcripts to stop updating in real-time. Users must manually refresh or restart the app. Health check detects the problem but auto-recovery fails silently.
+
+**Investigation Report:** `build/docs/audits/console-log-error-investigation-2025-11-20.md`
+
+**Critical Evidence from Log Analysis (2025-11-20):**
+- ❌ Zero watcher lifecycle logs (WATCHER-WATCH-START, WATCHER-WATCH-DONE, FSEVENTS-HEARTBEAT)
+- ❌ Watchers never started for 2 active transcripts (banagale-com, contextify)
+- ❌ Health check detected problem 3x in 3.5 minutes, attempted recovery, but **recovery failed silently**
+- ❌ No `[WATCHER-RECOVERY]` or error logs emitted from recovery flow
+- ✅ Files exist on disk and are being written to by CLI tools
+
+**Root Causes Identified:**
+
+1. **Silent Recovery Failure** (Primary Issue)
+   - `ConversationMonitor.attemptWatcherRecovery()` calls `orchestrator.ensureProjectWatcher()`
+   - Neither success log (`[WATCHER-RECOVERY]`) nor error log emitted
+   - Most likely: exception thrown before logging, or task cancelled mid-execution
+   - **Hypothesis:** Swift 6 actor isolation issue or reentrancy deadlock
+
+2. **Watcher Initialization Gap** (Secondary Issue)
+   - Watchers should start during: project discovery, session activation, health check recovery
+   - One or more of these paths is failing silently
+   - No diagnostic logs to trace failure point
+
+3. **Actor Isolation Issues** (Contributing Factor)
+   - Health check runs on background task
+   - Switches to MainActor for logging
+   - Watcher uses DispatchQueue (pre-Swift 6 concurrency)
+   - Potential deadlock when recovery attempts to access both MainActor and watcherQueue
+
+**User Impact:**
+- **Severe:** Codex and Claude Code sessions stop updating in real-time after project switches
+- User must manually restart app to resume monitoring
+- Affects all active development workflows
+
+**Implementation Plan:**
+
+**Phase 1: Diagnose Silent Failure (1 hour)**
+1. Add verbose logging to `ConversationMonitor.attemptWatcherRecovery()`:
+   - Log entry: `[WATCHER-RECOVERY-START] project=X target=Y`
+   - Log before orchestrator call: `[WATCHER-RECOVERY-CALL] calling ensureProjectWatcher`
+   - Log after success: `[WATCHER-RECOVERY-DONE] started=N already=M`
+   - Wrap in explicit do-catch: `[WATCHER-RECOVERY-ERROR] exception=...`
+
+2. Add logging to `TranscriptOrchestrator.ensureProjectWatcher()`:
+   - Log entry: `[ENSURE-WATCHER-START] project=X target=Y`
+   - Log each transcript checked: `[ENSURE-WATCHER-CHECK] transcript=A isWatching=B`
+   - Log each watcher started: `[ENSURE-WATCHER-START-OK] transcript=A`
+   - Log completion: `[ENSURE-WATCHER-DONE] started=N skipped=M`
+
+3. Add logging to `TranscriptWatcher.watch()` if missing:
+   - Verify `[WATCHER-WATCH-START]` logs exist
+   - Add file descriptor open result: `[WATCHER-FD-OPEN] fd=42 errno=0`
+   - Add dispatch source creation: `[WATCHER-SOURCE-CREATE] transcript=X`
+   - Add heartbeat startup: `[FSEVENTS-HEARTBEAT-START]`
+
+**Phase 2: Fix Identified Issues (1-2 hours)**
+Based on Phase 1 findings, likely fixes:
+- Add timeout monitoring for recovery operations (should complete <1s)
+- Fix actor isolation if deadlock detected
+- Add retry with exponential backoff if recovery throws
+- Ensure watcher.watch() is idempotent and can be called multiple times safely
+
+**Phase 3: Verify Fix (1 hour)**
+1. Reproduce watcher failure in clean environment
+2. Verify recovery logs appear and complete successfully
+3. Verify heartbeat logs start appearing every 60s
+4. Test project switch → verify watchers restart
+5. Test app resume → verify watchers still running
+
+**Files to Modify:**
+- `Contextify/Contextify/ConversationMonitor.swift:3126-3136` (recovery logging)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:1834-1860` (ensureProjectWatcher logging)
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift:60-98` (watch() logging)
+
+**Acceptance Criteria:**
+- ✅ Watcher lifecycle logs appear during normal operation
+- ✅ `[FSEVENTS-HEARTBEAT]` logs every 60s showing active watcher count
+- ✅ Recovery attempts are fully logged (success or failure)
+- ✅ Watchers restart after project switch
+- ✅ Watchers survive app resume/background
+- ✅ No more `[TRANSCRIPT-WATCHER]` critical issue logs
+- ✅ Real-time updates work continuously without manual refresh
+
+**Testing:**
+1. Monitor console log during project switch
+2. Verify watcher restart logs appear
+3. Make changes to active transcript file
+4. Verify timeline updates within 2 seconds
+5. Test with both Claude Code and Codex sessions
+
+**Related Issues:**
+- User-reported: "codex watchers seem to be breaking after a while"
+- Investigation reveals: watchers never restart after certain events, not that they crash
+
+---
 
 ## App Store Submission (4 items)
 
