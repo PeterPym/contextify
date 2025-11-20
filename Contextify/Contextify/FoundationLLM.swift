@@ -1949,6 +1949,11 @@ extension FoundationLLM {
     func _testPostProcess(kind: TimelineEntryKind, payload: GuidedTimelineSummary, message: String) throws -> TimelineSummaryResult {
         try postProcess(kind: kind, payload: payload, message: message)
     }
+
+    @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
+    func _testTimelineSummary(message: String, kind: TimelineEntryKind = .assistant, provider: TimelineSourceContext.Provider? = nil) async throws -> TimelineSummaryResult {
+        return try await summarizeTimeline(kind: kind, text: message, provider: provider)
+    }
     #endif
 }
 #endif
