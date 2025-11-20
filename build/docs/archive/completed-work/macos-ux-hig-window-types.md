@@ -1,7 +1,7 @@
 # macOS Window Types in SwiftUI (2025 HIG)
 
 **Date:** 2025-10-09
-**Context:** Evaluating window presentation options for Transcript Inventory feature
+**Context:** Evaluating window presentation options for Transcripts feature
 
 ---
 
@@ -127,7 +127,7 @@ struct MyApp: App {
 struct MyApp: App {
     var body: some Scene {
         WindowGroup("Main") { MainView() }
-        Window("Transcript Inventory", id: "transcript-inventory") {
+        Window("Transcripts", id: "transcript-inventory") {
             TranscriptInventoryView()
         }
         .keyboardShortcut("t", modifiers: [.command, .option])
@@ -148,7 +148,7 @@ struct MyApp: App {
 
 ### Best For
 Auxiliary functionality that complements main workflow:
-- **Inspector panels** (your transcript inventory!)
+- **Inspector panels** (your transcripts!)
 - Tool palettes
 - Secondary content users want visible alongside main window
 - Reference material
@@ -170,7 +170,7 @@ Auxiliary functionality that complements main workflow:
 - Mail message viewer
 - Finder info window
 - Safari Web Inspector
-- **Contextify Transcript Inventory** ✅
+- **Contextify Transcripts** ✅
 
 ### Window vs WindowGroup
 
@@ -280,7 +280,7 @@ Only use modal presentations (sheets, full screen covers) when you **must** bloc
 
 ---
 
-## Case Study: Contextify Transcript Inventory
+## Case Study: Contextify Transcripts
 
 ### Current Implementation
 - **Type:** Sheet (`.sheet(isPresented:)`)
@@ -290,14 +290,14 @@ Only use modal presentations (sheets, full screen covers) when you **must** bloc
 ### Problems with Sheet Approach
 1. ❌ Cannot browse transcripts while watching live timeline updates
 2. ❌ Modal blocking interrupts workflow
-3. ❌ Cannot compare transcript inventory with main window content
+3. ❌ Cannot compare transcripts with main window content
 4. ❌ Window state doesn't persist across sessions
 5. ❌ Feels cramped for complex, information-rich interface
 
 ### Recommendation: Convert to Window
 **Why Window is Better:**
 1. ✅ **Concurrent interaction** - Users can browse transcripts while watching live timeline
-2. ✅ **Reference material** - Transcript inventory is reference content, not a blocking task
+2. ✅ **Reference material** - Transcripts is reference content, not a blocking task
 3. ✅ **Persistent** - Window persists position/size across sessions
 4. ✅ **Full functionality** - Can have complex toolbar, search, multi-pane layout
 5. ✅ **Native macOS behavior** - Appears in Window menu, supports standard management
@@ -315,8 +315,8 @@ struct ContextifyApp: App {
             ContentView()
         }
 
-        // Transcript inventory as separate window
-        Window("Transcript Inventory", id: "transcript-inventory") {
+        // Transcripts as separate window
+        Window("Transcripts", id: "transcript-inventory") {
             TranscriptInventoryWindowView()
         }
         .keyboardShortcut("t", modifiers: [.command, .option])
@@ -330,7 +330,7 @@ struct ContextifyApp: App {
 1. **Remove "Done" button** - Windows have native close button
 2. **Enhance toolbar** - Use native window toolbar with full controls
 3. **Remove `onDismiss` callback** - Use `@Environment(\.openWindow)` for control
-4. **Add menu items** - Window → Show Transcript Inventory
+4. **Add menu items** - Window → Show Transcripts
 5. **State management** - Use shared observable object between windows
 6. **Keyboard shortcuts** - ⌘⌥T to open/focus window
 
@@ -350,4 +350,4 @@ struct ContextifyApp: App {
 
 Modern macOS app design favors **non-modal, concurrent workflows**. The `Window` scene type is ideal for auxiliary features like inspectors, tool palettes, and reference material that users need alongside their main workflow. Reserve modal presentations (sheets, full screen covers) for truly blocking operations.
 
-For Contextify's Transcript Inventory, converting from a sheet to a window would significantly improve the user experience by allowing concurrent interaction with both the live timeline and the transcript browser.
+For Contextify's Transcripts, converting from a sheet to a window would significantly improve the user experience by allowing concurrent interaction with both the live timeline and the transcript browser.

@@ -115,7 +115,7 @@ User opens Inventory → loadMetadataForSessions()
    - Error handling: Per-item retry (3 attempts)
    - Reports via `observeQueue() -> AsyncStream<QueueStats>`
 
-2. **TranscriptMetadataOrchestrator** (Transcript Inventory)
+2. **TranscriptMetadataOrchestrator** (Transcripts)
    - Document-level titles/descriptions/topics
    - Concurrent task-per-transcript
    - Circuit breaker (60% failure threshold, 5-minute window)

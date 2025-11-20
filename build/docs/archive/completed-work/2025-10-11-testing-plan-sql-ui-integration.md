@@ -8,7 +8,7 @@
 
 Current state:
 - Timeline shows entries with icons but **missing text content**
-- Transcript inventory shows **zero transcripts** despite discovery fix
+- Transcripts shows **zero transcripts** despite discovery fix
 - **No test coverage** for SQL integration changes
 - **No feedback loop** to verify changes work before committing
 - Flying blind - can't tell if bugs are in DB, parsing, mapping, or UI
@@ -283,7 +283,7 @@ func testSessionSwitchLoadsCorrectEntries() async {
 - ✅ Tests prove discovery works
 - ✅ Tests prove UI mapping works
 - ✅ Timeline shows entries with text content
-- ✅ Transcript inventory shows sessions
+- ✅ Transcripts shows sessions
 - ✅ All tests passing
 - ✅ No more blind changes
 

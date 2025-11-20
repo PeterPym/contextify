@@ -17,7 +17,7 @@ Controls whether the timeline automatically follows the newest active transcript
 2. **Manual Mode** - Stay pinned to user-selected session (ignore new writes)
 
 **User Control:**
-- Click session in Transcript Inventory → pins to that session
+- Click session in Transcripts → pins to that session
 - Click "Unpin" → returns to automatic mode
 - Automatic by default
 
@@ -84,7 +84,7 @@ case .manual(sessionId: String, provider: Provider)
 
 **Example:**
 ```
-10:00 - User clicks session A-123 in Transcript Inventory
+10:00 - User clicks session A-123 in Transcripts
        → Timeline pins to A-123
 10:05 - New write to session B-456 (active work)
        → Timeline STAYS on A-123 (pinned)
@@ -269,7 +269,7 @@ NotificationCenter.default.addObserver(
 
 ## UI Integration
 
-### Transcript Inventory Window
+### Transcripts Window
 
 **Pin Indicator:**
 - Pinned session: Blue pin icon next to session name
@@ -280,7 +280,7 @@ NotificationCenter.default.addObserver(
 - Click → `unpinToAuto()` → automatic mode + notification
 
 **User Workflow:**
-1. Open Transcript Inventory (`Cmd+Ctrl+I`)
+1. Open Transcripts (`Cmd+Ctrl+I`)
 2. Click any session row → timeline switches + pins
 3. Close window → timeline stays pinned
 4. New writes in other sessions → ignored
@@ -404,7 +404,7 @@ func testCooldownSuppressesMessage() {
 ### Manual Testing
 
 **Pin/Unpin:**
-1. Open Transcript Inventory
+1. Open Transcripts
 2. Click any session → verify timeline switches + pin icon appears
 3. Start new Claude Code session → verify timeline doesn't switch
 4. Click "Unpin" → verify timeline switches to newest session
@@ -423,7 +423,7 @@ func testCooldownSuppressesMessage() {
 
 ## Known Limitations
 
-1. **No UI indicator:** Main timeline doesn't show pin status (only via Transcript Inventory)
+1. **No UI indicator:** Main timeline doesn't show pin status (only via Transcripts)
 2. **No history:** Can't see past switches or reasons after notification dismisses
 3. **Per-project only:** Can't have global pin across all projects
 4. **No temporary pin:** Pin persists until explicitly unpinned (no "pin for 10 minutes" mode)

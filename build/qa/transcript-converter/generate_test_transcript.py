@@ -217,8 +217,8 @@ class TranscriptGenerator:
             exchanges = [
                 # Exchange 1: Initial request about a feature
                 {
-                    "user": f"Test conversation created at {creation_time}. Let's implement a new feature: add a 'Copy Session ID' button to the transcript inventory view.",
-                    "assistant": "I'll help you add a 'Copy Session ID' button to the transcript inventory view. Let me first search for the TranscriptInventoryView to understand its current structure."
+                    "user": f"Test conversation created at {creation_time}. Let's implement a new feature: add a 'Copy Session ID' button to the transcripts view.",
+                    "assistant": "I'll help you add a 'Copy Session ID' button to the transcripts view. Let me first search for the TranscriptInventoryView to understand its current structure."
                 },
                 # Exchange 2: Follow-up with implementation details
                 {

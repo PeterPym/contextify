@@ -1,4 +1,4 @@
-# Technical Brief: Transcript Inventory + Codex Migration Support
+# Technical Brief: Transcripts + Codex Migration Support
 
 **Date:** 2025-10-09
 **Branch:** `feature/transcript-inventory`
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Contextify now has a **Transcript Inventory** feature that discovers and displays all Claude Code transcripts for a project, including those in git worktrees. A **migration script** exists to rewrite transcript paths when projects move. Both features currently support **Claude Code only**.
+Contextify now has a **Transcripts** feature that discovers and displays all Claude Code transcripts for a project, including those in git worktrees. A **migration script** exists to rewrite transcript paths when projects move. Both features currently support **Claude Code only**.
 
 **Next goal:** Extend both to support **Codex/AI CLI** transcripts.
 
@@ -17,7 +17,7 @@ Contextify now has a **Transcript Inventory** feature that discovers and display
 
 ## Current State (What's Been Built)
 
-### 1. Transcript Inventory UI ✅
+### 1. Transcripts UI ✅
 **Location:** `Contextify/Contextify/TranscriptInventoryView.swift`
 
 **Features:**
@@ -339,7 +339,7 @@ enum Provider: String, Sendable {
 1. Implement `CodexTranscriptProvider`
 2. Register in `ConversationMonitor`
 3. Build and run app
-4. Open Transcript Inventory → should show Claude + Codex transcripts
+4. Open Transcripts → should show Claude + Codex transcripts
 5. Verify counts match discovery phase
 
 ### Phase 3: Migration Script
@@ -360,7 +360,7 @@ enum Provider: String, Sendable {
 7cd39f4 feat(scripts): add transcript migration utility
 305b907 fix(ui): replace NavigationSplitView with HSplitView
 bee7f6c fix(ui): resolve Swift 6 ForEach type inference issues
-af828ae feat(ui): integrate transcript inventory into timeline view
+af828ae feat(ui): integrate transcripts into timeline view
 b65aa3c feat(monitor): use ProjectContext for worktree-aware session
 23d0aea feat(timeline): add line number tracking to timeline entries
 b07d9d5 feat(ui): add TranscriptInventoryView with NavigationSplitView
@@ -374,7 +374,7 @@ deb4315 feat(core): add ProjectContext with git worktree discovery
 
 ## Success Criteria
 
-**Transcript Inventory:**
+**Transcripts:**
 - [ ] Shows Codex transcripts alongside Claude Code transcripts
 - [ ] Correct provider icon for Codex (different from Claude)
 - [ ] Clicking Codex transcript shows detail view with metadata
@@ -397,7 +397,7 @@ deb4315 feat(core): add ProjectContext with git worktree discovery
 
 ```
 I'm working on Contextify, a macOS SwiftUI app that monitors AI coding assistant
-transcripts. I've just built a Transcript Inventory feature that discovers all
+transcripts. I've just built a Transcripts feature that discovers all
 transcripts for a project, including git worktrees.
 
 Current state:
@@ -429,7 +429,7 @@ Start by locating Codex transcripts on this machine.
 
 ### Why This Matters
 
-Users often work with both Claude Code and Codex on the same project. The Transcript Inventory should show **all** AI assistant activity, not just one tool. This provides:
+Users often work with both Claude Code and Codex on the same project. The Transcripts should show **all** AI assistant activity, not just one tool. This provides:
 
 1. **Complete history** - See every AI session across tools
 2. **Better context** - Understand work done in different tools

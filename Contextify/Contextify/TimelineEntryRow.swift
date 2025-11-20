@@ -201,7 +201,7 @@ struct TimelineEntryRow: View, Equatable {
                         .font(.caption)
                 }
                 .buttonStyle(.plain)
-                .help("Reveal in transcript inventory")
+                .help("Reveal in transcripts")
             }
         }
     }

@@ -185,7 +185,7 @@ contextify/
 
 | Document | Current Location | Proposed | Versioned? |
 |----------|-----------------|----------|------------|
-| **Gap analysis: "Transcript Inventory not using SQL"** | technical-reference/ ❌ | /tmp/ | No |
+| **Gap analysis: "Transcripts not using SQL"** | technical-reference/ ❌ | /tmp/ | No |
 | **Implementation checklist** | feature-specs/*/STATUS.md ❌ | /tmp/ | No |
 | **Code review notes** | feature-specs/*/code-review-response.md ❌ | /tmp/ | No |
 | **Architecture: "How SQL backend works"** | technical-reference/sql-backend-architecture.md ✅ | build/docs/architecture/sql-backend.md | Yes |

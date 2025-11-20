@@ -41,7 +41,7 @@ case "$PRESET" in
     transcript-inventory)
         SHOT_NAME="03-transcript-inventory"
         TEXT="Explore source transcripts and gain insights"
-        echo "Setting up transcript inventory window..."
+        echo "Setting up transcripts window..."
 
         # Save window positions for restoration
         SAVED_POSITIONS=$(osascript <<EOF
@@ -90,12 +90,12 @@ tell application "System Events"
 end tell
 delay 1.5
 
--- Move main Contextify window and iTerm2 out of frame, position transcript inventory
+-- Move main Contextify window and iTerm2 out of frame, position transcripts window
 tell application "System Events"
     tell process "Contextify"
         repeat with w in (every window)
             set wName to name of w
-            if wName contains "Transcript Inventory" then
+            if wName contains "Transcripts" then
                 -- Center in 1440x900 capture area at (200, 50)
                 -- Window: 968x633, so center at 200 + (1440-968)/2 = 436
                 -- Vertically bias lower: base center 184, push down to give more top space for headline

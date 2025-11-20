@@ -322,7 +322,7 @@
   * **Fix:** Center default position; persist frame; focus existing instance when opened from menu.
 
   ```swift
-  Window("Transcript Inventory", id: "transcript-inventory") { TranscriptInventoryWindow() }
+  Window("Transcripts", id: "transcript-inventory") { TranscriptInventoryWindow() }
     .defaultSize(width: 1000, height: 700)
     .defaultPosition(.center)
 
@@ -330,7 +330,7 @@
     @Environment(\.openWindow) private var openWindow
     var body: some Commands {
       CommandGroup(after: .windowArrangement) {
-        Button("Show Transcript Inventory") {
+        Button("Show Transcripts") {
           openWindow(id: "transcript-inventory")
           NSApp.activate(ignoringOtherApps: true)
         }.keyboardShortcut("i", modifiers: [.command, .control])

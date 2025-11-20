@@ -390,7 +390,7 @@ actor TranscriptMetadataOrchestrator: QueueStatsProvider {
 ### Step 3: Validate (This PR)
 
 1. Build and run app
-2. Open transcript inventory
+2. Open transcripts
 3. Verify metadata generation works
 4. Check status bar integration
 5. Test error handling (circuit breaker)

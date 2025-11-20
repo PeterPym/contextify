@@ -1,4 +1,4 @@
-# Transcript Inventory SQL Integration - Implementation Plan
+# Transcripts SQL Integration - Implementation Plan
 
 **Date**: 2025-10-18
 **Branch**: `feature/transcript-inventory-db-integration`
@@ -1130,7 +1130,7 @@ Button {
 // Add window opener method:
 private func openInventoryWindow() {
     // Check if window already exists
-    if let window = NSApp.windows.first(where: { $0.title == "Transcript Inventory" }) {
+    if let window = NSApp.windows.first(where: { $0.title == "Transcripts" }) {
         window.makeKeyAndOrderFront(nil)
         return
     }
@@ -1142,7 +1142,7 @@ private func openInventoryWindow() {
         backing: .buffered,
         defer: false
     )
-    window.title = "Transcript Inventory"
+    window.title = "Transcripts"
     window.contentView = NSHostingView(
         rootView: TranscriptInventoryWindow()
             .environment(monitor)
@@ -1387,7 +1387,7 @@ class TranscriptInventoryIntegrationTests: XCTestCase {
    ```
 
 2. **Verify Persistence**:
-   - Open Transcript Inventory
+   - Open Transcripts
    - Check logs: "Loaded N sessions from database"
    - Restart app
    - Check logs: No LLM generation, metadata loaded from SQL
