@@ -2,6 +2,13 @@
 
 Scripts to automate positioning windows and capturing App Store screenshots.
 
+## Requirements
+
+- **oxipng** (optional but recommended): Lossless PNG compression, typically saves 30-50%
+  ```bash
+  brew install oxipng
+  ```
+
 ## Quick Start
 
 ```bash

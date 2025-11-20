@@ -55,12 +55,28 @@ screencapture -x -R"${CAPTURE_X},${CAPTURE_Y},${SHOT_WIDTH},${SHOT_HEIGHT}" "$FI
 # Play camera shutter sound
 afplay /System/Library/Sounds/Glass.aiff &
 
+# Get original file size
+ORIGINAL_SIZE=$(stat -f%z "$FILENAME")
+
 echo "✅ Screenshot saved: $FILENAME"
 
 # Get dimensions
 DIMENSIONS=$(sips -g pixelWidth -g pixelHeight "$FILENAME" | grep -E "pixelWidth|pixelHeight" | awk '{print $2}' | tr '\n' 'x' | sed 's/x$//')
 
 echo "   Dimensions: $DIMENSIONS"
+echo "   Original size: $(numfmt --to=iec-i --suffix=B $ORIGINAL_SIZE 2>/dev/null || echo "$ORIGINAL_SIZE bytes")"
+
+# Compress PNG (lossless)
+if command -v oxipng &> /dev/null; then
+    echo "   Compressing..."
+    oxipng -o 3 -q "$FILENAME"
+    COMPRESSED_SIZE=$(stat -f%z "$FILENAME")
+    SAVED=$((ORIGINAL_SIZE - COMPRESSED_SIZE))
+    PERCENT=$((SAVED * 100 / ORIGINAL_SIZE))
+    echo "   Compressed size: $(numfmt --to=iec-i --suffix=B $COMPRESSED_SIZE 2>/dev/null || echo "$COMPRESSED_SIZE bytes") (saved ${PERCENT}%)"
+else
+    echo "   (Install 'oxipng' via homebrew for PNG compression)"
+fi
 
 # Open screenshot by default
 if [ "$AUTO_OPEN" = true ]; then
