@@ -116,7 +116,7 @@ struct ProjectsWindow: View {
         Text("No Projects Found")
           .font(.title2.bold())
 
-        Text("We couldn't find any Claude Code or Codex CLI projects on your machine.")
+        Text("No projects found.")
           .font(.body)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
@@ -156,7 +156,7 @@ struct ProjectsWindow: View {
         Text("Discovering Projects...")
           .font(.title2.bold())
 
-        Text("Scanning for Claude Code and Codex projects across your machine...")
+        Text("Scanning for projects...")
           .font(.body)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
