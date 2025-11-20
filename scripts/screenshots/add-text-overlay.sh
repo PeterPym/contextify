@@ -55,16 +55,17 @@ Y_OFFSET=100  # Pixels from top
 
 # Make the text box span ~90% of the image width to avoid clipping long titles
 OVERLAY_WIDTH=$(( IMG_WIDTH * 90 / 100 ))
-OVERLAY_HEIGHT=200
+OVERLAY_HEIGHT=250  # Taller to accommodate wrapped text
 
-# Add text overlay with semi-transparent background for readability
+# Add text overlay with automatic wrapping for long headlines
 magick "$INPUT_IMAGE" \
-    \( -size ${OVERLAY_WIDTH}x${OVERLAY_HEIGHT} xc:none \
+    \( -size ${OVERLAY_WIDTH}x${OVERLAY_HEIGHT} \
+       -background none \
        -font "$FONT" \
        -pointsize "$FONT_SIZE" \
        -fill "$TEXT_COLOR" \
        -gravity center \
-       -annotate +0+0 "$OVERLAY_TEXT" \
+       caption:"$OVERLAY_TEXT" \
     \) \
     -gravity "$GRAVITY" \
     -geometry "+0+${Y_OFFSET}" \

@@ -28,14 +28,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "$PRESET" in
     main-hud)
         SHOT_NAME="01-main-hud"
-        TEXT="Real-time AI conversation monitoring"
+        TEXT="Stay in the loop during long AI conversations"
         # Main window is already open, no special setup
         ;;
 
     ai-summaries)
-        SHOT_NAME="02-ai-summaries"
-        TEXT="Intelligent summaries for every session"
-        # Just ensure timeline is visible in main window
+        SHOT_NAME="02-dual-provider"
+        TEXT="Works seamlessly with both Claude Code and Codex CLI"
+        # Show timeline with mixed Claude Code and Codex entries
         ;;
 
     transcript-inventory)
@@ -187,7 +187,7 @@ EOF
 
     project-switcher)
         SHOT_NAME="04-project-switcher"
-        TEXT="Track multiple projects effortlessly"
+        TEXT="Works with both Claude Code and Codex CLI"
         echo "Opening projects window..."
         osascript <<'EOF'
 tell application "Contextify"
@@ -205,20 +205,155 @@ EOF
 
     settings)
         SHOT_NAME="05-settings"
-        TEXT="Customize your development workflow"
-        echo "Opening settings (transcript sources)..."
-        osascript <<'EOF'
+        TEXT="Centralize scattered transcripts into one queryable database"
+        echo "Setting up settings window..."
+
+        # Save window positions for restoration
+        SAVED_POSITIONS=$(osascript <<EOF
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            if name of w is "Contextify" then
+                set pos to position of w
+                return "contextify:" & (item 1 of pos) & "," & (item 2 of pos)
+            end if
+        end repeat
+    end tell
+end tell
+return "contextify:0,0"
+EOF
+)
+
+        if [ -n "$WINDOW_INDEX" ]; then
+            SAVED_ITERM_POS=$(osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            return (item 1 of bnds) & "," & (item 2 of bnds)
+        end tell
+    else
+        return "0,0"
+    end if
+end tell
+EOF
+)
+        fi
+
+        # Open and position settings window
+        osascript <<EOF
 tell application "Contextify"
     activate
 end tell
 delay 0.5
+
 tell application "System Events"
     tell process "Contextify"
-        keystroke "t" using {command down, option down}
+        keystroke "," using {command down}
     end tell
 end tell
-delay 1
+delay 1.5
+
+-- Move main Contextify window and iTerm2 out of frame, position settings window
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            set wName to name of w
+            if wName contains "Settings" then
+                -- Center in 1440x900 capture area at (200, 50)
+                -- Settings window: 480x432 (retina-adjusted), centered: 680 (920 - 240)
+                set position of w to {680, 250}
+                set size of w to {480, 432}
+            else if wName is "Contextify" then
+                -- Move main HUD to the right (beyond capture frame)
+                set position of w to {2000, 0}
+            end if
+        end repeat
+
+        -- Give focus to settings window
+        repeat with w in (every window)
+            if name of w contains "Settings" then
+                set frontmost to true
+                perform action "AXRaise" of w
+                exit repeat
+            end if
+        end repeat
+    end tell
+end tell
+
+-- Move specified iTerm2 window to the right (beyond capture frame)
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bounds to {2000, 700, 2800, 1300}
+        end tell
+    end if
+end tell
 EOF
+
+        # Capture without running setup-screenshot.sh
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        OUTPUT_DIR="appstore-metadata/screenshots/drafts"
+        mkdir -p "$OUTPUT_DIR"
+        FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}.png"
+
+        echo ""
+        echo "📸 Taking screenshot in 2 seconds..."
+        sleep 2
+
+        # Capture region (1440x900 at 200,50)
+        screencapture -x -R"200,50,1440,900" "$FILENAME"
+        afplay /System/Library/Sounds/Glass.aiff &
+
+        # Add text overlay
+        FINAL_FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}-with-text.png"
+        NO_AUTO_OPEN=1 "$SCRIPT_DIR/add-text-overlay.sh" "$FILENAME" "$TEXT" "$FINAL_FILENAME" > /dev/null
+
+        echo "✅ Screenshot saved: $FINAL_FILENAME"
+        open "$FINAL_FILENAME"
+
+        # Restore main Contextify window
+        if [[ "$SAVED_POSITIONS" =~ contextify:([0-9]+),([0-9]+) ]]; then
+            CONTEXTIFY_X="${BASH_REMATCH[1]}"
+            CONTEXTIFY_Y="${BASH_REMATCH[2]}"
+            osascript <<EOF
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            if name of w is "Contextify" then
+                set position of w to {$CONTEXTIFY_X, $CONTEXTIFY_Y}
+                exit repeat
+            end if
+        end repeat
+    end tell
+end tell
+EOF
+            echo ""
+            echo "Main Contextify window restored to ($CONTEXTIFY_X, $CONTEXTIFY_Y)."
+        fi
+
+        # Restore iTerm2 window to original position
+        if [ -n "$WINDOW_INDEX" ] && [ -n "$SAVED_ITERM_POS" ]; then
+            IFS=',' read -r SAVED_X SAVED_Y <<< "$SAVED_ITERM_POS"
+            if [[ "$SAVED_X" =~ ^-?[0-9]+$ && "$SAVED_Y" =~ ^-?[0-9]+$ ]]; then
+                osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            set w to (item 3 of bnds) - (item 1 of bnds)
+            set h to (item 4 of bnds) - (item 2 of bnds)
+            set bounds to {$SAVED_X, $SAVED_Y, $SAVED_X + w, $SAVED_Y + h}
+        end tell
+    end if
+end tell
+EOF
+                echo "iTerm2 window restored to ($SAVED_X, $SAVED_Y)."
+            else
+                echo "Skipping iTerm2 restore (invalid saved coords: $SAVED_ITERM_POS)"
+            fi
+        fi
+        exit 0
         ;;
 
     real-time-monitoring)
