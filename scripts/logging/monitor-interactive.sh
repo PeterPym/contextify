@@ -43,11 +43,16 @@ trap cleanup SIGINT SIGTERM
 
 # Step 3: Build category predicate from CATEGORIES variable
 # Converts "Cat1 Cat2 Cat3" → 'category == "Cat1" OR category == "Cat2" OR category == "Cat3"'
-CATEGORY_PREDICATES=()
+CATEGORY_PREDICATE=""
+FIRST=true
 for cat in $CATEGORIES; do
-  CATEGORY_PREDICATES+=("category == \"$cat\"")
+  if [ "$FIRST" = true ]; then
+    CATEGORY_PREDICATE="category == \"$cat\""
+    FIRST=false
+  else
+    CATEGORY_PREDICATE="$CATEGORY_PREDICATE OR category == \"$cat\""
+  fi
 done
-CATEGORY_PREDICATE=$(IFS=" OR "; echo "${CATEGORY_PREDICATES[*]}")
 
 # Step 4: Build grep pattern from command-line arguments or default to ".*" (all)
 if [ $# -eq 0 ]; then
