@@ -45,7 +45,7 @@ echo ""
 
 # Font settings (Sketch-style large serif headline)
 FONT=".New-York-Medium"
-FONT_SIZE=68
+FONT_SIZE=120
 TEXT_COLOR="#FFFFFF"  # White text (works on dark backgrounds)
 GRAVITY="north"  # Position at top
 Y_OFFSET=100  # Pixels from top
