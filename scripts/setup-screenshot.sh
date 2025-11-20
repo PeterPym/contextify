@@ -7,11 +7,11 @@ set -e
 
 echo "Setting up windows for screenshot..."
 echo ""
-echo "⏱️  You have 3 seconds to click on the Terminal window you want to use..."
-echo "   (The frontmost Terminal window will be positioned)"
+echo "⏱️  You have 3 seconds to click on the iTerm2 window you want to use..."
+echo "   (The frontmost iTerm2 window will be positioned)"
 echo ""
 
-# Countdown to let user select the correct Terminal window
+# Countdown to let user select the correct iTerm2 window
 for i in 3 2 1; do
     echo "   $i..."
     sleep 1
@@ -64,17 +64,19 @@ EOF
 
 sleep 0.5
 
-# Position Terminal (uses whichever window became frontmost during countdown)
+# Position iTerm2 (uses whichever window became frontmost during countdown)
 osascript <<EOF
-tell application "Terminal"
+tell application "iTerm2"
     if (count of windows) is 0 then
         activate
-        do script ""
+        create window with default profile
         delay 0.5
     end if
-    # Don't activate - use whichever window user selected
-    set position of front window to {$TERMINAL_X, $TERMINAL_Y}
-    set size of front window to {$TERMINAL_WIDTH, $TERMINAL_HEIGHT}
+    # Position the current window (whichever user selected)
+    tell current window
+        set position to {$TERMINAL_X, $TERMINAL_Y}
+        set size to {$TERMINAL_WIDTH, $TERMINAL_HEIGHT}
+    end tell
 end tell
 EOF
 
@@ -82,7 +84,7 @@ echo "✅ Windows positioned!"
 echo ""
 echo "Screenshot area: ${SHOT_WIDTH}x${SHOT_HEIGHT} at (${CAPTURE_X}, ${CAPTURE_Y})"
 echo "Contextify (L):  ${CONTEXTIFY_WIDTH}x${CONTEXTIFY_HEIGHT} at (${CONTEXTIFY_X}, ${CONTEXTIFY_Y})"
-echo "Terminal (R):    ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
+echo "iTerm2 (R):      ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
 echo ""
 echo "Ready for screenshot!"
 echo "Press Cmd+Shift+4, then drag to select the ${SHOT_WIDTH}x${SHOT_HEIGHT} area containing both windows."
