@@ -1545,7 +1545,15 @@ private extension FoundationLLM {
 
             // Generic action/context words that legitimately appear in summaries
             "options", "types", "handling", "transitions", "moving", "changes", "updates",
-            "message", "messages", "logs", "issues", "errors", "them", "perhaps"
+            "message", "messages", "logs", "issues", "errors", "them", "perhaps",
+
+            // Meta-discussion terms (used when discussing text/wording/UI copy)
+            "sound", "sounds", "sounded", "unsatisfactory", "satisfactory", "feedback",
+            "phrase", "phrases", "phrasing", "wording", "worded", "word", "words",
+            "alternative", "alternatives", "preferred", "prefer", "prefers", "preference",
+            "subtle", "subtly", "current", "currently", "existing", "text", "copy",
+            "messaging", "label", "labels", "labeled",
+            "better", "worse", "improved", "improvement", "clearer", "clarity"
         ]
     }
 

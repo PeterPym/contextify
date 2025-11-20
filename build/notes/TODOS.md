@@ -2,16 +2,23 @@
 
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 
-**Last Updated:** 2025-11-19
+**Last Updated:** 2025-11-20
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
-- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
+- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 66
+**Total Active Items:** 72
+
+**Change Log (2025-11-20):**
+- Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
+- Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
+- Added 2 P2 items (#P2-TIMELINE-FONT: Increase timeline font size, #P2-STATUSBAR-HEIGHT: Reduce status bar padding)
+- Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
+- Root cause analysis reveals watchers never restart after project switches, not that they crash
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -34,11 +41,119 @@
 
 ---
 
-# P0 (Blocking Release) - 5 Items Remaining
+# P0 (Blocking Release) - 6 Items Remaining
 
 ## UI Polish (1 item)
 
 - [ ] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners when selected (possibly unselected too)
+
+---
+
+## Watcher Initialization Failure (1 item) 🚨
+
+**Status:** Not Started (Critical - Users experiencing missing real-time updates)
+**Priority:** P0 (Blocking - Core functionality broken)
+**Effort:** 2-4 hours
+
+- [ ] #P0-WATCHER-INIT: Fix watcher initialization failure causing missing real-time transcript updates
+
+**Problem:**
+Watchers are never initialized during certain app lifecycle events (project switches, discovery re-runs), causing transcripts to stop updating in real-time. Users must manually refresh or restart the app. Health check detects the problem but auto-recovery fails silently.
+
+**Investigation Report:** `build/docs/audits/console-log-error-investigation-2025-11-20.md`
+
+**Critical Evidence from Log Analysis (2025-11-20):**
+- ❌ Zero watcher lifecycle logs (WATCHER-WATCH-START, WATCHER-WATCH-DONE, FSEVENTS-HEARTBEAT)
+- ❌ Watchers never started for 2 active transcripts (banagale-com, contextify)
+- ❌ Health check detected problem 3x in 3.5 minutes, attempted recovery, but **recovery failed silently**
+- ❌ No `[WATCHER-RECOVERY]` or error logs emitted from recovery flow
+- ✅ Files exist on disk and are being written to by CLI tools
+
+**Root Causes Identified:**
+
+1. **Silent Recovery Failure** (Primary Issue)
+   - `ConversationMonitor.attemptWatcherRecovery()` calls `orchestrator.ensureProjectWatcher()`
+   - Neither success log (`[WATCHER-RECOVERY]`) nor error log emitted
+   - Most likely: exception thrown before logging, or task cancelled mid-execution
+   - **Hypothesis:** Swift 6 actor isolation issue or reentrancy deadlock
+
+2. **Watcher Initialization Gap** (Secondary Issue)
+   - Watchers should start during: project discovery, session activation, health check recovery
+   - One or more of these paths is failing silently
+   - No diagnostic logs to trace failure point
+
+3. **Actor Isolation Issues** (Contributing Factor)
+   - Health check runs on background task
+   - Switches to MainActor for logging
+   - Watcher uses DispatchQueue (pre-Swift 6 concurrency)
+   - Potential deadlock when recovery attempts to access both MainActor and watcherQueue
+
+**User Impact:**
+- **Severe:** Codex and Claude Code sessions stop updating in real-time after project switches
+- User must manually restart app to resume monitoring
+- Affects all active development workflows
+
+**Implementation Plan:**
+
+**Phase 1: Diagnose Silent Failure (1 hour)**
+1. Add verbose logging to `ConversationMonitor.attemptWatcherRecovery()`:
+   - Log entry: `[WATCHER-RECOVERY-START] project=X target=Y`
+   - Log before orchestrator call: `[WATCHER-RECOVERY-CALL] calling ensureProjectWatcher`
+   - Log after success: `[WATCHER-RECOVERY-DONE] started=N already=M`
+   - Wrap in explicit do-catch: `[WATCHER-RECOVERY-ERROR] exception=...`
+
+2. Add logging to `TranscriptOrchestrator.ensureProjectWatcher()`:
+   - Log entry: `[ENSURE-WATCHER-START] project=X target=Y`
+   - Log each transcript checked: `[ENSURE-WATCHER-CHECK] transcript=A isWatching=B`
+   - Log each watcher started: `[ENSURE-WATCHER-START-OK] transcript=A`
+   - Log completion: `[ENSURE-WATCHER-DONE] started=N skipped=M`
+
+3. Add logging to `TranscriptWatcher.watch()` if missing:
+   - Verify `[WATCHER-WATCH-START]` logs exist
+   - Add file descriptor open result: `[WATCHER-FD-OPEN] fd=42 errno=0`
+   - Add dispatch source creation: `[WATCHER-SOURCE-CREATE] transcript=X`
+   - Add heartbeat startup: `[FSEVENTS-HEARTBEAT-START]`
+
+**Phase 2: Fix Identified Issues (1-2 hours)**
+Based on Phase 1 findings, likely fixes:
+- Add timeout monitoring for recovery operations (should complete <1s)
+- Fix actor isolation if deadlock detected
+- Add retry with exponential backoff if recovery throws
+- Ensure watcher.watch() is idempotent and can be called multiple times safely
+
+**Phase 3: Verify Fix (1 hour)**
+1. Reproduce watcher failure in clean environment
+2. Verify recovery logs appear and complete successfully
+3. Verify heartbeat logs start appearing every 60s
+4. Test project switch → verify watchers restart
+5. Test app resume → verify watchers still running
+
+**Files to Modify:**
+- `Contextify/Contextify/ConversationMonitor.swift:3126-3136` (recovery logging)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:1834-1860` (ensureProjectWatcher logging)
+- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift:60-98` (watch() logging)
+
+**Acceptance Criteria:**
+- ✅ Watcher lifecycle logs appear during normal operation
+- ✅ `[FSEVENTS-HEARTBEAT]` logs every 60s showing active watcher count
+- ✅ Recovery attempts are fully logged (success or failure)
+- ✅ Watchers restart after project switch
+- ✅ Watchers survive app resume/background
+- ✅ No more `[TRANSCRIPT-WATCHER]` critical issue logs
+- ✅ Real-time updates work continuously without manual refresh
+
+**Testing:**
+1. Monitor console log during project switch
+2. Verify watcher restart logs appear
+3. Make changes to active transcript file
+4. Verify timeline updates within 2 seconds
+5. Test with both Claude Code and Codex sessions
+
+**Related Issues:**
+- User-reported: "codex watchers seem to be breaking after a while"
+- Investigation reveals: watchers never restart after certain events, not that they crash
+
+---
 
 ## App Store Submission (4 items)
 
@@ -55,7 +170,53 @@
 ---
 
 
-# P1 (High Priority) - 24 Items
+# P1 (High Priority) - 25 Items
+
+## Window Sizing (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (First impression - default window size affects App Store impression)
+**Effort:** 30 minutes - 1 hour
+
+- [ ] #P1-WINDOW-WIDTH: Reduce default application window width to match HUD-01 screenshot dimensions
+
+**Problem:**
+Default window opens too wide, creating unnecessary horizontal scrolling and poor space utilization. Screenshot HUD-01 demonstrates optimal width that fits content perfectly.
+
+**Implementation:**
+1. Measure window width in `appstore-metadata/screenshots/releases/01-main-hud.png`
+2. Locate default window size setting (likely in `ContextifyApp.swift` or window configuration)
+3. Update default width to match screenshot dimensions
+4. Ensure minimum width constraints still allow resize
+5. Test that content doesn't clip at new default width
+6. Verify window remembers user-adjusted size (don't override saved preferences)
+
+**Current vs Target:**
+- Current: Unknown (likely too wide)
+- Target: Width from HUD-01 screenshot (appears to be ~800-900pt)
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift` (likely `.frame()` or window configuration)
+- Possibly SwiftUI `.defaultSize()` modifier
+- Check for WindowGroup configuration
+
+**Acceptance Criteria:**
+- ✅ Default window width matches HUD-01 screenshot
+- ✅ Content fits without horizontal scrolling
+- ✅ Window remains resizable
+- ✅ User preferences for window size are preserved
+- ✅ Minimum width constraint prevents over-shrinking
+
+**Testing:**
+1. Delete app preferences/saved state
+2. Launch app fresh
+3. Verify default window width matches target
+4. Resize window, quit, relaunch
+5. Verify custom size is preserved
+
+**Note:** This affects first-run user experience and App Store reviewer impression. Getting the default size right is important for perceived polish.
+
+---
 
 ## Apple Intelligence Blinking Out (1 item)
 
@@ -820,7 +981,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 27 Items
+# P2 (Medium Priority) - 31 Items
 
 ---
 
@@ -1140,6 +1301,212 @@ if state.entries.count == new.count && state.entries == new {
 - Manual testing feasible short-term
 - Can add CI job post-launch
 - **Effort:** 2-3 hours
+
+---
+
+## Branch Management (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (Technical debt - token burn branches need review)
+**Effort:** 8-12 hours
+
+- [ ] #P2-TOKEN-BURN: Review and catalog token burn branches from Nov 18-19, 2025
+
+**Background:**
+Multiple branches created during late-night token burn session with speculative code, documentation, marketing plans, and experimental features. Need comprehensive review and cataloging before any integration.
+
+**Scope:**
+
+1. **Branch Analysis** (2-3 hours)
+   - Fetch all remote branches from last 24-48 hours
+   - Examine branches starting with `claude/` or created Nov 18-19
+   - Categorize by content type: Code, Documentation, Marketing, Research, Configuration
+   - Assess review priority: High, Medium, Low
+   - Identify dependencies and conflicts between branches
+
+2. **Reference Document Creation** (2-3 hours)
+   - Create `build/docs/audits/TOKEN_BURN_BRANCHES_2025-11-18.md`
+   - Document each branch: type, description, files changed, status, action required
+   - Organize by priority (high/medium/low) and category
+   - List commit messages and key changes for each branch
+   - Note special cases: breaking changes, duplicate work, experimental APIs
+
+3. **TODO Integration** (1 hour)
+   - Add specific review tasks to TODOS.md for each branch
+   - Flag branches requiring code review vs documentation extraction
+   - Create action items for high priority integrations
+   - Document migration plans for breaking changes
+
+4. **Recommendations** (1 hour)
+   - Identify branches ready for immediate merge (small, safe changes)
+   - Flag branches needing thorough code review (complexity, risk)
+   - Extract non-code content (marketing, docs) to appropriate locations
+   - Determine which experiments should be archived vs deleted
+
+**Important Constraints:**
+- ❌ DO NOT automatically merge any branches without review
+- ❌ DO NOT delete branches without documenting first
+- ❌ DO NOT consolidate code without manual review
+- ❌ DO NOT integrate breaking changes without migration plan
+- ✅ DO create comprehensive reference for manual review
+- ✅ DO categorize by type and priority
+- ✅ DO identify dependencies between branches
+- ✅ DO flag risky/breaking changes prominently
+
+**Deliverables:**
+- Reference document: `build/docs/audits/TOKEN_BURN_BRANCHES_2025-11-18.md`
+- Updated TODOS.md with specific review tasks per branch
+- Summary statistics (X branches, Y code, Z docs, etc.)
+- Prioritized recommendations for next steps
+- Warnings about breaking changes or conflicts
+
+**Special Considerations:**
+- Marketing plans → Consider moving to project docs or separate repo
+- Completed features → Test thoroughly before merge
+- Breaking changes → Requires migration plan and careful review
+- Duplicate work → Check if superseded by other work
+- Experimental APIs → Requires architecture review
+
+**Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
+
+---
+
+## UI Typography & Spacing (2 items)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish - readability improvements)
+**Effort:** 2-3 hours total
+
+- [ ] #P2-TIMELINE-FONT: Increase font size in conversation timeline for better readability
+- [ ] #P2-STATUSBAR-HEIGHT: Reduce status bar vertical height by decreasing padding
+
+**#P2-TIMELINE-FONT - Timeline Font Size:**
+
+**Problem:**
+Timeline conversation text is too small, making it harder to read during normal use. Users frequently lean in to read summaries and details.
+
+**Implementation:**
+1. Locate timeline text rendering (likely `TimelineEntryRow.swift`)
+2. Increase base font size from current value (likely 13-14pt) to 15-16pt
+3. Ensure proper line height scaling
+4. Test with long/short entries to verify layout doesn't break
+5. Verify scrolling performance isn't impacted
+
+**Files:**
+- `Contextify/Contextify/TimelineEntryRow.swift`
+- Possibly `Contextify/Contextify/TimelineModels.swift` if font constants defined there
+
+**Acceptance Criteria:**
+- ✅ Timeline text is comfortably readable at normal viewing distance
+- ✅ Layout remains clean with longer text
+- ✅ No performance degradation
+- ✅ Font size consistent across summary and detail views
+
+**Effort:** 1-1.5 hours
+
+---
+
+**#P2-STATUSBAR-HEIGHT - Reduce Status Bar Padding:**
+
+**Problem:**
+Status bar at top of window takes up too much vertical space due to excessive padding, reducing available space for timeline content.
+
+**Implementation:**
+1. Locate status bar view (likely `StatusBarView.swift` or similar)
+2. Reduce vertical padding (top/bottom insets)
+3. Ensure icons/text remain vertically centered
+4. Test with different window sizes
+5. Verify doesn't look cramped or cut off
+
+**Current vs Target:**
+- Current: Likely 12-16pt total vertical padding
+- Target: 6-10pt total vertical padding (50% reduction)
+
+**Files:**
+- `Contextify/Contextify/StatusBarView.swift` (or similar)
+- May need to adjust `.padding()` modifiers in SwiftUI
+
+**Acceptance Criteria:**
+- ✅ Status bar height reduced by ~30-40%
+- ✅ Content remains vertically centered
+- ✅ Icons and text don't appear cramped
+- ✅ More screen real estate for timeline
+- ✅ Maintains visual hierarchy
+
+**Effort:** 30min - 1 hour
+
+---
+
+## Timeline Display Enhancement (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish - improved code readability in timeline)
+**Effort:** 2-3 hours
+
+- [ ] #P2-MONOSPACE: Render backtick-enclosed text in monospace font in timeline entries
+
+**Problem:**
+Timeline entries display inline code (backtick-enclosed text) in the same proportional font as regular text, making code snippets, function names, and technical terms harder to read and identify at a glance.
+
+**Example:**
+Current display uses proportional font for all text including backticked content:
+```
+Claude Code suggested creating `todos.md` in `/Users/rob/code/projects/contextify/`.
+```
+
+Should render backticked text in monospace for better readability:
+- `todos.md` → rendered in monospace
+- `/Users/rob/code/projects/contextify/` → rendered in monospace
+- Regular text → rendered in system font
+
+**Implementation:**
+
+1. **Text Parsing** (1 hour)
+   - Parse timeline entry text (summary, detail fields) for backtick patterns
+   - Detect inline code: single backticks `` `code` ``
+   - Handle edge cases: escaped backticks, nested backticks, unclosed backticks
+   - Split text into segments: regular text vs code spans
+
+2. **SwiftUI Rendering** (1 hour)
+   - Use `Text` concatenation with `.font(.system(.body, design: .monospaced))`
+   - Build attributed text with mixed fonts:
+     - Regular segments: system font
+     - Code segments: monospace font
+   - Preserve existing styling (color, size, weight)
+   - Ensure proper spacing and line breaks
+
+3. **Testing** (30 min)
+   - Test with various backtick patterns:
+     - Single word: `` `todos.md` ``
+     - Path: `` `/Users/rob/path` ``
+     - Multiple in one line: `` `file.swift` and `other.swift` ``
+     - Edge cases: unclosed backticks, escaped backticks
+   - Verify rendering in timeline rows (summary and detail views)
+   - Check performance with long text containing many code spans
+
+**Files:**
+- `Contextify/Contextify/TimelineEntryRow.swift` (entry display)
+- `Contextify/Contextify/ConversationMonitor.swift` (if text preprocessing needed)
+- Possibly new helper: `Contextify/Contextify/Views/FormattedText.swift` (reusable component)
+
+**Acceptance Criteria:**
+- ✅ Backtick-enclosed text renders in monospace font
+- ✅ Regular text remains in system font
+- ✅ Proper handling of multiple code spans in one entry
+- ✅ Edge cases handled gracefully (unclosed, escaped backticks)
+- ✅ No performance degradation with long text
+- ✅ Styling preserved (colors, emphasis)
+
+**Benefits:**
+- Improved readability of technical content in timeline
+- Easier to spot file paths, function names, code snippets
+- More professional appearance matching developer tools
+- Consistent with markdown rendering conventions
+
+**Example Timeline Entries to Test:**
+- "Claude Code suggested creating `todos.md` in `/Users/rob/code/projects/contextify/`."
+- "Fixed `ConversationMonitor.swift` warnings in `startWatchingTranscript()`"
+- "Updated `README.md` with `npm install` instructions"
 
 ---
 

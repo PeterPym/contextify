@@ -18,6 +18,11 @@ struct SettingsView: View {
 
   private let devMode = DeveloperMode.shared
 
+  private var isDropboxLocation: Bool {
+    let normalized = currentLocation.lowercased()
+    return normalized.contains("/cloudstorage/dropbox") || normalized.contains("/dropbox/")
+  }
+
   var body: some View {
     Form {
       Section {
@@ -67,6 +72,11 @@ struct SettingsView: View {
             .cornerRadius(4)
         }
         .padding(.top, 4)
+
+        if isDropboxLocation {
+          DropboxBadge()
+            .padding(.top, 4)
+        }
 
         Divider()
           .padding(.vertical, 8)
@@ -370,6 +380,39 @@ struct SettingsView: View {
     }
   }
 
+}
+
+private struct DropboxBadge: View {
+  var body: some View {
+    HStack(spacing: 8) {
+      Image("dropbox-mark")
+        .resizable()
+        .interpolation(.high)
+        .renderingMode(.original)
+        .aspectRatio(contentMode: .fit)
+        .frame(width: 48, height: 40)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Stored in Dropbox")
+          .font(.caption)
+          .fontWeight(.semibold)
+        Text("Tip: avoid opening this database on multiple Macs at once to prevent sync conflicts.")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer()
+    }
+    .padding(.vertical, 8)
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color(nsColor: .controlBackgroundColor))
+    .cornerRadius(6)
+    .overlay(
+      RoundedRectangle(cornerRadius: 6)
+        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+    )
+  }
 }
 
 #Preview {

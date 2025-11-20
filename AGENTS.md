@@ -114,6 +114,8 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 
 ## Documentation Guide (For Agents)
 
+**Apple Developer docs:** When you need to reference Apple documentation, fetch the Markdown version via `https://sosumi.ai/documentation/...` (same path as the Apple URL) and use that copy for reading or testing.
+
 **Before starting work, read the relevant documentation:**
 
 **Database work:**

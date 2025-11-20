@@ -212,6 +212,7 @@ final class ConversationMonitor {
     private(set) var isProcessing = false
     private(set) var lastError: String?
     private(set) var lastUpdate: Date?
+    private(set) var allSessionsLastUpdate: Date?
     var autoScroll = true
 
     @ObservationIgnored private var didEmitSessionStart = false
@@ -1229,6 +1230,7 @@ final class ConversationMonitor {
             )
 
             allSessions = sessions
+            allSessionsLastUpdate = Date()
             log.info("Loaded \(sessions.count) sessions from database for transcript inventory")
         } catch {
             log.error("Failed to load sessions from database: \(error.localizedDescription, privacy: .public)")
