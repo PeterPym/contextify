@@ -1,14 +1,29 @@
 #!/bin/bash
 # Automated screenshot capture for Contextify
-# Usage: ./capture-screenshot.sh [name] [window-number]
+# Usage: ./capture-screenshot.sh [name] [window-number] [--no-open]
 #   name: Optional description (e.g., "timeline-view", "project-switcher")
 #   window-number: Optional iTerm2 window index (1, 2, 3, etc.)
+#   --no-open: Optional flag to skip opening the screenshot
 
 set -e
 
-# Get optional parameters
-SHOT_NAME="${1:-screenshot}"
-WINDOW_INDEX="${2:-}"
+# Parse arguments
+AUTO_OPEN=true
+SHOT_NAME=""
+WINDOW_INDEX=""
+
+for arg in "$@"; do
+    if [ "$arg" = "--no-open" ]; then
+        AUTO_OPEN=false
+    elif [ -z "$SHOT_NAME" ]; then
+        SHOT_NAME="$arg"
+    elif [ -z "$WINDOW_INDEX" ]; then
+        WINDOW_INDEX="$arg"
+    fi
+done
+
+# Set defaults
+SHOT_NAME="${SHOT_NAME:-screenshot}"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 OUTPUT_DIR="appstore-metadata/screenshots"
 FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}.png"
@@ -37,14 +52,26 @@ sleep 3
 # Capture specific region (x, y, width, height)
 screencapture -x -R"${CAPTURE_X},${CAPTURE_Y},${SHOT_WIDTH},${SHOT_HEIGHT}" "$FILENAME"
 
+# Play camera shutter sound
+afplay /System/Library/Sounds/Glass.aiff &
+
 echo "✅ Screenshot saved: $FILENAME"
 
 # Get dimensions
 DIMENSIONS=$(sips -g pixelWidth -g pixelHeight "$FILENAME" | grep -E "pixelWidth|pixelHeight" | awk '{print $2}' | tr '\n' 'x' | sed 's/x$//')
 
 echo "   Dimensions: $DIMENSIONS"
+
+# Open screenshot by default
+if [ "$AUTO_OPEN" = true ]; then
+    echo "   Opening screenshot..."
+    open "$FILENAME"
+else
+    echo "   (Use 'open \"$FILENAME\"' to view)"
+fi
+
 echo ""
 echo "Next: Review the screenshot and run again for different views:"
-echo "  ./scripts/capture-screenshot.sh timeline-view"
-echo "  ./scripts/capture-screenshot.sh project-switcher"
-echo "  ./scripts/capture-screenshot.sh settings-panel"
+echo "  ./scripts/screenshots/capture-screenshot.sh timeline-view 2"
+echo "  ./scripts/screenshots/capture-screenshot.sh project-switcher 3"
+echo "  ./scripts/screenshots/capture-screenshot.sh settings-panel 1 --no-open"

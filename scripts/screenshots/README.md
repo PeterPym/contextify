@@ -42,31 +42,38 @@ Window #2: claude — zsh — 80×24
 
 ### `capture-screenshot.sh`
 
-Positions windows and automatically captures a 1440x900 screenshot.
+Positions windows and automatically captures a 1440x900 screenshot. **Opens the screenshot automatically by default** for immediate review.
 
 **Usage:**
 ```bash
-./scripts/screenshots/capture-screenshot.sh [name] [window-number]
+./scripts/screenshots/capture-screenshot.sh [name] [window-number] [--no-open]
 ```
 
 **Parameters:**
 - `name`: Optional. Description for the screenshot file (default: "screenshot")
 - `window-number`: Optional. iTerm2 window index from list-iterm-windows.sh
+- `--no-open`: Optional. Skip auto-opening the screenshot
 
 **Examples:**
 ```bash
-# Manual selection (3-second countdown)
+# Manual selection (3-second countdown), opens automatically
 ./scripts/screenshots/capture-screenshot.sh main-hud
 
-# Use specific window by index
+# Use specific window by index, opens automatically
 ./scripts/screenshots/capture-screenshot.sh main-hud 2
-./scripts/screenshots/capture-screenshot.sh timeline-view 1
+
+# Use specific window, don't open
+./scripts/screenshots/capture-screenshot.sh timeline-view 1 --no-open
+
+# Countdown mode, don't open
+./scripts/screenshots/capture-screenshot.sh settings-panel --no-open
 ```
 
 **Output:**
 - Screenshots saved to: `appstore-metadata/screenshots/`
 - Format: `{name}-{timestamp}.png`
 - Size: 1440x900 pixels
+- **Auto-opens** in default image viewer (unless `--no-open` specified)
 
 ### `setup-screenshot.sh`
 
