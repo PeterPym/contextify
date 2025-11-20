@@ -14,8 +14,45 @@ WINDOW_INDEX="${1:-}"
 echo "Setting up windows for screenshot..."
 echo ""
 
+# Save original window positions to temp file for restoration
+POSITIONS_FILE="/tmp/contextify-screenshot-positions.txt"
+rm -f "$POSITIONS_FILE"
+
+echo "💾 Saving original window positions..."
+
+# Save Contextify window position
+osascript <<EOF > /dev/null 2>&1
+tell application "System Events"
+    tell process "Contextify"
+        if (count of windows) > 0 then
+            set pos to position of window 1
+            set sz to size of window 1
+            do shell script "echo 'CONTEXTIFY_X=" & (item 1 of pos) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'CONTEXTIFY_Y=" & (item 2 of pos) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'CONTEXTIFY_W=" & (item 1 of sz) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'CONTEXTIFY_H=" & (item 2 of sz) & "' >> $POSITIONS_FILE"
+        end if
+    end tell
+end tell
+EOF
+
 if [ -n "$WINDOW_INDEX" ]; then
     echo "🔍 Using iTerm2 window #$WINDOW_INDEX"
+    # Save specified iTerm2 window position
+    osascript <<EOF > /dev/null 2>&1
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            do shell script "echo 'ITERM_INDEX=$WINDOW_INDEX' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_X=" & (item 1 of bnds) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_Y=" & (item 2 of bnds) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_W=" & ((item 3 of bnds) - (item 1 of bnds)) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_H=" & ((item 4 of bnds) - (item 2 of bnds)) & "' >> $POSITIONS_FILE"
+        end tell
+    end if
+end tell
+EOF
 else
     echo "⏱️  You have 3 seconds to click on the iTerm2 window you want to use..."
     echo "   (The frontmost iTerm2 window will be positioned)"
@@ -26,6 +63,23 @@ else
         echo "   $i..."
         sleep 1
     done
+
+    # Save current iTerm2 window position
+    osascript <<EOF > /dev/null 2>&1
+tell application "iTerm2"
+    if (count of windows) > 0 then
+        tell current window
+            set bnds to bounds
+            set idx to index
+            do shell script "echo 'ITERM_INDEX=" & idx & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_X=" & (item 1 of bnds) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_Y=" & (item 2 of bnds) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_W=" & ((item 3 of bnds) - (item 1 of bnds)) & "' >> $POSITIONS_FILE"
+            do shell script "echo 'ITERM_H=" & ((item 4 of bnds) - (item 2 of bnds)) & "' >> $POSITIONS_FILE"
+        end tell
+    end if
+end tell
+EOF
 fi
 
 echo ""

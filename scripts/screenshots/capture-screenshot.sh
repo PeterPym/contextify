@@ -128,6 +128,9 @@ else
     fi
 fi
 
+# Restore windows to original positions
+"$SCRIPT_DIR/restore-screenshot.sh"
+
 echo ""
 echo "Next: Review and capture more screenshots:"
 echo "  ./scripts/screenshots/capture-screenshot.sh 01-main-hud 2 --text \"Real-time AI monitoring\""
