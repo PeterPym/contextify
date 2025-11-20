@@ -72,10 +72,9 @@ tell application "iTerm2"
         create window with default profile
         delay 0.5
     end if
-    # Position the current window (whichever user selected)
+    # iTerm2 uses bounds {x, y, width, height}
     tell current window
-        set position to {$TERMINAL_X, $TERMINAL_Y}
-        set size to {$TERMINAL_WIDTH, $TERMINAL_HEIGHT}
+        set bounds to {$TERMINAL_X, $TERMINAL_Y, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y + $TERMINAL_HEIGHT}
     end tell
 end tell
 EOF
