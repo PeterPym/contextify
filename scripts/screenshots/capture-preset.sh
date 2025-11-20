@@ -164,7 +164,8 @@ EOF
         # Restore iTerm2 window to original position
         if [ -n "$WINDOW_INDEX" ] && [ -n "$SAVED_ITERM_POS" ]; then
             IFS=',' read -r SAVED_X SAVED_Y <<< "$SAVED_ITERM_POS"
-            osascript <<EOF
+            if [[ "$SAVED_X" =~ ^-?[0-9]+$ && "$SAVED_Y" =~ ^-?[0-9]+$ ]]; then
+                osascript <<EOF
 tell application "iTerm2"
     if (count of windows) >= $WINDOW_INDEX then
         tell window $WINDOW_INDEX
@@ -176,7 +177,10 @@ tell application "iTerm2"
     end if
 end tell
 EOF
-            echo "iTerm2 window restored to ($SAVED_X, $SAVED_Y)."
+                echo "iTerm2 window restored to ($SAVED_X, $SAVED_Y)."
+            else
+                echo "Skipping iTerm2 restore (invalid saved coords: $SAVED_ITERM_POS)"
+            fi
         fi
         exit 0
         ;;
