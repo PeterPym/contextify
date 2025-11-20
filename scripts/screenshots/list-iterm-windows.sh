@@ -15,20 +15,26 @@ tell application "iTerm2"
 
     set output to ""
     repeat with i from 1 to windowCount
+        set output to output & "Window #" & i & ":" & return
+
         tell window i
-            set windowName to name
-            set currentSession to current session
-            tell currentSession
-                set sessionName to name
-                set currentPath to variable named "user.currentDirectory"
-            end tell
+            try
+                set tabCount to count of tabs
+                set output to output & "  " & tabCount & " tab(s)" & return
+
+                repeat with j from 1 to tabCount
+                    tell tab j
+                        tell current session
+                            set tabName to name
+                            set output to output & "    Tab " & j & ": " & tabName & return
+                        end tell
+                    end tell
+                end repeat
+            on error errMsg
+                set output to output & "  Error reading tabs: " & errMsg & return
+            end try
         end tell
 
-        set output to output & "Window #" & i & ": " & windowName & return
-        set output to output & "  Session: " & sessionName & return
-        if currentPath is not missing value then
-            set output to output & "  Path: " & currentPath & return
-        end if
         set output to output & return
     end repeat
 
