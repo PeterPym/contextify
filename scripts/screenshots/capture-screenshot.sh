@@ -1,9 +1,15 @@
 #!/bin/bash
 # Automated screenshot capture for Contextify
-# Usage: ./capture-screenshot.sh [name] [window-number] [--no-open]
+# Usage: ./capture-screenshot.sh [name] [window-number] [--text "Overlay text"] [--no-open]
 #   name: Optional description (e.g., "timeline-view", "project-switcher")
 #   window-number: Optional iTerm2 window index (1, 2, 3, etc.)
+#   --text "Text": Optional text overlay to add to screenshot
 #   --no-open: Optional flag to skip opening the screenshot
+#
+# Examples:
+#   ./capture-screenshot.sh 01-main-hud 2
+#   ./capture-screenshot.sh 02-ai-summaries 2 --text "Intelligent summaries for every session"
+#   ./capture-screenshot.sh 03-project-switcher 1 --text "Track multiple projects" --no-open
 
 set -e
 
@@ -11,15 +17,22 @@ set -e
 AUTO_OPEN=true
 SHOT_NAME=""
 WINDOW_INDEX=""
+OVERLAY_TEXT=""
 
-for arg in "$@"; do
+i=1
+while [ $i -le $# ]; do
+    arg="${!i}"
     if [ "$arg" = "--no-open" ]; then
         AUTO_OPEN=false
+    elif [ "$arg" = "--text" ]; then
+        i=$((i + 1))
+        OVERLAY_TEXT="${!i}"
     elif [ -z "$SHOT_NAME" ]; then
         SHOT_NAME="$arg"
     elif [ -z "$WINDOW_INDEX" ]; then
         WINDOW_INDEX="$arg"
     fi
+    i=$((i + 1))
 done
 
 # Set defaults
@@ -83,16 +96,40 @@ else
     echo "   (Install 'oxipng' via homebrew for PNG compression)"
 fi
 
-# Open screenshot by default
-if [ "$AUTO_OPEN" = true ]; then
-    echo "   Opening screenshot..."
-    open "$FILENAME"
+# Create text overlay version if requested
+if [ -n "$OVERLAY_TEXT" ]; then
+    echo ""
+    echo "📝 Adding text overlay..."
+
+    # Generate final filename
+    FINAL_DIR="appstore-metadata/screenshots/final"
+    mkdir -p "$FINAL_DIR"
+    FINAL_FILENAME="${FINAL_DIR}/${SHOT_NAME}-${TIMESTAMP}-final.png"
+
+    # Call text overlay script (suppress auto-open, we handle it here)
+    NO_AUTO_OPEN=1 "$SCRIPT_DIR/add-text-overlay.sh" "$FILENAME" "$OVERLAY_TEXT" "$FINAL_FILENAME" > /dev/null
+
+    echo "✅ Text overlay created: $FINAL_FILENAME"
+
+    # Open the final version instead of original
+    if [ "$AUTO_OPEN" = true ]; then
+        echo "   Opening final screenshot with text..."
+        open "$FINAL_FILENAME"
+    else
+        echo "   (Use 'open \"$FINAL_FILENAME\"' to view)"
+    fi
 else
-    echo "   (Use 'open \"$FILENAME\"' to view)"
+    # Open original screenshot if no text overlay
+    if [ "$AUTO_OPEN" = true ]; then
+        echo "   Opening screenshot..."
+        open "$FILENAME"
+    else
+        echo "   (Use 'open \"$FILENAME\"' to view)"
+    fi
 fi
 
 echo ""
-echo "Next: Review the screenshot and run again for different views:"
-echo "  ./scripts/screenshots/capture-screenshot.sh timeline-view 2"
-echo "  ./scripts/screenshots/capture-screenshot.sh project-switcher 3"
-echo "  ./scripts/screenshots/capture-screenshot.sh settings-panel 1 --no-open"
+echo "Next: Review and capture more screenshots:"
+echo "  ./scripts/screenshots/capture-screenshot.sh 01-main-hud 2 --text \"Real-time AI monitoring\""
+echo "  ./scripts/screenshots/capture-screenshot.sh 02-ai-summaries 2 --text \"Intelligent summaries\""
+echo "  ./scripts/screenshots/capture-screenshot.sh 03-project-switcher 1 --no-open"
