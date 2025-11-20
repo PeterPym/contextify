@@ -7,11 +7,11 @@
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 5 items - Must complete before App Store submission
-- **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 65
+**Total Active Items:** 66
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -55,7 +55,101 @@
 ---
 
 
-# P1 (High Priority) - 23 Items
+# P1 (High Priority) - 24 Items
+
+## Apple Intelligence Blinking Out (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical UX bug - Apple Intelligence appears to randomly disappear)
+**Effort:** 4-6 hours
+
+- [ ] #P1-AI-HEALTH-BLINK: Fix Apple Intelligence status blinking out unexpectedly due to health check issues
+
+**Problem:**
+Apple Intelligence status in the UI (status bar, timeline summaries) unexpectedly "blinks out" and shows as unavailable or checking, then recovers moments later. This creates a confusing UX where the feature appears unreliable even when functioning normally.
+
+**Likely Root Causes:**
+
+1. **Health Check Cancellations During Normal Operations** (Primary Suspect)
+   - Health checks get cancelled during project switches, app lifecycle events
+   - When cancelled, `StatusBarViewModel` sets status to `.checking` (line 316)
+   - Creates appearance of Apple Intelligence going offline when it's actually fine
+   - Cancellation tracking shows bursts >3 in 30s window (line 338-341)
+
+2. **Race Conditions in Status Updates**
+   - Multiple components trigger health checks simultaneously
+   - Cached status may be cleared during active checks
+   - Status bounces between `.available`, `.checking`, `.unavailable`
+
+3. **Exponential Backoff Side Effects**
+   - Failed checks increase cache interval: 5s → 10s → 20s → 30s
+   - Long cache intervals may cause stale status display
+   - Cancellations don't count as failures (line 90-93) but still disrupt flow
+
+**Investigation Steps:**
+
+1. **Add Health Check Lifecycle Logging** (1 hour)
+   - Log every health check start/completion/cancellation with timestamps
+   - Track cancellation sources (project switch, app lifecycle, timeout)
+   - Add correlation IDs to track health check lifetimes
+   - Log to category: "LLMHealthDebug" at `.info` level
+
+2. **Analyze Cancellation Patterns** (1 hour)
+   - Run app with verbose logging during normal usage
+   - Identify what triggers cancellations (project switches, window focus, etc.)
+   - Measure cancellation burst frequency
+   - Check if cancellations correlate with UI "blink out" events
+
+3. **Review Health Check Call Sites** (1 hour)
+   - Audit all `LLMHealthCheck.shared.checkHealth()` calls
+   - Verify each call site properly handles cancellation
+   - Check for redundant health checks within cache window
+   - Identify opportunities to share health check results vs re-checking
+
+**Potential Solutions:**
+
+**Option A: Smarter Cancellation Handling**
+- Don't change status to `.checking` on cancellation if last known status was `.available`
+- Only show `.checking` if no cached status exists
+- Treat cancellations as "keep last good status" rather than "reset to checking"
+
+**Option B: Debounce Health Checks**
+- Prevent multiple health checks within 5s window
+- Queue health check requests and deduplicate
+- Return cached result immediately if check is in-flight
+
+**Option C: Health Check Task Coordination**
+- Single global health check task that runs periodically
+- All components observe health check results rather than triggering checks
+- Prevents concurrent/duplicate checks
+
+**Option D: Separate "Availability" from "Health Check In Progress"**
+- UI shows last known availability while background check runs
+- Only update UI when health status actually changes
+- Never show `.checking` unless truly unknown (first launch)
+
+**Files to Review:**
+- `Contextify/Contextify/LLMHealthCheck.swift` (lines 187-248, 301-308) - Health check logic
+- `Contextify/Contextify/StatusBarViewModel.swift` (lines 270-330) - Status update logic
+- `Contextify/Contextify/AppDelegate.swift` (line 70) - Health check trigger
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (line 614) - Health check usage
+
+**Acceptance Criteria:**
+- ✅ Apple Intelligence status remains stable during project switches
+- ✅ No visible "blinking" between available/checking/unavailable states
+- ✅ Health check cancellations don't cause UI status changes unless health truly changed
+- ✅ Logs clearly show health check lifecycle and cancellation reasons
+- ✅ Cancellation burst warnings (<3 per 30s window under normal usage)
+- ✅ Status updates only when actual health state changes, not on transient events
+
+**Test Scenarios:**
+1. Switch between 5 projects rapidly - AI status should remain stable
+2. Background app and bring to foreground - status should not blink
+3. Let app run idle - periodic health checks should not cause UI flicker
+4. Simulate Apple Intelligence going offline - status should update once and stay unavailable
+5. Simulate Apple Intelligence coming online - status should update once and stay available
+
+---
 
 ## Git Worktree Conversation Display (1 item)
 
