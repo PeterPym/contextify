@@ -40,12 +40,44 @@ case "$PRESET" in
 
     transcript-inventory)
         SHOT_NAME="03-transcript-inventory"
-        TEXT="Explore session history and insights"
+        TEXT="Explore source transcripts and gain insights"
         echo "Setting up transcript inventory window..."
+
+        # Save window positions for restoration
+        SAVED_POSITIONS=$(osascript <<EOF
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            if name of w is "Contextify" then
+                set pos to position of w
+                return "contextify:" & (item 1 of pos) & "," & (item 2 of pos)
+            end if
+        end repeat
+    end tell
+end tell
+return "contextify:0,0"
+EOF
+)
+
+        if [ -n "$WINDOW_INDEX" ]; then
+            SAVED_ITERM_POS=$(osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            return (item 1 of bnds) & "," & (item 2 of bnds)
+        end tell
+    else
+        return "0,0"
+    end if
+end tell
+EOF
+)
+        fi
 
         # For single-window screenshot, bypass setup-screenshot.sh
         # and manually position just the transcript window
-        osascript <<'EOF'
+        osascript <<EOF
 tell application "Contextify"
     activate
 end tell
@@ -58,7 +90,7 @@ tell application "System Events"
 end tell
 delay 1.5
 
--- Position transcript inventory and hide other windows
+-- Move main Contextify window and iTerm2 out of frame, position transcript inventory
 tell application "System Events"
     tell process "Contextify"
         repeat with w in (every window)
@@ -66,34 +98,25 @@ tell application "System Events"
             if wName contains "Transcript Inventory" then
                 -- Center in 1440x900 capture area at (200, 50)
                 -- Window: 968x633, so center at 200 + (1440-968)/2 = 436
-                -- Vertically center: 50 + (900-633)/2 = 184
-                set position of w to {436, 184}
+                -- Vertically bias lower: base center 184, push down to give more top space for headline
+                set position of w to {436, 230}
                 set size of w to {968, 633}
+            else if wName is "Contextify" then
+                -- Move main HUD to the right (beyond capture frame)
+                set position of w to {2000, 0}
             end if
         end repeat
     end tell
 end tell
 
--- Move other windows off-screen (can't minimize via System Events)
-tell application "System Events"
-    tell process "Contextify"
-        repeat with w in (every window)
-            set wName to name of w
-            if wName is "Contextify" then
-                -- Move main HUD off-screen to the left
-                set position of w to {-5000, 0}
-            end if
-        end repeat
-    end tell
-end tell
-
--- Move iTerm2 windows off-screen
-tell application "System Events"
-    tell process "iTerm2"
-        repeat with w in (every window)
-            set position of w to {-5000, 0}
-        end repeat
-    end tell
+-- Move specified iTerm2 window to the right (beyond capture frame)
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            -- Move to the right, beyond X=1640 (capture ends at 200+1440)
+            set bounds to {2000, 700, 2800, 1300}
+        end tell
+    end if
 end tell
 EOF
 
@@ -118,35 +141,44 @@ EOF
         echo "✅ Screenshot saved: $FINAL_FILENAME"
         open "$FINAL_FILENAME"
 
-        # Note: This preset doesn't use setup-screenshot.sh so there are no saved positions to restore.
-        # The windows were manually positioned by the preset's own AppleScript above.
-        # Since we moved windows off-screen temporarily, restore them to reasonable default positions.
-        osascript <<'EOF'
+        # Restore main Contextify window
+        if [[ "$SAVED_POSITIONS" =~ contextify:([0-9]+),([0-9]+) ]]; then
+            CONTEXTIFY_X="${BASH_REMATCH[1]}"
+            CONTEXTIFY_Y="${BASH_REMATCH[2]}"
+            osascript <<EOF
 tell application "System Events"
     tell process "Contextify"
         repeat with w in (every window)
-            set wName to name of w
-            if wName is "Contextify" then
-                -- Restore main HUD to center-ish position
-                set position of w to {480, 360}
+            if name of w is "Contextify" then
+                set position of w to {$CONTEXTIFY_X, $CONTEXTIFY_Y}
+                exit repeat
             end if
         end repeat
     end tell
 end tell
+EOF
+            echo ""
+            echo "Main Contextify window restored to ($CONTEXTIFY_X, $CONTEXTIFY_Y)."
+        fi
 
-tell application "System Events"
-    tell process "iTerm2"
-        -- Restore first iTerm2 window to default position
-        if (count of windows) > 0 then
-            set position of window 1 to {950, 450}
-        end if
-    end tell
+        # Restore iTerm2 window to original position
+        if [ -n "$WINDOW_INDEX" ] && [ -n "$SAVED_ITERM_POS" ]; then
+            IFS=',' read -r SAVED_X SAVED_Y <<< "$SAVED_ITERM_POS"
+            osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            set w to (item 3 of bnds) - (item 1 of bnds)
+            set h to (item 4 of bnds) - (item 2 of bnds)
+            set bounds to {$SAVED_X, $SAVED_Y, $SAVED_X + w, $SAVED_Y + h}
+        end tell
+    end if
 end tell
 EOF
-
-        echo ""
-        echo "Windows restored to default positions (original positions not saved for this preset)."
-        return 0
+            echo "iTerm2 window restored to ($SAVED_X, $SAVED_Y)."
+        fi
+        exit 0
         ;;
 
     project-switcher)

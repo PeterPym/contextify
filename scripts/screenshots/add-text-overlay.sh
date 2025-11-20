@@ -43,17 +43,23 @@ echo "  Text:   $OVERLAY_TEXT"
 echo "  Output: $OUTPUT_IMAGE"
 echo ""
 
+# Detect image dimensions for responsive text box sizing
+read IMG_WIDTH IMG_HEIGHT <<< "$(magick identify -format "%w %h" "$INPUT_IMAGE")"
+
 # Font settings (Sketch-style large serif headline)
 FONT=".New-York-Medium"
 FONT_SIZE=120
 TEXT_COLOR="#FFFFFF"  # White text (works on dark backgrounds)
 GRAVITY="north"  # Position at top
 Y_OFFSET=100  # Pixels from top
-MAX_WIDTH=1200  # Text wrapping width
+
+# Make the text box span ~90% of the image width to avoid clipping long titles
+OVERLAY_WIDTH=$(( IMG_WIDTH * 90 / 100 ))
+OVERLAY_HEIGHT=200
 
 # Add text overlay with semi-transparent background for readability
 magick "$INPUT_IMAGE" \
-    \( -size ${MAX_WIDTH}x150 xc:none \
+    \( -size ${OVERLAY_WIDTH}x${OVERLAY_HEIGHT} xc:none \
        -font "$FONT" \
        -pointsize "$FONT_SIZE" \
        -fill "$TEXT_COLOR" \
