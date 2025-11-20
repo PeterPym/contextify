@@ -93,7 +93,7 @@ struct ProjectStatsView: View {
             // Activity timeline
             if !timeline.isEmpty {
               VStack(alignment: .leading, spacing: 12) {
-                Label("Activity Over Time (Last 30 Days)", systemImage: "chart.line.uptrend.xyaxis")
+                Label("Activity (Last 30 Days)", systemImage: "chart.line.uptrend.xyaxis")
                   .font(.headline)
 
                 TimelineChart(timeline: timeline)
@@ -127,7 +127,7 @@ struct ProjectStatsView: View {
             // Topic breakdown
             if !stats.topicBreakdown.isEmpty {
               VStack(alignment: .leading, spacing: 12) {
-                Label("Entry Breakdown by Role", systemImage: "chart.pie")
+                Label("Entries by Role", systemImage: "chart.pie")
                   .font(.headline)
 
                 ForEach(Array(stats.topicBreakdown.sorted(by: { $0.value > $1.value })), id: \.key) { role, count in

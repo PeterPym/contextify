@@ -135,7 +135,7 @@ struct ProjectRowView: View {
             HStack(spacing: 4) {
               Image(systemName: "checkmark.circle")
                 .imageScale(.small)
-              Text("Set as Current")
+              Text("Switch To")
             }
           }
           .buttonStyle(.bordered)
