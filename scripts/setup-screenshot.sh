@@ -2,20 +2,31 @@
 # Setup windows for Contextify screenshots
 # Positions Terminal and Contextify for optimal screenshot composition
 # within App Store screenshot dimensions
+#
+# Usage: ./setup-screenshot.sh [window-number]
+#   window-number: Optional. iTerm2 window index (1, 2, 3, etc.)
+#                 If omitted, uses current window after 3-second countdown.
 
 set -e
 
+WINDOW_INDEX="${1:-}"
+
 echo "Setting up windows for screenshot..."
 echo ""
-echo "⏱️  You have 3 seconds to click on the iTerm2 window you want to use..."
-echo "   (The frontmost iTerm2 window will be positioned)"
-echo ""
 
-# Countdown to let user select the correct iTerm2 window
-for i in 3 2 1; do
-    echo "   $i..."
-    sleep 1
-done
+if [ -n "$WINDOW_INDEX" ]; then
+    echo "🔍 Using iTerm2 window #$WINDOW_INDEX"
+else
+    echo "⏱️  You have 3 seconds to click on the iTerm2 window you want to use..."
+    echo "   (The frontmost iTerm2 window will be positioned)"
+    echo ""
+
+    # Countdown to let user select the correct iTerm2 window
+    for i in 3 2 1; do
+        echo "   $i..."
+        sleep 1
+    done
+fi
 
 echo ""
 echo "Positioning windows..."
@@ -64,20 +75,34 @@ EOF
 
 sleep 0.5
 
-# Position iTerm2 (uses whichever window became frontmost during countdown)
-osascript <<EOF
+# Position iTerm2 (uses specified window or current window)
+if [ -n "$WINDOW_INDEX" ]; then
+    # Use specified window index
+    osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) < $WINDOW_INDEX then
+        error "iTerm2 window #$WINDOW_INDEX not found. Only " & (count of windows) & " windows available."
+    end if
+    tell window $WINDOW_INDEX
+        set bounds to {$TERMINAL_X, $TERMINAL_Y, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y + $TERMINAL_HEIGHT}
+    end tell
+end tell
+EOF
+else
+    # Use current window (user selected during countdown)
+    osascript <<EOF
 tell application "iTerm2"
     if (count of windows) is 0 then
         activate
         create window with default profile
         delay 0.5
     end if
-    # iTerm2 uses bounds {x, y, width, height}
     tell current window
         set bounds to {$TERMINAL_X, $TERMINAL_Y, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y + $TERMINAL_HEIGHT}
     end tell
 end tell
 EOF
+fi
 
 echo "✅ Windows positioned!"
 echo ""
