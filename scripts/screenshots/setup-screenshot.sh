@@ -47,18 +47,19 @@ CAPTURE_X=200
 CAPTURE_Y=50
 
 # Window dimensions and positions (Apple marketing style: compact HUD + context)
-# Contextify: Compact HUD design (~420px wide, stays out of the way)
-CONTEXTIFY_WIDTH=420
-CONTEXTIFY_HEIGHT=550
-CONTEXTIFY_X=480
-CONTEXTIFY_Y=360
+# 15% larger than original, centered with equal left/right padding
+# Contextify: Compact HUD design (~483px wide, stays out of the way)
+CONTEXTIFY_WIDTH=483
+CONTEXTIFY_HEIGHT=633
+CONTEXTIFY_X=337
+CONTEXTIFY_Y=277
 
 # iTerm2: Terminal for context (shows real development workflow)
-# Positioned with 50px gap, bottoms aligned at Y=910
-TERMINAL_WIDTH=550
-TERMINAL_HEIGHT=400
-TERMINAL_X=950
-TERMINAL_Y=510
+# Positioned with 50px gap, bottoms aligned at Y=910, centered in 1440px frame
+TERMINAL_WIDTH=633
+TERMINAL_HEIGHT=460
+TERMINAL_X=870
+TERMINAL_Y=450
 
 # OLD DIMENSIONS (split-screen style, equal emphasis):
 # CONTEXTIFY_WIDTH=580
