@@ -8,15 +8,15 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 6 items - Must complete before App Store submission
 - **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 32 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 72
+**Total Active Items:** 73
 
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
 - Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 2 P2 items (#P2-TIMELINE-FONT: Increase timeline font size, #P2-STATUSBAR-HEIGHT: Reduce status bar padding)
+- Added 3 P2 items (#P2-TIMELINE-FONT: Increase timeline font size, #P2-STATUSBAR-HEIGHT: Reduce status bar padding, #P2-TRANSCRIPT-AUTOSELECT: Auto-select topmost transcript and auto-refresh detail pane)
 - Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
 - Root cause analysis reveals watchers never restart after project switches, not that they crash
 
@@ -981,7 +981,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 31 Items
+# P2 (Medium Priority) - 32 Items
 
 ---
 
@@ -1191,6 +1191,50 @@ if state.entries.count == new.count && state.entries == new {
 - `Contextify/Contextify/ProjectSwitcherView.swift`
 - `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`
 - `Contextify/Contextify/TranscriptInventoryView.swift`
+
+---
+
+## Transcripts Window Auto-Selection (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX improvement - nice to have)
+**Effort:** 2-3 hours
+
+- [ ] #P2-TRANSCRIPT-AUTOSELECT: Auto-select most recent transcript and auto-refresh detail pane when metadata updates
+
+**Problem:**
+When opening Transcripts window, no transcript is selected by default. User must manually click to see details. Additionally, if a transcript is selected and its metadata is being generated (LLM summarization), the detail pane does not refresh automatically when the metadata completes.
+
+**Expected Behavior:**
+1. **Auto-selection:** When Transcripts window opens, automatically select the topmost (most recently updated) transcript
+2. **Auto-refresh:** If the selected transcript's metadata is updated (e.g., LLM generates title/description), the detail pane should refresh automatically to show the new metadata
+
+**Implementation:**
+
+1. **Auto-Selection on Open** (1 hour)
+   - In `TranscriptInventoryView.onAppear`, select first transcript from filtered list
+   - Set `selectedSession` to `filteredSessions.first`
+   - Ensure selection persists when switching filters/scopes
+   - Handle edge cases: empty list, filter changes, search
+
+2. **Auto-Refresh Detail Pane** (1-2 hours)
+   - Subscribe to `TranscriptMetadataOrchestrator` updates (likely via `ConversationMonitor`)
+   - When metadata update completes for selected transcript, trigger detail view refresh
+   - Option A: Use `@Published` metadata dictionary in shared state
+   - Option B: Add SwiftUI `.onChange` observer on `ConversationMonitor.metadataStore`
+   - Ensure smooth transition (no flash/flicker)
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift` (selection logic, detail view binding)
+- `Contextify/Contextify/ConversationMonitor.swift` (metadata update notifications)
+- `app/Sources/ContextifyCore/LLM/TranscriptMetadataOrchestrator.swift` (metadata publishing)
+
+**Acceptance Criteria:**
+- ✅ Opening Transcripts window auto-selects topmost transcript
+- ✅ Detail pane shows selected transcript immediately
+- ✅ When selected transcript's metadata finishes generating, detail pane updates automatically
+- ✅ No visible flicker or re-render issues
+- ✅ Selection clears appropriately when list becomes empty (search/filter)
 
 ---
 
