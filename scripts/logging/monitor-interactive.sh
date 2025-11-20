@@ -97,7 +97,7 @@ log stream \
   --level "$LEVEL" \
   --style compact 2>&1 | \
   grep --line-buffered -E "$GREP_PATTERN" | \
-  tee -a "$LOGFILE" | \
+  stdbuf -oL tee -a "$LOGFILE" | \
   while IFS= read -r line; do
     # Step 7: Parse and simplify output
     # Input:  2025-11-07 10:12:10.633  I YourApp[67502:4b2540] [com.yourapp.yourfeature:Category] Message
