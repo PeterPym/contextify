@@ -91,6 +91,10 @@ public final class AppStateOrchestrator: ObservableObject {
     let duration = Date().timeIntervalSince(startTime)
     log.info("[ORCH-STARTUP] Startup complete in \(String(format: "%.3f", duration), privacy: .public)s. UI ready.")
 
+    // Post notification that discovery is complete (enables ProjectActivityMonitor FSEvents)
+    NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+    log.debug("[ORCH-STARTUP] Posted .projectsDiscoveryComplete notification")
+
     // 4. PATCH C: Auto-select most recent project (projects are already sorted by activity)
     if let mostRecent = projects.first {
       log.info("[ORCH-STARTUP] Auto-selecting most recent project: \(mostRecent.id, privacy: .public)")
@@ -301,4 +305,5 @@ extension Notification.Name {
   public static let projectDidActivate = Notification.Name("projectDidActivate")
   public static let appStateDidChange = Notification.Name("appStateDidChange")
   public static let backgroundIngestProgress = Notification.Name("backgroundIngestProgress")
+  public static let projectsDiscoveryComplete = Notification.Name("contextify.projectsDiscoveryComplete")
 }
