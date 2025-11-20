@@ -71,8 +71,11 @@ build/demo-videos/
 build/db-backups/
 build/screenshots-and-video/
 
-# App Store assets
+# App Store assets (ignore all screenshots except releases/)
+appstore-metadata/screenshots/*.png
 appstore-metadata/screenshots/drafts/
+appstore-metadata/screenshots/final/
+appstore-metadata/screenshots/alternates/*.png
 
 # Environment variables (contains secrets)
 .env
