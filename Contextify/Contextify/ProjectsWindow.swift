@@ -46,17 +46,13 @@ struct ProjectsWindow: View {
         }
       } else {
         VStack(alignment: .leading, spacing: 4) {
-          HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-              .foregroundStyle(.green)
-            Text("Discovered \(viewModel.projects.count) projects")
-              .font(.subheadline)
-              .fontWeight(.medium)
-          }
+          Text("\(viewModel.projects.count) projects")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
 
           if let lastScan = viewModel.lastScanTime {
-            Text("Last scan: \(lastScan, style: .relative)")
-              .font(.caption)
+            Text("Updated \(lastScan, format: .dateTime.hour().minute().second())")
+              .font(.caption2)
               .foregroundStyle(.secondary)
           }
         }
