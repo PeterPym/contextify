@@ -122,12 +122,12 @@ struct TranscriptInventoryView: View {
               Button {
                 flushHeuristicCache()
               } label: {
-                Label("Flush Heuristic Cache", systemImage: "trash")
+                Label("Flush Cache", systemImage: "trash")
               }
               Button {
                 showingCleanupConfirmation = true
               } label: {
-                Label("Clean Up Missing Files", systemImage: "trash.circle")
+                Label("Clean Up Missing...", systemImage: "trash.circle")
               }
             }
           } label: {
@@ -325,9 +325,9 @@ struct TranscriptInventoryView: View {
       Image(systemName: "doc.text")
         .font(.largeTitle)
         .foregroundStyle(.secondary)
-      Text("No Transcript Selected")
+      Text("No Selection")
         .font(.headline)
-      Text("Select a transcript from the sidebar to view details")
+      Text("Select a transcript to view details")
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
     }
@@ -567,7 +567,7 @@ struct TranscriptInventoryView: View {
       transcriptToDelete = session
       showingDeleteConfirmation = true
     } label: {
-      Label("Delete Transcript", systemImage: "trash")
+      Label("Delete", systemImage: "trash")
     }
   }
 
