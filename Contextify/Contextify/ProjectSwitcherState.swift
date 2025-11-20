@@ -735,8 +735,17 @@ public final class ProjectSwitcherState {
 
     cancelMonitorStartTasks()
 
+    // Check if discovery already completed (race condition fix)
     monitorStartTask = Task { [weak self] in
-      guard let self else { return }
+      guard let self,  let orchestrator = self.orchestrator else { return }
+      let projectCount = (try? await orchestrator.listProjects().count) ?? 0
+      if projectCount > 0 {
+        // Discovery already completed before we started listening - start monitoring immediately
+        log.info("[SWITCHER-MONITOR] Discovery already complete (projects: \(projectCount)) - starting monitor immediately")
+        await self.startGlobalMonitoringIfNeeded(reason: "discovery-already-complete")
+        return
+      }
+      // No projects yet - wait for notification
       log.info("[SWITCHER-MONITOR] Waiting for .projectsDiscoveryComplete notification...")
       let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
       for await _ in notifications {
