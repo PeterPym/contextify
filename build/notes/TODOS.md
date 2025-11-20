@@ -8,10 +8,10 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 28 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 66
+**Total Active Items:** 67
 
 **Change Log (2025-11-19):**
 - Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
@@ -820,7 +820,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 27 Items
+# P2 (Medium Priority) - 28 Items
 
 ---
 
@@ -1140,6 +1140,73 @@ if state.entries.count == new.count && state.entries == new {
 - Manual testing feasible short-term
 - Can add CI job post-launch
 - **Effort:** 2-3 hours
+
+---
+
+## Branch Management (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (Technical debt - token burn branches need review)
+**Effort:** 8-12 hours
+
+- [ ] #P2-TOKEN-BURN: Review and catalog token burn branches from Nov 18-19, 2025
+
+**Background:**
+Multiple branches created during late-night token burn session with speculative code, documentation, marketing plans, and experimental features. Need comprehensive review and cataloging before any integration.
+
+**Scope:**
+
+1. **Branch Analysis** (2-3 hours)
+   - Fetch all remote branches from last 24-48 hours
+   - Examine branches starting with `claude/` or created Nov 18-19
+   - Categorize by content type: Code, Documentation, Marketing, Research, Configuration
+   - Assess review priority: High, Medium, Low
+   - Identify dependencies and conflicts between branches
+
+2. **Reference Document Creation** (2-3 hours)
+   - Create `build/docs/audits/TOKEN_BURN_BRANCHES_2025-11-18.md`
+   - Document each branch: type, description, files changed, status, action required
+   - Organize by priority (high/medium/low) and category
+   - List commit messages and key changes for each branch
+   - Note special cases: breaking changes, duplicate work, experimental APIs
+
+3. **TODO Integration** (1 hour)
+   - Add specific review tasks to TODOS.md for each branch
+   - Flag branches requiring code review vs documentation extraction
+   - Create action items for high priority integrations
+   - Document migration plans for breaking changes
+
+4. **Recommendations** (1 hour)
+   - Identify branches ready for immediate merge (small, safe changes)
+   - Flag branches needing thorough code review (complexity, risk)
+   - Extract non-code content (marketing, docs) to appropriate locations
+   - Determine which experiments should be archived vs deleted
+
+**Important Constraints:**
+- ❌ DO NOT automatically merge any branches without review
+- ❌ DO NOT delete branches without documenting first
+- ❌ DO NOT consolidate code without manual review
+- ❌ DO NOT integrate breaking changes without migration plan
+- ✅ DO create comprehensive reference for manual review
+- ✅ DO categorize by type and priority
+- ✅ DO identify dependencies between branches
+- ✅ DO flag risky/breaking changes prominently
+
+**Deliverables:**
+- Reference document: `build/docs/audits/TOKEN_BURN_BRANCHES_2025-11-18.md`
+- Updated TODOS.md with specific review tasks per branch
+- Summary statistics (X branches, Y code, Z docs, etc.)
+- Prioritized recommendations for next steps
+- Warnings about breaking changes or conflicts
+
+**Special Considerations:**
+- Marketing plans → Consider moving to project docs or separate repo
+- Completed features → Test thoroughly before merge
+- Breaking changes → Requires migration plan and careful review
+- Duplicate work → Check if superseded by other work
+- Experimental APIs → Requires architecture review
+
+**Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
 
 ---
 
