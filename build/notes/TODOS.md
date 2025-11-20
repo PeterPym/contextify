@@ -8,15 +8,16 @@
 **Priority Levels:**
 - **P0 (Blocking Release):** 6 items - Must complete before App Store submission
 - **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 32 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 73
+**Total Active Items:** 77
 
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
 - Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 3 P2 items (#P2-TIMELINE-FONT: Increase timeline font size, #P2-STATUSBAR-HEIGHT: Reduce status bar padding, #P2-TRANSCRIPT-AUTOSELECT: Auto-select topmost transcript and auto-refresh detail pane)
+- Added 7 P2 items (#P2-TIMELINE-FONT, #P2-STATUSBAR-HEIGHT, #P2-TRANSCRIPT-AUTOSELECT, #P2-PROJECTS-SEARCH, #P2-PROJECTS-AUTOSELECT, #P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
+- Simplified copy in Transcripts and Projects windows to match Apple conventions
 - Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
 - Root cause analysis reveals watchers never restart after project switches, not that they crash
 
@@ -981,7 +982,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 32 Items
+# P2 (Medium Priority) - 36 Items
 
 ---
 
@@ -1235,6 +1236,173 @@ When opening Transcripts window, no transcript is selected by default. User must
 - ✅ When selected transcript's metadata finishes generating, detail pane updates automatically
 - ✅ No visible flicker or re-render issues
 - ✅ Selection clears appropriately when list becomes empty (search/filter)
+
+---
+
+## Projects Window Improvements (4 items)
+
+**Status:** Not Started
+**Priority:** P2 (UX improvements - nice to have)
+**Effort:** 5-6 hours total
+
+- [ ] #P2-PROJECTS-SEARCH: Add search functionality to Projects window (1-2 hours)
+- [ ] #P2-PROJECTS-AUTOSELECT: Auto-scroll to current project when window opens (1-2 hours)
+- [ ] #P2-PROJECTS-REFRESH-REVIEW: Investigate if manual "Refresh Projects" button is needed (1.5 hours)
+- [ ] #P2-PROJECTS-EMPTY-STATE: Add first-run guidance to empty state (30 min)
+
+**Context:** Transcripts window has search, auto-selection, and simplified copy. Projects window should match for consistency.
+
+---
+
+### #P2-PROJECTS-SEARCH: Add Search Functionality
+
+**Problem:**
+Transcripts window has `.searchable(text: $searchText, prompt: "Search")` but Projects window has NO search capability. With 10+ projects, users need to filter.
+
+**Implementation:**
+1. Add `@State private var searchText = ""` to ProjectsWindow
+2. Add `.searchable(text: $searchText, prompt: "Search")` modifier
+3. Filter projects by name or path in computed property:
+   ```swift
+   var filteredProjects: [DiscoveredProject] {
+     if searchText.isEmpty { return viewModel.projects }
+     return viewModel.projects.filter { project in
+       project.name.localizedCaseInsensitiveContains(searchText) ||
+       project.path.path.localizedCaseInsensitiveContains(searchText)
+     }
+   }
+   ```
+4. Update list to use `filteredProjects` instead of `viewModel.projects`
+
+**Files:**
+- `Contextify/Contextify/ProjectsWindow.swift`
+
+**Acceptance Criteria:**
+- ✅ Search bar appears in Projects window toolbar
+- ✅ Filters by project name (case insensitive)
+- ✅ Filters by path substring (case insensitive)
+- ✅ Empty search shows all projects
+- ✅ Matches Transcripts window search UX
+
+---
+
+### #P2-PROJECTS-AUTOSELECT: Auto-Scroll to Current Project
+
+**Problem:**
+When opening Projects window, no project is visually highlighted/centered. User must scan to find current project (though it has "CURRENT" badge and blue folder icon).
+
+**Expected Behavior:**
+1. Auto-scroll to current project when window opens
+2. Current project centered/visible without manual scrolling
+3. Makes it immediately obvious where user is
+
+**Implementation:**
+1. Add `ScrollViewReader` wrapper to ProjectsWindow.swift:91 ScrollView
+2. On `.onAppear`, find current project ID from viewModel
+3. Use `scrollTo(currentProjectId, anchor: .center)` to scroll
+4. Add `.id(project.id)` to each ProjectRowView in ForEach
+
+```swift
+ScrollViewReader { proxy in
+  ScrollView {
+    LazyVStack(alignment: .leading, spacing: 16) {
+      ForEach(viewModel.projects) { project in
+        ProjectRowView(...)
+          .id(project.id)
+      }
+    }
+    .padding()
+  }
+  .onAppear {
+    if let currentId = viewModel.projects.first(where: { $0.isCurrent })?.id {
+      withAnimation {
+        proxy.scrollTo(currentId, anchor: .center)
+      }
+    }
+  }
+}
+```
+
+**Files:**
+- `Contextify/Contextify/ProjectsWindow.swift`
+
+**Acceptance Criteria:**
+- ✅ Opening Projects window scrolls to current project
+- ✅ Current project visible in viewport without manual scrolling
+- ✅ Smooth animation (no jarring jumps)
+- ✅ Graceful handling if no current project
+
+---
+
+### #P2-PROJECTS-REFRESH-REVIEW: Review Auto-Refresh Behavior
+
+**Question:**
+ProjectsViewModel observes `AppStateOrchestrator` via `NotificationCenter.default.notifications(named: .appStateDidChange)`. Does this mean projects auto-refresh when discovery runs, making the manual "Refresh Projects" button redundant?
+
+**Investigation Required:**
+1. **Test auto-refresh:** Run discovery from welcome modal → Check if Projects window updates automatically
+2. **Test manual addition:** Add new project directory manually → Check if it appears without clicking Refresh
+3. **Review code:** Trace `AppStateOrchestrator.shared.state` changes → `ProjectsViewModel.updateFromOrchestrator()` flow
+4. **Determine necessity:** Is "Refresh Projects" button actually needed?
+
+**Potential Outcomes:**
+- **If auto-refresh works:** Consider removing button OR making it less prominent (borderless button, secondary style, or move to menu)
+- **If manual refresh needed:** Keep as-is, document why
+- **Hybrid approach:** Keep button but add tooltip explaining when it's needed
+
+**Files:**
+- `Contextify/Contextify/ProjectsViewModel.swift` (lines 52-100: state observation)
+- `Contextify/Contextify/ProjectsWindow.swift` (line 81: button)
+- `app/Sources/ContextifyCore/Projects/AppStateOrchestrator.swift`
+
+**Acceptance Criteria:**
+- ✅ Documented: Does auto-refresh work?
+- ✅ Decision made: Keep/remove/modify button
+- ✅ Code updated based on decision
+- ✅ User expectations clear (via tooltip or removal)
+
+---
+
+### #P2-PROJECTS-EMPTY-STATE: Add First-Run Guidance
+
+**Problem:**
+Empty state shows discovery paths but doesn't guide user on next steps. First-time users may not understand what triggers project discovery.
+
+**Current Empty State (ProjectsWindow.swift:113-152):**
+```
+No Projects Found
+
+We couldn't find any Claude Code or Codex CLI projects on your machine.
+
+Projects are discovered from:
+• ~/.claude/projects/*
+• <project>/.codex/sessions/
+```
+
+**Suggested Addition:**
+Add guidance text below the discovery paths:
+
+```swift
+Text("Start a conversation with Claude Code or Codex in any project, and it will appear here automatically.")
+  .font(.caption)
+  .foregroundStyle(.secondary)
+  .multilineTextAlignment(.center)
+  .padding(.top, 12)
+```
+
+**Alternative (More Concise):**
+```
+"Projects appear automatically when you use Claude Code or Codex."
+```
+
+**Files:**
+- `Contextify/Contextify/ProjectsWindow.swift` (lines 113-152)
+
+**Acceptance Criteria:**
+- ✅ Guidance text added to empty state
+- ✅ Explains what triggers project discovery
+- ✅ Matches overall tone and style
+- ✅ Doesn't clutter the UI
 
 ---
 
