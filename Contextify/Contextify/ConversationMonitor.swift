@@ -609,7 +609,7 @@ final class ConversationMonitor {
 
                         // Task 2: Health monitoring with auto-recovery
                         group.addTask { [weak self] in
-                            await self?.runHealthMonitoring(projectId: projectId, orchestrator: orchestrator)
+                            await self?.runHealthMonitoring(orchestrator: orchestrator)
                         }
                     }
                 }
@@ -2387,11 +2387,12 @@ final class ConversationMonitor {
         return "not_queued"
     }
 
-    /// Handle app resigning active - DISABLED to prevent background processing
+    /// Handle app resigning active - background LLM processing not implemented
     @MainActor
     private func handleAppResignActive() async {
-        // DISABLED: Only process visible entries via scroll tracking
-        log.info("App resigned active - background processing DISABLED")
+        // Policy: Only generate summaries for visible entries (scroll-based prioritization)
+        // Background processing disabled - summaries only generated when app is active
+        log.info("App resigned active - LLM summary generation paused (policy: visible-only)")
     }
 
     /// Handle app becoming active - cancel background tasks to prioritize visible entries
@@ -3047,7 +3048,7 @@ final class ConversationMonitor {
 
     /// Health monitoring loop - runs every 30s
     /// Detects stalls and attempts auto-recovery
-    private func runHealthMonitoring(projectId: String, orchestrator: TranscriptOrchestrator) async {
+    private func runHealthMonitoring(orchestrator: TranscriptOrchestrator) async {
         log.info("🏥 Health monitoring started")
 
         while !Task.isCancelled {
@@ -3061,7 +3062,7 @@ final class ConversationMonitor {
                 }
 
                 if shouldRunImmediateCheck {
-                    await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "restart-guard")
+                    await performHealthCheck(orchestrator: orchestrator, trigger: "restart-guard")
                     continue
                 }
 
@@ -3069,7 +3070,7 @@ final class ConversationMonitor {
                 try await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
 
-                await performHealthCheck(projectId: projectId, orchestrator: orchestrator, trigger: "interval")
+                await performHealthCheck(orchestrator: orchestrator, trigger: "interval")
 
             } catch is CancellationError {
                 break
@@ -3083,9 +3084,16 @@ final class ConversationMonitor {
         log.info("🏥 Health monitoring stopped")
     }
 
-    private func performHealthCheck(projectId: String, orchestrator: TranscriptOrchestrator, trigger: String) async {
+    private func performHealthCheck(orchestrator: TranscriptOrchestrator, trigger: String) async {
         await MainActor.run { [weak self] in
             self?.lastHealthCheck = Date()
+        }
+
+        // Get current project ID from state (may have changed since task started)
+        let projectId = await MainActor.run { self.currentProjectId }
+        guard let projectId else {
+            log.debug("🏥 Health check skipped (no current project)")
+            return
         }
 
         // Capture diagnostic snapshot
@@ -3124,14 +3132,17 @@ final class ConversationMonitor {
 
     /// Attempt to recover stalled watcher
     private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?) async {
+        log.info("[WATCHER-RECOVERY-START] Attempting recovery for project=\(projectId, privacy: .public) target=\(targetTranscriptId ?? "all", privacy: .public)")
+
         do {
+            log.debug("[WATCHER-RECOVERY-CALL] Calling orchestrator.ensureProjectWatcher...")
             let summary = try orchestrator.ensureProjectWatcher(
                 projectId: projectId,
                 targetTranscriptId: targetTranscriptId
             )
-            log.info("[WATCHER-RECOVERY] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
+            log.info("[WATCHER-RECOVERY-DONE] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
         } catch {
-            log.error("Watcher recovery failed: \(error.localizedDescription)")
+            log.error("[WATCHER-RECOVERY-ERROR] Recovery failed for project=\(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 

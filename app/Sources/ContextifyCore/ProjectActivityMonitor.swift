@@ -597,37 +597,41 @@ public actor ProjectActivityMonitor {
       return
     }
 
-    // Extract mangled directory
-    guard let rootIdx = comps.firstIndex(of: marker), rootIdx + 1 < comps.count else {
-      log.warning("FSEvents: malformed path (missing \(marker)) path=\(path)")
-      return
-    }
-
-    let mangledDir = comps[rootIdx + 1]
-    let home = FileManager.default.homeDirectoryForCurrentUser
-    let transcriptRoot = (provider == .claude)
-      ? home.appendingPathComponent(".claude/projects/\(mangledDir)")
-      : home.appendingPathComponent(".codex/sessions/\(mangledDir)")
-
-    // Verify transcript root exists
-    var isDir: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: transcriptRoot.path, isDirectory: &isDir), isDir.boolValue else {
-      log.warning("FSEvents: missing transcript dir=\(transcriptRoot.path)")
-      return
-    }
-
-    // Use canonical path resolution instead of custom mangle/demangle
+    // Determine project path based on provider
     let sessionId = url.deletingPathExtension().lastPathComponent
     let providerString = (provider == .claude ? "claude.code" : "codex.cli")
-
-    // Use ProjectIdentity.reverseManglePath() to properly demangle project paths
-    // This handles both Claude Code and Codex, and correctly handles hyphens in directory names
     let projPath: String
+
     do {
-      projPath = try ProjectIdentity.reverseManglePath(
-        provider: providerString,
-        directory: transcriptRoot
-      )
+      if provider == .claude {
+        // Claude Code: Extract mangled directory and reverse-mangle to get project path
+        guard let rootIdx = comps.firstIndex(of: marker), rootIdx + 1 < comps.count else {
+          log.warning("FSEvents: malformed Claude path (missing \(marker)) path=\(path, privacy: .public)")
+          return
+        }
+
+        let mangledDir = comps[rootIdx + 1]
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let transcriptRoot = home.appendingPathComponent(".claude/projects/\(mangledDir)")
+
+        projPath = try ProjectIdentity.reverseManglePath(
+          provider: providerString,
+          directory: transcriptRoot
+        )
+        log.debug("[FSEVENTS-CLAUDE] Reverse-mangled path: \(mangledDir, privacy: .public) → \(projPath, privacy: .public)")
+
+      } else {
+        // Codex: Extract CWD from transcript file (date-based hierarchy doesn't encode project path)
+        log.debug("[FSEVENTS-CODEX] Extracting CWD from transcript file: \(path, privacy: .public)")
+
+        guard let extractedPath = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(url) else {
+          log.warning("[FSEVENTS-CODEX-FAIL] Could not extract CWD from transcript: \(path, privacy: .public)")
+          return
+        }
+
+        projPath = extractedPath
+        log.debug("[FSEVENTS-CODEX] Extracted CWD: \(projPath, privacy: .public)")
+      }
 
       log.debug("FSEvents: sessionId=\(sessionId) projPath=\(projPath)")
 
@@ -664,7 +668,7 @@ public actor ProjectActivityMonitor {
         }
       }
     } catch {
-      log.error("FSEvents: path decode failed for \(mangledDir, privacy: .public): \(String(describing: error), privacy: .public)")
+      log.error("FSEvents: path decode failed for \(path, privacy: .public): \(String(describing: error), privacy: .public)")
     }
     #endif
   }

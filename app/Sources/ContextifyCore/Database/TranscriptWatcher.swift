@@ -175,17 +175,22 @@ public final class TranscriptWatcher: @unchecked Sendable {
   }
 
   private func armWatcher(transcriptId: String, fileURL: URL) {
+    log.debug("[WATCHER-ARM-START] Arming watcher for transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
-      log.error("Failed to open file for watching: \(fileURL.path, privacy: .public)")
+      let errorCode = errno
+      log.error("[WATCHER-FD-OPEN-FAILED] Failed to open file descriptor: path=\(fileURL.path, privacy: .public) errno=\(errorCode) (\(String(cString: strerror(errorCode))))")
       return
     }
+    log.debug("[WATCHER-FD-OPEN] Opened file descriptor fd=\(fileDescriptor) for transcript=\(transcriptId, privacy: .public)")
 
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: fileDescriptor,
       eventMask: [.write, .extend],
       queue: DispatchQueue.main
     )
+    log.debug("[WATCHER-SOURCE-CREATE] Created dispatch source for transcript=\(transcriptId, privacy: .public)")
 
     source.setEventHandler { [weak self] in
       guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
@@ -198,6 +203,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     source.resume()
+    log.debug("[WATCHER-SOURCE-RESUME] Resumed dispatch source for transcript=\(transcriptId, privacy: .public)")
 
     // Thread-safe dictionary mutation - double-check inside lock to catch any race
     // that occurred during ingestion
@@ -211,11 +217,11 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     if wasAdded {
-      log.info("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
+      log.debug("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
     } else {
       // Clean up the source we just created since we didn't use it
       source.cancel()
-      log.info("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
+      log.debug("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
     }
   }
 

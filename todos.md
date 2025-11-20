@@ -56,6 +56,75 @@ Three-layer improvement (mirrors assistant-side fix):
 
 ---
 
+### Automated QA Test Suite (MVP - Local Execution)
+
+**Issue:** Need automated regression testing for core Contextify workflows before releases
+
+**Context:**
+- Manual testing is time-consuming and error-prone
+- Critical flows (startup, project switching, transcript discovery, real-time updates) need validation
+- Pre-release sanity checks currently done ad-hoc
+
+**MVP Scope:**
+- **Local execution only** - Sequential bash scripts on development machine
+- **Real integrations** - Uses actual Codex/Claude CLIs, not fixtures
+- **6 core test cases** - Validates end-to-end pipeline (FSEvents → Database → Timeline → UI)
+- **Fast feedback** - Complete suite in <10 minutes with clear pass/fail
+
+**Test Coverage:**
+1. **QA-01:** App launch and startup orchestration
+2. **QA-02:** Project switching with AppleScript automation
+3. **QA-03:** Codex transcript discovery (canonical template)
+4. **QA-04:** Claude Code transcript discovery
+5. **QA-05:** Real-time transcript updates (incremental hoover)
+6. **QA-06:** Watcher health check and recovery
+
+**Implementation Approach:**
+- Bash scripts leveraging existing `scripts/logging/` toolkit
+- Log pattern matching with `wait_for_log_pattern` helper (no blind sleeps)
+- Direct SQLite queries with timeout for WAL lock handling
+- Sequential execution via `run-all-tests.sh` orchestrator
+
+**Expected Outcomes:**
+- Pre-release validation in <10 minutes
+- Catch regressions in FSEvents, database ingestion, timeline refresh
+- Clear diagnostics when tests fail (log patterns, DB state, troubleshooting steps)
+- Foundation for future CI/CD integration (v2)
+
+**Implementation Documents:**
+- **Full methodology (v2 - MVP):** `build/notes/reference/automated-qa-methodology-v2.md`
+- **Original analysis (v1):** `/tmp/contextify-automated-qa-methodology.md`
+- **Review feedback:** `/private/tmp/got-it-that-helps.md`
+
+**Implementation Checklist:**
+1. Create `scripts/qa/` directory structure
+2. Implement `lib/common.sh` with `wait_for_log_pattern`, `db_query` with timeout
+3. Implement `lib/assertions.sh` (exact count validation only)
+4. Implement `run-all-tests.sh` sequential orchestrator
+5. Implement QA-03 first (canonical example)
+6. Pattern-match QA-01, QA-02, QA-04, QA-05, QA-06 from QA-03
+7. Test full suite locally
+8. Document usage
+
+**Effort:** Medium (8-12 hours total)
+- Helper libs: 2 hours
+- QA-03 implementation: 3 hours
+- Other test cases: 3-4 hours
+- Testing and refinement: 2-3 hours
+
+**Deferred to v2 Professional QA:**
+- CI/CD GitHub Actions integration
+- Fixture-based tests (no live API calls)
+- Database migration testing
+- Performance benchmarks with timing assertions
+- Headless controls (no AppleScript dependency)
+
+**Priority:** P1 (implement before next major feature work)
+
+**Status:** Planning complete, ready for implementation
+
+---
+
 ## P3 (Low Priority - Nice to Have)
 
 ### Timeline Fix Test Infrastructure

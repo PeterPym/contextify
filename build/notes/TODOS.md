@@ -6,12 +6,12 @@
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 5 items - Must complete before App Store submission (1 new: logomark visibility, 2 fixed: watcher-init + tab-corners)
 - **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 77
+**Total Active Items:** 75 (77 - 2 completed P0 items)
 
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
@@ -42,21 +42,37 @@
 
 ---
 
-# P0 (Blocking Release) - 6 Items Remaining
+# P0 (Blocking Release) - 5 Items Remaining
 
 ## UI Polish (1 item)
 
-- [ ] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners when selected (possibly unselected too)
+- [ ] #P0-LOGOMARK-LIGHT: Fix Claude logomark visibility in light mode (white on white)
+
+**Problem:**
+The Claude logomark in the status bar is white, making it invisible against light mode backgrounds. This affects branding and usability in light mode.
+
+**Solution Options:**
+1. Add a subtle drop shadow or stroke to the white logomark
+2. Use a dark variant of the logomark in light mode
+3. Add a semi-transparent background circle/pill behind the logomark
+4. Use SF Symbol's automatic color adaptation (if available)
+
+**Implementation:**
+- File: Likely in status bar view or logomark asset rendering
+- Consider: Match macOS system appearance conventions (automatic dark/light variants)
+- Test: Verify visibility in both light and dark modes
+
+**Effort:** 30 minutes - 1 hour
 
 ---
 
-## Watcher Initialization Failure (1 item) 🚨
+## Watcher Initialization Failure (FIXED) ✅
 
-**Status:** Not Started (Critical - Users experiencing missing real-time updates)
-**Priority:** P0 (Blocking - Core functionality broken)
-**Effort:** 2-4 hours
+**Status:** Completed on feature/fix-watcher-initialization branch (9 commits)
+**Branch:** Ready to merge to main
 
-- [ ] #P0-WATCHER-INIT: Fix watcher initialization failure causing missing real-time transcript updates
+- [x] #P0-WATCHER-INIT: Fix watcher initialization failure causing missing real-time transcript updates
+- [x] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners (already fixed, can be removed)
 
 **Problem:**
 Watchers are never initialized during certain app lifecycle events (project switches, discovery re-runs), causing transcripts to stop updating in real-time. Users must manually refresh or restart the app. Health check detects the problem but auto-recovery fails silently.
@@ -1646,6 +1662,84 @@ Status bar at top of window takes up too much vertical space due to excessive pa
 - ✅ Maintains visual hierarchy
 
 **Effort:** 30min - 1 hour
+
+---
+
+## Background LLM Processing (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX improvement - pre-generate summaries when app is backgrounded)
+**Effort:** 4-6 hours
+
+- [ ] #P2-BACKGROUND-SUMM: Re-implement background LLM summarization for "would-be-visible" entries
+
+**Problem:**
+Currently, when app is backgrounded (user switches away), LLM summary generation is completely disabled. The log message is confusing: "App resigned active - background processing DISABLED". This is a policy decision, not a bug, but it's a missed opportunity.
+
+**Previous Implementation:**
+Background summarization used to exist but was removed at some point. Worth investigating git history to see:
+- Why it was removed (performance? battery? user feedback?)
+- What the implementation looked like
+- Any useful code/patterns to reuse
+
+**Proposed Behavior:**
+When app goes to background, continue summarizing entries that would be "visible" if the user scrolled back in timeline. This would:
+- Pre-populate summaries for entries user is likely to see
+- Make timeline feel more responsive when app returns to foreground
+- Avoid wasted work (only summarize what user might actually view)
+
+**Implementation Approach:**
+1. **Define "Would-Be-Visible" Scope** (1 hour)
+   - Current viewport + N entries above/below scroll position
+   - Or: All entries within last X hours/days
+   - Or: Based on user's typical scroll depth
+   - Consider: How far back do users typically scroll?
+
+2. **Background Task Management** (2-3 hours)
+   - Implement low-priority background LLM queue
+   - Respect system resource constraints (low battery, thermal pressure)
+   - Pause during active calls, media playback
+   - Cancel if app terminated
+
+3. **Smart Prioritization** (1 hour)
+   - Prioritize recent entries over old ones
+   - Skip entries already summarized
+   - Deprioritize if user never scrolls back
+
+4. **Logging & Observability** (30 min)
+   - Update confusing log message to explain policy clearly
+   - Log when background processing starts/stops
+   - Track: summaries generated while backgrounded, battery impact
+
+**Git History Investigation:**
+Search for commits related to:
+- "background" + "summarization" or "LLM"
+- `handleAppResignActive()` implementation changes
+- Removal of background processing code
+- Performance issues or user complaints
+
+Commands:
+```bash
+git log --all --grep="background.*summar" -i
+git log --all --grep="resign.*active" -i -- "**/ConversationMonitor.swift"
+git log -S "background processing" --all
+```
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift:2390-2395` (handleAppResignActive)
+- Likely: LLM queue management code
+- Likely: Timeline cache/priority logic
+
+**Acceptance Criteria:**
+- ✅ Background summarization generates summaries for would-be-visible entries
+- ✅ Respects system resource constraints (battery, thermal)
+- ✅ Logs clearly explain background processing status
+- ✅ No performance degradation when app returns to foreground
+- ✅ User doesn't notice lag when scrolling to pre-summarized content
+
+**Related:**
+- Confusing log message: "App resigned active - background processing DISABLED"
+- Should clarify: This is intentional policy, not a bug
 
 ---
 

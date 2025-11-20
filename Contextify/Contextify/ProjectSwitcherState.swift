@@ -735,19 +735,15 @@ public final class ProjectSwitcherState {
 
     cancelMonitorStartTasks()
 
+    // Always start monitoring when orchestrator is available, regardless of project count
+    // This fixes race condition where discovery completes with 0 projects AND notification
+    // was already posted before we subscribed (we would wait forever for a notification
+    // that already fired). The monitoring system gracefully handles 0 projects.
     monitorStartTask = Task { [weak self] in
-      guard let self else { return }
-      log.info("[SWITCHER-MONITOR] Waiting for .projectsDiscoveryComplete notification...")
-      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
-      for await _ in notifications {
-        log.info("[SWITCHER-MONITOR] ✅ Received .projectsDiscoveryComplete notification - starting monitor")
-        // Cancel fallback timer since we got the notification
-        await MainActor.run {
-          self.cancelMonitorStartTasks()
-        }
-        await self.startGlobalMonitoringIfNeeded(reason: "projectsDiscoveryComplete")
-        return
-      }
+      guard let self, let orchestrator = self.orchestrator else { return }
+      let projectCount = (try? await orchestrator.listProjects().count) ?? 0
+      log.info("[SWITCHER-MONITOR] Starting monitoring (projects: \(projectCount))")
+      await self.startGlobalMonitoringIfNeeded(reason: "startup-or-discovery")
     }
 
     // Start fallback timer only AFTER ingestion begins (not immediately at app launch)

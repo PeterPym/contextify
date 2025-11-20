@@ -36,18 +36,39 @@ cleanup() {
   echo ""
   echo "=== Logs saved to: $LOGFILE ==="
   echo "View with: cat $LOGFILE"
+  # Kill status reminder if running
+  if [ -n "$STATUS_PID" ]; then
+    kill "$STATUS_PID" 2>/dev/null
+  fi
   exit 0
 }
 
 trap cleanup SIGINT SIGTERM
 
+# Step 2.5: Start periodic status reminder
+status_reminder() {
+  while true; do
+    sleep 10
+    echo "" >&2
+    echo "⏱️  Still monitoring... (logs: $LOGFILE)" >&2
+  done
+}
+
+status_reminder &
+STATUS_PID=$!
+
 # Step 3: Build category predicate from CATEGORIES variable
 # Converts "Cat1 Cat2 Cat3" → 'category == "Cat1" OR category == "Cat2" OR category == "Cat3"'
-CATEGORY_PREDICATES=()
+CATEGORY_PREDICATE=""
+FIRST=true
 for cat in $CATEGORIES; do
-  CATEGORY_PREDICATES+=("category == \"$cat\"")
+  if [ "$FIRST" = true ]; then
+    CATEGORY_PREDICATE="category == \"$cat\""
+    FIRST=false
+  else
+    CATEGORY_PREDICATE="$CATEGORY_PREDICATE OR category == \"$cat\""
+  fi
 done
-CATEGORY_PREDICATE=$(IFS=" OR "; echo "${CATEGORY_PREDICATES[*]}")
 
 # Step 4: Build grep pattern from command-line arguments or default to ".*" (all)
 if [ $# -eq 0 ]; then
@@ -71,6 +92,7 @@ echo "Press Ctrl+C to stop..."
 echo ""
 
 # Step 6: Stream logs with filtering
+# Note: tee will buffer slightly on macOS (no line-buffering option), but logs are saved
 log stream \
   --predicate "subsystem == \"$SUBSYSTEM\" AND ($CATEGORY_PREDICATE)" \
   --level "$LEVEL" \
