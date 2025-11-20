@@ -176,6 +176,10 @@ actor FoundationLLM {
         case retryExhausted
     }
 
+    // Final timeline result struct - intentionally lighter than GuidedTimelineSummary
+    // Design decision: grounding and confidence are LLM generation metadata,
+    // not persisted in the final timeline entry. They're logged but not stored.
+    // This keeps the result focused on user-facing timeline data.
     struct TimelineSummaryResult: Sendable {
         let summary: String
         let isCompletion: Bool
@@ -804,6 +808,17 @@ actor FoundationLLM {
 #if canImport(FoundationModels)
 @available(macOS 26.0, iOS 26.0, tvOS 26.0, visionOS 26.0, *)
 @Generable(description: "Timeline summary metadata for HUD entries")
+// SCHEMA CONTRACT: Must stay in exact lockstep with LLM prompt JSON output
+// The prompt in instructionsForTimeline(kind: .assistant) promises this exact structure:
+// {
+//   "summary": String (≤140 chars, starts with assistant name)
+//   "isCompletion": Bool (true only if explicit completion markers)
+//   "disposition": String (one of: ack, completion, wip, analysis, proposal, question, refusal)
+//   "grounding": String (grounded | ungrounded | insufficient)
+//   "confidence": Double (0.0-1.0)
+// }
+// ⚠️ Any mismatch in field names, types, or required/optional status will cause guided decoding to fail silently.
+// ⚠️ If adding fields here, you MUST update the prompt's JSON example and instructions.
 struct GuidedTimelineSummary {
     @Guide(description: "One sentence (≤140 chars) starting with an allowed prefix. Use only MESSAGE content.")
     var summary: String
@@ -1778,10 +1793,12 @@ extension FoundationLLM {
             let msgLower = message.lowercased()
 
             // Lexical cue detection
+            // Completion cues: first-person past/present-perfect markers
+            // Note: Removed generic "done" and "✅" (too noisy, appear in non-completion contexts)
             let completionCues = [
                 "i've ", "i have ", "i already ", "i just ", "i went ahead",
                 "i updated", "i fixed", "i changed", "i added", "i implemented",
-                "i pushed", "i committed", "done", "✅"
+                "i pushed", "i committed"
             ]
             let hasCompletionCue = completionCues.contains { msgLower.contains($0) }
 

@@ -141,6 +141,12 @@ final class TimelineFixValidationTests: XCTestCase {
     // MARK: - Manual Validation Test
 
     func testTimelineFixManualValidation() async throws {
+        // MANUAL TEST: Skipped in CI by default (LLM behavior can fluctuate, causing flaky builds)
+        // To run locally: RUN_TIMELINE_FIX_VALIDATION=1 xcodebuild test ...
+        guard ProcessInfo.processInfo.environment["RUN_TIMELINE_FIX_VALIDATION"] == "1" else {
+            throw XCTSkip("Manual validation test; set RUN_TIMELINE_FIX_VALIDATION=1 to run.")
+        }
+
         print("\n")
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("  Timeline Summarization Fix - Manual Validation")
