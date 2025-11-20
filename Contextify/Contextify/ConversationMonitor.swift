@@ -2387,11 +2387,12 @@ final class ConversationMonitor {
         return "not_queued"
     }
 
-    /// Handle app resigning active - DISABLED to prevent background processing
+    /// Handle app resigning active - background LLM processing not implemented
     @MainActor
     private func handleAppResignActive() async {
-        // DISABLED: Only process visible entries via scroll tracking
-        log.info("App resigned active - background processing DISABLED")
+        // Policy: Only generate summaries for visible entries (scroll-based prioritization)
+        // Background processing disabled - summaries only generated when app is active
+        log.info("App resigned active - LLM summary generation paused (policy: visible-only)")
     }
 
     /// Handle app becoming active - cancel background tasks to prioritize visible entries
