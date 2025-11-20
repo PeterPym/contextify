@@ -100,15 +100,18 @@ struct TranscriptInventoryView: View {
         HStack {
           VStack(alignment: .leading, spacing: 2) {
             if let projectName = hudViewModel.projectRootURL?.lastPathComponent {
-              Text("Transcript Inventory for \(projectName)")
+              Text(projectName)
                 .font(.headline)
             } else {
-              Text("Transcript Inventory")
+              Text("No Project")
                 .font(.headline)
+                .foregroundStyle(.secondary)
             }
-            Text("\(filteredSessions.count) transcripts")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            if let last = monitor.allSessionsLastUpdate {
+              Text("Updated \(last, format: .dateTime.hour().minute().second())")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
           }
           Spacer()
 
@@ -208,7 +211,6 @@ struct TranscriptInventoryView: View {
               .onTapGesture {
                 selectedTranscriptId = session.identifier
               }
-              .background(selectedTranscriptId == session.identifier ? Color.accentColor.opacity(0.15) : Color.clear)
               .contextMenu {
                 exportContextMenu(for: session)
               }
@@ -497,7 +499,9 @@ struct TranscriptInventoryView: View {
     .padding(12)
     .background(
       RoundedRectangle(cornerRadius: 10, style: .continuous)
-        .fill(Color(nsColor: .windowBackgroundColor))
+        .fill(selectedTranscriptId == session.identifier
+          ? Color.accentColor.opacity(0.15)
+          : Color(nsColor: .windowBackgroundColor))
     )
     .overlay(alignment: .leading) {
       Capsule()
