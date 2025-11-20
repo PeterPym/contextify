@@ -1422,26 +1422,96 @@ private extension FoundationLLM {
         switch kind {
         case .assistant:
             return """
-            You fill a TimelineSummary for an AI assistant response.
+            You are classifying a SINGLE assistant message for a developer timeline.
 
-            Rules:
-            - Output ONE sentence: "\(assistantName) [verb] [object]", ≤140 chars.
-            - Format: Start with "\(assistantName)" followed by a past-tense third-person verb (no colon, no comma, no quotes).
-            - Examples: "\(assistantName) explained the API structure.", "\(assistantName) fixed the type error."
-            - Use only MESSAGE content; do not introduce topics absent from MESSAGE.
-            - No emojis.
-            - Tense: ALWAYS use past tense (the timeline is a historical record).
-              * "explained", "proposed", "fixed", "confirmed", "asked", "acknowledged"
-              * Even for statements like "I'll build this" → "proposed building"
-              * Even for "Let's test" → "suggested testing"
-            - Mention tools (Write/Edit/Read/Bash/etc.) ONLY if MESSAGE explicitly says they were executed.
+            Your job:
+            1. Decide the **disposition** of this message
+            2. Write a short summary suitable for a project activity timeline
 
-            Fields:
-            - summary: one sentence following the rules.
-            - isCompletion: true only if MESSAGE explicitly indicates completion.
-            - disposition: one of ack, completion, wip, analysis, proposal, question, refusal.
-            - grounding: grounded | ungrounded | insufficient.
-            - confidence: 0.0–1.0 (lower for short or ungrounded inputs).
+            ### Dispositions
+
+            Choose the most appropriate disposition. For most assistant messages, use one of these three:
+
+            **"completion"** - Work that has ALREADY been done or is actively being performed
+            Examples:
+            - "I've added logging to the function."
+            - "I refactored the class into two files."
+            - "I just pushed a fix to handle that edge case."
+
+            **"proposal"** - Work that COULD be done in the future, or offering to do something, but NOT done yet
+            Examples:
+            - "I can add logging to that function."
+            - "I will refactor this into two files."
+            - "Let me write a unit test for this."
+            - "Would you like me to add a retry loop?"
+
+            **"analysis"** - Analyzing, explaining, or reasoning WITHOUT committing to future work or reporting completed work
+            Examples:
+            - "Looking at the stack trace, it seems like the crash is due to a nil optional."
+            - "There should be a race condition between these two tasks."
+            - "It appears that the query is missing an index."
+
+            (If clearly appropriate, you may also use: ack, wip, question, refusal)
+
+            ### Verb & Tense Rules (CRITICAL)
+
+            Use verb tense and context to decide disposition:
+
+            **COMPLETION** when:
+            - Message uses PAST or PRESENT PERFECT tense:
+              "I've added…", "I already…", "I just…", "I went ahead and…", "I updated…", "I fixed…"
+            - Assistant is reporting work IS DONE or IS BEING DONE
+
+            **PROPOSAL** when:
+            - Message uses FUTURE or CONDITIONAL tense:
+              "I'll…", "I will…", "I can…", "I could…", "I'm going to…", "I need to…", "Let me…", "Would you like me to…"
+            - Assistant is describing something that MIGHT be done, OFFERING work, or SUGGESTING change
+
+            **ANALYSIS** when:
+            - Message describes or interprets information:
+              "Looking at…", "It looks like…", "It seems that…", "This suggests…", "There should be…", "I think the issue is…"
+            - Text is explanation or diagnosis without clear action claim or promise
+
+            ### Mixed/Ambiguous Cases
+
+            - If message describes **completed work AND mentions future steps**:
+              → Prefer **"completion"** if at least one significant action is clearly done
+
+            - If message is **mostly explanation** with weak language like "we could…" but no concrete commitment:
+              → Prefer **"analysis"** over "proposal"
+
+            - Do NOT label as "proposal" only because of "should" or "could" in analysis context:
+              → "There should be a lock around this code" is **analysis**, not a proposal to implement it
+
+            ### Summary Phrasing (CRITICAL)
+
+            Match your verb choice to the disposition:
+
+            **For COMPLETION:**
+            - Use past-tense verbs: "added", "implemented", "refactored", "fixed", "updated", "created"
+            - Do NOT use proposal language like "proposed" or "suggested"
+            - Example: "\(assistantName) added logging around the authentication flow."
+
+            **For PROPOSAL:**
+            - Use proposal verbs: "proposed", "suggested", "offered to", "outlined", "presented"
+            - Do NOT use completion verbs like "created", "implemented", "fixed"
+            - Example: "\(assistantName) proposed creating a helper script with presets."
+
+            **For ANALYSIS:**
+            - Use analysis verbs: "explained", "analyzed", "noted", "identified", "clarified"
+            - Example: "\(assistantName) analyzed the stack trace and identified the root cause."
+
+            ### Output Format
+
+            Return a JSON object with these exact keys:
+
+            {
+              "summary": "One sentence (≤140 chars) starting with '\(assistantName)'",
+              "isCompletion": true,
+              "disposition": "completion",
+              "grounding": "grounded",
+              "confidence": 0.95
+            }
 
             Input format:
             MESSAGE:
@@ -1701,6 +1771,95 @@ extension FoundationLLM {
             if !isGrounded && leaked.count > 0 {
                 log.debug("timeline summary ACCEPTED despite leakage (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
             }
+
+            // Disposition-verb alignment validation
+            // Catch obvious mismatches using lexical cues from the original message
+
+            let msgLower = message.lowercased()
+
+            // Lexical cue detection
+            let completionCues = [
+                "i've ", "i have ", "i already ", "i just ", "i went ahead",
+                "i updated", "i fixed", "i changed", "i added", "i implemented",
+                "i pushed", "i committed", "done", "✅"
+            ]
+            let hasCompletionCue = completionCues.contains { msgLower.contains($0) }
+
+            let proposalCues = [
+                "i'll ", "i will ", "i can ", "i could ", "i'm going to",
+                "i need to ", "let me ", "would you like me to", "i should go"
+            ]
+            let hasProposalCue = proposalCues.contains { msgLower.contains($0) }
+
+            let analysisCues = [
+                "looking at ", "it looks like", "it seems that", "there should be",
+                "this suggests", "the issue is", "i think the problem is",
+                "from the logs", "from the stack trace"
+            ]
+            let hasAnalysisCue = analysisCues.contains { msgLower.contains($0) }
+
+            // Validation rules (in priority order)
+
+            // Rule 1: Flip proposal → completion if strong completion cues present
+            if payload.disposition == "proposal" && hasCompletionCue && !hasProposalCue {
+                log.warning("Overriding disposition: proposal → completion (completion cues detected)")
+                log.debug("Message preview: \(String(message.prefix(200)), privacy: .public)")
+
+                return TimelineSummaryResult(
+                    summary: summary,
+                    isCompletion: true,
+                    isDirective: false,
+                    disposition: "completion"
+                )
+            }
+
+            // Rule 2: Flip completion → proposal if strong proposal cues present
+            if payload.disposition == "completion" && hasProposalCue && !hasCompletionCue && !hasAnalysisCue {
+                log.warning("Overriding disposition: completion → proposal (proposal cues detected)")
+                log.debug("Message preview: \(String(message.prefix(200)), privacy: .public)")
+
+                return TimelineSummaryResult(
+                    summary: summary,
+                    isCompletion: false,
+                    isDirective: false,
+                    disposition: "proposal"
+                )
+            }
+
+            // Rule 3: Flip proposal → analysis if pure diagnostic language
+            if payload.disposition == "proposal" && hasAnalysisCue && !hasCompletionCue && !hasProposalCue {
+                log.warning("Overriding disposition: proposal → analysis (analysis cues detected)")
+                log.debug("Message preview: \(String(message.prefix(200)), privacy: .public)")
+
+                return TimelineSummaryResult(
+                    summary: summary,
+                    isCompletion: false,
+                    isDirective: false,
+                    disposition: "analysis"
+                )
+            }
+
+            // Rule 4: Mixed case - completion wins if strong past-perfect present
+            if hasCompletionCue && hasProposalCue {
+                let strongCompletionMarkers = ["i've ", "i have ", "i already ", "i just "]
+                let hasStrongCompletion = strongCompletionMarkers.contains { msgLower.contains($0) }
+
+                if hasStrongCompletion && payload.disposition != "completion" {
+                    log.info("Mixed case: preferring completion (strong past-perfect marker found)")
+
+                    return TimelineSummaryResult(
+                        summary: summary,
+                        isCompletion: true,
+                        isDirective: false,
+                        disposition: "completion"
+                    )
+                }
+            }
+
+            // Note: "let me" with analysis verbs (analyze, calculate, read) is intentionally
+            // NOT overridden because investigation/calculation completes when done.
+            // Example: "Let me analyze the logs" → "analyzed" is correct.
+
         } else if kind == .user {
             // NEW: User message validation (parity with assistant)
             let autoIntent = classifyUserIntent(message)
