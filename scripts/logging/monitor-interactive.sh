@@ -36,10 +36,26 @@ cleanup() {
   echo ""
   echo "=== Logs saved to: $LOGFILE ==="
   echo "View with: cat $LOGFILE"
+  # Kill status reminder if running
+  if [ -n "$STATUS_PID" ]; then
+    kill "$STATUS_PID" 2>/dev/null
+  fi
   exit 0
 }
 
 trap cleanup SIGINT SIGTERM
+
+# Step 2.5: Start periodic status reminder
+status_reminder() {
+  while true; do
+    sleep 10
+    echo "" >&2
+    echo "⏱️  Still monitoring... (logs: $LOGFILE)" >&2
+  done
+}
+
+status_reminder &
+STATUS_PID=$!
 
 # Step 3: Build category predicate from CATEGORIES variable
 # Converts "Cat1 Cat2 Cat3" → 'category == "Cat1" OR category == "Cat2" OR category == "Cat3"'
