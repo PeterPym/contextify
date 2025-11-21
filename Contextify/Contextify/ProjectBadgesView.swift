@@ -4,6 +4,7 @@ import ContextifyCore
 /// Displays provider badges for a project (Claude Code, Codex)
 /// Uses database-backed provider information instead of filesystem detection
 struct ProjectBadgesView: View {
+  @Environment(\.colorScheme) private var colorScheme
   let providers: Set<DiscoveredProject.Provider>
 
   var body: some View {
@@ -12,9 +13,18 @@ struct ProjectBadgesView: View {
         Image(provider.iconImage)
           .renderingMode(.template)
           .foregroundStyle(providerColor(provider))
+          .shadow(
+            color: needsShadow(provider) ? .black.opacity(0.7) : .clear,
+            radius: 0.5
+          )
           .help(provider.displayName)
       }
     }
+  }
+
+  /// White/light logos need shadow in light mode for visibility
+  private func needsShadow(_ provider: DiscoveredProject.Provider) -> Bool {
+    colorScheme == .light && provider == .codexCLI
   }
 
   private func providerColor(_ provider: DiscoveredProject.Provider) -> Color {

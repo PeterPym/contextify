@@ -22,6 +22,7 @@ enum InventoryScope: String, CaseIterable, Identifiable {
 /// Displays all discovered transcripts for the current project, including worktrees.
 /// Uses HSplitView for macOS-native sidebar + detail layout.
 struct TranscriptInventoryView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(ConversationMonitor.self) private var monitor
   @Environment(DeveloperMode.self) private var devMode
   @Environment(HUDViewModel.self) private var hudViewModel
@@ -343,6 +344,10 @@ struct TranscriptInventoryView: View {
         Image(session.provider.iconImage)
           .renderingMode(.template)
           .foregroundStyle(session.provider.color)
+          .shadow(
+            color: (colorScheme == .light && session.provider == .codexCLI) ? .black.opacity(0.7) : .clear,
+            radius: 0.5
+          )
           .frame(width: 16)
 
         if let meta = metadata[session.identifier] {

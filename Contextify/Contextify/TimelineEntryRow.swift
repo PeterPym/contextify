@@ -31,6 +31,7 @@ struct TimelineEntryRow: View, Equatable {
     @State private var showSafetyInfo = false
     @State private var showErrorInfo = false
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(ConversationMonitor.self) private var monitor
 
     // SwiftUI will use TimelineEntry.hash for equality (onScrollToEntry closure ignored)
@@ -112,6 +113,10 @@ struct TimelineEntryRow: View, Equatable {
                 Image(provider.iconImage)
                     .renderingMode(.template)
                     .foregroundStyle(providerColor(provider))
+                    .shadow(
+                        color: (colorScheme == .light && provider == .codexCLI) ? .black.opacity(0.7) : .clear,
+                        radius: 0.5
+                    )
             } else {
                 Image(systemName: entry.kind.iconName)
                     .foregroundStyle(entry.kind.accentColor)
