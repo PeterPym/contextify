@@ -27,7 +27,7 @@
 - **Historical context** → `archive/` (completed investigations, original feature specs)
 - **Planning docs** → `/tmp/` (NOT in repo)
 
-See [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/HOLISTIC-DOCS-ORGANIZATION-PLAN.md) for detailed lifecycle management.
+See [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/archive/planning/HOLISTIC-DOCS-ORGANIZATION-PLAN.md) for detailed lifecycle management.
 
 ---
 
@@ -176,4 +176,4 @@ git commit -m "docs(archive): preserve design rationale for my-feature"
 - Moved current-state docs to categorized structure
 - Archived historical docs (investigations, feature specs)
 - Deleted stale tracking files and implementation plans
-- See: [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/HOLISTIC-DOCS-ORGANIZATION-PLAN.md)
+- See: [HOLISTIC-DOCS-ORGANIZATION-PLAN.md](../notes/archive/planning/HOLISTIC-DOCS-ORGANIZATION-PLAN.md)
