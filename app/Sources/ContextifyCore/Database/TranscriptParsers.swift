@@ -578,33 +578,117 @@ public struct CodexLineParser: TranscriptLineParser {
       throw ParserError.skipEntry
     }
 
+    guard let type = json["type"] as? String else {
+      parserLog.warning("[PARSER-WARN] Codex line missing type line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
+    }
+
     guard let payload = json["payload"] as? [String: Any] else {
       parserLog.warning("[PARSER-WARN] Codex line missing payload line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
       throw ParserError.skipEntry
     }
 
-    guard let payloadType = payload["type"] as? String, payloadType == "message" else {
+    guard let payloadType = payload["type"] as? String else {
       throw ParserError.skipEntry
     }
 
-    guard let role = payload["role"] as? String else {
-      parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
-      throw ParserError.skipEntry
+    // Handle event_msg records - these contain real user messages
+    // System-injected messages (AGENTS.md + environment) appear as response_item
+    // but do NOT have companion event_msg records
+    if type == "event_msg" && payloadType == "user_message" {
+      return try parseUserMessageFromEventMsg(
+        payload: payload,
+        timestamp: timestamp,
+        lineNumber: lineNumber,
+        transcriptId: transcriptId,
+        projectId: projectId,
+        provider: provider,
+        sessionId: sessionId
+      )
     }
 
-    // Extract content
-    let content = extractContentArray(payload["content"])
+    // Handle response_item records
+    if type == "response_item" && payloadType == "message" {
+      guard let role = payload["role"] as? String else {
+        parserLog.warning("[PARSER-WARN] Codex message missing role line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+        throw ParserError.skipEntry
+      }
+
+      // Skip user response_items - we parse user messages from event_msg records instead
+      // This automatically filters out system-injected messages (AGENTS.md + environment)
+      if role == "user" {
+        throw ParserError.skipEntry
+      }
+
+      // Process assistant messages from response_item
+      if role == "assistant" {
+        let content = extractContentArray(payload["content"])
+
+        // Generate deterministic ID
+        let entryId = EntryIDGenerator.generateEntryID(
+          timestamp: timestamp,
+          role: role,
+          lineNumber: lineNumber,
+          sessionID: sessionId ?? transcriptId
+        )
+
+        // Compute content hash
+        let contentSha256 = SHA256Utils.hash(content)
+
+        // TODO: Extract git context from session metadata if available
+        let gitBranch: String? = nil
+        let gitCommit: String? = nil
+        let cwd: String? = nil
+
+        return EntryInsert(
+          id: entryId,
+          transcriptId: transcriptId,
+          projectId: projectId,
+          sessionId: sessionId,
+          provider: provider,
+          kind: role,
+          timestamp: timestamp,
+          content: content,
+          contentSha256: contentSha256,
+          parentId: nil,
+          gitBranch: gitBranch,
+          gitCommit: gitCommit,
+          cwd: cwd
+        )
+      }
+    }
+
+    // Skip all other record types
+    throw ParserError.skipEntry
+  }
+
+  /// Parse user message from event_msg record
+  /// event_msg records with type=user_message contain real user input
+  /// System-injected messages do NOT have event_msg records
+  private func parseUserMessageFromEventMsg(
+    payload: [String: Any],
+    timestamp: Date,
+    lineNumber: Int,
+    transcriptId: String,
+    projectId: String,
+    provider: String,
+    sessionId: String?
+  ) throws -> EntryInsert {
+    guard let message = payload["message"] as? String else {
+      parserLog.warning("[PARSER-WARN] Codex event_msg missing message line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+      throw ParserError.skipEntry
+    }
 
     // Generate deterministic ID
     let entryId = EntryIDGenerator.generateEntryID(
       timestamp: timestamp,
-      role: role,
+      role: "user",
       lineNumber: lineNumber,
       sessionID: sessionId ?? transcriptId
     )
 
     // Compute content hash
-    let contentSha256 = SHA256Utils.hash(content)
+    let contentSha256 = SHA256Utils.hash(message)
 
     // TODO: Extract git context from session metadata if available
     let gitBranch: String? = nil
@@ -617,9 +701,9 @@ public struct CodexLineParser: TranscriptLineParser {
       projectId: projectId,
       sessionId: sessionId,
       provider: provider,
-      kind: role,
+      kind: "user",
       timestamp: timestamp,
-      content: content,
+      content: message,
       contentSha256: contentSha256,
       parentId: nil,
       gitBranch: gitBranch,

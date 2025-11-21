@@ -8,6 +8,43 @@ Codex CLI stores sessions in a **specific directory structure** that MUST be fol
 ~/.codex/sessions/YYYY/MM/DD/filename-timestamp-uuid.jsonl
 ```
 
+---
+
+## System-Injected Messages
+
+**Background:** Codex CLI automatically injects context at the start of every conversation. These appear as `response_item` records with `role: "user"` but were never actually sent by the user.
+
+### Injected Messages
+
+1. **AGENTS.md Instructions** - Project's AGENTS.md file wrapped in `<INSTRUCTIONS>` tags
+2. **Environment Context** - Session environment details in `<environment_context>` XML
+
+### Detection Pattern
+
+**Key difference:** Real user messages have a companion `event_msg` record with `payload.type == "user_message"`. System-injected messages do NOT.
+
+| Message Type | `response_item` (role=user) | Companion `event_msg` (type=user_message) |
+|--------------|----------------------------|------------------------------------------|
+| System-injected | Yes | **No** |
+| Real user input | Yes | **Yes** (1ms later) |
+
+**Example - System-injected message (no companion event_msg):**
+```json
+{"timestamp":"2025-11-21T16:51:57.131Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /path/to/project\n\n<INSTRUCTIONS>\n...\n</INSTRUCTIONS>"}]}}
+```
+
+**Example - Real user message (has both records):**
+```json
+{"timestamp":"2025-11-21T16:54:24.205Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Hello"}]}}
+{"timestamp":"2025-11-21T16:54:24.206Z","type":"event_msg","payload":{"type":"user_message","message":"Hello","images":[]}}
+```
+
+**Implementation:** Parser extracts user messages from `event_msg` records (with `payload.type == "user_message"`) instead of `response_item` records. This automatically excludes system-injected messages since they lack companion `event_msg` records.
+
+**See:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - `CodexLineParser.parseUserMessageFromEventMsg()`
+
+---
+
 ## Examples
 
 Real Codex sessions found on the system:
