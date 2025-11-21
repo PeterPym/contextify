@@ -68,16 +68,19 @@ Three-layer improvement (mirrors assistant-side fix):
 **MVP Scope:**
 - **Local execution only** - Sequential bash scripts on development machine
 - **Real integrations** - Uses actual Codex/Claude CLIs, not fixtures
-- **6 core test cases** - Validates end-to-end pipeline (FSEvents → Database → Timeline → UI)
-- **Fast feedback** - Complete suite in <10 minutes with clear pass/fail
+- **12 test cases** - Validates end-to-end pipeline (FSEvents → Database → Timeline → UI)
+- **Fully automated** - UI automation via AppleScript (Terminal needs Accessibility permission)
+- **Fast feedback** - Complete suite in <15 minutes with clear pass/fail
 
 **Test Coverage:**
-1. **QA-01:** App launch and startup orchestration
+1. **QA-01a-e:** App launch variants (DMG/AppStore × clean/existing + permission skip)
 2. **QA-02:** Project switching with AppleScript automation
 3. **QA-03:** Codex transcript discovery (canonical template)
 4. **QA-04:** Claude Code transcript discovery
 5. **QA-05:** Real-time transcript updates (incremental hoover)
 6. **QA-06:** Watcher health check and recovery
+7. **QA-07:** Transcript window opening
+8. **QA-08:** Projects window opening
 
 **Implementation Approach:**
 - Bash scripts leveraging existing `scripts/logging/` toolkit
