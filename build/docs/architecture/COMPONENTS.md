@@ -85,6 +85,8 @@ This document provides detailed information about Contextify's architecture and 
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
+- Uses DispatchSource per-file; started via `ensureProjectWatcher()` at app startup
+- Health check recovery restores all watchers if any are missing
 
 **Models** (`app/Sources/ContextifyCore/Database/Models.swift`):
 - Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.)

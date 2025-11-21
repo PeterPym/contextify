@@ -497,14 +497,14 @@ But ProjectActivityMonitor events flow to StatusBarViewModel and ProjectSwitcher
 - ConversationMonitor only listens to NotificationCenter
 - If TranscriptWatcher is not running for a transcript, ConversationMonitor never receives updates
 
-**Secondary Issue:** TranscriptWatcher reliability
-- Started during discovery (every 5 minutes)
-- No guarantee watchers persist between discovery runs
-- If watcher crashes or is never started, timeline doesn't update until next discovery
+**Secondary Issue:** TranscriptWatcher reliability (mitigated)
+- Started at app startup via `ensureProjectWatcher()` for all projects
+- Health check (30s interval) detects missing watchers and triggers recovery
+- Recovery restores ALL watchers when any single watcher is found missing
 
-**Tertiary Issue:** No fallback mechanism
-- If both watchers fail, only option is manual refresh or 5-minute poll
-- No health check or recovery for failed watchers
+**Note:** Watcher reliability issues were fixed in Nov 2025. See commits:
+- `fix(watcher): start watchers on app restart with existing DB`
+- `fix(watcher): recover ALL watchers when any is missing`
 
 ---
 
