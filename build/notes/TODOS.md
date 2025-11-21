@@ -1625,7 +1625,7 @@ Should render backticked text in monospace for better readability:
 
 ---
 
-# P3 (Low Priority / Deferred) - 11 Items
+# P3 (Low Priority / Deferred) - 12 Items
 
 ## Liquid Glass Design System (1 item) ⬇️
 
@@ -1692,6 +1692,53 @@ The diagnostics HTTP server was removed before initial release (see P0-REMOVE-HT
 - External scripts querying timeline state (`scripts/timeline_api.sh`)
 - Automated testing harnesses
 - Integration with other developer tools
+
+---
+
+## Off-Screen Project Activity Indicator (1 item)
+
+**Status:** Not Started
+**Priority:** P3 (UX enhancement - nice to have)
+**Effort:** 2-4 hours
+
+- [ ] #P3-OFFSCREEN-ACTIVITY: Indicate when new messages appear in off-screen projects
+
+**Problem:**
+When the project tab bar has many projects, some are scrolled out of view. If a non-visible project receives new transcript activity, the user has no indication that something is happening. They may miss important updates from background sessions.
+
+**Expected Behavior:**
+When a project not currently visible in the tab bar receives new messages:
+1. Show an indicator that activity is occurring off-screen (e.g., pulsing dot or arrow on the scroll edge)
+2. OR show a toast/notification in the app or macOS notification center
+3. OR add a badge count to the tab bar edge indicating N projects with new activity
+
+**Implementation Options:**
+
+**Option A: Edge Indicator (Recommended)**
+- Track which project tabs are visible in viewport
+- When non-visible project gets activity, show indicator on the edge (left/right arrow with pulse)
+- Clicking indicator scrolls to the active project
+
+**Option B: In-App Toast**
+- Show brief toast at top/bottom: "New activity in [project-name]"
+- Toast auto-dismisses after 3-5 seconds
+- Clicking toast switches to that project
+
+**Option C: macOS Notification**
+- Use `UserNotifications` framework
+- Show notification: "Contextify: New activity in [project-name]"
+- Only when app is not frontmost (avoid interruption)
+
+**Files:**
+- `Contextify/Contextify/ContentView.swift` (project tab bar)
+- `Contextify/Contextify/ConversationMonitor.swift` (activity detection)
+- Possibly new `ActivityIndicator.swift` view component
+
+**Acceptance Criteria:**
+- User can tell when off-screen project has new activity
+- Indicator is subtle but noticeable
+- Easy to navigate to the active project
+- No false positives (only triggers on actual new content)
 
 ---
 
