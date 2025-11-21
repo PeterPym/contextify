@@ -1,6 +1,37 @@
+---
+title: Technical Debt & Future Improvements
+type: actionable
+related: ROADMAP.md
+description: Items ready for implementation with clear scope. P0-P3 priority.
+promotion_from: ROADMAP.md (once scoped)
+priority_levels:
+  P0: Release blockers - must complete before App Store submission
+  P1: High priority - important for quality/UX, ship soon after launch
+  P2: Medium priority - nice to have, can defer to future releases
+  P3: Low priority/deferred - future enhancements
+doc_references:
+  standard: "All TODO supporting docs should have YAML front matter and live in build/notes/todo-support/, named by TODO ID"
+  naming: "P{N}-{ID}-{type}.md (e.g., P1-AUTOSCROLL-spec.md, P2-SWITCH-investigation.md)"
+  workflow:
+    iterate: "Work on docs in /tmp/ creating multiple versions until finalized"
+    finalize: "Copy final version to build/notes/todo-support/ with proper naming"
+    reference: "Use **Type:** label followed by relative path from repo root"
+  labels:
+    - "**Spec:**" # Implementation specification
+    - "**Investigation:**" # Research/analysis reports
+    - "**Plan:**" # Multi-phase implementation plans
+    - "**Reference:**" # General supporting documentation
+  yaml_front_matter:
+    required: ["todo_id", "title", "type", "date", "status", "description"]
+    types: ["spec", "investigation", "plan", "source_analysis", "prompt", "reference"]
+    statuses: ["active", "complete", "reference", "obsolete"]
+  cleanup: "On TODO completion, delete supporting docs from build/notes/todo-support/ OR move to build/docs/ if permanent reference"
+---
+
 # Contextify TODO List
 
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
+**Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
 **Last Updated:** 2025-11-20
 **Status:** Active
@@ -206,7 +237,7 @@ The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API 
 - [ ] #8: Submit for review (compliance, age rating, reviewer notes)
 - [ ] #9: TestFlight beta (optional, recommended)
 
-**Reference:** `build/notes/website-launch-status.md` § "APP STORE SUBMISSION CHECKLIST"
+**Reference:** `build/notes/todo-support/P0-APP-STORE-checklist.md` § "APP STORE SUBMISSION CHECKLIST"
 
 ---
 
@@ -461,6 +492,53 @@ When working in a git worktree (e.g., `../contextify-liquid-glass`), Contextify 
 
 ---
 
+## Automated QA Suite (1 item)
+
+**Status:** Not Started - methodology defined, needs implementation
+**Priority:** P2 (valuable for release confidence, but manual QA sufficient for MVP)
+**Effort:** 8-12 hours (MVP bash-based suite)
+**Methodology:** `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
+
+- [ ] #P2-AUTOMATED-QA: Implement automated QA suite for pre-release validation
+
+**Goal:** Bash-based automated QA suite that validates 6 critical user flows through log analysis, database queries, and filesystem verification.
+
+**Scope (MVP - Local Execution):**
+- Sequential execution on local macOS dev machine (no CI/CD yet)
+- Real integrations with actual Codex/Claude CLIs (not fixtures)
+- Sub-10 minute execution time with clear pass/fail results
+- AppleScript for UI automation, direct SQLite queries acceptable
+
+**Test Coverage:**
+1. App startup and initialization (5 variants: DMG/AppStore × clean/existing + permission skip)
+2. Project switching between multiple repositories
+3. File system event → ingestion → timeline display
+4. LLM processing and summary generation
+5. Timeline scroll and rendering
+6. Permission grant flows (App Store builds)
+
+**Deliverables:**
+- `scripts/qa/` directory with test harness
+- 6 test scripts (QA-01 through QA-06)
+- Test helper utilities (log parsing, DB queries, UI automation)
+- Test report generation
+- README with usage instructions
+
+**Future Work (v2 - Professional QA):**
+- CI/CD integration with GitHub Actions
+- Fixture-based tests for reliability/cost reduction
+- Database migration testing
+- Performance benchmarks with timing assertions
+- Headless controls without AppleScript
+
+**Files:**
+- `scripts/qa/` (new directory)
+- Test fixtures/helper scripts
+
+**Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
+
+---
+
 ## Failed Metadata Retry (1 item) ⬇️
 
 **Status:** Not Started
@@ -498,7 +576,7 @@ When working in a git worktree (e.g., `../contextify-liquid-glass`), Contextify 
 **Background:**
 Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring entirely in sandboxed builds and hid branch UI. New approach uses transcript data to display branch WITHOUT filesystem access.
 
-**Investigation:** `/tmp/git-branch-tracking-investigation.md`
+**Investigation:** `build/notes/todo-support/P1-GIT-BRANCH-investigation.md`
 **Documentation:** `build/docs/specifications/transcript-formats.md` (lines 56, 95, 360-365, 582)
 
 **Key Finding:**
@@ -784,7 +862,7 @@ When user chooses option 3 ("type something different") in response to Claude Co
 **Status:** Ready for implementation
 **Priority:** P1 (UX - auto-scroll unreliable, stops working after 25 items)
 **Effort:** 2-4 hours
-**Spec:** `build/notes/autoscroll-implementation-spec.md` (v2 — sticky bottom, jump-to-latest, optional removal of Auto-scroll toggle)
+**Spec:** `build/notes/todo-support/P1-AUTOSCROLL-spec.md` (v2 — sticky bottom, jump-to-latest, optional removal of Auto-scroll toggle)
 
 - [ ] #P1-AUTOSCROLL: Fix timeline auto-scroll flicker and 25-item stall
 
@@ -810,7 +888,7 @@ Timeline auto-scroll is unreliable:
 - `ConversationTimelineView.swift` - scroll behavior refactor
 - `ConversationMonitor.swift` - gating timeout
 
-**Implementation:** See full spec at `build/notes/autoscroll-implementation-spec.md`
+**Implementation:** See full spec at `build/notes/todo-support/P1-AUTOSCROLL-spec.md`
 
 ---
 
@@ -972,7 +1050,77 @@ CREATE TABLE git_activity (
 
 ---
 
+## CI/CD Infrastructure (1 item)
+
+**Status:** Broken - budget exhausted
+**Priority:** P1 (blocking CI for all contributors)
+**Effort:** 4-6 hours
+
+- [ ] #P1-CI-THROTTLE: Fix GitHub Actions budget exhaustion and implement build throttling
+
+**Problem:**
+GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflows/macos-build.yml) is broken due to budget exhaustion from excessive build triggers.
+
+**Root Causes:**
+- No throttling on build triggers
+- Web-based AI agents (e.g., Claude Code web) triggering CI builds unnecessarily
+- Desktop AI agents should use local build resources, not CI
+
+**Solution:**
+1. **Audit trigger frequency** - Analyze GitHub Actions logs to identify what's causing excessive builds
+2. **Implement throttling** - Add workflow conditions to prevent redundant builds (e.g., skip if previous commit already built)
+3. **Context-aware triggering** - Only trigger CI for:
+   - Pull request validation
+   - Main branch commits
+   - Explicit manual triggers
+   - Web-based AI agent requests (when local build not available)
+4. **Local build preference** - Update AGENTS.md to instruct desktop AI agents to use `bash scripts/xc.sh build` instead of triggering CI
+
+**Acceptance Criteria:**
+- [ ] GitHub Actions budget no longer exhausted
+- [ ] CI builds only when necessary (PRs, main commits, manual)
+- [ ] Desktop AI agents build locally by default
+- [ ] Web AI agents can still request CI builds when needed
+- [ ] Throttling rules documented in `.github/workflows/macos-build.yml`
+
+**Reference:** GitHub Actions workflow currently broken: https://github.com/banagale/contextify/actions/workflows/macos-build.yml
+
+---
+
 # P2 (Medium Priority) - 32 Items
+
+---
+
+## Timeline Flicker on DMG Startup (1 item)
+
+**Status:** Unresolved - may be fixed by P1-AUTOSCROLL work
+**Priority:** P2 (UX issue - DMG builds only)
+**Effort:** 30 minutes - 1 hour (if not resolved by scroll fixes)
+**Investigation:** `build/notes/todo-support/P2-TIMELINE-FLICKER-investigation.md`
+
+- [ ] #P2-TIMELINE-FLICKER: Fix timeline flicker during DMG startup (verify after P1-AUTOSCROLL complete)
+
+**Problem:**
+DMG builds show visible timeline flicker during startup with clean database. Timeline re-renders identical entries multiple times (visible UI flicker). App Store builds appear fine due to permission delays spacing events naturally.
+
+**Evidence:**
+Multiple rapid `loadFeedFromSQL()` calls during startup (4 calls in 19ms), followed by duplicate refresh 519ms later showing same 25 entries.
+
+**Potential Relationship:**
+May be resolved by P1-AUTOSCROLL scroll refactor work. The auto-scroll fix replaces dual-trigger scroll paths with single path using `scrollPosition(id:anchor:)` which could eliminate the duplicate refresh triggers.
+
+**Action Plan:**
+1. Complete P1-AUTOSCROLL implementation first
+2. Test DMG startup with clean database
+3. If flicker persists, implement investigation recommendations:
+   - Add call site logging to `loadFeedFromSQL()` to track callers
+   - Consider debouncing `loadFeedFromSQL()` itself (not just progress handler)
+   - Investigate startup sequence timing
+
+**Files:**
+- `ConversationMonitor.swift` - `loadFeedFromSQL()` duplicate calls
+
+**Investigation:** Full analysis with timeline reconstruction, root cause theories, and testing plan in `build/notes/todo-support/P2-TIMELINE-FLICKER-investigation.md`
 
 ---
 
@@ -981,7 +1129,7 @@ CREATE TABLE git_activity (
 **Status:** Spec Complete
 **Priority:** P2 (resource optimization - reduce FD usage by 90%)
 **Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
-**Spec:** `build/notes/planning/monitoring-coordinator-design.md`
+**Spec:** `build/notes/todo-support/P2-LAZY-WATCHERS-design.md`
 
 - [ ] #P2-LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
 
@@ -1348,8 +1496,8 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 - `Contextify/Contextify/ConversationMonitor.swift` (primary changes)
 
 **Reference:**
-- Implementation plan: `build/notes/feature-specs/refactor-project-switcher.md`
-- Source code analysis: `/tmp/project-switch-consolidation-SOURCE-CODE.md`
+- Implementation plan: `build/notes/todo-support/P2-SWITCH-refactor-plan.md`
+- Source code analysis: `build/notes/todo-support/P2-SWITCH-source-analysis.md`
 
 ---
 
@@ -1404,6 +1552,59 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 - Manual testing feasible short-term
 - Can add CI job post-launch
 - **Effort:** 2-3 hours
+
+---
+
+## TODO Management Agent (1 item)
+
+**Status:** Research complete, ready to implement
+**Priority:** P2 (workflow improvement - frequently managing TODOs)
+**Effort:** 6-8 hours
+
+- [ ] #P2-TODOS-AGENT: Build intelligent TODO management agent (create, update, prioritize, clean up)
+
+**Goal:** Full-featured agent that understands TODO/ROADMAP workflows and manages them intelligently.
+
+**Agent Capabilities:**
+1. **Create TODOs**
+   - Auto-generate IDs (P{N}-{SLUG} format)
+   - Insert in correct priority section
+   - Create supporting docs in `build/notes/todos/` with YAML front matter
+   - Reference research files appropriately
+
+2. **Manage TODOs**
+   - Update priorities based on context
+   - Move items between TODOS.md and ROADMAP.md
+   - Update status and estimates
+   - Link related items
+
+3. **Clean Up TODOs**
+   - Remove completed items
+   - Archive obsolete supporting docs
+   - Consolidate duplicate/similar items
+   - Flag stale TODOs for review
+
+4. **Workflow Knowledge**
+   - Understands priority levels (P0-P5)
+   - Knows doc reference standards (YAML front matter, naming conventions)
+   - Follows `/tmp/` → `build/notes/todos/` workflow
+   - Links to research files and specs appropriately
+
+**Implementation approach:**
+1. Create `.claude/agents/todos-manager/` (Claude Code native agent)
+2. Create `~/.codex/prompts/todos.md` (Codex workaround via slash command)
+3. Agent prompt includes full context:
+   - TODOS.md and ROADMAP.md formats
+   - Doc reference standards from TODOS.md front matter
+   - Priority definitions and workflows
+4. Optional: MCP server for richer integration
+
+**Research:** `~/code/projects/cli-ai-setup/notes/cross-cli-agent-research-2025-11-21.md`
+
+**Related:**
+- ROADMAP.md#P4-AUTONOMOUS-DEVELOPMENT (future vision - full autonomy)
+- `build/notes/todo-support/` directory (supporting docs)
+- TODOS.md front matter (standards and workflows)
 
 ---
 
@@ -1470,7 +1671,7 @@ Multiple branches created during late-night token burn session with speculative 
 - Duplicate work → Check if superseded by other work
 - Experimental APIs → Requires architecture review
 
-**Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
+**Reference:** `build/notes/todo-support/P2-TOKEN-BURN-prompt.md`
 
 ---
 
@@ -2125,6 +2326,26 @@ Previous sandbox attempt (commit `b4b4762`) was reverted (`b1fe869`) because:
 **Estimated Time:** 2-3 hours
 
 **Total Effort:** 18-28 hours (2.5-3.5 days)
+
+---
+
+## Automated Product Development Monitoring (1 item)
+
+**Status:** Concept - needs design specification
+**Priority:** P3 (valuable infrastructure, not blocking)
+**Effort:** Medium-Large (initial setup), Low (ongoing maintenance)
+
+- [ ] #P3-AGENTIC-DEVOPS: Build GitHub Actions service for upstream monitoring and conformance testing
+
+**Proposed Service:**
+1. **External Repo Monitoring** - Watch Gemini CLI, Claude Code, Codex CLI releases for transcript-relevant changes
+2. **Transcript Format Conformance Testing** - Recurring job creates fresh conversations, analyzes against expected format
+3. **Regression Suite** - Test edge cases, known corruption patterns
+
+**Expected Outcomes:**
+- Early warning of breaking changes
+- Discovery of new feature possibilities
+- Living documentation that stays in sync with reality
 
 ---
 

@@ -38,6 +38,52 @@ bash scripts/xc.sh build 2>&1 | grep -c "warning:"
 
 **Remember:** Persistent warnings in `ConversationMonitor`, `ProjectSwitcherState`, etc. aren't style issues - they're the compiler telling you about concurrency hazards in your most complex state management code.
 
+### Task & Roadmap Management
+
+**Two files track work and ideas:**
+
+- **TODOS.md** - Actionable items with clear implementation paths (P0-P3). Ready to work on.
+- **ROADMAP.md** - Exploratory ideas and research needing investigation (P4-P5). Not yet actionable.
+
+**Workflow:** Ideas start in ROADMAP.md. Once investigated and scoped, promote to TODOS.md.
+
+**Priority definitions:**
+- P0: Release blockers
+- P1: High priority (quality/UX)
+- P2: Medium priority (nice to have)
+- P3: Low priority (future enhancements)
+- P4: Future considerations (needs research/design)
+- P5: Research/exploratory (questions to investigate)
+
+**Agent Instructions for TODO Management:**
+
+When you discover bugs, issues, or technical debt during development:
+1. **Add to TODOS.md** with appropriate priority (P0-P3) and clear description
+2. **Create supporting docs** in `build/notes/todo-support/` with YAML front matter if complex
+3. **Link research/investigation** to the TODO entry using relative paths
+4. **Use P2-TODOS-AGENT** (see TODOS.md#P2-TODOS-AGENT) for help with TODO operations
+
+When you complete work:
+1. **Remove completed items from TODOS.md** (don't celebrate, just remove)
+2. **Archive or delete supporting docs** from `build/notes/todo-support/` per cleanup policy (see TODOS.md front matter)
+3. **Move permanent reference docs** to `build/docs/` if they describe current state
+
+When you have exploratory ideas or need research:
+1. **Add to ROADMAP.md** (P4-P5) with clear research questions
+2. **Iterate in /tmp/** until finalized, then copy to repo if needed
+3. **Promote to TODOS.md** once scoped and actionable
+
+**DON'T:**
+- ❌ Create planning docs directly in repo (use /tmp/ first)
+- ❌ Leave completed items in TODOS.md
+- ❌ Create TODO tracking files (TODOS.md is the single source of truth)
+- ❌ Skip YAML front matter on supporting docs in `build/notes/todo-support/`
+
+**Documentation lifecycle:**
+- Planning/transient work → `/tmp/` (not versioned, OS auto-cleans)
+- Current state docs → `build/docs/` (versioned, organized by category)
+- See: `build/docs/README.md` and `build/notes/archive/planning/HOLISTIC-DOCS-ORGANIZATION-PLAN.md`
+
 ### Documentation Writing - Present Tense, No Meta-Commentary
 
 **Documentation should describe the current state of the system, not narrate its own update history.**

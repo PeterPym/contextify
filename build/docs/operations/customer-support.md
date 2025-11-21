@@ -394,7 +394,7 @@ If user sends logs/database for debugging:
 ## Related Documentation
 
 - **Website:** `build/docs/operations/WEBSITE.md`
-- **App Store:** `build/notes/website-launch-status.md`
+- **App Store:** `build/notes/todo-support/P0-APP-STORE-checklist.md`
 - **TODOs:** `build/notes/TODOS.md`
 - **Logging:** `build/docs/guides/logging-best-practices.md` (for requesting logs from users)
 
