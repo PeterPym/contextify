@@ -998,7 +998,34 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 36 Items
+# P2 (Medium Priority) - 37 Items
+
+---
+
+## Lazy Watcher Optimization (1 item)
+
+**Status:** Spec Complete
+**Priority:** P2 (resource optimization - reduce FD usage by 90%)
+**Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
+**Spec:** `build/notes/planning/monitoring-coordinator-design.md`
+
+- [ ] #P2-LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
+
+**Problem:**
+Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
+
+**Solution:**
+Two-tier monitoring: active project gets real-time DispatchSource watchers; inactive projects use FSEvents-only with dirty transcript tracking. On activation, rehoover dirty transcripts (including offline changes via mtime check).
+
+**Key components:**
+- `MonitoringCoordinator` actor (extracted from ConversationMonitor)
+- FSEvents behavior matrix for active/inactive + new/existing transcripts
+- `pending_rehoover` + `last_known_mtime` DB columns (migration v27)
+- 5-second hysteresis for project switching
+- Feature flag for rollout (`lazyWatchersEnabled`)
+
+**Prerequisites:**
+- ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
 
 ---
 
