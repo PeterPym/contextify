@@ -5,6 +5,7 @@ import ContextifyCore
 struct ProjectsWindow: View {
   @Environment(ProjectsViewModel.self) private var viewModel
   @State private var selectedProject: DiscoveredProject?
+  @State private var searchText = ""  // P2-PROJECTS-SEARCH: Search functionality
 
   var body: some View {
     VStack(spacing: 0) {
@@ -87,7 +88,7 @@ struct ProjectsWindow: View {
   private var projectsList: some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 16) {
-        ForEach(viewModel.projects) { project in
+        ForEach(filteredProjects) { project in
           ProjectRowView(
             project: project,
             onSetAsCurrent: {
@@ -104,6 +105,7 @@ struct ProjectsWindow: View {
       }
       .padding()
     }
+    .searchable(text: $searchText, prompt: "Search")
   }
 
   private var emptyState: some View {
@@ -199,6 +201,19 @@ struct ProjectsWindow: View {
     }
     .padding()
     .frame(maxHeight: .infinity, alignment: .top)
+  }
+
+  // MARK: - Helpers
+
+  /// Filtered projects based on search text (P2-PROJECTS-SEARCH)
+  private var filteredProjects: [DiscoveredProject] {
+    if searchText.isEmpty {
+      return viewModel.projects
+    }
+    return viewModel.projects.filter { project in
+      project.name.localizedCaseInsensitiveContains(searchText) ||
+      project.path.path.localizedCaseInsensitiveContains(searchText)
+    }
   }
 }
 

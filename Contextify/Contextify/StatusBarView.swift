@@ -70,7 +70,7 @@ struct StatusBarView: View {
             Spacer()  // Push content to left
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 4)  // Reduced from 6 to 4
+        .padding(.vertical, 0)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
         .animation(.easeInOut(duration: 0.3), value: viewModel?.hooverMessage)
         .onAppear {
