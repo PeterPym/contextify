@@ -73,9 +73,24 @@ public actor ProjectActivityMonitor {
 
     // Check if projects were already discovered and ingested by ProjectsViewModel
     // If so, skip the expensive discoverAllProjects() call (P0 #P1-DISCOVERY optimization)
-    let projectCount = (try? orchestrator.listProjects().count) ?? 0
-    if projectCount > 0 {
-      log.info("[INIT-SKIP-DISCOVERY] Projects already ingested (count: \(projectCount, privacy: .public)) - skipping duplicate discovery")
+    let projects = (try? orchestrator.listProjects()) ?? []
+    if !projects.isEmpty {
+      log.info("[INIT-SKIP-DISCOVERY] Projects already ingested (count: \(projects.count, privacy: .public)) - skipping duplicate discovery")
+
+      // CRITICAL: Still need to start file watchers for existing transcripts
+      // Discovery starts watchers via hooverTranscript(..., startWatching: true)
+      // but when skipping discovery, watchers were never started
+      log.info("[INIT-ENSURE-WATCHERS] Ensuring watchers for \(projects.count, privacy: .public) existing projects")
+      for project in projects {
+        do {
+          let summary = try orchestrator.ensureProjectWatcher(projectId: project.id)
+          if summary.startedCount > 0 {
+            log.info("[INIT-WATCHER-STARTED] project=\(project.id, privacy: .public) started=\(summary.startedCount, privacy: .public)")
+          }
+        } catch {
+          log.error("[INIT-WATCHER-FAILED] project=\(project.id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+        }
+      }
     } else {
       log.info("[INIT-FULL-DISCOVERY] No projects in database - running full discovery")
       // Discover all projects from transcript roots
