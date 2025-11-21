@@ -741,7 +741,7 @@ public final class ProjectSwitcherState {
     // that already fired). The monitoring system gracefully handles 0 projects.
     monitorStartTask = Task { [weak self] in
       guard let self, let orchestrator = self.orchestrator else { return }
-      let projectCount = (try? await orchestrator.listProjects().count) ?? 0
+      let projectCount = (try? orchestrator.listProjects().count) ?? 0
       log.info("[SWITCHER-MONITOR] Starting monitoring (projects: \(projectCount))")
       await self.startGlobalMonitoringIfNeeded(reason: "startup-or-discovery")
     }

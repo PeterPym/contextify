@@ -18,7 +18,7 @@ struct ProjectRowView: View {
       // Header: icon + name + current badge + error indicator
       HStack(spacing: 8) {
         Image(systemName: project.isCurrent ? "folder.fill" : "folder")
-          .foregroundStyle(project.isCurrent ? .blue : .secondary)
+          .foregroundStyle(project.isCurrent ? Color.contextifyBlue : .secondary)
           .imageScale(.large)
 
         Text(project.name)
@@ -30,7 +30,7 @@ struct ProjectRowView: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Color.blue)
+            .background(Color.contextifyBlue)
             .cornerRadius(3)
         }
 

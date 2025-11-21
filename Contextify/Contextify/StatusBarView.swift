@@ -69,8 +69,9 @@ struct StatusBarView: View {
 
             Spacer()  // Push content to left
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)  // Reduced from 6 to 4
+        .padding(.leading, 16)
+        .padding(.trailing, 12)
+        .padding(.vertical, 0)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.95))
         .animation(.easeInOut(duration: 0.3), value: viewModel?.hooverMessage)
         .onAppear {
@@ -300,7 +301,7 @@ struct StatusBarView: View {
             return """
             Apple Intelligence is available and generating conversation summaries using on-device language models (FoundationLLM).
 
-            Summaries are generated locally with no network latency or additional API costs.
+            Summaries are generated with no network latency or additional API costs.
             """
         case .unavailable(let reason):
             return """

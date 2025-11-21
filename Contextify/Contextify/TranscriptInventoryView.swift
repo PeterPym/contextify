@@ -193,6 +193,7 @@ struct TranscriptInventoryView: View {
         .pickerStyle(.segmented)
         .controlSize(.small)
         .labelsHidden()
+        .tint(Color.contextifyBlue)
         .accessibilityLabel("Transcript type filter")
 
         Spacer()
@@ -258,6 +259,12 @@ struct TranscriptInventoryView: View {
         // (viewport tracking will handle subsequent updates and generation queue)
         log.info("[META-INIT] Loading cached metadata for \(monitor.allSessions.count) sessions on initial appearance")
         await loadMetadataForSessions(monitor.allSessions)
+
+        // P2-TRANSCRIPT-AUTOSELECT: Auto-select most recent transcript on first load
+        if selectedTranscriptId == nil, let firstSession = filteredSessions.first {
+          selectedTranscriptId = firstSession.identifier
+          log.info("[AUTO-SELECT] Auto-selected most recent transcript: \(firstSession.identifier, privacy: .public)")
+        }
       }
       .onDisappear {
         // Cancel pending debounce tasks to prevent leaks
