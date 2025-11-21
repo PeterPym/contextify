@@ -3119,11 +3119,15 @@ final class ConversationMonitor {
 
             // Auto-recovery for specific issues
             if issue.category == .watcherMissing {
+                // Recover ALL transcripts, not just the one that triggered - since if one is missing,
+                // likely all watchers were lost (e.g., DispatchSource cleanup, memory pressure)
+                log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public) (triggered by: \(snapshot.watcherState.transcriptId ?? "nil", privacy: .public))")
                 await attemptWatcherRecovery(
                     projectId: projectId,
                     orchestrator: orchestrator,
-                    targetTranscriptId: snapshot.watcherState.transcriptId
+                    targetTranscriptId: nil  // nil = recover ALL transcripts
                 )
+                log.warning("[RECOVERY-TRIGGER] Returned from attemptWatcherRecovery")
             } else if issue.category == .hooverStall {
                 await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
             }
