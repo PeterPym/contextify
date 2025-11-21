@@ -44,25 +44,19 @@
 
 # P0 (Blocking Release) - 5 Items Remaining
 
-## UI Polish (1 item)
+## UI Polish (COMPLETE) ✅
 
-- [ ] #P0-LOGOMARK-LIGHT: Fix Claude logomark visibility in light mode (white on white)
+- [x] #P0-LOGOMARK-LIGHT: Fix Codex logomark visibility in light mode (white on white)
 
-**Problem:**
-The Claude logomark in the status bar is white, making it invisible against light mode backgrounds. This affects branding and usability in light mode.
+**Status:** Fixed - Added conditional shadow for light mode
 
-**Solution Options:**
-1. Add a subtle drop shadow or stroke to the white logomark
-2. Use a dark variant of the logomark in light mode
-3. Add a semi-transparent background circle/pill behind the logomark
-4. Use SF Symbol's automatic color adaptation (if available)
+**Solution Applied:**
+Added `@Environment(\.colorScheme)` and conditional shadow (`.shadow(color: .black.opacity(0.5), radius: 0.5)`) when colorScheme is light and provider is Codex CLI.
 
-**Implementation:**
-- File: Likely in status bar view or logomark asset rendering
-- Consider: Match macOS system appearance conventions (automatic dark/light variants)
-- Test: Verify visibility in both light and dark modes
-
-**Effort:** 30 minutes - 1 hour
+**Files Changed:**
+- `ProjectBadgesView.swift` - Badge display in project list
+- `TimelineEntryRow.swift` - Provider icon in timeline entries
+- `TranscriptInventoryView.swift` - Provider icon in session rows
 
 ---
 
@@ -172,6 +166,36 @@ Based on Phase 1 findings, likely fixes:
 
 ---
 
+## Remove Diagnostics HTTP Server (1 item)
+
+**Status:** Not Started
+**Priority:** P0 (Blocking Release - debug HTTP server should not ship)
+**Effort:** 30 minutes
+
+- [ ] #P0-REMOVE-HTTP-API: Temporarily remove diagnostics HTTP server code before release
+
+**Problem:**
+The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API for debugging timeline state. This debug infrastructure should not ship in the initial release:
+- Security concern: local HTTP endpoint exposes internal state
+- Unnecessary complexity for v1
+- Can be re-enabled post-launch when needed
+
+**Files to Remove/Disable:**
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift` - HTTP server actor
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsExporter.swift` - Export utilities (keep if used elsewhere)
+- `app/Sources/ContextifyCore/Diagnostics/TimelineDiagnostics.swift` - Keep (used for internal diagnostics)
+- `ConversationMonitor.swift` - Remove HTTP server initialization (lines ~563-588)
+- `ConversationMonitor.swift` - Remove `DiagnosticsConfig.enableHTTPServer` usage
+
+**Implementation:**
+1. Set `DiagnosticsConfig.enableHTTPServer = false` (quick fix) OR
+2. Remove `DiagnosticsHTTPServer.swift` entirely and clean up references
+3. Document removal commit SHA for future restoration
+
+**Restoration:** See P3-RESTORE-HTTP-API for bringing this back post-launch
+
+---
+
 ## App Store Submission (4 items)
 
 **Status:** Not Started (Ready to begin - welcome modal polish complete)
@@ -187,7 +211,7 @@ Based on Phase 1 findings, likely fixes:
 ---
 
 
-# P1 (High Priority) - 25 Items
+# P1 (High Priority) - 26 Items
 
 ## Window Sizing (1 item)
 
@@ -837,6 +861,41 @@ Summarization LLM treats Claude's questions and proposals as completed actions, 
 - Entry `7da606f9-3708-4f5c-93c0-7e8be354a362` (2025-11-19T18:36:06Z)
   - Currently: "replaced #4 and #5 entirely"
   - Should be: "proposed replacing #4 and #5 with transcript-based approach"
+
+---
+
+## Timeline Auto-Scroll Fix (1 item)
+
+**Status:** Ready for implementation
+**Priority:** P1 (UX - auto-scroll unreliable, stops working after 25 items)
+**Effort:** 2-4 hours
+**Spec:** `build/notes/autoscroll-implementation-spec.md` (v2 — sticky bottom, jump-to-latest, optional removal of Auto-scroll toggle)
+
+- [ ] #P1-AUTOSCROLL: Fix timeline auto-scroll flicker and 25-item stall
+
+**Problem:**
+Timeline auto-scroll is unreliable:
+- Flickers on first load (double scroll triggers)
+- Stops working after 25 items (count-based trigger saturates)
+- Viewport summary queueing delayed by stuck scroll gating
+
+**Root Causes (Validated):**
+1. **Double programmatic scroll on first paint** - `onAppear` and `onChange(of: visibleEntries.count)` both fire
+2. **Count-based trigger stalls at 25-item cap** - `visibleEntries.count` saturates, no more triggers
+3. **Scroll gating stuck** - nil-animated jump doesn't emit `ScrollPhase`, gating never clears
+4. **Pending scroll task not cancelled** - teardown can leave stale scroll pending
+
+**Solution:**
+- Replace dual-trigger with single scroll path using `scrollPosition(id:anchor:)`
+- Key trigger on `entriesRevision` instead of `count`
+- Implement "sticky until user scrolls up" with "Jump to Latest" button
+- Add 1-second timeout to clear stuck scroll gating
+
+**Files:**
+- `ConversationTimelineView.swift` - scroll behavior refactor
+- `ConversationMonitor.swift` - gating timeout
+
+**Implementation:** See full spec at `build/notes/autoscroll-implementation-spec.md`
 
 ---
 
@@ -1843,7 +1902,7 @@ Should render backticked text in monospace for better readability:
 
 ---
 
-# P3 (Low Priority / Deferred) - 10 Items
+# P3 (Low Priority / Deferred) - 11 Items
 
 ## Liquid Glass Design System (1 item) ⬇️
 
@@ -1879,6 +1938,37 @@ SwiftUI's `.navigationTitle()` conflicts with `.principal` toolbar placement. Ta
 
 **Reference:** `build/docs/audits/liquid-glass-status.md` (full implementation history)
 **Branch:** `feat/liquid-glass-implementation` (commit 60ca32e)
+
+---
+
+## Restore Diagnostics HTTP API (1 item)
+
+**Status:** Blocked (waiting for P0-REMOVE-HTTP-API completion)
+**Priority:** P3 (Post-launch feature)
+**Effort:** 1-2 hours
+
+- [ ] #P3-RESTORE-HTTP-API: Re-enable diagnostics HTTP server for external tooling
+
+**Context:**
+The diagnostics HTTP server was removed before initial release (see P0-REMOVE-HTTP-API). This feature allows external scripts to query timeline state via localhost HTTP API.
+
+**Removal Commit:** _(To be documented when P0-REMOVE-HTTP-API is completed)_
+
+**Files to Restore:**
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsExporter.swift` (if removed)
+- `ConversationMonitor.swift` initialization code
+
+**Implementation:**
+1. Revert or cherry-pick the removal commit
+2. Update `DiagnosticsConfig.enableHTTPServer` to be configurable (settings pane or DEBUG-only)
+3. Document the HTTP API endpoints for external tooling
+4. Consider auth/security for localhost endpoint
+
+**Use Cases:**
+- External scripts querying timeline state (`scripts/timeline_api.sh`)
+- Automated testing harnesses
+- Integration with other developer tools
 
 ---
 
