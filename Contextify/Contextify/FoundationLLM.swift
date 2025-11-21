@@ -354,7 +354,13 @@ actor FoundationLLM {
         }
 
         // Check for directive patterns (request phrases)
-        let directivePatterns = ["can you", "could you", "would you", "please", "see if you can", "help me", "let's", "we should", "i need"]
+        // NOTE: Keep in sync with directiveLexicon (used by isDirective() post-LLM).
+        // These two could be unified in a future refactor.
+        let directivePatterns = [
+            "can you", "could you", "would you", "please", "see if you can",
+            "help me", "let's", "we should", "we need to", "we could",
+            "i need", "go ahead", "proceed", "continue", "figure out"
+        ]
         for pattern in directivePatterns {
             if Self.containsPhrase(normalized, phrase: pattern) { return .directive }
         }
@@ -1666,9 +1672,12 @@ private extension FoundationLLM {
         return tokens.allSatisfy { acknowledgementLexicon.contains(String($0)) }
     }
 
+    // NOTE: isDirective() and classifyUserIntent() both detect directives but use
+    // different lexicons. isDirective() is a post-LLM fallback, classifyUserIntent()
+    // runs pre-LLM. Keep directiveLexicon in sync with directivePatterns in
+    // classifyUserIntent(). Could be unified in a future refactor.
     func isDirective(_ text: String) -> Bool {
         let lower = text.lowercased()
-        // Detect command/directive patterns
         return directiveLexicon.contains { lower.contains($0) }
     }
 
@@ -1935,6 +1944,13 @@ extension FoundationLLM {
             if summary.count > 140 {
                 log.warning("User summary too long: \(summary.count) chars")
                 throw TimelineError.validationFailure(reason: "summary too long (\(summary.count) chars)")
+            }
+
+            // Detect placeholder leaks from LLM instructions (e.g., "[what]", "[action]")
+            let placeholderPattern = #"\[(?:what|action|question|description|brief paraphrase)\]"#
+            if let _ = summary.range(of: placeholderPattern, options: .regularExpression) {
+                log.warning("User summary contains placeholder text: \(summary, privacy: .public)")
+                throw TimelineError.validationFailure(reason: "placeholder leak in summary")
             }
 
             // Validate leakage (skip for high-confidence fast-path results)
