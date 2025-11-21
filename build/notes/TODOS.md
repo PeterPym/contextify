@@ -16,7 +16,7 @@
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
 - Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 7 P2 items (#P2-TIMELINE-FONT, #P2-STATUSBAR-HEIGHT, #P2-TRANSCRIPT-AUTOSELECT, #P2-PROJECTS-SEARCH, #P2-PROJECTS-AUTOSELECT, #P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
+- Added 3 P2 items (#P2-PROJECTS-AUTOSELECT, #P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
 - Simplified copy in Transcripts and Projects windows to match Apple conventions
 - Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
 - Root cause analysis reveals watchers never restart after project switches, not that they crash
@@ -1057,7 +1057,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 37 Items
+# P2 (Medium Priority) - 33 Items
 
 ---
 
@@ -1297,94 +1297,17 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
-## Transcripts Window Auto-Selection (1 item)
-
-**Status:** Not Started
-**Priority:** P2 (UX improvement - nice to have)
-**Effort:** 2-3 hours
-
-- [ ] #P2-TRANSCRIPT-AUTOSELECT: Auto-select most recent transcript and auto-refresh detail pane when metadata updates
-
-**Problem:**
-When opening Transcripts window, no transcript is selected by default. User must manually click to see details. Additionally, if a transcript is selected and its metadata is being generated (LLM summarization), the detail pane does not refresh automatically when the metadata completes.
-
-**Expected Behavior:**
-1. **Auto-selection:** When Transcripts window opens, automatically select the topmost (most recently updated) transcript
-2. **Auto-refresh:** If the selected transcript's metadata is updated (e.g., LLM generates title/description), the detail pane should refresh automatically to show the new metadata
-
-**Implementation:**
-
-1. **Auto-Selection on Open** (1 hour)
-   - In `TranscriptInventoryView.onAppear`, select first transcript from filtered list
-   - Set `selectedSession` to `filteredSessions.first`
-   - Ensure selection persists when switching filters/scopes
-   - Handle edge cases: empty list, filter changes, search
-
-2. **Auto-Refresh Detail Pane** (1-2 hours)
-   - Subscribe to `TranscriptMetadataOrchestrator` updates (likely via `ConversationMonitor`)
-   - When metadata update completes for selected transcript, trigger detail view refresh
-   - Option A: Use `@Published` metadata dictionary in shared state
-   - Option B: Add SwiftUI `.onChange` observer on `ConversationMonitor.metadataStore`
-   - Ensure smooth transition (no flash/flicker)
-
-**Files:**
-- `Contextify/Contextify/TranscriptInventoryView.swift` (selection logic, detail view binding)
-- `Contextify/Contextify/ConversationMonitor.swift` (metadata update notifications)
-- `app/Sources/ContextifyCore/LLM/TranscriptMetadataOrchestrator.swift` (metadata publishing)
-
-**Acceptance Criteria:**
-- ✅ Opening Transcripts window auto-selects topmost transcript
-- ✅ Detail pane shows selected transcript immediately
-- ✅ When selected transcript's metadata finishes generating, detail pane updates automatically
-- ✅ No visible flicker or re-render issues
-- ✅ Selection clears appropriately when list becomes empty (search/filter)
-
----
-
-## Projects Window Improvements (4 items)
+## Projects Window Improvements (3 items)
 
 **Status:** Not Started
 **Priority:** P2 (UX improvements - nice to have)
-**Effort:** 5-6 hours total
+**Effort:** 3-4 hours total
 
-- [ ] #P2-PROJECTS-SEARCH: Add search functionality to Projects window (1-2 hours)
 - [ ] #P2-PROJECTS-AUTOSELECT: Auto-scroll to current project when window opens (1-2 hours)
 - [ ] #P2-PROJECTS-REFRESH-REVIEW: Investigate if manual "Refresh Projects" button is needed (1.5 hours)
 - [ ] #P2-PROJECTS-EMPTY-STATE: Add first-run guidance to empty state (30 min)
 
-**Context:** Transcripts window has search, auto-selection, and simplified copy. Projects window should match for consistency.
-
----
-
-### #P2-PROJECTS-SEARCH: Add Search Functionality
-
-**Problem:**
-Transcripts window has `.searchable(text: $searchText, prompt: "Search")` but Projects window has NO search capability. With 10+ projects, users need to filter.
-
-**Implementation:**
-1. Add `@State private var searchText = ""` to ProjectsWindow
-2. Add `.searchable(text: $searchText, prompt: "Search")` modifier
-3. Filter projects by name or path in computed property:
-   ```swift
-   var filteredProjects: [DiscoveredProject] {
-     if searchText.isEmpty { return viewModel.projects }
-     return viewModel.projects.filter { project in
-       project.name.localizedCaseInsensitiveContains(searchText) ||
-       project.path.path.localizedCaseInsensitiveContains(searchText)
-     }
-   }
-   ```
-4. Update list to use `filteredProjects` instead of `viewModel.projects`
-
-**Files:**
-- `Contextify/Contextify/ProjectsWindow.swift`
-
-**Acceptance Criteria:**
-- ✅ Search bar appears in Projects window toolbar
-- ✅ Filters by project name (case insensitive)
-- ✅ Filters by path substring (case insensitive)
-- ✅ Empty search shows all projects
-- ✅ Matches Transcripts window search UX
+**Context:** Projects window improvements for better UX consistency.
 
 ---
 
@@ -1682,72 +1605,6 @@ Multiple branches created during late-night token burn session with speculative 
 - Experimental APIs → Requires architecture review
 
 **Reference:** `/private/tmp/swift-repo-branch-consolidation-prompt.md`
-
----
-
-## UI Typography & Spacing (2 items)
-
-**Status:** Not Started
-**Priority:** P2 (UX polish - readability improvements)
-**Effort:** 2-3 hours total
-
-- [ ] #P2-TIMELINE-FONT: Increase font size in conversation timeline for better readability
-- [ ] #P2-STATUSBAR-HEIGHT: Reduce status bar vertical height by decreasing padding
-
-**#P2-TIMELINE-FONT - Timeline Font Size:**
-
-**Problem:**
-Timeline conversation text is too small, making it harder to read during normal use. Users frequently lean in to read summaries and details.
-
-**Implementation:**
-1. Locate timeline text rendering (likely `TimelineEntryRow.swift`)
-2. Increase base font size from current value (likely 13-14pt) to 15-16pt
-3. Ensure proper line height scaling
-4. Test with long/short entries to verify layout doesn't break
-5. Verify scrolling performance isn't impacted
-
-**Files:**
-- `Contextify/Contextify/TimelineEntryRow.swift`
-- Possibly `Contextify/Contextify/TimelineModels.swift` if font constants defined there
-
-**Acceptance Criteria:**
-- ✅ Timeline text is comfortably readable at normal viewing distance
-- ✅ Layout remains clean with longer text
-- ✅ No performance degradation
-- ✅ Font size consistent across summary and detail views
-
-**Effort:** 1-1.5 hours
-
----
-
-**#P2-STATUSBAR-HEIGHT - Reduce Status Bar Padding:**
-
-**Problem:**
-Status bar at top of window takes up too much vertical space due to excessive padding, reducing available space for timeline content.
-
-**Implementation:**
-1. Locate status bar view (likely `StatusBarView.swift` or similar)
-2. Reduce vertical padding (top/bottom insets)
-3. Ensure icons/text remain vertically centered
-4. Test with different window sizes
-5. Verify doesn't look cramped or cut off
-
-**Current vs Target:**
-- Current: Likely 12-16pt total vertical padding
-- Target: 6-10pt total vertical padding (50% reduction)
-
-**Files:**
-- `Contextify/Contextify/StatusBarView.swift` (or similar)
-- May need to adjust `.padding()` modifiers in SwiftUI
-
-**Acceptance Criteria:**
-- ✅ Status bar height reduced by ~30-40%
-- ✅ Content remains vertically centered
-- ✅ Icons and text don't appear cramped
-- ✅ More screen real estate for timeline
-- ✅ Maintains visual hierarchy
-
-**Effort:** 30min - 1 hour
 
 ---
 
