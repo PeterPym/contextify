@@ -13,18 +13,38 @@ These are **stable reference documents** for external formats, not internal impl
 
 ## Documents
 
-### [Claude Code Format](claude-code-format.md)
-**Topics:** Claude Code JSONL transcript format specification
-- Message structure and record types
-- Content block types (`text`, `tool_use`, `tool_result`)
-- Metadata records (`file-history`, `summary`, `system`)
-- Transcript classification guide
-- Field reference by classification
+### [Transcript Formats Overview](transcript-formats.md)
+**Topics:** High-level comparison of Claude Code and Codex CLI transcript formats
+- Storage locations and project discovery
+- Record type taxonomies
+- Message linking strategies
+- Format comparison table
+- Critical requirements (monotonic timestamps)
 
-**Key Differences from Codex:**
-- Claude Code uses `text` content blocks
-- Claude Code has top-level `uuid`/`type` fields
-- Message structure differs in payload wrapping
+### [Claude Code Transcript Format](claude-code-transcript-format.md)
+**Topics:** Complete Claude Code JSONL transcript format specification
+- Message structure and record types
+- Content block types (`text`, `tool_use`, `tool_result`, `thinking`, `image`)
+- Metadata records (`file-history-snapshot`, `summary`, `system`)
+- Usage metadata and token counting
+- Transcript corruption patterns (Claude Code Web)
+- Tool call handshake protocol
+
+### [Codex CLI Transcript Format](codex-cli-transcript-format.md)
+**Topics:** Complete Codex CLI JSONL transcript format specification
+- Storage location and directory structure requirements
+- Session discovery requirements (6 critical rules)
+- System-injected messages detection pattern
+- Record types (`session_meta`, `response_item`, `event_msg`, `turn_context`, `function_call`, `reasoning`)
+- Event types and telemetry stream
+- Validation checklist and troubleshooting
+
+**Key Format Differences:**
+- **Content blocks:** Claude Code uses `text`, Codex uses `input_text`/`output_text`
+- **Message IDs:** Claude Code has top-level `uuid`, Codex uses `payload` structure
+- **Storage:** Claude Code per-project directories, Codex global date-hierarchical
+- **Tool invocations:** Claude Code uses content blocks, Codex has first-class `function_call` records
+- **Session context:** Claude Code implicit, Codex has explicit `session_meta` record
 
 ---
 
@@ -53,10 +73,3 @@ These are **stable reference documents** for external formats, not internal impl
 - Implementation details of our parsers (that's in Components/)
 - Gap analyses or feature requests (use /tmp/ or TODOS.md)
 
----
-
-## Note on Codex Format
-
-Currently missing: **codex-format.md** (TODO: extract from existing docs)
-
-See TECHNICAL-DOCS-AUDIT-2025-11-08.md for recommendation to create this file.

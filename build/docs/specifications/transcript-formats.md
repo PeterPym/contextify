@@ -563,6 +563,14 @@ Stores internal chain-of-thought in an encrypted payload.
 - **Temporal cohesion:** Via timestamps
 - **No global sessionId:** Each record (unlike Claude Code)
 
+### System-Injected Messages
+
+Codex CLI automatically injects context (AGENTS.md + environment) at conversation start. These appear as `response_item` with `role: "user"` but lack companion `event_msg` records.
+
+**Detection:** Real user messages have companion `event_msg` with `payload.type == "user_message"`. System-injected messages do NOT.
+
+**See:** `build/docs/specifications/codex-cli-transcript-format.md` - Complete format specification
+
 ### Critical Requirement: Monotonic Timestamps
 
 **Same as Claude Code:** Codex also requires monotonically increasing timestamps for proper session resumption.
@@ -605,6 +613,11 @@ Stores internal chain-of-thought in an encrypted payload.
 
 ## Related Documentation
 
+**Detailed format specifications:**
+- **Claude Code:** `build/docs/specifications/claude-code-transcript-format.md`
+- **Codex CLI:** `build/docs/specifications/codex-cli-transcript-format.md`
+
+**Operations:**
 - **Corruption detection:** `build/docs/operations/transcript-corruption-detection.md`
 - **Repair scripts:** `scripts/transcript-repair/README.md`
 - **Classification workflow:** See CLAUDE.md "Transcript Analysis Workflow" section

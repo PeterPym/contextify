@@ -225,7 +225,7 @@ This allows partial ingestion of corrupted transcripts while preserving valid co
 - Repair script: `scripts/repair_transcript.py`
 
 **Documentation:**
-- Claude Code format spec: `build/docs/specifications/claude-code-format.md`
+- Claude Code format spec: `build/docs/specifications/claude-code-transcript-format.md`
 - Transcript classification: `scripts/classify_transcript.sh`
 
 **Real-world example:**

@@ -11,7 +11,7 @@
 |----------|---------|---------------|
 | **Architecture** | System design & data flow | [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md), [Startup Coordinator](architecture/startup-coordinator.md), [Sandbox/App Store](architecture/sandbox-appstore-architecture.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
-| **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
+| **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-transcript-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
 | **Testing** | QA & testing workflows | [First-Run QA Guide](testing/first-run-qa-guide.md) |
 | **Design** | Design decisions | [Color Scheme](design/color-scheme.md), [Help System](design/help-tooltip-ux-system.md) |
@@ -69,7 +69,7 @@ Component-specific implementation details. How individual subsystems work.
 External dependency formats. Claude Code transcripts, Codex transcripts, etc.
 
 **Key docs:**
-- [Claude Code Format](specifications/claude-code-format.md) - Claude Code JSONL format specification
+- [Claude Code Format](specifications/claude-code-transcript-format.md) - Claude Code JSONL format specification
 
 ### guides/
 Operational how-to docs. How to use diagnostics API, build on Linux, etc.

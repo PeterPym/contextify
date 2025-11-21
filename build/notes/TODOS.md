@@ -73,129 +73,9 @@ doc_references:
 
 ---
 
-# P0 (Blocking Release) - 5 Items Remaining
+# P0 (Blocking Release) - 3 Items Remaining
 
-## UI Polish (COMPLETE) ✅
 
-- [x] #P0-LOGOMARK-LIGHT: Fix Codex logomark visibility in light mode (white on white)
-
-**Status:** Fixed - Added conditional shadow for light mode
-
-**Solution Applied:**
-Added `@Environment(\.colorScheme)` and conditional shadow (`.shadow(color: .black.opacity(0.5), radius: 0.5)`) when colorScheme is light and provider is Codex CLI.
-
-**Files Changed:**
-- `ProjectBadgesView.swift` - Badge display in project list
-- `TimelineEntryRow.swift` - Provider icon in timeline entries
-- `TranscriptInventoryView.swift` - Provider icon in session rows
-
----
-
-## Watcher Initialization Failure (FIXED) ✅
-
-**Status:** Completed on feature/fix-watcher-initialization branch (9 commits)
-**Branch:** Ready to merge to main
-
-- [x] #P0-WATCHER-INIT: Fix watcher initialization failure causing missing real-time transcript updates
-- [x] #P0-TAB-CORNERS: Fix project tab bar dark/bold corners (already fixed, can be removed)
-
-**Problem:**
-Watchers are never initialized during certain app lifecycle events (project switches, discovery re-runs), causing transcripts to stop updating in real-time. Users must manually refresh or restart the app. Health check detects the problem but auto-recovery fails silently.
-
-**Investigation Report:** `build/docs/audits/console-log-error-investigation-2025-11-20.md`
-
-**Critical Evidence from Log Analysis (2025-11-20):**
-- ❌ Zero watcher lifecycle logs (WATCHER-WATCH-START, WATCHER-WATCH-DONE, FSEVENTS-HEARTBEAT)
-- ❌ Watchers never started for 2 active transcripts (banagale-com, contextify)
-- ❌ Health check detected problem 3x in 3.5 minutes, attempted recovery, but **recovery failed silently**
-- ❌ No `[WATCHER-RECOVERY]` or error logs emitted from recovery flow
-- ✅ Files exist on disk and are being written to by CLI tools
-
-**Root Causes Identified:**
-
-1. **Silent Recovery Failure** (Primary Issue)
-   - `ConversationMonitor.attemptWatcherRecovery()` calls `orchestrator.ensureProjectWatcher()`
-   - Neither success log (`[WATCHER-RECOVERY]`) nor error log emitted
-   - Most likely: exception thrown before logging, or task cancelled mid-execution
-   - **Hypothesis:** Swift 6 actor isolation issue or reentrancy deadlock
-
-2. **Watcher Initialization Gap** (Secondary Issue)
-   - Watchers should start during: project discovery, session activation, health check recovery
-   - One or more of these paths is failing silently
-   - No diagnostic logs to trace failure point
-
-3. **Actor Isolation Issues** (Contributing Factor)
-   - Health check runs on background task
-   - Switches to MainActor for logging
-   - Watcher uses DispatchQueue (pre-Swift 6 concurrency)
-   - Potential deadlock when recovery attempts to access both MainActor and watcherQueue
-
-**User Impact:**
-- **Severe:** Codex and Claude Code sessions stop updating in real-time after project switches
-- User must manually restart app to resume monitoring
-- Affects all active development workflows
-
-**Implementation Plan:**
-
-**Phase 1: Diagnose Silent Failure (1 hour)**
-1. Add verbose logging to `ConversationMonitor.attemptWatcherRecovery()`:
-   - Log entry: `[WATCHER-RECOVERY-START] project=X target=Y`
-   - Log before orchestrator call: `[WATCHER-RECOVERY-CALL] calling ensureProjectWatcher`
-   - Log after success: `[WATCHER-RECOVERY-DONE] started=N already=M`
-   - Wrap in explicit do-catch: `[WATCHER-RECOVERY-ERROR] exception=...`
-
-2. Add logging to `TranscriptOrchestrator.ensureProjectWatcher()`:
-   - Log entry: `[ENSURE-WATCHER-START] project=X target=Y`
-   - Log each transcript checked: `[ENSURE-WATCHER-CHECK] transcript=A isWatching=B`
-   - Log each watcher started: `[ENSURE-WATCHER-START-OK] transcript=A`
-   - Log completion: `[ENSURE-WATCHER-DONE] started=N skipped=M`
-
-3. Add logging to `TranscriptWatcher.watch()` if missing:
-   - Verify `[WATCHER-WATCH-START]` logs exist
-   - Add file descriptor open result: `[WATCHER-FD-OPEN] fd=42 errno=0`
-   - Add dispatch source creation: `[WATCHER-SOURCE-CREATE] transcript=X`
-   - Add heartbeat startup: `[FSEVENTS-HEARTBEAT-START]`
-
-**Phase 2: Fix Identified Issues (1-2 hours)**
-Based on Phase 1 findings, likely fixes:
-- Add timeout monitoring for recovery operations (should complete <1s)
-- Fix actor isolation if deadlock detected
-- Add retry with exponential backoff if recovery throws
-- Ensure watcher.watch() is idempotent and can be called multiple times safely
-
-**Phase 3: Verify Fix (1 hour)**
-1. Reproduce watcher failure in clean environment
-2. Verify recovery logs appear and complete successfully
-3. Verify heartbeat logs start appearing every 60s
-4. Test project switch → verify watchers restart
-5. Test app resume → verify watchers still running
-
-**Files to Modify:**
-- `Contextify/Contextify/ConversationMonitor.swift:3126-3136` (recovery logging)
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:1834-1860` (ensureProjectWatcher logging)
-- `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift:60-98` (watch() logging)
-
-**Acceptance Criteria:**
-- ✅ Watcher lifecycle logs appear during normal operation
-- ✅ `[FSEVENTS-HEARTBEAT]` logs every 60s showing active watcher count
-- ✅ Recovery attempts are fully logged (success or failure)
-- ✅ Watchers restart after project switch
-- ✅ Watchers survive app resume/background
-- ✅ No more `[TRANSCRIPT-WATCHER]` critical issue logs
-- ✅ Real-time updates work continuously without manual refresh
-
-**Testing:**
-1. Monitor console log during project switch
-2. Verify watcher restart logs appear
-3. Make changes to active transcript file
-4. Verify timeline updates within 2 seconds
-5. Test with both Claude Code and Codex sessions
-
-**Related Issues:**
-- User-reported: "codex watchers seem to be breaking after a while"
-- Investigation reveals: watchers never restart after certain events, not that they crash
-
----
 
 ## Remove Diagnostics HTTP Server (1 item)
 
@@ -892,26 +772,6 @@ Timeline auto-scroll is unreliable:
 
 ---
 
-## Build Warnings (5 items) ✅ COMPLETE
-
-**Status:** ✅ Complete (verified 2025-11-18)
-**Validation:** `bash scripts/xc.sh build 2>&1 | grep -c "warning:"` → **0**
-
-- [x] #19: Fix ConversationMonitor.swift warnings ✅
-- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks ✅
-- [x] #21: Fix ProjectsViewModel.swift warnings ✅
-- [x] #22: Fix ProjectSwitcherState.swift warnings ✅
-- [x] #23: Verify clean build with zero warnings ✅
-
-**Result:** Build produces **zero warnings** - all previously reported warnings have been resolved.
-
-**Tested:**
-- `bash scripts/xc.sh build` → BUILD SUCCEEDED, 0 warnings
-- Meets zero-tolerance policy from CLAUDE.md
-
----
-
-
 ## Compatibility (1 item)
 
 **Status:** Not Started
@@ -1088,6 +948,71 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 ---
 
 # P2 (Medium Priority) - 32 Items
+
+---
+
+## Scripts Directory Consolidation & Cleanup (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (organizational debt - cleanup from Nov 17 audit)
+**Effort:** 6-8 hours (audit + consolidation + cleanup)
+**Context:** Nov 17 documentation audit identified 15+ standalone docs in scripts/ that should move to build/docs/
+
+- [ ] #P2-SCRIPTS-CONSOLIDATION: Complete scripts directory consolidation and cleanup
+
+**Scope:**
+
+1. **Audit scripts/ directory structure** (2-3 hours)
+   - Document all files in scripts/ and subdirectories (logging/, transcript-repair/, etc.)
+   - Classify each file: keep in scripts/, move to build/docs/, consolidate, or delete
+   - Identify cleanup needed in logging/ subdirectory
+   - Create consolidation plan document in /tmp/
+
+2. **Consolidate standalone documentation** (2-3 hours)
+   - Merge scripts/CI-TRIGGER-README.md + scripts/CLAUDE-CODE-WEB-CI-GUIDE.md → build/docs/guides/linux-ci-builds.md
+   - Merge scripts/DATABASE-MANAGEMENT.md → build/docs/operations/DATABASE-LOCATIONS.md
+   - Merge scripts/LOG-CAPTURE-README.md + scripts/LOG-SETUP-SUMMARY.md → scripts/logging/README.md
+   - Merge scripts/QUICK-REFERENCE.md → build/docs/guides/DEVELOPMENT.md
+   - Move scripts/RELEASE.md → build/docs/operations/release/RELEASE-PROCESS.md
+   - Move scripts/SIGNING-SETUP.md → build/docs/operations/release/
+   - Delete scripts/REVIEW-PREP-README.md (internal workflow, belongs in /tmp/)
+   - Archive or consolidate CODEX_*.md files (now covered by codex-cli-transcript-format.md)
+
+3. **Clean up scripts/logging/** (1-2 hours)
+   - Audit all scripts in logging/ subdirectory
+   - Consolidate or remove redundant scripts
+   - Update logging/README.md with current script inventory
+   - Ensure all scripts have clear descriptions and usage examples
+
+4. **Update cross-references** (1 hour)
+   - Update all markdown files referencing moved/consolidated docs
+   - Update scripts/README.md to reflect new structure
+   - Update AGENTS.md references if needed
+
+**Files to consolidate/move (from Nov 17 audit):**
+- scripts/CI-TRIGGER-README.md
+- scripts/CLAUDE-CODE-WEB-CI-GUIDE.md
+- scripts/DATABASE-MANAGEMENT.md
+- scripts/LOG-CAPTURE-README.md
+- scripts/LOG-SETUP-SUMMARY.md
+- scripts/QUICK-REFERENCE.md
+- scripts/RELEASE.md
+- scripts/SIGNING-SETUP.md
+- scripts/REVIEW-PREP-README.md (delete)
+- scripts/CODEX_*.md (3 files - already consolidated in codex-cli-transcript-format.md)
+
+**Acceptance Criteria:**
+- ✅ Complete audit document created with classification of all scripts/ files
+- ✅ All standalone docs consolidated or moved per plan
+- ✅ scripts/logging/ cleaned up with updated README
+- ✅ scripts/README.md updated to concise index format
+- ✅ All cross-references updated
+- ✅ Zero broken documentation links
+
+**Related:**
+- Nov 17 documentation audit recommendations
+- codex-cli-transcript-format.md consolidation (completed)
+- claude-code-transcript-format.md rename (completed)
 
 ---
 
@@ -1997,369 +1922,6 @@ When a project not currently visible in the tab bar receives new messages:
   - `TranscriptMetadataFormatters.swift:21` - `fullStrategyLimit = 25`
 - Should be centralized constant or user preference
 - Low priority: current value works fine, just poor code hygiene
-
----
-
-# COMPLETED ITEMS (For Reference)
-
-## Website Launch (2025-11-11) ✅
-
-- [x] #1: Disable Namecheap URL forwarding
-- [x] Domain registration & DNS
-- [x] Homepage, privacy policy, support page
-- [x] Nginx + SSL deployment
-- [x] Deploy scripts
-
-**Remaining:** #2 (Setup hello@contextify.sh email) - moved to P0
-
----
-
-## P0 Completed Items ✅
-
-- [x] #10: Fix project ingestion order to match tab order
-- [x] #11: Prioritize active project hoover on first launch
-- [x] #12: Hide invalid projects from tab bar
-- [x] #15: Remove "Run in Background" button from welcome modal
-- [x] #17: Replace invalid project root modal with warning icons
-- [x] #18: Validate paths before persisting to database
-- [x] #29: Fix drag-drop cancellation when cursor exits window (2025-11-18, commit `0bbe383`)
-- [x] #30: Add state validation after drag operations (2025-11-18, commit `0bbe383`)
-- [x] #P0-SUMM: Fix failure to kick off summarization on initial viewport load (2025-11-17)
-- [x] #P0-LOGOMARK-INFO: Remove non-functional CLI logomark info icon (2025-11-17)
-
----
-
-## P1 Completed Items ✅
-
-- [x] #19: Fix ConversationMonitor.swift warnings (verified 2025-11-18)
-- [x] #20: Fix TranscriptMetadataOrchestrator.swift availability checks (verified 2025-11-18)
-- [x] #21: Fix ProjectsViewModel.swift warnings (verified 2025-11-18)
-- [x] #22: Fix ProjectSwitcherState.swift warnings (verified 2025-11-18)
-- [x] #23: Verify clean build with zero warnings (verified 2025-11-18)
-- [x] #31: Auto-refresh Projects tab on FSEvents detection
-- [x] #33: Debounce rapid filesystem events (2s)
-- [x] #34: Add failed transcript tracking with error states
-- [x] #36: Persist failed transcripts across restarts
-- [x] #44: Document discovery timing expectations (<5s target)
-- [x] #53: Verify bash scripts/xc.sh build matches Xcode Run
-
----
-
-## P2 Completed Items ✅
-
-- [x] #62: Gather user feedback on Projects vs Transcripts window UX
-- [x] #73: Port FileKitty's release.py for automation
-- [x] #74: Automate build → sign → notarize → DMG → GitHub release
-- [x] #75: Add regex-based content filter for LLM summaries
-
----
-
-## P3 Completed Items ✅
-
-- [x] #84: Refactor ConversationMonitor initialization (deferred)
-- [x] #92: Add v26 migration with 3 new metadata tables
-
----
-
-## Dropped/Invalid Items ❌
-
-- ❌ #26: F53B3BE1-3A80-4C84-9E37-42D947CADAFA (accidental paste)
-- ❌ #41: Implement port fallback for diagnostics server - **DROP DIAGNOSTICS SERVER FROM INITIAL RELEASE**
-- ❌ #42: Update timeline_api.sh to auto-detect port - **Depends on #41 (dropped)**
-- ❌ #77: Verify all diagnostics API endpoints functional - **Feature dropped**
-- ❌ #78: Test /health, /diagnostics, /timeline/* endpoints - **Feature dropped**
-
-**Rationale:** User note: "Should drop diagnostics / web server from initial release entirely" - non-critical debugging feature, can add post-launch.
-
----
-
-# DETAILED TASK SPECIFICATIONS
-
-*The sections below contain full implementation details for complex tasks. Simple tasks (listed above) don't need detailed specs.*
-
----
-
-## P0: Disable Git Monitoring in Sandboxed Builds ✅ COMPLETE → SUPERSEDED
-
-**Status:** ✅ Complete (2025-11-15) → **Superseded by P1 #P1-GIT-BRANCH**
-**Commit:** `b0abdb4` - fix(sandbox): disable git monitoring in App Store builds
-**Branch:** `claude/codex-discovery-fix-012fkAJXMWvjrfWZPh7xhPEm`
-
-**Note:** This temporary solution disabled git monitoring entirely in sandboxed builds. **New approach (P1 #P1-GIT-BRANCH)** uses transcript-based branch tracking to ENABLE branch display in App Store builds without filesystem access.
-
-### Old Problem (Solved by Disabling)
-
-Git branch monitoring completely broken in sandboxed builds. Console spam every 2 seconds:
-```
-error  [GIT-BROKEN] Git monitoring failed (no project root access in sandboxed build)
-error  [GIT-BROKEN] No project root bookmark (git monitoring unavailable in sandboxed build)
-```
-
-**Root cause:** Requires user permission to project root directories.
-
-### Old Solution (Temporary - Now Being Replaced)
-
-Simple, fast approach:
-1. Early return from `updateHeadWatcher()` if sandboxed (skip all git logic) ✅
-2. Hide branch UI in sandboxed builds (show project name only) ✅
-3. Remove bookmark restoration attempts in sandboxed builds ✅
-
-**Result:** Clean logs, zero errors, but NO branch display in App Store.
-
-### New Solution (P1 #P1-GIT-BRANCH)
-
-Extract branch from transcript data instead of filesystem:
-- Claude Code: Read `gitBranch` from any message
-- Codex: Read `session_meta.payload.git.branch` from last session_meta
-- Display branch with InfoButton explaining source and lag
-- Zero filesystem access required
-- Works in App Store builds
-
-**See:** P1 section for full specification of transcript-based approach
-
-### Old Tasks (Completed for Temporary Solution)
-
-- [x] **[NOGIT1]** Early return from `updateHeadWatcher()` if sandboxed ✅
-- [x] **[NOGIT2]** Remove bookmark restoration in `handleCoordinatorUpdate()` ✅
-- [x] **[NOGIT3]** Hide branch display in header ✅
-- [x] **[NOGIT4]** Test App Store build - verified zero errors ✅
-- [x] **[NOGIT5]** Verify zero `[GIT-BROKEN]` errors ✅
-
-**Files Modified (Will Be Partially Reverted by P1 Implementation):**
-- `app/Sources/ContextifyCore/HUDCore.swift` (git monitoring disabled)
-- `Contextify/Contextify/ContentView.swift` (branch UI hidden - will be restored)
-
----
-
-## P0 Critical: Codex Transcript Real-Time Updates ✅ COMPLETE
-
-**Status:** ✅ COMPLETE (2025-11-08)
-**Priority:** P0 (Regression - previously worked, now broken)
-
-### Problem
-
-When user switches from active Claude Code session to Codex session **in the same project**, Codex transcript updates don't appear in real-time. User must manually refresh or restart app.
-
-**User Impact:** Severe - Codex sessions appear "frozen" after switching.
-
-### Root Cause
-
-- `startWatchingTranscript()` only called during initial project discovery
-- Active session follow policy switches sessions via `setActiveSession()` but doesn't verify watcher running
-- Missing hook in `setActiveSession()` to ensure watcher active
-
-### Solution Implemented
-
-Add watcher verification to session activation path. `TranscriptWatcher.watch()` is idempotent (line 44), so safe to call multiple times.
-
-### Tasks Completed
-
-- [x] Add watcher verification to `setActiveSession()`
-- [x] Verify `TranscriptWatcher.watch()` idempotence
-- [x] Integration test: switch Claude Code → Codex
-- [x] Test with multiple Codex sessions
-- [x] Verify no duplicate watcher warnings
-- [x] Test no file descriptor leaks
-
-**Files:** `Contextify/Contextify/ConversationMonitor.swift`, `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`
-
----
-
-## P0 Critical: App Sandbox Implementation
-
-**Status:** Reverted, Needs Re-implementation
-**Priority:** P0 (Blocks App Store submission)
-
-### Problem
-
-Previous sandbox attempt (commit `b4b4762`) was reverted (`b1fe869`) because:
-- Cannot access `~/.claude/projects` and `~/.codex/projects`
-- FSEvents monitoring blocked
-- Projects window shows 0 projects
-- Database location changed, breaking existing users
-
-### Solution
-
-**Detailed plan:** `build/docs/operations/app-store/sandbox-implementation-plan.md`
-
-**Four-Phase Approach:**
-1. First-launch file picker for project directory access (4 hours)
-2. Security-scoped bookmark persistence (3 hours)
-3. Database migration to sandbox container (4 hours)
-4. Entitlements configuration (30 minutes)
-
-**Total Effort:** 8-12 hours
-
-### Tasks
-
-- [ ] Implement first-launch file picker flow
-- [ ] Add security-scoped bookmark storage
-- [ ] Create database migration to sandbox container
-- [ ] Update entitlements file
-- [ ] Test with sandboxed build
-- [ ] Verify FSEvents work with bookmarks
-- [ ] Test migration from non-sandboxed → sandboxed
-
-### Acceptance Criteria
-
-- [ ] Sandboxed build discovers projects via file picker
-- [ ] Security-scoped bookmarks persist across launches
-- [ ] Database migrates cleanly
-- [ ] FSEvents watching works
-- [ ] No data loss during migration
-- [ ] App Store review guidelines met
-
----
-
-## P0: Welcome Modal & First Launch UX
-
-**Context:** StartupCoordinator refactor introduced regression where first launch fails with cryptic error.
-
-**Reference:** Detailed specification follows (phases 1-8)
-
-**Target:** 100% passing acceptance criteria before merge to main
-
-### Phase 1: Coordinator Graceful Failure (P0)
-
-**Goal:** Make coordinator tolerate "no project configured" state without fatal error.
-
-**Status:** Not Started
-
-**Tasks:**
-- [ ] Modify `StartupCoordinator.start()` to catch `noProjectRootAvailable` gracefully
-- [ ] Add notification name for welcome modal trigger
-- [ ] Update `ContextifyApp.init()` error handling
-
-**Dependencies:** None
-**Estimated Time:** 1-2 hours
-**Risk:** Low
-
-### Phase 2: State Unification (P0)
-
-**Goal:** Make discovery state accessible to main window for progress UI.
-
-**Tasks:**
-- [ ] Initialize `ProjectsViewModel` early in `ContextifyApp.init()`
-- [ ] Pass `ProjectsViewModel` to `ContentView` via environment
-- [ ] Add `ProjectsViewModel` to `ContentView` environment
-
-**Dependencies:** Phase 1
-**Estimated Time:** 2-3 hours
-
-### Phase 3: Welcome Modal UI (P0)
-
-**Goal:** Implement modal with live discovery progress.
-
-**Tasks:**
-- [ ] Create `WelcomeModalView.swift`
-- [ ] Add welcome modal state to `ContextifyApp`
-- [ ] Subscribe to `startupRequiresWelcomeModal` notification
-- [ ] Attach modal as sheet to main window
-
-**Dependencies:** Phase 2
-**Estimated Time:** 3-4 hours
-
-### Phase 4: Auto-Selection Logic (P0)
-
-**Goal:** After discovery, automatically select most recent project.
-
-**Tasks:**
-- [ ] Add `getMostRecentProject()` to `TranscriptOrchestrator`
-- [ ] Implement auto-selection in `initializeProjectsSystem()`
-- [ ] Close welcome modal after auto-selection
-
-**Dependencies:** Phase 3
-**Estimated Time:** 2-3 hours
-
-### Phase 5: Loading Overlay (P1)
-
-**Goal:** Show loading state when modal dismissed during discovery.
-
-**Tasks:**
-- [ ] Add loading overlay to `ContentView`
-- [ ] Style overlay with material background
-
-**Dependencies:** Phase 4
-**Estimated Time:** 1-2 hours
-
-### Phase 6: Error Handling (P1)
-
-**Goal:** Handle edge cases (no projects found, discovery failures).
-
-**Tasks:**
-- [ ] Add "No projects found" state to modal
-- [ ] Add error state with retry button
-- [ ] Guard auto-selection against races
-
-**Dependencies:** Phase 3
-**Estimated Time:** 2-3 hours
-
-### Phase 7: Testing & Validation (P0)
-
-**Goal:** Verify all acceptance criteria met.
-
-**Tasks:**
-- [ ] Manual testing: First launch (clean DB)
-- [ ] Manual testing: No projects found
-- [ ] Manual testing: Dismiss during discovery
-- [ ] Manual testing: Normal launch (existing project)
-- [ ] Manual testing: Manual selection during discovery
-- [ ] Unit testing: Coordinator graceful failure
-- [ ] Unit testing: Auto-selection logic
-- [ ] Performance testing: Discovery time
-- [ ] Thread safety audit
-
-**Dependencies:** Phases 1-6
-**Estimated Time:** 4-6 hours
-
-### Phase 8: Documentation & Polish (P2)
-
-**Goal:** Update docs, release notes, code comments.
-
-**Tasks:**
-- [ ] Update AGENTS.md with welcome modal flow
-- [ ] Add code comments to coordinator changes
-- [ ] Update changelog
-- [ ] Add Xcode preview for modal
-
-**Dependencies:** Phase 7
-**Estimated Time:** 2-3 hours
-
-**Total Effort:** 18-28 hours (2.5-3.5 days)
-
----
-
-## Automated Product Development Monitoring (1 item)
-
-**Status:** Concept - needs design specification
-**Priority:** P3 (valuable infrastructure, not blocking)
-**Effort:** Medium-Large (initial setup), Low (ongoing maintenance)
-
-- [ ] #P3-AGENTIC-DEVOPS: Build GitHub Actions service for upstream monitoring and conformance testing
-
-**Proposed Service:**
-1. **External Repo Monitoring** - Watch Gemini CLI, Claude Code, Codex CLI releases for transcript-relevant changes
-2. **Transcript Format Conformance Testing** - Recurring job creates fresh conversations, analyzes against expected format
-3. **Regression Suite** - Test edge cases, known corruption patterns
-
-**Expected Outcomes:**
-- Early warning of breaking changes
-- Discovery of new feature possibilities
-- Living documentation that stays in sync with reality
-
----
-
-# CROSS-REFERENCE: Item Number → Priority
-
-**P0 (25):** #2-9, #16, #29-30, #32, #35, #43, #45-47, #49-50, #58-59
-
-**P1 (18):** #19-23, #51, #54-56, #71-72, #79-83, #85-88, #91
-
-**P2 (19):** #13-14, #24-25, #27-28, #37-40, #48, #52, #57, #60, #63-66
-
-**P3 (8):** #61, #67-70, #76, #89-90
-
-**Removed (22):** #1, #10-12, #15, #17-18, #26, #31, #33-34, #36, #41-42, #44, #53, #62, #73-75, #77-78, #84, #92
 
 ---
 

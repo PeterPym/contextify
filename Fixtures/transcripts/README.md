@@ -32,4 +32,7 @@ This will:
 - **Claude Code**: Uses top-level `uuid` and `type` fields, `text` content blocks
 - **Codex**: Uses `messageId` with `payload.type`, `input_text`/`output_text` content blocks
 
-See `build/docs/archive/completed-work/technical-briefing-local-history-claude-code-codex.md` for full format specifications.
+**Format specifications:**
+- `build/docs/specifications/transcript-formats.md` - Overview and comparison
+- `build/docs/specifications/claude-code-transcript-format.md` - Claude Code detailed spec
+- `build/docs/specifications/codex-cli-transcript-format.md` - Codex CLI detailed spec

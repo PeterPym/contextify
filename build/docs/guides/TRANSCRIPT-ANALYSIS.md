@@ -43,7 +43,7 @@ When working with Claude Code transcript files, **ALWAYS classify first** before
 
 ## Key Documentation
 
-**Primary resource:** `build/docs/specifications/claude-code-format.md`
+**Primary resource:** `build/docs/specifications/claude-code-transcript-format.md`
 
 This document contains:
 - Complete field specifications for all record types

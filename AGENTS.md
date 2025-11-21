@@ -178,7 +178,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 **Transcript work:**
 - `build/docs/specifications/transcript-formats.md` - **MUST READ FIRST**
 - `build/docs/guides/TRANSCRIPT-ANALYSIS.md` - Classification workflow
-- `build/docs/specifications/claude-code-format.md` - Claude Code format spec
+- `build/docs/specifications/claude-code-transcript-format.md` - Claude Code format spec
 - `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - Parser implementation
 
 **Project identity/startup:**
@@ -277,7 +277,7 @@ try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
 
 **Workflow:**
 1. **Classify first:** `./scripts/classify_transcript.sh <transcript-id>`
-2. **Read relevant docs:** `build/docs/specifications/claude-code-format.md`
+2. **Read relevant docs:** `build/docs/specifications/claude-code-transcript-format.md`
 3. **Reference parser:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
 **For complete workflow:** See `build/docs/guides/TRANSCRIPT-ANALYSIS.md`
