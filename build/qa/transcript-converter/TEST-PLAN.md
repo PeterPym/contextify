@@ -45,7 +45,7 @@ build/qa/transcript-converter/
    ```bash
    head -1 build/qa/transcript-converter/fixtures/test-claude-*.jsonl | python3 -m json.tool
    ```
-3. Check required fields match spec (see `build/docs/specifications/claude-code-format.md`):
+3. Check required fields match spec (see `build/docs/specifications/claude-code-transcript-format.md`):
    - User message: `type`, `uuid`, `timestamp`, `parentUuid`, `sessionId`, `version`, `userType`, `cwd`, `gitBranch`, `isSidechain`, `isMeta`, `message`
    - Assistant message: `type`, `uuid`, `timestamp`, `parentUuid`, `sessionId`, `version`, `userType`, `cwd`, `gitBranch`, `isSidechain`, `requestId`, `message` (with `id`, `type`, `role`, `model`, `content[]`, `stop_reason`, `stop_sequence`, `usage`)
 

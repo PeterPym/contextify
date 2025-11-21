@@ -189,7 +189,7 @@ contextify/
 | **Implementation checklist** | feature-specs/*/STATUS.md ❌ | /tmp/ | No |
 | **Code review notes** | feature-specs/*/code-review-response.md ❌ | /tmp/ | No |
 | **Architecture: "How SQL backend works"** | technical-reference/sql-backend-architecture.md ✅ | build/docs/architecture/sql-backend.md | Yes |
-| **External spec: "Claude Code format"** | technical-reference/claude-code-transcript-format.md ✅ | build/docs/specifications/claude-code-format.md | Yes |
+| **External spec: "Claude Code format"** | technical-reference/claude-code-transcript-format.md ✅ | build/docs/specifications/claude-code-transcript-format.md | Yes |
 | **Investigation: "CXT-10 debugging"** | technical-reference/cxt-10-11-investigation.md ❌ | build/docs/archive/investigations/2025-11-05-cxt-10-11.md | Yes (historical) |
 | **Original spec: "Project switcher"** | feature-specs/project-switcher/spec.md ❌ | build/docs/archive/feature-specs/project-switcher.md | Yes (rationale) |
 
@@ -244,7 +244,7 @@ git mv build/notes/technical-reference/project-discovery-implementation.md \
 **Specifications:**
 ```bash
 git mv build/notes/technical-reference/claude-code-transcript-format.md \
-       build/docs/specifications/claude-code-format.md
+       build/docs/specifications/claude-code-transcript-format.md
 ```
 
 **Guides:**
@@ -375,7 +375,7 @@ Create `build/docs/README.md`:
 |----------|---------|---------------|
 | **Architecture** | System design & data flow | [Data Flow](architecture/data-flow.md), [SQL Backend](architecture/sql-backend.md), [LLM Processing](architecture/llm-processing.md) |
 | **Components** | Individual subsystems | [Transcript Ingestion](components/transcript-ingestion.md), [Timeline Cache](components/timeline-cache.md) |
-| **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-format.md) |
+| **Specifications** | External dependencies | [Claude Code Format](specifications/claude-code-transcript-format.md) |
 | **Guides** | How-to documentation | [Diagnostics API](guides/diagnostics-api.md), [Linux CI](guides/linux-ci-builds.md) |
 | **Design** | Design decisions | [Color Scheme](design/color-scheme.md), [Help System](design/help-system.md) |
 | **Operations** | Release & deployment | [App Store](operations/app-store/), [Marketing](operations/marketing/) |

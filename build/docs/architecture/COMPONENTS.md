@@ -395,4 +395,4 @@ python3 scripts/transcript-repair/repair_transcript.py <transcript>
 **Documentation:**
 - Full guide: `build/docs/operations/transcript-corruption-detection.md`
 - Script README: `scripts/transcript-repair/README.md`
-- Format spec: `build/docs/specifications/claude-code-format.md`
+- Format spec: `build/docs/specifications/claude-code-transcript-format.md`

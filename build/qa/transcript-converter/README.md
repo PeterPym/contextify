@@ -96,7 +96,7 @@ See TEST-PLAN.md for full details:
 
 - **Converter README:** `scripts/TRANSCRIPT_CONVERTER_README.md`
 - **Test Plan:** `build/qa/transcript-converter/TEST-PLAN.md`
-- **Format Spec (Claude Code):** `build/docs/specifications/claude-code-format.md`
+- **Format Spec (Claude Code):** `build/docs/specifications/claude-code-transcript-format.md`
 - **Format Comparison:** `build/notes/archive/technical-briefing-local-history-claude-code-codex.md`
 - **Resume Guide:** `build/docs/guides/transcript-resumption.md`
 

@@ -225,7 +225,7 @@ python3 scripts/repair_transcript.py <transcript>
 ## Related Documentation
 
 - **Full guide:** `build/docs/operations/transcript-corruption-detection.md`
-- **Transcript format:** `build/docs/specifications/claude-code-format.md`
+- **Transcript format:** `build/docs/specifications/claude-code-transcript-format.md`
 - **Classification:** `scripts/classify_transcript.sh`
 - **Database repair:** `scripts/db_manager.sh`
 

@@ -72,6 +72,31 @@ Owner only needs to review progress. Agent handles:
 - TODOS.md#P3-AGENTIC-DEVOPS (transcript monitoring, conformance testing)
 - Customer support stub (`CustomerSupport/` module)
 
+### P4-WINDOW-KEEP-ON-TOP: Always-on-Top Window Option
+
+**Status:** Not started
+**Priority:** P4 (future consideration, UX design needed)
+**Effort:** Small (UI toggle + window level management)
+
+- [ ] Add user preference to keep Contextify window on top of other windows
+
+**Motivation:**
+- Users working with multiple tools (terminal, editor, browser) may want Contextify always visible
+- Common pattern in utility/HUD apps (calculators, system monitors, clipboards)
+- Helps maintain context during rapid tool switching
+
+**Implementation Considerations:**
+1. **UI**: Toggle in Settings or window titlebar/toolbar
+2. **Window level**: Use `.floating` or `.statusBar` level (NSWindow.Level)
+3. **Persistence**: Save preference per-project or globally?
+4. **Interaction**: Should "on top" disable when app loses focus? Or stay truly always-on-top?
+5. **Accessibility**: Ensure users can easily disable if it becomes annoying
+
+**Research Questions:**
+1. Should this be per-project or global preference?
+2. What's the best macOS pattern for toggling window float state?
+3. Should we auto-disable when user drags window? (prevent accidental "stuck" windows)
+
 ---
 
 ## P5 (Research / Exploratory)

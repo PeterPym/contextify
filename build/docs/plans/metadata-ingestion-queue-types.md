@@ -318,7 +318,7 @@ chmod +x scripts/analyze_metadata_schemas.sh
 
 #### Step 1.2: Update Documentation
 
-**File:** `build/docs/specifications/claude-code-format.md`
+**File:** `build/docs/specifications/claude-code-transcript-format.md`
 
 **Location:** After Section 5 (System Messages), insert new section at ~line 290
 
@@ -1626,7 +1626,7 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
   - [ ] Samples saved to `build/docs/specifications/examples/metadata/`
   - [ ] Field names confirmed (operationId, stateId, resultId)
   - [ ] Join keys validated (operationId exists in both tables)
-  - [ ] `claude-code-format.md` updated
+  - [ ] `claude-code-transcript-format.md` updated
   - [ ] `sql-backend.md` updated
 
 ### Implementation
@@ -1695,7 +1695,7 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
 
 ### Documentation
 
-- [ ] `claude-code-format.md` updated (Phase 1)
+- [ ] `claude-code-transcript-format.md` updated (Phase 1)
 - [ ] `sql-backend.md` updated (Phase 1)
 - [ ] `scripts/logging/README.md` updated (Phase 8)
 - [ ] Future enhancements documented
@@ -1716,7 +1716,7 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
 ✅ **Documentation complete**
 - Real samples captured from transcripts
 - Field names confirmed from analysis
-- Sections added to claude-code-format.md and sql-backend.md
+- Sections added to claude-code-transcript-format.md and sql-backend.md
 - Examples directory populated
 
 ✅ **All metadata types stored**
@@ -1780,7 +1780,7 @@ SELECT 'file_snapshots', COUNT(*) FROM file_snapshots;
 - TBD (Phase 0): Repository insert location
 
 **Documentation:**
-- `build/docs/specifications/claude-code-format.md` - Format specs
+- `build/docs/specifications/claude-code-transcript-format.md` - Format specs
 - `build/docs/architecture/sql-backend.md` - Database architecture
 - `build/docs/specifications/examples/metadata/` - Real samples (Phase 1)
 - `scripts/logging/README.md` - Logging tags and scripts
