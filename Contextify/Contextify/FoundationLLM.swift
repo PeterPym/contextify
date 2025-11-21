@@ -16,11 +16,12 @@ enum TimelineError: Swift.Error {
     case unexpected(String)
     case cancelled
     case llmUnavailable(reason: String)
+    case validationFailure(reason: String)
 
     var isRetryable: Bool {
         switch self {
         case .llmTimeout, .databaseError, .unexpected: return true
-        case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled, .llmUnavailable: return false
+        case .contextOverflow, .guardrailViolation, .decodingFailure, .cancelled, .llmUnavailable, .validationFailure: return false
         }
     }
 
@@ -42,6 +43,8 @@ enum TimelineError: Swift.Error {
             return "Operation was cancelled."
         case .llmUnavailable(let reason):
             return "\(reason) This typically recovers after a minute or two. If it happens frequently or persists, consider contacting support via Help menu."
+        case .validationFailure(let reason):
+            return "Summary validation failed: \(reason)"
         }
     }
 }
@@ -640,22 +643,22 @@ actor FoundationLLM {
                     // Record success
                     metrics.total += 1
                     return result
-                } catch Error.retryExhausted {
-                    // postProcess rejected - don't retry, just propagate up
+                } catch let validationError as TimelineError {
+                    // postProcess rejected with TimelineError (e.g., validationFailure) - don't retry
                     metrics.total += 1
                     metrics.failed += 1
-                    log.error("[\(reqNum)] postProcess rejection - propagating failure without retry")
-                    throw Error.retryExhausted
+                    log.error("[\(reqNum)] postProcess rejection - propagating failure without retry: \(validationError.userMessage)")
+                    throw validationError
                 } catch {
-                    // Other postProcess errors
+                    // Other postProcess errors - convert to validation failure
                     metrics.total += 1
                     metrics.failed += 1
                     log.error("[\(reqNum)] postProcess unexpected error: \(error)")
-                    throw Error.retryExhausted
+                    throw TimelineError.validationFailure(reason: error.localizedDescription)
                 }
-            } catch Error.retryExhausted {
-                // Already exhausted from postProcess - just propagate
-                throw Error.retryExhausted
+            } catch let validationError as TimelineError where validationError.isRetryable == false {
+                // Non-retryable TimelineError from postProcess - just propagate
+                throw validationError
             } catch let guarded as LanguageModelSession.GenerationError {
                 // Map FoundationModels errors to TimelineError
                 switch guarded {
@@ -1599,7 +1602,10 @@ private extension FoundationLLM {
         func tokens(_ source: String) -> Set<String> {
             let keep = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._- "))
             let filtered = String(source.unicodeScalars.filter { keep.contains($0) })
-            return Set(filtered.lowercased().split(separator: " ").map(String.init).filter { $0.count >= 3 })
+            let punct = CharacterSet.punctuationCharacters
+            return Set(filtered.lowercased().split(separator: " ")
+                .map { $0.trimmingCharacters(in: punct) }
+                .filter { $0.count >= 3 })
         }
         let summaryTokens = tokens(summary)
         let messageTokens = tokens(message)
@@ -1620,6 +1626,11 @@ private extension FoundationLLM {
 
             // User message required words (from LLM instructions)
             "you", "requested", "made",
+            // User prefix verbs (slash commands and general)
+            "informed", "cleared", "compacted", "changed", "checked", "initialized",
+            "logged", "managed", "added", "opened", "ran", "switched", "edited",
+            "viewed", "rewound", "enabled", "configured", "entered", "started",
+            "undid", "exited", "sent", "performed", "executed",
 
             // Instruction-derived words
             "infer", "proceed", "proposed",
@@ -1780,7 +1791,7 @@ extension FoundationLLM {
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")
-                throw Error.retryExhausted  // Skip straight to exhausted
+                throw TimelineError.validationFailure(reason: "grounding/confidence check failed")
             }
 
             if !isGrounded && leaked.count > 0 {
@@ -1923,7 +1934,7 @@ extension FoundationLLM {
             // Validate length
             if summary.count > 140 {
                 log.warning("User summary too long: \(summary.count) chars")
-                throw Error.retryExhausted
+                throw TimelineError.validationFailure(reason: "summary too long (\(summary.count) chars)")
             }
 
             // Validate leakage (skip for high-confidence fast-path results)
@@ -1934,14 +1945,14 @@ extension FoundationLLM {
                 let leaked = introducedTopics(message: message, summary: summary)
                 if leaked.count > 6 {
                     log.warning("User summary has excessive leakage: \(leaked.count) tokens: \(leaked.joined(separator: ", "), privacy: .public)")
-                    throw Error.retryExhausted
+                    throw TimelineError.validationFailure(reason: "excessive token leakage (\(leaked.count) tokens)")
                 }
             }
 
             // Validate confidence/grounding
             if payload.confidence < 0.45 && payload.grounding.lowercased() != "grounded" {
                 log.warning("User summary has low confidence (\(payload.confidence, privacy: .public)) and is not grounded")
-                throw Error.retryExhausted
+                throw TimelineError.validationFailure(reason: "low confidence and ungrounded")
             }
         }
 

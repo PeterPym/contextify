@@ -542,7 +542,14 @@ actor TimelineCacheMissGenerator {
                 if case .decodingFailure = timelineError {
                     log.error("Decoding failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "decoding", error: timelineError)
-                    trackError(reason: timelineError.userMessage)
+                    // Don't trackError - show (i) icon but not status bar error
+                    return .generated
+                }
+
+                if case .validationFailure = timelineError {
+                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                    try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
+                    // Don't trackError - show (i) icon but not status bar error
                     return .generated
                 }
 
