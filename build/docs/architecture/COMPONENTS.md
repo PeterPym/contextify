@@ -2,7 +2,7 @@
 
 This document provides detailed information about Contextify's architecture and key components.
 
-**For high-level overview:** See `build/notes/technical-reference/system-architecture-overview.md`
+**For high-level overview:** See `build/notes/archive/superseded-docs/system-architecture-overview.md`
 - Explains component roles (Coordinator vs Orchestrator vs Monitor)
 - Data model hierarchy (Projects → Transcripts → Entries → Summaries)
 - Initialization flow and common confusion points

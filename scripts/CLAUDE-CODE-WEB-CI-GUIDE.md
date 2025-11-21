@@ -376,7 +376,7 @@ Much simpler!
 ## Related Documentation
 
 - **CI Trigger Guide:** `scripts/CI-TRIGGER-README.md` (comprehensive Linux guide)
-- **Investigation Report:** `build/notes/technical-reference/ci-signing-investigation.md`
+- **Investigation Report:** `build/notes/archive/completed-investigations/ci-signing-investigation.md`
 - **Claude Code Hooks:** https://docs.claude.com/en/hooks
 - **GitHub API Reference:** https://docs.github.com/en/rest/actions/workflows
 

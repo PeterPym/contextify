@@ -41,7 +41,7 @@ Rsync-based, one-command deployment to production server.
 ## Additional Documentation
 
 - Website docs: `build/docs/website/`
-- Launch status: `build/notes/website-launch-status.md`
+- Launch status: `build/notes/todo-support/P0-APP-STORE-checklist.md`
 
 ## Deployment Workflow
 
