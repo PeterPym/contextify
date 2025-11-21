@@ -16,7 +16,7 @@
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
 - Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 3 P2 items (#P2-PROJECTS-AUTOSELECT, #P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
+- Added 2 P2 items (#P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
 - Simplified copy in Transcripts and Projects windows to match Apple conventions
 - Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
 - Root cause analysis reveals watchers never restart after project switches, not that they crash
@@ -1057,7 +1057,7 @@ CREATE TABLE git_activity (
 
 ---
 
-# P2 (Medium Priority) - 33 Items
+# P2 (Medium Priority) - 32 Items
 
 ---
 
@@ -1297,65 +1297,16 @@ if state.entries.count == new.count && state.entries == new {
 
 ---
 
-## Projects Window Improvements (3 items)
+## Projects Window Improvements (2 items)
 
 **Status:** Not Started
 **Priority:** P2 (UX improvements - nice to have)
-**Effort:** 3-4 hours total
+**Effort:** 2 hours total
 
-- [ ] #P2-PROJECTS-AUTOSELECT: Auto-scroll to current project when window opens (1-2 hours)
 - [ ] #P2-PROJECTS-REFRESH-REVIEW: Investigate if manual "Refresh Projects" button is needed (1.5 hours)
 - [ ] #P2-PROJECTS-EMPTY-STATE: Add first-run guidance to empty state (30 min)
 
 **Context:** Projects window improvements for better UX consistency.
-
----
-
-### #P2-PROJECTS-AUTOSELECT: Auto-Scroll to Current Project
-
-**Problem:**
-When opening Projects window, no project is visually highlighted/centered. User must scan to find current project (though it has "CURRENT" badge and blue folder icon).
-
-**Expected Behavior:**
-1. Auto-scroll to current project when window opens
-2. Current project centered/visible without manual scrolling
-3. Makes it immediately obvious where user is
-
-**Implementation:**
-1. Add `ScrollViewReader` wrapper to ProjectsWindow.swift:91 ScrollView
-2. On `.onAppear`, find current project ID from viewModel
-3. Use `scrollTo(currentProjectId, anchor: .center)` to scroll
-4. Add `.id(project.id)` to each ProjectRowView in ForEach
-
-```swift
-ScrollViewReader { proxy in
-  ScrollView {
-    LazyVStack(alignment: .leading, spacing: 16) {
-      ForEach(viewModel.projects) { project in
-        ProjectRowView(...)
-          .id(project.id)
-      }
-    }
-    .padding()
-  }
-  .onAppear {
-    if let currentId = viewModel.projects.first(where: { $0.isCurrent })?.id {
-      withAnimation {
-        proxy.scrollTo(currentId, anchor: .center)
-      }
-    }
-  }
-}
-```
-
-**Files:**
-- `Contextify/Contextify/ProjectsWindow.swift`
-
-**Acceptance Criteria:**
-- ✅ Opening Projects window scrolls to current project
-- ✅ Current project visible in viewport without manual scrolling
-- ✅ Smooth animation (no jarring jumps)
-- ✅ Graceful handling if no current project
 
 ---
 
