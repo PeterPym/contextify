@@ -42,7 +42,7 @@ struct TimelineEntryRow: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            Text(entry.summary)
+            formatWithBackticks(entry.summary)
                 .font(.callout)
                 .foregroundStyle(.primary)
 
@@ -295,6 +295,21 @@ struct TimelineEntryRow: View, Equatable {
     // Provider color now uses TimelineSourceContext.Provider.color extension (TimelineModels.swift)
     private func providerColor(_ provider: TimelineSourceContext.Provider) -> Color {
         return provider.color
+    }
+
+    /// Format text with backtick-enclosed portions in monospace font
+    private func formatWithBackticks(_ text: String) -> Text {
+        let parts = text.components(separatedBy: "`")
+        var result = Text("")
+        for (index, part) in parts.enumerated() {
+            if index % 2 == 1 && !part.isEmpty {
+                // Odd indices are inside backticks - render monospace
+                result = result + Text(part).font(.system(.callout, design: .monospaced))
+            } else {
+                result = result + Text(part)
+            }
+        }
+        return result
     }
 
     /// Generate contextual error message based on error type

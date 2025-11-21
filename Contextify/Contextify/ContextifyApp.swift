@@ -269,7 +269,7 @@ struct ContextifyApp: App {
         showWelcomeModal = true
       }
     }
-    .defaultSize(width: 800, height: 500)
+    .defaultSize(width: 400, height: 500)
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }

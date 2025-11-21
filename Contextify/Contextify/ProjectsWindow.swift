@@ -115,29 +115,42 @@ struct ProjectsWindow: View {
         .foregroundStyle(.secondary)
 
       VStack(spacing: 8) {
-        Text("No Projects Found")
+        Text("No Projects Discovered Yet")
           .font(.title2.bold())
 
-        Text("No projects found.")
+        Text("Contextify monitors your AI coding sessions and displays them here once you start working.")
           .font(.body)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
+          .frame(maxWidth: 400)
       }
 
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Projects are discovered from:")
-          .font(.caption.bold())
+      VStack(alignment: .leading, spacing: 12) {
+        Text("Monitored locations:")
+          .font(.subheadline.bold())
           .foregroundStyle(.secondary)
 
-        VStack(alignment: .leading, spacing: 4) {
-          Label("~/.claude/projects/*", systemImage: "folder")
-            .font(.caption)
+        VStack(alignment: .leading, spacing: 6) {
+          Label("~/.claude/projects/", systemImage: "folder")
+            .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
 
-          Label("<project>/.codex/sessions/", systemImage: "folder")
-            .font(.caption)
+          Label("~/.codex/sessions/", systemImage: "folder")
+            .font(.system(.caption, design: .monospaced))
             .foregroundStyle(.secondary)
         }
+
+        Divider()
+          .padding(.vertical, 4)
+
+        Text("To get started:")
+          .font(.subheadline.bold())
+          .foregroundStyle(.secondary)
+
+        Text("Use Claude Code or Codex CLI in any project directory. Contextify will automatically discover your sessions.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
       .padding()
       .background(Color.secondary.opacity(0.05))
