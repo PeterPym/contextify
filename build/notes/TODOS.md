@@ -30,7 +30,7 @@
   - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
   - #49-50 (Project management) → P2
 - Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
-- Added 2 P1 items (#P1-OPTION3: parse permission dialog responses, #P1-SUMM-QUESTIONS: fix summarizer treating questions as actions)
+- Added 1 P1 item (#P1-OPTION3: parse permission dialog responses)
 - Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
 
 **Change Log (2025-11-15):**
@@ -211,7 +211,7 @@ The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API 
 ---
 
 
-# P1 (High Priority) - 26 Items
+# P1 (High Priority) - 25 Items
 
 ## Window Sizing (1 item)
 
@@ -776,91 +776,6 @@ When user chooses option 3 ("type something different") in response to Claude Co
 - Transcript: `28a20f3c-d598-449b-9a88-8d77f3799ce3.jsonl`
 - Message: "THIS IS A TEST TEST TEST IGNORE THIS AND PROCEED ZZZ"
 - Should appear in timeline with response decoration
-
----
-
-## Timeline UX - Fix Summarizer Treating Questions as Actions (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (Critical UX - timeline shows false information)
-**Effort:** 3-4 hours
-
-- [ ] #P1-SUMM-QUESTIONS: Fix LLM summarizer misinterpreting questions/proposals as completed actions
-
-**Problem:**
-Summarization LLM treats Claude's questions and proposals as completed actions, creating misleading timeline where it appears work was done when Claude was just asking permission or confirming understanding.
-
-**Examples of Incorrect Summaries:**
-
-**Example 1:**
-- **Claude wrote:** "Here's my understanding... [spec]... **Is that correct?**"
-- **Summary incorrectly says:** "Claude Code **implemented** transcript-based git branch tracking"
-- **Should say:** "Claude confirmed understanding of transcript-based git branch tracking requirements"
-
-**Example 2:**
-- **Claude wrote:** "**Should I proceed** with replacing those three P0 items?"
-- **Summary incorrectly says:** "Claude Code **replaced** #4 and #5 entirely"
-- **Should say:** "Claude proposed replacing #4 and #5 with new transcript-based approach"
-
-**Impact:**
-- Timeline misleading - shows work as done when it was only discussed
-- User can't distinguish proposals from completed work
-- Can't tell what actually happened vs what was suggested
-- Undermines trust in timeline accuracy
-
-**Root Cause:**
-- LLM summarizer doesn't detect interrogative context
-- Uses past tense even for future/conditional statements
-- Misses question markers ("Is that correct?", "Should I proceed?")
-- Treats all assistant messages as action completion
-
-**Solution:**
-
-1. **Prompt Engineering** (2 hours)
-   - Update summarization system prompt to detect questions vs actions
-   - Add explicit instruction: "If message ends with '?' or contains conditional language, use proposal/question framing, not past-tense completion"
-   - Add instruction: "Distinguish: 'I implemented X' vs 'Should I implement X?' vs 'Is this correct understanding of X?'"
-   - Provide examples in prompt:
-     - "Should I proceed with X?" → "Proposed implementing X" (NOT "Implemented X")
-     - "Is that correct?" → "Confirmed understanding of X" (NOT "Did X")
-     - "I've completed X" → "Completed X" (past tense OK here)
-
-2. **Pattern Detection** (1 hour)
-   - Pre-process assistant message before summarization
-   - Detect question marks in final sentence
-   - Detect conditional verbs: "should", "could", "would", "may", "can"
-   - Detect confirmation phrases: "Is that correct?", "Does that make sense?", "Should I proceed?"
-   - Pass flags to LLM: `is_question=true`, `is_proposal=true`, `is_confirmation=true`
-   - Adjust prompt template based on detected patterns
-
-3. **Validation & Testing** (1 hour)
-   - Re-summarize the two provided examples
-   - Verify summaries now reflect questions/proposals, not actions
-   - Test suite of 10+ examples:
-     - Pure questions
-     - Proposals with "should/could"
-     - Confirmations with "Is that correct?"
-     - Actual completed work (ensure still past-tense)
-   - A/B comparison: old summaries vs new summaries
-
-**Files:**
-- `app/Sources/ContextifyCore/LLM/ConversationSummarizer.swift` (or wherever summarization lives)
-- `Contextify/Contextify/ConversationMonitor.swift` (if pre-processing logic added)
-
-**Acceptance Criteria:**
-- ✅ Messages ending with "?" summarized as questions/proposals, not completed actions
-- ✅ "Should I proceed?" messages use conditional tense ("proposed", "suggested")
-- ✅ "Is that correct?" messages reflect confirmation/verification, not action
-- ✅ Actual completed work still uses past tense appropriately
-- ✅ Re-summarizing existing timeline entries shows improved accuracy
-
-**Test Cases:**
-- Entry `067d8835-b0c3-4f6b-82fc-c14bc87dac21` (2025-11-19T18:33:12Z)
-  - Currently: "implemented transcript-based git branch tracking"
-  - Should be: "confirmed understanding of transcript-based branch tracking requirements"
-- Entry `7da606f9-3708-4f5c-93c0-7e8be354a362` (2025-11-19T18:36:06Z)
-  - Currently: "replaced #4 and #5 entirely"
-  - Should be: "proposed replacing #4 and #5 with transcript-based approach"
 
 ---
 
