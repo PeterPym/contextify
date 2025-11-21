@@ -192,6 +192,7 @@ struct TranscriptInventoryView: View {
         .pickerStyle(.segmented)
         .controlSize(.small)
         .labelsHidden()
+        .tint(Color.contextifyBlue)
         .accessibilityLabel("Transcript type filter")
 
         Spacer()

@@ -78,7 +78,7 @@ struct ProjectsWindow: View {
       Button("Refresh Projects") {
         viewModel.refresh()
       }
-      .buttonStyle(.borderedProminent)
+      .buttonStyle(.bordered)
       .disabled(viewModel.isDiscovering)
     }
   }
