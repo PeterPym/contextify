@@ -113,16 +113,22 @@ struct ProjectRowView: View {
 
       // Stats
       HStack(spacing: 12) {
-        Label("\(project.transcriptCount) transcripts", systemImage: "doc.text")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-
-        if let lastActivity = project.lastActivity {
-          Text("•")
+        if project.transcriptCount == 0 {
+          Label("No conversations yet", systemImage: "doc.text")
+            .font(.caption)
             .foregroundStyle(.tertiary)
-          Text("Last activity: \(lastActivity, style: .relative)")
+        } else {
+          Label("\(project.transcriptCount) transcripts", systemImage: "doc.text")
             .font(.caption)
             .foregroundStyle(.secondary)
+
+          if let lastActivity = project.lastActivity {
+            Text("•")
+              .foregroundStyle(.tertiary)
+            Text("Last activity: \(lastActivity, style: .relative)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
       }
 
@@ -166,6 +172,7 @@ struct ProjectRowView: View {
     .padding()
     .background(Color.secondary.opacity(project.isCurrent ? 0.08 : 0.03))
     .cornerRadius(8)
+    .opacity(project.transcriptCount == 0 ? 0.6 : 1.0)
   }
 
   // MARK: - Info Popover Content
