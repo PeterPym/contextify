@@ -81,39 +81,9 @@ doc_references:
 
 ---
 
-# P0 (Blocking Release) - 3 Items Remaining
+# P0 (Blocking Release) - 2 Items Remaining
 
 
-
-## Remove Diagnostics HTTP Server (1 item)
-
-**Status:** Not Started
-**Priority:** P0 (Blocking Release - debug HTTP server should not ship)
-**Effort:** 30 minutes
-
-- [ ] #P0-REMOVE-HTTP-API: Temporarily remove diagnostics HTTP server code before release
-
-**Problem:**
-The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API for debugging timeline state. This debug infrastructure should not ship in the initial release:
-- Security concern: local HTTP endpoint exposes internal state
-- Unnecessary complexity for v1
-- Can be re-enabled post-launch when needed
-
-**Files to Remove/Disable:**
-- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift` - HTTP server actor
-- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsExporter.swift` - Export utilities (keep if used elsewhere)
-- `app/Sources/ContextifyCore/Diagnostics/TimelineDiagnostics.swift` - Keep (used for internal diagnostics)
-- `ConversationMonitor.swift` - Remove HTTP server initialization (lines ~563-588)
-- `ConversationMonitor.swift` - Remove `DiagnosticsConfig.enableHTTPServer` usage
-
-**Implementation:**
-1. Set `DiagnosticsConfig.enableHTTPServer = false` (quick fix) OR
-2. Remove `DiagnosticsHTTPServer.swift` entirely and clean up references
-3. Document removal commit SHA for future restoration
-
-**Restoration:** See P3-RESTORE-HTTP-API for bringing this back post-launch
-
----
 
 ## App Store Submission (4 items)
 

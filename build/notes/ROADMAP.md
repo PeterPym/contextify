@@ -97,6 +97,50 @@ Owner only needs to review progress. Agent handles:
 2. What's the best macOS pattern for toggling window float state?
 3. Should we auto-disable when user drags window? (prevent accidental "stuck" windows)
 
+### P4-DIAGNOSTICS-HTTP-API: Restore Diagnostics HTTP Server
+
+**Status:** Removed pre-launch, planned for restoration
+**Priority:** P4 (post-launch feature for developer tooling)
+**Effort:** Small (1-2 hours - restore previously removed code)
+
+- [ ] Re-enable diagnostics HTTP server for external debugging and automation
+
+**Background:**
+HTTP server removed before initial App Store release (security/complexity concerns). Code preserved in git history for future restoration.
+
+**Original Functionality:**
+- Localhost-only HTTP server on port 17329
+- External scripts could query timeline state, entries, diagnostics
+- Helper script: `scripts/timeline_api.sh` (also removed)
+- Endpoints: `/health`, `/diagnostics`, `/timeline/recent`, `/timeline/latest`
+
+**Use Cases:**
+- External debugging scripts querying app state
+- Automated test harnesses validating timeline behavior
+- Integration with developer tools (log analyzers, monitors)
+- CI/CD health checks
+
+**Restoration Plan:**
+1. Revert removal commit or cherry-pick deleted files
+2. Restore `DiagnosticsHTTPServer.swift` and `timeline_api.sh`
+3. Make server opt-in via Settings pane or DEBUG-only flag
+4. Update documentation with security notes (localhost-only binding)
+5. Consider authentication/authorization for localhost endpoint
+
+**Security Considerations:**
+- Ensure server binds to 127.0.0.1 only (no network exposure)
+- Consider auth token for localhost requests
+- Document that HTTP server exposes internal state (intentional for debugging)
+
+**Files to Restore (from git history):**
+- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`
+- `scripts/timeline_api.sh`
+- `ConversationMonitor.swift` initialization code
+
+**Related:**
+- P3-RESTORE-HTTP-API in TODOS.md (references this work)
+- Original removal commit: `[will be documented in commit message]`
+
 ---
 
 ## P5 (Research / Exploratory)
