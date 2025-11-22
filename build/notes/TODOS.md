@@ -37,14 +37,15 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
-- **P1 (High Priority):** 26 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 38 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 10 items - Future enhancements
+- **P0 (Blocking Release):** 2 items - Must complete before App Store submission
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
+- **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 79
+**Total Active Items:** 67
 
 **Change Log (2025-11-22):**
+- Added 1 P1 item (#P1-USER-PROMPT-REWORK: Comprehensive user message summarization improvements with permission response handling)
 - Added 1 P2 item (#P2-EXPANSION-STATE: Preserve timeline entry expansion state across view redraws)
 
 **Change Log (2025-11-21):**
@@ -100,7 +101,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 21 Items
+# P1 (High Priority) - 22 Items
 
 ## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
 
@@ -776,6 +777,171 @@ Short app runs generating excessively large log files (20K+ lines, 3.9MB for <20
 4. Ensure debug flag can re-enable verbose logging when needed
 
 **Note:** Large log files make debugging harder and can impact performance. Logging should be informative but not overwhelming.
+
+---
+
+## User Message Summarization Quality Improvement (1 item)
+
+**Status:** Planning Complete - Ready to Implement (Phase 1 shipped)
+**Priority:** P1 (High - Quality/UX - mirrors assistant-side improvements)
+**Effort:** 5-7 hours (comprehensive implementation + validation)
+**Coordination:** Combines user prompt rework + permission response handling
+
+- [ ] #P1-USER-PROMPT-REWORK: Implement comprehensive user message summarization improvements with permission response handling
+
+**Background:**
+
+Assistant-side summarization was significantly improved with explicit disposition taxonomy, verb-tense rules, and structured prompts. User-side deserves same quality treatment.
+
+**Scope Expansion Note:**
+
+Original scope (3-6 hours): User prompt quality improvement only
+**v2 coordinated scope (5-7 hours):** User prompt quality + permission response handling + bug fixes
+
+**Scope has grown ~50% but legitimately:**
+- ✅ Tracks with original intent (improve user summarization quality)
+- ✅ More comprehensive (handles permission response edge cases + prevents bugs)
+- ✅ Mirrors assistant-side SOTA patterns (disposition taxonomy, structured prompts)
+- ✅ Fixes active bugs (broken "Nevermind" summaries, prefixPolicy conflicts)
+
+**Phase 1 (SHIPPED ✅ - commit a8577a9):**
+- Expanded negative word list in classifyUserIntent
+- Fixes: "Nevermind", "wait", "pause" → correct negative classification
+- Zero risk, deterministic, no LLM changes
+- Closes immediate issue
+
+**Phase 2 (Coordinated Implementation - 5-7 hours):**
+
+**Core Improvements (from original P1):**
+1. Rewrite user prompt with explicit disposition taxonomy + examples
+2. Add summary phrasing guidance tied to each disposition (CRITICAL section)
+3. Trust classifyUserIntent as source of truth in postProcess
+4. Maintain simplicity (no complex rule engine)
+
+**Added: Permission Response Handling (NEW):**
+5. Add permission_response disposition to prompt
+6. Add "You responded" to prefixPolicy allowed list (prevents double-prefix bug)
+7. Add Disposition.permissionResponse enum case
+8. Optional: Add permission fast path with cue-word heuristic
+9. Update isDirective calculation to include permission_response
+
+**Bug Fixes (from colleague review):**
+- Fix UserIntent enum references (.other → .unknown)
+- Align with prefixPolicy to prevent "You requested Claude Code You..." bug
+- Add Disposition enum case for proper type safety
+- Include permission_response in directive flag calculation
+
+**Implementation Tasks:**
+
+1. **User Prompt Rewrite** (2-3 hours)
+   - Add disposition taxonomy with examples (directive, question, report, affirmative, negative, permission_response)
+   - Add summary phrasing templates for each disposition
+   - Add special case handling (slash commands, mixed messages)
+   - Mirror assistant-side prompt structure and quality
+
+2. **prefixPolicy Update** (15 min)
+   - Add "You responded" to allowed prefixes
+   - Prevents double-prefix bug for permission responses
+
+3. **postProcess Integration** (1 hour)
+   - Add classifyUserIntent override logic
+   - Log disagreements between LLM and classifier
+   - Exception: preserve permission_response (LLM has special context)
+   - Update isDirective calculation
+
+4. **Disposition Enum** (15 min)
+   - Add Disposition.permissionResponse case
+   - Audit all switch statements for exhaustiveness
+
+5. **Optional: Permission Fast Path** (1 hour)
+   - Add detectPermissionResponse() helper with cue-word heuristic
+   - Prevents false positives ("Thanks" → NOT permission_response)
+   - Can be deferred to Phase 3 if complexity concerns
+
+6. **Validation** (1-2 hours)
+   - Run 15 test cases (directives, questions, reports, permissions, edge cases)
+   - Verify disposition accuracy ≥90%
+   - Verify no double-prefix bugs
+   - Verify no false positive permission responses ("Thanks", "Cool" → NOT permission_response)
+   - Monitor first 100 user messages in production
+
+**Files Modified:**
+- `Contextify/Contextify/FoundationLLM.swift`
+  - User prompt (instructionsForTimeline case .user)
+  - prefixPolicy (add "You responded")
+  - Optional: detectPermissionResponse() helper
+  - Optional: Permission fast path
+  - postProcess user block (classifyUserIntent override)
+- `app/Sources/ContextifyCore/Database/Models.swift`
+  - Add Disposition.permissionResponse enum case
+- Optional: `Contextify/Contextify/TimelineEntryRow.swift`
+  - UI styling for permission_response disposition
+
+**Test Cases:**
+
+**Directives (3):**
+1. "Add logging around retry loop." → "You requested Claude Code to add logging..."
+2. "Can you refactor this?" → "You requested Claude Code to refactor..."
+3. "/review-prep" → "You requested Claude Code to execute the /review-prep command."
+
+**Questions (2):**
+1. "Why is this slow?" → "You asked why this is slow."
+2. "What does this error mean?" → "You asked what the error means."
+
+**Reports (2):**
+1. "App crashes when clicking timeline." → "You reported crashes..."
+2. "CI is failing." → "You reported CI failures."
+
+**Affirmative/Negative (2):**
+1. "Yes, that works." → "You confirmed the approach works."
+2. "No, that's not right." → "You disagreed with..." OR "You requested Claude Code not to proceed."
+
+**Permission Responses (5):**
+1. "Nevermind" → "You requested Claude Code not to proceed." (Phase 1 fast path)
+2. "pause a moment" → "You responded to permission request: pause a moment"
+3. "do X instead" → "You responded to permission request: do X instead"
+4. "THIS IS A TEST" → "You responded to permission request: THIS IS A TEST"
+5. "maybe later" → "You responded to permission request: maybe later"
+
+**Edge Cases (3):**
+1. "Thanks" → affirmative OR unknown → NOT permission_response ✅
+2. "Cool" → affirmative OR unknown → NOT permission_response ✅
+3. "Got it" → affirmative → NOT permission_response ✅
+
+**Success Criteria:**
+- ✅ User prompt quality matches assistant (symmetry)
+- ✅ Disposition accuracy ≥90%
+- ✅ classifyUserIntent vs LLM agreement ≥85%
+- ✅ Zero double-prefix bugs ("You requested Claude Code You...")
+- ✅ Zero false positive permission responses
+- ✅ All test cases pass (≥13/15)
+
+**Risks & Mitigation:**
+- **Risk:** Breaking existing summaries → Test on recent transcripts first
+- **Risk:** classifyUserIntent disagrees with LLM → Log disagreements, monitor patterns
+- **Risk:** Permission heuristic false positives → Tightened with cue words, can defer
+- **Risk:** prefixPolicy conflicts → Explicitly addressed by adding "You responded"
+
+**References:**
+- **Original planning doc:** `build/docs/planning/user-timeline-summarization-improvement.md`
+- **v2 coordinated guide:** `/tmp/permission-response-fix-v2-coordinated.md` (Phase 2)
+- **Scope analysis:** `/tmp/scope-analysis.md`
+- **Phase 1 commit:** `a8577a9` (negative word list expansion - shipped ✅)
+- **Colleague review:** `/private/tmp/here-s-my-review.md` (bug fixes integrated)
+- **Related:** #P1-OPTION3 (parsing ✅, summarization Phase 2)
+- **Related:** #P2-SUMMARIZATION-FIX (attribution issues - separate PR)
+
+**Decision Points:**
+1. **Include permission fast path?** Recommended: YES with cue words (safe, handles edge cases)
+2. **Parser metadata (future)?** Defer to Phase 3 if false positives emerge
+3. **Defer lexical seatbelts?** YES - Phase 1 + improved prompt should be sufficient
+
+**Notes:**
+- Phase 1 already shipped (negative word list) - closes immediate issue
+- Phase 2 is comprehensive quality improvement coordinated with permission handling
+- Mirrors assistant-side improvements (disposition taxonomy, structured prompts, validation)
+- Scope grew 50% but legitimately (fixes bugs + handles edge cases)
+- Can ship without optional components if time-constrained
 
 ---
 
