@@ -281,6 +281,20 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
           return text
         } else if let thinking = block["thinking"] as? String {
           return thinking
+        } else if let blockType = block["type"] as? String,
+                  blockType == "tool_result",
+                  let isError = block["is_error"] as? Bool,
+                  isError,
+                  let toolResultContent = block["content"] as? String {
+          // Extract option 3 permission dialog responses
+          // Format: "The user doesn't want to proceed... To tell you how to proceed, the user said:\n<user's custom text>"
+          if let markerRange = toolResultContent.range(of: "To tell you how to proceed, the user said:\n") {
+            let customText = String(toolResultContent[markerRange.upperBound...])
+            if !customText.isEmpty {
+              hasText = true
+              return customText
+            }
+          }
         }
         return nil
       }
