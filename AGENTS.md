@@ -222,7 +222,6 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - **Feature not appearing** → `scripts/logging/monitor-pipeline-check.sh` (exit 0=pass, 1=fail)
 - **Verify bug fix** → `scripts/logging/monitor-automated-test.sh` (automated test harness)
 - **App slow/laggy** → `scripts/logging/monitor-interactive.sh` + `analyze-gaps.sh`
-- **Diagnostics API** (DEBUG builds): `./scripts/timeline_api.sh status|latest|recent|watch`
 
 **Logging conventions (OSLog):**
 - Use `Logger(subsystem: "dev.contextify", category: "CategoryName")`

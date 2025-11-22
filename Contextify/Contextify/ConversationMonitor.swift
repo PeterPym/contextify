@@ -6,16 +6,6 @@ import AppKit
 import SwiftUI
 import CryptoKit
 
-// MARK: - Diagnostics Configuration
-
-enum DiagnosticsConfig {
-    #if DEBUG
-    static let enableHTTPServer = true
-    #else
-    static let enableHTTPServer = false
-    #endif
-}
-
 // MARK: - R3: String hash extension for stable cursor keys
 
 extension String {
@@ -287,7 +277,6 @@ final class ConversationMonitor {
     // Health monitoring and diagnostics
     @ObservationIgnored private var lastHealthCheck: Date?
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
-    @ObservationIgnored private var diagnosticsHTTPServer: DiagnosticsHTTPServer?  // External HTTP API
 
     // Viewport tracking and background summarization (Phase 2-3)
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
@@ -371,13 +360,6 @@ final class ConversationMonitor {
 
         // Cancel background fill task
         backgroundFillTask?.cancel()
-
-        // Stop diagnostics HTTP server
-        if let server = diagnosticsHTTPServer {
-            Task {
-                await server.stop()
-            }
-        }
 
         // Clean up observers (only relevant for tests/previews, not for singleton)
         if let observer = projectChangeObserver {
@@ -565,33 +547,6 @@ final class ConversationMonitor {
                     self.diagnosticsService = diagnosticsService
                 }
 
-                // Initialize diagnostics HTTP server (external API) - opt-in, non-fatal
-                // CXT-13: Only create if not already running (persists across project switches)
-                let serverAlreadyRunning = await MainActor.run { self.diagnosticsHTTPServer != nil }
-                if DiagnosticsConfig.enableHTTPServer && !serverAlreadyRunning {
-                    let server = DiagnosticsHTTPServer()
-                    do {
-                        try await server.start(
-                            diagnosticsHandler: { @Sendable [weak self] in
-                                guard let self else { return nil }
-                                return await self.captureDiagnostics()
-                            },
-                            recentEntriesHandler: { @Sendable [weak self] count in
-                                guard let self else { return [] }
-                                return await self.getRecentEntries(count: count)
-                            }
-                        )
-                        await MainActor.run {
-                            self.diagnosticsHTTPServer = server
-                        }
-                    } catch {
-                        await MainActor.run {
-                            self.log.warning("Diagnostics HTTP disabled: \(error.localizedDescription, privacy: .public)")
-                            self.diagnosticsHTTPServer = nil
-                        }
-                    }
-                }
-
                 // 4. Start background work (discovery + debounced updates + health monitoring) in a single parent task
                 let orchestrator = orchestratorForGenerator
                 await MainActor.run {
@@ -685,9 +640,6 @@ final class ConversationMonitor {
         pendingCacheKeys.removeAll()
         // CXT-13: Do NOT cancel coordinatorTask here! It must persist across project switches
         // to continue receiving updates. It's only canceled in deinit.
-
-        // CXT-13: Do NOT stop diagnosticsHTTPServer here! It persists across project switches
-        // like coordinatorTask. Only stopped in deinit.
 
         if let observer = cacheUpdateObserver {
             NotificationCenter.default.removeObserver(observer)

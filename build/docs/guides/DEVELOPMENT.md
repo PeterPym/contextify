@@ -198,22 +198,6 @@ Commands:
 
 **For detailed debugging workflows:** See `scripts/logging/README.md` (primary debugging toolkit) and `scripts/QUICK-REFERENCE.md`
 
-### Diagnostics HTTP API (DEBUG builds only)
-
-API runs on `http://localhost:17329` when app is running
-
-**Endpoints:**
-- `GET /health` - Check if API is responding
-- `GET /diagnostics` - Full diagnostic snapshot (project state, watcher, hoover, timeline, issues)
-- `GET /timeline/recent?count=N` - Recent N entries (default 10)
-- `GET /timeline/latest` - Most recent entry
-
-**Helper script:** `./scripts/timeline_api.sh status|latest|recent|watch`
-
-**Entry fields:** `role` (user/assistant), `present_summary`, `content`, `timestamp`, `is_generating`, `is_error`
-
-**Use for:** Debugging timeline state, hoover lag, LLM generation issues
-
 ### Quick-Discovery Logs (Phase 2)
 
 Quick-discovery runs at app launch to identify the project with newest transcript activity before full discovery begins.
