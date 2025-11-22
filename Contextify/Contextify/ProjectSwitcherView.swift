@@ -380,6 +380,14 @@ struct ProjectTabView: View {
   let isDragging: Bool
   @Environment(ProjectSwitcherState.self) private var state
 
+  private var tabBackgroundColor: Color {
+    isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear
+  }
+
+  private var tabBorderColor: Color {
+    isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
+  }
+
   var body: some View {
     HStack(spacing: 4) {
       // Orphaned indicator
@@ -398,7 +406,7 @@ struct ProjectTabView: View {
       if unreadCount > 0 {
         Text(unreadCount > 99 ? "(99+)" : "(\(unreadCount))")
           .font(.caption)
-          .foregroundStyle(.blue)
+          .foregroundStyle(Color.contextifyBlue)
       }
     }
     .padding(.horizontal, 12)
@@ -407,14 +415,11 @@ struct ProjectTabView: View {
     .contentShape(Rectangle())  // Expand tap area to full frame
     .background(
       RoundedRectangle(cornerRadius: 6)
-        .fill(isActive ? Color.accentColor.opacity(0.2) : Color.clear)
+        .fill(tabBackgroundColor)
     )
     .overlay(
       RoundedRectangle(cornerRadius: 6)
-        .strokeBorder(
-          isActive ? Color.accentColor : Color.secondary.opacity(0.3),
-          lineWidth: 1
-        )
+        .strokeBorder(tabBorderColor, lineWidth: 1)
     )
     .opacity(isDragging ? 0.0 : 1.0)  // Fully hide while dragging (only placeholder visible)
     .animation(.easeInOut(duration: 0.15), value: isDragging)
@@ -485,14 +490,14 @@ struct InsertionIndicator: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
     .frame(minHeight: 44)
-    .background(Color.accentColor.opacity(0.1))
+    .background(Color.contextifyBlue.opacity(0.1))
     .cornerRadius(6)
     .overlay(
       RoundedRectangle(cornerRadius: 6)
         .strokeBorder(
           style: StrokeStyle(lineWidth: 2, dash: [6, 4])
         )
-        .foregroundStyle(Color.accentColor)
+        .foregroundStyle(Color.contextifyBlue)
     )
   }
 }
