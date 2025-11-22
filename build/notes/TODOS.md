@@ -37,9 +37,9 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission (1 new: logomark visibility, 2 fixed: watcher-init + tab-corners)
-- **P1 (High Priority):** 26 items - Important for quality/UX, ship soon after launch (1 new: logging audit)
-- **P2 (Medium Priority):** 38 items - Nice to have, can defer to future releases (1 new: expansion state)
+- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
+- **P1 (High Priority):** 26 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 38 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
 **Total Active Items:** 79
