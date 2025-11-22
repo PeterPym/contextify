@@ -40,6 +40,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let action: TimelineEntryAction
     let sessionId: String?  // Identifies which session this entry belongs to
     let disposition: String?  // Cache disposition (e.g., "safety-filtered", "directive", etc.)
+    let isQueued: Bool  // True if message was queued (sent while Claude was working)
 
     // Hidden cache keys for lightweight refresh (not displayed in UI)
     let contentSha256: String?
@@ -77,6 +78,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         action: TimelineEntryAction = .none,
         sessionId: String? = nil,
         disposition: String? = nil,
+        isQueued: Bool = false,
         contentSha256: String? = nil,
         windowSha256: String? = nil
     ) {
@@ -95,6 +97,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.action = action
         self.sessionId = sessionId
         self.disposition = disposition
+        self.isQueued = isQueued
         self.contentSha256 = contentSha256
         self.windowSha256 = windowSha256
     }
@@ -191,6 +194,12 @@ extension TimelineEntry {
     }
 
     /// Create a copy with modified fields
+    ///
+    /// **IMPORTANT:** This function is called during cache refresh after LLM summarization.
+    /// Any fields that should persist across summarization MUST be explicitly copied here.
+    /// Missing fields will reset to their default values (e.g., isQueued defaults to false).
+    ///
+    /// When adding new fields to TimelineEntry, verify they are preserved in this initializer.
     func copyWith(
         summary: String? = nil,
         sessionId: String? = nil,
@@ -213,6 +222,7 @@ extension TimelineEntry {
             action: action ?? self.action,
             sessionId: sessionId ?? self.sessionId,
             disposition: disposition ?? self.disposition,  // Use new value if provided
+            isQueued: self.isQueued,  // Preserve queued flag during cache refresh
             contentSha256: contentSha256,
             windowSha256: windowSha256
         )
