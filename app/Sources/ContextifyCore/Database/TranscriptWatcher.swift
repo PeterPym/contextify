@@ -59,8 +59,8 @@ public final class TranscriptWatcher: @unchecked Sendable {
 
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL, provider: String) throws {
-    log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
-    log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+    log.debug("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
+    log.debug("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
 
     // Defensive check: refuse to watch files in sandbox container paths
     // These can't be accessed and will cause recovery loops

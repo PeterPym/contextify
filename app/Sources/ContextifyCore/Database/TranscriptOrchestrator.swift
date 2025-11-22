@@ -282,7 +282,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Try to find existing project by canonicalized path
     let canon = PathUtils.canonicalizePath(rootPath)
     if let existing = try projectRepo.list().first(where: { $0.rootPath == canon }) {
-      log.info("Found existing project: \(existing.id) for path: \(canon)")
+      log.debug("Found existing project: \(existing.id) for path: \(canon)")
       return existing.id
     }
 
