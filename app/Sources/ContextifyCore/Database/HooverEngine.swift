@@ -20,6 +20,12 @@ public enum MonitorConfig {
   public static let enableHooverStorageTracing: Bool = {
     ProcessInfo.processInfo.environment["CONTEXTIFY_TRACE_HOOVER_STORAGE"] == "1"
   }()
+  /// Enable/disable queue message indicators in timeline
+  /// Set CONTEXTIFY_SHOW_QUEUED=0 to hide queued message badges
+  /// Default: enabled (shows QUEUED badges for messages sent while Claude is busy)
+  public static let showQueuedMessages: Bool = {
+    ProcessInfo.processInfo.environment["CONTEXTIFY_SHOW_QUEUED"] != "0"
+  }()
 }
 
 // MARK: - Hoover Limits
@@ -64,6 +70,7 @@ public struct EntryInsert {
   public let gitCommit: String?
   public let cwd: String?
   public let hasTextContent: Bool  // true if contains "text" blocks, false if only "thinking"
+  public let isQueued: Bool  // true if message is queued (queue-operation enqueue without remove/popAll/dequeue)
 
   public init(
     id: String,
@@ -79,7 +86,8 @@ public struct EntryInsert {
     gitBranch: String?,
     gitCommit: String?,
     cwd: String?,
-    hasTextContent: Bool = true
+    hasTextContent: Bool = true,
+    isQueued: Bool = false
   ) {
     self.id = id
     self.transcriptId = transcriptId
@@ -95,6 +103,7 @@ public struct EntryInsert {
     self.gitCommit = gitCommit
     self.cwd = cwd
     self.hasTextContent = hasTextContent
+    self.isQueued = isQueued
   }
 
   /// Convert to TranscriptEntry model
@@ -121,7 +130,8 @@ public struct EntryInsert {
       windowSha256: nil,
       createdTs: TimeUnits.truncateToMillis(epochSeconds),  // Truncate to milliseconds for consistent precision
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      isQueued: isQueued ? 1 : 0
     )
   }
 }
@@ -135,6 +145,7 @@ private struct MetadataBatch {
   var transcriptSummaries: [TranscriptSummary] = []
   var systemEvents: [SystemEvent] = []
   var assistantUsages: [AssistantUsage] = []
+  var queueOperations: [QueueOperation] = []
 
   mutating func add(_ result: MetadataParseResult) {
     if let snapshot = result.fileSnapshot {
@@ -150,6 +161,7 @@ private struct MetadataBatch {
     if let usage = result.assistantUsage {
       assistantUsages.append(usage)
     }
+    queueOperations.append(contentsOf: result.queueOperations)
   }
 
   mutating func clear() {
@@ -158,10 +170,11 @@ private struct MetadataBatch {
     transcriptSummaries.removeAll()
     systemEvents.removeAll()
     assistantUsages.removeAll()
+    queueOperations.removeAll()
   }
 
   var isEmpty: Bool {
-    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty
+    fileSnapshots.isEmpty && trackedFiles.isEmpty && transcriptSummaries.isEmpty && systemEvents.isEmpty && assistantUsages.isEmpty && queueOperations.isEmpty
   }
 }
 
@@ -718,6 +731,26 @@ public final class HooverEngine {
         }
       }
 
+      // HEURISTIC: Delete synthetic queue-XX entries when real message appears
+      // Workaround for Claude Code 2.0.50+ not writing dequeue/popAll/remove operations
+      // When a real user message appears, it means the queued message was dequeued
+      // Match by content_sha256 and delete the synthetic queue-XX placeholder
+      for entry in entries where entry.kind == "user" && !entry.id.hasPrefix("queue-") {
+        // Check if there's a synthetic queue entry with matching content
+        try db.execute(sql: """
+          DELETE FROM transcript_entries
+          WHERE transcript_id = ?
+            AND content_sha256 = ?
+            AND id LIKE 'queue-%'
+            AND is_queued = 1
+        """, arguments: [transcriptId, entry.contentSha256])
+
+        let deletedCount = db.changesCount
+        if deletedCount > 0 {
+          log.debug("[QUEUE-HEURISTIC] Deleted \(deletedCount) synthetic queue entry (real message appeared) content_sha256=\(entry.contentSha256.prefix(8), privacy: .public)")
+        }
+      }
+
       // v7: Insert metadata
       for snapshot in metadata.fileSnapshots {
         try snapshot.insert(db, onConflict: .ignore)
@@ -777,6 +810,67 @@ public final class HooverEngine {
           )
           if MonitorConfig.enableHooverStorageTracing {
             log.debug("Staged usage for entry \(usage.entryId) (entry not yet present)")
+          }
+        }
+      }
+
+      // Apply queue operations (queue-operation remove/popAll/dequeue)
+      if !metadata.queueOperations.isEmpty {
+        for op in metadata.queueOperations {
+          guard !op.sessionId.isEmpty else {
+            log.warning("[QUEUE-OP] Skipping queue operation with empty sessionId for transcript \(op.transcriptId, privacy: .public)")
+            continue
+          }
+
+          switch op.kind {
+          case .dequeue, .popAll:
+            // Clear entire queue for the session
+            try db.execute(sql: """
+              UPDATE transcript_entries
+              SET is_queued = 0
+              WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
+            """, arguments: [op.transcriptId, op.sessionId])
+
+            let changes = db.changesCount
+            let elapsed = Date().timeIntervalSince(op.timestamp)
+            log.info("[QUEUE-OP-CLEAR] \(op.kind.rawValue, privacy: .public) cleared \(changes, privacy: .public) entries after \(String(format: "%.1f", elapsed), privacy: .public)s transcript=\(op.transcriptId.prefix(8), privacy: .public)")
+
+          case .remove:
+            guard let contentSha256 = op.contentSha256 else {
+              log.warning("[QUEUE-OP] remove operation without contentSha256; skipping transcript \(op.transcriptId, privacy: .public)")
+              continue
+            }
+
+            // NOTE: `remove` is defined as "clear all queued messages in this transcript/session
+            // that match the same content hash". If Claude ever allows multiple queued messages
+            // with identical content, this will clear all of them by design.
+            try db.execute(sql: """
+              UPDATE transcript_entries
+              SET is_queued = 0
+              WHERE transcript_id = ?
+                AND session_id = ?
+                AND is_queued = 1
+                AND content_sha256 = ?
+            """, arguments: [op.transcriptId, op.sessionId, contentSha256])
+
+            let changes = db.changesCount
+            let elapsed = Date().timeIntervalSince(op.timestamp)
+            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes, privacy: .public) entries after \(String(format: "%.1f", elapsed), privacy: .public)s content_sha256=\(contentSha256.prefix(8), privacy: .public)")
+          }
+        }
+
+        // Notify UI to refresh entries after queue operations
+        // ConversationMonitor will re-read affected entries from DB to update badges
+        if !metadata.queueOperations.isEmpty {
+          let projectId = try String.fetchOne(db, sql: "SELECT project_id FROM transcripts WHERE id = ?", arguments: [transcriptId])
+          if let projectId {
+            DispatchQueue.main.async {
+              NotificationCenter.default.post(
+                name: Notification.Name("QueueOperationsProcessed"),
+                object: nil,
+                userInfo: ["projectId": projectId, "transcriptId": transcriptId]
+              )
+            }
           }
         }
       }
