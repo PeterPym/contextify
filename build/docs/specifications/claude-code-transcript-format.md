@@ -371,6 +371,385 @@ Used within `message.content` arrays for both user and assistant messages.
 
 ---
 
+## Queue Operations
+
+### Overview
+
+Claude Code queues user messages sent during tool execution to prevent interruption of active operations. Queue operations are recorded as metadata records with `type: "queue-operation"`.
+
+**Purpose:** When Claude is executing tools (Read, Edit, Bash, etc.), user input cannot interrupt the current turn. Messages sent during execution are queued and processed after completion, maintaining conversation coherence while preserving user input.
+
+**Design Philosophy:** Queue first, process after completion. Users can continue sending messages while Claude works, and those messages are addressed in subsequent turns.
+
+**⚠️ Version-Specific Behavior:** Queue operation semantics changed significantly between Claude Code versions. See [Queue Operations Architecture](../architecture/queue-operations.md) for full implementation details including v2.0.37 vs v2.0.50 behavior differences.
+
+### Version Behavior Differences
+
+**v2.0.37 (Nov 2025) - DEQUEUE Pattern:**
+- `enqueue` → queued message held in memory
+- `dequeue` → message released into conversation
+- Real `user` message record written to transcript
+- Timeline shows permanent conversation record
+
+**v2.0.50+ (Current) - REMOVE Pattern:**
+- `enqueue` → queued message held in memory
+- `remove` → message processed ephemerally
+- **NO** `user` message record in transcript
+- Assistant still responds, but message leaves no permanent trace
+- Requires synthetic timeline entries for visibility
+
+**Key Difference:** v2.0.50 treats queued messages as ephemeral (influence conversation but aren't persisted), while v2.0.37 promoted them to permanent user records.
+
+### Record Format
+
+```typescript
+{
+  type: "queue-operation",
+  operation: "enqueue" | "remove" | "popAll" | "dequeue",
+  timestamp: string,         // ISO 8601
+  content?: string,          // User message text (absent in dequeue)
+  sessionId: string          // Session UUID
+}
+```
+
+**Key Characteristics:**
+- **Metadata-only:** Queue operations are not conversational messages
+- **Content field:** Present in `enqueue`, `remove`, `popAll`; **absent** in `dequeue`
+- **Not displayed:** Should not appear as timeline entries (only affect display of related user messages)
+- **Session-scoped:** Queue state is per-session (isolated by `sessionId`)
+
+### Operation Types
+
+#### 1. enqueue
+
+**Trigger:** User sends a message while Claude is executing tools
+
+**Record:**
+```json
+{
+  "type": "queue-operation",
+  "operation": "enqueue",
+  "timestamp": "2025-11-12T19:51:40.564Z",
+  "content": "may be okay to not include these big thigns in teh git ",
+  "sessionId": "2393f674-7037-407a-a0ed-0f7e7b61625d"
+}
+```
+
+**Semantics:**
+- User message is captured and queued for later processing
+- Content field contains the full user message text
+- Message will be processed after current tool execution completes
+- Multiple messages can be enqueued in rapid succession
+
+**Parser Note:** Enqueue operations should mark the corresponding user message as "queued" in the UI.
+
+#### 2. remove
+
+**Trigger:** Claude processes a queued message after tool execution completes
+
+**Record:**
+```json
+{
+  "type": "queue-operation",
+  "operation": "remove",
+  "timestamp": "2025-11-12T19:51:53.870Z",
+  "content": "may be okay to not include these big thigns in teh git ",
+  "sessionId": "2393f674-7037-407a-a0ed-0f7e7b61625d"
+}
+```
+
+**Semantics (v2.0.50+):**
+- Message processed **ephemerally** - influences conversation but **not persisted**
+- Content field matches the corresponding `enqueue` operation
+- **NO** corresponding `user` message record written to transcript
+- Assistant still responds to the message despite no permanent record
+- One `remove` operation per queued message
+
+**Semantics (v2.0.37):**
+- Used same operation name but different behavior
+- Message would appear as permanent `user` record after `remove`
+- See "Version Behavior Differences" section above
+
+**Parser Note:** Match `remove` to `enqueue` by content. In v2.0.50+, synthetic timeline entries are needed to show these ephemeral messages.
+
+**Timing Pattern Example:**
+```
+Line 271: enqueue at 19:51:40.564Z
+Line 272: enqueue at 19:51:45.694Z
+[Claude continues tool execution]
+Line 276: remove at 19:51:53.870Z (13 seconds after first enqueue)
+Line 277: remove at 19:51:53.870Z (same timestamp, batch removal)
+```
+
+**Note:** Multiple `remove` operations often share identical timestamp, suggesting batch dequeue.
+
+#### 3. popAll
+
+**Trigger:** User sends a NEW message that supersedes/combines previous queued message(s)
+
+**Record:**
+```json
+{
+  "type": "queue-operation",
+  "operation": "popAll",
+  "timestamp": "2025-11-12T21:40:37.908Z",
+  "content": "if you have not, you should include any discovered methodology for performing queries etc on imssages",
+  "sessionId": "2393f674-7037-407a-a0ed-0f7e7b61625d"
+}
+```
+
+**Semantics:**
+- Original queued message is being replaced/combined with new user input
+- Different from `remove`: message is NOT processed standalone
+- Used when user refines/expands queued message before Claude responds
+- Next `enqueue` will contain the combined/replacement message
+
+**Example Lifecycle:**
+```
+Line 592: enqueue "if you have not, you should include..."
+[User decides to add more context]
+Line 593: popAll "if you have not, you should include..." (1m 48s later)
+Line 597: enqueue "Do you have the url...?\n\n---\n\nif you have not..." (12s after popAll)
+```
+
+**Parser Note:** The `---` separator in combined messages suggests Claude Code appends original message to new message when user sends additional input.
+
+**Key Difference:**
+- `remove`: Message will be processed as-is
+- `popAll`: Message is discarded/combined, won't be processed standalone
+
+**UI Guidance:** Change badge from "QUEUED" to "REFINED" when `popAll` occurs, then show combined message as newly queued.
+
+#### 4. dequeue
+
+**Trigger:** Queue is cleared without processing messages (session end, cancellation, or reset)
+
+**Record:**
+```json
+{
+  "type": "queue-operation",
+  "operation": "dequeue",
+  "timestamp": "2025-11-12T21:40:55.094Z",
+  "sessionId": "2393f674-7037-407a-a0ed-0f7e7b61625d"
+}
+```
+
+**Semantics:**
+- **NO content field** (unlike enqueue/remove/popAll)
+- Clears entire queue without processing
+- All queued messages are discarded
+- Typically occurs at session boundaries or when user cancels
+
+**Triggers for dequeue:**
+- Session ends (user closes Claude Code)
+- User cancels pending work
+- User switches projects/sessions
+- Error conditions requiring queue reset
+
+**Parser Note:** Must track all queued messages separately to determine what was discarded. Dequeue does NOT indicate which messages were cleared.
+
+**UI Guidance:** Remove all queue badges or mark queued messages as "CANCELLED" when `dequeue` occurs.
+
+### Queue Lifecycle Patterns
+
+#### Pattern 1: Single Message (Standard Flow)
+
+**Sequence:**
+```
+Line N:   {"type":"user",...}                      // User sends message, tool execution starts
+Line N+1: {"operation":"enqueue","content":"..."}  // User sends another message (queued)
+Line N+2: {"type":"assistant",...}                 // Tool execution completes
+Line N+3: {"operation":"remove","content":"..."}   // Message dequeued
+Line N+4: {"type":"assistant",...}                 // Claude addresses queued message
+```
+
+**Real Example:**
+```
+Line 360: enqueue "if nothing is found go back to the external drive..."
+Line 361: remove "if nothing is found go back to the external drive..." (1m 55s later)
+[Next assistant turn addresses this message]
+```
+
+**Timing:** Queue duration varies from seconds to minutes depending on tool execution time.
+
+#### Pattern 2: Multiple Messages (Batch Processing)
+
+**Sequence:**
+```
+Line N:   {"type":"user",...}                      // Initial message
+Line N+1: {"operation":"enqueue","content":"msg1"} // First queued message
+Line N+2: {"operation":"enqueue","content":"msg2"} // Second queued message
+Line N+3: {"type":"assistant",...}                 // Tool execution continues
+Line N+4: {"operation":"remove","content":"msg1"}  // Both messages removed
+Line N+5: {"operation":"remove","content":"msg2"}  // (often same timestamp)
+Line N+6: {"type":"assistant",...}                 // Addresses both messages
+```
+
+**Real Example:**
+```
+Line 271: enqueue "may be okay to not include these big thigns in teh git"
+Line 272: enqueue "mabye git ignore them"
+[Tool execution continues for ~8 seconds]
+Line 276: remove "may be okay to not include these big thigns in teh git"
+Line 277: remove "mabye git ignore them" (same timestamp: 19:51:53.870Z)
+```
+
+**Observation:** Multiple `remove` operations often share identical timestamp, suggesting batch dequeue.
+
+#### Pattern 3: Message Refinement (popAll)
+
+**Sequence:**
+```
+Line N:   {"operation":"enqueue","content":"original message"}
+Line N+1: {"operation":"popAll","content":"original message"}     // User refines
+Line N+2: {"operation":"enqueue","content":"refined + original"}  // Combined message
+Line N+3: [Possibly dequeue or remove depending on what happens next]
+```
+
+**Real Example:**
+```
+Line 592: enqueue "if you have not, you should include any discovered methodology..."
+Line 593: popAll "if you have not, you should include any discovered methodology..." (1m 48s later)
+Line 597: enqueue "Do you have hte url...?\n\n---\n\nif you have not..." (12s after popAll)
+Line 598: dequeue (6s after refined enqueue)
+```
+
+**Interpretation:**
+1. User sent message A while Claude was working (enqueued)
+2. User decided to add more context (popAll discards A)
+3. User sends combined message "B + A" (re-enqueued)
+4. Queue was then cleared (dequeue), possibly due to cancellation
+
+#### Pattern 4: Queue Clear (dequeue)
+
+**Sequence:**
+```
+Line N:   {"operation":"enqueue","content":"..."}
+Line N+1: {"operation":"dequeue"}                  // Queue cleared
+[No remove operation - message was NOT processed]
+```
+
+**Real Example:**
+```
+Line 597: enqueue "Do you have hte url...?"
+Line 598: dequeue (6 seconds later)
+```
+
+### Parsing Considerations
+
+**1. Queue-operation records are metadata**
+- Type: `"queue-operation"` (NOT `"user"` or `"assistant"`)
+- Should NOT be displayed as timeline entries
+- Should modify state of related user message entries
+
+**2. Content Matching**
+```swift
+// Match enqueue → remove by content
+if operation == "remove" && content == previousEnqueueContent {
+    // Mark corresponding user message as processed
+}
+```
+
+**3. Edge Cases**
+- **Multiple enqueues:** User sends 3 messages → 3 enqueue operations → 3 remove operations
+- **Out-of-order removal:** FIFO order not guaranteed (batch remove may have same timestamp)
+- **Orphaned enqueues:** Enqueue without corresponding remove (session crashed)
+- **Empty dequeue:** Dequeue with empty queue (redundant operation)
+
+**4. Dequeue Handling**
+```swift
+// Dequeue has NO content - must clear all tracked queued messages
+if operation == "dequeue" {
+    clearAllQueuedMessages(sessionId: sessionId)
+}
+```
+
+**5. Session Boundaries**
+- Queue state is per-session (isolated by `sessionId`)
+- Switching sessions should clear queue display
+- Historical session playback should replay queue operations
+
+### Implementation Guidance
+
+**Database Storage:**
+
+**Option 1: Transient Computation (RECOMMENDED)**
+- Parse transcript and compute queue state dynamically
+- Track which messages are currently queued based on `enqueue`/`remove`/`popAll`/`dequeue` records
+- Display queue status in UI without persisting to database
+
+**Pros:**
+- No schema changes required
+- Always accurate (reflects transcript state)
+- Simpler implementation
+
+**Option 2: Database Column**
+- Add `is_queued BOOLEAN` column to transcript_entries
+- Update column when parsing queue-operation records
+
+**Pros:**
+- Faster queries (no parsing required)
+- Simpler UI logic
+
+**Recommendation:** Use **Option 1 (Transient)** because:
+1. Queue state is inherently transient (only meaningful during active session)
+2. Historical transcripts don't need queue status (already processed)
+3. Simpler implementation without schema changes
+
+**UI Display Guidelines:**
+
+1. **Show "QUEUED" badge on timeline entries**
+   - Display when `enqueue` operation is recorded
+   - Remove badge when corresponding `remove` operation occurs
+   - Grey out when `popAll` occurs (will be refined/replaced)
+   - Remove entirely when `dequeue` occurs (cancelled)
+
+2. **Visual States:**
+   ```
+   [Enqueued]     → Yellow badge "QUEUED" on timeline entry
+   [Removed]      → Badge removed, entry shows as normal user message
+   [PopAll]       → Badge changes to "REFINED" or entry is greyed out
+   [Dequeued]     → Entry removed from timeline or marked "CANCELLED"
+   ```
+
+3. **InfoButton Tooltip:**
+   ```
+   When hovering over "QUEUED" badge:
+   "This message was sent while Claude was executing tools.
+    It will be addressed after the current operation completes."
+   ```
+
+4. **Persistence:**
+   - Queue status is **transient** - only relevant for active sessions
+   - Historical transcripts should NOT show queue badges (all messages already processed)
+   - Exception: Show badge if viewing transcript replay mode
+
+**Swift Implementation Example:**
+```swift
+class QueueStateTracker {
+    private var queuedMessages: [String: String] = [:]  // content -> timestamp
+
+    func process(operation: QueueOperation) {
+        switch operation.operation {
+        case "enqueue":
+            queuedMessages[operation.content] = operation.timestamp
+        case "remove":
+            queuedMessages.removeValue(forKey: operation.content)
+        case "popAll":
+            queuedMessages.removeValue(forKey: operation.content)
+        case "dequeue":
+            queuedMessages.removeAll()
+        }
+    }
+
+    func isQueued(content: String) -> Bool {
+        return queuedMessages[content] != nil
+    }
+}
+```
+
+---
+
 ## Parsing Recommendations
 
 ### Current Implementation (Contextify)
