@@ -103,6 +103,21 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     }
 }
 
+/// Lightweight snapshot of a timeline entry for external API access
+public struct TimelineEntrySnapshot: Codable, Sendable {
+    public let entryId: String
+    public let timestamp: Date
+    public let disposition: String
+    public let role: String?
+    public let content: String
+    public let provider: String?
+    public let presentSummary: String
+    public let pastSummary: String?
+    public let isGenerating: Bool
+    public let isNonSummarizable: Bool
+    public let isError: Bool
+}
+
 public struct TimelineSourceContext: Hashable, Sendable {
     public enum Provider: String, Sendable {
         case claudeCode = "claude.code"
