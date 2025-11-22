@@ -186,6 +186,7 @@ struct ConversationTimelineView: View {
                         .font(.callout)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.contextifyBlue)
                 .padding()
                 .transition(.scale.combined(with: .opacity))
             }
