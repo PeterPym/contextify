@@ -38,13 +38,14 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 67
+**Total Active Items:** 66
 
 **Change Log (2025-11-22):**
+- Completed and removed #P1-OPTION3: Parse permission dialog option 3 responses (commits 204f12e, a8577a9)
 - Added 1 P1 item (#P1-USER-PROMPT-REWORK: Comprehensive user message summarization improvements with permission response handling)
 - Added 1 P2 item (#P2-EXPANSION-STATE: Preserve timeline entry expansion state across view redraws)
 
@@ -70,7 +71,6 @@ doc_references:
   - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
   - #49-50 (Project management) → P2
 - Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
-- Added 1 P1 item (#P1-OPTION3: parse permission dialog responses)
 - Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
 
 **Change Log (2025-11-15):**
@@ -101,7 +101,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 22 Items
+# P1 (High Priority) - 21 Items
 
 ## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
 
@@ -381,78 +381,6 @@ Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring
 **Related:**
 - Builds on fix for welcome modal discovery (commit `199072e`)
 - Needed for pre-launch App Store testing
-
----
-
-## Timeline UX - Permission Dialog Option 3 Responses (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (Critical UX - missing user intent from timeline)
-**Effort:** 2-3 hours
-
-- [ ] #P1-OPTION3: Parse and display user's custom responses from permission dialog option 3
-
-**Problem:**
-When user chooses option 3 ("type something different") in response to Claude Code permission questions, their custom text is stored in the transcript but NOT displayed in timeline. This creates incomplete conversation history where user's alternative instructions are invisible.
-
-**Example from transcript:**
-```json
-{
-  "type": "user",
-  "message": {
-    "content": [{
-      "type": "tool_result",
-      "is_error": true,
-      "content": "The user doesn't want to proceed... To tell you how to proceed, the user said:\nTHIS IS A TEST TEST TEST IGNORE THIS AND PROCEED ZZZ"
-    }]
-  }
-}
-```
-
-**Impact:**
-- User's alternative instructions invisible in timeline
-- Appears like Claude is acting without user direction
-- Can't review what alternative instructions were given
-- Confusing UX - "Why did Claude do that instead of what I asked?"
-
-**Solution:**
-
-1. **Parser Extension** (1 hour)
-   - Detect `user` records with `message.content[].type == "tool_result"` AND `is_error == true`
-   - Check if `content` contains marker text: "To tell you how to proceed, the user said:"
-   - Extract user's custom text (everything after marker)
-   - Create timeline entry with `kind: user` and extracted text as content
-   - Preserve timestamp and session info
-
-2. **Timeline Display** (1 hour)
-   - Add visual indicator: 💬 speech bubble or 🔄 response icon
-   - Add InfoButton (ⓘ) with popover:
-     - Title: "Alternative Instruction"
-     - Message: "Response to permission question - user provided alternative instruction instead of proceeding with suggested action."
-   - Subtle visual distinction from regular user messages (border/background tint)
-   - Use existing InfoButton component
-
-3. **Testing** (30 min)
-   - Verify test message "THIS IS A TEST TEST TEST..." appears in timeline
-   - Check icon/decoration renders correctly
-   - Test InfoButton popover explanation
-   - Verify doesn't duplicate with tool_result entries
-
-**Files:**
-- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` (parser logic)
-- `Contextify/Contextify/TimelineEntryRow.swift` (display logic)
-- `Contextify/Contextify/InfoButton.swift` (existing component, reuse)
-
-**Acceptance Criteria:**
-- ✅ Option 3 custom responses appear in timeline as user messages
-- ✅ Visual decoration distinguishes from regular user input
-- ✅ InfoButton explains context (response to permission question)
-- ✅ All historical option 3 responses ingested on next hoover
-
-**Test Data:**
-- Transcript: `28a20f3c-d598-449b-9a88-8d77f3799ce3.jsonl`
-- Message: "THIS IS A TEST TEST TEST IGNORE THIS AND PROCEED ZZZ"
-- Should appear in timeline with response decoration
 
 ---
 
@@ -928,7 +856,7 @@ Original scope (3-6 hours): User prompt quality improvement only
 - **Scope analysis:** `/tmp/scope-analysis.md`
 - **Phase 1 commit:** `a8577a9` (negative word list expansion - shipped ✅)
 - **Colleague review:** `/private/tmp/here-s-my-review.md` (bug fixes integrated)
-- **Related:** #P1-OPTION3 (parsing ✅, summarization Phase 2)
+- **Related:** Permission dialog option 3 parsing (commits 204f12e, a8577a9 - completed ✅)
 - **Related:** #P2-SUMMARIZATION-FIX (attribution issues - separate PR)
 
 **Decision Points:**
