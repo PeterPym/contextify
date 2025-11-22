@@ -214,14 +214,7 @@ open /Applications/Xcode.app/Contents/Applications/Instruments.app
 
 ### Step 4: Check Database Query Performance
 
-```bash
-# Enable SQL logging in DEBUG builds
-./scripts/timeline_api.sh status
-
-# Output includes recent query timings:
-# - getRecentFeed: 45ms
-# - getCachedTimeline: 2ms
-```
+Check database query performance via logging (see `scripts/logging/README.md`).
 
 **Slow Query Thresholds:**
 - `getRecentFeed` (50 entries): <50ms expected
@@ -662,43 +655,6 @@ log stream --predicate 'category == "ConversationMonitor"' --level debug
 ./scripts/logging/analyze-pipeline.sh /tmp/transcript-queue-monitor-*.log
 ./scripts/logging/analyze-tags.sh /tmp/transcript-queue-monitor-*.log
 ./scripts/logging/analyze-gaps.sh /tmp/transcript-queue-monitor-*.log 1000
-```
-
----
-
-## Diagnostic API (DEBUG Builds Only)
-
-### Quick Status Check
-
-```bash
-./scripts/timeline_api.sh status
-
-# Output:
-# - Active project ID
-# - Timeline entry count
-# - Cache hit rate
-# - Recent activity
-```
-
-### Watch Live Updates
-
-```bash
-./scripts/timeline_api.sh watch
-
-# Streams real-time updates:
-# - New entries added
-# - Cache entries generated
-# - Project switches
-```
-
-### Retrieve Specific Data
-
-```bash
-# Get latest timeline entry
-./scripts/timeline_api.sh latest
-
-# Get recent N entries
-./scripts/timeline_api.sh recent 10
 ```
 
 ---

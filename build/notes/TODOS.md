@@ -81,39 +81,9 @@ doc_references:
 
 ---
 
-# P0 (Blocking Release) - 3 Items Remaining
+# P0 (Blocking Release) - 2 Items Remaining
 
 
-
-## Remove Diagnostics HTTP Server (1 item)
-
-**Status:** Not Started
-**Priority:** P0 (Blocking Release - debug HTTP server should not ship)
-**Effort:** 30 minutes
-
-- [ ] #P0-REMOVE-HTTP-API: Temporarily remove diagnostics HTTP server code before release
-
-**Problem:**
-The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API for debugging timeline state. This debug infrastructure should not ship in the initial release:
-- Security concern: local HTTP endpoint exposes internal state
-- Unnecessary complexity for v1
-- Can be re-enabled post-launch when needed
-
-**Files to Remove/Disable:**
-- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift` - HTTP server actor
-- `app/Sources/ContextifyCore/Diagnostics/DiagnosticsExporter.swift` - Export utilities (keep if used elsewhere)
-- `app/Sources/ContextifyCore/Diagnostics/TimelineDiagnostics.swift` - Keep (used for internal diagnostics)
-- `ConversationMonitor.swift` - Remove HTTP server initialization (lines ~563-588)
-- `ConversationMonitor.swift` - Remove `DiagnosticsConfig.enableHTTPServer` usage
-
-**Implementation:**
-1. Set `DiagnosticsConfig.enableHTTPServer = false` (quick fix) OR
-2. Remove `DiagnosticsHTTPServer.swift` entirely and clean up references
-3. Document removal commit SHA for future restoration
-
-**Restoration:** See P3-RESTORE-HTTP-API for bringing this back post-launch
-
----
 
 ## App Store Submission (4 items)
 
@@ -534,33 +504,6 @@ Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring
 **Related:**
 - Supersedes old P0 items #3, #4, #5 (test/verify git disabled)
 - Builds on completed work: commit `b0abdb4` (git monitoring disabled)
-
----
-
-## CLI Logomark Display (1 item) ⬇️
-
-**Status:** Partially complete (project switch works, ingestion updates missing)
-**Priority:** Demoted from P0 (project switch already works via database)
-**Effort:** 1-2 hours (add hoover notification subscription)
-
-- [ ] #P0-LOGOMARK: Add real-time logomark updates during transcript ingestion
-
-**Already Working (commit `0ab0d79`):**
-- ✅ Database-backed provider detection
-- ✅ Updates on project switch via `.task(id: projectPath)`
-- ✅ Efficient SQL query for providers
-
-**Missing:**
-- ❌ Real-time updates during initial ingestion/hoovering
-- ProjectBadgesContainer needs to subscribe to hoover notifications
-
-**Implementation:**
-- Subscribe to hoover/ingestion completion notifications
-- Trigger `loadProviders()` refresh when transcripts are added
-- No UI changes needed, just notification wiring
-
-**Files:**
-- `Contextify/Contentify/ProjectBadgesContainer.swift`
 
 ---
 
@@ -1104,7 +1047,7 @@ Short app runs generating excessively large log files (20K+ lines, 3.9MB for <20
 
 ---
 
-# P2 (Medium Priority) - 32 Items
+# P2 (Medium Priority) - 29 Items
 
 ---
 
@@ -1203,90 +1146,6 @@ May be resolved by P1-AUTOSCROLL scroll refactor work. The auto-scroll fix repla
 - `ConversationMonitor.swift` - `loadFeedFromSQL()` duplicate calls
 
 **Investigation:** Full analysis with timeline reconstruction, root cause theories, and testing plan in `build/notes/todo-support/P2-TIMELINE-FLICKER-investigation.md`
-
----
-
-## Lazy Watcher Optimization (1 item)
-
-**Status:** Spec Complete
-**Priority:** P2 (resource optimization - reduce FD usage by 90%)
-**Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
-**Spec:** `build/notes/todo-support/P2-LAZY-WATCHERS-design.md`
-
-- [ ] #P2-LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
-
-**Problem:**
-Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
-
-**Solution:**
-Two-tier monitoring: active project gets real-time DispatchSource watchers; inactive projects use FSEvents-only with dirty transcript tracking. On activation, rehoover dirty transcripts (including offline changes via mtime check).
-
-**Key components:**
-- `MonitoringCoordinator` actor (extracted from ConversationMonitor)
-- FSEvents behavior matrix for active/inactive + new/existing transcripts
-- `pending_rehoover` + `last_known_mtime` DB columns (migration v27)
-- 5-second hysteresis for project switching
-- Feature flag for rollout (`lazyWatchersEnabled`)
-
-**Prerequisites:**
-- ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
-
----
-
-## Empty Project Detection (1 item)
-
-**Status:** Not Started
-**Priority:** P2 (UX polish - avoid showing spinner for empty projects)
-**Effort:** 2-3 hours
-
-- [ ] #P2-EMPTY-PROJECTS: Detect and immediately show empty state for projects with no conversation entries
-
-**Problem:**
-When switching to a project with no conversations, users see a "searching for conversations" spinner that then transitions to a "no conversations" view. This creates unnecessary loading state when we could determine emptiness immediately.
-
-**Impact:**
-- Confusing UX - spinner implies search is happening when result is predetermined
-- Wasted time - users wait for spinner when answer is instant
-- May indicate filtering bug - we previously tried to hide projects with 0 messages from tab bar
-
-**Investigation Required:**
-Add logging to verify SQL query filtering behavior:
-- Log count of conversation entries per project during tab rendering
-- Verify if projects with 0 entries should appear in tab bar at all
-- Check if SQL query to filter projects with 0 entries was implemented incorrectly
-- Determine if issue is detection logic vs display logic
-
-**Solution:**
-
-1. **Add SQL Query Logging** (1 hour)
-   - Add `.info` level logs showing entry count per project in tab bar
-   - Log SQL query used to filter projects: `SELECT project_id, COUNT(*) FROM timeline_entries GROUP BY project_id`
-   - Verify if zero-entry projects are intentionally shown or filtering failed
-   - Log to category: "ProjectFiltering" for easy grep
-
-2. **Immediate Empty Detection** (1 hour)
-   - Query entry count before showing spinner: `SELECT COUNT(*) FROM timeline_entries WHERE project_id = ?`
-   - If count = 0, skip loading state and show empty view immediately
-   - Add `hasAnyEntries` check to project switch logic
-   - Cache result to avoid repeated queries
-
-3. **Decision on Zero-Entry Projects** (30 min)
-   - Review logs to determine if zero-entry projects should be hidden from tab bar
-   - If filtering intended: Fix SQL query and hide from tabs
-   - If intentional display: Keep immediate empty state (faster UX)
-   - Document decision in code comments
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift` (project switch logic)
-- `Contextify/Contextify/ProjectSwitcherView.swift` (tab bar rendering with logging)
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (entry count query)
-
-**Acceptance Criteria:**
-- ✅ Logs show entry count for each project in tab bar
-- ✅ SQL query for filtering projects with 0 entries is logged and verified
-- ✅ Projects with no conversations show empty state immediately (no spinner)
-- ✅ Decision documented: hide zero-entry projects from tabs OR show with instant empty state
-- ✅ No "searching" spinner when switching to empty project
 
 ---
 
@@ -1547,39 +1406,6 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 - **Create:** `Views/SessionListView.swift`, `Views/SessionRowView.swift`, `Views/MetadataLoadingView.swift`
 
 **Comparison:** `ProjectsWindow.swift` is only 216 lines (7x smaller)
-
----
-
-## Project Switch Consolidation (1 item)
-
-**Status:** Not Started
-**Priority:** P2 (code quality, no user-visible impact)
-**Effort:** 4-6 hours
-
-- [ ] #P2-SWITCH: Consolidate 4 overlapping project switch code paths into single unified pipeline
-
-**Problem:** ConversationMonitor has 4 different code paths handling project switching, creating overlaps, potential race conditions, and wasted work during rapid switching.
-
-**Current Paths:**
-1. `startMonitoring()` - Full bootstrap + initial feed load
-2. `onProjectOrSessionChange()` - v23 startup pipeline (policy/sessions/cursor/feed/switch events)
-3. `handleContextUpdate()` - Coordinator-triggered switch
-4. `handleProjectRootChange()` - Legacy notification
-
-**Solution:** Single `switchToProject(_:reason:)` entry point that all 4 paths delegate to.
-
-**Key Requirements:**
-- Preserve v23 startup sequence (policy → sessions → cursor → feed → switch events)
-- Split session switching logic (no timeline reload for session-only changes)
-- Cancel in-flight loads on rapid switching
-- Extract bootstrap infrastructure setup into separate helper
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift` (primary changes)
-
-**Reference:**
-- Implementation plan: `build/notes/todo-support/P2-SWITCH-refactor-plan.md`
-- Source code analysis: `build/notes/todo-support/P2-SWITCH-source-analysis.md`
 
 ---
 
@@ -1948,7 +1774,34 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 
 ---
 
-# P3 (Low Priority / Deferred) - 12 Items
+# P3 (Low Priority / Deferred) - 16 Items
+
+## CLI Logomark Display (1 item) ⬇️
+
+**Status:** Partially complete (project switch works, ingestion updates missing)
+**Priority:** Demoted from P1 (project switch already works via database)
+**Effort:** 1-2 hours (add hoover notification subscription)
+
+- [ ] #P3-LOGOMARK: Add real-time logomark updates during transcript ingestion
+
+**Already Working (commit `0ab0d79`):**
+- ✅ Database-backed provider detection
+- ✅ Updates on project switch via `.task(id: projectPath)`
+- ✅ Efficient SQL query for providers
+
+**Missing:**
+- ❌ Real-time updates during initial ingestion/hoovering
+- ProjectBadgesContainer needs to subscribe to hoover notifications
+
+**Implementation:**
+- Subscribe to hoover/ingestion completion notifications
+- Trigger `loadProviders()` refresh when transcripts are added
+- No UI changes needed, just notification wiring
+
+**Files:**
+- `Contextify/Contentify/ProjectBadgesContainer.swift`
+
+---
 
 ## Liquid Glass Design System (1 item) ⬇️
 
@@ -2062,6 +1915,123 @@ When a project not currently visible in the tab bar receives new messages:
 - Indicator is subtle but noticeable
 - Easy to navigate to the active project
 - No false positives (only triggers on actual new content)
+
+---
+
+## Lazy Watcher Optimization (1 item) ⬇️
+
+**Status:** Spec Complete
+**Priority:** Demoted from P2 (large effort, no immediate impact)
+**Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
+**Spec:** `build/notes/todo-support/P2-LAZY-WATCHERS-design.md`
+
+- [ ] #P3-LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
+
+**Problem:**
+Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
+
+**Solution:**
+Two-tier monitoring: active project gets real-time DispatchSource watchers; inactive projects use FSEvents-only with dirty transcript tracking. On activation, rehoover dirty transcripts (including offline changes via mtime check).
+
+**Key components:**
+- `MonitoringCoordinator` actor (extracted from ConversationMonitor)
+- FSEvents behavior matrix for active/inactive + new/existing transcripts
+- `pending_rehoover` + `last_known_mtime` DB columns (migration v27)
+- 5-second hysteresis for project switching
+- Feature flag for rollout (`lazyWatchersEnabled`)
+
+**Prerequisites:**
+- ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
+
+---
+
+## Empty Project Detection (1 item) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P2 (nice-to-have UX polish)
+**Effort:** 2-3 hours
+
+- [ ] #P3-EMPTY-PROJECTS: Detect and immediately show empty state for projects with no conversation entries
+
+**Problem:**
+When switching to a project with no conversations, users see a "searching for conversations" spinner that then transitions to a "no conversations" view. This creates unnecessary loading state when we could determine emptiness immediately.
+
+**Impact:**
+- Confusing UX - spinner implies search is happening when result is predetermined
+- Wasted time - users wait for spinner when answer is instant
+- May indicate filtering bug - we previously tried to hide projects with 0 messages from tab bar
+
+**Investigation Required:**
+Add logging to verify SQL query filtering behavior:
+- Log count of conversation entries per project during tab rendering
+- Verify if projects with 0 entries should appear in tab bar at all
+- Check if SQL query to filter projects with 0 entries was implemented incorrectly
+- Determine if issue is detection logic vs display logic
+
+**Solution:**
+
+1. **Add SQL Query Logging** (1 hour)
+   - Add `.info` level logs showing entry count per project in tab bar
+   - Log SQL query used to filter projects: `SELECT project_id, COUNT(*) FROM timeline_entries GROUP BY project_id`
+   - Verify if zero-entry projects are intentionally shown or filtering failed
+   - Log to category: "ProjectFiltering" for easy grep
+
+2. **Immediate Empty Detection** (1 hour)
+   - Query entry count before showing spinner: `SELECT COUNT(*) FROM timeline_entries WHERE project_id = ?`
+   - If count = 0, skip loading state and show empty view immediately
+   - Add `hasAnyEntries` check to project switch logic
+   - Cache result to avoid repeated queries
+
+3. **Decision on Zero-Entry Projects** (30 min)
+   - Review logs to determine if zero-entry projects should be hidden from tab bar
+   - If filtering intended: Fix SQL query and hide from tabs
+   - If intentional display: Keep immediate empty state (faster UX)
+   - Document decision in code comments
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (project switch logic)
+- `Contextify/Contextify/ProjectSwitcherView.swift` (tab bar rendering with logging)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (entry count query)
+
+**Acceptance Criteria:**
+- ✅ Logs show entry count for each project in tab bar
+- ✅ SQL query for filtering projects with 0 entries is logged and verified
+- ✅ Projects with no conversations show empty state immediately (no spinner)
+- ✅ Decision documented: hide zero-entry projects from tabs OR show with instant empty state
+- ✅ No "searching" spinner when switching to empty project
+
+---
+
+## Project Switch Consolidation (1 item) ⬇️
+
+**Status:** Not Started
+**Priority:** Demoted from P2 (code quality, no user-visible impact)
+**Effort:** 4-6 hours
+
+- [ ] #P3-SWITCH: Consolidate 4 overlapping project switch code paths into single unified pipeline
+
+**Problem:** ConversationMonitor has 4 different code paths handling project switching, creating overlaps, potential race conditions, and wasted work during rapid switching.
+
+**Current Paths:**
+1. `startMonitoring()` - Full bootstrap + initial feed load
+2. `onProjectOrSessionChange()` - v23 startup pipeline (policy/sessions/cursor/feed/switch events)
+3. `handleContextUpdate()` - Coordinator-triggered switch
+4. `handleProjectRootChange()` - Legacy notification
+
+**Solution:** Single `switchToProject(_:reason:)` entry point that all 4 paths delegate to.
+
+**Key Requirements:**
+- Preserve v23 startup sequence (policy → sessions → cursor → feed → switch events)
+- Split session switching logic (no timeline reload for session-only changes)
+- Cancel in-flight loads on rapid switching
+- Extract bootstrap infrastructure setup into separate helper
+
+**Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` (primary changes)
+
+**Reference:**
+- Implementation plan: `build/notes/todo-support/P2-SWITCH-refactor-plan.md`
+- Source code analysis: `build/notes/todo-support/P2-SWITCH-source-analysis.md`
 
 ---
 
