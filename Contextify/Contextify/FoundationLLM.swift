@@ -333,7 +333,22 @@ actor FoundationLLM {
             let allAffirmative = tokens.allSatisfy { affirmatives.contains($0) }
             if allAffirmative { return .affirmative }
 
-            let negatives = ["no", "nope", "nah", "not", "now", "hold", "off", "stop", "don't", "cancel", "abort"]
+            let negatives = [
+                // Direct negations
+                "no", "nope", "nah", "not", "don't",
+
+                // Cancellations
+                "cancel", "abort", "stop", "nevermind", "never", "mind",
+
+                // Deferrals
+                "hold", "off", "pause", "wait", "skip", "later",
+
+                // Returns/backs
+                "back", "return",
+
+                // Time-based (for patterns like "not now")
+                "now"
+            ]
             let allNegative = tokens.allSatisfy { negatives.contains($0) }
             if allNegative { return .negative }
         }
