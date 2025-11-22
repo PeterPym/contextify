@@ -177,11 +177,9 @@ struct ConversationTimelineView: View {
             // "Jump to Latest" button appears when user has scrolled up
             if userHasScrolledUp && !monitor.visibleEntries.isEmpty {
                 Button {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        log.debug("[SCROLL] Jump to Latest clicked, resuming auto-scroll")
-                        scrollPositionId = monitor.visibleEntries.last?.id
-                        userHasScrolledUp = false
-                    }
+                    log.debug("[SCROLL] Jump to Latest clicked")
+                    userHasScrolledUp = false
+                    autoScrollToBottomIfNeeded("jumpButton", animated: true)
                 } label: {
                     Label("Jump to Latest", systemImage: "arrow.down.circle.fill")
                         .labelStyle(.titleAndIcon)
@@ -197,46 +195,63 @@ struct ConversationTimelineView: View {
             monitor.replaceVisibleSnapshot(ids)
         }
         // Scroll phase tracking for user input detection
-        .onScrollPhaseChange { oldPhase, newPhase in
+        .onScrollPhaseChange { _, newPhase in
             monitor.handleScrollPhaseChange(newPhase)
 
-            // Detect actual user scroll input (trackpad, mouse wheel, etc.)
-            if newPhase == .interacting || newPhase == .decelerating {
-                // User is actively scrolling - check if they're away from bottom
-                let lastId = monitor.visibleEntries.last?.id
-                let isAtBottom = (lastId != nil && scrollPositionId == lastId)
+            guard let lastId = monitor.visibleEntries.last?.id else { return }
+            let atBottom = (scrollPositionId == lastId)
 
-                if !isAtBottom && !userHasScrolledUp {
-                    log.debug("[SCROLL] User actively scrolled away from bottom")
+            switch newPhase {
+            case .interacting, .decelerating:
+                if !atBottom && !userHasScrolledUp {
+                    log.debug("[SCROLL] User scrolled away from bottom")
                     userHasScrolledUp = true
                 }
-            } else if newPhase == .idle {
-                // Scroll settled - check if user ended up at bottom
-                let lastId = monitor.visibleEntries.last?.id
-                let isAtBottom = (lastId != nil && scrollPositionId == lastId)
 
-                if isAtBottom && userHasScrolledUp {
-                    log.debug("[SCROLL] User scrolled back to bottom, resuming auto-scroll")
+            case .idle:
+                if atBottom && userHasScrolledUp {
+                    log.debug("[SCROLL] User returned to bottom; re-enabling auto-scroll")
                     userHasScrolledUp = false
                 }
+
+            default:
+                break
             }
         }
-        // Reset state on project switch and scroll to bottom on initial load
+        // Reset state on project switch and scroll to bottom on initial load / new entries
         .onChange(of: monitor.entriesRevision) { oldRevision, newRevision in
+            // When entries go to empty, we treat it as a project switch / full reset
             if monitor.entries.isEmpty {
                 log.debug("[SCROLL] Project switch detected, resetting scroll state")
                 userHasScrolledUp = false
                 scrollPositionId = nil
-            } else if !userHasScrolledUp, let lastId = monitor.visibleEntries.last?.id {
-                // Auto-scroll to bottom when not manually scrolled up
-                scrollPositionId = lastId
+            } else {
+                autoScrollToBottomIfNeeded("entriesRevision")
             }
         }
         .onAppear {
-            // Initial scroll to bottom
-            if let lastId = monitor.visibleEntries.last?.id {
+            autoScrollToBottomIfNeeded("onAppear")
+        }
+    }
+
+    /// Centralized auto-scroll helper - only scrolls when user hasn't manually scrolled up
+    private func autoScrollToBottomIfNeeded(_ reason: StaticString, animated: Bool = false) {
+        guard !userHasScrolledUp else {
+            log.debug("[SCROLL] Skipping auto-scroll (\(reason)); userHasScrolledUp == true")
+            return
+        }
+
+        guard let lastId = monitor.visibleEntries.last?.id else { return }
+
+        log.debug("[SCROLL] Auto-scrolling to bottom (\(reason)) -> \(String(describing: lastId))")
+
+        monitor.beginProgrammaticScroll()
+        if animated {
+            withAnimation(.easeOut(duration: 0.3)) {
                 scrollPositionId = lastId
             }
+        } else {
+            scrollPositionId = lastId
         }
     }
 

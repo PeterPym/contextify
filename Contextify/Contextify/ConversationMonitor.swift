@@ -293,7 +293,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var viewedEntryIDs = Set<UUID>()  // Tracks which entries user has seen
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
-    @ObservationIgnored var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps (internal for view access)
+    @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
     @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var scrollGateTimeoutTask: Task<Void, Never>?  // Clears stuck gate after 1s
     @ObservationIgnored private var needsInitialVisibilitySnapshot = false  // First settled snapshot after project switch
