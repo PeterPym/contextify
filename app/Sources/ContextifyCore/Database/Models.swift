@@ -120,13 +120,19 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
   public var prev1Id: String?
   public var prev2Id: String?
   public var windowSha256: String?
+  // v4: RAG embeddings
+  public var embedding: Data?
+  public var embeddingVersion: Int?
+  public var embeddingGeneratedAt: Int?
   // Epoch timestamp for unread tracking (timezone-free)
   public var createdTs: Double?
   public var createdAt: Int
   public var updatedAt: Int
+  // v27: Queue status for transient UI indicators
+  public var isQueued: Int  // SQLite boolean (0=false, 1=true)
 
   public static let databaseTableName = "transcript_entries"
-  public static let databaseColumnCount = 20
+  public static let databaseColumnCount = 24
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -146,9 +152,13 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
     case prev1Id = "prev1_id"
     case prev2Id = "prev2_id"
     case windowSha256 = "window_sha256"
+    case embedding
+    case embeddingVersion = "embedding_version"
+    case embeddingGeneratedAt = "embedding_generated_at"
     case createdTs = "created_ts"
     case createdAt = "created_at"
     case updatedAt = "updated_at"
+    case isQueued = "is_queued"
   }
 }
 

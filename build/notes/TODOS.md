@@ -33,16 +33,21 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-20
+**Last Updated:** 2025-11-21
 **Status:** Active
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 5 items - Must complete before App Store submission (1 new: logomark visibility, 2 fixed: watcher-init + tab-corners)
-- **P1 (High Priority):** 25 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
+- **P1 (High Priority):** 26 items - Important for quality/UX, ship soon after launch (1 new: logging audit)
+- **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases (1 new: summarization quality)
 - **P3 (Low Priority / Deferred):** 10 items - Future enhancements
 
-**Total Active Items:** 75 (77 - 2 completed P0 items)
+**Total Active Items:** 78 (77 + 1 new P1 item: logging audit)
+
+**Change Log (2025-11-21):**
+- Added 1 P1 item (#P1-LOGGING-AUDIT: Review and reduce excessive logging from TranscriptWatcher and TranscriptOrchestrator - 3.9MB logs for short runs)
+- Added 1 P1 item (#P1-UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior)
+- Added 1 P2 item (#P2-SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations)
 
 **Change Log (2025-11-20):**
 - Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
@@ -122,7 +127,7 @@ The diagnostics HTTP server (`DiagnosticsHTTPServer.swift`) exposes a local API 
 ---
 
 
-# P1 (High Priority) - 25 Items
+# P1 (High Priority) - 26 Items
 
 ## Window Sizing (1 item)
 
@@ -737,6 +742,63 @@ When user chooses option 3 ("type something different") in response to Claude Co
 
 ---
 
+## Unread Count Investigation (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (UX - unread count behavior unclear and doesn't follow standard patterns)
+**Effort:** 4-6 hours
+
+- [ ] #P1-UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior
+
+**Problem:**
+The calculation of unread counts in project tabs is not transparent, and the clearing behavior doesn't follow common UX patterns. Users can't easily understand when/why counts appear or how to clear them.
+
+**Investigation Areas:**
+
+1. **Current Calculation Logic** (1-2 hours)
+   - How are unread counts currently calculated?
+   - What events trigger count increments?
+   - Are counts stored in database or calculated on-the-fly?
+   - How does the system determine what is "read" vs "unread"?
+   - Document current implementation with code references
+
+2. **Clearing Behavior** (1-2 hours)
+   - When/how do unread counts get cleared?
+   - Does clearing happen on tab click, scroll to bottom, message view, or something else?
+   - Are there edge cases where counts don't clear properly?
+   - How does auto-scroll interact with unread count clearing?
+
+3. **Standard UX Patterns** (1 hour)
+   - Research standard unread count patterns (Messages, Slack, Discord, etc.)
+   - Identify best practices: clear on view, clear on scroll, clear on explicit action
+   - Document expected behavior for Contextify's use case
+
+4. **Proposed Improvements** (1-2 hours)
+   - Design improved unread count logic matching standard patterns
+   - Consider: Visual "jump to unread" feature
+   - Consider: Manual "mark as read" action
+   - Consider: Persistence across app restarts
+   - Propose implementation approach with code locations
+
+**Files to Investigate:**
+- `Contextify/Contextify/ProjectSwitcherView.swift` (tab display with unread badges)
+- `Contextify/Contextify/ConversationMonitor.swift` (likely count calculation)
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (database queries)
+- Timeline view files (scroll/view tracking)
+
+**Acceptance Criteria:**
+- ✅ Current implementation fully documented
+- ✅ Clearing behavior clearly defined
+- ✅ UX pattern research completed
+- ✅ Proposed improvements documented with rationale
+- ✅ Implementation plan with file/line references
+
+**Related Issues:**
+- May interact with #P1-AUTOSCROLL (auto-scroll and unread tracking)
+- May inform empty project detection (#P2-EMPTY-PROJECTS)
+
+---
+
 ## Timeline Auto-Scroll Fix (1 item)
 
 **Status:** Ready for implementation
@@ -944,6 +1006,57 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - [ ] Throttling rules documented in `.github/workflows/macos-build.yml`
 
 **Reference:** GitHub Actions workflow currently broken: https://github.com/banagale/contextify/actions/workflows/macos-build.yml
+
+---
+
+## Logging Volume Review (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Performance/Debug - excessive logging creating 3.9MB logs for short runs)
+**Effort:** 2-4 hours (audit + review + selective reduction)
+
+- [ ] #P1-LOGGING-AUDIT: Review and reduce excessive logging from TranscriptWatcher and TranscriptOrchestrator
+
+**Problem:**
+Short app runs generating excessively large log files (20K+ lines, 3.9MB for <20 seconds). TranscriptWatcher alone produces 11K+ logs, TranscriptOrchestrator 6K+ logs (83% of total volume).
+
+**Key Offenders:**
+- `TranscriptWatcher`: 11,133 logs (54%)
+- `TranscriptOrchestrator`: 5,991 logs (29%)
+- Total: 20,546 lines in 3.9MB file
+
+**Root Causes:**
+1. TranscriptWatcher logging every FD operation (open, create source, resume) at Info/Debug level
+2. Polling/checking operations: 1,569 instances
+3. Per-transcript logging for multiple transcripts (agents + main)
+4. No log level filtering or rate limiting
+
+**Implementation:**
+1. Audit TranscriptWatcher logging levels (move FD operations to trace-only)
+2. Review TranscriptOrchestrator debug logs for redundancy
+3. Add conditional logging (e.g., only log errors + first/last operations)
+4. Consider rate limiting for polling operations
+5. Check if Debug logs should be conditional on MonitorConfig flags
+
+**Files to Review:**
+- `app/Sources/ContextifyCore/TranscriptWatcher.swift`
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+- `app/Sources/ContextifyCore/MonitorConfig.swift` (check for existing log flags)
+
+**Acceptance Criteria:**
+- [ ] Short run (<1 minute) produces <500KB log file
+- [ ] TranscriptWatcher logs reduced by 80%+ (keep only errors + state changes)
+- [ ] TranscriptOrchestrator logs reduced by 60%+ (keep only meaningful events)
+- [ ] Debug-level polling logs removed or gated behind config flag
+- [ ] No loss of useful diagnostic information
+
+**Testing:**
+1. Run app for 30 seconds
+2. Check Console.app log size
+3. Verify critical events still logged (errors, state transitions)
+4. Ensure debug flag can re-enable verbose logging when needed
+
+**Note:** Large log files make debugging harder and can impact performance. Logging should be informative but not overwhelming.
 
 ---
 
@@ -1748,6 +1861,46 @@ Should render backticked text in monospace for better readability:
 - "Claude Code suggested creating `todos.md` in `/Users/rob/code/projects/contextify/`."
 - "Fixed `ConversationMonitor.swift` warnings in `startWatchingTranscript()`"
 - "Updated `README.md` with `npm install` instructions"
+
+---
+
+## LLM Summarization Quality (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (Quality improvement - summaries misrepresenting user intent)
+**Effort:** 4-6 hours
+**Spec:** `build/notes/todo-support/P2-SUMMARIZATION-FIX-spec.md`
+
+- [ ] #P2-SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
+
+**Problem:**
+Timeline summaries sometimes reverse attribution, showing user action requests as assistant explanations. Example: User says "add a P1 todo" → Summary says "You explained how to add a todo."
+
+**Root Cause:**
+- Summarizer doesn't distinguish action requests from explanations
+- Tool completion results not visible to summarizer (assistant doesn't relay in text)
+- Prompts lack explicit guidance on attribution preservation
+
+**Solution:**
+1. Update LLM prompts with explicit attribution rules
+2. Ensure tool_result content available to summarizer
+3. Add examples of correct vs. incorrect attribution patterns
+
+**Test Cases:**
+- Entry `f268414b-31ca-431a-b4e6-383898844de0` - Primary example with detailed transcript analysis
+- Additional UUIDs in audit doc for validation
+
+**Files:**
+- `Contextify/Contextify/TimelineCacheMissGenerator.swift` (prompts)
+- `app/Sources/ContextifyCore/Database/Models.swift` (structure)
+
+**Acceptance Criteria:**
+- Action requests correctly identified as "User asked to..." or "User requested..."
+- No reversed attribution (user actions attributed to assistant or vice versa)
+- Completed tasks reflected in summaries (not just requests)
+- Information requests distinguished from action requests
+
+**For full analysis**: See investigation document with transcript analysis, examples, and proposed prompt improvements
 
 ---
 

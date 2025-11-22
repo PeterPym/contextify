@@ -254,6 +254,7 @@ final class ConversationMonitor {
     @ObservationIgnored nonisolated(unsafe) private var projectsDiscoveryObserver: NSObjectProtocol? // For projects discovery completion
     @ObservationIgnored nonisolated(unsafe) private var primerReadyObserver: NSObjectProtocol? // For primer ready events
     @ObservationIgnored nonisolated(unsafe) private var hooveringProgressObserver: NSObjectProtocol? // For incremental hoovering progress
+    @ObservationIgnored nonisolated(unsafe) private var queueOpsObserver: NSObjectProtocol? // For queue operation updates
     @ObservationIgnored private var updateInFlight = false  // Single-flight guard for processIncrementalUpdate
     @ObservationIgnored private var updateDirty = false    // Marks that updates arrived during processing
     @ObservationIgnored private let updateDrainMaxItersDefault = 8  // Max drain loop iterations to prevent starvation
@@ -294,6 +295,7 @@ final class ConversationMonitor {
     // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks and enableScrollQueueing
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
     @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
+    @ObservationIgnored private var scrollGateTimeoutTask: Task<Void, Never>?  // Clears stuck gate after 1s
     @ObservationIgnored private var needsInitialVisibilitySnapshot = false  // First settled snapshot after project switch
     @ObservationIgnored private var pendingInitialVisibleIDs: Set<UUID>? = nil  // IDs seen while programmatic scroll is active
     @ObservationIgnored private var initialViewportFallbackTask: Task<Void, Never>?
@@ -394,6 +396,9 @@ final class ConversationMonitor {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = appBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = queueOpsObserver {
             NotificationCenter.default.removeObserver(observer)
         }
 
@@ -1324,6 +1329,7 @@ final class ConversationMonitor {
             action: action,
             sessionId: entry.sessionId,
             disposition: cached?.disposition,
+            isQueued: entry.isQueued == 1,
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256
         )
@@ -1956,6 +1962,32 @@ final class ConversationMonitor {
         }
 
         log.debug("App lifecycle observers registered for background summarization")
+
+        // Set up observer for queue operation updates
+        queueOpsObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("QueueOperationsProcessed"),
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let projectId = notification.userInfo?["projectId"] as? String  // Extract before Task
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.handleQueueOperationsProcessed(projectId: projectId)
+            }
+        }
+    }
+
+    /// Handle queue operations being processed (clear badges on affected entries)
+    @MainActor
+    private func handleQueueOperationsProcessed(projectId: String?) async {
+        // Only refresh if this is for the current project
+        guard projectId == currentProjectId else { return }
+
+        log.debug("[QUEUE-REFRESH] Queue operations processed, refreshing entries")
+
+        // Simplest approach: just reload from SQL (loadFeedFromSQL already handles everything)
+        // This ensures we get fresh is_queued values from the database
+        await loadFeedFromSQL()?.value
     }
 
     /// Mark an entry as visible in the viewport (called by UI)
@@ -2026,6 +2058,17 @@ final class ConversationMonitor {
         doingProgrammaticScroll = true
         pendingInitialVisibleIDs = nil
         log.debug("[SUMM-SCROLL] Programmatic scroll started, gating visibility updates")
+
+        // Clear any existing timeout and start fresh 1-second timeout
+        scrollGateTimeoutTask?.cancel()
+        scrollGateTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            await MainActor.run {
+                guard let self, self.doingProgrammaticScroll else { return }
+                self.doingProgrammaticScroll = false
+                self.log.warning("[SUMM-SCROLL] Clearing programmatic scroll gate after timeout")
+            }
+        }
     }
 
     /// Called by view when scroll phase changes - enables queueing once scroll is idle
@@ -2034,6 +2077,7 @@ final class ConversationMonitor {
         switch phase {
         case .idle:
             if doingProgrammaticScroll {
+                scrollGateTimeoutTask?.cancel()  // Cancel timeout - scroll completed normally
                 doingProgrammaticScroll = false
                 log.debug("[SUMM-SCROLL] Programmatic scroll completed")
                 if needsInitialVisibilitySnapshot,
@@ -2316,9 +2360,14 @@ final class ConversationMonitor {
         log.info("[SUMM-QUEUE-NEEDS-SUMMARY-COUNT] Entries needing summaries: \(misses.count, privacy: .public)")
 
         log.info("[SUMM-QUEUE] Queueing \(misses.count, privacy: .public) visible unsummarized entries:")
+
+        // Create lookup map from source identifier to timeline entry (for isQueued status)
+        let entryLookup = Dictionary(uniqueKeysWithValues: visibleEntries.map { ($0.sourceIdentifier, $0) })
+
         for miss in misses {
             let contentPreview = String(miss.content.prefix(15))
-            log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
+            let isQueued = entryLookup[miss.entryId]?.isQueued ?? false
+            log.info("  [SUMM-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | isQueued=\(isQueued, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
 
         log.debug("[SUMM-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")

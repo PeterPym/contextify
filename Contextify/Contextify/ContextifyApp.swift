@@ -269,7 +269,11 @@ struct ContextifyApp: App {
         showWelcomeModal = true
       }
     }
-    .defaultSize(width: 400, height: 500)
+    // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
+    // Height minimum: 360 (ContentView.minHeight) + ~25 (titlebar)
+    // Actual window dimensions: max(width, ~365pt), height + ~25pt (titlebar)
+    // These are in points. On Retina (2x), multiply by 2 for pixel dimensions in screenshots.
+    .defaultSize(width: 480, height: 515)
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }

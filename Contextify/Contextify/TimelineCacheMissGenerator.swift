@@ -668,6 +668,11 @@ actor TimelineCacheMissGenerator {
             return
         }
 
+        // Log entry being summarized (helps trace queued flag behavior)
+        log.debug("[CACHE-UPSERT] Saving summary for entry=\(miss.entryId.prefix(8), privacy: .public) content_sha256=\(miss.contentSha256.prefix(12), privacy: .public) window_sha256=\(miss.windowSha256.prefix(12), privacy: .public)")
+        log.debug("[CACHE-UPSERT]   content preview: \(miss.content.prefix(60), privacy: .public)...")
+        log.debug("[CACHE-UPSERT]   summary: \(summary.selectedForm.prefix(60), privacy: .public)...")
+
         // Create TimelineCache object with entryId from miss
         let now = Int(Date().timeIntervalSince1970)
         let cache = TimelineCache(
@@ -685,6 +690,8 @@ actor TimelineCacheMissGenerator {
 
         // Save to database (no MainActor.run needed)
         try orchestrator.saveCachedTimeline(cache)
+
+        log.debug("[CACHE-UPSERT] Successfully saved summary for entry=\(miss.entryId.prefix(8), privacy: .public)")
     }
 
     /// Post notification to trigger lightweight UI refresh with specific keys

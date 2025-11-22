@@ -6,7 +6,6 @@ private let parserLog = Logger(subsystem: "dev.contextify", category: "Transcrip
 private let metadataRecordTypes: Set<String> = [
   "file-history-snapshot",
   "summary",
-  "queue-operation",
   "timeline-state",
   "queue-operation-result"
 ]
@@ -99,6 +98,50 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     guard let type = json["type"] as? String else {
       parserLog.warning("[PARSER-WARN] Missing type field line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public) – skipping entry")
       throw ParserError.skipEntry
+    }
+
+    // Handle queue-operation records with enqueue operation (user messages sent while Claude was working)
+    if type == "queue-operation" {
+      guard let operation = json["operation"] as? String, operation == "enqueue" else {
+        throw ParserError.skipEntry  // Skip "remove", "popAll", and "dequeue" operations for now
+      }
+
+      // Feature flag: skip creating synthetic queue entries if disabled
+      guard MonitorConfig.showQueuedMessages else {
+        throw ParserError.skipEntry
+      }
+
+      guard let queueContent = json["content"] as? String, !queueContent.isEmpty else {
+        throw ParserError.skipEntry  // Skip if no content
+      }
+      guard let timestampStr = json["timestamp"] as? String,
+            let timestamp = parseISO8601(timestampStr) else {
+        throw ParserError.skipEntry
+      }
+      // Generate stable UUID from timestamp and content for queue-operation entries
+      let queueUuid = "queue-\(abs(timestampStr.hashValue))-\(abs(queueContent.hashValue))"
+      let contentSha256 = SHA256Utils.hash(queueContent)
+      let providerSessionId = json["sessionId"] as? String ?? sessionId
+
+      parserLog.info("[QUEUE-ENQUEUE] Creating synthetic entry id=\(queueUuid, privacy: .public) ts=\(timestampStr, privacy: .public) content=\"\(String(queueContent.prefix(40)), privacy: .public)\"")
+
+      return EntryInsert(
+        id: queueUuid,
+        transcriptId: transcriptId,
+        projectId: projectId,
+        sessionId: providerSessionId,
+        provider: provider,
+        kind: "user",
+        timestamp: timestamp,
+        content: queueContent,
+        contentSha256: contentSha256,
+        parentId: nil,
+        gitBranch: json["gitBranch"] as? String,
+        gitCommit: nil,
+        cwd: json["cwd"] as? String,
+        hasTextContent: true,
+        isQueued: true  // Mark as queued - UI will show "QUEUED" badge
+      )
     }
 
     // Skip structural metadata records (no conversation content)
@@ -730,6 +773,35 @@ public struct CodexLineParser: TranscriptLineParser {
 
 // MARK: - Metadata Parser (v7)
 
+/// Queue operation for clearing is_queued flags
+public struct QueueOperation {
+  public enum Kind: String {
+    case remove   // clear one or more queued messages by content hash
+    case popAll   // clear entire queue for a session
+    case dequeue  // clear entire queue for a session
+  }
+
+  public let kind: Kind
+  public let transcriptId: String
+  public let sessionId: String
+  public let contentSha256: String?  // non-nil for .remove; nil for .popAll/.dequeue
+  public let timestamp: Date
+
+  public init(
+    kind: Kind,
+    transcriptId: String,
+    sessionId: String,
+    contentSha256: String?,
+    timestamp: Date
+  ) {
+    self.kind = kind
+    self.transcriptId = transcriptId
+    self.sessionId = sessionId
+    self.contentSha256 = contentSha256
+    self.timestamp = timestamp
+  }
+}
+
 /// Result of parsing metadata from a transcript line
 public struct MetadataParseResult {
   public let fileSnapshot: FileSnapshot?
@@ -737,23 +809,26 @@ public struct MetadataParseResult {
   public let transcriptSummary: TranscriptSummary?
   public let systemEvent: SystemEvent?
   public let assistantUsage: AssistantUsage?
+  public let queueOperations: [QueueOperation]
 
   public init(
     fileSnapshot: FileSnapshot? = nil,
     trackedFiles: [TrackedFile] = [],
     transcriptSummary: TranscriptSummary? = nil,
     systemEvent: SystemEvent? = nil,
-    assistantUsage: AssistantUsage? = nil
+    assistantUsage: AssistantUsage? = nil,
+    queueOperations: [QueueOperation] = []
   ) {
     self.fileSnapshot = fileSnapshot
     self.trackedFiles = trackedFiles
     self.transcriptSummary = transcriptSummary
     self.systemEvent = systemEvent
     self.assistantUsage = assistantUsage
+    self.queueOperations = queueOperations
   }
 
   public var hasMetadata: Bool {
-    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil
+    fileSnapshot != nil || !trackedFiles.isEmpty || transcriptSummary != nil || systemEvent != nil || assistantUsage != nil || !queueOperations.isEmpty
   }
 }
 
@@ -807,6 +882,52 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
     }
 
     let now = Int(Date().timeIntervalSince1970)
+
+    // queue-operation metadata (remove/popAll/dequeue)
+    if type == "queue-operation" {
+      guard let opString = json["operation"] as? String else {
+        throw ParserError.missingRequiredField("operation")
+      }
+
+      // Ignore enqueue here; enqueue is handled in ClaudeCodeLineParser.parse
+      if opString == "enqueue" {
+        return MetadataParseResult()
+      }
+
+      guard let kind = QueueOperation.Kind(rawValue: opString) else {
+        // Unknown operation type; treat as no-op metadata
+        return MetadataParseResult()
+      }
+
+      guard let sessionId = json["sessionId"] as? String, !sessionId.isEmpty else {
+        parserLog.warning("[QUEUE-OP] queue-operation \(opString, privacy: .public) missing sessionId; skipping line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+        return MetadataParseResult()
+      }
+
+      var contentSha256: String? = nil
+      switch kind {
+      case .remove:
+        guard let content = json["content"] as? String, !content.isEmpty else {
+          parserLog.warning("[QUEUE-OP] remove without content; skipping line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
+          return MetadataParseResult()
+        }
+        contentSha256 = SHA256Utils.hash(content)
+
+      case .popAll, .dequeue:
+        // Full-queue clear for the session; no per-message content hash needed
+        contentSha256 = nil
+      }
+
+      let op = QueueOperation(
+        kind: kind,
+        transcriptId: transcriptId,
+        sessionId: sessionId,
+        contentSha256: contentSha256,
+        timestamp: timestamp
+      )
+
+      return MetadataParseResult(queueOperations: [op])
+    }
 
     // file-history-snapshot
     if type == "file-history-snapshot" {

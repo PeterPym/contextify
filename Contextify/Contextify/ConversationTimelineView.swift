@@ -6,13 +6,16 @@ struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
     @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.openWindow) private var openWindow
-    @State private var scrollTask: Task<Void, Never>?
+
+    // Auto-scroll state (sticky bottom pattern)
+    @State private var scrollPositionId: UUID?
+    @State private var isAtBottom = true
+    @State private var didRunInitialScroll = false
 
     // Info popover state
     @State private var showEmptyStateInfo = false
 
     private let minWidth: CGFloat = 52
-    private let scrollAnchorID = "timeline-scroll-anchor"
 
     private let log = Logger(subsystem: "dev.contextify", category: "UIRender")
 
@@ -171,68 +174,84 @@ struct ConversationTimelineView: View {
     }
 
     private var actualTimelineContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(monitor.visibleEntries, id: \.id) { entry in
-                        TimelineEntryRow(
-                            entry: entry,
-                            onScrollToEntry: { entryId in
-                                withAnimation(.easeInOut(duration: 0.3)) {
-                                    proxy.scrollTo(entryId, anchor: .center)
-                                }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(monitor.visibleEntries, id: \.id) { entry in
+                    TimelineEntryRow(
+                        entry: entry,
+                        onScrollToEntry: { entryId in
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                scrollPositionId = entryId
                             }
-                        )
-                        .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
-                        // PERF: Removed transition to reduce animation costs during bulk loads
-                        // .transition(.move(edge: .trailing).combined(with: .opacity))
-                        .id(entry.id)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(scrollAnchorID)
-                }
-                .scrollTargetLayout()  // Required for aggregate visibility tracking (macOS 15+)
-                .onAppear {
-                    // Initial scroll to bottom when timeline first appears
-                    guard monitor.autoScroll, !monitor.visibleEntries.isEmpty else { return }
-                    monitor.beginProgrammaticScroll()
-                    // Jump without animation to avoid "briefly visible" churn during programmatic scroll
-                    DispatchQueue.main.async {
-                        withAnimation(nil) {
-                            proxy.scrollTo(scrollAnchorID, anchor: .bottom)
                         }
-                    }
+                    )
+                    .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
+                    .id(entry.id)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .scrollContentBackground(.hidden)
-            // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks
-            .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
-                monitor.replaceVisibleSnapshot(ids)
-            }
-            // Scroll phase gating to prevent queueing during programmatic jumps
-            .onScrollPhaseChange { oldPhase, newPhase in
-                monitor.handleScrollPhaseChange(newPhase)
-            }
-            .onChange(of: monitor.visibleEntries.count) { _, newCount in
-                log.info("[UIOPT-RENDER-ENTRIES] Timeline entry count changed to \(newCount, privacy: .public)")
-
-                // Cancel any pending scroll task
-                scrollTask?.cancel()
-
-                guard monitor.autoScroll, !monitor.visibleEntries.isEmpty else { return }
-
-                monitor.beginProgrammaticScroll()
-                // Create new debounced scroll task (150ms delay to coalesce rapid updates)
-                scrollTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 150_000_000)
-                    guard !Task.isCancelled else { return }
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        proxy.scrollTo(scrollAnchorID, anchor: .bottom)
-                    }
+            .scrollTargetLayout()  // Required for aggregate visibility tracking (macOS 15+)
+        }
+        .scrollPosition(id: $scrollPositionId, anchor: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollContentBackground(.hidden)
+        .overlay(alignment: .bottomTrailing) {
+            // "Jump to Latest" button appears when user scrolls up
+            if !isAtBottom && !monitor.visibleEntries.isEmpty {
+                Button {
+                    scrollToBottomIfNeeded()
+                } label: {
+                    Label("Jump to Latest", systemImage: "arrow.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.callout)
                 }
+                .buttonStyle(.borderedProminent)
+                .padding()
+                .transition(.scale.combined(with: .opacity))
             }
+        }
+        // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks
+        .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
+            monitor.replaceVisibleSnapshot(ids)
+        }
+        // Scroll phase gating to prevent queueing during programmatic jumps
+        .onScrollPhaseChange { oldPhase, newPhase in
+            monitor.handleScrollPhaseChange(newPhase)
+        }
+        // Detect when user scrolls away from bottom
+        .onChange(of: scrollPositionId) { _, newId in
+            let lastId = monitor.visibleEntries.last?.id
+            withAnimation(.spring(duration: 0.3)) {
+                isAtBottom = (lastId != nil && newId == lastId)
+            }
+        }
+        // Initial scroll on appear (once per view lifecycle)
+        .onAppear {
+            if !didRunInitialScroll {
+                didRunInitialScroll = true
+                scrollToBottomIfNeeded()
+            }
+        }
+        // Incremental updates keyed to revision (not count - count saturates at 25)
+        .onChange(of: monitor.entriesRevision) { _, _ in
+            if monitor.entries.isEmpty {
+                // Reset state on project switch
+                didRunInitialScroll = false
+                isAtBottom = true
+            } else if isAtBottom {
+                scrollToBottomIfNeeded()
+            }
+        }
+    }
+
+    /// Consolidated scroll helper - single path for all programmatic scrolling
+    private func scrollToBottomIfNeeded() {
+        guard monitor.autoScroll,
+              let lastId = monitor.visibleEntries.last?.id
+        else { return }
+
+        monitor.beginProgrammaticScroll()
+        withAnimation(.easeOut(duration: 0.3)) {
+            scrollPositionId = lastId
         }
     }
 

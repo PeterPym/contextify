@@ -30,6 +30,7 @@ struct TimelineEntryRow: View, Equatable {
     @State private var showCopiedToast = false
     @State private var showSafetyInfo = false
     @State private var showErrorInfo = false
+    @State private var showQueuedInfo = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ConversationMonitor.self) private var monitor
@@ -141,6 +142,24 @@ struct TimelineEntryRow: View, Equatable {
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.tertiary)
                     .help("Unsummarized (will generate when scrolled into view)")
+            }
+            // Queue-operation indicator (user message sent while Claude was working)
+            if entry.kind == .user && entry.isQueued {
+                Text("QUEUED")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.8))
+                    .cornerRadius(3)
+                InfoButton(isPresented: $showQueuedInfo)
+                    .popover(isPresented: $showQueuedInfo) {
+                        InfoPopoverContent(
+                            title: "Queued Message",
+                            message: "This message was sent while Claude was actively working on tools. It was received via system reminder and addressed in the response."
+                        )
+                    }
+                    .help("Message sent while Claude was working")
             }
             if entry.action == .nonSummarizable {
                 Text("—")
