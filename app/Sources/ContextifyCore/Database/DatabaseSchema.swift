@@ -3,14 +3,14 @@ import GRDB
 import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v26 (removed sandbox container path projects)
+/// Current version: v27 (added is_queued for queue-operation tracking)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 26
+  static let version = 27
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
 
   /// Create migrator for schema evolution
@@ -565,6 +565,31 @@ enum DatabaseSchema {
       logger.info("[MIGRATION-v26] Cleanup complete - removed \(containerProjects.count, privacy: .public) projects")
     }
 
+    // v27: Add is_queued column for queue-operation tracking
+    // This enables transient "QUEUED" badge display for messages sent while Claude is working
+    migrator.registerMigration("v27_queued_messages") { db in
+      logger.info("[MIGRATION-v27] Adding is_queued column to transcript_entries")
+
+      // Check if column already exists (defensive)
+      let columns = try db.columns(in: "transcript_entries")
+      if !columns.contains(where: { $0.name == "is_queued" }) {
+        try db.execute(sql: """
+          ALTER TABLE transcript_entries
+          ADD COLUMN is_queued INTEGER NOT NULL DEFAULT 0
+        """)
+        logger.info("[MIGRATION-v27] is_queued column added successfully")
+      } else {
+        logger.info("[MIGRATION-v27] is_queued column already exists, skipping")
+      }
+
+      // Add index for efficient queue operations
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_transcript_entries_queue_state
+        ON transcript_entries (transcript_id, session_id, is_queued, content_sha256)
+      """)
+      logger.info("[MIGRATION-v27] Queue state index created successfully")
+    }
+
     return migrator
   }
 
@@ -689,6 +714,8 @@ enum DatabaseSchema {
       t.column("embedding_generated_at", .integer)
       // v12: Unread tracking (millisecond-precision epoch timestamp)
       t.column("created_ts", .double)  // Populated from timestamp during ingestion
+      // v27: Queue-operation tracking for transient "QUEUED" badge display
+      t.column("is_queued", .integer).notNull().defaults(to: 0)
     }
     try db.create(index: "idx_entries_transcript_time", on: "transcript_entries", columns: ["transcript_id", "timestamp"], ifNotExists: true)
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
