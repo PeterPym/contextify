@@ -7,10 +7,9 @@ struct ConversationTimelineView: View {
     @Environment(ProjectsViewModel.self) private var projectsVM
     @Environment(\.openWindow) private var openWindow
 
-    // Auto-scroll state (sticky bottom pattern)
+    // Auto-scroll state
     @State private var scrollPositionId: UUID?
-    @State private var isAtBottom = true
-    @State private var didRunInitialScroll = false
+    @State private var userHasScrolledUp = false  // True when user manually scrolls away from bottom
 
     // Info popover state
     @State private var showEmptyStateInfo = false
@@ -96,28 +95,10 @@ struct ConversationTimelineView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Show All Transcripts (\(monitor.allSessions.count))")
-                Menu {
-                    Button("Refresh Now") {
-                        TimelineIntegration.shared.requestManualRefresh(trigger: .manualHotkey)
-                    }
-                    Toggle("Auto-scroll", isOn: Binding(
-                        get: { monitor.autoScroll },
-                        set: { monitor.autoScroll = $0 }
-                    ))
-                    Divider()
-                    Button(role: .destructive) {
-                        monitor.clearEntries()
-                    } label: {
-                        Label("Clear Timeline", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .foregroundStyle(.secondary)
-                        .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
+                // REMOVED: Entire Menu { ... } block
+                // - Auto-scroll toggle is redundant with sticky-bottom behavior
+                // - Refresh is automatic via file watcher
+                // - Clear Timeline can be added to Settings if needed later
         }
         .padding(.vertical, 8)
     }
@@ -180,9 +161,7 @@ struct ConversationTimelineView: View {
                     TimelineEntryRow(
                         entry: entry,
                         onScrollToEntry: { entryId in
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                scrollPositionId = entryId
-                            }
+                            // Row linking - not currently used for scroll control
                         }
                     )
                     .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
@@ -191,20 +170,23 @@ struct ConversationTimelineView: View {
             }
             .scrollTargetLayout()  // Required for aggregate visibility tracking (macOS 15+)
         }
-        .scrollPosition(id: $scrollPositionId, anchor: .bottom)
+        .scrollPosition(id: $scrollPositionId, anchor: .bottom)  // Scroll position binding with bottom anchor
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollContentBackground(.hidden)
         .overlay(alignment: .bottomTrailing) {
-            // "Jump to Latest" button appears when user scrolls up
-            if !isAtBottom && !monitor.visibleEntries.isEmpty {
+            // "Jump to Latest" button appears when user has scrolled up
+            if userHasScrolledUp && !monitor.visibleEntries.isEmpty {
                 Button {
-                    scrollToBottomIfNeeded()
+                    log.debug("[SCROLL] Jump to Latest clicked")
+                    userHasScrolledUp = false
+                    autoScrollToBottomIfNeeded("jumpButton", animated: true)
                 } label: {
                     Label("Jump to Latest", systemImage: "arrow.down.circle.fill")
                         .labelStyle(.titleAndIcon)
                         .font(.callout)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(.contextifyBlue)
                 .padding()
                 .transition(.scale.combined(with: .opacity))
             }
@@ -213,44 +195,63 @@ struct ConversationTimelineView: View {
         .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
             monitor.replaceVisibleSnapshot(ids)
         }
-        // Scroll phase gating to prevent queueing during programmatic jumps
-        .onScrollPhaseChange { oldPhase, newPhase in
+        // Scroll phase tracking for user input detection
+        .onScrollPhaseChange { _, newPhase in
             monitor.handleScrollPhaseChange(newPhase)
-        }
-        // Detect when user scrolls away from bottom
-        .onChange(of: scrollPositionId) { _, newId in
-            let lastId = monitor.visibleEntries.last?.id
-            withAnimation(.spring(duration: 0.3)) {
-                isAtBottom = (lastId != nil && newId == lastId)
+
+            guard let lastId = monitor.visibleEntries.last?.id else { return }
+            let atBottom = (scrollPositionId == lastId)
+
+            switch newPhase {
+            case .interacting, .decelerating:
+                if !atBottom && !userHasScrolledUp {
+                    log.debug("[SCROLL] User scrolled away from bottom")
+                    userHasScrolledUp = true
+                }
+
+            case .idle:
+                if atBottom && userHasScrolledUp {
+                    log.debug("[SCROLL] User returned to bottom; re-enabling auto-scroll")
+                    userHasScrolledUp = false
+                }
+
+            default:
+                break
             }
         }
-        // Initial scroll on appear (once per view lifecycle)
-        .onAppear {
-            if !didRunInitialScroll {
-                didRunInitialScroll = true
-                scrollToBottomIfNeeded()
-            }
-        }
-        // Incremental updates keyed to revision (not count - count saturates at 25)
-        .onChange(of: monitor.entriesRevision) { _, _ in
+        // Reset state on project switch and scroll to bottom on initial load / new entries
+        .onChange(of: monitor.entriesRevision) { oldRevision, newRevision in
+            // When entries go to empty, we treat it as a project switch / full reset
             if monitor.entries.isEmpty {
-                // Reset state on project switch
-                didRunInitialScroll = false
-                isAtBottom = true
-            } else if isAtBottom {
-                scrollToBottomIfNeeded()
+                log.debug("[SCROLL] Project switch detected, resetting scroll state")
+                userHasScrolledUp = false
+                scrollPositionId = nil
+            } else {
+                autoScrollToBottomIfNeeded("entriesRevision")
             }
+        }
+        .onAppear {
+            autoScrollToBottomIfNeeded("onAppear")
         }
     }
 
-    /// Consolidated scroll helper - single path for all programmatic scrolling
-    private func scrollToBottomIfNeeded() {
-        guard monitor.autoScroll,
-              let lastId = monitor.visibleEntries.last?.id
-        else { return }
+    /// Centralized auto-scroll helper - only scrolls when user hasn't manually scrolled up
+    private func autoScrollToBottomIfNeeded(_ reason: StaticString, animated: Bool = false) {
+        guard !userHasScrolledUp else {
+            log.debug("[SCROLL] Skipping auto-scroll (\(reason)); userHasScrolledUp == true")
+            return
+        }
+
+        guard let lastId = monitor.visibleEntries.last?.id else { return }
+
+        log.debug("[SCROLL] Auto-scrolling to bottom (\(reason)) -> \(String(describing: lastId))")
 
         monitor.beginProgrammaticScroll()
-        withAnimation(.easeOut(duration: 0.3)) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scrollPositionId = lastId
+            }
+        } else {
             scrollPositionId = lastId
         }
     }
