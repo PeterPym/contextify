@@ -162,7 +162,8 @@ final class DatabaseTests: XCTestCase {
         windowSha256: nil,
         createdTs: Double(now),
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        isQueued: 0
       ),
       TranscriptEntry(
         id: UUID().uuidString,
@@ -184,7 +185,8 @@ final class DatabaseTests: XCTestCase {
         windowSha256: nil,
         createdTs: Double(now + 1),
         createdAt: now + 1,
-        updatedAt: now + 1
+        updatedAt: now + 1,
+        isQueued: 0
       )
     ]
 
@@ -384,7 +386,8 @@ final class DatabaseTests: XCTestCase {
       windowSha256: nil,
       createdTs: Double(now),
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      isQueued: 0
     )
     try entryRepo.insertBatch([entry])
 

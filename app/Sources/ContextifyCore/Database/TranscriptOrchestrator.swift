@@ -1807,8 +1807,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectVisitsRepo.markViewed(projectId: projectId, timestamp: timestamp)
     // Return fresh state immediately after update
     guard let visit = try projectVisitsRepo.getVisit(projectId: projectId) else {
-      // If visit doesn't exist yet, return a default one with zero unread count
-      return ProjectVisit(projectId: projectId, unreadCount: 0, lastViewedAt: timestamp, lastSelectedAt: nil)
+      // If visit doesn't exist yet, return a default one
+      return ProjectVisit(projectId: projectId, lastViewedAt: timestamp, lastSelectedAt: nil, pinned: false)
     }
     return visit
   }
