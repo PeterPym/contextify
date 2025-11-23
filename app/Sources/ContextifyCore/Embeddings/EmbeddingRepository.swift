@@ -21,6 +21,12 @@ public protocol EmbeddingRepository: Sendable {
 
   /// Counts entries by embedding status
   func countEmbeddings(version: Int, projectId: String?, minLength: Int) async throws -> (total: Int, embedded: Int, pending: Int)
+
+  /// Gets content length distribution for stats (admin UI)
+  func getContentLengthDistribution() async throws -> [String: Int]
+
+  /// Clears all embeddings (admin operation for testing/reprocessing)
+  func clearAllEmbeddings() async throws
 }
 
 /// GRDB implementation of EmbeddingRepository
@@ -140,6 +146,41 @@ public final class EmbeddingRepositoryImpl: EmbeddingRepository, @unchecked Send
       let pending = total - embedded
 
       return (total: total, embedded: embedded, pending: pending)
+    }
+  }
+
+  public func getContentLengthDistribution() async throws -> [String: Int] {
+    try await db.read { db in
+      var distribution: [String: Int] = [:]
+
+      // Count entries in each range (for admin UI stats)
+      // NOTE: Intentionally queries ALL entries (no display_in_timeline filter) for complete stats
+      distribution["<50"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) < 50") ?? 0
+      distribution["50-99"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 50 AND length(content) < 100") ?? 0
+      distribution["100-199"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 100 AND length(content) < 200") ?? 0
+      distribution["200-499"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 200 AND length(content) < 500") ?? 0
+      distribution["500+"] = try Int.fetchOne(db,
+        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 500") ?? 0
+
+      return distribution
+    }
+  }
+
+  public func clearAllEmbeddings() async throws {
+    try await db.write { db in
+      try db.execute(
+        sql: """
+          UPDATE transcript_entries
+          SET embedding = NULL,
+              embedding_version = NULL,
+              embedding_generated_at = NULL
+          WHERE embedding IS NOT NULL
+        """
+      )
     }
   }
 }

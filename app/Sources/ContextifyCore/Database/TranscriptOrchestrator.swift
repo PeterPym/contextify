@@ -574,6 +574,42 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.get(id: id)
   }
 
+  /// Gets the set of providers (Claude Code, Codex, etc.) that have transcripts for a project
+  /// - Parameter projectPath: Absolute path to project root
+  /// - Returns: Set of provider types found in project's transcripts
+  public func getProviders(forProjectPath projectPath: String) async throws -> Set<DiscoveredProject.Provider> {
+    try await dbManager.pool.read { db in
+      let sql = """
+        SELECT GROUP_CONCAT(DISTINCT t.provider) AS providers
+        FROM projects p
+        LEFT JOIN transcripts t ON t.project_id = p.id
+        WHERE p.root_path = ?
+        GROUP BY p.id
+        LIMIT 1
+        """
+
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectPath]) else {
+        return []
+      }
+
+      // Parse provider set from CSV of raw values
+      let providersCSV: String? = row["providers"]
+      var result: Set<DiscoveredProject.Provider> = []
+      if let csv = providersCSV, !csv.isEmpty {
+        for token in csv.split(separator: ",") {
+          let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
+          // Tolerant mapping for legacy/variant provider strings
+          if let p = DiscoveredProject.Provider(dbRaw: raw) ?? DiscoveredProject.Provider(rawValue: raw) {
+            result.insert(p)
+          } else {
+            result.insert(.other)
+          }
+        }
+      }
+      return result
+    }
+  }
+
   /// Reset all display_order values to NULL for activity-based sorting
   /// (Used on first launch to ensure projects sort by newest entry)
   public func resetDisplayOrder() throws {
