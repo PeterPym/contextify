@@ -28,6 +28,14 @@ let package = Package(
       name: "TranscriptValidatorCLI",
       dependencies: ["ContextifyCore"],
       path: "Sources/TranscriptValidatorCLI"
+    ),
+    .testTarget(
+      name: "ContextifyCoreTests",
+      dependencies: [
+        "ContextifyCore",
+        .product(name: "GRDB", package: "GRDB.swift")
+      ],
+      path: "Tests/ContextifyCoreTests"
     )
   ]
 )
