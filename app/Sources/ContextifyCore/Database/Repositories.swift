@@ -362,7 +362,9 @@ public final class EntryRepositoryImpl: EntryRepository {
 
   public func byTranscript(_ transcriptId: String, afterTimestamp: Int? = nil) throws -> [TranscriptEntry] {
     try db.read { db in
-      var query = TranscriptEntry.filter(Column("transcript_id") == transcriptId)
+      var query = TranscriptEntry
+        .filter(Column("transcript_id") == transcriptId)
+        .filter(Column("display_in_timeline") == 1)
       if let after = afterTimestamp {
         query = query.filter(Column("timestamp") > after)
       }
@@ -372,7 +374,9 @@ public final class EntryRepositoryImpl: EntryRepository {
 
   public func search(content: String, projectId: String? = nil) throws -> [TranscriptEntry] {
     try db.read { db in
-      var query = TranscriptEntry.filter(Column("content").like("%\(content)%"))
+      var query = TranscriptEntry
+        .filter(Column("content").like("%\(content)%"))
+        .filter(Column("display_in_timeline") == 1)
       if let projectId = projectId {
         query = query.filter(Column("project_id") == projectId)
       }

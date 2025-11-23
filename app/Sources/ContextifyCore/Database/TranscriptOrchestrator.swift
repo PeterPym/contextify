@@ -2089,11 +2089,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         // Scalar comparison workaround (SQLite has no tuple >)
         return try TranscriptEntry.fetchAll(db, sql: """
           SELECT * FROM transcript_entries
-           WHERE project_id = :pid AND (
+           WHERE project_id = :pid
+             AND display_in_timeline = 1
+             AND (
                   timestamp > :ts
                OR (timestamp = :ts AND created_at > :ca)
                OR (timestamp = :ts AND created_at = :ca AND id > :id)
-           )
+             )
            ORDER BY timestamp ASC, created_at ASC, id ASC
         """, arguments: ["pid": projectId, "ts": c.timestamp, "ca": c.createdAt, "id": c.id])
       } else {
@@ -2101,6 +2103,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         return try TranscriptEntry.fetchAll(db, sql: """
           SELECT * FROM transcript_entries
            WHERE project_id = :pid
+             AND display_in_timeline = 1
            ORDER BY timestamp ASC, created_at ASC, id ASC
         """, arguments: ["pid": projectId])
       }
