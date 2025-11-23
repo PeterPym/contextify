@@ -33,16 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-22
+**Last Updated:** 2025-11-23
 **Status:** Active
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 4 items - Must complete before App Store submission
-- **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
+- **P1 (High Priority):** 14 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 32 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 66
 
 ---
 
@@ -115,6 +115,43 @@ doc_references:
 **Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
 
 ---
+
+## Code Quality & Prevention (3 items)
+
+**Status:** P0 bugs fixed (commit ad190448), prevention work ready to start
+**Effort:** 29 hours total (reduced from 83h after review)
+**Spec:** `build/notes/todo-support/P1-CODE-QUALITY-spec.md`
+
+### Phase 1B: Regression Tests (Week 1)
+
+- [ ] #P1-CODE-QUALITY-TESTS: Add regression tests for display_in_timeline filters (2h)
+  - Test byTranscript() excludes hidden entries
+  - Test search() excludes hidden entries  
+  - Test getEntriesAfterCursor() excludes hidden entries
+  - **Prevents:** Recurrence of bugs fixed in commit ad190448
+
+### Phase 2: Architectural Enforcement (Month 1)
+
+- [ ] #P1-ARCHITECTURAL-TESTS: Implement layer boundary tests with SwiftSyntax (4h)
+  - Enforce UI → Orchestrator → Repository → DB boundaries
+  - Prevent UI from importing GRDB directly
+  - Add informative failure messages
+  - Integrate into pre-commit hook
+  - **Prevents:** Layer violations, maintains architecture
+
+### Phase 3: Pattern Documentation (Quarter 1)
+
+- [ ] #P2-STATE-SYNC-DOCS: Document hybrid state sync pattern in CLAUDE.md (1h)
+  - Optimistic UI updates for user-initiated changes
+  - DB reconciliation for background changes
+  - When refresh is required vs optional
+  - **Prevents:** State sync bugs, clarifies design intent
+
+**Related:**
+- Existing `#P1-QUERY-CENTRALIZE` aligns with query builder pilot
+- Phase 2 verification audit may identify additional issues
+- Deferred: God class refactoring (40-60h realistic), reactive state
+
 
 ## Transcript-Based Git Branch Display (1 item)
 

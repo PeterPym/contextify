@@ -1,0 +1,23 @@
+# Essential Documents from Code Smell Analysis
+
+For implementation, refer to:
+
+1. **CONSOLIDATED-CODE-SMELL-ANALYSIS.md** - Master analysis (keep for reference)
+
+2. **build/notes/todo-support/P1-CODE-QUALITY-spec.md** - Implementation spec
+   - This is the actionable document
+   - Referenced by TODOS.md items
+   - Contains all implementation details
+
+Supporting reports (for detailed reference if needed):
+- sql-duplication-audit.md
+- observable-state-sync-audit.md  
+- code-smell-audit-2025-11-23.md
+
+Superseded documents (can be removed):
+- code-smell-hotspots.md (merged into consolidated)
+- code-smell-p0-fixes.md (P0s already fixed)
+- code-smell-refactoring-roadmap.md (superseded by spec)
+- claude-md-guidelines-code-quality.md (extract to CLAUDE.md as needed)
+- sql-guidelines-for-claude-md.md (extract to CLAUDE.md as needed)
+- sql-duplication-hotfixes.md (merged into spec)
