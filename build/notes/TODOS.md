@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
 - **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 64
+**Total Active Items:** 63
 
 ---
 
-# P0 (Blocking Release) - 5 Items Remaining
+# P0 (Blocking Release) - 4 Items Remaining
 
 
 
@@ -133,32 +133,7 @@ doc_references:
 - No new summaries matching old prompt examples
 - Increased diversity in summary phrasing
 
-**Rollback:** Single-commit revert, bump generator signature to regenerate
-
----
-
-- [ ] #P0-GENERATOR-BUMP: Increment timeline generator signature to trigger regeneration
-
-**Purpose:** Mark all existing summaries as stale so they regenerate with new validation rules.
-
-**Scope:**
-- Single line change in FoundationLLM.swift
-- Existing summaries will be regenerated on next timeline load
-
-**Files:**
-- `Contextify/Contextify/FoundationLLM.swift` (timelineGeneratorSignature function)
-
-**Change:**
-```swift
-"v2-filter-and-validation-fixes-2025-11-22"  // Increment from v1
-```
-
-**Impact:**
-- All cached summaries treated as stale
-- Regeneration uses new validation logic
-- No data loss (just triggers re-summarization)
-
-**Note:** No data cleanup needed - database regenerates frequently in preproduction.
+**Rollback:** Single-commit revert
 
 ---
 
