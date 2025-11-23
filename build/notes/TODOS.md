@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 2 items - Must complete before App Store submission
 - **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 61
 
 ---
 
-# P0 (Blocking Release) - 4 Items Remaining
+# P0 (Blocking Release) - 2 Items Remaining
 
 
 
@@ -61,79 +61,6 @@ doc_references:
 - [ ] #9: TestFlight beta (optional, recommended)
 
 **Reference:** `build/notes/todo-support/P0-APP-STORE-checklist.md` § "APP STORE SUBMISSION CHECKLIST"
-
----
-
-- [ ] #P0-VALIDATION-FIX: Remove confidence bypass from validation, add prompt example blacklist
-
-**Problem:** Validation uses LLM-generated `confidence` field to bypass all checks, allowing hallucinations to be accepted.
-
-**Root cause:** LLM grades its own homework - when uncertain, it copies prompt examples AND example confidence value (0.95), triggering bypass.
-
-**Evidence:**
-- 40+ entries with identical hallucination: "Claude Code analyzed the stack trace and identified the root cause"
-- All have confidence = 0.95 (copied from prompt example)
-- Original messages never mention "stack trace"
-
-**Scope:**
-- Remove `goodConfidence` bypass (confidence >= 0.6)
-- Add `containsPromptExample()` check
-- Stricter leakage threshold (4 instead of 8)
-- ~30 lines changed in FoundationLLM.swift
-
-**Files:**
-- `Contextify/Contextify/FoundationLLM.swift:1799-1807` (validation logic)
-- Add helper function `containsPromptExample()`
-
-**Plan:** `build/notes/todo-support/P0-VALIDATION-FIX-plan.md`
-**Analysis:** `build/notes/todo-support/P0-VALIDATION-FIX-analysis.md`
-
-**Testing:**
-- Unit test: `testValidationRejectsPromptExamples()`
-- Unit test: `testValidationRejectsHighLeakage()`
-- Monitor logs: "Timeline summary REJECTED: leakage=X, hasExample=Y"
-
-**Success criteria:**
-- Zero new "stack trace" hallucinations
-- Rejection rate 5-10% (was ~0%)
-- No legitimate summaries rejected excessively
-
-**Rollback:** Single-commit revert
-
----
-
-- [ ] #P0-PROMPT-CLEANUP: Remove specific technical phrases from prompt examples
-
-**Problem:** Prompt contains concrete examples ("analyzed the stack trace") that LLM copies when uncertain.
-
-**Root cause:** Generic technical examples are too broadly applicable, become fallback when LLM confused (especially for thinking blocks).
-
-**Scope:**
-- Replace specific examples with variable templates
-- Change example confidence from 0.95 to 0.75
-- ~10 lines changed in FoundationLLM.swift
-
-**Files:**
-- `Contextify/Contextify/FoundationLLM.swift:1541` (analysis example)
-- `Contextify/Contextify/FoundationLLM.swift:1552` (example confidence)
-
-**Plan:** `build/notes/todo-support/P0-PROMPT-CLEANUP-plan.md`
-
-**Changes:**
-- OLD: "Claude Code analyzed the stack trace and identified the root cause."
-- NEW: "Claude Code explained the authentication logic and identified retry timing."
-- Also: Use variable template format showing structure
-
-**Impact:**
-- Reduces prompt contamination risk
-- LLM less likely to copy examples verbatim
-- Lower anchor for confidence values
-
-**Success criteria:**
-- No new summaries matching old prompt examples
-- Increased diversity in summary phrasing
-
-**Rollback:** Single-commit revert
 
 ---
 
