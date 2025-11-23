@@ -298,6 +298,10 @@ final class ConversationMonitor {
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
 
+    // P1-UNREAD-COUNT: Scroll-to-bottom unread clearing
+    @ObservationIgnored private var isAtBottom: Bool = false  // Track if user is scrolled to bottom
+    @ObservationIgnored private var clearUnreadTask: Task<Void, Never>?  // Debounced mark-as-viewed task
+
     // P0-4: Computed properties for UI binding
     var isPinnedMode: Bool {
         if case .manual = followMode { return true }
@@ -695,6 +699,14 @@ final class ConversationMonitor {
             log.debug("onProjectOrSessionChange: cancelling pending debounce task")
             debounceTask?.cancel()
             debounceTask = nil
+        }
+
+        // P1-UNREAD-COUNT: Cancel pending unread clear (for OLD project)
+        if clearUnreadTask != nil {
+            log.debug("onProjectOrSessionChange: cancelling pending unread clear task")
+            clearUnreadTask?.cancel()
+            clearUnreadTask = nil
+            isAtBottom = false
         }
 
         // Clear ALL pending LLM requests on project/session change
@@ -2000,6 +2012,85 @@ final class ConversationMonitor {
         let currentIDs = Set(state.entries.map { $0.id })
         viewedEntryIDs.formIntersection(currentIDs)
         log.debug("Pruned viewedEntryIDs to \(self.viewedEntryIDs.count)")
+    }
+
+    // MARK: - Scroll-to-Bottom Unread Clearing (P1-UNREAD-COUNT)
+
+    /// Update scroll position and trigger unread clearing if at bottom
+    /// Called from timeline view when scroll position changes
+    @MainActor
+    func updateScrollPosition(visibleRect: CGRect, contentHeight: CGFloat) {
+        let threshold: CGFloat = 50.0
+        let scrollBottom = visibleRect.maxY
+        let newIsAtBottom = (contentHeight - scrollBottom) <= threshold || contentHeight <= visibleRect.height
+
+        if newIsAtBottom != isAtBottom {
+            isAtBottom = newIsAtBottom
+            if isAtBottom {
+                log.debug("[UNREAD-CLEAR] User scrolled to bottom, scheduling mark-as-viewed")
+                scheduleMarkAsViewed()
+            } else {
+                // User scrolled away from bottom, cancel pending clear
+                clearUnreadTask?.cancel()
+                clearUnreadTask = nil
+                log.debug("[UNREAD-CLEAR] User scrolled away from bottom, cancelled pending mark-as-viewed")
+            }
+        }
+    }
+
+    /// Schedule delayed mark-as-viewed (1 second debounce to prevent accidental clears)
+    @MainActor
+    private func scheduleMarkAsViewed() {
+        clearUnreadTask?.cancel()
+        clearUnreadTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+                guard let self, !Task.isCancelled else { return }
+                await self.markActiveProjectAsViewed()
+            } catch {
+                // Task was cancelled, don't mark as viewed
+            }
+        }
+    }
+
+    /// Mark active project as viewed with timestamp of latest entry
+    /// Clears unread count by updating last_viewed_ts
+    @MainActor
+    private func markActiveProjectAsViewed() async {
+        guard let projectId = currentProjectId else {
+            log.debug("[UNREAD-CLEAR] No active project, skipping mark-as-viewed")
+            return
+        }
+
+        guard let latestEntry = state.entries.last else {
+            log.debug("[UNREAD-CLEAR] No entries in timeline, skipping mark-as-viewed")
+            return
+        }
+
+        guard let orchestrator = orchestrator else {
+            log.debug("[UNREAD-CLEAR] No orchestrator available, skipping mark-as-viewed")
+            return
+        }
+
+        let timestamp = ISO8601Z.string(from: latestEntry.timestamp)
+
+        Task.detached(priority: .utility) { [orchestrator, projectId, timestamp] in
+            let logger = Logger(subsystem: "dev.contextify.timeline", category: "ConversationMonitor")
+            do {
+                try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
+                logger.info("[UNREAD-CLEAR] ✅ Marked project \(projectId, privacy: .public) as viewed (scroll-to-bottom)")
+
+                // Trigger UI refresh of unread counts
+                _ = await MainActor.run {
+                    Task {
+                        await ProjectSwitcherState.shared.refreshUnreadCounts()
+                        logger.debug("[UNREAD-CLEAR] Refreshed unread counts in UI")
+                    }
+                }
+            } catch {
+                logger.error("[UNREAD-CLEAR-ERROR] Failed to mark project as viewed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     // MARK: - Aggregate Visibility Tracking (macOS 15+)

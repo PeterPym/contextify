@@ -2,6 +2,20 @@ import SwiftUI
 import OSLog
 import ContextifyCore
 
+// MARK: - P1-UNREAD-COUNT: Scroll Geometry Tracking
+
+struct ScrollGeometry: Equatable {
+    let visibleRect: CGRect
+    let contentSize: CGSize
+}
+
+struct ScrollGeometryPreferenceKey: PreferenceKey {
+    static var defaultValue: ScrollGeometry? = nil
+    static func reduce(value: inout ScrollGeometry?, nextValue: () -> ScrollGeometry?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct ConversationTimelineView: View {
     @Environment(ConversationMonitor.self) private var monitor
     @Environment(ProjectsViewModel.self) private var projectsVM
@@ -173,6 +187,27 @@ struct ConversationTimelineView: View {
         .scrollPosition(id: $scrollPositionId, anchor: .bottom)  // Scroll position binding with bottom anchor
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .scrollContentBackground(.hidden)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ScrollGeometryPreferenceKey.self,
+                    value: ScrollGeometry(
+                        visibleRect: proxy.frame(in: .named("scrollContainer")),
+                        contentSize: proxy.size
+                    )
+                )
+            }
+        )
+        .coordinateSpace(name: "scrollContainer")
+        .onPreferenceChange(ScrollGeometryPreferenceKey.self) { geometry in
+            // P1-UNREAD-COUNT: Track scroll position for unread clearing
+            if let geometry = geometry {
+                monitor.updateScrollPosition(
+                    visibleRect: geometry.visibleRect,
+                    contentHeight: geometry.contentSize.height
+                )
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             // "Jump to Latest" button appears when user has scrolled up
             if userHasScrolledUp && !monitor.visibleEntries.isEmpty {
