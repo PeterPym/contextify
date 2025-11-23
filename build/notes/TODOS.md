@@ -38,47 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
+- **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 66
-
-**Change Log (2025-11-22):**
-- Completed and removed #P1-OPTION3: Parse permission dialog option 3 responses (commits 204f12e, a8577a9)
-- Added 1 P1 item (#P1-USER-PROMPT-REWORK: Comprehensive user message summarization improvements with permission response handling)
-- Added 1 P2 item (#P2-EXPANSION-STATE: Preserve timeline entry expansion state across view redraws)
-
-**Change Log (2025-11-21):**
-- Added 1 P1 item (#P1-LOGGING-AUDIT: Review and reduce excessive logging from TranscriptWatcher and TranscriptOrchestrator - 3.9MB logs for short runs)
-- Added 1 P1 item (#P1-UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior)
-- Added 1 P2 item (#P2-SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations)
-
-**Change Log (2025-11-20):**
-- Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
-- Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 2 P2 items (#P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
-- Simplified copy in Transcripts and Projects windows to match Apple conventions
-- Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
-- Root cause analysis reveals watchers never restart after project switches, not that they crash
-
-**Change Log (2025-11-19):**
-- Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
-- Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
-- Demoted 8 P0 items based on pre-submission priorities:
-  - #32, #43 (Discovery UX) → P1
-  - #35 (Failed metadata retry) → P1
-  - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
-  - #49-50 (Project management) → P2
-- Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
-- Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
-
-**Change Log (2025-11-15):**
-- Removed 19 completed items, 5 dropped items (diagnostics server feature)
-- Promoted 13 items (11 to P0, 2 to P1) - critical bugs and testing
-- Demoted 21 items (2 from P0, 11 from P1, 8 from P2)
-- Grouped 15 items into 3 consolidated features
-- See `/tmp/todo-proposed-changes-final.md` for full rationale
+**Total Active Items:** 61
 
 ---
 
@@ -101,76 +65,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 21 Items
-
-## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
-
-**Status:** Not Started (Blocked)
-**Priority:** Demoted from P0 (blocked by test infrastructure issues, manual QA sufficient for MVP)
-**Effort:** 12-16 hours
-
-- [ ] #P1-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
-- [ ] #45: Re-enable testInitialHooverWorkflow integration test
-- [ ] #46: Re-enable testOrchestratorWorkflow integration test
-- [ ] #47: Re-enable testCrashRecovery integration test
-
-**Problem:** Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
-
-**Blockers:**
-- FoundationLLM compatibility issues with test environment
-- Recent macOS SDK changes affecting test execution
-- Async/actor isolation problems in test harness
-- **Action:** Search database for previous conversations documenting these blockers
-
-**Tasks:**
-1. **Infrastructure Fix** (6-8 hours)
-   - Research FoundationLLM test compatibility issues
-   - Resolve SDK/async/actor problems
-   - Get test suite building and running cleanly
-   - Verify existing passing tests still work
-
-2. **Re-enable Integration Tests** (6-8 hours)
-   - Update tests for new HooverEngine API
-   - Update tests for new TranscriptOrchestrator API
-   - Update tests for checkpoint changes
-   - Remove `skip_` prefix
-   - Add to CI pipeline
-   - Verify tests pass 10x in a row (no flaky failures)
-
-**Files:**
-- `Contextify/ContextifyTests/IntegrationTests.swift`
-- Test configuration files (to be determined during investigation)
-
-**Acceptance Criteria:**
-- Test suite builds and runs without infrastructure errors
-- All 3 integration tests re-enabled and passing
-- Tests are stable (10 consecutive passes)
-- Integrated into CI pipeline
-
-**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
-
----
-
-## Discovery UX (2 items) ⬇️
-
-**Status:** Not Started
-**Priority:** Demoted from P0 (nice to have, not blocking submission)
-**Effort:** 4-6 hours total
-
-- [ ] #32: Show toast for newly discovered projects
-- [ ] #43: Stress test discovery with 10, 50, 100 projects
-
-**#32 - Toast Notifications:**
-- Format: "New project discovered: [project-name]"
-- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
-- Debounce rapid events (2-second window)
-
-**#43 - Stress Testing:**
-- Benchmark discovery time with varying project counts
-- Document P95 targets (goal: <30 seconds for 50 projects)
-- Test edge cases: missing directories, renamed projects, moved transcripts
-
-**Files:** `Contextify/Contextify/ContextifyApp.swift`, `ProjectsViewModel.swift`
+# P1 (High Priority) - 12 Items
 
 ---
 
@@ -218,32 +113,6 @@ doc_references:
 - Test fixtures/helper scripts
 
 **Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
-
----
-
-## Failed Metadata Retry (1 item) ⬇️
-
-**Status:** Not Started
-**Priority:** Demoted from P0 (not blocking submission)
-**Effort:** 2-3 hours
-
-- [ ] #35: Show manual retry button for failed metadata generation
-
-**Problem:** Silent failures after circuit breaker opens. Users see endless loading spinners.
-
-**Implementation:**
-- Add `failedTranscripts: Set<String>` state
-- Show orange warning icon in session rows
-- Add "Retry Metadata Generation" button
-- Persist failed set to UserDefaults
-
-**Files:** `Contextify/Contextify/TranscriptInventoryView.swift`
-
-**Acceptance Criteria:**
-- Failed generations show warning icon
-- Retry button appears in detail view
-- Success removes from failed set
-- Failed transcripts persist across restarts
 
 ---
 
@@ -482,50 +351,72 @@ The calculation of unread counts in project tabs is not transparent, and the cle
 
 ---
 
-## Compatibility (1 item)
+## OS Version Compatibility & User Communication (1 item)
 
 **Status:** Not Started
-**Effort:** 4-6 hours
+**Priority:** P1 (Pre-launch - graceful handling of unsupported OS versions)
+**Effort:** 2-3 hours
 
-- [ ] #51: Test all @available(macOS 26, *) fallback paths on macOS 14
+- [ ] #P1-OS-COMPATIBILITY: Investigate App Store OS restrictions and implement compatibility modal
 
-**Problem:** Code has 18 availability guards but no documented testing on macOS 14/15. App may crash on stated minimum OS.
+**Problem:**
+App is designed for macOS 26+ (Tahoe) but minimum deployment target may be set lower. Need to understand App Store behavior and communicate gracefully to users on unsupported OS versions.
 
-**Tasks:**
-- Test all fallback paths on macOS 14
-- Document degraded experience (timeline summaries = heuristics, no LLM)
-- Update README with feature availability matrix
-- Test on macOS 15 (one version before current)
+**Investigation (30 min):**
+1. **Research App Store behavior:**
+   - Does App Store prevent downloads on unsupported OS versions automatically?
+   - Or can users download but app won't launch?
+   - Check Apple developer documentation on minimum OS version enforcement
+   - Test: Can macOS 14 user see/download an app with macOS 26 minimum?
 
-**Key files with guards:**
-- `Contextify/Contextify/FoundationLLM.swift` (14 guards)
-- `Contextify/Contextify/LLMHealthCheck.swift`
-- `Contextify/Contextify/SynthesisService.swift`
+**Implementation (1.5-2 hours):**
 
-**Acceptance:** App launches on macOS 14, timeline displays with heuristics, no crashes
+2. **Add OS Version Check on Launch:**
+   ```swift
+   // In App init or SceneDelegate
+   if #unavailable(macOS 26) {
+       showOSCompatibilityModal()
+       return
+   }
+   ```
 
----
+3. **Create Compatibility Modal:**
+   - **Title:** "macOS Version Not Supported"
+   - **Message:** "Contextify is designed for macOS 26 (Tahoe) or later. Your current version: macOS [X.Y]"
+   - **Body:** "This version of macOS doesn't include features Contextify requires. We'd love to support your version - let us know!"
+   - **Buttons:**
+     - Primary: "Request Compatibility" → Opens mailto link
+     - Secondary: "Close App" → Quits gracefully
 
-## UI/UX (2 items) 🔗
+4. **Mailto Link:**
+   ```
+   mailto:support@contextify.sh?subject=macOS%20Compatibility%20Request&body=I'm%20on%20macOS%20[VERSION]%20and%20would%20like%20Contextify%20support.
+   ```
+   - Pre-fill subject: "macOS Compatibility Request"
+   - Pre-fill body with detected OS version
 
-**Status:** Not Started
-**Effort:** 6-8 hours total
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift` (OS version check on launch)
+- `Contextify/Contextify/Views/OSCompatibilityModal.swift` (new modal view)
+- `Info.plist` (verify MinimumOSVersion setting)
 
-- [ ] #54+#55: **[GROUPED]** Implement NSStatusBar menubar icon with processing status & errors
-- [ ] #56: Surface corrupt transcripts in Transcript window with warning
+**Acceptance Criteria:**
+- ✅ Documented: Does App Store block downloads on unsupported OS?
+- ✅ If app launches on unsupported OS, modal appears immediately
+- ✅ Modal clearly communicates OS requirement (macOS 26+)
+- ✅ "Request Compatibility" button opens mail client with pre-filled template
+- ✅ "Close App" quits gracefully (no crashes)
+- ✅ Modal includes detected user OS version
+- ✅ User gets clear path to provide feedback/request support
 
-**#54+#55 - Menubar (Grouped Feature):**
-- Implement NSStatusBar menubar icon
-- Show processing status and errors
-- Always-on access when window closed
-- **Files:** `Contextify/Contextify/AppDelegate.swift` (see TODO comment line 83)
-- **Effort:** 6-8 hours
+**Benefits:**
+- Professional user experience instead of crashes or confusing errors
+- Collect compatibility requests to inform future support decisions
+- Clear communication about OS requirements
+- Graceful degradation path
 
-**#56 - Corrupt Transcripts:**
-- Related to #58 (P0 repair feature) but separate concern
-- #56 = display warnings, #58 = repair actions
-- Show warning indicator for transcripts with errors
-- **Effort:** 1-2 hours (may already be covered by #58 implementation)
+**Alternative Approach:**
+If App Store DOES block downloads, this modal becomes unnecessary but check is still useful for TestFlight/sideload scenarios.
 
 ---
 
@@ -873,7 +764,55 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
-# P2 (Medium Priority) - 27 Items
+# P2 (Medium Priority) - 31 Items
+
+---
+
+## Test Infrastructure - Get Test Suite Running (4 items)
+
+**Status:** Not Started (Blocked)
+**Priority:** Demoted from P1 (blocked by test infrastructure issues, manual QA sufficient for MVP)
+**Effort:** 12-16 hours
+
+- [ ] #P2-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
+- [ ] #45: Re-enable testInitialHooverWorkflow integration test
+- [ ] #46: Re-enable testOrchestratorWorkflow integration test
+- [ ] #47: Re-enable testCrashRecovery integration test
+
+**Problem:**
+Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
+
+**Blockers:**
+- FoundationLLM compatibility issues with test environment
+- Recent macOS SDK changes affecting test execution
+- Async/actor isolation problems in test harness
+
+**Tasks:**
+1. **Infrastructure Fix** (6-8 hours)
+   - Research FoundationLLM test compatibility issues
+   - Resolve SDK/async/actor problems
+   - Get test suite building and running cleanly
+   - Verify existing passing tests still work
+
+2. **Re-enable Integration Tests** (6-8 hours)
+   - Update tests for new HooverEngine API
+   - Update tests for new TranscriptOrchestrator API
+   - Update tests for checkpoint changes
+   - Remove `skip_` prefix
+   - Add to CI pipeline
+   - Verify tests pass 10x in a row (no flaky failures)
+
+**Files:**
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+- Test configuration files (to be determined during investigation)
+
+**Acceptance Criteria:**
+- Test suite builds and runs without infrastructure errors
+- All 3 integration tests re-enabled and passing
+- Tests are stable (10 consecutive passes)
+- Integrated into CI pipeline
+
+**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
 
 ---
 
@@ -1562,16 +1501,16 @@ SwiftUI's `.navigationTitle()` conflicts with `.principal` toolbar placement. Ta
 
 ## Restore Diagnostics HTTP API (1 item)
 
-**Status:** Blocked (waiting for P0-REMOVE-HTTP-API completion)
+**Status:** Ready to implement (removal complete)
 **Priority:** P3 (Post-launch feature)
 **Effort:** 1-2 hours
 
 - [ ] #P3-RESTORE-HTTP-API: Re-enable diagnostics HTTP server for external tooling
 
 **Context:**
-The diagnostics HTTP server was removed before initial release (see P0-REMOVE-HTTP-API). This feature allows external scripts to query timeline state via localhost HTTP API.
+The diagnostics HTTP server was removed before initial release. This feature allows external scripts to query timeline state via localhost HTTP API.
 
-**Removal Commit:** _(To be documented when P0-REMOVE-HTTP-API is completed)_
+**Removal Commit:** `c0ffd9c` - feat(diagnostics): remove HTTP API before release (merged via feat/consistent-contextify-blue-tinting → main)
 
 **Files to Restore:**
 - `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`

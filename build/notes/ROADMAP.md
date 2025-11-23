@@ -97,6 +97,104 @@ Owner only needs to review progress. Agent handles:
 2. What's the best macOS pattern for toggling window float state?
 3. Should we auto-disable when user drags window? (prevent accidental "stuck" windows)
 
+---
+
+### P4-DISCOVERY-TOAST: Toast Notifications for Newly Discovered Projects
+
+**Status:** Not started (demoted from P1)
+**Priority:** P4 (nice-to-have UX polish)
+**Effort:** Small (2-3 hours)
+**Demoted From:** TODOS.md #32 (2025-11-22)
+
+- [ ] Show toast notification when new projects are discovered
+
+**Motivation:**
+- User feedback: Nice-to-have but not blocking MVP
+- Discovery already works silently in background
+- Projects appear in tabs automatically
+
+**Implementation:**
+- Format: "New project discovered: [project-name]"
+- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
+- Debounce rapid events (2-second window to batch multiple discoveries)
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift`
+- `ProjectsViewModel.swift`
+
+**Research Questions:**
+1. Should toast show for ALL discovered projects or only NEW ones (never seen before)?
+2. Should there be a user preference to disable discovery toasts?
+3. Should toast link to the project (clicking switches to it)?
+
+---
+
+### P4-MENUBAR-ICON: NSStatusBar Menubar Icon with Processing Status
+
+**Status:** Not started (demoted from P1)
+**Priority:** P4 (nice-to-have - always-on access)
+**Effort:** Medium (6-8 hours)
+**Demoted From:** TODOS.md #54+#55 (2025-11-22)
+
+- [ ] Implement NSStatusBar menubar icon showing processing status and errors
+
+**Motivation:**
+- Always-on access to Contextify when window is closed
+- Quick glance at processing status (hoovering, LLM queue, errors)
+- Common pattern in utility/background apps (Dropbox, Time Machine, etc.)
+
+**Features:**
+- Menubar icon that shows app status
+- Processing indicator (animated when hoovering/processing)
+- Error badge when issues occur
+- Click to show/hide main window
+- Right-click for quick actions menu
+
+**Implementation:**
+- `NSStatusBar` API for menubar integration
+- Status item with dynamic icon (idle/processing/error states)
+- Menu with quick actions: Show Window, Check for Updates, Quit
+- Show error count badge when transcripts fail parsing or LLM errors
+
+**Files:**
+- `Contextify/Contextify/AppDelegate.swift` (existing TODO comment line 83)
+- New: `Contextify/Contextify/StatusBarController.swift`
+
+**Research Questions:**
+1. Should menubar icon be optional (user preference to show/hide)?
+2. What icon states are most useful? (idle, processing, error, paused)
+3. Should clicking icon toggle window or show menu?
+
+---
+
+### P4-CORRUPT-TRANSCRIPT-WARNING: Surface Corrupt Transcripts in UI
+
+**Status:** Not started (demoted from P1)
+**Priority:** P4 (nice-to-have - diagnostic visibility)
+**Effort:** Small (1-2 hours)
+**Demoted From:** TODOS.md #56 (2025-11-22)
+
+- [ ] Show warning indicators for transcripts with parsing errors
+
+**Motivation:**
+- Help users identify problematic transcripts at a glance
+- Related to transcript repair (#58-59 in P2) but separate concern
+- #58-59 = repair actions, #56 = visual warnings
+
+**Implementation:**
+- Show orange warning icon (⚠️) in session rows for corrupt transcripts
+- Tooltip on hover: "Transcript has parsing errors - [error type]"
+- Click to show error details or repair options
+- Badge count in project tab if project has corrupt transcripts
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift`
+- `Contextify/Contextify/TimelineEntryRow.swift` (for error badges)
+
+**Note:** May already be covered by #58-59 implementation (P2 transcript repair MVP). Validate if separate work is needed.
+
+---
+
 ### P4-DIAGNOSTICS-HTTP-API: Restore Diagnostics HTTP Server
 
 **Status:** Removed pre-launch, planned for restoration
