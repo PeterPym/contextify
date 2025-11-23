@@ -309,6 +309,8 @@ public final class ProjectSwitcherState {
 
         if project.isOrphaned && pathExists {
           let projectId = project.id
+          // NOTE: Using Task.detached because this background database update
+          // should complete independently (fire-and-forget). No UI depends on immediate completion.
           Task.detached(priority: .utility) {
             do {
               try orchestrator.markProjectRestored(projectId: projectId)
@@ -597,6 +599,8 @@ public final class ProjectSwitcherState {
       }
 
       log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
+      // NOTE: Using Task.detached because fast-path ingestion is a background optimization
+      // that should run independently. UI doesn't wait for completion.
       Task.detached(priority: .utility) { [coordinator, projectIds, projectId] in
         await coordinator.runFastPath(projectIds: projectIds, activeProjectId: projectId)
       }
