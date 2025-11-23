@@ -1801,9 +1801,9 @@ extension FoundationLLM {
 
             // Objective validation (no LLM self-assessment)
             // Reject if:
-            // 1. Excessive leakage (≥4 tokens from prompt)
+            // 1. Excessive leakage (≥6 tokens from prompt)
             // 2. Contains known prompt example phrases
-            let excessiveLeakage = leaked.count >= 4
+            let excessiveLeakage = leaked.count >= 6
             let hasExamplePhrase = containsPromptExample(summary)
 
             let shouldReject = excessiveLeakage || hasExamplePhrase
