@@ -2079,6 +2079,14 @@ final class ConversationMonitor {
             do {
                 try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
                 logger.info("[UNREAD-CLEAR] ✅ Marked project \(projectId, privacy: .public) as viewed (scroll-to-bottom)")
+
+                // Trigger UI refresh of unread counts
+                _ = await MainActor.run {
+                    Task {
+                        await ProjectSwitcherState.shared.refreshUnreadCounts()
+                        logger.debug("[UNREAD-CLEAR] Refreshed unread counts in UI")
+                    }
+                }
             } catch {
                 logger.error("[UNREAD-CLEAR-ERROR] Failed to mark project as viewed: \(error.localizedDescription, privacy: .public)")
             }
