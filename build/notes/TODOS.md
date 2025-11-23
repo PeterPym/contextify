@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 11 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 61
+**Total Active Items:** 60
 
 ---
 
@@ -65,7 +65,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 12 Items
+# P1 (High Priority) - 11 Items
 
 ---
 
@@ -545,57 +545,6 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - [ ] Throttling rules documented in `.github/workflows/macos-build.yml`
 
 **Reference:** GitHub Actions workflow currently broken: https://github.com/banagale/contextify/actions/workflows/macos-build.yml
-
----
-
-## Logging Volume Review (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (Performance/Debug - excessive logging creating 3.9MB logs for short runs)
-**Effort:** 2-4 hours (audit + review + selective reduction)
-
-- [ ] #P1-LOGGING-AUDIT: Review and reduce excessive logging from TranscriptWatcher and TranscriptOrchestrator
-
-**Problem:**
-Short app runs generating excessively large log files (20K+ lines, 3.9MB for <20 seconds). TranscriptWatcher alone produces 11K+ logs, TranscriptOrchestrator 6K+ logs (83% of total volume).
-
-**Key Offenders:**
-- `TranscriptWatcher`: 11,133 logs (54%)
-- `TranscriptOrchestrator`: 5,991 logs (29%)
-- Total: 20,546 lines in 3.9MB file
-
-**Root Causes:**
-1. TranscriptWatcher logging every FD operation (open, create source, resume) at Info/Debug level
-2. Polling/checking operations: 1,569 instances
-3. Per-transcript logging for multiple transcripts (agents + main)
-4. No log level filtering or rate limiting
-
-**Implementation:**
-1. Audit TranscriptWatcher logging levels (move FD operations to trace-only)
-2. Review TranscriptOrchestrator debug logs for redundancy
-3. Add conditional logging (e.g., only log errors + first/last operations)
-4. Consider rate limiting for polling operations
-5. Check if Debug logs should be conditional on MonitorConfig flags
-
-**Files to Review:**
-- `app/Sources/ContextifyCore/TranscriptWatcher.swift`
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
-- `app/Sources/ContextifyCore/MonitorConfig.swift` (check for existing log flags)
-
-**Acceptance Criteria:**
-- [ ] Short run (<1 minute) produces <500KB log file
-- [ ] TranscriptWatcher logs reduced by 80%+ (keep only errors + state changes)
-- [ ] TranscriptOrchestrator logs reduced by 60%+ (keep only meaningful events)
-- [ ] Debug-level polling logs removed or gated behind config flag
-- [ ] No loss of useful diagnostic information
-
-**Testing:**
-1. Run app for 30 seconds
-2. Check Console.app log size
-3. Verify critical events still logged (errors, state transitions)
-4. Ensure debug flag can re-enable verbose logging when needed
-
-**Note:** Large log files make debugging harder and can impact performance. Logging should be informative but not overwhelming.
 
 ---
 
