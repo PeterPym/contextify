@@ -536,7 +536,10 @@ public final class HooverEngine {
     }
 
     // Handle final partial line (no trailing newline)
-    // Skip if we hit the limit - the buffer contains the next line to process on resume
+    // CRITICAL: When limitReached is true, we must NOT parse buffered data.
+    // The buffer contains the next line to process on resume. Processing it here
+    // would increment lineNo and save an incorrect checkpoint, causing that line
+    // to be permanently skipped on the next ingestion pass (data loss).
     if !buffer.isEmpty && !limitReached {
       if let lineString = String(data: buffer, encoding: .utf8) {
         lineNo += 1

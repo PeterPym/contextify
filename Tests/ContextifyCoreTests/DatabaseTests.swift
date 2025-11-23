@@ -679,6 +679,83 @@ final class DatabaseTests: XCTestCase {
     XCTAssertEqual(totalEntries, 20, "Should have ingested all 20 entries")
   }
 
+  func testHooverEngineSinglePassNoTrailingNewline() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    // Create test transcript file with 20 entries and NO trailing newline
+    let transcriptFile = tempDir.appendingPathComponent("test-no-newline.jsonl")
+    var lines: [String] = []
+    for i in 1...20 {
+      lines.append("""
+        {"type":"user","timestamp":"\(Date().addingTimeInterval(TimeInterval(i)).ISO8601Format())","uuid":"user-\(i)","message":{"role":"user","content":[{"type":"text","text":"Test message \(i)"}]}}
+        """)
+    }
+    // Join with newlines but don't add trailing newline
+    try lines.joined(separator: "\n").write(to: transcriptFile, atomically: true, encoding: .utf8)
+
+    // Setup repositories and engine
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+    let errorRepo = ParseErrorRepositoryImpl(db: pool)
+    let parser = ClaudeCodeLineParser()
+    let metadataParser = ClaudeCodeMetadataParser()
+
+    let hooverEngine = HooverEngine(
+      db: pool,
+      transcriptRepo: transcriptRepo,
+      entryRepo: entryRepo,
+      errorRepo: errorRepo,
+      parser: parser,
+      fileSnapshotRepo: FileSnapshotRepositoryImpl(db: pool),
+      trackedFileRepo: TrackedFileRepositoryImpl(db: pool),
+      transcriptSummaryRepo: TranscriptSummaryRepositoryImpl(db: pool),
+      systemEventRepo: SystemEventRepositoryImpl(db: pool),
+      assistantUsageRepo: AssistantUsageRepositoryImpl(db: pool),
+      metadataParser: metadataParser
+    )
+
+    // Create project and transcript records
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
+
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: transcriptFile,
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: lines.joined(separator: "\n").count
+    )
+
+    let transcript = try transcriptRepo.get(transcriptId)!
+
+    // Ingest in single pass with no limit
+    let progressSink = NoOpProgressSink()
+    let outcome = try hooverEngine.hooverTranscript(
+      transcript,
+      fileURL: transcriptFile,
+      progress: progressSink,
+      limit: .none
+    )
+
+    // Verify all 20 entries ingested (including final partial line)
+    XCTAssertEqual(outcome.newEntries, 20, "Should ingest all 20 entries including final partial line")
+    XCTAssertTrue(outcome.reachedEOF, "Should reach EOF")
+    XCTAssertNotNil(outcome.contentSha256, "Should compute SHA at EOF")
+
+    // Verify transcript state is complete
+    let completeTranscript = try transcriptRepo.get(transcriptId)!
+    XCTAssertEqual(completeTranscript.ingestState, "complete", "Should mark as complete")
+    XCTAssertEqual(completeTranscript.lastProcessedLine, 20, "Should have processed all 20 lines")
+
+    // Verify total entries in database
+    let totalEntries = try pool.read { db in
+      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries WHERE transcript_id = ?", arguments: [transcriptId]) ?? 0
+    }
+    XCTAssertEqual(totalEntries, 20, "Should have ingested all 20 entries")
+  }
+
   func testIngestionLockPreventsParallelIngest() async throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
     let pool = try makeMigratedPool(at: dbPath)
