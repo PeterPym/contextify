@@ -26,9 +26,9 @@ if ! ls $LOG_PATTERN >/dev/null 2>&1; then
 fi
 
 # Write CSV header
-echo "timestamp,leaked_count,confidence,leaked_tokens" > "$OUTPUT_FILE"
+echo "timestamp,entry_kind,leaked_count,confidence,leaked_tokens" > "$OUTPUT_FILE"
 
-# Extract all VALIDATION-REJECT lines with excessive leakage
+# Pattern 1: VALIDATION-REJECT with tagged format (assistant summaries)
 grep -h "VALIDATION-REJECT.*excessive leakage" $LOG_PATTERN 2>/dev/null | \
 while IFS= read -r line; do
     # Parse timestamp
@@ -43,7 +43,25 @@ while IFS= read -r line; do
     # Parse leaked tokens (after ): at end of line)
     leaked_tokens=$(echo "$line" | sed 's/.*): //' | tr ',' ';')
 
-    echo "\"$timestamp\",$leaked_count,$confidence,\"$leaked_tokens\"" >> "$OUTPUT_FILE"
+    echo "\"$timestamp\",assistant,$leaked_count,$confidence,\"$leaked_tokens\"" >> "$OUTPUT_FILE"
+done
+
+# Pattern 2: "User summary has excessive leakage" (user summaries, older format)
+grep -h "User summary has excessive leakage" $LOG_PATTERN 2>/dev/null | \
+while IFS= read -r line; do
+    # Parse timestamp
+    timestamp=$(echo "$line" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}')
+
+    # Parse leaked count (format: "9 tokens:")
+    leaked_count=$(echo "$line" | grep -oE '[0-9]+ tokens:' | grep -oE '[0-9]+')
+
+    # No confidence in older format
+    confidence=""
+
+    # Parse leaked tokens (after "tokens: ")
+    leaked_tokens=$(echo "$line" | sed 's/.*tokens: //' | tr ',' ';')
+
+    echo "\"$timestamp\",user,$leaked_count,$confidence,\"$leaked_tokens\"" >> "$OUTPUT_FILE"
 done
 
 # Count results
@@ -58,16 +76,23 @@ fi
 echo "Found $total_rejections failed summarization attempts"
 echo ""
 
+# Show breakdown by entry kind
+echo "Breakdown by entry kind:"
+tail -n +2 "$OUTPUT_FILE" | cut -d, -f2 | sort | uniq -c | while read count kind; do
+    echo "  $kind: $count"
+done
+
 # Show leakage statistics
+echo ""
 echo "Leakage count distribution:"
-tail -n +2 "$OUTPUT_FILE" | cut -d, -f2 | sort -n | uniq -c | while read count leaked; do
+tail -n +2 "$OUTPUT_FILE" | cut -d, -f3 | sort -n | uniq -c | while read count leaked; do
     printf "  %2d tokens: %3d occurrences\n" "$leaked" "$count"
 done
 
 # Show top leaked tokens
 echo ""
 echo "Most common leaked tokens (top 20):"
-tail -n +2 "$OUTPUT_FILE" | cut -d, -f4 | tr ';' '\n' | grep -v '^$' | \
+tail -n +2 "$OUTPUT_FILE" | cut -d, -f5 | tr ';' '\n' | grep -v '^$' | \
     sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/"//g' | \
     sort | uniq -c | sort -rn | head -20 | while read count token; do
     printf "  %3d: %s\n" "$count" "$token"
