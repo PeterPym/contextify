@@ -536,7 +536,8 @@ public final class HooverEngine {
     }
 
     // Handle final partial line (no trailing newline)
-    if !buffer.isEmpty {
+    // Skip if we hit the limit - the buffer contains the next line to process on resume
+    if !buffer.isEmpty && !limitReached {
       if let lineString = String(data: buffer, encoding: .utf8) {
         lineNo += 1
         transcriptHasher.update(lineData: buffer)
