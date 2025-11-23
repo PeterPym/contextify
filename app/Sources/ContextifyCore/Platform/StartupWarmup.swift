@@ -18,6 +18,8 @@ public enum StartupWarmup {
   ///
   /// Should be called once during app startup, before any UI-critical code paths.
   public static func run() {
+    // NOTE: Using Task.detached because this warmup should complete independently
+    // on app launch. Fire-and-forget initialization with no UI dependency.
     Task.detached(priority: .userInitiated) {
       // 1. Warm unified logging (triggers _os_trace_init_slow, XPC bundle parsing)
       let warmupLogger = Logger(subsystem: "dev.contextify", category: "Warmup")

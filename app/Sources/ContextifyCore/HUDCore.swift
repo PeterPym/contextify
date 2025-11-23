@@ -732,6 +732,8 @@ public final class HUDViewModel {
     // Notify coordinator with the final path (git root if present)
     // IMPORTANT: Do NOT await - this would block the main thread during project switch
     // The coordinator will handle database operations on background thread and publish updates
+    // NOTE: Using Task.detached because project switching is a background coordination task
+    // that should complete independently. UI updates come via StartupCoordinator.updates publisher.
     let finalPath = (self.projectRootURL ?? resolved).path
     Task.detached(priority: .userInitiated) {
       let logger = Logger(subsystem: "dev.contextify", category: "Lifecycle")
