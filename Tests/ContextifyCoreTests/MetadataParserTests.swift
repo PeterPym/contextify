@@ -12,20 +12,20 @@ final class MetadataParserTests: XCTestCase {
       "type": "file-history-snapshot",
       "timestamp": "2025-01-15T10:30:00.000Z",
       "isSnapshotUpdate": true,
-      "snapshotTimestamp": 1705314600,
-      "files": [
-        {
-          "path": "/path/to/file1.swift",
-          "version": 1,
-          "backupTime": 1705314600,
-          "backupFilename": "file1.swift.1705314600.bak"
-        },
-        {
-          "path": "/path/to/file2.swift",
-          "version": 2,
-          "backupTime": 1705314601
+      "snapshot": {
+        "timestamp": "2024-01-15T10:30:00.000Z",
+        "trackedFileBackups": {
+          "/path/to/file1.swift": {
+            "version": 1,
+            "backupTime": "2024-01-15T10:30:00.000Z",
+            "backupFileName": "file1.swift.1705314600.bak"
+          },
+          "/path/to/file2.swift": {
+            "version": 2,
+            "backupTime": "2024-01-15T10:30:01.000Z"
+          }
         }
-      ]
+      }
     }
     """
 
@@ -46,13 +46,18 @@ final class MetadataParserTests: XCTestCase {
     XCTAssertEqual(result.fileSnapshot?.isSnapshotUpdate, 1)
 
     XCTAssertEqual(result.trackedFiles.count, 2)
-    XCTAssertEqual(result.trackedFiles[0].filePath, "/path/to/file1.swift")
-    XCTAssertEqual(result.trackedFiles[0].version, 1)
-    XCTAssertEqual(result.trackedFiles[0].backupFilename, "file1.swift.1705314600.bak")
 
-    XCTAssertEqual(result.trackedFiles[1].filePath, "/path/to/file2.swift")
-    XCTAssertEqual(result.trackedFiles[1].version, 2)
-    XCTAssertNil(result.trackedFiles[1].backupFilename)
+    // Find files by path (dictionary order is not guaranteed)
+    let file1 = result.trackedFiles.first { $0.filePath == "/path/to/file1.swift" }
+    let file2 = result.trackedFiles.first { $0.filePath == "/path/to/file2.swift" }
+
+    XCTAssertNotNil(file1)
+    XCTAssertEqual(file1?.version, 1)
+    XCTAssertEqual(file1?.backupFilename, "file1.swift.1705314600.bak")
+
+    XCTAssertNotNil(file2)
+    XCTAssertEqual(file2?.version, 2)
+    XCTAssertNil(file2?.backupFilename)
   }
 
   // MARK: - Summary Parsing
