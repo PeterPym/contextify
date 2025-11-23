@@ -239,16 +239,15 @@ final class DatabaseTests: XCTestCase {
   func testCodexParser() throws {
     let parser = CodexLineParser()
 
+    // User messages in Codex format come from event_msg records, not response_item
+    // (response_item with role=user are now skipped to filter out system-injected messages)
     let json = """
     {
       "timestamp": "2025-10-11T12:00:00.000Z",
-      "type": "response_item",
+      "type": "event_msg",
       "payload": {
-        "type": "message",
-        "role": "user",
-        "content": [
-          { "type": "input_text", "text": "Test content" }
-        ]
+        "type": "user_message",
+        "message": "Test content"
       }
     }
     """
@@ -472,71 +471,12 @@ final class DatabaseTests: XCTestCase {
     XCTAssertTrue(indexes.contains("idx_tr_mtime_ms"))
   }
 
-  func testMigrationBackfillMtimeMs() throws {
-    let dbPath = tempDir.appendingPathComponent("test.db")
-    var config = Configuration()
-    config.foreignKeysEnabled = true
-
-    let pool = try DatabasePool(path: dbPath.path, configuration: config)
-
-    // Manually insert legacy data with mtime_ns
-    try pool.write { db in
-      // Create v2 schema (before mtime_ms)
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS projects (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          root_path TEXT NOT NULL,
-          created_at INTEGER NOT NULL
-        )
-      """)
-      try db.execute(sql: """
-        CREATE TABLE IF NOT EXISTS transcripts (
-          id TEXT PRIMARY KEY,
-          project_id TEXT NOT NULL,
-          provider TEXT NOT NULL,
-          mtime_ns INTEGER
-        )
-      """)
-
-      // Insert test data
-      try db.execute(sql: "INSERT INTO projects VALUES ('p1', 'Test', '/test', 1000)")
-      try db.execute(sql: "INSERT INTO transcripts VALUES ('t1', 'p1', 'claude.code', 1234567890000000000)")
-    }
-
-    // Run v3 migration
-    try applySchema(pool)
-
-    // Verify backfill worked
-    let result = try pool.read { db in
-      try Row.fetchOne(db, sql: "SELECT mtime_ns, mtime_ms FROM transcripts WHERE id = 't1'")
-    }
-
-    XCTAssertNotNil(result)
-    let mtimeNs: Int64? = result?["mtime_ns"]
-    let mtimeMs: Int64? = result?["mtime_ms"]
-
-    XCTAssertNotNil(mtimeNs)
-    XCTAssertNotNil(mtimeMs)
-    XCTAssertEqual(mtimeMs, mtimeNs! / 1000000)
-
-    // Test mismatch guard: mtime_ms already set, should NOT overwrite
-    try pool.write { db in
-      try db.execute(sql: "INSERT INTO transcripts VALUES ('t2', 'p1', 'claude.code', 2000000000000000000)")
-      try db.execute(sql: "UPDATE transcripts SET mtime_ms = 9999 WHERE id = 't2'")
-    }
-
-    // Re-run migration (idempotent)
-    try applySchema(pool)
-
-    // Verify mtime_ms was NOT overwritten (backfill only touches NULL values)
-    let result2 = try pool.read { db in
-      try Row.fetchOne(db, sql: "SELECT mtime_ns, mtime_ms FROM transcripts WHERE id = 't2'")
-    }
-
-    let mtimeMs2: Int64? = result2?["mtime_ms"]
-    XCTAssertEqual(mtimeMs2, 9999, "Migration should not overwrite existing mtime_ms values")
-  }
+  // DELETED: testMigrationBackfillMtimeMs
+  // This test validated the v3 migration (mtime_ms backfill), but that migration
+  // was collapsed into v16_collapsed_schema (commit af8c1437). The test created
+  // a manual v2 schema then ran modern migrations, which fails because v16+
+  // assumes either fresh DB or already-migrated DB. The migration path being
+  // tested no longer exists.
 
   // MARK: - Identity Resolution Tests
 
