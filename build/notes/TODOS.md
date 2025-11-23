@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 2 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
 - **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 61
+**Total Active Items:** 63
 
 ---
 
-# P0 (Blocking Release) - 2 Items Remaining
+# P0 (Blocking Release) - 4 Items Remaining
 
 
 
