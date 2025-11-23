@@ -97,6 +97,70 @@ Owner only needs to review progress. Agent handles:
 2. What's the best macOS pattern for toggling window float state?
 3. Should we auto-disable when user drags window? (prevent accidental "stuck" windows)
 
+---
+
+### P4-DISCOVERY-TOAST: Toast Notifications for Newly Discovered Projects
+
+**Status:** Not started (demoted from P1)
+**Priority:** P4 (nice-to-have UX polish)
+**Effort:** Small (2-3 hours)
+**Demoted From:** TODOS.md #32 (2025-11-22)
+
+- [ ] Show toast notification when new projects are discovered
+
+**Motivation:**
+- User feedback: Nice-to-have but not blocking MVP
+- Discovery already works silently in background
+- Projects appear in tabs automatically
+
+**Implementation:**
+- Format: "New project discovered: [project-name]"
+- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
+- Debounce rapid events (2-second window to batch multiple discoveries)
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift`
+- `ProjectsViewModel.swift`
+
+**Research Questions:**
+1. Should toast show for ALL discovered projects or only NEW ones (never seen before)?
+2. Should there be a user preference to disable discovery toasts?
+3. Should toast link to the project (clicking switches to it)?
+
+---
+
+### P4-METADATA-RETRY: Manual Retry for Failed Metadata Generation
+
+**Status:** Not started (demoted from P1)
+**Priority:** P4 (edge case, manual workaround exists)
+**Effort:** Small (2-3 hours)
+**Demoted From:** TODOS.md #35 (2025-11-22)
+
+- [ ] Add manual retry button for failed metadata/summary generation
+
+**Problem:**
+When LLM summarization fails (circuit breaker opens, API errors, etc.), transcripts show endless loading spinners. Users have no way to retry.
+
+**Impact:**
+- Low frequency issue (most metadata generation succeeds)
+- Manual workaround: Restart app or wait for automatic retry
+- Not blocking MVP release
+
+**Implementation:**
+- Add `failedTranscripts: Set<String>` state
+- Show orange warning icon in session rows for failed items
+- Add "Retry Metadata Generation" button in detail view
+- Persist failed set to UserDefaults across restarts
+
+**Files:**
+- `Contextify/Contextify/TranscriptInventoryView.swift`
+- `Contextify/Contextify/ConversationMonitor.swift` (retry logic)
+
+**Research Questions:**
+1. Should retry happen automatically after circuit breaker recovers?
+2. Should failed metadata show placeholder text instead of spinner?
+3. How to communicate failure reason to user (network, quota, API error)?
+
 ### P4-DIAGNOSTICS-HTTP-API: Restore Diagnostics HTTP Server
 
 **Status:** Removed pre-launch, planned for restoration

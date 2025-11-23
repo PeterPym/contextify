@@ -38,47 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 66
-
-**Change Log (2025-11-22):**
-- Completed and removed #P1-OPTION3: Parse permission dialog option 3 responses (commits 204f12e, a8577a9)
-- Added 1 P1 item (#P1-USER-PROMPT-REWORK: Comprehensive user message summarization improvements with permission response handling)
-- Added 1 P2 item (#P2-EXPANSION-STATE: Preserve timeline entry expansion state across view redraws)
-
-**Change Log (2025-11-21):**
-- Added 1 P1 item (#P1-LOGGING-AUDIT: Review and reduce excessive logging from TranscriptWatcher and TranscriptOrchestrator - 3.9MB logs for short runs)
-- Added 1 P1 item (#P1-UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior)
-- Added 1 P2 item (#P2-SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations)
-
-**Change Log (2025-11-20):**
-- Added 1 P0 item (#P0-WATCHER-INIT: Fix watcher initialization failure - critical system reliability issue)
-- Added 1 P1 item (#P1-WINDOW-WIDTH: Reduce default window width to match HUD-01 screenshot)
-- Added 2 P2 items (#P2-PROJECTS-REFRESH-REVIEW, #P2-PROJECTS-EMPTY-STATE)
-- Simplified copy in Transcripts and Projects windows to match Apple conventions
-- Added investigation report: `build/docs/audits/console-log-error-investigation-2025-11-20.md`
-- Root cause analysis reveals watchers never restart after project switches, not that they crash
-
-**Change Log (2025-11-19):**
-- Demoted 1 P2 item to P3 (#P2-LIQUID-GLASS → #P3-LIQUID-GLASS: toolbar translucency deferred post-launch)
-- Removed 3 P0 items (#3-5: old git monitoring disable tests) - superseded by transcript-based approach
-- Demoted 8 P0 items based on pre-submission priorities:
-  - #32, #43 (Discovery UX) → P1
-  - #35 (Failed metadata retry) → P1
-  - #45-47 (Integration tests) → P1 (blocked by test infrastructure issues)
-  - #49-50 (Project management) → P2
-- Added 1 P1 item (#P1-GIT-BRANCH: transcript-based git branch display for App Store)
-- Added 1 P1 item (#P1-TESTS: Get test suite running - wrapper for #45-47)
-
-**Change Log (2025-11-15):**
-- Removed 19 completed items, 5 dropped items (diagnostics server feature)
-- Promoted 13 items (11 to P0, 2 to P1) - critical bugs and testing
-- Demoted 21 items (2 from P0, 11 from P1, 8 from P2)
-- Grouped 15 items into 3 consolidated features
-- See `/tmp/todo-proposed-changes-final.md` for full rationale
+**Total Active Items:** 63
 
 ---
 
@@ -101,7 +65,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 21 Items
+# P1 (High Priority) - 18 Items
 
 ## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
 
@@ -151,29 +115,6 @@ doc_references:
 
 ---
 
-## Discovery UX (2 items) ⬇️
-
-**Status:** Not Started
-**Priority:** Demoted from P0 (nice to have, not blocking submission)
-**Effort:** 4-6 hours total
-
-- [ ] #32: Show toast for newly discovered projects
-- [ ] #43: Stress test discovery with 10, 50, 100 projects
-
-**#32 - Toast Notifications:**
-- Format: "New project discovered: [project-name]"
-- Use existing toast system (NotificationCenter + `.contextifyShowToast`)
-- Debounce rapid events (2-second window)
-
-**#43 - Stress Testing:**
-- Benchmark discovery time with varying project counts
-- Document P95 targets (goal: <30 seconds for 50 projects)
-- Test edge cases: missing directories, renamed projects, moved transcripts
-
-**Files:** `Contextify/Contextify/ContextifyApp.swift`, `ProjectsViewModel.swift`
-
----
-
 ## Automated QA Suite (1 item)
 
 **Status:** Not Started - methodology defined, needs implementation
@@ -218,32 +159,6 @@ doc_references:
 - Test fixtures/helper scripts
 
 **Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
-
----
-
-## Failed Metadata Retry (1 item) ⬇️
-
-**Status:** Not Started
-**Priority:** Demoted from P0 (not blocking submission)
-**Effort:** 2-3 hours
-
-- [ ] #35: Show manual retry button for failed metadata generation
-
-**Problem:** Silent failures after circuit breaker opens. Users see endless loading spinners.
-
-**Implementation:**
-- Add `failedTranscripts: Set<String>` state
-- Show orange warning icon in session rows
-- Add "Retry Metadata Generation" button
-- Persist failed set to UserDefaults
-
-**Files:** `Contextify/Contextify/TranscriptInventoryView.swift`
-
-**Acceptance Criteria:**
-- Failed generations show warning icon
-- Retry button appears in detail view
-- Success removes from failed set
-- Failed transcripts persist across restarts
 
 ---
 
@@ -1562,16 +1477,16 @@ SwiftUI's `.navigationTitle()` conflicts with `.principal` toolbar placement. Ta
 
 ## Restore Diagnostics HTTP API (1 item)
 
-**Status:** Blocked (waiting for P0-REMOVE-HTTP-API completion)
+**Status:** Ready to implement (removal complete)
 **Priority:** P3 (Post-launch feature)
 **Effort:** 1-2 hours
 
 - [ ] #P3-RESTORE-HTTP-API: Re-enable diagnostics HTTP server for external tooling
 
 **Context:**
-The diagnostics HTTP server was removed before initial release (see P0-REMOVE-HTTP-API). This feature allows external scripts to query timeline state via localhost HTTP API.
+The diagnostics HTTP server was removed before initial release. This feature allows external scripts to query timeline state via localhost HTTP API.
 
-**Removal Commit:** _(To be documented when P0-REMOVE-HTTP-API is completed)_
+**Removal Commit:** `c0ffd9c` - feat(diagnostics): remove HTTP API before release (merged via feat/consistent-contextify-blue-tinting → main)
 
 **Files to Restore:**
 - `app/Sources/ContextifyCore/Diagnostics/DiagnosticsHTTPServer.swift`
