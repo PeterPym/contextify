@@ -15,6 +15,7 @@ struct SettingsView: View {
   @State private var showingFilePicker: Bool = false
   @State private var conflictWarning: String?
   @State private var showLocationInfo: Bool = false
+  @State private var migrationTask: Task<Void, Never>?
 
   private let devMode = DeveloperMode.shared
 
@@ -292,16 +293,23 @@ struct SettingsView: View {
         didStartScope = true
       }
 
-      // Run the heavy migration work off the main thread
-      Task.detached(priority: .userInitiated) {
+      // Run the heavy migration work off the main thread (stored for cancellation)
+      migrationTask?.cancel()
+      migrationTask = Task.detached(priority: .userInitiated) { [weak self] in
         defer {
           if didStartScope {
             url.stopAccessingSecurityScopedResource()
           }
         }
-        await migrateDatabase(to: url)
+
+        guard let self = self else { return }
+        if Task.isCancelled { return }
+
+        await self.migrateDatabase(to: url)
+
+        if Task.isCancelled { return }
         await MainActor.run {
-          loadCurrentLocation()
+          self.loadCurrentLocation()
         }
       }
 
@@ -343,39 +351,52 @@ struct SettingsView: View {
   private func resetToDefaultLocation() {
     guard HUDPreferences.getCustomDatabaseLocation() != nil else { return }
 
-    // Run the heavy migration work off the main thread
-    Task.detached(priority: .userInitiated) {
+    // Run the heavy migration work off the main thread (stored for cancellation)
+    migrationTask?.cancel()
+    migrationTask = Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self = self else { return }
+      if Task.isCancelled { return }
+
       // Capture old path before migration
       let oldPath = (try? DatabaseManager.shared.databasePath().deletingLastPathComponent().path) ?? "previous location"
 
       await MainActor.run {
-        isMigrating = true
-        migrationError = nil
-        migrationSuccess = nil
+        self.isMigrating = true
+        self.migrationError = nil
+        self.migrationSuccess = nil
       }
+
+      if Task.isCancelled { return }
 
       do {
         let defaultDir = try FileManager.default
           .url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
           .appendingPathComponent("Contextify")
 
+        if Task.isCancelled { return }
+
         // Migrate FIRST, then clear preference on success
         try await DatabaseMigration.migrateDatabase(to: defaultDir, deleteSource: false)
+
+        if Task.isCancelled { return }
+
         HUDPreferences.clearCustomDatabaseLocation()
         await MainActor.run {
-          loadCurrentLocation()
-          migrationSuccess = "Old database kept as backup at:\n\(oldPath)\n\nYou can manually delete it after verifying sync is working."
+          self.loadCurrentLocation()
+          self.migrationSuccess = "Old database kept as backup at:\n\(oldPath)\n\nYou can manually delete it after verifying sync is working."
           log.info("Database reset to default location")
         }
       } catch {
+        if Task.isCancelled { return }
         await MainActor.run {
-          migrationError = error.localizedDescription
+          self.migrationError = error.localizedDescription
           log.error("Reset to default failed: \(error)")
         }
       }
 
+      if Task.isCancelled { return }
       await MainActor.run {
-        isMigrating = false
+        self.isMigrating = false
       }
     }
   }

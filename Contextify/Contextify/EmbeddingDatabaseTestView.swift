@@ -1,6 +1,5 @@
 import SwiftUI
 import ContextifyCore
-import GRDB
 
 /// Test view for verifying end-to-end embedding database operations
 struct EmbeddingDatabaseTestView: View {
@@ -11,7 +10,8 @@ struct EmbeddingDatabaseTestView: View {
 
   // Hold references safely; build once in init
   private let embeddingService: EmbeddingService
-  private let repository: EmbeddingRepository
+  private let repository: EmbeddingRepository?
+  private let initializationError: String?
 
   init() {
     // Build dependencies once with proper error handling
@@ -21,11 +21,11 @@ struct EmbeddingDatabaseTestView: View {
     do {
       let pool = try DatabaseManager.shared.pool
       self.repository = EmbeddingRepositoryImpl(db: pool)
+      self.initializationError = nil
     } catch {
-      // Fallback stub so view can render error message in .task
-      let memPool = try! DatabasePool(path: ":memory:")
-      self.repository = EmbeddingRepositoryImpl(db: memPool)
-      // Error will be displayed when loadStats() runs in .task
+      // Database initialization failed - repository will be nil
+      self.repository = nil
+      self.initializationError = "Failed to initialize database: \(error.localizedDescription)"
     }
   }
 
@@ -87,6 +87,17 @@ struct EmbeddingDatabaseTestView: View {
   }
 
   private func loadStats() async {
+    // Check for initialization error
+    if let initError = initializationError {
+      self.error = initError
+      return
+    }
+
+    guard let repository = repository else {
+      self.error = "Repository not initialized"
+      return
+    }
+
     do {
       stats = try await repository.countEmbeddings(
         version: EmbeddingService.currentEmbeddingVersion,
@@ -103,6 +114,12 @@ struct EmbeddingDatabaseTestView: View {
       isRunning = true
       error = nil
       result = ""
+
+      guard let repository = repository else {
+        self.error = initializationError ?? "Repository not initialized"
+        isRunning = false
+        return
+      }
 
       do {
         var log = "🧪 Starting End-to-End Test\n\n"

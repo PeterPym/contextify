@@ -253,6 +253,8 @@ public actor FastPathIngestionCoordinator {
     let orchestrator = self.orchestrator
     let log = self.log
 
+    // NOTE: Using Task.detached because background completion is a fire-and-forget optimization.
+    // UI was already notified during preview phase; this silently completes full ingestion.
     Task.detached(priority: .utility) { [weak self] in
       do {
         _ = try await orchestrator.ingestTranscript(
