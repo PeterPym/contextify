@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 11 items - Important for quality/UX, ship soon after launch
+- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 60
+**Total Active Items:** 65
 
 ---
 
-# P0 (Blocking Release) - 2 Items Remaining
+# P0 (Blocking Release) - 6 Items Remaining
 
 
 
@@ -64,8 +64,155 @@ doc_references:
 
 ---
 
+## Timeline Filter Bypasses (3 Critical Bugs)
 
-# P1 (High Priority) - 11 Items
+**Status:** Ready to implement
+**Priority:** P0 (Preproduction correctness - make timeline trustworthy)
+**Effort:** 2-4 hours
+**Blocking:** App Store submission (user-visible data corruption)
+
+- [ ] #P0-TIMELINE-FILTERS: Fix display_in_timeline filter bypasses in incremental updates, transcript view, and search
+
+**Problem:** Hidden entries (`display_in_timeline = 0`) appearing in timeline UI via incremental updates, causing hallucinated summaries to be visible.
+
+**Root causes:**
+1. `getEntriesAfterCursor()` in TranscriptOrchestrator uses raw SQL without filter (critical - high frequency)
+2. `byTranscript()` in Repositories missing filter (transcript detail view)
+3. `search()` in Repositories missing filter (search results)
+
+**Impact:**
+- User sees thinking blocks with hallucinated summaries
+- Timeline shows entries that should be hidden
+- Every incremental update (new entry arrival) triggers bug
+
+**Scope:**
+- Add `AND display_in_timeline = 1` to 3 SQL queries
+- ~15 lines changed across 2 files
+- No schema changes, no data migration needed
+
+**Files:**
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:2085-2108`
+- `app/Sources/ContextifyCore/Database/Repositories.swift:363-371` (byTranscript)
+- `app/Sources/ContextifyCore/Database/Repositories.swift:373-381` (search)
+
+**Plan:** `build/notes/todo-support/P0-TIMELINE-FILTERS-plan.md`
+**Investigation:** `build/notes/todo-support/P0-TIMELINE-FILTERS-investigation.md`
+
+**Testing:**
+- Unit tests: `testIncrementalUpdateFiltersHiddenEntries()` and similar
+- Manual: Switch projects, verify no thinking blocks appear
+- Logs: "Incremental update appended X entries" should exclude hidden
+
+**Success criteria:**
+- Zero hidden entries in timeline UI
+- Zero hidden entries in transcript view
+- Zero hidden entries in search results
+- No performance regression
+
+**Rollback:** Single-commit revert, no migration needed
+
+---
+
+- [ ] #P0-VALIDATION-FIX: Remove confidence bypass from validation, add prompt example blacklist
+
+**Problem:** Validation uses LLM-generated `confidence` field to bypass all checks, allowing hallucinations to be accepted.
+
+**Root cause:** LLM grades its own homework - when uncertain, it copies prompt examples AND example confidence value (0.95), triggering bypass.
+
+**Evidence:**
+- 40+ entries with identical hallucination: "Claude Code analyzed the stack trace and identified the root cause"
+- All have confidence = 0.95 (copied from prompt example)
+- Original messages never mention "stack trace"
+
+**Scope:**
+- Remove `goodConfidence` bypass (confidence >= 0.6)
+- Add `containsPromptExample()` check
+- Stricter leakage threshold (4 instead of 8)
+- ~30 lines changed in FoundationLLM.swift
+
+**Files:**
+- `Contextify/Contextify/FoundationLLM.swift:1799-1807` (validation logic)
+- Add helper function `containsPromptExample()`
+
+**Plan:** `build/notes/todo-support/P0-VALIDATION-FIX-plan.md`
+**Analysis:** `build/notes/todo-support/P0-VALIDATION-FIX-analysis.md`
+
+**Testing:**
+- Unit test: `testValidationRejectsPromptExamples()`
+- Unit test: `testValidationRejectsHighLeakage()`
+- Monitor logs: "Timeline summary REJECTED: leakage=X, hasExample=Y"
+
+**Success criteria:**
+- Zero new "stack trace" hallucinations
+- Rejection rate 5-10% (was ~0%)
+- No legitimate summaries rejected excessively
+
+**Rollback:** Single-commit revert
+
+---
+
+- [ ] #P0-PROMPT-CLEANUP: Remove specific technical phrases from prompt examples
+
+**Problem:** Prompt contains concrete examples ("analyzed the stack trace") that LLM copies when uncertain.
+
+**Root cause:** Generic technical examples are too broadly applicable, become fallback when LLM confused (especially for thinking blocks).
+
+**Scope:**
+- Replace specific examples with variable templates
+- Change example confidence from 0.95 to 0.75
+- ~10 lines changed in FoundationLLM.swift
+
+**Files:**
+- `Contextify/Contextify/FoundationLLM.swift:1541` (analysis example)
+- `Contextify/Contextify/FoundationLLM.swift:1552` (example confidence)
+
+**Plan:** `build/notes/todo-support/P0-PROMPT-CLEANUP-plan.md`
+
+**Changes:**
+- OLD: "Claude Code analyzed the stack trace and identified the root cause."
+- NEW: "Claude Code explained the authentication logic and identified retry timing."
+- Also: Use variable template format showing structure
+
+**Impact:**
+- Reduces prompt contamination risk
+- LLM less likely to copy examples verbatim
+- Lower anchor for confidence values
+
+**Success criteria:**
+- No new summaries matching old prompt examples
+- Increased diversity in summary phrasing
+
+**Rollback:** Single-commit revert, bump generator signature to regenerate
+
+---
+
+- [ ] #P0-GENERATOR-BUMP: Increment timeline generator signature to trigger regeneration
+
+**Purpose:** Mark all existing summaries as stale so they regenerate with new validation rules.
+
+**Scope:**
+- Single line change in FoundationLLM.swift
+- Existing summaries will be regenerated on next timeline load
+
+**Files:**
+- `Contextify/Contextify/FoundationLLM.swift` (timelineGeneratorSignature function)
+
+**Change:**
+```swift
+"v2-filter-and-validation-fixes-2025-11-22"  // Increment from v1
+```
+
+**Impact:**
+- All cached summaries treated as stale
+- Regeneration uses new validation logic
+- No data loss (just triggers re-summarization)
+
+**Note:** No data cleanup needed - database regenerates frequently in preproduction.
+
+---
+
+
+# P1 (High Priority) - 12 Items
 
 ---
 
@@ -197,6 +344,69 @@ Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring
 **Related:**
 - Supersedes old P0 items #3, #4, #5 (test/verify git disabled)
 - Builds on completed work: commit `b0abdb4` (git monitoring disabled)
+
+---
+
+## Timeline Query Centralization
+
+**Status:** Deferred to P1 (after P0 filter fixes ship)
+**Priority:** P1 (Prevent future filter drift bugs)
+**Effort:** 8-12 hours (requires refactoring all query callsites)
+
+- [ ] #P1-QUERY-CENTRALIZE: Eliminate duplicate SQL implementations, create single source of truth for timeline queries
+
+**Problem:** Multiple functions loading timeline entries with inconsistent filters.
+
+**Evidence:**
+- `entriesAfterCursor()` in Repositories (GRDB builder, correct, UNUSED)
+- `getEntriesAfterCursor()` in TranscriptOrchestrator (raw SQL, was broken, USED)
+- 7 total functions doing similar things with different approaches
+
+**Architectural smell:** TranscriptOrchestrator reimplements queries with raw SQL instead of delegating to Repositories.
+
+**Goal:** Single composable query builder that enforces visibility filter by default.
+
+**Design:**
+```swift
+final class TimelineEntryQuery {
+    func forProject(_ id: String) -> Self
+    func visibleOnly() -> Self  // display_in_timeline = 1
+    func afterCursor(_ cursor: EntryCursor) -> Self
+    func byTranscript(_ id: String) -> Self
+    func search(_ text: String) -> Self
+    func limit(_ n: Int) -> Self
+    func fetch() throws -> [TranscriptEntry]
+}
+
+// Usage (filter always explicit)
+let entries = TimelineEntryQuery()
+    .forProject(projectId)
+    .visibleOnly()
+    .afterCursor(cursor)
+    .fetch()
+```
+
+**Plan:** `build/notes/todo-support/P1-QUERY-CENTRALIZE-design.md`
+**Source Analysis:** `build/notes/todo-support/P1-QUERY-CENTRALIZE-source-analysis.md`
+
+**Benefits:**
+- Impossible to forget filter
+- Single source of truth
+- Easier to maintain and extend
+- Prevents future filter drift bugs
+
+**Scope:**
+- Create TimelineEntryQuery builder class
+- Refactor all 7 query functions to use builder
+- Update all callsites in ConversationMonitor, TranscriptOrchestrator
+- Remove duplicate implementations
+
+**Testing:**
+- Existing unit tests should pass unchanged
+- Add builder-specific tests
+- Integration test: timeline loading still works
+
+**Rollback:** Can revert to old implementation if issues found
 
 ---
 
