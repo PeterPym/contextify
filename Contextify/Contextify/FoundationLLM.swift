@@ -1529,16 +1529,17 @@ private extension FoundationLLM {
             **For COMPLETION:**
             - Use past-tense verbs: "added", "implemented", "refactored", "fixed", "updated", "created"
             - Do NOT use proposal language like "proposed" or "suggested"
-            - Example: "\(assistantName) added logging around the authentication flow."
+            - Example: "\(assistantName) implemented retry logic in the network client."
 
             **For PROPOSAL:**
             - Use proposal verbs: "proposed", "suggested", "offered to", "outlined", "presented"
             - Do NOT use completion verbs like "created", "implemented", "fixed"
-            - Example: "\(assistantName) proposed creating a helper script with presets."
+            - Example: "\(assistantName) suggested adding telemetry for deployment metrics."
 
             **For ANALYSIS:**
             - Use analysis verbs: "explained", "analyzed", "noted", "identified", "clarified"
-            - Example: "\(assistantName) analyzed the stack trace and identified the root cause."
+            - Example format: "\(assistantName) [verb] the [subject] and [verb] [outcome]."
+            - Concrete example: "\(assistantName) explained the authentication logic and identified retry timing."
 
             ### Output Format
 
@@ -1549,7 +1550,7 @@ private extension FoundationLLM {
               "isCompletion": true,
               "disposition": "completion",
               "grounding": "grounded",
-              "confidence": 0.95
+              "confidence": 0.75
             }
 
             Input format:
@@ -1777,6 +1778,16 @@ extension FoundationLLM {
         }
     }
 
+    /// Check if summary contains known prompt example phrases that indicate contamination
+    private func containsPromptExample(_ summary: String) -> Bool {
+        let examples = [
+            "analyzed the stack trace and identified the root cause",
+            "added logging around the authentication flow",
+            "proposed creating a helper script with presets"
+        ]
+        return examples.contains { summary.localizedCaseInsensitiveContains($0) }
+    }
+
     func postProcess(
         kind: TimelineEntryKind,
         payload: GuidedTimelineSummary,
@@ -1787,27 +1798,24 @@ extension FoundationLLM {
 
         if kind == .assistant {
             let leaked = introducedTopics(message: message, summary: summary)
-            let grounding = payload.grounding.lowercased()
-            let isGrounded = grounding == "grounded"
 
-            // Multi-factor acceptance decision:
-            // Accept if ANY of:
-            // 1. Confidence ≥0.6 - trust the model when it's reasonably confident
-            // 2. Low leakage (<8 tokens) with OK confidence (≥0.5)
-            // 3. Grounded with any confidence ≥0.4
-            // This is VERY permissive because the LLM is generally good
-            let goodConfidence = payload.confidence >= 0.6
-            let okConfidence = payload.confidence >= 0.5
-            let minimalConfidence = payload.confidence >= 0.4
-            let excessiveLeakage = leaked.count >= 8
+            // Objective validation (no LLM self-assessment)
+            // Reject if:
+            // 1. Excessive leakage (≥4 tokens from prompt)
+            // 2. Contains known prompt example phrases
+            let excessiveLeakage = leaked.count >= 4
+            let hasExamplePhrase = containsPromptExample(summary)
 
-            let shouldAccept = goodConfidence ||
-                               (okConfidence && !excessiveLeakage) ||
-                               (isGrounded && minimalConfidence)
-            let shouldReject = !shouldAccept
+            let shouldReject = excessiveLeakage || hasExamplePhrase
 
             if shouldReject {
-                log.warning("timeline summary REJECTED (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
+                if hasExamplePhrase {
+                    log.warning("[VALIDATION-REJECT] Timeline summary contains prompt example phrase: \(summary, privacy: .public)")
+                }
+                if excessiveLeakage {
+                    log.warning("[VALIDATION-REJECT] Timeline summary has excessive leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
+                }
+
                 // Special case: if it's just an ack, accept the generic ack message
                 let assistantName = provider?.displayName ?? "Claude Code"
                 if isAck(message) {
@@ -1815,11 +1823,11 @@ extension FoundationLLM {
                 }
                 // Reject but DON'T retry - it won't help since input doesn't change
                 log.error("NOT retrying - postProcess rejection won't change with same input")
-                throw TimelineError.validationFailure(reason: "grounding/confidence check failed")
+                throw TimelineError.validationFailure(reason: "excessive leakage or prompt contamination")
             }
 
-            if !isGrounded && leaked.count > 0 {
-                log.debug("timeline summary ACCEPTED despite leakage (grounding=\(grounding), leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
+            if leaked.count > 0 {
+                log.debug("[VALIDATION-ACCEPT] Timeline summary accepted with minimal leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public))")
             }
 
             // Disposition-verb alignment validation
