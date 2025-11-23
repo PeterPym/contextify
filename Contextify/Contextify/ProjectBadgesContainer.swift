@@ -20,7 +20,7 @@ struct ProjectBadgesContainer: View {
       if Task.isCancelled { return }
 
       // Query providers via orchestrator
-      let orchestrator = TranscriptOrchestrator.shared
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
       let set = try await orchestrator.getProviders(forProjectPath: projectPath)
 
       if Task.isCancelled { return }

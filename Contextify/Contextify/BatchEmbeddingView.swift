@@ -388,6 +388,11 @@ struct BatchEmbeddingView: View {
   }
 
   private func clearAllEmbeddings() async {
+    guard let repository = repository else {
+      self.error = "Repository not initialized"
+      return
+    }
+
     do {
       // Use repository method instead of direct SQL
       try await repository.clearAllEmbeddings()

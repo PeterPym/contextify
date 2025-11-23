@@ -615,12 +615,15 @@ public final class ProjectSwitcherState {
         // Mark project as selected and viewed
         try orchestrator.markProjectSelected(projectId: projectId)
         let timestamp = ISO8601Z.string(from: Date())
-        let updatedVisit = try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-        logger.debug("✅ Project metadata updated in database: \(projectId, privacy: .public)")
+        try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
+
+        // Refresh unread count from database
+        let freshCount = try orchestrator.getUnreadCount(projectId: projectId)
+        logger.debug("✅ Project metadata updated in database: \(projectId, privacy: .public), unread: \(freshCount)")
 
         // Update observable state with fresh unread count
-        await MainActor.run {
-          self?.unreadCounts[projectId] = updatedVisit.unreadCount
+        await MainActor.run { [weak self] in
+          self?.unreadCounts[projectId] = freshCount
         }
       } catch {
         logger.error("Failed to update project metadata: \(error.localizedDescription)")
