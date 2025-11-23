@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 6 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 5 items - Must complete before App Store submission
 - **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 65
+**Total Active Items:** 64
 
 ---
 
-# P0 (Blocking Release) - 6 Items Remaining
+# P0 (Blocking Release) - 5 Items Remaining
 
 
 
@@ -61,55 +61,6 @@ doc_references:
 - [ ] #9: TestFlight beta (optional, recommended)
 
 **Reference:** `build/notes/todo-support/P0-APP-STORE-checklist.md` § "APP STORE SUBMISSION CHECKLIST"
-
----
-
-## Timeline Filter Bypasses (3 Critical Bugs)
-
-**Status:** Ready to implement
-**Priority:** P0 (Preproduction correctness - make timeline trustworthy)
-**Effort:** 2-4 hours
-**Blocking:** App Store submission (user-visible data corruption)
-
-- [ ] #P0-TIMELINE-FILTERS: Fix display_in_timeline filter bypasses in incremental updates, transcript view, and search
-
-**Problem:** Hidden entries (`display_in_timeline = 0`) appearing in timeline UI via incremental updates, causing hallucinated summaries to be visible.
-
-**Root causes:**
-1. `getEntriesAfterCursor()` in TranscriptOrchestrator uses raw SQL without filter (critical - high frequency)
-2. `byTranscript()` in Repositories missing filter (transcript detail view)
-3. `search()` in Repositories missing filter (search results)
-
-**Impact:**
-- User sees thinking blocks with hallucinated summaries
-- Timeline shows entries that should be hidden
-- Every incremental update (new entry arrival) triggers bug
-
-**Scope:**
-- Add `AND display_in_timeline = 1` to 3 SQL queries
-- ~15 lines changed across 2 files
-- No schema changes, no data migration needed
-
-**Files:**
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:2085-2108`
-- `app/Sources/ContextifyCore/Database/Repositories.swift:363-371` (byTranscript)
-- `app/Sources/ContextifyCore/Database/Repositories.swift:373-381` (search)
-
-**Plan:** `build/notes/todo-support/P0-TIMELINE-FILTERS-plan.md`
-**Investigation:** `build/notes/todo-support/P0-TIMELINE-FILTERS-investigation.md`
-
-**Testing:**
-- Unit tests: `testIncrementalUpdateFiltersHiddenEntries()` and similar
-- Manual: Switch projects, verify no thinking blocks appear
-- Logs: "Incremental update appended X entries" should exclude hidden
-
-**Success criteria:**
-- Zero hidden entries in timeline UI
-- Zero hidden entries in transcript view
-- Zero hidden entries in search results
-- No performance regression
-
-**Rollback:** Single-commit revert, no migration needed
 
 ---
 
