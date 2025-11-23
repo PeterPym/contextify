@@ -1767,8 +1767,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // MARK: - Project Visits (Unread Tracking)
 
   /// Mark a project as viewed at a specific timestamp
-  public func markProjectViewed(projectId: String, timestamp: String) throws {
+  public func markProjectViewed(projectId: String, timestamp: String) throws -> ProjectVisit {
     try projectVisitsRepo.markViewed(projectId: projectId, timestamp: timestamp)
+    // Return fresh state immediately after update
+    guard let visit = try projectVisitsRepo.getVisit(projectId: projectId) else {
+      // If visit doesn't exist yet, return a default one with zero unread count
+      return ProjectVisit(projectId: projectId, unreadCount: 0, lastViewedAt: timestamp, lastSelectedAt: nil)
+    }
+    return visit
   }
 
   /// Mark a project as selected (updates last_selected_at to now)
