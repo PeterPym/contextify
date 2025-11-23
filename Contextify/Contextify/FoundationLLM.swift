@@ -1529,16 +1529,17 @@ private extension FoundationLLM {
             **For COMPLETION:**
             - Use past-tense verbs: "added", "implemented", "refactored", "fixed", "updated", "created"
             - Do NOT use proposal language like "proposed" or "suggested"
-            - Example: "\(assistantName) added logging around the authentication flow."
+            - Example: "\(assistantName) implemented retry logic in the network client."
 
             **For PROPOSAL:**
             - Use proposal verbs: "proposed", "suggested", "offered to", "outlined", "presented"
             - Do NOT use completion verbs like "created", "implemented", "fixed"
-            - Example: "\(assistantName) proposed creating a helper script with presets."
+            - Example: "\(assistantName) suggested adding telemetry for deployment metrics."
 
             **For ANALYSIS:**
             - Use analysis verbs: "explained", "analyzed", "noted", "identified", "clarified"
-            - Example: "\(assistantName) analyzed the stack trace and identified the root cause."
+            - Example format: "\(assistantName) [verb] the [subject] and [verb] [outcome]."
+            - Concrete example: "\(assistantName) explained the authentication logic and identified retry timing."
 
             ### Output Format
 
@@ -1549,7 +1550,7 @@ private extension FoundationLLM {
               "isCompletion": true,
               "disposition": "completion",
               "grounding": "grounded",
-              "confidence": 0.95
+              "confidence": 0.75
             }
 
             Input format:
