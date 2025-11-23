@@ -59,8 +59,10 @@ public final class TranscriptWatcher: @unchecked Sendable {
 
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL, provider: String) throws {
-    log.info("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
-    log.info("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+    if LoggingConfig.enableVerboseWatcherLogs {
+      log.debug("[WATCHER-WATCH-START] Request to watch transcript: \(transcriptId, privacy: .public) at path: \(fileURL.path, privacy: .public)")
+      log.debug("[FSEVENTS-WATCH-START] transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+    }
 
     // Defensive check: refuse to watch files in sandbox container paths
     // These can't be accessed and will cause recovery loops
@@ -104,7 +106,9 @@ public final class TranscriptWatcher: @unchecked Sendable {
       if let source = watchers[transcriptId] {
         source.cancel()
         watchers.removeValue(forKey: transcriptId)
-        log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
+        if LoggingConfig.enableVerboseWatcherLogs {
+          log.info("[FSEVENTS-WATCH-STOP] transcript=\(transcriptId, privacy: .public)")
+        }
       }
 
       if let timer = debounceTimers[transcriptId] {
@@ -175,7 +179,9 @@ public final class TranscriptWatcher: @unchecked Sendable {
   }
 
   private func armWatcher(transcriptId: String, fileURL: URL) {
-    log.debug("[WATCHER-ARM-START] Arming watcher for transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+    if LoggingConfig.enableVerboseWatcherRecovery {
+      log.debug("[WATCHER-ARM-START] Arming watcher for transcript=\(transcriptId, privacy: .public) path=\(fileURL.path, privacy: .public)")
+    }
 
     let fileDescriptor = open(fileURL.path, O_EVTONLY)
     guard fileDescriptor >= 0 else {
@@ -183,14 +189,20 @@ public final class TranscriptWatcher: @unchecked Sendable {
       log.error("[WATCHER-FD-OPEN-FAILED] Failed to open file descriptor: path=\(fileURL.path, privacy: .public) errno=\(errorCode) (\(String(cString: strerror(errorCode))))")
       return
     }
-    log.debug("[WATCHER-FD-OPEN] Opened file descriptor fd=\(fileDescriptor) for transcript=\(transcriptId, privacy: .public)")
+
+    if LoggingConfig.enableVerboseWatcherLogs {
+      log.debug("[WATCHER-FD-OPEN] Opened file descriptor fd=\(fileDescriptor) for transcript=\(transcriptId, privacy: .public)")
+    }
 
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: fileDescriptor,
       eventMask: [.write, .extend],
       queue: DispatchQueue.main
     )
-    log.debug("[WATCHER-SOURCE-CREATE] Created dispatch source for transcript=\(transcriptId, privacy: .public)")
+
+    if LoggingConfig.enableVerboseWatcherLogs {
+      log.debug("[WATCHER-SOURCE-CREATE] Created dispatch source for transcript=\(transcriptId, privacy: .public)")
+    }
 
     source.setEventHandler { [weak self] in
       guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
@@ -203,7 +215,10 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     source.resume()
-    log.debug("[WATCHER-SOURCE-RESUME] Resumed dispatch source for transcript=\(transcriptId, privacy: .public)")
+
+    if LoggingConfig.enableVerboseWatcherLogs {
+      log.debug("[WATCHER-SOURCE-RESUME] Resumed dispatch source for transcript=\(transcriptId, privacy: .public)")
+    }
 
     // Thread-safe dictionary mutation - double-check inside lock to catch any race
     // that occurred during ingestion
@@ -217,11 +232,15 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     if wasAdded {
-      log.debug("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
+      if LoggingConfig.enableVerboseWatcherLogs {
+        log.debug("[WATCHER-WATCH-DONE] ✅ Now watching transcript: \(transcriptId, privacy: .public)")
+      }
     } else {
       // Clean up the source we just created since we didn't use it
       source.cancel()
-      log.debug("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
+      if LoggingConfig.enableVerboseWatcherLogs {
+        log.debug("[WATCHER-WATCH-SKIP] Skipping - watcher was added by another thread during ingestion: \(transcriptId, privacy: .public)")
+      }
     }
   }
 

@@ -104,6 +104,55 @@ rerun against that file without re-capturing.
 
 ---
 
+## Logging Configuration Flags
+
+Contextify supports runtime logging verbosity control via `LoggingConfig` flags in `app/Sources/ContextifyCore/LoggingConfig.swift`.
+All flags default to `false` (quiet) to minimize log volume while preserving errors and warnings.
+
+### Available Flags
+
+| Flag | Impact | When to Enable | Affected Tags |
+|------|--------|----------------|---------------|
+| `enableVerboseWatcherLogs` | ~12,000 logs/session | FD leak debugging, watcher lifecycle issues | `[WATCHER-FD-OPEN]`, `[WATCHER-SOURCE-CREATE]`, `[WATCHER-SOURCE-RESUME]`, `[WATCHER-WATCH-START]`, `[FSEVENTS-WATCH-START]`, `[WATCHER-WATCH-DONE]` |
+| `enableVerboseWatcherRecovery` | ~6,000 logs/session | Recovery diagnosis, watcher restart behavior | `[WATCHER-RECOVERY-START]`, `[WATCHER-RECOVERY-SUCCESS]`, `[WATCHER-RECOVERY-SKIP]`, `[WATCHER-ARM-START]` |
+| `enableVerboseWatcherHealthChecks` | ~3,000 logs/session | Watcher health issues, polling behavior | `[ENSURE-WATCHER-CHECK]`, `[ENSURE-WATCHER-START]`, `[ENSURE-WATCHER-DONE]` |
+| `enableVerboseProjectDiscovery` | ~500 logs/session | Project discovery bugs, duplicate projects | "Found existing project" messages, project lookups |
+| `enableVerboseFastPath` | ~1,000 logs/session | Fast path vs full hoover diagnosis | `[FAST-PATH-*]`, `[JIT-INGEST]` |
+| `enableVerboseTimelineUI` | ~500 logs/session | UI performance, rendering delays | `[ROW-APPEAR]`, `[UIOPT-*]`, `[TIMELINE-REFRESH-PROGRESS]` |
+
+**Total default reduction:** ~23,000 logs eliminated (65% of typical session)
+
+### Enabling Flags for Debugging
+
+**To enable a flag:**
+1. Edit `app/Sources/ContextifyCore/LoggingConfig.swift`
+2. Change the flag from `false` to `true`:
+   ```swift
+   // Enable watcher FD debugging
+   public static let enableVerboseWatcherLogs: Bool = true  // Changed from false
+   ```
+3. Rebuild: `bash scripts/xc.sh build`
+4. Run app - verbose logs will now appear in Console.app
+
+**To disable:**
+1. Change flag back to `false`
+2. Rebuild
+
+### Quick Reference by Problem
+
+| Problem Symptom | Flag to Enable |
+|----------------|----------------|
+| "Too many open files" error | `enableVerboseWatcherLogs` |
+| Transcripts not being monitored | `enableVerboseWatcherRecovery` |
+| Watchers disappearing | `enableVerboseWatcherHealthChecks` |
+| Project discovery issues | `enableVerboseProjectDiscovery` |
+| Timeline not updating | `enableVerboseFastPath` or `enableVerboseTimelineUI` |
+| UI stalls/delays | `enableVerboseTimelineUI` |
+
+**See also:** `app/Sources/ContextifyCore/LoggingConfig.swift` for complete flag documentation and tag lists.
+
+---
+
 ## Debugging Patterns
 
 ### Pattern 1: Pipeline Completeness Check
