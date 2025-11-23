@@ -233,7 +233,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
         lastProcessedEntryId: nil,
         parserVersion: 1,
         status: "active",
-        ingestState: "complete",
+        ingestState: "partial",  // New transcripts start as partial, hoover will set to complete
         lastError: nil,
         createdAt: now,
         updatedAt: now

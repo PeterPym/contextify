@@ -683,6 +683,10 @@ final class DatabaseTests: XCTestCase {
     let dbPath = tempDir.appendingPathComponent("test.db")
     let pool = try makeMigratedPool(at: dbPath)
 
+    // Disable scheduler to force synchronous ingestion for testing
+    ContextifyConfig.shared.hooverSchedulerEnabled = false
+    defer { ContextifyConfig.shared.hooverSchedulerEnabled = true }
+
     let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
     let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
 
@@ -690,9 +694,15 @@ final class DatabaseTests: XCTestCase {
     let projectRepo = ProjectRepositoryImpl(db: pool)
     let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
 
-    // Create transcript with partial state
+    // Create transcript with enough entries to remain partial during preview
     let transcriptFile = tempDir.appendingPathComponent("test-transcript.jsonl")
-    try "".write(to: transcriptFile, atomically: true, encoding: .utf8)
+    var lines: [String] = []
+    for i in 1...20 {
+      lines.append("""
+        {"type":"user","timestamp":"\(Date().addingTimeInterval(TimeInterval(i)).ISO8601Format())","uuid":"user-\(i)","message":{"role":"user","content":[{"type":"text","text":"Test message \(i)"}]}}
+        """)
+    }
+    try lines.joined(separator: "\n").write(to: transcriptFile, atomically: true, encoding: .utf8)
 
     let transcriptRepo = TranscriptRepositoryImpl(db: pool)
     let transcriptId = try transcriptRepo.upsert(
@@ -701,19 +711,23 @@ final class DatabaseTests: XCTestCase {
       provider: "claude.code",
       providerSessionId: nil,
       lastModified: Date(),
-      fileSize: 0
+      fileSize: lines.joined(separator: "\n").count
     )
 
     // Test lock behavior
     var secondCallResult: Bool = false
 
-    // First call should acquire lock
-    let firstCallResult = try await orchestrator.ingestTranscript(
+    // First call should succeed (acquire lock and ingest)
+    // Note: Return value indicates partial state, not lock acquisition success
+    _ = try await orchestrator.ingestTranscript(
       transcriptId: transcriptId,
       mode: .preview(entries: 10),
       notifyUI: false
     )
-    XCTAssertTrue(firstCallResult, "First call should acquire lock")
+
+    // Verify ingestion happened
+    let afterFirst = try transcriptRepo.get(transcriptId)!
+    XCTAssertGreaterThan(afterFirst.lastProcessedLine, 0, "First call should have processed lines")
 
     // Manually acquire lock to simulate concurrent access
     try await pool.write { db in
