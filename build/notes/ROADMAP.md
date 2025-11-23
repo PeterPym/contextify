@@ -129,38 +129,6 @@ Owner only needs to review progress. Agent handles:
 
 ---
 
-### P4-METADATA-RETRY: Manual Retry for Failed Metadata Generation
-
-**Status:** Not started (demoted from P1)
-**Priority:** P4 (edge case, manual workaround exists)
-**Effort:** Small (2-3 hours)
-**Demoted From:** TODOS.md #35 (2025-11-22)
-
-- [ ] Add manual retry button for failed metadata/summary generation
-
-**Problem:**
-When LLM summarization fails (circuit breaker opens, API errors, etc.), transcripts show endless loading spinners. Users have no way to retry.
-
-**Impact:**
-- Low frequency issue (most metadata generation succeeds)
-- Manual workaround: Restart app or wait for automatic retry
-- Not blocking MVP release
-
-**Implementation:**
-- Add `failedTranscripts: Set<String>` state
-- Show orange warning icon in session rows for failed items
-- Add "Retry Metadata Generation" button in detail view
-- Persist failed set to UserDefaults across restarts
-
-**Files:**
-- `Contextify/Contextify/TranscriptInventoryView.swift`
-- `Contextify/Contextify/ConversationMonitor.swift` (retry logic)
-
-**Research Questions:**
-1. Should retry happen automatically after circuit breaker recovers?
-2. Should failed metadata show placeholder text instead of spinner?
-3. How to communicate failure reason to user (network, quota, API error)?
-
 ### P4-DIAGNOSTICS-HTTP-API: Restore Diagnostics HTTP Server
 
 **Status:** Removed pre-launch, planned for restoration
