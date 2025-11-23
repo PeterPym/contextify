@@ -25,7 +25,21 @@ public enum HUDPreferences {
     }
     return .standard
   }()
-  nonisolated(unsafe) private static var hasWarnedLegacyDefaults = false
+
+  // Actor to safely track warning state (prevents race conditions)
+  private actor WarningTracker {
+    private var hasWarned = false
+
+    func shouldWarn() -> Bool {
+      if hasWarned {
+        return false
+      }
+      hasWarned = true
+      return true
+    }
+  }
+
+  private static let warningTracker = WarningTracker()
 
   public static func getPersistedRoot() -> String? {
     warnIfLegacyDefaultsPresent()
@@ -160,12 +174,15 @@ public enum HUDPreferences {
   }
 
   private static func warnIfLegacyDefaultsPresent() {
-    guard !hasWarnedLegacyDefaults else { return }
-    let legacyDefaults = UserDefaults.standard
-    let legacyKeys = [projectRootKey, projectRootBookmarkKey, autoPersistKey]
-      .filter { legacyDefaults.object(forKey: $0) != nil }
-    guard !legacyKeys.isEmpty else { return }
-    hasWarnedLegacyDefaults = true
+    // Check for legacy defaults asynchronously (warning doesn't block main operation)
+    Task {
+      guard await warningTracker.shouldWarn() else { return }
+      let legacyDefaults = UserDefaults.standard
+      let legacyKeys = [projectRootKey, projectRootBookmarkKey, autoPersistKey]
+        .filter { legacyDefaults.object(forKey: $0) != nil }
+      guard !legacyKeys.isEmpty else { return }
+      // Warning would be logged here (currently just sets flag)
+    }
   }
 }
 
