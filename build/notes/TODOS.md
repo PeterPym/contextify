@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 2 items - Must complete before App Store submission
-- **P1 (High Priority):** 18 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 27 items - Nice to have, can defer to future releases
+- **P1 (High Priority):** 12 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 31 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 63
+**Total Active Items:** 61
 
 ---
 
@@ -65,53 +65,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 18 Items
-
-## Test Infrastructure - Get Test Suite Running (4 items) ⬇️
-
-**Status:** Not Started (Blocked)
-**Priority:** Demoted from P0 (blocked by test infrastructure issues, manual QA sufficient for MVP)
-**Effort:** 12-16 hours
-
-- [ ] #P1-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
-- [ ] #45: Re-enable testInitialHooverWorkflow integration test
-- [ ] #46: Re-enable testOrchestratorWorkflow integration test
-- [ ] #47: Re-enable testCrashRecovery integration test
-
-**Problem:** Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
-
-**Blockers:**
-- FoundationLLM compatibility issues with test environment
-- Recent macOS SDK changes affecting test execution
-- Async/actor isolation problems in test harness
-- **Action:** Search database for previous conversations documenting these blockers
-
-**Tasks:**
-1. **Infrastructure Fix** (6-8 hours)
-   - Research FoundationLLM test compatibility issues
-   - Resolve SDK/async/actor problems
-   - Get test suite building and running cleanly
-   - Verify existing passing tests still work
-
-2. **Re-enable Integration Tests** (6-8 hours)
-   - Update tests for new HooverEngine API
-   - Update tests for new TranscriptOrchestrator API
-   - Update tests for checkpoint changes
-   - Remove `skip_` prefix
-   - Add to CI pipeline
-   - Verify tests pass 10x in a row (no flaky failures)
-
-**Files:**
-- `Contextify/ContextifyTests/IntegrationTests.swift`
-- Test configuration files (to be determined during investigation)
-
-**Acceptance Criteria:**
-- Test suite builds and runs without infrastructure errors
-- All 3 integration tests re-enabled and passing
-- Tests are stable (10 consecutive passes)
-- Integrated into CI pipeline
-
-**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
+# P1 (High Priority) - 12 Items
 
 ---
 
@@ -397,50 +351,72 @@ The calculation of unread counts in project tabs is not transparent, and the cle
 
 ---
 
-## Compatibility (1 item)
+## OS Version Compatibility & User Communication (1 item)
 
 **Status:** Not Started
-**Effort:** 4-6 hours
+**Priority:** P1 (Pre-launch - graceful handling of unsupported OS versions)
+**Effort:** 2-3 hours
 
-- [ ] #51: Test all @available(macOS 26, *) fallback paths on macOS 14
+- [ ] #P1-OS-COMPATIBILITY: Investigate App Store OS restrictions and implement compatibility modal
 
-**Problem:** Code has 18 availability guards but no documented testing on macOS 14/15. App may crash on stated minimum OS.
+**Problem:**
+App is designed for macOS 26+ (Tahoe) but minimum deployment target may be set lower. Need to understand App Store behavior and communicate gracefully to users on unsupported OS versions.
 
-**Tasks:**
-- Test all fallback paths on macOS 14
-- Document degraded experience (timeline summaries = heuristics, no LLM)
-- Update README with feature availability matrix
-- Test on macOS 15 (one version before current)
+**Investigation (30 min):**
+1. **Research App Store behavior:**
+   - Does App Store prevent downloads on unsupported OS versions automatically?
+   - Or can users download but app won't launch?
+   - Check Apple developer documentation on minimum OS version enforcement
+   - Test: Can macOS 14 user see/download an app with macOS 26 minimum?
 
-**Key files with guards:**
-- `Contextify/Contextify/FoundationLLM.swift` (14 guards)
-- `Contextify/Contextify/LLMHealthCheck.swift`
-- `Contextify/Contextify/SynthesisService.swift`
+**Implementation (1.5-2 hours):**
 
-**Acceptance:** App launches on macOS 14, timeline displays with heuristics, no crashes
+2. **Add OS Version Check on Launch:**
+   ```swift
+   // In App init or SceneDelegate
+   if #unavailable(macOS 26) {
+       showOSCompatibilityModal()
+       return
+   }
+   ```
 
----
+3. **Create Compatibility Modal:**
+   - **Title:** "macOS Version Not Supported"
+   - **Message:** "Contextify is designed for macOS 26 (Tahoe) or later. Your current version: macOS [X.Y]"
+   - **Body:** "This version of macOS doesn't include features Contextify requires. We'd love to support your version - let us know!"
+   - **Buttons:**
+     - Primary: "Request Compatibility" → Opens mailto link
+     - Secondary: "Close App" → Quits gracefully
 
-## UI/UX (2 items) 🔗
+4. **Mailto Link:**
+   ```
+   mailto:support@contextify.sh?subject=macOS%20Compatibility%20Request&body=I'm%20on%20macOS%20[VERSION]%20and%20would%20like%20Contextify%20support.
+   ```
+   - Pre-fill subject: "macOS Compatibility Request"
+   - Pre-fill body with detected OS version
 
-**Status:** Not Started
-**Effort:** 6-8 hours total
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift` (OS version check on launch)
+- `Contextify/Contextify/Views/OSCompatibilityModal.swift` (new modal view)
+- `Info.plist` (verify MinimumOSVersion setting)
 
-- [ ] #54+#55: **[GROUPED]** Implement NSStatusBar menubar icon with processing status & errors
-- [ ] #56: Surface corrupt transcripts in Transcript window with warning
+**Acceptance Criteria:**
+- ✅ Documented: Does App Store block downloads on unsupported OS?
+- ✅ If app launches on unsupported OS, modal appears immediately
+- ✅ Modal clearly communicates OS requirement (macOS 26+)
+- ✅ "Request Compatibility" button opens mail client with pre-filled template
+- ✅ "Close App" quits gracefully (no crashes)
+- ✅ Modal includes detected user OS version
+- ✅ User gets clear path to provide feedback/request support
 
-**#54+#55 - Menubar (Grouped Feature):**
-- Implement NSStatusBar menubar icon
-- Show processing status and errors
-- Always-on access when window closed
-- **Files:** `Contextify/Contextify/AppDelegate.swift` (see TODO comment line 83)
-- **Effort:** 6-8 hours
+**Benefits:**
+- Professional user experience instead of crashes or confusing errors
+- Collect compatibility requests to inform future support decisions
+- Clear communication about OS requirements
+- Graceful degradation path
 
-**#56 - Corrupt Transcripts:**
-- Related to #58 (P0 repair feature) but separate concern
-- #56 = display warnings, #58 = repair actions
-- Show warning indicator for transcripts with errors
-- **Effort:** 1-2 hours (may already be covered by #58 implementation)
+**Alternative Approach:**
+If App Store DOES block downloads, this modal becomes unnecessary but check is still useful for TestFlight/sideload scenarios.
 
 ---
 
@@ -788,7 +764,55 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
-# P2 (Medium Priority) - 27 Items
+# P2 (Medium Priority) - 31 Items
+
+---
+
+## Test Infrastructure - Get Test Suite Running (4 items)
+
+**Status:** Not Started (Blocked)
+**Priority:** Demoted from P1 (blocked by test infrastructure issues, manual QA sufficient for MVP)
+**Effort:** 12-16 hours
+
+- [ ] #P2-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
+- [ ] #45: Re-enable testInitialHooverWorkflow integration test
+- [ ] #46: Re-enable testOrchestratorWorkflow integration test
+- [ ] #47: Re-enable testCrashRecovery integration test
+
+**Problem:**
+Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
+
+**Blockers:**
+- FoundationLLM compatibility issues with test environment
+- Recent macOS SDK changes affecting test execution
+- Async/actor isolation problems in test harness
+
+**Tasks:**
+1. **Infrastructure Fix** (6-8 hours)
+   - Research FoundationLLM test compatibility issues
+   - Resolve SDK/async/actor problems
+   - Get test suite building and running cleanly
+   - Verify existing passing tests still work
+
+2. **Re-enable Integration Tests** (6-8 hours)
+   - Update tests for new HooverEngine API
+   - Update tests for new TranscriptOrchestrator API
+   - Update tests for checkpoint changes
+   - Remove `skip_` prefix
+   - Add to CI pipeline
+   - Verify tests pass 10x in a row (no flaky failures)
+
+**Files:**
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+- Test configuration files (to be determined during investigation)
+
+**Acceptance Criteria:**
+- Test suite builds and runs without infrastructure errors
+- All 3 integration tests re-enabled and passing
+- Tests are stable (10 consecutive passes)
+- Integrated into CI pipeline
+
+**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
 
 ---
 
