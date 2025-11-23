@@ -1637,14 +1637,14 @@ private extension FoundationLLM {
 
     var bridgingLexicon: Set<String> {
         [
-            // Assistant-specific verbs
-            "claude", "explains", "explained", "explaining", "clarifies", "clarified", "clarifying",
+            // Assistant names and common verbs
+            "claude", "code", "codex", "explains", "explained", "explaining", "clarifies", "clarified", "clarifying",
             "states", "stated", "says", "said", "notes", "noted", "acknowledges", "acknowledged",
             "confirms", "confirmed", "reports", "reported", "outlines", "outlined", "highlights",
             "highlighted", "advises", "advised", "suggests", "suggested", "proposes", "proposed",
             "asks", "asked", "observes", "observed", "mentions", "mentioned", "reminds", "reminded",
             "recommends", "recommended", "describes", "described", "details", "detailed", "responds",
-            "responded", "summarizes", "summarized",
+            "responded", "summarizes", "summarized", "identified", "revised",
 
             // User message required words (from LLM instructions)
             "you", "requested", "made",
