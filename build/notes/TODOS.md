@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 4 items - Must complete before App Store submission
-- **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 15 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 32 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 71
+**Total Active Items:** 67
 
 ---
 
@@ -65,7 +65,7 @@ doc_references:
 ---
 
 
-# P1 (High Priority) - 19 Items
+# P1 (High Priority) - 15 Items
 
 ---
 
@@ -116,45 +116,8 @@ doc_references:
 
 ---
 
-## Code Quality & Prevention (3 items)
 
-**Status:** P0 bugs fixed (commit ad190448), prevention work ready to start
-**Effort:** 29 hours total (reduced from 83h after review)
-**Spec:** `build/notes/todo-support/P1-CODE-QUALITY-spec.md`
-
-### Phase 1B: Regression Tests (Week 1)
-
-- [ ] #P1-CODE-QUALITY-TESTS: Add regression tests for display_in_timeline filters (2h)
-  - Test byTranscript() excludes hidden entries
-  - Test search() excludes hidden entries  
-  - Test getEntriesAfterCursor() excludes hidden entries
-  - **Prevents:** Recurrence of bugs fixed in commit ad190448
-
-### Phase 2: Architectural Enforcement (Month 1)
-
-- [ ] #P1-ARCHITECTURAL-TESTS: Implement layer boundary tests with SwiftSyntax (4h)
-  - Enforce UI → Orchestrator → Repository → DB boundaries
-  - Prevent UI from importing GRDB directly
-  - Add informative failure messages
-  - Integrate into pre-commit hook
-  - **Prevents:** Layer violations, maintains architecture
-
-### Phase 3: Pattern Documentation (Quarter 1)
-
-- [ ] #P2-STATE-SYNC-DOCS: Document hybrid state sync pattern in CLAUDE.md (1h)
-  - Optimistic UI updates for user-initiated changes
-  - DB reconciliation for background changes
-  - When refresh is required vs optional
-  - **Prevents:** State sync bugs, clarifies design intent
-
-**Related:**
-- Existing `#P1-QUERY-CENTRALIZE` aligns with query builder pilot
-- Phase 2 verification audit may identify additional issues
-- Deferred: God class refactoring (40-60h realistic), reactive state
-
----
-
-## State Management & Orchestrator Consolidation (4 items)
+## State Management & Orchestrator Consolidation (2 items)
 
 **Status:** External review feedback (2025-11-23)
 **Priority:** P1 (architectural improvement, reduces foot-guns)
@@ -193,15 +156,6 @@ public func markProjectActivated(projectId: String, timestamp: String) throws ->
 - `Contextify/Contextify/ProjectSwitcherState.swift:618`
 
 **Reference:** `/private/tmp/1-executive-summary-1.md` § P1.1
-
-- [ ] #P1-MARK-VIEWED-DISCARDABLE: Add @discardableResult to TranscriptOrchestrator.markProjectViewed() (15min)
-
-**Rationale:** Current call site in ProjectSwitcherState ignores returned ProjectVisit and independently calls getUnreadCount, producing "result of call is unused" warnings. Either add @discardableResult or use returned visit in smarter combined method (see #P1-PROJECT-ACTIVATED).
-
-**Files:**
-- `app/Sources/ContextifyCore/TranscriptOrchestrator.swift`
-
-**Reference:** `/private/tmp/1-executive-summary-1.md` § P2.1
 
 - [ ] #P1-TASK-DETACHED-SENDABILITY: Review and fix Task.detached Sendability issues with strict concurrency (2h)
 
