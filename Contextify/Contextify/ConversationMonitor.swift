@@ -2235,8 +2235,10 @@ final class ConversationMonitor {
 
         // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
         // from auto-scroll and view rebuilds that happen without user intent.
-        guard isUserScrollActive else {
-            return
+        // Previously we blocked programmatic updates entirely; now allow them when
+        // the visible set actually changes so resizes can still prune.
+        if !isUserScrollActive {
+            log.debug("[SUMM-VIEWPORT] Programmatic viewport update detected (isUserScrollActive=false)")
         }
 
         #if DEBUG
