@@ -860,6 +860,18 @@ Original scope (3-6 hours): User prompt quality improvement only
 2. **Parser metadata (future)?** Defer to Phase 3 if false positives emerge
 3. **Defer lexical seatbelts?** YES - Phase 1 + improved prompt should be sufficient
 
+## Database Discovery (1 item)
+
+**Status:** Identified while troubleshooting missing defaults key
+**Priority:** P1 (high impact on automated tooling/QA workflows)
+**Effort:** ~1h to sync prefs + fallback detection
+
+- [ ] #P1-DATABASE-DISCOVERY: Ensure `dev.contextify.database_location` mirrors `HUDPreferences.customDatabaseLocationKey` and add fallback detection (read `HUDPreferences.getCustomDatabaseLocation()` and default path when the key is missing) so automation/debugging tools always discover the current database directory without manual defaults tweaks.
+
+**Background:** The settings/migration code currently only writes `HUDPreferences.customDatabaseLocationKey` (`app/Sources/ContextifyCore/HUDCore.swift:19-107`), so scripts reading `dev.contextify.database_location` hit “domain/default pair … does not exist” even though `/Users/rob/Library/CloudStorage/Dropbox/contextify-db/contextify.db` is the live database.
+
+**Reference:** `build/docs/operations/database-migration-runbook.md`, `app/Sources/ContextifyCore/HUDCore.swift:19-107`
+
 **Notes:**
 - Phase 1 already shipped (negative word list) - closes immediate issue
 - Phase 2 is comprehensive quality improvement coordinated with permission handling
@@ -1714,6 +1726,18 @@ When a project not currently visible in the tab bar receives new messages:
 - Indicator is subtle but noticeable
 - Easy to navigate to the active project
 - No false positives (only triggers on actual new content)
+
+---
+
+## Timeline Summary Height Regression (1 item) ⬇️
+
+**Status:** Idea
+**Priority:** P3 (guard against UI regressions)
+**Effort:** 2-3 hours (test harness + assertions)
+
+- [ ] #P3-TIMELINE-SUMMARY-HEIGHT: Add regression coverage for the row-height-capping behavior so any future change to `summaryFrameMinHeight` or the logged deltas is caught automatically.
+
+**Plan:** `build/notes/todo-support/P3-TIMELINE-SUMMARY-HEIGHT.md`
 
 ---
 
