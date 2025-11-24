@@ -222,6 +222,7 @@ rm -rf ~/.claude/projects ~/.codex/sessions
 - Script exits 0 (PASS)
 - Output shows viewport counts instead of "Queueing 12" fallback
 - Timing metric `< 100ms` between load completion and viewport report
+- Viewport counts now include rows that are at least 25% visible, matching the visibility threshold constant.
 - PASS indicates viewport-aware queueing is healthy for project switches
 
 ## CLI Command Reference
