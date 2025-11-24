@@ -873,54 +873,6 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
-## Test Infrastructure - Get Test Suite Running (4 items)
-
-**Status:** Not Started (Blocked)
-**Priority:** Demoted from P1 (blocked by test infrastructure issues, manual QA sufficient for MVP)
-**Effort:** 12-16 hours
-
-- [ ] #P2-TESTS: Resolve test infrastructure blockers (FoundationLLM, SDK, async/actor issues)
-- [ ] #45: Re-enable testInitialHooverWorkflow integration test
-- [ ] #46: Re-enable testOrchestratorWorkflow integration test
-- [ ] #47: Re-enable testCrashRecovery integration test
-
-**Problem:**
-Test suite currently broken with substantial blockers related to FoundationLLM, recent SDK changes, and async/actor isolation issues. 3 critical integration tests disabled with `skip_` prefix pending resolution.
-
-**Blockers:**
-- FoundationLLM compatibility issues with test environment
-- Recent macOS SDK changes affecting test execution
-- Async/actor isolation problems in test harness
-
-**Tasks:**
-1. **Infrastructure Fix** (6-8 hours)
-   - Research FoundationLLM test compatibility issues
-   - Resolve SDK/async/actor problems
-   - Get test suite building and running cleanly
-   - Verify existing passing tests still work
-
-2. **Re-enable Integration Tests** (6-8 hours)
-   - Update tests for new HooverEngine API
-   - Update tests for new TranscriptOrchestrator API
-   - Update tests for checkpoint changes
-   - Remove `skip_` prefix
-   - Add to CI pipeline
-   - Verify tests pass 10x in a row (no flaky failures)
-
-**Files:**
-- `Contextify/ContextifyTests/IntegrationTests.swift`
-- Test configuration files (to be determined during investigation)
-
-**Acceptance Criteria:**
-- Test suite builds and runs without infrastructure errors
-- All 3 integration tests re-enabled and passing
-- Tests are stable (10 consecutive passes)
-- Integrated into CI pipeline
-
-**Decision:** Manual QA sufficient for MVP App Store submission. Test infrastructure can be fixed post-launch.
-
----
-
 ## Scripts Directory Consolidation & Cleanup (1 item)
 
 **Status:** Not Started
@@ -1617,6 +1569,27 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 
 ---
 
+## Test Infrastructure Follow-up (1 item)
+
+**Status:** Ready for verification
+**Priority:** P3 (post-launch stability work after infrastructure issues resolved)
+**Effort:** 6-8 hours
+
+- [ ] #P2-TESTS: Validate reinstated test infrastructure and re-enable skipped integration tests
+
+**Summary:** FoundationLLM/SDK/actor blockers have been addressed, so this work is now about verification: ensure `swift test` passes cleanly, re-enable `testInitialHooverWorkflow`, `testOrchestratorWorkflow`, and `testCrashRecovery`, and confirm the CI workflow references the reactivated suites.
+
+**Files to check:**
+- `Contextify/ContextifyTests/IntegrationTests.swift`
+- CI/test configuration files
+
+**Acceptance Criteria:**
+- ✅ All integration tests run without `skip_`
+- ✅ Test infrastructure remains stable across repeated runs
+- ✅ CI reflects the reactivated tests
+
+---
+
 ## Liquid Glass Design System (1 item) ⬇️
 
 **Status:** Partially implemented, toolbar translucency deferred
@@ -1759,60 +1732,23 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 ---
 
-## Empty Project Detection (1 item) ⬇️
+## Empty Timeline UI Regression Tests (1 item) ⬇️
 
-**Status:** Not Started
-**Priority:** Demoted from P2 (nice-to-have UX polish)
-**Effort:** 2-3 hours
+**Status:** Idea
+**Priority:** P3 (post-launch stability)
+**Effort:** 4-6 hours
 
-- [ ] #P3-EMPTY-PROJECTS: Detect and immediately show empty state for projects with no conversation entries
+- [ ] #P3-EMPTY-TIMELINE-TESTS: Define and add UI/regression coverage for the empty-project timeline-to-empty-state transition so the spinner removal can be validated automatically (see `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`)
 
 **Problem:**
-When switching to a project with no conversations, users see a "searching for conversations" spinner that then transitions to a "no conversations" view. This creates unnecessary loading state when we could determine emptiness immediately.
+- No automated verification currently guards the UI transition around `.loaded` vs `.loading`, so the spinner can reappear unnoticed.
+**Approach:**
+1. Draft acceptance criteria and scenario matrix in the supporting note (`build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`).
+2. Implement a lightweight guard (unit test or UI test) that drives `ConversationMonitor` through the zero-entry case and asserts `phase`, `isAwaitingPrimer`, and the rendered view branch.
+3. Hook the guard into CI/integration workflow so regressions are caught during automation.
 
-**Impact:**
-- Confusing UX - spinner implies search is happening when result is predetermined
-- Wasted time - users wait for spinner when answer is instant
-- May indicate filtering bug - we previously tried to hide projects with 0 messages from tab bar
-
-**Investigation Required:**
-Add logging to verify SQL query filtering behavior:
-- Log count of conversation entries per project during tab rendering
-- Verify if projects with 0 entries should appear in tab bar at all
-- Check if SQL query to filter projects with 0 entries was implemented incorrectly
-- Determine if issue is detection logic vs display logic
-
-**Solution:**
-
-1. **Add SQL Query Logging** (1 hour)
-   - Add `.info` level logs showing entry count per project in tab bar
-   - Log SQL query used to filter projects: `SELECT project_id, COUNT(*) FROM timeline_entries GROUP BY project_id`
-   - Verify if zero-entry projects are intentionally shown or filtering failed
-   - Log to category: "ProjectFiltering" for easy grep
-
-2. **Immediate Empty Detection** (1 hour)
-   - Query entry count before showing spinner: `SELECT COUNT(*) FROM timeline_entries WHERE project_id = ?`
-   - If count = 0, skip loading state and show empty view immediately
-   - Add `hasAnyEntries` check to project switch logic
-   - Cache result to avoid repeated queries
-
-3. **Decision on Zero-Entry Projects** (30 min)
-   - Review logs to determine if zero-entry projects should be hidden from tab bar
-   - If filtering intended: Fix SQL query and hide from tabs
-   - If intentional display: Keep immediate empty state (faster UX)
-   - Document decision in code comments
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift` (project switch logic)
-- `Contextify/Contextify/ProjectSwitcherView.swift` (tab bar rendering with logging)
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (entry count query)
-
-**Acceptance Criteria:**
-- ✅ Logs show entry count for each project in tab bar
-- ✅ SQL query for filtering projects with 0 entries is logged and verified
-- ✅ Projects with no conversations show empty state immediately (no spinner)
-- ✅ Decision documented: hide zero-entry projects from tabs OR show with instant empty state
-- ✅ No "searching" spinner when switching to empty project
+**Notes:**
+- Supporting details and future iterations go into `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`.
 
 ---
 

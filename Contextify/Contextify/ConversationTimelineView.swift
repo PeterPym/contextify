@@ -318,7 +318,7 @@ struct ConversationTimelineView: View {
                     }
                 }
                 .padding(.vertical, 32)
-            } else if monitor.isAwaitingPrimer {
+            } else if monitor.isAwaitingPrimer && monitor.phase == .loading {
                 let _ = log.info("[TIMELINE-LOADING] Awaiting primer completion for active project")
                 VStack(spacing: 12) {
                     ProgressView()
