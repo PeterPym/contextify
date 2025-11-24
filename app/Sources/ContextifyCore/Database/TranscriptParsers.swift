@@ -215,8 +215,8 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
-      // User messages should ALWAYS be displayed in timeline, regardless of thinking metadata
-      hasTextContent = (type == "user") ? true : hasText
+      let shouldHideShellOutput = type == "user" && containsShellOutput(content)
+      hasTextContent = (type == "user") ? !shouldHideShellOutput : hasText
       // Skip entries with empty content (tool_use blocks, etc.)
       guard !content.isEmpty else {
         throw ParserError.skipEntry
@@ -306,6 +306,10 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
   private func containsCommandContent(_ text: String) -> Bool {
     text.contains("<command-name>") || text.contains("/clear")
+  }
+
+  private func containsShellOutput(_ text: String) -> Bool {
+    text.contains("<bash-stdout>") || text.contains("<bash-stderr>")
   }
 
   private func mapKind(_ type: String) -> String {

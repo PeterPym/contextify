@@ -90,4 +90,23 @@ final class TranscriptParserTests: XCTestCase {
     let telemetry = parser.debug_telemetrySnapshot()
     XCTAssertEqual(telemetry.stopReasonCoerced, 1)
   }
+
+  func testBashStdoutEntriesHidden() throws {
+    let parser = ClaudeCodeLineParser()
+
+    let bashOutputLine = """
+    {"type":"user","uuid":"bash-stdout","timestamp":"2025-11-24T12:00:00Z","message":{"content":"<bash-stdout>output</bash-stdout><bash-stderr></bash-stderr>"},"parentUuid":"input-uuid"}
+    """
+
+    let entry = try parser.parse(
+      line: bashOutputLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    XCTAssertFalse(entry.hasTextContent, "Shell stdout entries should be hidden from the timeline")
+  }
 }

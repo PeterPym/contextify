@@ -547,6 +547,20 @@ actor FoundationLLM {
                 result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: false, disposition: "interrupted")
                 return result
             } else if kind == .user {
+                if let shellSummary = detectBashInputSummary(message) {
+                    log.debug("[\(reqNum)] timeline: bash input detected, using fast path")
+                    let fp = GuidedTimelineSummary(
+                        summary: shellSummary,
+                        isCompletion: false,
+                        disposition: "report",
+                        grounding: "grounded",
+                        confidence: 0.95
+                    )
+                    var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
+                    result = TimelineSummaryResult(summary: result.summary, isCompletion: false, isDirective: false, disposition: "report")
+                    return result
+                }
+
                 // Fast path for slash commands (before intent classification)
                 if let commandSummary = detectSlashCommand(message, assistantName: assistantName) {
                     log.debug("[\(reqNum)] timeline: slash command detected, using fast path")
@@ -1082,9 +1096,23 @@ actor SessionController {
 }
 #endif
 
-// MARK: - Slash Command Detection
+// MARK: - Shell Command Detection
 
 private extension FoundationLLM {
+    nonisolated func detectBashInputSummary(_ message: String) -> String? {
+        guard message.contains("<bash-input>") else { return nil }
+        guard let start = message.range(of: "<bash-input>") else { return nil }
+        let searchRange = start.upperBound..<message.endIndex
+        guard let end = message.range(of: "</bash-input>", options: [], range: searchRange) else { return nil }
+        let rawCommand = message[start.upperBound..<end.lowerBound]
+        let trimmed = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let collapsed = trimmed.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return "You executed the command `\(collapsed)`."
+    }
+
+    // MARK: - Slash Command Detection
+
     /// Detect and summarize slash commands from Claude Code and Codex CLI
     /// Returns a summary string if a command is detected, nil otherwise
     nonisolated func detectSlashCommand(_ message: String, assistantName: String) -> String? {

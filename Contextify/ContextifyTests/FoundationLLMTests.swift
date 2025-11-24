@@ -178,6 +178,14 @@ final class GroundingTests: XCTestCase {
         // Should accept because leakage is minimal (<3 tokens) and confidence is reasonable
         XCTAssertTrue(result.summary.contains("identifies") || result.summary.contains("function"))
     }
+
+    func testBashInputFastPathSummary() async throws {
+        let message = "<bash-input>checkout claude/p1-code-quality-017eyf46izwZZFvGYbX6jsSN and rebase off main</bash-input>"
+        let result = try await FoundationLLM.shared._testTimelineSummary(message: message, kind: .user)
+        XCTAssertEqual(result.summary, "You executed the command `checkout claude/p1-code-quality-017eyf46izwZZFvGYbX6jsSN and rebase off main`.")
+        XCTAssertEqual(result.disposition, "report")
+        XCTAssertFalse(result.isDirective)
+    }
 }
 #endif
 
