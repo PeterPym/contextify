@@ -1,7 +1,6 @@
 import SwiftUI
 import ContextifyCore
 import UniformTypeIdentifiers
-import GRDB
 
 /// Semantic search interface for conversation history
 struct SemanticSearchView: View {
@@ -22,11 +21,12 @@ struct SemanticSearchView: View {
 
   // Hold references safely; build once in init
   private let embeddingService: EmbeddingService
-  private let repository: EmbeddingRepository
-  private let searchService: SearchService
-  private let bm25Service: BM25Service
-  private let hybridSearchService: HybridSearchService
+  private let repository: EmbeddingRepository?
+  private let searchService: SearchService?
+  private let bm25Service: BM25Service?
+  private let hybridSearchService: HybridSearchService?
   private let synthesisService: SynthesisService
+  private let initializationError: String?
 
   init() {
     // Build dependencies once with proper error handling
@@ -45,27 +45,18 @@ struct SemanticSearchView: View {
       )
       self.bm25Service = BM25Service(db: pool)
       self.hybridSearchService = HybridSearchService(
-        semanticSearch: self.searchService,
-        bm25Search: self.bm25Service,
+        semanticSearch: self.searchService!,
+        bm25Search: self.bm25Service!,
         db: pool
       )
+      self.initializationError = nil
     } catch {
-      // Fallback stubs so view can render error message
-      let memPool = try! DatabasePool(path: ":memory:")
-      let fallbackRepo = EmbeddingRepositoryImpl(db: memPool)
-      self.repository = fallbackRepo
-      self.searchService = SearchService(
-        embeddingService: embeddingService,
-        repository: fallbackRepo,
-        db: memPool
-      )
-      self.bm25Service = BM25Service(db: memPool)
-      self.hybridSearchService = HybridSearchService(
-        semanticSearch: self.searchService,
-        bm25Search: self.bm25Service,
-        db: memPool
-      )
-      // Error will be displayed when user tries to search
+      // Database initialization failed - services will be nil
+      self.repository = nil
+      self.searchService = nil
+      self.bm25Service = nil
+      self.hybridSearchService = nil
+      self.initializationError = "Failed to initialize database: \(error.localizedDescription)"
     }
   }
 
@@ -267,6 +258,21 @@ struct SemanticSearchView: View {
       synthesisError = nil
 
       let startTime = Date()
+
+      // Check for initialization error
+      if let initError = initializationError {
+        error = initError
+        isSearching = false
+        return
+      }
+
+      // Check services are available
+      guard let searchService = searchService,
+            let hybridSearchService = hybridSearchService else {
+        error = "Search services not initialized"
+        isSearching = false
+        return
+      }
 
       // Determine project ID based on checkbox state
       let projectId: String? = searchAllProjects ? nil : hudModel.projectRootURL?.path

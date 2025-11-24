@@ -1,6 +1,5 @@
 import SwiftUI
 import ContextifyCore
-import GRDB
 import OSLog
 
 /// Container view that queries providers from database and displays badges
@@ -20,38 +19,9 @@ struct ProjectBadgesContainer: View {
     do {
       if Task.isCancelled { return }
 
-      // Query database for providers
-      let db = try DatabaseManager.shared.pool
-      let set: Set<DiscoveredProject.Provider> = try await db.read { db in
-        let sql = """
-          SELECT GROUP_CONCAT(DISTINCT t.provider) AS providers
-          FROM projects p
-          LEFT JOIN transcripts t ON t.project_id = p.id
-          WHERE p.root_path = ?
-          GROUP BY p.id
-          LIMIT 1
-          """
-
-        guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectPath]) else {
-          return []
-        }
-
-        // Parse provider set from CSV of raw values
-        let providersCSV: String? = row["providers"]
-        var result: Set<DiscoveredProject.Provider> = []
-        if let csv = providersCSV, !csv.isEmpty {
-          for token in csv.split(separator: ",") {
-            let raw = String(token).trimmingCharacters(in: .whitespacesAndNewlines)
-            // Tolerant mapping for legacy/variant provider strings
-            if let p = DiscoveredProject.Provider(dbRaw: raw) ?? DiscoveredProject.Provider(rawValue: raw) {
-              result.insert(p)
-            } else {
-              result.insert(.other)
-            }
-          }
-        }
-        return result
-      }
+      // Query providers via orchestrator
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      let set = try await orchestrator.getProviders(forProjectPath: projectPath)
 
       if Task.isCancelled { return }
       await MainActor.run { self.providers = set }

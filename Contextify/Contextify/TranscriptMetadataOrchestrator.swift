@@ -2,7 +2,6 @@ import Foundation
 import OSLog
 import ContextifyCore
 import CryptoKit
-import GRDB
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -731,9 +730,14 @@ actor TranscriptMetadataOrchestrator {
     // Save with FK constraint error handling
     do {
       try orchestrator.saveMetadata(record)
-    } catch let err as DatabaseError where err.resultCode == .SQLITE_CONSTRAINT_FOREIGNKEY {
-      log.error("Orphaned metadata for \(transcriptId, privacy: .public) - transcript FK missing")
-      throw TranscriptMetadataError.orphanedTranscript(transcriptId)
+    } catch {
+      // Check for foreign key constraint violation (orphaned transcript)
+      let errorDesc = error.localizedDescription
+      if errorDesc.contains("FOREIGN KEY constraint failed") || errorDesc.contains("SQLITE_CONSTRAINT_FOREIGNKEY") {
+        log.error("Orphaned metadata for \(transcriptId, privacy: .public) - transcript FK missing")
+        throw TranscriptMetadataError.orphanedTranscript(transcriptId)
+      }
+      throw error
     }
 
     // Post notification for cache updates (outside actor to avoid reentrancy)

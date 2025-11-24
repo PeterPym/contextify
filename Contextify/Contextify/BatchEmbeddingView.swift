@@ -1,6 +1,5 @@
 import SwiftUI
 import ContextifyCore
-import GRDB
 
 /// UI for batch embedding generation with progress tracking
 struct BatchEmbeddingView: View {
@@ -14,8 +13,9 @@ struct BatchEmbeddingView: View {
 
   // Hold references safely; build once in init
   private let embeddingService: EmbeddingService
-  private let repository: EmbeddingRepository
-  private let orchestrator: EmbeddingOrchestrator
+  private let repository: EmbeddingRepository?
+  private let orchestrator: EmbeddingOrchestrator?
+  private let initializationError: String?
 
   @Environment(\.dismiss) private var dismiss
 
@@ -33,17 +33,12 @@ struct BatchEmbeddingView: View {
         repository: repository,
         db: pool
       )
+      self.initializationError = nil
     } catch {
-      // Fallback stubs so view can render error message in .task
-      let memPool = try! DatabasePool(path: ":memory:")
-      let fallbackRepo = EmbeddingRepositoryImpl(db: memPool)
-      self.repository = fallbackRepo
-      self.orchestrator = EmbeddingOrchestrator(
-        embeddingService: embeddingService,
-        repository: fallbackRepo,
-        db: memPool
-      )
-      // Error will be displayed when loadStats() runs in .task
+      // Database initialization failed - services will be nil
+      self.repository = nil
+      self.orchestrator = nil
+      self.initializationError = "Failed to initialize database: \(error.localizedDescription)"
     }
   }
 
@@ -325,6 +320,17 @@ struct BatchEmbeddingView: View {
   }
 
   private func loadStats() async {
+    // Check for initialization error
+    if let initError = initializationError {
+      self.error = initError
+      return
+    }
+
+    guard let repository = repository else {
+      self.error = "Repository not initialized"
+      return
+    }
+
     do {
       dbStats = try await repository.countEmbeddings(
         version: EmbeddingService.currentEmbeddingVersion,
@@ -338,24 +344,11 @@ struct BatchEmbeddingView: View {
   }
 
   private func loadLengthDistribution() async throws -> [String: Int] {
-    let db = try DatabaseManager.shared.pool
-    return try await db.read { db in
-      var distribution: [String: Int] = [:]
-
-      // Count entries in each range
-      distribution["<50"] = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) < 50") ?? 0
-      distribution["50-99"] = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 50 AND length(content) < 100") ?? 0
-      distribution["100-199"] = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 100 AND length(content) < 200") ?? 0
-      distribution["200-499"] = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 200 AND length(content) < 500") ?? 0
-      distribution["500+"] = try Int.fetchOne(db,
-        sql: "SELECT COUNT(*) FROM transcript_entries WHERE length(content) >= 500") ?? 0
-
-      return distribution
+    guard let repository = repository else {
+      throw NSError(domain: "BatchEmbeddingView", code: -1, userInfo: [NSLocalizedDescriptionKey: "Repository not initialized"])
     }
+    // Use repository method instead of direct SQL
+    return try await repository.getContentLengthDistribution()
   }
 
   private func startBatchGeneration() {
@@ -364,6 +357,12 @@ struct BatchEmbeddingView: View {
       error = nil
       stats = nil
       progress = nil
+
+      guard let orchestrator = orchestrator else {
+        self.error = "Orchestrator not initialized"
+        isRunning = false
+        return
+      }
 
       do {
         let generatedStats = try await orchestrator.generateEmbeddingsForAllEntries(
@@ -389,19 +388,14 @@ struct BatchEmbeddingView: View {
   }
 
   private func clearAllEmbeddings() async {
+    guard let repository = repository else {
+      self.error = "Repository not initialized"
+      return
+    }
+
     do {
-      let db = try DatabaseManager.shared.pool
-      try await db.write { db in
-        try db.execute(
-          sql: """
-            UPDATE transcript_entries
-            SET embedding = NULL,
-                embedding_version = NULL,
-                embedding_generated_at = NULL
-            WHERE embedding IS NOT NULL
-          """
-        )
-      }
+      // Use repository method instead of direct SQL
+      try await repository.clearAllEmbeddings()
       await loadStats()
       self.stats = nil
       self.progress = nil
