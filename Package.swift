@@ -11,7 +11,8 @@ let package = Package(
     .executable(name: "TranscriptValidatorCLI", targets: ["TranscriptValidatorCLI"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0")
+    .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
+    .package(url: "https://github.com/apple/swift-syntax.git", from: "510.0.0")
   ],
   targets: [
     .target(
