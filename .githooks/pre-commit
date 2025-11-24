@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pre-commit: build guard for Xcode project changes
-# Blocks commit if files under the Xcode project folder changed and the build fails.
+# Pre-commit: test + build guard for Xcode project changes
+# Blocks commit if files under the Xcode project folder changed and tests or build fails.
 
 changed=$(git diff --cached --name-only --diff-filter=ACMR || true)
 if [[ -z "$changed" ]]; then
@@ -19,7 +19,15 @@ if [[ ! -x scripts/xc.sh ]]; then
   exit 0
 fi
 
-echo "[pre-commit] Xcode project changes detected. Running headless build (Xcode-beta if available)…"
+echo "[pre-commit] Xcode project changes detected. Running tests…"
+
+# Run tests first - fail fast if tests don't pass
+if ! swift test; then
+  echo "[pre-commit] ❌ Tests failed. Fix tests before committing." >&2
+  exit 1
+fi
+
+echo "[pre-commit] ✅ Tests passed. Running headless build (Xcode-beta if available)…"
 
 # Prefer Xcode-beta automatically (handled by the script). Capture exit status.
 if ! bash scripts/xc.sh build; then

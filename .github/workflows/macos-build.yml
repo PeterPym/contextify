@@ -27,6 +27,9 @@ jobs:
           # Use default Xcode on runner; adjust if you require a specific beta version
           xcodebuild -version
 
+      - name: Run Tests
+        run: swift test
+
       - name: Build Contextify
         run: |
           set -euo pipefail
