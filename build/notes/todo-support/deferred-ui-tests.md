@@ -48,3 +48,19 @@ description: Catalog of UI behavior we can’t yet cover with SPM tests; each en
 3. Use SQL to confirm the project has no `timeline_entries` but does exist (e.g., `SELECT COUNT(*) FROM transcript_entries WHERE project_id = '<id>'` returns 0).
 
 **Goal:** Add the empty-state UI test once the SwiftUI automation stabilizes (or move this check into a lightweight expectation harness) so we can guard the spinner-free behavior. Keep this entry in the deferred doc until the automated test is written.
+
+## 3. Initial viewport fallback handshake needs verification
+
+**Problem:** In the `commands`/`webviewer` timeline the spinner was previously stuck because `[SUMM-VIEWPORT-FALLBACK]` re-armed after the first viewport snapshot even though no scroll occurred. The fix introduces instrumentation (`[SUMM-VIEWPORT-ACCEPTED]`, `[SUMM-VIEWPORT-STARVATION]`, `initial_viewport_fallback_*` counters) but we still lack a SwiftUI automation that captures the UI state and correlates it with the logs.
+
+**Verification steps:**
+1. Launch the HUD and switch to the `commands` project while **not** manually scrolling.
+2. Capture logs around the switch and confirm the following sequence fires exactly once:
+   - `[SUMM-LOAD-STATE] ... needsInitialSnapshot=true`
+   - `[SUMM-VIEWPORT-ACCEPTED] ... initial viewport snapshot`
+   - `[SUMM-VIEWPORT-FALLBACK]` (should not fire or should skip re-queue; fallback count should stay at 1)
+   - `[SUMM-VIEWPORT-STARVATION]` should not log for this scenario
+3. Ensure the visible entries go from the hourglass/pending state to summarized within a few seconds (use the status bar or dedicated UI flags rather than scrolling).
+4. Re-check the timeline entries in SQLite to verify the `is_queued` flag transitions to `1` for the visible entries that were pending.
+
+**Goal:** Build a deferred SwiftUI test that asserts the HUD transitions out of the spinner state for non-scrolling projects while the instrumentation above stays within expected bounds. Until the SwiftUI harness can reliably reproduce this scenario, the above steps and log checks remain the verification checklist.
