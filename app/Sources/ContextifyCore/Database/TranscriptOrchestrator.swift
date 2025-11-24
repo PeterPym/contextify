@@ -1803,6 +1803,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // MARK: - Project Visits (Unread Tracking)
 
   /// Mark a project as viewed at a specific timestamp
+  @discardableResult
   public func markProjectViewed(projectId: String, timestamp: String) throws -> ProjectVisit {
     try projectVisitsRepo.markViewed(projectId: projectId, timestamp: timestamp)
     // Return fresh state immediately after update

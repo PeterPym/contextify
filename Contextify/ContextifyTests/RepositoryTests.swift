@@ -61,9 +61,11 @@ final class RepositoryTests: XCTestCase {
   private func createEntry(
     content: String,
     displayInTimeline: Int,
-    timestamp: Int? = nil
+    timestamp: Int? = nil,
+    createdAt: Int? = nil
   ) throws -> TranscriptEntry {
     let now = timestamp ?? Int(Date().timeIntervalSince1970)
+    let created = createdAt ?? now
     let entry = TranscriptEntry(
       id: UUID().uuidString,
       transcriptId: transcriptId,
@@ -82,9 +84,9 @@ final class RepositoryTests: XCTestCase {
       prev1Id: nil,
       prev2Id: nil,
       windowSha256: nil,
-      createdTs: Double(now),
-      createdAt: now,
-      updatedAt: now
+      createdTs: Double(created),
+      createdAt: created,
+      updatedAt: created
     )
     try entryRepo.insertBatch([entry])
     return entry
@@ -248,14 +250,10 @@ final class RepositoryTests: XCTestCase {
   func testEntriesAfterCursorHandlesEdgeCaseAtSameTimestamp() throws {
     // Given: multiple entries at same timestamp with different created_at/id
     let baseTimestamp = 1000
-    let entry1 = try createEntry(content: "Entry 1 visible", displayInTimeline: 1, timestamp: baseTimestamp)
-    try createEntry(content: "Entry 2 hidden", displayInTimeline: 0, timestamp: baseTimestamp)
-    let entry3 = try createEntry(content: "Entry 3 visible", displayInTimeline: 1, timestamp: baseTimestamp)
-
-    // Wait a moment to ensure different created_at times
-    try Task.sleep(nanoseconds: 10_000_000) // 10ms
-
-    try createEntry(content: "Entry 4 visible", displayInTimeline: 1, timestamp: baseTimestamp)
+    let entry1 = try createEntry(content: "Entry 1 visible", displayInTimeline: 1, timestamp: baseTimestamp, createdAt: baseTimestamp)
+    try createEntry(content: "Entry 2 hidden", displayInTimeline: 0, timestamp: baseTimestamp, createdAt: baseTimestamp + 1)
+    let entry3 = try createEntry(content: "Entry 3 visible", displayInTimeline: 1, timestamp: baseTimestamp, createdAt: baseTimestamp + 2)
+    try createEntry(content: "Entry 4 visible", displayInTimeline: 1, timestamp: baseTimestamp, createdAt: baseTimestamp + 3)
 
     // When: querying after first entry
     let cursor = (timestamp: entry1.timestamp, createdAt: entry1.createdAt, id: entry1.id)
