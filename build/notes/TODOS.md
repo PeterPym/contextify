@@ -869,6 +869,18 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
+# Conversation Search (1 item)
+
+**Status:** Spec ready for implementation
+**Priority:** P1 (core UX quality)
+**Effort:** 8-12 hours (Phase 1)
+
+- [ ] #P1-CONVO-SEARCH: Implement Quick Search (HUD project scope) and Deep Search (Search Center) following the unified spec so users can quickly search messages/context per project and still dig into cross-project history without extra spinner noise.
+
+**Spec:** `build/notes/todo-support/P1-CONVO-SEARCH-spec.md`
+
+---
+
 # P2 (Medium Priority) - 31 Items
 
 ---
