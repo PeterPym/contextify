@@ -1354,14 +1354,8 @@ final class ConversationMonitor {
         }
         #endif
 
-        // Set loading phase (tracked by UI)
-        phase = .loading
-        log.info("[UIOPT-BRANCH] phase → loading")
-
         // P1-1: Hold isReadyForUpdates=false during initial load to prevent append races
         let priorReady = isReadyForUpdates
-        isReadyForUpdates = false
-        isProcessing = true
 
         feedHydrationTask?.cancel()
         let maxEntries = config.maxEntries
@@ -1376,6 +1370,13 @@ final class ConversationMonitor {
             schedulePrimerRetry(for: projectId)
             return nil
         }
+
+        // Set loading phase (tracked by UI)
+        phase = .loading
+        log.info("[UIOPT-BRANCH] phase → loading")
+
+        isReadyForUpdates = false
+        isProcessing = true
 
         cancelPrimerRetry(reason: "entries-available")
 
