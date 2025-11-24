@@ -34,7 +34,9 @@ let package = Package(
       name: "ContextifyCoreTests",
       dependencies: [
         "ContextifyCore",
-        .product(name: "GRDB", package: "GRDB.swift")
+        .product(name: "GRDB", package: "GRDB.swift"),
+        .product(name: "SwiftSyntax", package: "swift-syntax"),
+        .product(name: "SwiftParser", package: "swift-syntax")
       ],
       path: "Tests/ContextifyCoreTests"
     )

@@ -26,7 +26,7 @@ final class ArchitecturalTests: XCTestCase {
       let source = try String(contentsOf: file)
       let tree = Parser.parse(source: source)
 
-      let visitor = ImportVisitor()
+      let visitor = ImportVisitor(viewMode: .sourceAccurate)
       visitor.walk(tree)
 
       let grdbImports = visitor.imports.filter { $0.contains("GRDB") }
@@ -72,7 +72,7 @@ final class ArchitecturalTests: XCTestCase {
       let source = try String(contentsOf: file)
       let tree = Parser.parse(source: source)
 
-      let visitor = ImportVisitor()
+      let visitor = ImportVisitor(viewMode: .sourceAccurate)
       visitor.walk(tree)
 
       let grdbImports = visitor.imports.filter { $0.contains("GRDB") }
@@ -118,13 +118,13 @@ final class ArchitecturalTests: XCTestCase {
       let source = try String(contentsOf: file)
       let tree = Parser.parse(source: source)
 
-      let visitor = ImportVisitor()
+      let visitor = ImportVisitor(viewMode: .sourceAccurate)
       visitor.walk(tree)
 
-      let uiImports = visitor.imports.filter { import in
-        import.contains("SwiftUI") ||
-        import.contains("AppKit") ||
-        import.contains("UIKit")
+      let uiImports = visitor.imports.filter {
+        $0.contains("SwiftUI") ||
+        $0.contains("AppKit") ||
+        $0.contains("UIKit")
       }
 
       if !uiImports.isEmpty {
@@ -164,12 +164,12 @@ final class ArchitecturalTests: XCTestCase {
       let source = try String(contentsOf: file)
       let tree = Parser.parse(source: source)
 
-      let visitor = ImportVisitor()
+      let visitor = ImportVisitor(viewMode: .sourceAccurate)
       visitor.walk(tree)
 
-      let uiImports = visitor.imports.filter { import in
-        import.contains("SwiftUI") ||
-        import.contains("AppKit")
+      let uiImports = visitor.imports.filter {
+        $0.contains("SwiftUI") ||
+        $0.contains("AppKit")
       }
 
       if !uiImports.isEmpty {
