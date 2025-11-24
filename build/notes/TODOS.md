@@ -1223,6 +1223,56 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 
 ---
 
+## Code Quality - Compiler Warnings (1 item)
+
+**Status:** Partial Progress - 11/21 warnings fixed
+**Priority:** P2 (Zero-warning policy enforcement)
+**Effort:** 3-4 hours remaining
+**Branch:** `claude/p1-code-quality-017eyf46izwZZFvGYbX6jsSN` (rebased off main, pushed)
+
+- [ ] #P2-CODE-QUALITY: Fix remaining 10 compiler warnings to achieve zero-warning policy
+
+**Branch Status:**
+- ✅ Rebased off main (commit 22415ce0)
+- ✅ All 46 tests passing
+- ✅ 11 warnings fixed (Sendable conformance, unnecessary await/try, unused variables)
+- ⚠️ 10 warnings remain (unused variables, false positive async warnings, #file deprecation)
+
+**Fixed Warnings (commit 22415ce0):**
+1. Added Sendable conformance to CorruptionType enum
+2. Removed unnecessary await expressions (6 locations)
+3. Removed unreachable catch block
+4. Discarded unused db.write() return values (2 locations)
+5. Removed unnecessary nil coalescing operator
+6. Replaced unused binding with boolean test
+7. Removed unnecessary try expression
+8. Changed var to let for immutable variable
+
+**Remaining Warnings:**
+1. HooverEngine.swift:304 - `transcriptHasher` never mutated
+2. TranscriptWatcher.swift:208 - Conditional cast always succeeds (3 occurrences)
+3. DatabaseMigration.swift:50 - `sourceDir` never used
+4. TranscriptParsers.swift:393 - `hasOnlyThinking` never used
+5. TranscriptConverter.swift:288 - `convertedCalls` never used
+6. TranscriptConverter.swift:313 - `timestamp` never used
+7. FSEventsMonitor.swift:56,180 - No async operations in await (2 occurrences)
+8. TestHelpers.swift - #file vs #filePath deprecation (3 occurrences)
+
+**Next Steps:**
+1. Fix remaining 10 warnings
+2. Run `swift test` to verify zero warnings
+3. Merge to main once clean
+
+**Files:**
+- Various (see commit history for complete list)
+
+**Related Work on Branch:**
+- Query builder pattern implementation (TimelineEntryQuery)
+- Raw SQL elimination from TranscriptOrchestrator
+- Concurrency fixes (Task.detached → Task)
+
+---
+
 ## Code Quality - Refactoring (4 items) ⬇️
 
 **Status:** Not Started
