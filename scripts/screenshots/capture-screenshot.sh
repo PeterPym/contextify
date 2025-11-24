@@ -129,7 +129,7 @@ else
 fi
 
 # Restore windows to original positions
-"$SCRIPT_DIR/restore-screenshot.sh"
+# "$SCRIPT_DIR/restore-screenshot.sh"  # Commented out temporarily for iterative screenshot capture
 
 echo ""
 echo "Next: Review and capture more screenshots:"
