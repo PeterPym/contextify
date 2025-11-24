@@ -22,6 +22,8 @@ Contextify uses **two independent LLM processing queues** for different content 
 
 Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
 
+**Viewport-driven summarization:** Timeline entries enter the LLM queue once SwiftUI reports ≥25% visibility (`viewportVisibilityThreshold` shared constant). `ConversationMonitor` tracks that snapshot via `InitialViewportStateMachine`, cancels fallback timers after the first accepted snapshot, and logs `[SUMM-VIEWPORT-ACCEPTED]` / `[SUMM-VIEWPORT-FALLBACK]` plus starvation warnings when visible entries stay unsummarized for >2 s. Recent-visible IDs expire after 1 s so pruning removes scrolled-off entries even if their UUIDs linger.
+
 ---
 
 ## System Architecture
