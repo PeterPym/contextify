@@ -221,7 +221,7 @@ struct TranscriptInventoryView: View {
         .padding(.horizontal, 8)
         .scrollTargetLayout()
       }
-      .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
+      .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.25) { visibleIDs in
         replaceVisibleSnapshot(visibleIDs)
       }
       .searchable(text: $searchText, prompt: "Search")

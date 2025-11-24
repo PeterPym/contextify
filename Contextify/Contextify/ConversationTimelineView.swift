@@ -227,7 +227,7 @@ struct ConversationTimelineView: View {
             }
         }
         // Aggregate visibility tracking (macOS 15+) - replaces per-row callbacks
-        .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.55) { ids in
+        .onScrollTargetVisibilityChange(idType: UUID.self, threshold: 0.25) { ids in
             monitor.replaceVisibleSnapshot(ids)
         }
         // Scroll phase tracking for user input detection
