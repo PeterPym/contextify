@@ -346,12 +346,95 @@ try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
 
 ## Testing
 
-- **XCTest** (or Swift Testing) under `ContextifyTests/` for app modules
-- Key test files:
-  - `GitDetectionTests.swift`: Git resolution, worktree handling, HEAD parsing
-  - `ContextifyTests.swift`: HUD view model tests
-  - `TestHelpers.swift`: Shared test utilities
-- Target: tests for every feature; smoke tests for HUD launch and file ingest
+**Canonical Test Suite:** Swift Package Manager (SPM)
+**Command:** `swift test`
+**Current Baseline:** 46/46 tests passing
+**Policy:** Zero test failures, zero compiler warnings
+
+### Validation Commands (AI Agents: Run Before Every Merge)
+
+```bash
+# 1. Run tests
+swift test
+
+# 2. Only if tests pass, run build
+bash scripts/xc.sh build
+```
+
+**If `swift test` fails:** Do NOT run the build. Fix tests first.
+**If `bash scripts/xc.sh build` fails or reports warnings:** Do NOT merge. Fix and re-run.
+**Before merging to main:** ALWAYS run both commands, regardless of what files changed.
+
+### Test Location
+
+**Always add new tests here:**
+```
+Tests/ContextifyCoreTests/YourNewTest.swift
+```
+
+**Never add tests here:**
+```
+Contextify/ContextifyTests/  # Legacy Xcode tests (READ-ONLY - deprecated)
+```
+
+**Treat `Contextify/ContextifyTests/` as read-only.** You may only delete or move tests out, never add or modify tests in place.
+
+### Test Categories (46 tests total)
+
+- **Architectural:** Layer boundary enforcement (UI → Orchestrator → Repository → DB)
+- **Repository:** display_in_timeline filters, cursor pagination, search
+- **Database:** HooverEngine, crash recovery, ingestion locks, state management
+- **Parsers:** Transcript parsing, metadata extraction, project identity
+
+### Quick Commands
+
+```bash
+# Run all tests
+swift test
+
+# Run specific test suite
+swift test --filter ArchitecturalTests
+
+# Run single test
+swift test --filter testHooverEnginePreviewLimit
+
+# Build verification (must show 0 warnings)
+bash scripts/xc.sh build
+```
+
+### Test Coverage Requirements
+
+**All new features require:**
+1. Happy path test (expected behavior)
+2. Edge case test (boundary conditions)
+3. Error case test (failure handling)
+
+**All bug fixes require:**
+1. Regression test that would have caught the bug
+
+### Before Merging to Main (Critical)
+
+**AI agents must verify:**
+```bash
+# 1. All tests pass
+swift test
+# Expected: "Executed 46 tests, with 0 failures"
+
+# 2. Build succeeds with zero warnings
+bash scripts/xc.sh build
+# Expected: "** BUILD SUCCEEDED **" with no warning lines
+```
+
+**Do not merge if either check fails.**
+
+### Complete Testing Strategy
+
+**See:** `build/docs/testing/TESTING-STRATEGY.md` for comprehensive guidelines including:
+- Where to put tests
+- Test dependencies available
+- Naming conventions
+- Common mistakes to avoid
+- FAQ for AI agents
 
 ## Quickstart For Agents
 
