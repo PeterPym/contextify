@@ -295,7 +295,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
     @ObservationIgnored private var visibleEntryTimestamps: [UUID: Date] = [:]
-    private let viewportEntryRetentionDuration: TimeInterval = 5.0
+    private let viewportEntryRetentionDuration: TimeInterval = 1.0
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
     @ObservationIgnored private var feedHydrationTask: Task<Void, Never>?  // Cancelable hydration work item
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
@@ -2371,7 +2371,15 @@ final class ConversationMonitor {
     @MainActor
     private func recordVisibleEntryTimestamps(_ ids: Set<UUID>) {
         let now = Date()
+        // Expire stale entries even if they never left the visible set
         visibleEntryTimestamps = visibleEntryTimestamps.filter { now.timeIntervalSince($0.value) <= viewportEntryRetentionDuration }
+
+        // Remove entries that are no longer reported as visible
+        let toRemove = visibleEntryTimestamps.keys.filter { !ids.contains($0) }
+        for key in toRemove {
+            visibleEntryTimestamps.removeValue(forKey: key)
+        }
+
         ids.forEach { visibleEntryTimestamps[$0] = now }
     }
 
