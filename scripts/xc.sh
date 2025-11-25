@@ -44,7 +44,7 @@ parse_arg() {
     Debug|Release)
       config="$value"
       ;;
-    build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs)
+    build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|archive|export-pkg|upload)
       action="$value"
       ;;
     ca)
@@ -99,6 +99,9 @@ parse_arg() {
       echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  ar                 Fast App Store cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  arp                Fast App Store cleanrun PRESERVING BOOKMARKS (for testing)" >&2
+      echo "  archive            Create Xcode archive for App Store submission" >&2
+      echo "  export-pkg         Export archive as .pkg for App Store Connect" >&2
+      echo "  upload             Upload .pkg to App Store Connect via altool" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
       echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
       echo "  reset-all          Reset both permissions and state" >&2
@@ -567,6 +570,113 @@ fi
 # Stream logs
 if [[ "$action" == "logs" ]]; then
   watch_logs
+  exit 0
+fi
+
+# Archive for App Store
+archive_path="build/Contextify.xcarchive"
+pkg_path="build/appstore/Contextify.pkg"
+export_options_plist="ExportOptions-AppStore.plist"
+
+if [[ "$action" == "archive" ]]; then
+  echo "📦 Creating Xcode archive for App Store submission..."
+  quit_running_app
+
+  # Always use Release for archives
+  config="Release"
+
+  # Clean previous archive
+  rm -rf "$archive_path"
+  mkdir -p build
+
+  run_xcodebuild -project "$proj" -scheme "$scheme" \
+    -configuration Release \
+    -destination "generic/platform=macOS" \
+    -archivePath "$archive_path" \
+    CODE_SIGN_ENTITLEMENTS="$entitlements_appstore" \
+    OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
+    archive
+
+  echo ""
+  echo "✅ Archive created: $archive_path"
+  echo ""
+  echo "Next step: Run 'bash scripts/xc.sh export-pkg' to create the .pkg"
+  exit 0
+fi
+
+if [[ "$action" == "export-pkg" ]]; then
+  echo "📦 Exporting archive as .pkg for App Store Connect..."
+
+  if [[ ! -d "$archive_path" ]]; then
+    echo "❌ Archive not found at: $archive_path"
+    echo "   Run 'bash scripts/xc.sh archive' first"
+    exit 1
+  fi
+
+  if [[ ! -f "$export_options_plist" ]]; then
+    echo "❌ Export options plist not found at: $export_options_plist"
+    exit 1
+  fi
+
+  # Clean previous export
+  rm -rf build/appstore
+  mkdir -p build/appstore
+
+  xcodebuild -exportArchive \
+    -archivePath "$archive_path" \
+    -exportPath build/appstore \
+    -exportOptionsPlist "$export_options_plist"
+
+  # Find the exported pkg
+  exported_pkg=$(find build/appstore -name "*.pkg" -type f 2>/dev/null | head -1)
+
+  if [[ -n "$exported_pkg" ]]; then
+    echo ""
+    echo "✅ Package created: $exported_pkg"
+    echo ""
+    echo "Next step: Run 'bash scripts/xc.sh upload' to upload to App Store Connect"
+  else
+    echo ""
+    echo "⚠️  Export completed but no .pkg found. Check build/appstore/ for output."
+  fi
+  exit 0
+fi
+
+if [[ "$action" == "upload" ]]; then
+  echo "🚀 Uploading to App Store Connect..."
+
+  # Find the pkg
+  exported_pkg=$(find build/appstore -name "*.pkg" -type f 2>/dev/null | head -1)
+
+  if [[ -z "$exported_pkg" ]]; then
+    echo "❌ No .pkg found in build/appstore/"
+    echo "   Run 'bash scripts/xc.sh archive' then 'bash scripts/xc.sh export-pkg' first"
+    exit 1
+  fi
+
+  # Check for API credentials
+  api_key_id="AG868N57U6"
+  api_issuer_id="69a6de89-2083-47e3-e053-5b8c7c11a4d1"
+  api_key_path=".secrets/AuthKey_${api_key_id}.p8"
+
+  if [[ ! -f "$api_key_path" ]]; then
+    echo "❌ API key not found at: $api_key_path"
+    echo "   Download from App Store Connect and place in .secrets/"
+    exit 1
+  fi
+
+  echo "Uploading: $exported_pkg"
+  echo "Using API Key: $api_key_id"
+  echo ""
+
+  xcrun altool --upload-app \
+    --type macos \
+    --file "$exported_pkg" \
+    --apiKey "$api_key_id" \
+    --apiIssuer "$api_issuer_id"
+
+  echo ""
+  echo "✅ Upload complete! Check App Store Connect for build status."
   exit 0
 fi
 

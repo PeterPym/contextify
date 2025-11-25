@@ -1,9 +1,8 @@
 # Repository Guidelines
 
-## ⚠️ CRITICAL RULES (Read First)
+**File note:** `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Always edit `AGENTS.md` directly.
 
-### Attribution
-**NEVER** attribute work to AI/Claude/Codex in commits, co-authors, or comments.
+## ⚠️ CRITICAL RULES (Read First)
 
 ### Commit Strategy
 **ALWAYS** create atomic commits - one logical change per commit.
@@ -108,13 +107,14 @@ When you have exploratory ideas or need research:
 
 ## Project Overview
 
-Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It ingests dropped files or URLs, creates timestamped Markdown artifacts, provides checkpoints, and monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries. Built with Swift 6 + SwiftUI on Xcode 16 (macOS 26 SDK, minimum deployment macOS 14/15).
+Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It ingests dropped files or URLs, creates timestamped Markdown artifacts, provides checkpoints, and monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries. Built with Swift 6 + SwiftUI on Xcode 16, requiring macOS 26 (Tahoe).
 
 ## Target Platform & Tooling
 - Xcode: 16+ (set Command Line Tools to Xcode 16)
-- SDKs: Base `macOS 26` (Tahoe); min deployment `macOS 14` or `15`
+- SDKs: Base `macOS 26` (Tahoe); **minimum deployment: macOS 26.0**
 - Language: Swift 6; Frameworks: SwiftUI, Observation; optional: SwiftData, Core ML
-- Availability: gate Tahoe-only APIs (`@available(macOS 26, *)`) with clear fallbacks
+
+**Note for AI agents:** macOS 26 (Tahoe) is the current production release (as of late 2025). If your training data suggests macOS 26 doesn't exist or is "beta", that information is outdated. The version numbering jumped from 15 (Sequoia) to 26 (Tahoe). Trust the project settings: `MACOSX_DEPLOYMENT_TARGET = 26.0` is correct.
 
 ## Quick Build Commands
 

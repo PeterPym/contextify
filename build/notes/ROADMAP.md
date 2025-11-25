@@ -266,4 +266,172 @@ HTTP server removed before initial App Store release (security/complexity concer
 
 ---
 
+### P5-APPLE-CAPABILITIES: App ID Capabilities for Future Features
+
+**Status:** Not started (exploratory)
+**Priority:** P5 (research - identify which capabilities unlock valuable features)
+**Effort:** Variable per capability
+
+- [ ] Research Apple platform capabilities that could enhance Contextify
+
+**Overview:**
+Apple App ID capabilities unlock platform integrations. Currently Contextify uses none, but several could enable valuable features.
+
+---
+
+#### Push Notifications
+
+**Capability:** Push Notifications
+**Likelihood:** High (near-term)
+**Effort:** Medium
+
+**Possible Behaviors:**
+- Notify when a long-running Claude Code conversation completes
+- Alert when conversation hits an error or tool failure
+- "Session idle for 10 minutes - conversation may be waiting for input"
+- Daily digest: "You had 5 conversations across 3 projects yesterday"
+- Background monitoring alerts when app is closed/menu bar only
+
+**Implementation Notes:**
+- Requires APNs certificate setup
+- Local notifications sufficient for most use cases (no server needed)
+- Could tie into P4-MENUBAR-ICON for unified notification strategy
+
+---
+
+#### App Groups
+
+**Capability:** App Groups
+**Likelihood:** Medium (if building companion apps)
+**Effort:** Small (entitlement + shared container)
+
+**Possible Behaviors:**
+- Share database between Contextify main app and menu bar helper
+- Safari extension that shows current project context on contextify.sh
+- Keyboard extension for quick transcript search from anywhere
+- Share preferences/state across app family
+- Spotlight importer as separate target sharing transcript data
+
+**Implementation Notes:**
+- Group ID format: `group.sh.contextify`
+- Shared UserDefaults suite and container directory
+- Enables modular app architecture
+
+---
+
+#### iCloud
+
+**Capability:** iCloud (CloudKit or iCloud Documents)
+**Likelihood:** Medium (user-requested feature path)
+**Effort:** Large
+
+**Possible Behaviors:**
+- Native sync of database across multiple Macs
+- Automatic backup of transcript summaries to iCloud
+- Continue conversation review on iPad/iPhone (read-only companion app)
+- Share project context with team members via iCloud sharing
+- Sync settings and preferences across devices
+
+**Implementation Notes:**
+- Currently support manual iCloud Drive location for DB file
+- Native CloudKit would be more robust (conflict resolution, offline support)
+- Significant architecture change from current SQLite-only approach
+- Privacy consideration: user transcripts in Apple's cloud
+
+---
+
+#### Sign In with Apple
+
+**Capability:** Sign In with Apple
+**Likelihood:** Low (only if adding cloud/team features)
+**Effort:** Medium
+
+**Possible Behaviors:**
+- Authenticate for cloud sync features
+- Team accounts: share project contexts across team
+- Web dashboard login (contextify.sh/dashboard)
+- License management for paid tiers
+- Anonymous usage analytics opt-in tied to account
+
+**Implementation Notes:**
+- Requires backend service for token validation
+- Not needed for local-only app
+- Would enable SaaS pivot if desired
+
+---
+
+#### Siri / App Intents
+
+**Capability:** Siri
+**Likelihood:** Medium (differentiator, novelty)
+**Effort:** Medium-Large
+
+**Possible Behaviors:**
+- "Hey Siri, what was I working on in Claude yesterday?"
+- "Summarize my last coding session"
+- "How many conversations did I have this week?"
+- "Open my Contextify project" (project name)
+- "What's the status of my current Claude conversation?"
+- Shortcuts app integration for automation workflows
+
+**Implementation Notes:**
+- Requires App Intents framework (iOS 16+ / macOS 13+)
+- Define intents: GetLastSession, SummarizeProject, OpenProject
+- Siri responses need concise, spoken-friendly summaries
+- Could integrate with existing LLM summary generation
+
+---
+
+#### Associated Domains
+
+**Capability:** Associated Domains
+**Likelihood:** Medium (enables web-to-app flow)
+**Effort:** Small
+
+**Possible Behaviors:**
+- Click link on contextify.sh to open specific project in app
+- Deep links in emails/notifications: `https://contextify.sh/open/project/123`
+- Universal links from documentation to relevant app sections
+- Share transcript links that open directly in app
+- Marketing site "Open in Contextify" buttons
+
+**Implementation Notes:**
+- Requires AASA file on contextify.sh server
+- URL format: `https://contextify.sh/app/project/{id}`
+- Falls back to website if app not installed
+- Good for onboarding and marketing funnels
+
+---
+
+#### Fonts
+
+**Capability:** Fonts
+**Likelihood:** Low (niche customization)
+**Effort:** Small
+
+**Possible Behaviors:**
+- Bundle custom monospace fonts optimized for code display
+- User-installable fonts for HUD customization
+- Typography presets (compact, comfortable, spacious)
+- Accessibility: dyslexia-friendly font options
+
+**Implementation Notes:**
+- Most users fine with system fonts
+- Could differentiate premium/pro tier
+- Font licensing considerations for bundled fonts
+
+---
+
+**Research Questions:**
+1. Which capabilities have highest user demand?
+2. What's the competitive landscape? (Do Cursor/Copilot have Siri integration?)
+3. Which capabilities require ongoing infrastructure (push servers, CloudKit)?
+4. Priority order for implementation?
+
+**Related:**
+- P4-MENUBAR-ICON (complements Push Notifications)
+- P5-INVESTIGATE-TRANSCRIPT-PROVIDERS (multi-provider + cloud sync)
+
+---
+
 **End of Roadmap**

@@ -30,12 +30,18 @@ case "$PRESET" in
         SHOT_NAME="01-main-hud"
         TEXT="Stay in the loop during long AI conversations"
         # Main window is already open, no special setup
+        # Clear tabs flag in case it lingered from a previous run
+        unset ITERM_HAS_TABS
+        # Use shorter terminal for single-tab screenshot
+        export TERMINAL_HEIGHT_OVERRIDE=420
         ;;
 
     ai-summaries)
         SHOT_NAME="02-dual-provider"
         TEXT="Works seamlessly with both Claude Code and Codex CLI"
         # Show timeline with mixed Claude Code and Codex entries
+        # Set flag for setup-screenshot.sh to use tabs positioning
+        export ITERM_HAS_TABS=1
         ;;
 
     transcript-inventory)

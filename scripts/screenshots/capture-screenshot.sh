@@ -13,6 +13,41 @@
 
 set -e
 
+# Function to open screenshot in positioned Preview window
+# Opens 400px to the right of iTerm2 window, 1000px wide, outside capture frame
+open_screenshot_preview() {
+    local file_path="$1"
+
+    # Open the file in Preview
+    open "$file_path"
+
+    # Wait for Preview to open
+    sleep 0.5
+
+    # Position Preview window outside capture frame
+    # Calculate position: iTerm2 right edge (870 + 633) + 400px offset = 1903
+    # Screen origin is at 200, so: 1903 - 200 = 1703 from capture frame origin
+    # Absolute position: 200 (capture X) + 1440 (capture width) + 400 (offset) = 2040
+    osascript <<'EOF'
+tell application "Preview"
+    activate
+end tell
+delay 0.3
+
+tell application "System Events"
+    tell process "Preview"
+        set frontmost to true
+        if (count of windows) > 0 then
+            tell front window
+                set position to {2040, 100}
+                set size to {1000, 900}
+            end tell
+        end if
+    end tell
+end tell
+EOF
+}
+
 # Parse arguments
 AUTO_OPEN=true
 SHOT_NAME=""
@@ -114,7 +149,7 @@ if [ -n "$OVERLAY_TEXT" ]; then
     # Open the final version instead of original
     if [ "$AUTO_OPEN" = true ]; then
         echo "   Opening final screenshot with text..."
-        open "$FINAL_FILENAME"
+        open_screenshot_preview "$FINAL_FILENAME"
     else
         echo "   (Use 'open \"$FINAL_FILENAME\"' to view)"
     fi
@@ -122,14 +157,14 @@ else
     # Open original screenshot if no text overlay
     if [ "$AUTO_OPEN" = true ]; then
         echo "   Opening screenshot..."
-        open "$FILENAME"
+        open_screenshot_preview "$FILENAME"
     else
         echo "   (Use 'open \"$FILENAME\"' to view)"
     fi
 fi
 
 # Restore windows to original positions
-"$SCRIPT_DIR/restore-screenshot.sh"
+# "$SCRIPT_DIR/restore-screenshot.sh"  # Commented out temporarily for iterative screenshot capture
 
 echo ""
 echo "Next: Review and capture more screenshots:"
