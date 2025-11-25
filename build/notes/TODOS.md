@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Blocking Release):** 4 items - Must complete before App Store submission
 - **P1 (High Priority):** 15 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 32 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 33 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 67
+**Total Active Items:** 68
 
 ---
 
@@ -1561,6 +1561,29 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 - Information requests distinguished from action requests
 
 **For full analysis**: See investigation document with transcript analysis, examples, and proposed prompt improvements
+
+---
+
+## Summarization Parsing Backlog (1 item)
+
+**Status:** Collecting examples
+**Priority:** P2 (Quality - batch fix unparseable summaries)
+**Effort:** 2-4 hours per batch
+
+- [ ] #P2-SUMM-PARSING-BACKLOG: Fix messages that fail summarization parsing
+
+**Problem:**
+Some transcript entries produce summaries that fail post-processing or contain unexpected formats. Rather than fixing these one-off as they appear, collect examples and fix in batches.
+
+**Workflow:**
+1. When encountering an unparseable summary, add to the backlog reference doc
+2. Periodically review backlog and identify patterns
+3. Fix root causes in parser/prompts/post-processing
+4. Validate fixes against collected examples
+
+**Reference:** `build/notes/todo-support/P2-SUMM-PARSING-BACKLOG-examples.md`
+
+**Current Count:** 1 example (seed script markdown table output)
 
 ---
 
