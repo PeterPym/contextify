@@ -1,7 +1,7 @@
 {
   "app_info": {
     "name": "Contextify",
-    "bundle_id": "dev.contextify.Contextify",
+    "bundle_id": "sh.contextify.Contextify",
     "sku": "CONTEXTIFY-001",
     "primary_language": "en-US",
     "platforms": ["macOS"],
@@ -42,7 +42,7 @@
     "email_address": "[REQUIRED]",
     "demo_user": "",
     "demo_password": "",
-    "notes": "Contextify monitors Claude Code and Codex CLI conversation transcripts. To fully test the app:\n\n1. Install Claude Code CLI (https://github.com/anthropics/claude-code)\n2. Run 'claude' command to start a session\n3. Launch Contextify - it will auto-detect the active session\n4. The app will display real-time conversation timeline and summaries\n\nThe app requires access to:\n• ~/.claude/projects/ (Claude Code transcripts)\n• ~/.codex/sessions/ (Codex transcripts)\n\nThese are standard locations for AI coding assistant conversation logs. No special permissions needed beyond standard file access.\n\nFor sandbox build testing, the app uses security-scoped bookmarks to access these directories."
+    "notes": "Contextify monitors Claude Code and Codex CLI conversation transcripts. To fully test the app:\n\n1. Install Claude Code CLI (https://github.com/anthropics/claude-code)\n2. Run 'claude' command to start a session\n3. Launch Contextify - it will auto-detect the active session\n4. The app will display real-time conversation timeline and summaries\n\nThe app requires access to:\n• ~/.claude/projects/ (Claude Code transcripts)\n• ~/.codex/sessions/ (Codex transcripts)\n\nThese are standard locations for AI coding assistant conversation logs. No special permissions needed beyond standard file access.\n\nYou'll be prompted for permission to these directories, the app uses security-scoped bookmarks prescribed in the docs to access these directories."
   },
 
   "trade_representative_contact": {
@@ -161,10 +161,10 @@
       "notes": "Use 'fastlane deliver' to upload metadata and screenshots. Use 'fastlane deliver download_metadata --platform osx' to download current metadata from App Store Connect."
     },
     "app_store_connect_api": {
-      "enabled": false,
-      "api_key_path": "[PATH_TO_API_KEY_JSON]",
-      "issuer_id": "[ISSUER_ID]",
-      "key_id": "[KEY_ID]"
+      "enabled": true,
+      "api_key_path": ".secrets/api_key.json",
+      "issuer_id": "69a6de89-2083-47e3-e053-5b8c7c11a4d1",
+      "key_id": "AG868N57U6"
     }
   },
 

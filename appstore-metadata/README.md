@@ -426,6 +426,35 @@ Key metrics to track (in App Store Connect):
 - **Conversion Rate** - Views → Downloads
 - **Proceeds** - Revenue (if applicable)
 
+## Certificates & Signing
+
+### Certificate Signing Request (CSR)
+Location: `/Users/rob/code/certificates/CertificateSigningRequest.certSigningRequest`
+
+Use this CSR when creating new certificates in the Apple Developer portal.
+
+### API Key for App Store Connect
+- Key ID: `AG868N57U6`
+- Issuer ID: `69a6de89-2083-47e3-e053-5b8c7c11a4d1`
+- Key file: `.secrets/AuthKey_AG868N57U6.p8` (gitignored)
+
+### Required Certificates for App Store
+1. **Apple Distribution** - For signing the app for App Store
+2. **Mac Installer Distribution** - For creating the .pkg installer (optional, Xcode can auto-manage)
+
+Create at: https://developer.apple.com/account/resources/certificates/list
+
+### Build & Upload Commands
+```bash
+# Step by step:
+bash scripts/xc.sh archive      # Create .xcarchive
+bash scripts/xc.sh export-pkg   # Export as .pkg
+bash scripts/xc.sh upload       # Upload to App Store Connect
+
+# Or all at once:
+make appstore-submit
+```
+
 ## Getting Help
 
 ### App Store Connect
