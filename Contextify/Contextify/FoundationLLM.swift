@@ -603,6 +603,24 @@ actor FoundationLLM {
                     var result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
                     result = TimelineSummaryResult(summary: result.summary, isCompletion: result.isCompletion, isDirective: true, disposition: "negative")
                     return result
+                } else if intent == .unknown {
+                    // Fast-path for very short ambiguous messages that the LLM struggles with
+                    // (e.g., "reply GOMP", "another test", "hi", "test 123")
+                    // Only applies to .unknown intent - affirmative/negative/directive/etc. handled above
+                    let cleanMessage = stripQuotedAndCode(message).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if cleanMessage.count <= 20 {
+                        log.debug("[\(reqNum)] timeline: short ambiguous message detected (\(cleanMessage.count) chars), using fast path")
+                        let truncated = String(cleanMessage.prefix(100))
+                        let fp = GuidedTimelineSummary(
+                            summary: "You said: \"\(truncated)\"",
+                            isCompletion: false,
+                            disposition: "unknown",
+                            grounding: "grounded",
+                            confidence: 0.95
+                        )
+                        let result = try postProcess(kind: kind, payload: fp, message: message, provider: provider)
+                        return result
+                    }
                 }
             }
 
@@ -679,7 +697,24 @@ actor FoundationLLM {
                     metrics.total += 1
                     return result
                 } catch let validationError as TimelineError {
-                    // postProcess rejected with TimelineError (e.g., validationFailure) - don't retry
+                    // postProcess rejected with TimelineError (e.g., validationFailure)
+                    // For placeholder leaks in user messages, use a fallback instead of failing
+                    if case .validationFailure(let reason) = validationError,
+                       reason.contains("placeholder leak"),
+                       kind == .user {
+                        log.info("[\(reqNum)] Placeholder leak detected, using echo fallback for user message")
+                        let cleanMessage = stripQuotedAndCode(clamped).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let truncated = String(cleanMessage.prefix(100))
+                        let fallbackSummary = "You said: \"\(truncated)\""
+                        metrics.total += 1
+                        return TimelineSummaryResult(
+                            summary: fallbackSummary,
+                            isCompletion: false,
+                            isDirective: false,
+                            disposition: "unknown"
+                        )
+                    }
+                    // Other validation errors - don't retry, just propagate
                     metrics.total += 1
                     metrics.failed += 1
                     log.error("[\(reqNum)] postProcess rejection - propagating failure without retry: \(validationError.userMessage)")
