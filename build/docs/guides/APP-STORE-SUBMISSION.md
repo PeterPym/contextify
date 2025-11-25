@@ -225,13 +225,56 @@ Remove duplicates in Keychain Access, keeping only one.
 
 1. Wait 5-15 minutes for Apple to process the build
 2. Check status at: https://appstoreconnect.apple.com/apps/YOUR_APP_ID/testflight/macos
-3. Once processed, go to App Store tab → select build
-4. Complete App Store listing (screenshots, description, etc.)
-5. **Export Compliance**: You'll be asked about encryption:
+3. Once processed, go to App Store tab → macOS App → select the version
+4. **Export Compliance**: You'll be asked about encryption:
    - "What type of encryption algorithms does your app implement?"
    - Select **"None of the algorithms mentioned above"** (if you don't use custom crypto)
-   - This is required before you can submit
-6. Submit for review
+   - This is required before you can select the build
+5. **Select Build**: Click the **+** next to "Build" and select your uploaded build
+6. Complete App Store listing (screenshots, description, keywords, etc.)
+
+---
+
+## Required Before Submission
+
+Complete these sections in App Store Connect before you can submit for review:
+
+### App Information Tab
+- **Content Rights**: Confirm you own or have rights to all content in the app
+- **Primary Category**: Select appropriate category (e.g., Developer Tools)
+- **Secondary Category** (optional): Select if applicable
+
+### Pricing and Availability Tab
+- **Price**: Select price tier (e.g., Free, or a paid tier)
+- **Availability**: Select countries/regions
+
+### App Privacy Tab
+- **Privacy Policy URL**: Required - must be a publicly accessible URL (e.g., `https://yoursite.com/privacy.html`)
+- **Data Collection**: Answer questions about what data your app collects
+  - If no data collected, select "No, we do not collect data from this app"
+
+### Age Rating
+- Answer questionnaire about content (violence, gambling, mature themes, etc.)
+- For most developer tools: Answer "None" to all questions → results in 4+ rating
+
+### Version Information (App Store Tab)
+- **Screenshots**: Required for each supported screen size
+- **Description**: App description (up to 4000 characters)
+- **Keywords**: Comma-separated, up to 100 characters total
+- **Support URL**: Required
+- **Marketing URL** (optional)
+- **What's New**: Release notes for this version
+- **Review Notes** (optional but recommended): Instructions for Apple reviewers
+
+---
+
+## Submit for Review
+
+Once all required sections are complete:
+1. Click **Add for Review** button
+2. Answer any final compliance questions
+3. Click **Submit to App Review**
+4. Wait for review (typically 1-7 days for macOS apps)
 
 ### Avoiding Export Compliance Question on Future Uploads
 
