@@ -917,6 +917,7 @@ Original scope (3-6 hours): User prompt quality improvement only
 - [ ] #P1-CONVO-SEARCH: Implement Quick Search (HUD project scope) and Deep Search (Search Center) following the unified spec so users can quickly search messages/context per project and still dig into cross-project history without extra spinner noise.
 
 **Spec:** `build/notes/todo-support/P1-CONVO-SEARCH-spec.md`
+**Implementation:** `build/notes/todo-support/P1-CONVO-SEARCH-implementation.md`
 
 ---
 
@@ -977,13 +978,15 @@ import Sparkle
 - [ ] One-click update downloads and installs new version
 - [ ] App Store builds have Sparkle completely excluded
 
+**Implementation:** `build/notes/todo-support/P1-SPARKLE-implementation.md`
+
 **References:**
 - Sparkle documentation: https://sparkle-project.org/documentation/
 - EdDSA signing: https://sparkle-project.org/documentation/eddsa-migration/
 
 ---
 
-# P2 (Medium Priority) - 32 Items
+# P2 (Medium Priority) - 34 Items
 
 ---
 
