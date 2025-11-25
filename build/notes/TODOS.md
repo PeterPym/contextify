@@ -33,34 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-23
+**Last Updated:** 2025-11-25
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 4 items - Must complete before App Store submission
+- **P0 (Blocking Release):** 0 items - ✅ App Store submitted (2025-11-25)
 - **P1 (High Priority):** 15 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 33 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 68
-
----
-
-# P0 (Blocking Release) - 4 Items Remaining
-
-
-
-## App Store Submission (4 items)
-
-**Status:** Not Started (Ready to begin - welcome modal polish complete)
-**Effort:** 8-12 hours
-
-- [ ] #6: App Store Connect setup (metadata, screenshots, description)
-- [ ] #7: Build Release binary (sign, archive, validate, upload)
-- [ ] #8: Submit for review (compliance, age rating, reviewer notes)
-- [ ] #9: TestFlight beta (optional, recommended)
-
-**Reference:** `build/notes/todo-support/P0-APP-STORE-checklist.md` § "APP STORE SUBMISSION CHECKLIST"
+**Total Active Items:** 64
 
 ---
 
