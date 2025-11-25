@@ -1125,3 +1125,71 @@ All errors are logged to existing diagnostics.
 * Quick Search remains message-oriented; Deep Search becomes the card-heavy archival view.
 
 Each phase is self-contained and can be shipped independently. You can pause at any phase without invalidating the UX contracts above.
+
+---
+
+## Appendix: Market Research - HN Feedback on Chat Search (Nov 2025)
+
+From the Onyx (YC W24) Launch HN discussion (https://news.ycombinator.com/item?id=46045987), users highlighted specific pain points around search and chat history discovery. These validate Contextify's search direction and suggest areas to explore.
+
+### Key Pain Points
+
+**1. "Sidebar = graveyard" (visarga)**
+> "That sidebar of past chats is where they go to be lost forever. Nobody came up with a UI that has decent search experience."
+
+**Contextify answer:** Project-centric organization + timeline view prevents the "endless sidebar" problem. Search adds discoverability.
+
+**2. Feature wishlist (aargh_aargh)**
+Suggested improvements for conversation management:
+- Categorization by topic/date
+- Topic clustering
+- Ranked search options
+- Conversation tree views
+- Integration with external tools (email, issue trackers)
+- Knowledge bank for saving learned information
+
+**Contextify answer:**
+| Request | Status |
+|---------|--------|
+| Categorization by date | ✅ Already have (timeline) |
+| Categorization by topic | ✅ LLM summaries provide light categorization |
+| Topic clustering | 🔮 Phase 3 segments could enable this |
+| Ranked search | ✅ Phase 1 BM25, Phase 2 hybrid ranking |
+| Conversation tree views | ❓ Not planned, but timeline is linear |
+| External tool integration | 🔮 MCP server could enable this |
+| Knowledge bank | ✅ The database IS the knowledge bank |
+
+**3. Source mapping (rao-v)**
+> Users cannot easily track what's been processed or map results back to source materials.
+
+**Contextify answer:** Every entry links to source transcript file. Transcript Inventory view shows all indexed files.
+
+### Areas to Explore (Future Phases)
+
+Based on this feedback, consider for Phase 3+:
+
+1. **Topic clustering / tagging**
+   - Auto-generate topic tags from segment summaries
+   - Filter/browse by topic across projects
+   - "What have I worked on related to X?"
+
+2. **Knowledge bank / pinning**
+   - Let users "star" or "pin" important excerpts
+   - Build a curated subset of key learnings
+   - Export as reference doc
+
+3. **Conversation tree visualization**
+   - Visual representation of conversation flow
+   - See branching points where you tried different approaches
+   - May be overkill for CLI transcripts (linear by nature)
+
+4. **External tool integration via MCP**
+   - Let other tools query Contextify's history
+   - "What did we decide about authentication?" from any MCP client
+   - GitHub issue linking ("find conversations mentioning issue #123")
+
+### Positioning Insight
+
+The consistent theme: **chat UIs treat history as an afterthought**. Users generate valuable context, then it disappears into an unsearchable sidebar.
+
+Contextify's value prop: **We're the search/discovery layer that chat UIs neglect.** Your conversations are an asset, not a liability.
