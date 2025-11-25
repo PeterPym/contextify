@@ -428,10 +428,37 @@ Key metrics to track (in App Store Connect):
 
 ## Certificates & Signing
 
+### Apple Developer Account
+- **Email:** rob@banagale.com
+- **Team:** Perch Innovations, Inc.
+- **Team ID:** J8P5B23FK7
+
+### Quick Links
+- **Developer Portal:** https://developer.apple.com/account
+- **App Store Connect:** https://appstoreconnect.apple.com
+- **Contextify App:** https://appstoreconnect.apple.com/apps/6753190666/distribution/macos/version/inflight
+- **App ID:** 6753190666
+- **Certificates:** https://developer.apple.com/account/resources/certificates/list
+- **Identifiers:** https://developer.apple.com/account/resources/identifiers/list
+- **Profiles:** https://developer.apple.com/account/resources/profiles/list
+
 ### Certificate Signing Request (CSR)
 Location: `/Users/rob/code/certificates/CertificateSigningRequest.certSigningRequest`
 
 Use this CSR when creating new certificates in the Apple Developer portal.
+
+### Certificates on Disk
+- CSR: `/Users/rob/code/certificates/CertificateSigningRequest.certSigningRequest`
+- Apple Distribution: `/Users/rob/code/certificates/distribution.cer`
+- Mac Installer Distribution: `/Users/rob/code/certificates/mac_installer.cer`
+
+### Provisioning Profiles
+Production provisioning profiles (App Store) cannot be installed via double-click.
+Copy manually to: `~/Library/MobileDevice/Provisioning Profiles/`
+
+```bash
+cp ~/Downloads/YourProfile.provisionprofile ~/Library/MobileDevice/Provisioning\ Profiles/
+```
 
 ### API Key for App Store Connect
 - Key ID: `AG868N57U6`
