@@ -183,10 +183,6 @@ struct TranscriptInventoryView: View {
 
       // Scope filter
       HStack {
-        Text("Type")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-
         Picker("Type", selection: $selectedScope) {
           Text("Conversations\(countSuffix(.conversations))").tag(InventoryScope.conversations)
           Text("Metadata\(countSuffix(.metadata))").tag(InventoryScope.metadata)
