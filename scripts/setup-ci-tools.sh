@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Only run in remote environments (Claude Code on the web)
-if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   echo "Local environment detected - skipping CI tool setup"
   exit 0
 fi
