@@ -46,24 +46,24 @@ struct ProjectRowView: View {
         .lineLimit(1)
         .truncationMode(.middle)
 
-      // Provider badges
-      HStack(spacing: 8) {
-        ForEach(Array(project.providers.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { provider in
-          HStack(spacing: 4) {
-            Image(provider.iconImage)
-              .renderingMode(.template)
-              .foregroundStyle(providerColor(provider))
-              .imageScale(.small)
-            Text(provider.displayName)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(Color.secondary.opacity(0.1))
-          .cornerRadius(4)
-        }
-      }
+      // Provider badges (hidden until data flow issues resolved)
+      // HStack(spacing: 8) {
+      //   ForEach(Array(project.providers.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { provider in
+      //     HStack(spacing: 4) {
+      //       Image(provider.iconImage)
+      //         .renderingMode(.template)
+      //         .foregroundStyle(providerColor(provider))
+      //         .imageScale(.small)
+      //       Text(provider.displayName)
+      //         .font(.caption)
+      //         .foregroundStyle(.secondary)
+      //     }
+      //     .padding(.horizontal, 6)
+      //     .padding(.vertical, 2)
+      //     .background(Color.secondary.opacity(0.1))
+      //     .cornerRadius(4)
+      //   }
+      // }
 
       // Stats
       HStack(spacing: 12) {
