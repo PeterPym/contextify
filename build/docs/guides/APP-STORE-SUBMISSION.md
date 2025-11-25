@@ -1,0 +1,280 @@
+# macOS App Store Submission Guide
+
+Step-by-step guide for submitting a macOS app to the App Store, based on the Contextify submission process (November 2025).
+
+## Prerequisites
+
+### Apple Developer Account
+- Enrolled in Apple Developer Program ($99/year)
+- Account with Admin or Account Holder role
+- Team ID (found in Membership details)
+
+### Required Certificates (create at developer.apple.com/account/resources/certificates)
+1. **Apple Distribution** - Signs the .app bundle
+2. **Mac Installer Distribution** - Signs the .pkg installer
+
+### Certificate Signing Request (CSR)
+Create once via Keychain Access:
+1. Keychain Access → Certificate Assistant → Request a Certificate From a Certificate Authority
+2. Enter email, select "Saved to disk"
+3. Save the `.certSigningRequest` file (reuse for all certs)
+
+Store CSR somewhere permanent: `/Users/yourname/code/certificates/CertificateSigningRequest.certSigningRequest`
+
+---
+
+## One-Time Setup
+
+### 1. Create App Store Connect API Key
+1. Go to https://appstoreconnect.apple.com → Users and Access → Integrations → Keys
+2. Click **+** to generate a new key
+3. Name it (e.g., "CLI Upload")
+4. Select **Admin** or **App Manager** role
+5. Download the `.p8` file (only available once!)
+6. Note the **Key ID** and **Issuer ID**
+
+Store the key:
+```bash
+mkdir -p ~/.private_keys
+cp ~/Downloads/AuthKey_XXXXXXXX.p8 ~/.private_keys/
+```
+
+### 2. Create Certificates
+
+#### Apple Distribution Certificate
+1. https://developer.apple.com/account/resources/certificates/list
+2. Click **+** → **Apple Distribution**
+3. Upload your CSR
+4. Download and double-click to install
+
+#### Mac Installer Distribution Certificate
+1. Same page, click **+** → **Mac Installer Distribution**
+2. Upload your CSR
+3. Download and double-click to install
+
+Verify installed:
+```bash
+security find-identity -v -p codesigning | grep -i "distribution\|installer"
+```
+
+Should show:
+```
+"Apple Distribution: Your Name (TEAMID)"
+"3rd Party Mac Developer Installer: Your Name (TEAMID)"
+```
+
+### 3. Register App ID
+1. https://developer.apple.com/account/resources/identifiers/list
+2. Click **+** → **App IDs** → **App**
+3. Select **Mac** platform
+4. Enter Bundle ID (e.g., `sh.contextify.Contextify`) - use reverse domain notation
+5. Add description
+6. Enable any capabilities needed (usually none for basic apps)
+7. Click Register
+
+### 4. Create Provisioning Profile
+1. https://developer.apple.com/account/resources/profiles/list
+2. Click **+** → **Mac App Store Connect**
+3. Select **Mac** (not Mac Catalyst)
+4. Select your App ID
+5. Select your Apple Distribution certificate
+6. Name it (e.g., "AppName Mac App Store")
+7. Download
+
+Install the profile:
+```bash
+mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+cp ~/Downloads/YourProfile.provisionprofile ~/Library/MobileDevice/Provisioning\ Profiles/
+```
+
+Note: Production profiles cannot be installed via double-click - must copy manually.
+
+### 5. Create App in App Store Connect
+1. https://appstoreconnect.apple.com → My Apps → **+** → New App
+2. Select **macOS**
+3. Enter name, primary language, Bundle ID, SKU
+4. SKU can be anything (internal reference, cannot be changed later)
+
+---
+
+## Required Info.plist Keys
+
+Add these to your Info.plist before archiving:
+
+```xml
+<!-- App category (required) -->
+<key>LSApplicationCategoryType</key>
+<string>public.app-category.developer-tools</string>
+
+<!-- Skip encryption export compliance question -->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+
+<!-- Copyright -->
+<key>NSHumanReadableCopyright</key>
+<string>Copyright © 2025 YourCompany. All rights reserved.</string>
+```
+
+Common category values:
+- `public.app-category.developer-tools`
+- `public.app-category.productivity`
+- `public.app-category.utilities`
+- `public.app-category.business`
+
+---
+
+## Export Options Plist
+
+Create `ExportOptions-AppStore.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>app-store-connect</string>
+    <key>teamID</key>
+    <string>YOUR_TEAM_ID</string>
+    <key>uploadBitcode</key>
+    <false/>
+    <key>uploadSymbols</key>
+    <true/>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+    <key>installerSigningCertificate</key>
+    <string>3rd Party Mac Developer Installer</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>your.bundle.id</key>
+        <string>Your Profile Name</string>
+    </dict>
+</dict>
+</plist>
+```
+
+---
+
+## Build & Upload Commands
+
+### Archive
+```bash
+xcodebuild archive \
+  -project YourApp.xcodeproj \
+  -scheme YourApp \
+  -configuration Release \
+  -destination "generic/platform=macOS" \
+  -archivePath build/YourApp.xcarchive
+```
+
+### Export as .pkg
+```bash
+xcodebuild -exportArchive \
+  -archivePath build/YourApp.xcarchive \
+  -exportPath build/appstore \
+  -exportOptionsPlist ExportOptions-AppStore.plist
+```
+
+### Upload to App Store Connect
+```bash
+xcrun altool --upload-app \
+  --type macos \
+  --file build/appstore/YourApp.pkg \
+  --apiKey YOUR_KEY_ID \
+  --apiIssuer YOUR_ISSUER_ID
+```
+
+---
+
+## Troubleshooting
+
+### "No profiles for 'bundle.id' were found"
+- Provisioning profile not installed or wrong bundle ID
+- Copy profile to `~/Library/MobileDevice/Provisioning Profiles/`
+- Verify bundle ID matches exactly
+
+### "Provisioning profile doesn't include signing certificate"
+- Profile was created with a different certificate than installed
+- Delete and recreate the provisioning profile
+- Make sure only one Apple Distribution cert exists (delete duplicates from Keychain)
+
+### "No signing certificate 'Mac Installer Distribution' found"
+- Create the Mac Installer Distribution certificate (separate from Apple Distribution)
+- Download and install it
+
+### "LSApplicationCategoryType key" error
+- Add `LSApplicationCategoryType` to Info.plist
+
+### "Cannot determine Apple ID from Bundle ID"
+- Bundle ID in App Store Connect doesn't match the built app
+- Update bundle ID in App Store Connect → App Information
+
+### Duplicate certificates
+Check for duplicates:
+```bash
+security find-certificate -a -c "Apple Distribution" -Z | grep "SHA-1"
+```
+
+Remove duplicates in Keychain Access, keeping only one.
+
+---
+
+## Post-Upload
+
+1. Wait 5-15 minutes for Apple to process the build
+2. Check status at: https://appstoreconnect.apple.com/apps/YOUR_APP_ID/testflight/macos
+3. Once processed, go to App Store tab → select build
+4. Complete App Store listing (screenshots, description, etc.)
+5. Answer export compliance (select "None" if no custom encryption)
+6. Submit for review
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Check installed signing identities
+security find-identity -v -p codesigning
+
+# List apps in App Store Connect
+xcrun altool --list-apps --apiKey KEY_ID --apiIssuer ISSUER_ID
+
+# Validate without uploading
+xcrun altool --validate-app --file build/appstore/App.pkg --apiKey KEY_ID --apiIssuer ISSUER_ID
+```
+
+---
+
+## Files to Keep Outside Repo
+
+- `.p8` API key files → `~/.private_keys/`
+- `.cer` certificate files → `/Users/yourname/code/certificates/`
+- `.certSigningRequest` → `/Users/yourname/code/certificates/`
+- `.provisionprofile` → `~/Library/MobileDevice/Provisioning Profiles/`
+
+Add to `.gitignore`:
+```
+.secrets/
+build/appstore/
+build/*.xcarchive/
+```
+
+---
+
+## Contextify-Specific Reference
+
+- **Team ID:** J8P5B23FK7
+- **Bundle ID:** sh.contextify.Contextify
+- **App Store Connect:** https://appstoreconnect.apple.com/apps/6753190666
+- **API Key ID:** AG868N57U6
+- **Issuer ID:** 69a6de89-2083-47e3-e053-5b8c7c11a4d1
+
+Build commands:
+```bash
+make appstore-submit  # or individually:
+bash scripts/xc.sh archive
+bash scripts/xc.sh export-pkg
+bash scripts/xc.sh upload
+```

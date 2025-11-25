@@ -24,6 +24,8 @@
 	<string>Copyright © 2025 Contextify. All rights reserved.</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Contextify needs access to read your developer transcripts from your Desktop folder.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
