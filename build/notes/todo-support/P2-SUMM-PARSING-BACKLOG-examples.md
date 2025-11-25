@@ -59,6 +59,43 @@ Should be a single-sentence prose summary like:
 
 ---
 
+## Example 2: Echo/Passthrough Summary
+
+**Date Added:** 2025-11-25
+**Category:** attribution error
+**Transcript:** `56a12863-8c40-4c50-a9b7-8219d9a3f59a.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "you run it",
+  "entry_id": "01e59f33-b9bd-45c4-8645-ac1566452e6b",
+  "summary": "You said: \"you run it\"",
+  "timestamp": "2025-11-25T18:41:56Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/56a12863-8c40-4c50-a9b7-8219d9a3f59a.jsonl"
+}
+```
+
+**Problem:**
+The summary is essentially an echo of the input with "You said:" prepended. For short user messages, this pattern provides no summarization value - it's just restating the literal message.
+
+**Expected Summary:**
+For very short/simple user messages, either:
+- Skip summarization entirely (display the raw message)
+- Provide meaningful context: "You asked Claude to run something"
+
+**Root Cause (suspected):**
+- Short messages may not trigger meaningful summarization
+- The "You said:" prefix pattern may be a fallback when no summarization is needed
+- Prompt may not distinguish between messages that need summarization vs passthrough
+
+**Fix Approach:**
+1. Add length/complexity threshold: messages under N chars or N words skip LLM summarization
+2. If message is already concise, use it directly without "You said:" wrapper
+3. Consider context-aware summarization that looks at surrounding entries
+
+---
+
 ## Template for New Examples
 
 ```markdown
