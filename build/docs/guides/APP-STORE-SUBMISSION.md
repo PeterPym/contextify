@@ -227,8 +227,19 @@ Remove duplicates in Keychain Access, keeping only one.
 2. Check status at: https://appstoreconnect.apple.com/apps/YOUR_APP_ID/testflight/macos
 3. Once processed, go to App Store tab → select build
 4. Complete App Store listing (screenshots, description, etc.)
-5. Answer export compliance (select "None" if no custom encryption)
+5. **Export Compliance**: You'll be asked about encryption:
+   - "What type of encryption algorithms does your app implement?"
+   - Select **"None of the algorithms mentioned above"** (if you don't use custom crypto)
+   - This is required before you can submit
 6. Submit for review
+
+### Avoiding Export Compliance Question on Future Uploads
+
+Add this to Info.plist to skip the question:
+```xml
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+```
 
 ---
 
