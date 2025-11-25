@@ -47,6 +47,62 @@ if [ "$1" = "--minimal" ]; then
   while true; do sleep 1; done
 fi
 
+if [ "$1" = "--mixed-claude" ]; then
+  # Claude Code session for mixed provider screenshot
+  printf "\033]0;✽ Refactor auth module\007"
+  clear
+  echo ""
+  printf "${ORANGE} ▐▛███▜▌${RESET}   ${WHITE}Claude Code${RESET} ${DIM}v2.0.53${RESET}\n"
+  printf "${ORANGE}▝▜█████▛▘${RESET}  ${WHITE}Opus 4.5${RESET} ${DIM}· Claude Max${RESET}\n"
+  printf "${ORANGE}  ▘▘ ▝▝${RESET}    ${DIM}~/code/projects/contextify${RESET}\n"
+  echo ""
+  printf "${USER_BG}${WHITE}> Refactor the auth module to use async/await${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ I'll refactor the authentication module to use modern async/await${RESET}\n"
+  printf "${WHITE}  patterns throughout.${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/AuthManager.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Converted callbacks to async/await${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/TokenRefresh.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Updated token refresh flow${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ Auth module refactored. All 12 tests passing.${RESET}\n"
+  echo ""
+  printf "${USER_BG}${WHITE}> ${RESET}"
+  while true; do sleep 1; done
+fi
+
+if [ "$1" = "--mixed-codex" ]; then
+  # Codex session for mixed provider screenshot
+  # Codex uses different styling - blue/teal theme
+  CODEX_BLUE="\033[38;2;100;200;255m"
+
+  printf "\033]0;Codex - Write auth tests\007"
+  clear
+  echo ""
+  printf "${CODEX_BLUE}┌──────────────────────────────────────────┐${RESET}\n"
+  printf "${CODEX_BLUE}│${RESET} ${WHITE}Codex CLI${RESET} ${DIM}v0.1.2${RESET}                        ${CODEX_BLUE}│${RESET}\n"
+  printf "${CODEX_BLUE}│${RESET} ${DIM}~/code/projects/contextify${RESET}              ${CODEX_BLUE}│${RESET}\n"
+  printf "${CODEX_BLUE}└──────────────────────────────────────────┘${RESET}\n"
+  echo ""
+  printf "${USER_BG}${WHITE}> Write unit tests for the auth module${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ I'll generate comprehensive tests for the authentication module.${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Write${RESET} ${DIM}tests/auth/AuthManagerTests.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Created 8 test cases${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Write${RESET} ${DIM}tests/auth/TokenRefreshTests.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Created 4 test cases${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ Generated 12 test cases covering auth flows, token refresh,${RESET}\n"
+  printf "${WHITE}  and error handling. All tests passing.${RESET}\n"
+  echo ""
+  printf "${USER_BG}${WHITE}> ${RESET}"
+  while true; do sleep 1; done
+fi
+
 # Full session display
 
 # Print the Claude Code banner with monster

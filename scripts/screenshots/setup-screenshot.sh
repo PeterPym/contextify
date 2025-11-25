@@ -194,6 +194,132 @@ EOSQL
   echo ""
 }
 
+# ============================================================================
+# MIXED DEMO ENTRIES: Claude Code + Codex interleaved for screenshot 2
+# ============================================================================
+seed_mixed_demo_entries() {
+  echo "📝 Seeding mixed provider demo entries (Claude Code + Codex)..."
+
+  DB_PATH=$(defaults read dev.contextify "dev.contextify.customDatabaseLocation" 2>/dev/null || echo "")
+  if [ -z "$DB_PATH" ]; then
+    DB_PATH="$HOME/Library/Application Support/Contextify"
+  fi
+  DB_FILE="$DB_PATH/contextify.db"
+
+  # Get contextify project ID
+  PROJECT_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM projects WHERE name = 'contextify' LIMIT 1")
+  if [ -z "$PROJECT_ID" ]; then
+    echo "❌ contextify project not found"
+    return 1
+  fi
+
+  # Create demo transcripts for both providers
+  CLAUDE_TRANSCRIPT_ID="demo-mixed-claude-transcript"
+  CODEX_TRANSCRIPT_ID="demo-mixed-codex-transcript"
+  DEMO_CLAUDE_PATH="/tmp/demo-mixed-claude.jsonl"
+  DEMO_CODEX_PATH="/tmp/demo-mixed-codex.jsonl"
+
+  # Base timestamp: now minus 10 minutes, entries spaced apart
+  NOW=$(date +%s)
+  TS1=$((NOW - 600))  # Claude Code user
+  TS2=$((NOW - 480))  # Claude Code assistant
+  TS3=$((NOW - 360))  # Codex user
+  TS4=$((NOW - 240))  # Codex assistant
+  TS5=$((NOW - 120))  # Claude Code assistant (sees codex work)
+
+  GEN_SIG="screenshot-mixed-demo-v1"
+
+  sqlite3 "$DB_FILE" <<EOSQL
+-- Clean up any previous demo entries
+DELETE FROM timeline_cache WHERE entry_id LIKE 'demo-mixed-%';
+DELETE FROM transcript_entries WHERE id LIKE 'demo-mixed-%';
+DELETE FROM transcripts WHERE id IN ('$CLAUDE_TRANSCRIPT_ID', '$CODEX_TRANSCRIPT_ID');
+
+-- Hide any real entries that would appear after our first demo entry
+UPDATE transcript_entries
+SET display_in_timeline = 0
+WHERE project_id = '$PROJECT_ID'
+  AND timestamp >= $TS1
+  AND id NOT LIKE 'demo-mixed-%';
+
+-- Create demo transcripts
+INSERT OR REPLACE INTO transcripts (
+  id, project_id, file_path, provider, last_modified, line_count, status, ingest_state, created_at, updated_at
+) VALUES
+  ('$CLAUDE_TRANSCRIPT_ID', '$PROJECT_ID', '$DEMO_CLAUDE_PATH', 'claude.code', $NOW, 3, 'active', 'complete', $NOW, $NOW),
+  ('$CODEX_TRANSCRIPT_ID', '$PROJECT_ID', '$DEMO_CODEX_PATH', 'codex.cli', $NOW, 2, 'active', 'complete', $NOW, $NOW);
+
+-- Entry 1: Claude Code user request
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-mixed-1', '$CLAUDE_TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'user', $TS1,
+  'Refactor the auth module to use async/await',
+  'demo-mixed-sha-1', 1, $NOW, $NOW, ${TS1}.0, 'demo-mixed-window-1'
+);
+
+-- Entry 2: Claude Code assistant response
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-mixed-2', '$CLAUDE_TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'assistant', $TS2,
+  'I have refactored the authentication module to use async/await patterns throughout.',
+  'demo-mixed-sha-2', 1, $NOW, $NOW, ${TS2}.0, 'demo-mixed-window-2'
+);
+
+-- Entry 3: Codex user request
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-mixed-3', '$CODEX_TRANSCRIPT_ID', '$PROJECT_ID', 'codex.cli', 'user', $TS3,
+  'Write unit tests for the auth module',
+  'demo-mixed-sha-3', 1, $NOW, $NOW, ${TS3}.0, 'demo-mixed-window-3'
+);
+
+-- Entry 4: Codex assistant response
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-mixed-4', '$CODEX_TRANSCRIPT_ID', '$PROJECT_ID', 'codex.cli', 'assistant', $TS4,
+  'Generated 12 test cases covering authentication flows, token refresh, and error handling.',
+  'demo-mixed-sha-4', 1, $NOW, $NOW, ${TS4}.0, 'demo-mixed-window-4'
+);
+
+-- Entry 5: Claude Code sees the tests and confirms
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-mixed-5', '$CLAUDE_TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'assistant', $TS5,
+  'All 12 new tests are passing. The async refactor is complete.',
+  'demo-mixed-sha-5', 1, $NOW, $NOW, ${TS5}.0, 'demo-mixed-window-5'
+);
+
+-- Pre-populate timeline cache with summaries
+INSERT OR REPLACE INTO timeline_cache (
+  content_sha256, window_sha256, entry_id, generator_signature, disposition,
+  present_form, past_form, selected_form, generated_at
+) VALUES
+  ('demo-mixed-sha-1', 'demo-mixed-window-1', 'demo-mixed-1', '$GEN_SIG', 'directive',
+   'You requested async/await refactor for the auth module', 'You requested async/await refactor for the auth module', 'present', $NOW),
+  ('demo-mixed-sha-2', 'demo-mixed-window-2', 'demo-mixed-2', '$GEN_SIG', 'completion',
+   'Claude Code refactored auth module to async/await', 'Claude Code refactored auth module to async/await', 'present', $NOW),
+  ('demo-mixed-sha-3', 'demo-mixed-window-3', 'demo-mixed-3', '$GEN_SIG', 'directive',
+   'You requested unit tests for auth module', 'You requested unit tests for auth module', 'present', $NOW),
+  ('demo-mixed-sha-4', 'demo-mixed-window-4', 'demo-mixed-4', '$GEN_SIG', 'completion',
+   'Codex generated 12 test cases for auth flows', 'Codex generated 12 test cases for auth flows', 'present', $NOW),
+  ('demo-mixed-sha-5', 'demo-mixed-window-5', 'demo-mixed-5', '$GEN_SIG', 'completion',
+   'Claude Code confirmed all 12 tests passing', 'Claude Code confirmed all 12 tests passing', 'present', $NOW);
+EOSQL
+
+  echo "✅ Mixed demo entries seeded (5 entries: 3 Claude Code, 2 Codex)"
+  echo ""
+}
+
 # Function to clean up demo entries
 cleanup_demo_entries() {
   echo "🧹 Cleaning up demo entries..."
@@ -208,17 +334,18 @@ cleanup_demo_entries() {
   PROJECT_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM projects WHERE name = 'contextify' LIMIT 1")
 
   sqlite3 "$DB_FILE" <<EOSQL
--- Remove demo entries
-DELETE FROM timeline_cache WHERE entry_id LIKE 'demo-entry-%';
-DELETE FROM transcript_entries WHERE id LIKE 'demo-entry-%';
-DELETE FROM transcripts WHERE id = 'demo-screenshot-transcript';
+-- Remove demo entries (both single and mixed)
+DELETE FROM timeline_cache WHERE entry_id LIKE 'demo-entry-%' OR entry_id LIKE 'demo-mixed-%';
+DELETE FROM transcript_entries WHERE id LIKE 'demo-entry-%' OR id LIKE 'demo-mixed-%';
+DELETE FROM transcripts WHERE id IN ('demo-screenshot-transcript', 'demo-mixed-claude-transcript', 'demo-mixed-codex-transcript');
 
 -- Restore any real entries we hid
 UPDATE transcript_entries
 SET display_in_timeline = 1
 WHERE project_id = '$PROJECT_ID'
   AND display_in_timeline = 0
-  AND id NOT LIKE 'demo-entry-%';
+  AND id NOT LIKE 'demo-entry-%'
+  AND id NOT LIKE 'demo-mixed-%';
 EOSQL
 
   echo "✅ Demo entries removed and hidden entries restored"
@@ -231,6 +358,10 @@ setup_database
 case "${1:-}" in
   --seed-demo)
     seed_demo_entries
+    exit 0
+    ;;
+  --seed-mixed)
+    seed_mixed_demo_entries
     exit 0
     ;;
   --cleanup-demo)
