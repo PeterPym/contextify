@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Blocking Release):** 0 items - ✅ App Store submitted (2025-11-25)
-- **P1 (High Priority):** 15 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 33 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 64
+**Total Active Items:** 65
 
 ---
 
@@ -872,6 +872,69 @@ Original scope (3-6 hours): User prompt quality improvement only
 - [ ] #P1-CONVO-SEARCH: Implement Quick Search (HUD project scope) and Deep Search (Search Center) following the unified spec so users can quickly search messages/context per project and still dig into cross-project history without extra spinner noise.
 
 **Spec:** `build/notes/todo-support/P1-CONVO-SEARCH-spec.md`
+
+---
+
+## DMG Auto-Updates (Sparkle Framework) (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (Critical for DMG distribution - users have no update mechanism)
+**Effort:** 4-6 hours
+
+- [ ] #P1-SPARKLE: Integrate Sparkle framework for DMG auto-updates
+
+**Problem:**
+DMG users have no way to know when updates are available. They must manually check contextify.sh and re-download. App Store users get automatic updates, but DMG users are left behind.
+
+**Solution:**
+Integrate [Sparkle](https://sparkle-project.org/) framework - the standard for macOS app updates outside the App Store.
+
+**Implementation Tasks:**
+
+1. **Add Sparkle Dependency** (1 hour)
+   - Add via Swift Package Manager or CocoaPods
+   - Configure for DMG builds only (not App Store - Apple doesn't allow)
+
+2. **Host Appcast** (1 hour)
+   - Create `appcast.xml` on contextify.sh
+   - Include version, release notes, DMG URL, DSA/EdDSA signature
+   - Script to generate appcast entries on release
+
+3. **Configure Sparkle** (2 hours)
+   - Set `SUFeedURL` in Info.plist (DMG builds only)
+   - Configure update check frequency
+   - Enable automatic background checks
+   - Add "Check for Updates..." menu item
+
+4. **Release Workflow Updates** (1 hour)
+   - Update `scripts/release.py` to generate appcast entry
+   - Sign DMG with EdDSA key for Sparkle verification
+   - Upload appcast.xml to contextify.sh on release
+
+**Conditional Compilation:**
+```swift
+#if !APPSTORE
+import Sparkle
+// Sparkle initialization
+#endif
+```
+
+**Files:**
+- `Contextify/Contextify.xcodeproj` (add Sparkle package)
+- `Contextify/Info.plist` (SUFeedURL for DMG builds)
+- `scripts/release.py` (appcast generation)
+- `contextify.sh/appcast.xml` (hosted feed)
+
+**Acceptance Criteria:**
+- [ ] DMG users see "Check for Updates..." in app menu
+- [ ] App checks for updates on launch (configurable)
+- [ ] Update notification shows release notes
+- [ ] One-click update downloads and installs new version
+- [ ] App Store builds have Sparkle completely excluded
+
+**References:**
+- Sparkle documentation: https://sparkle-project.org/documentation/
+- EdDSA signing: https://sparkle-project.org/documentation/eddsa-migration/
 
 ---
 
