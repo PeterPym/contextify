@@ -87,6 +87,22 @@ seed_demo_entries() {
     return 1
   fi
 
+  # Check if demo entries already exist with correct summaries
+  EXISTING_COUNT=$(sqlite3 "$DB_FILE" "
+    SELECT COUNT(*)
+    FROM transcript_entries te
+    INNER JOIN timeline_cache tc ON te.id = tc.entry_id
+    WHERE te.id LIKE 'demo-entry-%'
+      AND te.display_in_timeline = 1
+      AND tc.generator_signature = 'screenshot-demo-v1'
+  ")
+
+  if [ "$EXISTING_COUNT" -eq 5 ]; then
+    echo "✅ Demo entries already seeded (5 entries found, skipping reseed)"
+    echo ""
+    return 0
+  fi
+
   # Create a demo transcript if needed
   TRANSCRIPT_ID="demo-screenshot-transcript"
   DEMO_PATH="/tmp/demo-screenshot.jsonl"
@@ -211,6 +227,22 @@ seed_mixed_demo_entries() {
   if [ -z "$PROJECT_ID" ]; then
     echo "❌ contextify project not found"
     return 1
+  fi
+
+  # Check if mixed demo entries already exist with correct summaries
+  EXISTING_COUNT=$(sqlite3 "$DB_FILE" "
+    SELECT COUNT(*)
+    FROM transcript_entries te
+    INNER JOIN timeline_cache tc ON te.id = tc.entry_id
+    WHERE te.id LIKE 'demo-mixed-%'
+      AND te.display_in_timeline = 1
+      AND tc.generator_signature = 'screenshot-mixed-demo-v1'
+  ")
+
+  if [ "$EXISTING_COUNT" -eq 5 ]; then
+    echo "✅ Mixed provider demo entries already seeded (5 entries found, skipping reseed)"
+    echo ""
+    return 0
   fi
 
   # Create demo transcripts for both providers
@@ -542,6 +574,7 @@ echo "Screenshot area: ${SHOT_WIDTH}x${SHOT_HEIGHT} at (${CAPTURE_X}, ${CAPTURE_
 echo "Contextify (L):  ${CONTEXTIFY_WIDTH}x${CONTEXTIFY_HEIGHT} at (${CONTEXTIFY_X}, ${CONTEXTIFY_Y})"
 echo "iTerm2 (R):      ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
 echo ""
-echo "Ready for screenshot!"
-echo "Press Cmd+Shift+4, then drag to select the ${SHOT_WIDTH}x${SHOT_HEIGHT} area containing both windows."
-echo "Or use ./scripts/capture-screenshot.sh to auto-capture the region."
+
+# Give focus to Contextify window before returning
+osascript -e 'tell application "Contextify" to activate' > /dev/null 2>&1
+sleep 0.3

@@ -65,16 +65,17 @@ capture_screenshot_1() {
 
   # Restart Contextify
   echo ""
-  echo "Step 1.2: Restart Contextify"
-  echo "  Press Enter to quit and relaunch Contextify..."
-  read -p ""
-
+  echo "Step 1.2: Restarting Contextify..."
   osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
   sleep 1
   open "$SCRIPT_DIR/../../.derived/Build/Products/Debug/Contextify.app"
   sleep 2
 
-  read -p "Press Enter when demo entries are visible in timeline..."
+  # Return focus to terminal for user input
+  osascript -e 'tell application "iTerm2" to activate' 2>/dev/null || osascript -e 'tell application "Terminal" to activate' 2>/dev/null || true
+  sleep 0.3
+
+  read -p "Press Enter when demo entries are visible and summarized in timeline..."
   echo ""
 
   # Start fake claude session
@@ -90,17 +91,14 @@ end tell
 EOF
   sleep 2
 
-  # Position windows
-  echo "Step 1.4: Positioning windows..."
-  "$SCRIPT_DIR/setup-screenshot.sh" "$WINDOW_NUM"
-  sleep 1
-
-  # Capture screenshot
-  echo "Step 1.5: Capturing screenshot..."
-  "$SCRIPT_DIR/capture-screenshot.sh" 01-main-hud "$WINDOW_NUM"
+  # Capture screenshot (uses preset for consistent text overlay)
+  # Note: capture-screenshot.sh will handle window positioning
+  echo "Step 1.4: Capturing screenshot..."
+  "$SCRIPT_DIR/capture-preset.sh" main-hud "$WINDOW_NUM"
   sleep 1
 
   # Kill fake session
+  echo "Step 1.5: Cleaning up fake session..."
   osascript <<EOF
 tell application "iTerm2"
     tell window $WINDOW_NUM
@@ -137,16 +135,17 @@ capture_screenshot_2() {
 
   # Restart Contextify
   echo ""
-  echo "Step 2.2: Restart Contextify"
-  echo "  Press Enter to quit and relaunch Contextify..."
-  read -p ""
-
+  echo "Step 2.2: Restarting Contextify..."
   osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
   sleep 1
   open "$SCRIPT_DIR/../../.derived/Build/Products/Debug/Contextify.app"
   sleep 2
 
-  read -p "Press Enter when mixed provider entries are visible (look for Codex icon)..."
+  # Return focus to terminal for user input
+  osascript -e 'tell application "iTerm2" to activate' 2>/dev/null || osascript -e 'tell application "Terminal" to activate' 2>/dev/null || true
+  sleep 0.3
+
+  read -p "Press Enter when mixed provider entries are visible and summarized (look for Codex icon)..."
   echo ""
 
   # Start dual fake session (creates two tabs)
@@ -154,28 +153,36 @@ capture_screenshot_2() {
   "$SCRIPT_DIR/fake-dual-session.sh" "$WINDOW_NUM"
   sleep 2
 
-  # Position windows
-  echo "Step 2.4: Positioning windows..."
-  "$SCRIPT_DIR/setup-screenshot.sh" "$WINDOW_NUM"
-  sleep 1
-
-  # Capture screenshot
-  echo "Step 2.5: Capturing screenshot..."
-  "$SCRIPT_DIR/capture-screenshot.sh" 02-dual-provider "$WINDOW_NUM"
+  # Capture screenshot (uses preset for consistent text overlay)
+  # Note: capture-screenshot.sh will handle window positioning
+  echo "Step 2.4: Capturing screenshot..."
+  "$SCRIPT_DIR/capture-preset.sh" ai-summaries "$WINDOW_NUM"
   sleep 1
 
   # Kill fake sessions in both tabs
+  echo "Step 2.5: Cleaning up fake sessions..."
   osascript <<EOF
 tell application "iTerm2"
+    activate
+    delay 0.3
+
     tell window $WINDOW_NUM
-        -- Kill tab 1
+        select
+        delay 0.3
+
+        -- Kill tab 1 (Claude Code)
+        select tab 1
+        delay 0.2
         tell tab 1
             tell current session
                 write text (ASCII character 3)
             end tell
         end tell
-        -- Kill tab 2 if it exists
+
+        -- Kill tab 2 if it exists (Codex)
         if (count of tabs) > 1 then
+            select tab 2
+            delay 0.2
             tell tab 2
                 tell current session
                     write text (ASCII character 3)

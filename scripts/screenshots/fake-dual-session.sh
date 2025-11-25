@@ -25,8 +25,22 @@ echo "Setting up dual-provider terminal in window #$WINDOW_NUM..."
 # Set tab 1 title and run Claude Code fake session
 osascript <<EOF
 tell application "iTerm2"
+    activate
+    delay 0.5
+
     tell window $WINDOW_NUM
-        tell current session
+        select
+        delay 0.5
+
+        -- Ensure tab 1 is selected
+        select tab 1
+        delay 0.3
+
+        tell current session of tab 1
+            -- Send Ctrl-C to clear any running processes
+            write text (ASCII character 3)
+            delay 0.3
+
             set name to "✽ Refactor auth module"
             write text "cd '$SCRIPT_DIR' && ./fake-claude-session.sh --mixed-claude"
         end tell
@@ -39,16 +53,30 @@ sleep 1
 # Create new tab for Codex and run fake session
 osascript <<EOF
 tell application "iTerm2"
+    activate
+    delay 0.5
+
     tell window $WINDOW_NUM
+        select
+        delay 0.5
+
         -- Create new tab
         set newTab to (create tab with default profile)
-        tell current session
+        delay 0.5
+
+        -- The new tab is automatically selected, get its session
+        tell current session of current tab
+            -- Send Ctrl-C to clear any running processes
+            write text (ASCII character 3)
+            delay 0.3
+
             set name to "Codex - Write auth tests"
             write text "cd '$SCRIPT_DIR' && ./fake-claude-session.sh --mixed-codex"
         end tell
 
         -- Switch back to first tab (Claude Code)
         select tab 1
+        delay 0.3
     end tell
 end tell
 EOF

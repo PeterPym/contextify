@@ -18,6 +18,7 @@ WHITE="\033[38;2;255;255;255m"           # RGB 255,255,255 for text
 USER_BG="\033[48;2;55;55;55m"            # RGB 55,55,55 background for user lines
 GREEN="\033[38;5;78m"                     # Green for success/checkmarks
 GRAY="\033[38;5;245m"                     # Gray for metadata
+RULE_GRAY="\033[38;2;68;68;68m"          # RGB 68,68,68 for horizontal rules
 CYAN="\033[38;5;87m"                      # Cyan for tool names
 ORANGE="\033[38;2;215;119;87m"           # RGB 215,119,87 for the monster
 
@@ -69,7 +70,21 @@ if [ "$1" = "--mixed-claude" ]; then
   echo ""
   printf "${WHITE}⏺ Auth module refactored. All 12 tests passing.${RESET}\n"
   echo ""
-  printf "${USER_BG}${WHITE}> ${RESET}"
+  printf "${USER_BG}${WHITE}> Add comprehensive error handling${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ I'll add proper error handling for network failures and token${RESET}\n"
+  printf "${WHITE}  expiration scenarios.${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/AuthManager.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Added error handling for network failures${RESET}\n"
+  echo ""
+  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/TokenRefresh.swift${RESET}\n"
+  printf "    ${GREEN}✓${RESET} ${DIM}Added token expiration recovery${RESET}\n"
+  echo ""
+  printf "${WHITE}⏺ Error handling complete. All edge cases covered.${RESET}\n"
+  echo ""
+  printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
+  printf "${WHITE}> ${RESET}"
   while true; do sleep 1; done
 fi
 
@@ -148,8 +163,9 @@ echo ""
 printf "${WHITE}⏺ All 47 tests passing. Build succeeded with zero warnings.${RESET}\n"
 echo ""
 
-# Waiting prompt
-printf "${USER_BG}${WHITE}> ${RESET}"
+# Waiting prompt with horizontal rule above (full width)
+printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
+printf "${WHITE}> ${RESET}"
 
 # Keep cursor blinking
 while true; do
