@@ -79,3 +79,4 @@ appstore-metadata/screenshots/alternates/*.png
 
 # Environment variables (contains secrets)
 .env
+.secrets/
