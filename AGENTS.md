@@ -1,9 +1,8 @@
 # Repository Guidelines
 
-## ⚠️ CRITICAL RULES (Read First)
+**File note:** `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Always edit `AGENTS.md` directly.
 
-### Attribution
-**NEVER** attribute work to AI/Claude/Codex in commits, co-authors, or comments.
+## ⚠️ CRITICAL RULES (Read First)
 
 ### Commit Strategy
 **ALWAYS** create atomic commits - one logical change per commit.
