@@ -21,6 +21,8 @@ enum InventoryScope: String, CaseIterable, Identifiable {
 
 /// Displays all discovered transcripts for the current project, including worktrees.
 /// Uses HSplitView for macOS-native sidebar + detail layout.
+private let inventoryViewportVisibilityThreshold: CGFloat = 0.25  // fraction of row height needed for inclusion in viewport set
+
 struct TranscriptInventoryView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(ConversationMonitor.self) private var monitor
@@ -221,7 +223,10 @@ struct TranscriptInventoryView: View {
         .padding(.horizontal, 8)
         .scrollTargetLayout()
       }
-      .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.55) { visibleIDs in
+      .onScrollTargetVisibilityChange(
+        idType: String.self,
+        threshold: inventoryViewportVisibilityThreshold
+      ) { visibleIDs in
         replaceVisibleSnapshot(visibleIDs)
       }
       .searchable(text: $searchText, prompt: "Search")

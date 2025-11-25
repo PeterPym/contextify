@@ -26,7 +26,6 @@ private actor CursorPersistence {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(EntryCursor.self, from: data)
     }
-
     func save(projectId: String, cursor: EntryCursor) {
         let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
         guard let data = try? JSONEncoder().encode(cursor) else { return }
@@ -285,18 +284,36 @@ final class ConversationMonitor {
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
     @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var scrollGateTimeoutTask: Task<Void, Never>?  // Clears stuck gate after 1s
-    @ObservationIgnored private var needsInitialVisibilitySnapshot = false  // First settled snapshot after project switch
+    @ObservationIgnored private var initialViewportStateMachine = InitialViewportStateMachine()  // Tracks waiting snapshot lifecycle
     @ObservationIgnored private var pendingInitialVisibleIDs: Set<UUID>? = nil  // IDs seen while programmatic scroll is active
     @ObservationIgnored private var initialViewportFallbackTask: Task<Void, Never>?
-    @ObservationIgnored private var initialViewportProjectId: String? = nil  // Project expecting the initial snapshot
+    @ObservationIgnored private var initialViewportSnapshotIDs = Set<UUID>()
+    @ObservationIgnored private var initialViewportSnapshotTimestamp: Date?
+    @ObservationIgnored private var initialViewportStarvationTask: Task<Void, Never>?
+    @ObservationIgnored private var initialViewportFallbackFireCount = 0
+    @ObservationIgnored private var initialViewportFallbackArmedCount = 0
     @ObservationIgnored private var lastVisibleIDs = Set<UUID>()  // Current visible entry IDs from aggregate callback
     @ObservationIgnored private var coalesceTask: Task<Void, Never>?  // Debounce rapid visibility updates
+    @ObservationIgnored private var visibleEntryTimestamps: [UUID: Date] = [:]
+    private let viewportEntryRetentionDuration: TimeInterval = 1.0
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
     @ObservationIgnored private var feedHydrationTask: Task<Void, Never>?  // Cancelable hydration work item
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
+
+    private var needsInitialVisibilitySnapshot: Bool {
+        initialViewportStateMachine.isAwaiting
+    }
+
+    private var initialViewportAwaitingContext: InitialViewportStateMachine.Context? {
+        initialViewportStateMachine.awaitingContext
+    }
+
+    private var activeInitialViewportContext: InitialViewportStateMachine.Context? {
+        initialViewportStateMachine.activeContext
+    }
 
     // P1-UNREAD-COUNT: Scroll-to-bottom unread clearing
     @ObservationIgnored private var isAtBottom: Bool = false  // Track if user is scrolled to bottom
@@ -456,10 +473,7 @@ final class ConversationMonitor {
         // where UI tries to load sessions before this is set
         currentProjectId = projectId
         log.info("📁 Project ID set (sync): \(projectId, privacy: .public)")
-        initialViewportProjectId = nil
-        needsInitialVisibilitySnapshot = false
-        pendingInitialVisibleIDs = nil
-        cancelInitialViewportFallback(reason: "start-monitoring")
+        resetInitialViewportState(reason: "start-monitoring")
 
         log.info("⭐️ [MONITOR-START] Timeline integration starting for project \(projectId, privacy: .public)")
 
@@ -629,13 +643,10 @@ final class ConversationMonitor {
         // Reset aggregate visibility tracking state for new project
         doingProgrammaticScroll = false
         isUserScrollActive = false
-        needsInitialVisibilitySnapshot = false
-        initialViewportProjectId = nil
-        pendingInitialVisibleIDs = nil
         lastVisibleIDs.removeAll()
         coalesceTask?.cancel()
         coalesceTask = nil
-        cancelInitialViewportFallback(reason: "stop-monitoring")
+        resetInitialViewportState(reason: "stop-monitoring")
 
         debounceTask?.cancel()
         debounceTask = nil
@@ -678,6 +689,8 @@ final class ConversationMonitor {
             log.debug("onProjectOrSessionChange: skipping, initialization in progress")
             return
         }
+
+        resetInitialViewportState(reason: "project-session-change")
 
         // P0-2: Cancel prior startup to prevent cross-project races
         startupTask?.cancel()
@@ -754,6 +767,52 @@ final class ConversationMonitor {
                 log.error("Startup failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    @MainActor
+    private func resetInitialViewportState(reason: String) {
+        initialViewportStateMachine.reset()
+        pendingInitialVisibleIDs = nil
+        initialViewportSnapshotIDs.removeAll()
+        initialViewportSnapshotTimestamp = nil
+        initialViewportFallbackFireCount = 0
+        initialViewportFallbackArmedCount = 0
+        cancelInitialViewportStarvationCheck()
+        cancelInitialViewportFallback(reason: reason)
+    }
+
+    private func scheduleInitialViewportStarvationCheck() {
+        initialViewportStarvationTask?.cancel()
+        let snapshotIDs = initialViewportSnapshotIDs
+        guard !snapshotIDs.isEmpty,
+              let snapshotTimestamp = initialViewportSnapshotTimestamp else {
+            return
+        }
+
+        initialViewportStarvationTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+            } catch {
+                return
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.initialViewportSnapshotTimestamp == snapshotTimestamp else { return }
+                let elapsed = Date().timeIntervalSince(snapshotTimestamp)
+                let stillPending = snapshotIDs.filter { id in
+                    guard let entry = self.lookup(id) else { return false }
+                    return entry.action == .unsummarized
+                }
+                guard !stillPending.isEmpty else { return }
+                let preview = stillPending.prefix(4).map { String($0.uuidString.prefix(8)) }.joined(separator: ", ")
+                self.log.warning("[SUMM-VIEWPORT-STARVATION] \(stillPending.count, privacy: .public) initial entries still unsummarized after \(Int(elapsed * 1000), privacy: .public)ms: \(preview, privacy: .public)")
+            }
+        }
+    }
+
+    private func cancelInitialViewportStarvationCheck() {
+        initialViewportStarvationTask?.cancel()
+        initialViewportStarvationTask = nil
     }
 
     /// Structured watcher for debounced transcript updates (off main actor, no polling)
@@ -1507,10 +1566,7 @@ final class ConversationMonitor {
                 replayPendingInitialViewportSnapshot(reason: "post-load")
             } else {
                 log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
-                cancelInitialViewportFallback(reason: "post-load-no-miss")
-                initialViewportProjectId = nil
-                needsInitialVisibilitySnapshot = false
-                pendingInitialVisibleIDs = nil
+                resetInitialViewportState(reason: "post-load-no-miss")
             }
 
             // Always seed cursor from the newest entry so incremental updates start from current timeline.
@@ -2155,7 +2211,7 @@ final class ConversationMonitor {
         // Programmatic scroll is allowed once to capture this snapshot; after that, we only
         // react to user-driven viewport changes to avoid churn from auto-scroll refreshes.
         if needsInitialVisibilitySnapshot {
-            guard initialViewportProjectId == currentProjectId else {
+            guard activeInitialViewportContext?.projectId == currentProjectId else {
                 log.debug("[SUMM-VIEWPORT-INIT] Ignoring snapshot from stale project context")
                 return
             }
@@ -2179,8 +2235,10 @@ final class ConversationMonitor {
 
         // Ignore viewport churn unless the user is actively scrolling; prevents queue churn
         // from auto-scroll and view rebuilds that happen without user intent.
-        guard isUserScrollActive else {
-            return
+        // Previously we blocked programmatic updates entirely; now allow them when
+        // the visible set actually changes so resizes can still prune.
+        if !isUserScrollActive {
+            log.debug("[SUMM-VIEWPORT] Programmatic viewport update detected (isUserScrollActive=false)")
         }
 
         #if DEBUG
@@ -2220,6 +2278,7 @@ final class ConversationMonitor {
         // This ensures needsInitialVisibilitySnapshot can be captured
         lastVisibleIDs = current
         debugVisibleIDs = current  // Update observable for debug visualization
+        recordVisibleEntryTimestamps(current)
 
         // Debounce viewport changes to avoid queueing entries during rapid scrolling (1250ms)
         coalesceTask?.cancel()
@@ -2277,7 +2336,8 @@ final class ConversationMonitor {
         }
 
         let delayMs = initialViewportFallbackDelay / 1_000_000
-        log.debug("[SUMM-VIEWPORT-FALLBACK] Armed fallback timer (\(reason, privacy: .public)) - firing in \(delayMs, privacy: .public)ms")
+        self.initialViewportFallbackArmedCount &+= 1
+        log.debug("[SUMM-VIEWPORT-FALLBACK] Armed fallback timer (\(reason, privacy: .public)) - firing in \(delayMs, privacy: .public)ms (armed #\(self.initialViewportFallbackArmedCount, privacy: .public))")
     }
 
     @MainActor
@@ -2299,7 +2359,8 @@ final class ConversationMonitor {
             return
         }
 
-        log.warning("[SUMM-VIEWPORT-FALLBACK] Triggering fallback snapshot (\(snapshot.count, privacy: .public) IDs, reason=\(reason, privacy: .public))")
+        self.initialViewportFallbackFireCount &+= 1
+        log.warning("[SUMM-VIEWPORT-FALLBACK] Triggering fallback snapshot (\(snapshot.count, privacy: .public) IDs, reason=\(reason, privacy: .public)) (count #\(self.initialViewportFallbackFireCount, privacy: .public))")
         processInitialVisibleSnapshot(snapshot)
     }
 
@@ -2310,10 +2371,35 @@ final class ConversationMonitor {
     }
 
     @MainActor
+    private func recordVisibleEntryTimestamps(_ ids: Set<UUID>) {
+        let now = Date()
+        // Expire stale entries even if they never left the visible set
+        visibleEntryTimestamps = visibleEntryTimestamps.filter { now.timeIntervalSince($0.value) <= viewportEntryRetentionDuration }
+
+        // Remove entries that are no longer reported as visible
+        let toRemove = visibleEntryTimestamps.keys.filter { !ids.contains($0) }
+        for key in toRemove {
+            visibleEntryTimestamps.removeValue(forKey: key)
+        }
+
+        ids.forEach { visibleEntryTimestamps[$0] = now }
+    }
+
+    @MainActor
+    private func recentVisibleEntryIDs() -> Set<UUID> {
+        let now = Date()
+        return Set(visibleEntryTimestamps.compactMap { id, ts in
+            now.timeIntervalSince(ts) <= viewportEntryRetentionDuration ? id : nil
+        })
+    }
+
+    @MainActor
     private func beginAwaitingInitialViewport(reason: String) {
         guard let projectId = currentProjectId else { return }
-        initialViewportProjectId = projectId
-        needsInitialVisibilitySnapshot = true
+        let sessionId = currentSessionId
+        guard initialViewportStateMachine.beginAwaiting(projectId: projectId, sessionId: sessionId) else {
+            return
+        }
         pendingInitialVisibleIDs = nil
         log.debug("[SUMM-VIEWPORT-ARM] Awaiting initial snapshot for project \(projectId, privacy: .public) (\(reason, privacy: .public))")
         scheduleInitialViewportFallback(using: nil, reason: reason)
@@ -2340,9 +2426,10 @@ final class ConversationMonitor {
         log.debug("[SUMM-PRUNE-BEFORE] Queue depth before pruning: \(beforeCount, privacy: .public)")
         #endif
 
+        let relevantUUIDs = ids.union(recentVisibleEntryIDs())
         // Convert UUID set to entry ID strings (sourceIdentifier)
         let visibleEntryIDs = Set(visibleEntries
-            .filter { ids.contains($0.id) }
+            .filter { relevantUUIDs.contains($0.id) }
             .map { $0.sourceIdentifier })
 
         #if DEBUG
@@ -2378,21 +2465,33 @@ final class ConversationMonitor {
         log.debug("[SUMM-QUEUE] Checking \(ids.count) actually-visible IDs (buffered: \(self.visibleEntries.count))")
         log.debug("[SUMM-QUEUE] Matching in buffer: \(bufferedEntries.count), Unsummarized: \(unsummarizedVisible.count)")
 
-        let misses: [CacheMiss] = visibleEntries
-            .filter { ids.contains($0.id) && $0.action == .unsummarized }
-            .compactMap { e in
-                guard let c = e.contentSha256, let w = e.windowSha256, let s = e.sourceContent else { return nil }
-                return CacheMiss(
-                    entryId: e.sourceIdentifier,  // Use original DB ID, not UUID
-                    projectId: projectId,
-                    contentSha256: c,
-                    windowSha256: w,
-                    content: s,
-                    context: e.detail,
-                    kind: e.kind.rawValue,
-                    provider: e.sourceContext?.provider.rawValue ?? "other"
-                )
+        var misses: [CacheMiss] = []
+        for entry in bufferedEntries where entry.action == .unsummarized {
+            guard let contentSha = entry.contentSha256,
+                  let windowSha = entry.windowSha256,
+                  let sourceText = entry.sourceContent else {
+                continue
             }
+
+            let entryId = entry.sourceIdentifier
+            if await generator.isEntryQueued(entryId) {
+                log.debug(
+                    "[SUMM-QUEUE-SKIP] Entry \(entryId.prefix(8), privacy: .public) already queued, skipping re-queue"
+                )
+                continue
+            }
+
+            misses.append(CacheMiss(
+                entryId: entryId,  // Use original DB ID, not UUID
+                projectId: projectId,
+                contentSha256: contentSha,
+                windowSha256: windowSha,
+                content: sourceText,
+                context: entry.detail,
+                kind: entry.kind.rawValue,
+                provider: entry.sourceContext?.provider.rawValue ?? "other"
+            ))
+        }
 
         guard !misses.isEmpty else {
             log.debug("[SUMM-QUEUE] No entries need queueing (all visible entries have summaries)")
@@ -2421,7 +2520,8 @@ final class ConversationMonitor {
 
     @MainActor
     private func processInitialVisibleSnapshot(_ current: Set<UUID>) {
-        guard let projectId = initialViewportProjectId, projectId == currentProjectId else {
+        guard let context = initialViewportAwaitingContext,
+              context.projectId == currentProjectId else {
             log.debug("[SUMM-VIEWPORT-INIT] Snapshot ignored – project context changed mid-queue")
             return
         }
@@ -2439,10 +2539,12 @@ final class ConversationMonitor {
         }
 
         pendingInitialVisibleIDs = nil
-        needsInitialVisibilitySnapshot = false
+        let accepted = initialViewportStateMachine.acceptSnapshot(
+            projectId: context.projectId,
+            sessionId: context.sessionId
+        )
         doingProgrammaticScroll = false
         cancelInitialViewportFallback(reason: "initial-processed")
-        initialViewportProjectId = nil
 
         if let loadTime = lastLoadCompletionTime {
             let delta = Date().timeIntervalSince(loadTime) * 1000
@@ -2455,7 +2557,15 @@ final class ConversationMonitor {
             return entry.action == .unsummarized
         }.count
 
-        log.info("[SUMM-VIEWPORT-INIT] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+        if accepted {
+            log.info("[SUMM-VIEWPORT-ACCEPTED] Initial viewport snapshot: \(ids.count, privacy: .public) visible, \(visibleNeedingSummaries, privacy: .public) need summaries")
+        } else {
+            log.debug("[SUMM-VIEWPORT-ACCEPTED] Snapshot already accepted for project \(context.projectId, privacy: .public)")
+        }
+
+        initialViewportSnapshotIDs = current
+        initialViewportSnapshotTimestamp = Date()
+        scheduleInitialViewportStarvationCheck()
 
         Task {
             await self.pruneQueueToVisible(current)

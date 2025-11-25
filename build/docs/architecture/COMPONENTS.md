@@ -143,6 +143,12 @@ Contextify uses **two independent LLM processing queues** for content generation
 **TimelineState** (`ConversationMonitor.swift`):
 - Observable state container for timeline entries, derived cache index, and revision tracking
 
+**Viewport-driven Summaries**
+- Entries join the LLM queue once SwiftUI reports ≥25% visibility (`viewportVisibilityThreshold` in `ConversationTimelineView`/`TranscriptInventoryView`), so partial rows still count.
+- `InitialViewportStateMachine` keeps the initial snapshot/fallback handshake deterministic, logging `[SUMM-VIEWPORT-ACCEPTED]`, `[SUMM-VIEWPORT-FALLBACK]`, and ticking fallback counters while replaying pending snapshots only once.
+- Recent-visible IDs now expire after ~1 s and are removed as soon as they drop out of the reported viewport, allowing pruning to evict scrolled-off rows without waiting for a different UUID set.
+- `TimelineCacheMissGenerator.isEntryQueued` guards `queueVisibleGeneratingEntries`, so repeated fallbacks/replays never requeue the same entry, and `SUMM-QUEUE-SKIP` logs highlight the deduplication.
+
 ### Documentation
 
 - **⭐ LLM Architecture Overview:** `build/docs/architecture/llm-processing.md` (start here)

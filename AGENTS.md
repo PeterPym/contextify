@@ -199,6 +199,15 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `scripts/logging/README.md` - **MUST READ FIRST** (automated toolkit)
 - `build/docs/guides/logging-best-practices.md` - Logging conventions
 
+## UI Testing Gaps
+
+When SwiftUI-based UI tests aren’t practical (broken harness, unstable viewport callbacks), note the limitation and deferred test plan in `build/notes/todo-support/deferred-ui-tests.md`. Each entry should capture:
+1. The behavior that can’t be covered today (e.g., the viewport queue never fires without scrolling).
+2. Logs/DB queries that reproduce the issue (see that doc for the `[SUMM-...]` patterns and sample SQL).
+3. The TODO or spec that will consume the test once the environment stabilizes.
+
+This keeps UI test debt visible and ensures future work can pick up the integration check as soon as we can rely on the SwiftUI automation stack.
+
 ## Coding Style & Naming Conventions
 
 - Swift: 2-space indent; follow Swift API Design Guidelines. Types `UpperCamelCase`, methods/vars `lowerCamelCase`
