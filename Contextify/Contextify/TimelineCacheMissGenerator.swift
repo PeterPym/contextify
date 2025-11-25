@@ -418,6 +418,13 @@ actor TimelineCacheMissGenerator {
                     let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
                     log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=skipped elapsed_ms=\(elapsedMs, privacy: .public)")
                     markProgress()
+
+                case .tombstone(let reason):
+                    // Tombstone written - counts as "handled" but not success
+                    // Don't increment errorCount since trackError was already called where appropriate
+                    let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
+                    log.info("[SUMM-GENERATOR-DONE] entry=\(miss.entryId, privacy: .public) status=tombstone reason=\(reason, privacy: .public) elapsed_ms=\(elapsedMs, privacy: .public)")
+                    markProgress()
                 }
             } catch is SummaryTimeoutError {
                 let elapsedMs = Int(Date().timeIntervalSince(entryStart) * 1000)
@@ -536,35 +543,35 @@ actor TimelineCacheMissGenerator {
                     log.error("Context overflow for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "overflow", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return .generated  // Treat as handled
+                    return .tombstone(reason: "overflow")
                 }
 
                 if case .decodingFailure = timelineError {
                     log.error("Decoding failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "decoding", error: timelineError)
                     // Don't trackError - show (i) icon but not status bar error
-                    return .generated
+                    return .tombstone(reason: "decoding")
                 }
 
                 if case .validationFailure = timelineError {
                     log.info("Validation failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
                     // Don't trackError - show (i) icon but not status bar error
-                    return .generated
+                    return .tombstone(reason: "validation")
                 }
 
                 if case .unexpected = timelineError {
                     log.error("Unexpected error for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "unexpected", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return .generated
+                    return .tombstone(reason: "unexpected")
                 }
 
                 if case .databaseError = timelineError {
                     log.error("Database error for entry \(miss.entryId.prefix(8)) - writing tombstone")
                     try await writeErrorTombstone(miss: miss, errorType: "database", error: timelineError)
                     trackError(reason: timelineError.userMessage)
-                    return .generated  // Treat as handled
+                    return .tombstone(reason: "database")
                 }
 
                 // Transient errors (timeout, unavailable, cancelled) - continue to retry logic
@@ -891,6 +898,7 @@ private struct SummaryTimeoutError: Error, Sendable {}
 private enum MissProcessingResult {
     case generated
     case skipped
+    case tombstone(reason: String)  // Permanent failure, wrote error tombstone
 }
 
 extension TimelineCacheMissGenerator {
