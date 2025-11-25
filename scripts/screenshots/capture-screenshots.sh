@@ -148,15 +148,82 @@ capture_screenshot_2() {
   read -p "Press Enter when mixed provider entries are visible and summarized (look for Codex icon)..."
   echo ""
 
-  # Start dual fake session (creates two tabs)
-  echo "Step 2.3: Setting up dual-provider terminal (two tabs)..."
-  "$SCRIPT_DIR/fake-dual-session.sh" "$WINDOW_NUM"
-  sleep 2
+  # Manual setup for dual-provider tabs (automation wasn't reliable)
+  echo ""
+  echo "Step 2.3: Manual setup for dual-provider terminal..."
+  echo "  IMPORTANT: Follow this order to ensure correct window positioning:"
+  echo ""
+  echo "  1. In iTerm window #$WINDOW_NUM, tab 1:"
+  echo "     cd '$SCRIPT_DIR' && ./fake-claude-session.sh --mixed-claude"
+  echo ""
+  echo "  2. Position windows manually (BEFORE creating tab 2):"
+  echo "     - Contextify: Left side, compact HUD"
+  echo "     - iTerm window #$WINDOW_NUM: Right side, showing full terminal content"
+  echo "     - Make sure terminal is tall enough to show all content"
+  echo ""
+  echo "  3. Create tab 2 (Codex) in iTerm window #$WINDOW_NUM:"
+  echo "     - Create new tab (⌘T)"
+  echo "     - cd '$SCRIPT_DIR' && ./fake-claude-session.sh --mixed-codex"
+  echo "     - Switch back to tab 1 (⌘1)"
+  echo ""
+
+  # Return focus to terminal for user input
+  osascript -e 'tell application "iTerm2" to activate' 2>/dev/null || osascript -e 'tell application "Terminal" to activate' 2>/dev/null || true
+  sleep 0.3
+
+  read -p "Press Enter when both tabs are ready and windows are positioned..."
+  echo ""
 
   # Capture screenshot (uses preset for consistent text overlay)
-  # Note: capture-screenshot.sh will handle window positioning
+  # Note: Windows already positioned in step 2.3, just need to capture
   echo "Step 2.4: Capturing screenshot..."
-  "$SCRIPT_DIR/capture-preset.sh" ai-summaries "$WINDOW_NUM"
+
+  # Give focus to Contextify before capture
+  osascript -e 'tell application "Contextify" to activate' > /dev/null 2>&1
+  sleep 0.5
+
+  # Capture with the already-positioned windows
+  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+  OUTPUT_DIR="appstore-metadata/screenshots/drafts"
+  mkdir -p "$OUTPUT_DIR"
+  FILENAME="${OUTPUT_DIR}/02-dual-provider-${TIMESTAMP}.png"
+
+  echo ""
+  echo "📸 Taking screenshot in 3 seconds..."
+  sleep 3
+
+  # Capture region (1440x900 at 200,50)
+  screencapture -x -R"200,50,1440,900" "$FILENAME"
+  afplay /System/Library/Sounds/Glass.aiff &
+
+  # Add text overlay
+  FINAL_FILENAME="${OUTPUT_DIR}/02-dual-provider-${TIMESTAMP}-with-text.png"
+  NO_AUTO_OPEN=1 "$SCRIPT_DIR/add-text-overlay.sh" "$FILENAME" "Works seamlessly with both Claude Code and Codex CLI" "$FINAL_FILENAME" > /dev/null
+
+  echo "✅ Screenshot saved: $FINAL_FILENAME"
+
+  # Open in positioned Preview window
+  open "$FINAL_FILENAME"
+  sleep 0.5
+  osascript <<'PREVIEW_EOF'
+tell application "Preview"
+    activate
+end tell
+delay 0.3
+
+tell application "System Events"
+    tell process "Preview"
+        set frontmost to true
+        if (count of windows) > 0 then
+            tell front window
+                set position to {2040, 100}
+                set size to {1000, 900}
+            end tell
+        end if
+    end tell
+end tell
+PREVIEW_EOF
+
   sleep 1
 
   # Kill fake sessions in both tabs

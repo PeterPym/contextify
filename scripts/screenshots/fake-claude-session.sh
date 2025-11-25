@@ -70,36 +70,26 @@ if [ "$1" = "--mixed-claude" ]; then
   echo ""
   printf "${WHITE}⏺ Auth module refactored. All 12 tests passing.${RESET}\n"
   echo ""
-  printf "${USER_BG}${WHITE}> Add comprehensive error handling${RESET}\n"
-  echo ""
-  printf "${WHITE}⏺ I'll add proper error handling for network failures and token${RESET}\n"
-  printf "${WHITE}  expiration scenarios.${RESET}\n"
-  echo ""
-  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/AuthManager.swift${RESET}\n"
-  printf "    ${GREEN}✓${RESET} ${DIM}Added error handling for network failures${RESET}\n"
-  echo ""
-  printf "  ${CYAN}Edit${RESET} ${DIM}src/auth/TokenRefresh.swift${RESET}\n"
-  printf "    ${GREEN}✓${RESET} ${DIM}Added token expiration recovery${RESET}\n"
-  echo ""
-  printf "${WHITE}⏺ Error handling complete. All edge cases covered.${RESET}\n"
-  echo ""
   printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
-  printf "${WHITE}> ${RESET}"
+  printf "${WHITE}> ${RESET}\n"
+  printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
   while true; do sleep 1; done
 fi
 
 if [ "$1" = "--mixed-codex" ]; then
   # Codex session for mixed provider screenshot
-  # Codex uses different styling - blue/teal theme
-  CODEX_BLUE="\033[38;2;100;200;255m"
+  # Codex uses muted gray styling
+  CODEX_GRAY="\033[38;2;98;98;98m"
+  CODEX_LIGHT="\033[38;2;199;199;199m"
 
   printf "\033]0;Codex - Write auth tests\007"
   clear
-  echo ""
-  printf "${CODEX_BLUE}┌──────────────────────────────────────────┐${RESET}\n"
-  printf "${CODEX_BLUE}│${RESET} ${WHITE}Codex CLI${RESET} ${DIM}v0.1.2${RESET}                        ${CODEX_BLUE}│${RESET}\n"
-  printf "${CODEX_BLUE}│${RESET} ${DIM}~/code/projects/contextify${RESET}              ${CODEX_BLUE}│${RESET}\n"
-  printf "${CODEX_BLUE}└──────────────────────────────────────────┘${RESET}\n"
+  printf "${CODEX_GRAY}╭───────────────────────────────────────────────────────╮${RESET}\n"
+  printf "${CODEX_GRAY}│${RESET} ${WHITE}>_ OpenAI Codex${RESET} ${CODEX_GRAY}(v0.63.0)                             │${RESET}\n"
+  printf "${CODEX_GRAY}│                                                       │${RESET}\n"
+  printf "${CODEX_GRAY}│ model:     ${CODEX_LIGHT}gpt-5.1-codex-mini high${RESET}   ${CODEX_GRAY}/model to change │${RESET}\n"
+  printf "${CODEX_GRAY}│ directory: ${CODEX_LIGHT}~/code/projects/contextify${RESET}                 ${CODEX_GRAY}│${RESET}\n"
+  printf "${CODEX_GRAY}╰───────────────────────────────────────────────────────╯${RESET}\n"
   echo ""
   printf "${USER_BG}${WHITE}> Write unit tests for the auth module${RESET}\n"
   echo ""
@@ -114,13 +104,19 @@ if [ "$1" = "--mixed-codex" ]; then
   printf "${WHITE}⏺ Generated 12 test cases covering auth flows, token refresh,${RESET}\n"
   printf "${WHITE}  and error handling. All tests passing.${RESET}\n"
   echo ""
-  printf "${USER_BG}${WHITE}> ${RESET}"
+  # Codex input area: background color 25,25,25 for line above, input line, and line below
+  CODEX_INPUT_BG="\033[48;2;25;25;25m"
+  printf "${CODEX_INPUT_BG}%89s${RESET}\n" ""
+  printf "${CODEX_INPUT_BG}${WHITE}> ${RESET}${CODEX_INPUT_BG}%87s${RESET}\n" ""
+  printf "${CODEX_INPUT_BG}%89s${RESET}\n" ""
+  printf "${CODEX_GRAY} 100%% context left · ? for shortcuts${RESET}          "
   while true; do sleep 1; done
 fi
 
 # Full session display
 
 # Print the Claude Code banner with monster
+echo ""
 echo ""
 printf "${ORANGE} ▐▛███▜▌${RESET}   ${WHITE}Claude Code${RESET} ${DIM}v2.0.53${RESET}\n"
 printf "${ORANGE}▝▜█████▛▘${RESET}  ${WHITE}Opus 4.5${RESET} ${DIM}· Claude Max${RESET}\n"
@@ -150,22 +146,10 @@ printf "${WHITE}⏺ Dark mode implementation complete. All components now respec
 printf "${WHITE}  system appearance setting.${RESET}\n"
 echo ""
 
-# User prompt 2
-printf "${USER_BG}${WHITE}> Looks great! Run the tests to make sure nothing broke.${RESET}\n"
-echo ""
-
-# Tool use for tests
-printf "  ${CYAN}Bash${RESET} ${DIM}swift test${RESET}\n"
-printf "    ${GREEN}✓${RESET} ${DIM}Executed 47 tests with 0 failures${RESET}\n"
-echo ""
-
-# Final response
-printf "${WHITE}⏺ All 47 tests passing. Build succeeded with zero warnings.${RESET}\n"
-echo ""
-
-# Waiting prompt with horizontal rule above (full width)
+# Waiting prompt with horizontal rules above and below (full width)
 printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
-printf "${WHITE}> ${RESET}"
+printf "${WHITE}> ${RESET}\n"
+printf "${RULE_GRAY}%89s${RESET}\n" | tr ' ' '─'
 
 # Keep cursor blinking
 while true; do

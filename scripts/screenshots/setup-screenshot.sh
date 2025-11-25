@@ -507,10 +507,12 @@ CONTEXTIFY_Y=277
 
 # iTerm2: Terminal for context (shows real development workflow)
 # Positioned with 50px gap, bottoms aligned at Y=910, centered in 1440px frame
+# Note: When iTerm has tabs visible (2+ tabs), move Y up ~22px to account for tab bar
 TERMINAL_WIDTH=633
-TERMINAL_HEIGHT=460
+TERMINAL_HEIGHT=${TERMINAL_HEIGHT_OVERRIDE:-460}
 TERMINAL_X=870
 TERMINAL_Y=450
+TERMINAL_Y_WITH_TABS=428  # Y position when tab bar is visible
 
 # OLD DIMENSIONS (split-screen style, equal emphasis):
 # CONTEXTIFY_WIDTH=580
@@ -540,6 +542,13 @@ EOF
 sleep 0.5
 
 # Position iTerm2 (uses specified window or current window)
+# Use adjusted Y position if tabs are visible
+if [ "${ITERM_HAS_TABS:-0}" = "1" ]; then
+    TERMINAL_Y_ACTUAL=$TERMINAL_Y_WITH_TABS
+else
+    TERMINAL_Y_ACTUAL=$TERMINAL_Y
+fi
+
 if [ -n "$WINDOW_INDEX" ]; then
     # Use specified window index
     osascript <<EOF
@@ -548,7 +557,7 @@ tell application "iTerm2"
         error "iTerm2 window #$WINDOW_INDEX not found. Only " & (count of windows) & " windows available."
     end if
     tell window $WINDOW_INDEX
-        set bounds to {$TERMINAL_X, $TERMINAL_Y, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y + $TERMINAL_HEIGHT}
+        set bounds to {$TERMINAL_X, $TERMINAL_Y_ACTUAL, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y_ACTUAL + $TERMINAL_HEIGHT}
     end tell
 end tell
 EOF
@@ -562,7 +571,7 @@ tell application "iTerm2"
         delay 0.5
     end if
     tell current window
-        set bounds to {$TERMINAL_X, $TERMINAL_Y, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y + $TERMINAL_HEIGHT}
+        set bounds to {$TERMINAL_X, $TERMINAL_Y_ACTUAL, $TERMINAL_X + $TERMINAL_WIDTH, $TERMINAL_Y_ACTUAL + $TERMINAL_HEIGHT}
     end tell
 end tell
 EOF
@@ -572,7 +581,7 @@ echo "✅ Windows positioned!"
 echo ""
 echo "Screenshot area: ${SHOT_WIDTH}x${SHOT_HEIGHT} at (${CAPTURE_X}, ${CAPTURE_Y})"
 echo "Contextify (L):  ${CONTEXTIFY_WIDTH}x${CONTEXTIFY_HEIGHT} at (${CONTEXTIFY_X}, ${CONTEXTIFY_Y})"
-echo "iTerm2 (R):      ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y})"
+echo "iTerm2 (R):      ${TERMINAL_WIDTH}x${TERMINAL_HEIGHT} at (${TERMINAL_X}, ${TERMINAL_Y_ACTUAL})"
 echo ""
 
 # Give focus to Contextify window before returning
