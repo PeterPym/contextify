@@ -221,7 +221,21 @@ extension TimelineEntry {
         action: TimelineEntryAction? = nil,
         disposition: String?? = nil  // Optional<Optional<String>> to distinguish "not provided" from "set to nil"
     ) -> TimelineEntry {
-        TimelineEntry(
+        // Resolve the new disposition value
+        let newDisposition = disposition ?? self.disposition
+
+        // Recompute isDirective and isCompletion from disposition when disposition changes
+        let newIsDirective: Bool
+        let newIsCompletion: Bool
+        if let disp = newDisposition {
+            newIsDirective = ["directive", "affirmative", "negative"].contains(disp)
+            newIsCompletion = disp == "completion"
+        } else {
+            newIsDirective = self.isDirective
+            newIsCompletion = self.isCompletion
+        }
+
+        return TimelineEntry(
             id: id,
             kind: kind,
             timestamp: timestamp,
@@ -231,12 +245,12 @@ extension TimelineEntry {
             sourceContext: sourceContext,
             sourceIdentifier: sourceIdentifier,
             isError: isError,
-            isCompletion: isCompletion,
-            isDirective: isDirective,
+            isCompletion: newIsCompletion,
+            isDirective: newIsDirective,
             requestId: requestId,
             action: action ?? self.action,
             sessionId: sessionId ?? self.sessionId,
-            disposition: disposition ?? self.disposition,  // Use new value if provided
+            disposition: newDisposition,
             isQueued: self.isQueued,  // Preserve queued flag during cache refresh
             contentSha256: contentSha256,
             windowSha256: windowSha256

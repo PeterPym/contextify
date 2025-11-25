@@ -3,13 +3,247 @@
 # Positions Terminal and Contextify for optimal screenshot composition
 # within App Store screenshot dimensions
 #
-# Usage: ./setup-screenshot.sh [window-number]
+# Usage: ./setup-screenshot.sh [options] [window-number]
+#   --db-only     Only setup database (project order), skip window positioning
 #   window-number: Optional. iTerm2 window index (1, 2, 3, etc.)
 #                 If omitted, uses current window after 3-second countdown.
 
 set -e
 
-WINDOW_INDEX="${1:-}"
+# Parse arguments
+DB_ONLY=false
+WINDOW_INDEX=""
+
+for arg in "$@"; do
+  case $arg in
+    --db-only)
+      DB_ONLY=true
+      ;;
+    *)
+      WINDOW_INDEX="$arg"
+      ;;
+  esac
+done
+
+# ============================================================================
+# DATABASE SETUP: Project order for screenshot 1
+# ============================================================================
+setup_database() {
+  echo "🗄️  Setting up database for screenshots..."
+
+  # Find database location from defaults
+  DB_PATH=$(defaults read dev.contextify "dev.contextify.customDatabaseLocation" 2>/dev/null || echo "")
+  if [ -z "$DB_PATH" ]; then
+    DB_PATH="$HOME/Library/Application Support/Contextify"
+  fi
+  DB_FILE="$DB_PATH/contextify.db"
+
+  if [ ! -f "$DB_FILE" ]; then
+    echo "❌ Database not found at: $DB_FILE"
+    return 1
+  fi
+
+  echo "   Database: $DB_FILE"
+
+  # Set project display order:
+  # contextify=0, cli-ai-setup=1, Euler=2, correspondence=3, administration=4
+  echo "   Setting project order: contextify, cli-ai-setup, Euler, correspondence, administration"
+
+  sqlite3 "$DB_FILE" <<'EOSQL'
+UPDATE projects SET display_order = 0 WHERE name = 'contextify';
+UPDATE projects SET display_order = 1 WHERE name = 'cli-ai-setup';
+UPDATE projects SET display_order = 2 WHERE name = 'Euler';
+UPDATE projects SET display_order = 3 WHERE name = 'correspondence';
+UPDATE projects SET display_order = 4 WHERE name = 'administration';
+-- Push others down
+UPDATE projects SET display_order = display_order + 100
+  WHERE name NOT IN ('contextify', 'cli-ai-setup', 'Euler', 'correspondence', 'administration')
+  AND display_order IS NOT NULL AND display_order < 100;
+EOSQL
+
+  echo "✅ Database setup complete"
+  echo ""
+  echo "   Project order now:"
+  sqlite3 "$DB_FILE" "SELECT display_order, name FROM projects WHERE hidden = 0 ORDER BY display_order ASC NULLS LAST LIMIT 7"
+  echo ""
+}
+
+# ============================================================================
+# DEMO ENTRIES: Seed compelling conversation entries for screenshot 1
+# ============================================================================
+seed_demo_entries() {
+  echo "📝 Seeding demo conversation entries..."
+
+  DB_PATH=$(defaults read dev.contextify "dev.contextify.customDatabaseLocation" 2>/dev/null || echo "")
+  if [ -z "$DB_PATH" ]; then
+    DB_PATH="$HOME/Library/Application Support/Contextify"
+  fi
+  DB_FILE="$DB_PATH/contextify.db"
+
+  # Get contextify project ID
+  PROJECT_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM projects WHERE name = 'contextify' LIMIT 1")
+  if [ -z "$PROJECT_ID" ]; then
+    echo "❌ contextify project not found"
+    return 1
+  fi
+
+  # Create a demo transcript if needed
+  TRANSCRIPT_ID="demo-screenshot-transcript"
+  DEMO_PATH="/tmp/demo-screenshot.jsonl"
+
+  # Base timestamp: now minus 10 minutes, entries spaced 2 min apart
+  NOW=$(date +%s)
+  TS1=$((NOW - 600))
+  TS2=$((NOW - 480))
+  TS3=$((NOW - 360))
+  TS4=$((NOW - 240))
+  TS5=$((NOW - 120))
+
+  # Generator signature for cache
+  GEN_SIG="screenshot-demo-v1"
+
+  sqlite3 "$DB_FILE" <<EOSQL
+-- Clean up any previous demo entries
+DELETE FROM timeline_cache WHERE entry_id LIKE 'demo-entry-%';
+DELETE FROM transcript_entries WHERE id LIKE 'demo-entry-%';
+DELETE FROM transcripts WHERE id = '$TRANSCRIPT_ID';
+
+-- Hide any real entries that would appear after our first demo entry (TS1)
+-- We set display_in_timeline = 0 instead of deleting so cleanup can restore them
+UPDATE transcript_entries
+SET display_in_timeline = 0
+WHERE project_id = '$PROJECT_ID'
+  AND timestamp >= $TS1
+  AND id NOT LIKE 'demo-entry-%';
+
+-- Create demo transcript
+INSERT OR REPLACE INTO transcripts (
+  id, project_id, file_path, provider, last_modified, line_count, status, ingest_state, created_at, updated_at
+) VALUES (
+  '$TRANSCRIPT_ID', '$PROJECT_ID', '$DEMO_PATH', 'claude.code', $NOW, 5, 'active', 'complete', $NOW, $NOW
+);
+
+-- Entry 1: User request
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-entry-1', '$TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'user', $TS1,
+  'Add dark mode support to the settings panel',
+  'demo-sha-1', 1, $NOW, $NOW, ${TS1}.0, 'demo-window-1'
+);
+
+-- Entry 2: Claude working
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-entry-2', '$TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'assistant', $TS2,
+  'I have updated the color tokens and fixed contrast issues in the sidebar.',
+  'demo-sha-2', 1, $NOW, $NOW, ${TS2}.0, 'demo-window-2'
+);
+
+-- Entry 3: Claude completion
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-entry-3', '$TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'assistant', $TS3,
+  'Dark mode implementation complete. All components now respect the system appearance setting.',
+  'demo-sha-3', 1, $NOW, $NOW, ${TS3}.0, 'demo-window-3'
+);
+
+-- Entry 4: User follow-up
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-entry-4', '$TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'user', $TS4,
+  'Looks great! Run the tests to make sure nothing broke.',
+  'demo-sha-4', 1, $NOW, $NOW, ${TS4}.0, 'demo-window-4'
+);
+
+-- Entry 5: Claude test results
+INSERT INTO transcript_entries (
+  id, transcript_id, project_id, provider, kind, timestamp, content, content_sha256,
+  display_in_timeline, created_at, updated_at, created_ts, window_sha256
+) VALUES (
+  'demo-entry-5', '$TRANSCRIPT_ID', '$PROJECT_ID', 'claude.code', 'assistant', $TS5,
+  'All 47 tests passing. Build succeeded with zero warnings.',
+  'demo-sha-5', 1, $NOW, $NOW, ${TS5}.0, 'demo-window-5'
+);
+
+-- Pre-populate timeline cache with summaries
+INSERT OR REPLACE INTO timeline_cache (
+  content_sha256, window_sha256, entry_id, generator_signature, disposition,
+  present_form, past_form, selected_form, generated_at
+) VALUES
+  ('demo-sha-1', 'demo-window-1', 'demo-entry-1', '$GEN_SIG', 'directive',
+   'You requested dark mode support for the settings panel', 'You requested dark mode support for the settings panel', 'present', $NOW),
+  ('demo-sha-2', 'demo-window-2', 'demo-entry-2', '$GEN_SIG', 'completion',
+   'Claude Code updated color tokens and fixed sidebar contrast', 'Claude Code updated color tokens and fixed sidebar contrast', 'present', $NOW),
+  ('demo-sha-3', 'demo-window-3', 'demo-entry-3', '$GEN_SIG', 'completion',
+   'Claude Code completed dark mode implementation', 'Claude Code completed dark mode implementation', 'present', $NOW),
+  ('demo-sha-4', 'demo-window-4', 'demo-entry-4', '$GEN_SIG', 'directive',
+   'You requested to run the test suite', 'You requested to run the test suite', 'present', $NOW),
+  ('demo-sha-5', 'demo-window-5', 'demo-entry-5', '$GEN_SIG', 'completion',
+   'Claude Code confirmed all 47 tests passing', 'Claude Code confirmed all 47 tests passing', 'present', $NOW);
+EOSQL
+
+  echo "✅ Demo entries seeded (5 entries for contextify project)"
+  echo ""
+}
+
+# Function to clean up demo entries
+cleanup_demo_entries() {
+  echo "🧹 Cleaning up demo entries..."
+
+  DB_PATH=$(defaults read dev.contextify "dev.contextify.customDatabaseLocation" 2>/dev/null || echo "")
+  if [ -z "$DB_PATH" ]; then
+    DB_PATH="$HOME/Library/Application Support/Contextify"
+  fi
+  DB_FILE="$DB_PATH/contextify.db"
+
+  # Get contextify project ID for restoring hidden entries
+  PROJECT_ID=$(sqlite3 "$DB_FILE" "SELECT id FROM projects WHERE name = 'contextify' LIMIT 1")
+
+  sqlite3 "$DB_FILE" <<EOSQL
+-- Remove demo entries
+DELETE FROM timeline_cache WHERE entry_id LIKE 'demo-entry-%';
+DELETE FROM transcript_entries WHERE id LIKE 'demo-entry-%';
+DELETE FROM transcripts WHERE id = 'demo-screenshot-transcript';
+
+-- Restore any real entries we hid
+UPDATE transcript_entries
+SET display_in_timeline = 1
+WHERE project_id = '$PROJECT_ID'
+  AND display_in_timeline = 0
+  AND id NOT LIKE 'demo-entry-%';
+EOSQL
+
+  echo "✅ Demo entries removed and hidden entries restored"
+}
+
+# Run database setup
+setup_database
+
+# Handle demo entries based on flags
+case "${1:-}" in
+  --seed-demo)
+    seed_demo_entries
+    exit 0
+    ;;
+  --cleanup-demo)
+    cleanup_demo_entries
+    exit 0
+    ;;
+esac
+
+# If --db-only, exit here
+if [ "$DB_ONLY" = true ]; then
+  echo "Done (--db-only mode)"
+  exit 0
+fi
 
 echo "Setting up windows for screenshot..."
 echo ""
