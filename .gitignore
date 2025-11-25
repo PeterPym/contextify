@@ -81,3 +81,4 @@ appstore-metadata/screenshots/alternates/*.png
 .env
 .secrets/
 build/Contextify.xcarchive/
+build/appstore/
