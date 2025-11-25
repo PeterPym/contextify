@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Blocking Release):** 0 items - ✅ App Store submitted (2025-11-25)
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 33 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 34 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 65
+**Total Active Items:** 66
 
 ---
 
@@ -938,7 +938,60 @@ import Sparkle
 
 ---
 
-# P2 (Medium Priority) - 31 Items
+# P2 (Medium Priority) - 32 Items
+
+---
+
+## Pre-macOS 26 Compatibility (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (growth enabler - lets users start collecting history before upgrading)
+**Effort:** 6-10 hours
+
+- [ ] #P2-LEGACY-MACOS: Add support for macOS 14/15 with graceful degradation
+
+**Problem:**
+Current app requires macOS 26 (Tahoe) because Apple Intelligence powers the LLM summaries. This excludes users on older macOS who could still benefit from:
+- Timeline monitoring
+- Transcript indexing
+- Project organization
+- Search (when implemented)
+
+**Growth strategy:**
+Let users on older macOS "bank" their conversation history now. When they upgrade to Tahoe, summaries auto-generate for their existing transcripts. This creates upgrade incentive and builds loyalty.
+
+**Implementation options:**
+
+1. **Lite mode (recommended for v1):**
+   - Lower deployment target to macOS 14 or 15
+   - Detect Apple Intelligence availability at runtime
+   - Show timeline without summaries on older macOS
+   - Display "Upgrade to macOS 26 for AI summaries" prompt
+   - Summaries auto-generate when user upgrades
+
+2. **Alternative LLM support (future):**
+   - Ollama integration for local models
+   - OpenAI/Anthropic API option (opt-in, user provides key)
+   - Requires significant additional work
+
+**Scope for P2:**
+- Focus on option 1 (lite mode)
+- Runtime detection of FoundationModels availability
+- Graceful UI fallback (hide summary column, show "upgrade" badge)
+- Ensure database schema works on older macOS
+- Test on macOS 14 and 15
+
+**Files:**
+- `Contextify/Contextify.xcodeproj` (deployment target)
+- `FoundationLLM.swift` (availability checks)
+- `TimelineEntryRow.swift` (conditional summary display)
+- Various views (upgrade prompts)
+
+**Acceptance criteria:**
+- [ ] App installs and runs on macOS 14+
+- [ ] Timeline, project switching, indexing work without summaries
+- [ ] Clear messaging about what requires macOS 26
+- [ ] Summaries appear automatically after macOS upgrade
 
 ---
 
