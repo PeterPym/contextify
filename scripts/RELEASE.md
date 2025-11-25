@@ -429,6 +429,64 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 ---
 
-**Last Updated:** 2025-11-01
+## App Store Releases
+
+For App Store submissions, **both distributions must be built from the same commit** to ensure version parity.
+
+### Complete Release Workflow (App Store + DMG)
+
+When submitting a new version to the App Store:
+
+```bash
+# 1. Ensure all changes committed
+git status
+
+# 2. Build and upload App Store version
+bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh --dist=appstore export-pkg
+bash scripts/xc.sh upload
+
+# 3. Build and sign DMG (MUST do after App Store build to match)
+bash scripts/xc.sh Release build
+make sign-dmg
+
+# 4. Create GitHub release (if not already done)
+gh release create vX.Y.Z dist/Contextify.dmg --title "Contextify X.Y.Z"
+```
+
+### App Store Submission Steps
+
+After uploading, complete these in App Store Connect:
+
+1. **Wait** 5-15 min for Apple to process the build
+2. **Select build** in App Store → macOS App → version
+3. **Export compliance** (answer encryption questions, or skip if `ITSAppUsesNonExemptEncryption=false` in Info.plist)
+4. **Submit for review**
+
+Full guide: `build/docs/guides/APP-STORE-SUBMISSION.md`
+
+### Re-submission Checklist
+
+If you need to upload a new build (e.g., after fixing an issue):
+
+- [ ] Fix the issue and commit
+- [ ] Rebuild App Store version (`archive` → `export-pkg` → `upload`)
+- [ ] **Rebuild DMG** (easy to forget - DMG must match App Store binary)
+- [ ] Update GitHub release if needed
+- [ ] Select new build in App Store Connect
+- [ ] Re-submit for review
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `build/docs/guides/APP-STORE-SUBMISSION.md` | Full App Store submission guide |
+| `appstore-metadata/metadata.json` | App Store metadata (description, screenshots, etc.) |
+| `ExportOptions-AppStore.plist` | App Store export configuration |
+| `build/releases/vX.Y.Z/` | Release artifacts archive |
+
+---
+
+**Last Updated:** 2025-11-25
 **Maintained by:** Contextify Development Team
 **Questions?** Open an issue at https://github.com/banagale/contextify/issues
