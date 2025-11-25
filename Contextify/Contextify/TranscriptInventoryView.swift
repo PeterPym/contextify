@@ -182,20 +182,16 @@ struct TranscriptInventoryView: View {
       }
 
       // Scope filter
-      HStack {
-        Picker("Type", selection: $selectedScope) {
-          Text("Conversations\(countSuffix(.conversations))").tag(InventoryScope.conversations)
-          Text("Metadata\(countSuffix(.metadata))").tag(InventoryScope.metadata)
-          Text("All\(countSuffix(.all))").tag(InventoryScope.all)
-        }
-        .pickerStyle(.segmented)
-        .controlSize(.small)
-        .labelsHidden()
-        .tint(Color.contextifyBlue)
-        .accessibilityLabel("Transcript type filter")
-
-        Spacer()
+      Picker("Type", selection: $selectedScope) {
+        Text("Conversations\(countSuffix(.conversations))").tag(InventoryScope.conversations)
+        Text("Metadata\(countSuffix(.metadata))").tag(InventoryScope.metadata)
+        Text("All\(countSuffix(.all))").tag(InventoryScope.all)
       }
+      .pickerStyle(.segmented)
+      .controlSize(.small)
+      .labelsHidden()
+      .tint(Color.contextifyBlue)
+      .accessibilityLabel("Transcript type filter")
       .padding(.horizontal)
       .padding(.bottom, 8)
 
