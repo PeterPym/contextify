@@ -37,17 +37,62 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Blocking Release):** 0 items - ✅ App Store submitted (2025-11-25)
+- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 34 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 66
+**Total Active Items:** 67
 
 ---
 
+# P0 (Launch Critical) - 1 Item
 
-# P1 (High Priority) - 15 Items
+---
+
+## v1.0 Public Launch (1 item)
+
+**Status:** In Progress - App Store submitted, awaiting approval
+**Priority:** P0 (blocking public launch)
+**Effort:** 8-16 hours across multiple days
+
+- [ ] #P0-LAUNCH: Complete v1.0 public launch sequence
+
+**Reference:** `build/docs/operations/marketing/launch-plan-v1.md`
+
+### Sub-tasks
+
+**Website (contextify.sh)**
+- [ ] Hero section with headline, subhead, video embed
+- [ ] Features section with screenshots
+- [ ] Download section (DMG link, SHA256, requirements)
+- [ ] App Store badge (when approved)
+- [ ] Upload DMG to contextify.sh/releases/
+
+**Content Creation**
+- [ ] Record 2-minute video demo
+- [ ] Finalize Show HN post
+- [ ] Prepare Twitter announcement thread
+- [ ] Prepare Reddit posts (r/MacApps, r/ClaudeAI)
+
+**Distribution**
+- [ ] App Store approval (submitted, waiting)
+- [ ] DMG available on website
+- [ ] GitHub release (done)
+
+**Launch Sequence**
+- [ ] Soft launch: Tweet + Reddit on App Store approval
+- [ ] Show HN post (1-2 days after soft launch)
+- [ ] Monitor and respond to feedback
+- [ ] Expand to other channels (Dev.to, Indie Hackers)
+
+**Post-Launch**
+- [ ] Homebrew Cask formula
+- [ ] Product Hunt (when ready)
+
+---
+
+# P1 (High Priority) - 16 Items
 
 ---
 
