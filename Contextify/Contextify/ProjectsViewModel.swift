@@ -230,42 +230,22 @@ final class ProjectsViewModel {
   // MARK: - Helpers
 
   private func convertToDiscoveredProjects(_ lightweight: [LightweightProject]) -> [DiscoveredProject] {
-    // Group by canonical root path to merge providers (same project may appear twice: once from Claude, once from Codex)
-    var grouped: [String: (providers: Set<DiscoveredProject.Provider>, transcriptCount: Int, lastActivity: Date, displayName: String, path: URL, id: String)] = [:]
-
-    for light in lightweight {
+    return lightweight.map { light in
+      // Map provider string to enum
       let provider: DiscoveredProject.Provider = light.provider == "claude.code" ? .claudeCode : .codexCLI
-      let key = light.canonicalRootPath
 
-      if var existing = grouped[key] {
-        existing.providers.insert(provider)
-        existing.transcriptCount += light.transcriptCount
-        existing.lastActivity = max(existing.lastActivity, light.lastActivity)
-        grouped[key] = existing
-      } else {
-        grouped[key] = (
-          providers: [provider],
-          transcriptCount: light.transcriptCount,
-          lastActivity: light.lastActivity,
-          displayName: light.displayName,
-          path: URL(fileURLWithPath: key),
-          id: key  // Use canonical path as stable ID for merged projects
-        )
-      }
-    }
-
-    return grouped.map { _, data in
-      DiscoveredProject(
-        id: data.id,
-        name: data.displayName,
-        path: data.path,
-        providers: data.providers,
-        transcriptCount: data.transcriptCount,
-        entryCount: 0,
-        lastActivity: data.lastActivity,
-        isCurrent: false
+      // Phase 3: Use displayName populated during discovery (no need to derive it here)
+      return DiscoveredProject(
+        id: light.id,
+        name: light.displayName,  // Already derived by LightweightDiscoveryService
+        path: light.path,
+        providers: [provider],
+        transcriptCount: light.transcriptCount,
+        entryCount: 0, // Not available in lightweight scan
+        lastActivity: light.lastActivity,
+        isCurrent: false // Will be updated by coordinator
       )
-    }.sorted { ($0.lastActivity ?? .distantPast) > ($1.lastActivity ?? .distantPast) }
+    }
   }
 }
 
