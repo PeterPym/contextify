@@ -236,6 +236,18 @@ final class DeepSearchViewModel {
     }
   }
 
+  /// Clear results when query is edited (invalidate stale results)
+  func clearResults() {
+    searchTask?.cancel()
+    result = nil
+    selectedHitId = nil
+    contextEntries = []
+    earlierCount = 0
+    laterCount = 0
+    isSearching = false
+    searchError = nil
+  }
+
   // MARK: - Copy Actions
 
   func copyExcerpt() {

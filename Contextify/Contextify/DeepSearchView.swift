@@ -39,7 +39,10 @@ struct DeepSearchView: View {
     .searchable(
       text: Binding(
         get: { viewModel.query },
-        set: { viewModel.query = $0 }
+        set: { newValue in
+          viewModel.query = newValue
+          viewModel.clearResults()  // Clear stale results when query edited
+        }
       ),
       isPresented: $isSearchPresented,
       prompt: "Search"
