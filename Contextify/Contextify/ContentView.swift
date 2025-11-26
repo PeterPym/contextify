@@ -136,7 +136,8 @@ struct ContentView: View {
         }
         .task {
             // Clear search when project changes
-            for await _ in StartupCoordinator.shared.updates() {
+            for await context in StartupCoordinator.shared.updates() {
+                uiLog.info("[SEARCH-PROJECT-SWITCH] Clearing search due to project switch to: \(context.displayName, privacy: .public) (id: \(context.id, privacy: .public))")
                 searchVM.clearQuery()
             }
         }
@@ -436,6 +437,9 @@ private extension ContentView {
         }
 
         let queryForDeepSearch = searchVM.query
+        let resultCount = searchVM.result?.hits.count ?? 0
+        uiLog.info("[SEARCH] Opening Deep Search: query='\(queryForDeepSearch, privacy: .public)' projectId=\(context.id, privacy: .public) resultCount=\(resultCount) selectedHitId=\(selectedHitId ?? "nil", privacy: .public)")
+
         DeepSearchWindowController.shared.showWindow(
             projectId: context.id,
             projectName: model.projectDisplayName,
@@ -447,7 +451,7 @@ private extension ContentView {
         // Clear search field and dismiss quick search in main window
         searchVM.clearQuery()
 
-        uiLog.info("[SEARCH] Opened Deep Search for query: \(queryForDeepSearch, privacy: .public)")
+        uiLog.info("[SEARCH] Deep Search opened, main window search cleared")
     }
 
     /// Open a specific entry in the timeline

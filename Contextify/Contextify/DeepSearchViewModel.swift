@@ -61,17 +61,24 @@ final class DeepSearchViewModel {
     self.result = initialResult
     self.searchService = searchService ?? ConversationSearchService()
 
+    let resultCount = initialResult?.hits.count ?? 0
+    log.info("[DEEPSEARCH-INIT] projectId=\(projectId, privacy: .public) query='\(initialQuery, privacy: .public)' initialResultCount=\(resultCount) selectedHitId=\(selectedHitId ?? "nil", privacy: .public)")
+
     // Load context if we have a selected hit, or auto-select first result
     if let hitId = selectedHitId {
+      log.debug("[DEEPSEARCH-INIT] Loading context for explicit selection: \(hitId, privacy: .public)")
       Task {
         await loadContext(for: hitId)
       }
     } else if let firstHit = initialResult?.hits.first {
       // Auto-select first result when opening via Cmd+Enter (no explicit selection)
+      log.debug("[DEEPSEARCH-INIT] Auto-selecting first result: \(firstHit.id, privacy: .public)")
       self.selectedHitId = firstHit.id
       Task {
         await loadContext(for: firstHit.id)
       }
+    } else {
+      log.debug("[DEEPSEARCH-INIT] No results to select - will need fresh search")
     }
   }
 
@@ -86,6 +93,8 @@ final class DeepSearchViewModel {
     isSearching = true
     searchError = nil
 
+    log.info("[DEEPSEARCH-START] query='\(trimmedQuery, privacy: .public)' projectId=\(self.projectId, privacy: .public)")
+
     searchTask = Task {
       do {
         let request = ConversationSearchRequest(
@@ -96,10 +105,13 @@ final class DeepSearchViewModel {
         )
 
         let searchResult = try await searchService.search(request)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+          log.debug("[DEEPSEARCH-CANCEL] Search cancelled for query='\(trimmedQuery, privacy: .public)'")
+          return
+        }
 
         result = searchResult
-        log.info("[SEARCH] '\(trimmedQuery)' returned \(searchResult.hits.count) hits")
+        log.info("[DEEPSEARCH-DONE] query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count)")
 
         // Auto-select first result if none selected
         if selectedHitId == nil, let firstHit = searchResult.hits.first {

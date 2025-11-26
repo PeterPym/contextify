@@ -70,6 +70,8 @@ final class QuickSearchViewModel {
     searchError = nil
     mode = .quickSearch(query: trimmedQuery)
 
+    log.info("[SEARCH-START] QuickSearch query='\(trimmedQuery, privacy: .public)' projectId=\(projectId, privacy: .public)")
+
     searchTask = Task {
       do {
         let request = ConversationSearchRequest(
@@ -82,10 +84,13 @@ final class QuickSearchViewModel {
         let searchResult = try await searchService.search(request)
 
         // Check for cancellation
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+          log.debug("[SEARCH-CANCEL] QuickSearch cancelled for query='\(trimmedQuery, privacy: .public)'")
+          return
+        }
 
         result = searchResult
-        log.info("[SEARCH] '\(trimmedQuery)' returned \(searchResult.hits.count) hits (total: \(searchResult.totalCount))")
+        log.info("[SEARCH-DONE] QuickSearch query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count) total=\(searchResult.totalCount)")
 
         // Auto-select first result
         if let firstHit = searchResult.hits.first {
