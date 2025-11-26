@@ -7,6 +7,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "DeepSearchView"
 /// Deep Search window content with split-view layout
 struct DeepSearchView: View {
   @Environment(DeepSearchViewModel.self) private var viewModel
+  @FocusState private var searchFieldFocused: Bool  // Cmd+F support
 
   /// Extract search terms from query for highlighting in context
   private var searchTerms: [String] {
@@ -38,6 +39,13 @@ struct DeepSearchView: View {
         emptyState
       }
     }
+    // Cmd+F to focus search field
+    .background {
+      Button("") { searchFieldFocused = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+    }
   }
 
   // MARK: - Toolbar
@@ -60,6 +68,7 @@ struct DeepSearchView: View {
           set: { viewModel.query = $0 }
         ))
         .textFieldStyle(.plain)
+        .focused($searchFieldFocused)
         .onSubmit {
           viewModel.search()
         }

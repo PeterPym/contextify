@@ -1240,6 +1240,77 @@ proxy.scrollTo(id, anchor: .center)
 
 ---
 
+## Search Field Conventions
+
+### Cmd+F Support Requirement
+
+All windows with search functionality MUST support Cmd+F to focus the search field. SwiftUI does NOT provide this automatically - manual implementation required for ALL search types.
+
+### Pattern A: Custom TextField
+
+Use when you have a custom search TextField (not using `.searchable()`):
+
+```swift
+struct SomeView: View {
+  @FocusState private var searchFieldFocused: Bool
+
+  var body: some View {
+    VStack {
+      TextField("Search...", text: $query)
+        .focused($searchFieldFocused)
+      // ... other content
+    }
+    // Cmd+F to focus search field
+    .background {
+      Button("") { searchFieldFocused = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+    }
+  }
+}
+```
+
+### Pattern B: .searchable() Modifier
+
+Use when using SwiftUI's built-in `.searchable()` modifier:
+
+```swift
+struct SomeView: View {
+  @State private var searchText = ""
+  @State private var isSearchFieldPresented = false
+
+  var body: some View {
+    List { /* ... */ }
+      .searchable(text: $searchText, isPresented: $isSearchFieldPresented, prompt: "Search")
+      // Cmd+F to focus search field
+      .background {
+        Button("") { isSearchFieldPresented = true }
+          .keyboardShortcut("f", modifiers: .command)
+          .frame(width: 0, height: 0)
+          .opacity(0)
+      }
+  }
+}
+```
+
+### Implementation References
+
+**Pattern A (Custom TextField):**
+- `Contextify/Contextify/ContentView.swift` - Main window with HUDSearchField
+- `Contextify/Contextify/DeepSearchView.swift` - Deep Search window
+- `Contextify/Contextify/SemanticSearchView.swift` - Semantic Search window
+
+**Pattern B (.searchable):**
+- `Contextify/Contextify/TranscriptInventoryView.swift` - Transcript inventory
+- `Contextify/Contextify/ProjectsWindow.swift` - Projects browser
+
+### Why This Is Required
+
+SwiftUI's `.searchable()` modifier and custom TextFields do NOT respond to Cmd+F by default. This is a macOS platform quirk that users expect but Apple does not provide automatically. The hidden button pattern intercepts the keyboard shortcut and programmatically focuses the search field.
+
+---
+
 ## References
 
 ### Internal Documentation

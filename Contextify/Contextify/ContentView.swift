@@ -45,6 +45,7 @@ struct ContentView: View {
 
     // Quick Search state
     @State private var searchVM = QuickSearchViewModel()
+    @FocusState private var searchFieldFocused: Bool  // Cmd+F support
 
     var body: some View {
         ZStack {
@@ -107,6 +108,13 @@ struct ContentView: View {
             minWidth: Layout.timelineMin,  // Timeline-only minimum for v1.0
             minHeight: 360
         )
+        // Cmd+F to focus search field
+        .background {
+            Button("") { searchFieldFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+        }
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -232,6 +240,7 @@ struct ContentView: View {
                     get: { searchVM.query },
                     set: { searchVM.query = $0 }
                 ),
+                isFocused: $searchFieldFocused,
                 onSearch: {
                     if let projectId = StartupCoordinator.shared.current?.id {
                         searchVM.search(projectId: projectId)

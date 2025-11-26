@@ -6,6 +6,7 @@ struct ProjectsWindow: View {
   @Environment(ProjectsViewModel.self) private var viewModel
   @State private var selectedProject: DiscoveredProject?
   @State private var searchText = ""  // P2-PROJECTS-SEARCH: Search functionality
+  @State private var isSearchFieldPresented = false  // Cmd+F support
 
   var body: some View {
     VStack(spacing: 0) {
@@ -30,6 +31,13 @@ struct ProjectsWindow: View {
     .frame(minWidth: 800, idealWidth: 800, maxWidth: .infinity, minHeight: 600, idealHeight: 600, maxHeight: .infinity)
     .sheet(item: $selectedProject) { project in
       ProjectStatsView(project: project)
+    }
+    // Cmd+F to focus search field
+    .background {
+      Button("") { isSearchFieldPresented = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
     }
   }
 
@@ -105,7 +113,7 @@ struct ProjectsWindow: View {
       }
       .padding()
     }
-    .searchable(text: $searchText, prompt: "Search")
+    .searchable(text: $searchText, isPresented: $isSearchFieldPresented, prompt: "Search")
   }
 
   private var emptyState: some View {

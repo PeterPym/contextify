@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct SemanticSearchView: View {
   @Environment(HUDViewModel.self) private var hudModel
   @State private var searchQuery = ""
+  @FocusState private var searchFieldFocused: Bool  // Cmd+F support
   @State private var results: [SearchResult] = []
   @State private var isSearching = false
   @State private var error: String?
@@ -70,6 +71,7 @@ struct SemanticSearchView: View {
         HStack {
           TextField("Search your conversation history...", text: $searchQuery)
             .textFieldStyle(.roundedBorder)
+            .focused($searchFieldFocused)
             .onSubmit {
               performSearch()
             }
@@ -245,6 +247,13 @@ struct SemanticSearchView: View {
       }
     }
     .frame(width: 800, height: 600)
+    // Cmd+F to focus search field
+    .background {
+      Button("") { searchFieldFocused = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+    }
   }
 
   private func performSearch() {
