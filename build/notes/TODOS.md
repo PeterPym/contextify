@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 35 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 68
+**Total Active Items:** 69
 
 ---
 
@@ -921,7 +921,7 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
-# P2 (Medium Priority) - 35 Items
+# P2 (Medium Priority) - 36 Items
 
 ---
 
@@ -1749,6 +1749,91 @@ Contextify has partial worktree support. Core infrastructure works (separate pro
 **Related:**
 - P3-LOGOMARK (discovered during this work)
 - P1-PROJECT-BADGES-ORCHESTRATOR (similar layering concerns)
+
+---
+
+## Project Tab Reordering UX (1 item)
+
+**Status:** Investigation Complete - Ready for Implementation
+**Priority:** P2 (UX improvement - tab reordering precision and keyboard shortcuts)
+**Effort:** 3-4 hours
+
+- [ ] #P2-TAB-REORDER-UX: Fix drag-drop precision and add keyboard shortcuts for tab reordering
+
+**Investigation:** `build/notes/todo-support/P2-TAB-REORDER-UX-investigation.md`
+
+**Issue 1: Vertical Drag Sensitivity**
+
+**Problem:** Dragging a tab too far vertically causes it to "drop" unexpectedly. Users must exercise excessive precision to keep the drag within a narrow horizontal band.
+
+**Root Cause:** `dropExited()` in `ProjectSwitcherView.swift:151-156` clears drag state when cursor exits the drop zone. The drop zone is vertically constrained to tab bar height, so small vertical drift triggers exit.
+
+**Historical Context:** This was likely a fix for "ghost entries when dragging outside the window" - tabs disappearing when dragged outside and released. The fix may be overly aggressive.
+
+**Proposed Fix (Option A - Recommended):**
+- Expand vertical hit zone significantly (+/- 100px)
+- Keep horizontal precision for slot detection
+- Only cancel drag on true horizontal exit (left/right of tab bar)
+
+**Alternative:** Reimplment drag-drop from scratch using:
+- SwiftUI's native `.draggable()` / `.dropDestination()` (macOS 13+)
+- Custom `DragGesture` with full bounds control
+- Research Safari/Chrome tab bar behavior for reference
+
+**Issue 2: Missing Keyboard Shortcuts**
+
+**Problem:** No keyboard shortcuts exist to move the currently selected tab.
+
+**Requested:** `Shift-Command-Option-[` (move left) and `Shift-Command-Option-]` (move right)
+
+**Behavior:**
+- Move active tab one position in direction
+- **No wrap-around:** At boundaries, do nothing (don't loop to opposite end)
+- Should work regardless of focus state
+
+**Implementation:**
+```swift
+func moveActiveTab(direction: TabMoveDirection) {
+  guard let activeId = activeProjectId,
+        let currentIndex = projects.firstIndex(where: { $0.id == activeId }) else { return }
+
+  switch direction {
+  case .left:
+    guard currentIndex > 0 else { return }  // No wrap
+    // Move to currentIndex - 1
+  case .right:
+    guard currentIndex < projects.count - 1 else { return }  // No wrap
+    // Move to currentIndex + 1
+  }
+  // Persist new order...
+}
+```
+
+**Testing Strategy:**
+
+**SPM-Compatible:**
+- Unit test: `moveActiveTab(direction:)` logic
+- Unit test: No-wrap-around at boundaries
+- Unit test: Tab order persistence
+
+**Deferred SwiftUI Tests:**
+- UI test: Drag with vertical drift maintains state
+- UI test: Keyboard shortcuts trigger reorder
+
+**Files:**
+- `Contextify/Contextify/ProjectSwitcherView.swift` (drag-drop fix, keyboard shortcuts)
+- `Contextify/Contextify/ProjectSwitcherState.swift` (add `moveActiveTab()`)
+- `Tests/ContextifyCoreTests/TabReorderTests.swift` (new)
+
+**Acceptance Criteria:**
+- [ ] Vertical drag drift (reasonable amount) does not cancel drag
+- [ ] Horizontal exit still cancels drag (prevents ghost tabs)
+- [ ] Shift-Cmd-Opt-[ moves active tab left (no wrap)
+- [ ] Shift-Cmd-Opt-] moves active tab right (no wrap)
+- [ ] Keyboard reorder persists like drag-drop reorder
+
+**Related:**
+- #63: Add tests for ProjectSwitcherView drag-drop (P2 Testing)
 
 ---
 
