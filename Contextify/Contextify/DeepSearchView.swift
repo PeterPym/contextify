@@ -134,12 +134,10 @@ struct DeepSearchView: View {
             }
           }
           .listStyle(.sidebar)
-          .onChange(of: viewModel.selectedHitId) { oldId, newId in
+          .onChange(of: viewModel.selectedHitId) { _, newId in
             // Scroll results list to selected hit
-            log.debug("[RESULTS-PANE] Selection changed: \(oldId ?? "nil", privacy: .public) -> \(newId ?? "nil", privacy: .public)")
             if let hitId = newId {
               proxy.scrollTo(hitId, anchor: .center)
-              log.debug("[RESULTS-PANE] Scrolled to hit: \(hitId, privacy: .public)")
             }
           }
         }
@@ -199,26 +197,21 @@ struct DeepSearchView: View {
               }
             }
             .listStyle(.plain)
-            .onChange(of: viewModel.contextEntries.first?.id) { oldFirstId, newFirstId in
+            .onChange(of: viewModel.contextEntries.first?.id) { _, newFirstId in
               // Scroll to highlighted entry when context entries change
               // Using first entry ID as a proxy for "entries have changed"
-              let entryIds = viewModel.contextEntries.map { $0.id }
-              let hitExists = entryIds.contains(hitId)
-              log.info("[CONTEXT-PANE] Entries changed: count=\(viewModel.contextEntries.count) hitId=\(hitId, privacy: .public) hitExists=\(hitExists)")
-              log.debug("[CONTEXT-PANE] Entry IDs: first=\(entryIds.first ?? "nil", privacy: .public) last=\(entryIds.last ?? "nil", privacy: .public)")
+              let hitExists = viewModel.contextEntries.contains { $0.id == hitId }
               if newFirstId != nil && hitExists {
                 // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates
                 // offsets on first call. See: https://stackoverflow.com/a/77042664
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                   proxy.scrollTo(hitId, anchor: .center)
-                  log.info("[CONTEXT-PANE] First scrollTo hitId=\(hitId, privacy: .public)")
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                   proxy.scrollTo(hitId, anchor: .center)
-                  log.info("[CONTEXT-PANE] Second scrollTo hitId=\(hitId, privacy: .public)")
                 }
               } else if !hitExists {
-                log.warning("[CONTEXT-PANE] Cannot scroll - hitId not found in entries!")
+                log.warning("[CONTEXT-PANE] Cannot scroll - hitId \(hitId, privacy: .public) not found in \(viewModel.contextEntries.count) entries")
               }
             }
           }
