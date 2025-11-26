@@ -217,6 +217,12 @@ This keeps UI test debt visible and ensures future work can pick up the integrat
 - File/dir names: kebab-case for non-code folders (e.g., `docs/sessions/active/`)
 - Keep modules small; separate UI (Views), state (ViewModels), and services
 
+**SwiftUI patterns & platform quirks:** See `build/docs/design/swiftui-patterns.md` for:
+- @Observable vs @State vs @Environment decision tree
+- ScrollViewReader workarounds (call scrollTo twice for reliable scrolling)
+- @MainActor patterns and anti-patterns
+- Implementation examples with file:line references
+
 ### State Sync Pattern - Hybrid Model
 
 Contextify uses a **hybrid state synchronization pattern** that balances immediate UI feedback with database-backed consistency.
