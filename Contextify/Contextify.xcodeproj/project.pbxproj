@@ -10,6 +10,7 @@
 		D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
 		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
 		D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
+		D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +63,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */,
+				D4SPAR00010000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,6 +137,7 @@
 			name = Contextify;
 			packageProductDependencies = (
 				D4C0A0062E77AAAA00747100 /* ContextifyCore */,
+				D4SPAR00010000000000002 /* Sparkle */,
 			);
 			productName = Contextify;
 			productReference = D4A7739D2E76936700747100 /* Contextify.app */;
@@ -221,6 +224,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */,
+				D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D4A7739E2E76936700747100 /* Products */;
@@ -620,6 +624,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		D4C0A0062E77AAAA00747100 /* ContextifyCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -630,6 +645,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
 			productName = ContextifyCore;
+		};
+		D4SPAR00010000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
