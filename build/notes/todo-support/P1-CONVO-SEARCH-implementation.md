@@ -793,11 +793,21 @@ final class SearchServiceTests: XCTestCase {
 - Quick Search view with responsive layout
 - Basic copy actions
 
-### Phase 1B: Deep Search Window (3-4 hours)
-- Create DeepSearchWindow with injected SearchService
+### Phase 1B: Deep Search Window (revised)
+
+**See: `P1-CONVO-SEARCH-1B1-addendum.md` for updated scope**
+
+#### Phase 1B1: Single-Project Deep Search (2-3 hours)
+- Simplify HUD Quick Search to results-only (compact)
+- Create DeepSearchWindow (non-modal NSWindow)
+- HSplitView: Results list | Context pane
+- Open via Cmd+Enter or click result in HUD
+- Highlight search hit in context with Contextify Yellow
+
+#### Phase 1B2: Cross-Project Features (deferred)
+- Cross-project search scope
 - Pagination with 5000 cap
 - Project filter dropdown
-- "Open in HUD" action
 
 ### Phase 1C: Polish (3-4 hours)
 - Keyboard navigation
