@@ -208,7 +208,9 @@ struct DeepSearchView: View {
             .listStyle(.plain)
             .onChange(of: viewModel.contextEntries.first?.id) { _, newFirstId in
               // Scroll to highlighted entry when context entries change
-              // Using first entry ID as a proxy for "entries have changed"
+              // But NOT when loading more entries (shouldScrollToHit = false)
+              guard viewModel.shouldScrollToHit else { return }
+
               let hitExists = viewModel.contextEntries.contains { $0.id == hitId }
               if newFirstId != nil && hitExists {
                 // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates

@@ -28,6 +28,9 @@ final class DeepSearchViewModel {
   var contextBefore: Int = 10  // How many entries loaded before hit
   var contextAfter: Int = 10   // How many entries loaded after hit
 
+  /// Whether to scroll to hit after context loads (false when loading more)
+  var shouldScrollToHit: Bool = false
+
   /// Is search in progress
   var isSearching = false
 
@@ -136,6 +139,7 @@ final class DeepSearchViewModel {
     // Reset context extent when loading new hit
     contextBefore = 10
     contextAfter = 10
+    shouldScrollToHit = true  // Scroll to hit on new selection
 
     do {
       let entries = try await searchService.getContext(
@@ -167,6 +171,7 @@ final class DeepSearchViewModel {
   func loadMoreEarlier() {
     guard let entryId = selectedHitId else { return }
     contextBefore += 5
+    shouldScrollToHit = false  // Don't scroll when loading more
     Task {
       do {
         let entries = try await searchService.getContext(
@@ -193,6 +198,7 @@ final class DeepSearchViewModel {
   func loadMoreLater() {
     guard let entryId = selectedHitId else { return }
     contextAfter += 5
+    shouldScrollToHit = false  // Don't scroll when loading more
     Task {
       do {
         let entries = try await searchService.getContext(
