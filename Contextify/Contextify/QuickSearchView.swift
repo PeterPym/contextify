@@ -75,15 +75,6 @@ struct QuickSearchView: View {
       }
       .buttonStyle(.plain)
       .help("Close search results (Esc)")
-
-      Button {
-        onDeepSearch(nil)
-      } label: {
-        Image(systemName: "arrow.up.right.square")
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .help("Open in Deep Search (Cmd+Enter)")
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
