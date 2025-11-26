@@ -134,10 +134,12 @@ struct DeepSearchView: View {
             }
           }
           .listStyle(.sidebar)
-          .onChange(of: viewModel.selectedHitId) { _, newId in
+          .onChange(of: viewModel.selectedHitId) { oldId, newId in
             // Scroll results list to selected hit
+            log.debug("[RESULTS-PANE] Selection changed: \(oldId ?? "nil", privacy: .public) -> \(newId ?? "nil", privacy: .public)")
             if let hitId = newId {
               proxy.scrollTo(hitId, anchor: .center)
+              log.debug("[RESULTS-PANE] Scrolled to hit: \(hitId, privacy: .public)")
             }
           }
         }
@@ -197,21 +199,16 @@ struct DeepSearchView: View {
               }
             }
             .listStyle(.plain)
-            .onChange(of: viewModel.contextEntries.count) { _, count in
-              // Scroll to highlighted entry when context loads
-              // Use DispatchQueue to ensure layout is complete before scrolling
-              if count > 0 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            .onChange(of: viewModel.contextEntries.first?.id) { oldFirstId, newFirstId in
+              // Scroll to highlighted entry when context entries change
+              // Using first entry ID as a proxy for "entries have changed"
+              log.debug("[CONTEXT-PANE] Entries changed (first: \(oldFirstId ?? "nil", privacy: .public) -> \(newFirstId ?? "nil", privacy: .public)), hitId=\(hitId, privacy: .public)")
+              if newFirstId != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                  log.debug("[CONTEXT-PANE] Scrolling to hitId: \(hitId, privacy: .public)")
                   withAnimation {
                     proxy.scrollTo(hitId, anchor: .center)
                   }
-                }
-              }
-            }
-            .onChange(of: hitId) { _, newId in
-              DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation {
-                  proxy.scrollTo(newId, anchor: .center)
                 }
               }
             }
@@ -334,6 +331,29 @@ struct DeepSearchHitRow: View {
       RoundedRectangle(cornerRadius: 6)
         .fill(isSelected ? Color.contextifyYellow.opacity(0.15) : Color.clear)
     )
+    .contextMenu {
+      Button("Copy as JSON") {
+        copyAsJSON()
+      }
+    }
+  }
+
+  private func copyAsJSON() {
+    let json: [String: Any] = [
+      "id": hit.id,
+      "project_id": hit.projectId,
+      "project_name": hit.projectName,
+      "provider": hit.provider,
+      "role": hit.role,
+      "content": String(hit.content.prefix(500)),
+      "created_at": ISO8601DateFormatter().string(from: hit.createdAt),
+      "snippet": hit.snippet.replacingOccurrences(of: "<mark>", with: "")
+                           .replacingOccurrences(of: "</mark>", with: "")
+    ]
+
+    guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+          let string = String(data: data, encoding: .utf8) else { return }
+    string.copyToClipboard()
   }
 
   private var attributedSnippet: AttributedString {
@@ -410,6 +430,28 @@ struct ContextEntryRow: View {
       RoundedRectangle(cornerRadius: 6)
         .strokeBorder(isHighlighted ? Color.contextifyYellow.opacity(0.5) : Color.clear, lineWidth: 1.5)
     )
+    .contextMenu {
+      Button("Copy as JSON") {
+        copyAsJSON()
+      }
+    }
+  }
+
+  private func copyAsJSON() {
+    let json: [String: Any] = [
+      "id": entry.id,
+      "transcript_id": entry.transcriptId,
+      "project_id": entry.projectId,
+      "provider": entry.provider,
+      "kind": entry.kind,
+      "timestamp": entry.timestamp,
+      "content": String(entry.content.prefix(500)),
+      "is_highlighted": isHighlighted
+    ]
+
+    guard let data = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]),
+          let string = String(data: data, encoding: .utf8) else { return }
+    string.copyToClipboard()
   }
 
   /// Highlight search terms in the content (for non-selected entries)

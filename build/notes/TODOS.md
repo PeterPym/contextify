@@ -1957,6 +1957,28 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 ---
 
+## Clipboard Code Refactoring (1 item)
+
+**Status:** Not Started
+**Priority:** P3 (code quality, no user-visible impact)
+**Effort:** 1-2 hours
+
+- [ ] #P3-CLIPBOARD: Refactor 15+ clipboard copy locations to use shared `String.copyToClipboard()` extension
+
+**Problem:** `NSPasteboard.general.clearContents()` / `setString()` pattern is repeated 15+ times across codebase.
+
+**Solution:** New `String.copyToClipboard()` extension created in `Contextify/Contextify/Extensions/String+Clipboard.swift`. Existing clipboard code can be migrated to use it.
+
+**Files to update:**
+- `SemanticSearchView.swift` (1 location)
+- `QuickSearchViewModel.swift` (2 locations)
+- `TranscriptDetailView.swift` (1 location)
+- `TranscriptInventoryView.swift` (2 locations)
+- `DeepSearchViewModel.swift` (2 locations)
+- `TimelineEntryRow.swift` (1 location)
+
+---
+
 ## Project Switch Consolidation (1 item) ⬇️
 
 **Status:** Not Started
