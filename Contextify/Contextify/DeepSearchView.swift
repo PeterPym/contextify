@@ -7,7 +7,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "DeepSearchView"
 /// Deep Search window content with split-view layout
 struct DeepSearchView: View {
   @Environment(DeepSearchViewModel.self) private var viewModel
-  @FocusState private var searchFieldFocused: Bool  // Cmd+F support
+  @State private var isSearchPresented = false  // Cmd+F support
 
   /// Extract search terms from query for highlighting in context
   private var searchTerms: [String] {
@@ -19,10 +19,7 @@ struct DeepSearchView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      toolbar
-      Divider()
-
+    Group {
       if let result = viewModel.result {
         HSplitView {
           resultsList(result)
@@ -39,66 +36,24 @@ struct DeepSearchView: View {
         emptyState
       }
     }
+    .searchable(
+      text: Binding(
+        get: { viewModel.query },
+        set: { viewModel.query = $0 }
+      ),
+      isPresented: $isSearchPresented,
+      prompt: "Search"
+    )
+    .onSubmit(of: .search) {
+      viewModel.search()
+    }
     // Cmd+F to focus search field
     .background {
-      Button("") { searchFieldFocused = true }
+      Button("") { isSearchPresented = true }
         .keyboardShortcut("f", modifiers: .command)
         .frame(width: 0, height: 0)
         .opacity(0)
     }
-  }
-
-  // MARK: - Toolbar
-
-  private var toolbar: some View {
-    HStack(spacing: 12) {
-      Text(viewModel.projectName)
-        .font(.headline)
-        .foregroundStyle(.secondary)
-
-      Spacer()
-
-      // Search field
-      HStack(spacing: 4) {
-        Image(systemName: "magnifyingglass")
-          .foregroundStyle(.secondary)
-
-        TextField("Search messages...", text: Binding(
-          get: { viewModel.query },
-          set: { viewModel.query = $0 }
-        ))
-        .textFieldStyle(.plain)
-        .focused($searchFieldFocused)
-        .onSubmit {
-          viewModel.search()
-        }
-
-        if !viewModel.query.isEmpty {
-          Button {
-            viewModel.query = ""
-          } label: {
-            Image(systemName: "xmark.circle.fill")
-              .foregroundStyle(.secondary)
-          }
-          .buttonStyle(.plain)
-        }
-      }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 5)
-      .background(
-        RoundedRectangle(cornerRadius: 6)
-          .fill(Color(nsColor: .textBackgroundColor))
-      )
-      .frame(width: 250)
-
-      if viewModel.isSearching {
-        ProgressView()
-          .scaleEffect(0.7)
-      }
-    }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 10)
-    .background(Color(nsColor: .windowBackgroundColor))
   }
 
   @State private var showSearchInfo = false

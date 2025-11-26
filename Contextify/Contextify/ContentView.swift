@@ -45,7 +45,7 @@ struct ContentView: View {
 
     // Quick Search state
     @State private var searchVM = QuickSearchViewModel()
-    @FocusState private var searchFieldFocused: Bool  // Cmd+F support
+    @State private var isSearchPresented = false  // Cmd+F support
 
     var body: some View {
         ZStack {
@@ -108,10 +108,30 @@ struct ContentView: View {
             minWidth: Layout.timelineMin,  // Timeline-only minimum for v1.0
             minHeight: 360
         )
-        // Cmd+F to focus search field
+        .searchable(
+            text: Binding(
+                get: { searchVM.query },
+                set: { newValue in
+                    searchVM.query = newValue
+                    searchVM.clearResults()  // Clear stale results when query edited
+                }
+            ),
+            isPresented: $isSearchPresented,
+            prompt: "Search"
+        )
+        .onSubmit(of: .search) {
+            if let projectId = StartupCoordinator.shared.current?.id {
+                searchVM.search(projectId: projectId)
+            }
+        }
+        // Cmd+F to focus search field, Cmd+Enter to open search window
         .background {
-            Button("") { searchFieldFocused = true }
+            Button("") { isSearchPresented = true }
                 .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+            Button("") { openDeepSearch() }
+                .keyboardShortcut(.return, modifiers: .command)
                 .frame(width: 0, height: 0)
                 .opacity(0)
         }
@@ -233,23 +253,6 @@ struct ContentView: View {
                 .accessibilityIdentifier("set-project-root")
             }
             Spacer()
-
-            // Search field
-            HUDSearchField(
-                query: Binding(
-                    get: { searchVM.query },
-                    set: { searchVM.query = $0 }
-                ),
-                isFocused: $searchFieldFocused,
-                onSearch: {
-                    if let projectId = StartupCoordinator.shared.current?.id {
-                        searchVM.search(projectId: projectId)
-                    }
-                },
-                onDeepSearch: { openDeepSearch() },
-                onClear: { searchVM.clearQuery() },
-                onQueryChange: { searchVM.clearResults() }
-            )
 
             // Developer-only test buttons (hidden by default)
             if devMode.isEnabled {
