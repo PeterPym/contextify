@@ -199,13 +199,20 @@ struct DeepSearchView: View {
             .listStyle(.plain)
             .onChange(of: viewModel.contextEntries.count) { _, count in
               // Scroll to highlighted entry when context loads
+              // Use DispatchQueue to ensure layout is complete before scrolling
               if count > 0 {
-                proxy.scrollTo(hitId, anchor: .center)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                  withAnimation {
+                    proxy.scrollTo(hitId, anchor: .center)
+                  }
+                }
               }
             }
             .onChange(of: hitId) { _, newId in
-              withAnimation {
-                proxy.scrollTo(newId, anchor: .center)
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation {
+                  proxy.scrollTo(newId, anchor: .center)
+                }
               }
             }
           }

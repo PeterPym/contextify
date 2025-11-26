@@ -436,21 +436,75 @@ private extension ContentView {
             return
         }
 
-        let queryForDeepSearch = searchVM.query
-        let resultCount = searchVM.result?.hits.count ?? 0
-        uiLog.info("[SEARCH] Opening Deep Search: query='\(queryForDeepSearch, privacy: .public)' projectId=\(context.id, privacy: .public) resultCount=\(resultCount) selectedHitId=\(selectedHitId ?? "nil", privacy: .public)")
+        let queryForDeepSearch = searchVM.query.trimmingCharacters(in: .whitespaces)
+        guard !queryForDeepSearch.isEmpty else {
+            uiLog.debug("[SEARCH] Cannot open Deep Search - empty query")
+            return
+        }
+
+        // If we have cached results, check if there are any hits
+        if let result = searchVM.result {
+            if result.hits.isEmpty {
+                // No results - just show in main window, don't open Deep Search
+                uiLog.info("[SEARCH] No results for '\(queryForDeepSearch, privacy: .public)' - staying in main window")
+                return
+            }
+
+            // Has results - open Deep Search
+            uiLog.info("[SEARCH] Opening Deep Search: query='\(queryForDeepSearch, privacy: .public)' projectId=\(context.id, privacy: .public) resultCount=\(result.hits.count) selectedHitId=\(selectedHitId ?? "nil", privacy: .public)")
+
+            DeepSearchWindowController.shared.showWindow(
+                projectId: context.id,
+                projectName: model.projectDisplayName,
+                query: queryForDeepSearch,
+                selectedHitId: selectedHitId,
+                searchResult: result
+            )
+
+            // Clear search field and dismiss quick search in main window
+            searchVM.clearQuery()
+            uiLog.info("[SEARCH] Deep Search opened, main window search cleared")
+        } else {
+            // No cached results - run search first, then open if results found
+            uiLog.info("[SEARCH] No cached results, running search first for: '\(queryForDeepSearch, privacy: .public)'")
+            Task {
+                await searchAndOpenDeepSearch(query: queryForDeepSearch, projectId: context.id)
+            }
+        }
+    }
+
+    /// Search and open Deep Search only if results are found
+    private func searchAndOpenDeepSearch(query: String, projectId: String) async {
+        // Run the search
+        searchVM.search(projectId: projectId)
+
+        // Wait for search to complete (with timeout)
+        for _ in 0..<50 {  // 5 second timeout
+            try? await Task.sleep(for: .milliseconds(100))
+            if !searchVM.isSearching {
+                break
+            }
+        }
+
+        // Check results
+        guard let result = searchVM.result, !result.hits.isEmpty else {
+            uiLog.info("[SEARCH] Search completed with no results - staying in main window")
+            return
+        }
+
+        // Has results - open Deep Search
+        uiLog.info("[SEARCH] Search found \(result.hits.count) results - opening Deep Search")
 
         DeepSearchWindowController.shared.showWindow(
-            projectId: context.id,
+            projectId: projectId,
             projectName: model.projectDisplayName,
-            query: queryForDeepSearch,
-            selectedHitId: selectedHitId,
-            searchResult: searchVM.result
+            query: query,
+            selectedHitId: nil,
+            searchResult: result
         )
 
         // Clear search field and dismiss quick search in main window
         searchVM.clearQuery()
-
         uiLog.info("[SEARCH] Deep Search opened, main window search cleared")
     }
 
