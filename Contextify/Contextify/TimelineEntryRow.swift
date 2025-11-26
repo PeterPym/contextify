@@ -319,16 +319,20 @@ struct TimelineEntryRow: View, Equatable {
     /// Format text with backtick-enclosed portions in monospace font
     private func formatWithBackticks(_ text: String) -> Text {
         let parts = text.components(separatedBy: "`")
-        var result = Text("")
+        var attributed = AttributedString()
+
         for (index, part) in parts.enumerated() {
-            if index % 2 == 1 && !part.isEmpty {
+            if part.isEmpty { continue }
+
+            var segment = AttributedString(part)
+            if index % 2 == 1 {
                 // Odd indices are inside backticks - render monospace
-                result = result + Text(part).font(.system(.callout, design: .monospaced))
-            } else {
-                result = result + Text(part)
+                segment.font = .system(.callout, design: .monospaced)
             }
+            attributed.append(segment)
         }
-        return result
+
+        return Text(attributed)
     }
 
     /// Generate contextual error message based on error type
