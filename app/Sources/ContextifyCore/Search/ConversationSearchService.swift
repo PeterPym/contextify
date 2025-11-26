@@ -26,8 +26,8 @@ public struct ConversationSearchRequest: Sendable {
   public init(query: String, scope: ConversationSearchScope, limit: Int = 50, offset: Int = 0) {
     self.query = query
     self.scope = scope
-    self.limit = min(limit, 50)  // Cap at 50 per page
-    self.offset = min(offset, 5000)  // Cap pagination depth
+    self.limit = max(0, min(limit, 50))  // Cap at 50 per page, guard against negative
+    self.offset = max(0, min(offset, 5000))  // Cap pagination depth, guard against negative
   }
 }
 
