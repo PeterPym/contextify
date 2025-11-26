@@ -116,12 +116,19 @@ final class DeepSearchViewModel {
         result = searchResult
         log.info("[DEEPSEARCH-DONE] query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count)")
 
-        // Auto-select first result if none selected
-        if selectedHitId == nil, let firstHit = searchResult.hits.first {
+        // Validate selection against new results, then auto-select if needed
+        if let hitId = selectedHitId,
+           searchResult.hits.contains(where: { $0.id == hitId }) {
+          // Previous selection still valid in new results
+          await loadContext(for: hitId)
+        } else if let firstHit = searchResult.hits.first {
+          // No valid selection - select first result
           selectedHitId = firstHit.id
           await loadContext(for: firstHit.id)
-        } else if let hitId = selectedHitId {
-          await loadContext(for: hitId)
+        } else {
+          // No results at all
+          selectedHitId = nil
+          contextEntries = []
         }
       } catch {
         if !Task.isCancelled {
