@@ -150,6 +150,7 @@ final class ConversationSearchServiceTests: XCTestCase {
       id: "entry-123",
       projectId: "project-456",
       projectName: "Test Project",
+      provider: "claude.code",
       role: "user",
       content: "Hello world",
       createdAt: Date(),
@@ -160,6 +161,7 @@ final class ConversationSearchServiceTests: XCTestCase {
     XCTAssertEqual(hit.id, "entry-123")
     XCTAssertEqual(hit.projectId, "project-456")
     XCTAssertEqual(hit.projectName, "Test Project")
+    XCTAssertEqual(hit.provider, "claude.code")
     XCTAssertEqual(hit.role, "user")
   }
 
@@ -169,6 +171,7 @@ final class ConversationSearchServiceTests: XCTestCase {
       id: "entry-123",
       projectId: "p1",
       projectName: "Project",
+      provider: "claude.code",
       role: "user",
       content: "content",
       createdAt: date,
@@ -180,6 +183,7 @@ final class ConversationSearchServiceTests: XCTestCase {
       id: "entry-123",
       projectId: "p1",
       projectName: "Project",
+      provider: "claude.code",
       role: "user",
       content: "content",
       createdAt: date,

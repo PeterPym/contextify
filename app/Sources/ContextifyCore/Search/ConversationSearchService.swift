@@ -36,6 +36,7 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
   public let id: String          // entry_id
   public let projectId: String
   public let projectName: String
+  public let provider: String    // "claude.code" or "codex.cli"
   public let role: String
   public let content: String
   public let createdAt: Date
@@ -46,6 +47,7 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     id: String,
     projectId: String,
     projectName: String,
+    provider: String,
     role: String,
     content: String,
     createdAt: Date,
@@ -55,6 +57,7 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     self.id = id
     self.projectId = projectId
     self.projectName = projectName
+    self.provider = provider
     self.role = role
     self.content = content
     self.createdAt = createdAt
@@ -119,6 +122,7 @@ public actor ConversationSearchService {
           f.entry_id,
           f.project_id,
           p.name as project_name,
+          e.provider,
           f.role,
           f.content,
           f.created_at,
@@ -126,6 +130,7 @@ public actor ConversationSearchService {
           snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
+        LEFT JOIN transcript_entries e ON e.id = f.entry_id
         WHERE transcript_entries_fts MATCH ?
       """
 
@@ -160,6 +165,7 @@ public actor ConversationSearchService {
           id: row["entry_id"],
           projectId: row["project_id"],
           projectName: row["project_name"] ?? "Unknown",
+          provider: row["provider"] ?? "claude.code",
           role: row["role"],
           content: row["content"],
           createdAt: Date(timeIntervalSince1970: TimeInterval(row["created_at"] as Int64)),

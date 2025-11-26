@@ -254,22 +254,31 @@ struct DeepSearchView: View {
 // MARK: - Deep Search Hit Row
 
 struct DeepSearchHitRow: View {
+  @Environment(\.colorScheme) private var colorScheme
   let hit: ConversationSearchHit
   let isSelected: Bool
 
-  private var roleIcon: String {
-    hit.role == "user" ? "person.fill" : "sparkles"
-  }
-
-  private var roleColor: Color {
-    hit.role == "user" ? .contextifyBlue : .contextifyTaupe
+  private var provider: TimelineSourceContext.Provider {
+    TimelineSourceContext.Provider(rawValue: hit.provider) ?? .other
   }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
-      Image(systemName: roleIcon)
-        .foregroundStyle(roleColor)
-        .frame(width: 16)
+      // Use person icon for user, provider icon for assistant
+      if hit.role == "user" {
+        Image(systemName: "person.fill")
+          .foregroundStyle(.contextifyBlue)
+          .frame(width: 16)
+      } else {
+        Image(provider.iconImage)
+          .renderingMode(.template)
+          .foregroundStyle(provider.color)
+          .shadow(
+            color: (colorScheme == .light && provider == .codexCLI) ? .black.opacity(0.7) : .clear,
+            radius: 0.5
+          )
+          .frame(width: 16)
+      }
 
       VStack(alignment: .leading, spacing: 4) {
         Text(attributedSnippet)
@@ -316,22 +325,31 @@ struct DeepSearchHitRow: View {
 // MARK: - Context Entry Row (uses Contextify Yellow for highlight)
 
 struct ContextEntryRow: View {
+  @Environment(\.colorScheme) private var colorScheme
   let entry: TranscriptEntry
   let isHighlighted: Bool
 
-  private var roleIcon: String {
-    entry.kind == "user" ? "person.fill" : "sparkles"
-  }
-
-  private var roleColor: Color {
-    entry.kind == "user" ? .contextifyBlue : .contextifyTaupe
+  private var provider: TimelineSourceContext.Provider {
+    TimelineSourceContext.Provider(rawValue: entry.provider) ?? .other
   }
 
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
-      Image(systemName: roleIcon)
-        .foregroundStyle(roleColor)
-        .frame(width: 16)
+      // Use person icon for user, provider icon for assistant
+      if entry.kind == "user" {
+        Image(systemName: "person.fill")
+          .foregroundStyle(.contextifyBlue)
+          .frame(width: 16)
+      } else {
+        Image(provider.iconImage)
+          .renderingMode(.template)
+          .foregroundStyle(provider.color)
+          .shadow(
+            color: (colorScheme == .light && provider == .codexCLI) ? .black.opacity(0.7) : .clear,
+            radius: 0.5
+          )
+          .frame(width: 16)
+      }
 
       VStack(alignment: .leading, spacing: 4) {
         Text(entry.content)
