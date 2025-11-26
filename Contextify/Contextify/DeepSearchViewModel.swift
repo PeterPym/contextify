@@ -22,6 +22,12 @@ final class DeepSearchViewModel {
   /// Context entries for selected hit
   var contextEntries: [TranscriptEntry] = []
 
+  /// Context extent state
+  var earlierCount: Int = 0  // Entries available before current window
+  var laterCount: Int = 0    // Entries available after current window
+  var contextBefore: Int = 10  // How many entries loaded before hit
+  var contextAfter: Int = 10   // How many entries loaded after hit
+
   /// Is search in progress
   var isSearching = false
 
@@ -115,13 +121,85 @@ final class DeepSearchViewModel {
 
   /// Load context entries for a selected hit
   func loadContext(for entryId: String) async {
+    // Reset context extent when loading new hit
+    contextBefore = 10
+    contextAfter = 10
+
     do {
-      let entries = try await searchService.getContext(entryId: entryId)
+      let entries = try await searchService.getContext(
+        entryId: entryId,
+        before: contextBefore,
+        after: contextAfter
+      )
       contextEntries = entries
-      log.debug("[CONTEXT] Loaded \(entries.count) context entries")
+
+      // Get counts for "load more" UI
+      let counts = try await searchService.getContextCounts(
+        entryId: entryId,
+        currentBefore: contextBefore,
+        currentAfter: contextAfter
+      )
+      earlierCount = counts.earlierCount
+      laterCount = counts.laterCount
+
+      log.debug("[CONTEXT] Loaded \(entries.count) entries (\(self.earlierCount) earlier, \(self.laterCount) later available)")
     } catch {
       contextEntries = []
+      earlierCount = 0
+      laterCount = 0
       log.error("[CONTEXT] Failed: \(error.localizedDescription)")
+    }
+  }
+
+  /// Load more entries before the current window
+  func loadMoreEarlier() {
+    guard let entryId = selectedHitId else { return }
+    contextBefore += 5
+    Task {
+      do {
+        let entries = try await searchService.getContext(
+          entryId: entryId,
+          before: contextBefore,
+          after: contextAfter
+        )
+        contextEntries = entries
+
+        let counts = try await searchService.getContextCounts(
+          entryId: entryId,
+          currentBefore: contextBefore,
+          currentAfter: contextAfter
+        )
+        earlierCount = counts.earlierCount
+        laterCount = counts.laterCount
+      } catch {
+        log.error("[CONTEXT] Load more earlier failed: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  /// Load more entries after the current window
+  func loadMoreLater() {
+    guard let entryId = selectedHitId else { return }
+    contextAfter += 5
+    Task {
+      do {
+        let entries = try await searchService.getContext(
+          entryId: entryId,
+          before: contextBefore,
+          after: contextAfter
+        )
+        contextEntries = entries
+
+        let counts = try await searchService.getContextCounts(
+          entryId: entryId,
+          currentBefore: contextBefore,
+          currentAfter: contextAfter
+        )
+        earlierCount = counts.earlierCount
+        laterCount = counts.laterCount
+      } catch {
+        log.error("[CONTEXT] Load more later failed: \(error.localizedDescription)")
+      }
     }
   }
 

@@ -8,6 +8,15 @@ private let log = Logger(subsystem: "dev.contextify", category: "DeepSearchView"
 struct DeepSearchView: View {
   @Environment(DeepSearchViewModel.self) private var viewModel
 
+  /// Extract search terms from query for highlighting in context
+  private var searchTerms: [String] {
+    // Split query into words, filter out empty strings and very short terms
+    viewModel.query
+      .components(separatedBy: .whitespaces)
+      .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+      .filter { $0.count >= 2 }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       toolbar
@@ -160,12 +169,31 @@ struct DeepSearchView: View {
         } else {
           ScrollViewReader { proxy in
             List {
+              // Load more earlier row
+              if viewModel.earlierCount > 0 {
+                LoadMoreRow(
+                  direction: .earlier,
+                  count: viewModel.earlierCount,
+                  action: { viewModel.loadMoreEarlier() }
+                )
+              }
+
               ForEach(viewModel.contextEntries, id: \.id) { entry in
                 ContextEntryRow(
                   entry: entry,
-                  isHighlighted: entry.id == hitId
+                  isHighlighted: entry.id == hitId,
+                  searchTerms: searchTerms
                 )
                 .id(entry.id)
+              }
+
+              // Load more later row
+              if viewModel.laterCount > 0 {
+                LoadMoreRow(
+                  direction: .later,
+                  count: viewModel.laterCount,
+                  action: { viewModel.loadMoreLater() }
+                )
               }
             }
             .listStyle(.plain)
@@ -267,7 +295,7 @@ struct DeepSearchHitRow: View {
       // Use person icon for user, provider icon for assistant
       if hit.role == "user" {
         Image(systemName: "person.fill")
-          .foregroundStyle(.contextifyBlue)
+          .foregroundStyle(Color.contextifyBlue)
           .frame(width: 16)
       } else {
         Image(provider.iconImage)
@@ -328,6 +356,7 @@ struct ContextEntryRow: View {
   @Environment(\.colorScheme) private var colorScheme
   let entry: TranscriptEntry
   let isHighlighted: Bool
+  var searchTerms: [String] = []  // Terms to highlight in non-selected entries
 
   private var provider: TimelineSourceContext.Provider {
     TimelineSourceContext.Provider(rawValue: entry.provider) ?? .other
@@ -338,7 +367,7 @@ struct ContextEntryRow: View {
       // Use person icon for user, provider icon for assistant
       if entry.kind == "user" {
         Image(systemName: "person.fill")
-          .foregroundStyle(.contextifyBlue)
+          .foregroundStyle(Color.contextifyBlue)
           .frame(width: 16)
       } else {
         Image(provider.iconImage)
@@ -352,7 +381,7 @@ struct ContextEntryRow: View {
       }
 
       VStack(alignment: .leading, spacing: 4) {
-        Text(entry.content)
+        Text(highlightedContent)
           .font(.body)
           .textSelection(.enabled)
 
@@ -370,6 +399,83 @@ struct ContextEntryRow: View {
     .overlay(
       RoundedRectangle(cornerRadius: 6)
         .strokeBorder(isHighlighted ? Color.contextifyYellow.opacity(0.5) : Color.clear, lineWidth: 1.5)
+    )
+  }
+
+  /// Highlight search terms in the content (for non-selected entries)
+  private var highlightedContent: AttributedString {
+    guard !isHighlighted, !searchTerms.isEmpty else {
+      return AttributedString(entry.content)
+    }
+
+    var result = AttributedString(entry.content)
+
+    // Highlight each search term
+    for term in searchTerms {
+      guard !term.isEmpty else { continue }
+
+      // Case-insensitive search
+      var searchStart = result.startIndex
+      while let range = result[searchStart...].range(of: term, options: .caseInsensitive) {
+        result[range].backgroundColor = .yellow.opacity(0.3)
+        searchStart = range.upperBound
+      }
+    }
+
+    return result
+  }
+}
+
+// MARK: - Load More Row
+
+struct LoadMoreRow: View {
+  enum Direction {
+    case earlier
+    case later
+
+    var icon: String {
+      switch self {
+      case .earlier: return "arrow.up"
+      case .later: return "arrow.down"
+      }
+    }
+
+    var label: String {
+      switch self {
+      case .earlier: return "Load 5 earlier"
+      case .later: return "Load 5 later"
+      }
+    }
+  }
+
+  let direction: Direction
+  let count: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 8) {
+        Image(systemName: direction.icon)
+          .font(.caption)
+          .foregroundStyle(.blue)
+
+        Text(direction.label)
+          .font(.caption)
+          .foregroundStyle(.blue)
+
+        Text("· \(count) remaining")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Spacer()
+      }
+      .padding(.vertical, 8)
+      .padding(.horizontal, 12)
+    }
+    .buttonStyle(.plain)
+    .background(
+      RoundedRectangle(cornerRadius: 6)
+        .fill(Color.blue.opacity(0.05))
     )
   }
 }

@@ -178,7 +178,7 @@ struct SearchHitRow: View {
       // Use person icon for user, provider icon for assistant
       if hit.role == "user" {
         Image(systemName: "person.fill")
-          .foregroundStyle(.contextifyBlue)
+          .foregroundStyle(Color.contextifyBlue)
           .frame(width: 16)
       } else {
         Image(provider.iconImage)

@@ -267,6 +267,60 @@ public actor ConversationSearchService {
     }
   }
 
+  /// Context counts for "load more" UI
+  public struct ContextCounts: Sendable {
+    public let earlierCount: Int
+    public let laterCount: Int
+  }
+
+  /// Get counts of entries before/after the current context window
+  /// Used to show "X earlier / Y later" in the UI
+  public func getContextCounts(
+    entryId: String,
+    currentBefore: Int,
+    currentAfter: Int
+  ) async throws -> ContextCounts {
+    let pool = try dbManager.pool
+
+    return try await pool.read { db in
+      // Get the hit's project, created_at, and id for ordering
+      guard let hit = try Row.fetchOne(db, sql: """
+        SELECT project_id, created_at, id FROM transcript_entries WHERE id = ?
+      """, arguments: [entryId]) else {
+        return ContextCounts(earlierCount: 0, laterCount: 0)
+      }
+
+      let projectId: String = hit["project_id"]
+      let createdAt: Int64 = hit["created_at"]
+      let hitId: String = hit["id"]
+
+      // Count entries strictly before the current window
+      // We need to find where the current window starts, then count before that
+      let earlierCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries
+        WHERE project_id = ?
+          AND display_in_timeline = 1
+          AND (created_at < ? OR (created_at = ? AND id < ?))
+      """, arguments: [projectId, createdAt, createdAt, hitId]) ?? 0
+
+      // Subtract entries already shown
+      let actualEarlier = max(0, earlierCount - currentBefore)
+
+      // Count entries strictly after the current window
+      let laterCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries
+        WHERE project_id = ?
+          AND display_in_timeline = 1
+          AND (created_at > ? OR (created_at = ? AND id > ?))
+      """, arguments: [projectId, createdAt, createdAt, hitId]) ?? 0
+
+      // Subtract entries already shown
+      let actualLater = max(0, laterCount - currentAfter)
+
+      return ContextCounts(earlierCount: actualEarlier, laterCount: actualLater)
+    }
+  }
+
   /// Check if FTS index is populated (for "indexing in progress" UI)
   public func isIndexReady() async throws -> Bool {
     let pool = try dbManager.pool
