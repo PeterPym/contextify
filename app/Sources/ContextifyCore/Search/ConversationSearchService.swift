@@ -205,29 +205,35 @@ public actor ConversationSearchService {
   }
 
   /// Get surrounding context for a hit, matching timeline display semantics
-  public func getContext(entryId: String, before: Int = 10, after: Int = 19) async throws -> [TranscriptEntry] {
+  ///
+  /// Returns entries before and after the hit, always including the hit itself.
+  /// Uses `id` as secondary sort to ensure deterministic ordering when multiple
+  /// entries share the same timestamp (fixes timestamp collision bug).
+  public func getContext(entryId: String, before: Int = 10, after: Int = 10) async throws -> [TranscriptEntry] {
     let pool = try dbManager.pool
 
     return try await pool.read { db in
-      // Get the hit's project and created_at for ordering
+      // Get the hit's project, created_at, and id for ordering
       guard let hit = try Row.fetchOne(db, sql: """
-        SELECT project_id, created_at FROM transcript_entries WHERE id = ?
+        SELECT project_id, created_at, id FROM transcript_entries WHERE id = ?
       """, arguments: [entryId]) else {
         return []
       }
 
       let projectId: String = hit["project_id"]
       let createdAt: Int64 = hit["created_at"]
+      let hitId: String = hit["id"]
 
       // Get context entries using same predicates as timeline view
-      // Uses created_at ordering to match timeline display
+      // Uses (created_at, id) ordering for deterministic results when timestamps collide
+      // The hit is explicitly included via the id comparison
       return try TranscriptEntry.fetchAll(db, sql: """
         SELECT * FROM (
           SELECT * FROM transcript_entries
           WHERE project_id = ?
             AND display_in_timeline = 1
-            AND created_at <= ?
-          ORDER BY created_at DESC
+            AND (created_at < ? OR (created_at = ? AND id < ?))
+          ORDER BY created_at DESC, id DESC
           LIMIT ?
         )
         UNION ALL
@@ -235,12 +241,23 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE project_id = ?
             AND display_in_timeline = 1
-            AND created_at > ?
-          ORDER BY created_at ASC
+            AND id = ?
+        )
+        UNION ALL
+        SELECT * FROM (
+          SELECT * FROM transcript_entries
+          WHERE project_id = ?
+            AND display_in_timeline = 1
+            AND (created_at > ? OR (created_at = ? AND id > ?))
+          ORDER BY created_at ASC, id ASC
           LIMIT ?
         )
-        ORDER BY created_at ASC
-      """, arguments: [projectId, createdAt, before + 1, projectId, createdAt, after])
+        ORDER BY created_at ASC, id ASC
+      """, arguments: [
+        projectId, createdAt, createdAt, hitId, before,  // before entries
+        projectId, hitId,                                  // the hit itself
+        projectId, createdAt, createdAt, hitId, after      // after entries
+      ])
     }
   }
 

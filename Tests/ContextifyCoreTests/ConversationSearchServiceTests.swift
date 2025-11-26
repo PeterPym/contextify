@@ -189,4 +189,237 @@ final class ConversationSearchServiceTests: XCTestCase {
 
     XCTAssertEqual(hit1, hit2)
   }
+
+  // MARK: - getContext Integration Tests
+
+  /// Test that getContext returns the hit entry itself in the context
+  func testGetContext_includesHitEntry() async throws {
+    // Setup: Create test database with entries
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("test.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert test project and transcript
+    let projectId = "test-project-1"
+    let transcriptId = "transcript-1"
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES (?, 'Test Project', '/test', 0, 0, 0)
+      """, arguments: [projectId])
+
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES (?, ?, '/test/file.jsonl', '/test/file.jsonl', 'hash123', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """, arguments: [transcriptId, projectId])
+
+      // Insert 25 entries with sequential timestamps
+      let baseTimestamp = 1000
+      for i in 1...25 {
+        let entryId = "entry-\(i)"
+        let ts = baseTimestamp + i
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp, content,
+            content_sha256, display_in_timeline, created_at, updated_at, is_queued
+          ) VALUES (?, ?, ?, 'claude.code', 'user', ?, 'Message \(i)',
+            'sha-\(i)', 1, ?, ?, 0)
+        """, arguments: [entryId, transcriptId, projectId, ts, ts, ts])
+      }
+    }
+
+    // Test: Get context for entry 15 (middle entry)
+    let service = ConversationSearchService(dbManager: dbManager)
+    let hitEntryId = "entry-15"
+    let context = try await service.getContext(entryId: hitEntryId, before: 10, after: 10)
+
+    // Assert: The hit entry MUST be in the context
+    let contextIds = context.map { $0.id }
+    XCTAssertTrue(contextIds.contains(hitEntryId), "Context must include the hit entry itself")
+
+    // Also verify we got reasonable context around it
+    XCTAssertGreaterThan(context.count, 1, "Context should include surrounding entries")
+  }
+
+  /// Test that getContext handles timestamp collisions correctly
+  /// When multiple entries have the same timestamp, the hit must still be included
+  func testGetContext_timestampCollision_includesHit() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("test.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert test project and transcript
+    let projectId = "test-project-collision"
+    let transcriptId = "transcript-1"
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES (?, 'Test Project', '/test', 0, 0, 0)
+      """, arguments: [projectId])
+
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES (?, ?, '/test/file.jsonl', '/test/file.jsonl', 'hash456', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """, arguments: [transcriptId, projectId])
+
+      // Insert 15 entries ALL with the same timestamp (worst case collision)
+      let sameTimestamp = 5000
+      for i in 1...15 {
+        let entryId = "collision-entry-\(i)"
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp, content,
+            content_sha256, display_in_timeline, created_at, updated_at, is_queued
+          ) VALUES (?, ?, ?, 'claude.code', 'user', ?, 'Collision message \(i)',
+            'sha-\(i)', 1, ?, ?, 0)
+        """, arguments: [entryId, transcriptId, projectId, sameTimestamp, sameTimestamp, sameTimestamp])
+      }
+    }
+
+    // Test: Get context for entry in the middle (entry 8)
+    let service = ConversationSearchService(dbManager: dbManager)
+    let hitEntryId = "collision-entry-8"
+    let context = try await service.getContext(entryId: hitEntryId, before: 10, after: 10)
+
+    // Assert: The hit entry MUST be in the context even with timestamp collision
+    let contextIds = context.map { $0.id }
+    XCTAssertTrue(contextIds.contains(hitEntryId),
+      "Context must include hit entry even when multiple entries share the same timestamp")
+  }
+
+  /// Test that getContext handles timestamp collision with many entries
+  /// This tests the edge case where the hit might be excluded due to LIMIT
+  func testGetContext_timestampCollision_manyEntries() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("test.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert test project and transcript
+    let projectId = "test-project-many"
+    let transcriptId = "transcript-1"
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES (?, 'Test Project', '/test', 0, 0, 0)
+      """, arguments: [projectId])
+
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES (?, ?, '/test/file.jsonl', '/test/file.jsonl', 'hashmany', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """, arguments: [transcriptId, projectId])
+
+      // Insert 30 entries ALL with the same timestamp
+      // With before=10, the query gets 11 entries max from the "before" side
+      // If the hit is not in those 11 due to non-deterministic ordering, it fails
+      let sameTimestamp = 5000
+      for i in 1...30 {
+        // Use UUIDs to simulate real-world conditions where ID ordering is random
+        let entryId = "entry-\(String(format: "%02d", i))-\(UUID().uuidString)"
+        try db.execute(sql: """
+          INSERT INTO transcript_entries (
+            id, transcript_id, project_id, provider, kind, timestamp, content,
+            content_sha256, display_in_timeline, created_at, updated_at, is_queued
+          ) VALUES (?, ?, ?, 'claude.code', 'user', ?, 'Message \(i)',
+            'sha-\(i)', 1, ?, ?, 0)
+        """, arguments: [entryId, transcriptId, projectId, sameTimestamp, sameTimestamp, sameTimestamp])
+      }
+    }
+
+    // Get the 15th entry ID (middle of the pack)
+    let hitEntryId = try await pool.read { db -> String in
+      let rows = try Row.fetchAll(db, sql: """
+        SELECT id FROM transcript_entries WHERE project_id = ? ORDER BY rowid LIMIT 1 OFFSET 14
+      """, arguments: [projectId])
+      return rows.first!["id"]
+    }
+
+    // Test: Get context for that entry
+    let service = ConversationSearchService(dbManager: dbManager)
+    let context = try await service.getContext(entryId: hitEntryId, before: 10, after: 10)
+
+    // Assert: The hit entry MUST be in the context
+    let contextIds = context.map { $0.id }
+    XCTAssertTrue(contextIds.contains(hitEntryId),
+      "Context must include hit entry even with 30 entries sharing the same timestamp. Hit: \(hitEntryId), got \(contextIds.count) entries")
+  }
+
+  /// Test that getContext works for a single entry project
+  func testGetContext_singleEntry() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("test.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Insert test project and transcript
+    let projectId = "test-project-single"
+    let transcriptId = "transcript-1"
+    let entryId = "single-entry"
+    try await pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES (?, 'Test Project', '/test', 0, 0, 0)
+      """, arguments: [projectId])
+
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES (?, ?, '/test/file.jsonl', '/test/file.jsonl', 'hash789', 'claude.code',
+          0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """, arguments: [transcriptId, projectId])
+
+      // Insert single entry
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, timestamp, content,
+          content_sha256, display_in_timeline, created_at, updated_at, is_queued
+        ) VALUES (?, ?, ?, 'claude.code', 'user', 1000, 'Only message',
+          'sha-1', 1, 1000, 1000, 0)
+      """, arguments: [entryId, transcriptId, projectId])
+    }
+
+    // Test: Get context for the only entry
+    let service = ConversationSearchService(dbManager: dbManager)
+    let context = try await service.getContext(entryId: entryId, before: 10, after: 10)
+
+    // Assert: Should return exactly the one entry
+    XCTAssertEqual(context.count, 1, "Single entry project should return exactly 1 entry")
+    XCTAssertEqual(context.first?.id, entryId, "The single entry should be the hit")
+  }
 }
