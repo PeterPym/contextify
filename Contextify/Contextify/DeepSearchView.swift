@@ -134,9 +134,9 @@ struct DeepSearchView: View {
             }
           }
           .listStyle(.sidebar)
-          .onAppear {
-            // Scroll to selected hit if any
-            if let hitId = viewModel.selectedHitId {
+          .onChange(of: viewModel.selectedHitId) { _, newId in
+            // Scroll results list to selected hit
+            if let hitId = newId {
               proxy.scrollTo(hitId, anchor: .center)
             }
           }
