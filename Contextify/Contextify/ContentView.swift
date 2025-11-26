@@ -71,7 +71,7 @@ struct ContentView: View {
                             QuickSearchView(
                                 projectId: projectId,
                                 projectName: model.projectDisplayName,
-                                onDeepSearch: { openDeepSearch() },
+                                onDeepSearch: { selectedHitId in openDeepSearch(selectedHitId: selectedHitId) },
                                 onOpenInTimeline: { entryId in openInTimeline(entryId) }
                             )
                             .environment(searchVM)
@@ -422,11 +422,20 @@ private extension ContentView {
     }
 
     /// Open Deep Search window with current query
-    func openDeepSearch() {
-        // For now, show toast indicating Deep Search is coming in Phase 1B
-        // TODO: Open Deep Search window when implemented
-        presentToast("Deep Search coming soon...", duration: 2)
-        uiLog.info("[SEARCH] Deep Search requested with query: \(searchVM.query, privacy: .public)")
+    func openDeepSearch(selectedHitId: String? = nil) {
+        guard let context = StartupCoordinator.shared.current else {
+            uiLog.warning("[SEARCH] Cannot open Deep Search - no project context")
+            return
+        }
+
+        DeepSearchWindowController.shared.showWindow(
+            projectId: context.id,
+            projectName: model.projectDisplayName,
+            query: searchVM.query,
+            selectedHitId: selectedHitId,
+            searchResult: searchVM.result
+        )
+        uiLog.info("[SEARCH] Opened Deep Search for query: \(searchVM.query, privacy: .public)")
     }
 
     /// Open a specific entry in the timeline
