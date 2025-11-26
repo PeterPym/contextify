@@ -5,6 +5,9 @@ import OSLog
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
+#if SPARKLE
+import Sparkle
+#endif
 
 // MARK: - Discovery Errors
 
@@ -179,7 +182,22 @@ struct ContextifyApp: App {
   @State private var projectDirectoryMonitor: FSEventsMonitor?
   @State private var showWelcomeModal = false  // C3.2: Welcome modal state
 
+  #if SPARKLE
+  /// Sparkle updater controller for DMG distribution auto-updates.
+  /// Initialized with `startingUpdater: true` to enable automatic background checks.
+  private let updaterController: SPUStandardUpdaterController
+  #endif
+
   init() {
+    #if SPARKLE
+    // Initialize Sparkle updater for DMG builds
+    updaterController = SPUStandardUpdaterController(
+      startingUpdater: true,
+      updaterDelegate: nil,
+      userDriverDelegate: nil
+    )
+    #endif
+
     let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
     startupLog.notice("🚀 Contextify launched (Phase 3 Lazy Loading)")
 
@@ -277,6 +295,11 @@ struct ContextifyApp: App {
     .windowToolbarStyle(.unified)
     .commands {
       CommandGroup(replacing: .newItem) { }
+      #if SPARKLE
+      CommandGroup(after: .appInfo) {
+        CheckForUpdatesView(updater: updaterController.updater)
+      }
+      #endif
       ProjectRootCommands()
       WindowCommands()
       HelpCommands()
