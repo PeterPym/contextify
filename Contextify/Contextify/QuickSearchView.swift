@@ -9,6 +9,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "QuickSearchView
 struct QuickSearchView: View {
   @Environment(QuickSearchViewModel.self) private var viewModel
   @Environment(HUDViewModel.self) private var hudModel
+  @AppStorage("search.hasSeenWindowTip") private var hasSeenWindowTip = false
 
   let projectId: String
   let projectName: String
@@ -85,6 +86,11 @@ struct QuickSearchView: View {
 
   private func resultsList(_ result: ConversationSearchResult) -> some View {
     VStack(spacing: 0) {
+      // Dismissable tip for keyboard shortcut
+      if !hasSeenWindowTip && !result.hits.isEmpty {
+        windowTip
+      }
+
       if result.hits.isEmpty {
         noResultsState
       } else {
@@ -133,6 +139,29 @@ struct QuickSearchView: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 4)
     .background(Color(nsColor: .controlBackgroundColor))
+  }
+
+  private var windowTip: some View {
+    HStack(spacing: 6) {
+      Text("Tip: ⌘↩ skips this step and opens results in Search window")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      Spacer()
+
+      Button {
+        hasSeenWindowTip = true
+      } label: {
+        Image(systemName: "xmark")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .buttonStyle(.plain)
+      .help("Dismiss tip")
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
+    .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
   }
 
   // MARK: - Loading/Error States

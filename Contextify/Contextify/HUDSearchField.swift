@@ -71,7 +71,7 @@ struct HUDSearchField: View {
         .strokeBorder(isFocused.wrappedValue ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 1)
     )
     .frame(width: 150)
-    .help("Search (↩), Deep Search (⌘↩)")
+    .help("Search (↩), Open in Window (⌘↩)")
   }
 }
 
