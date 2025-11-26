@@ -1197,7 +1197,7 @@ ScrollViewReader { proxy in
 - [Hacking with Swift Forums: ScrollViewReader issues](https://www.hackingwithswift.com/forums/swiftui/scrollviewreader-and-scrollto-isssues-possible-bug/23128)
 
 **Implementation Example:**
-- `Contextify/Contextify/DeepSearchView.swift:209-219` - Double scrollTo with delays for context pane
+- `Contextify/Contextify/DeepSearchView.swift:192-200` - Double scrollTo with delays for context pane
 
 **Note:** This affects macOS Lists more than iOS. The new scroll APIs from WWDC 2023+ (`scrollPosition`, `scrollTargetLayout`) do NOT support `List`, only `ScrollView`.
 
@@ -1278,8 +1278,47 @@ class ContextViewModel {
 ```
 
 **Implementation Example:**
-- `Contextify/Contextify/DeepSearchViewModel.swift:31` - `shouldScrollToHit` flag
-- `Contextify/Contextify/DeepSearchView.swift:212` - Guard check before scrolling
+- `Contextify/Contextify/DeepSearchViewModel.swift:32` - `shouldScrollToHit` flag
+- `Contextify/Contextify/DeepSearchView.swift:188` - Guard check before scrolling
+
+---
+
+### onChange Does NOT Fire on Initial Value
+
+**Problem:** SwiftUI's `.onChange(of:)` modifier only fires when a value **changes after** the view appears, not when the value is set initially. If a view appears with a pre-populated value, `onChange` never triggers.
+
+**Symptoms:**
+- `.onChange(of: someArray.first?.id)` doesn't fire when the array is already populated on view appear
+- Scroll-to-item logic in `onChange` doesn't work on initial window open
+- Works fine when clicking to change selection (because the value actually changes)
+
+**Workaround:** Use `.onAppear` in addition to `.onChange` to handle the initial state:
+
+```swift
+ScrollViewReader { proxy in
+  List { /* ... */ }
+    .onAppear {
+      // Handle initial value that onChange won't catch
+      scrollToTargetIfNeeded(proxy: proxy)
+    }
+    .onChange(of: viewModel.entries.first?.id) { _, _ in
+      // Handle subsequent changes
+      scrollToTargetIfNeeded(proxy: proxy)
+    }
+}
+
+private func scrollToTargetIfNeeded(proxy: ScrollViewProxy) {
+  guard viewModel.shouldScroll else { return }
+  guard !viewModel.entries.isEmpty else { return }
+  // ... scroll logic
+}
+```
+
+**Key insight:** Extract scroll logic to a helper function to avoid duplication between `onAppear` and `onChange`.
+
+**Implementation Example:**
+- `Contextify/Contextify/DeepSearchView.swift:164-172` - Combined `onAppear` + `onChange` pattern
+- `Contextify/Contextify/DeepSearchView.swift:186-203` - `scrollToHitIfNeeded` helper function
 
 ---
 
@@ -1340,13 +1379,13 @@ struct SomeView: View {
 ### Implementation References
 
 **Pattern A (Custom TextField):**
-- `Contextify/Contextify/ContentView.swift` - Main window with HUDSearchField
-- `Contextify/Contextify/DeepSearchView.swift` - Deep Search window
 - `Contextify/Contextify/SemanticSearchView.swift` - Semantic Search window
 
 **Pattern B (.searchable):**
-- `Contextify/Contextify/TranscriptInventoryView.swift` - Transcript inventory
-- `Contextify/Contextify/ProjectsWindow.swift` - Projects browser
+- `Contextify/Contextify/ContentView.swift:111` - Main window search
+- `Contextify/Contextify/DeepSearchView.swift:39` - Deep Search window
+- `Contextify/Contextify/TranscriptInventoryView.swift:232` - Transcript inventory
+- `Contextify/Contextify/ProjectsWindow.swift:116` - Projects browser
 
 ### Why This Is Required
 
