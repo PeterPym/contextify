@@ -83,21 +83,21 @@ struct DeepSearchView: View {
     .background(Color(nsColor: .windowBackgroundColor))
   }
 
+  @State private var showSearchInfo = false
+
   // MARK: - Results List
 
   private func resultsList(_ result: ConversationSearchResult) -> some View {
     VStack(spacing: 0) {
-      // Results header
-      HStack {
-        if result.cappedResults {
-          Text("5000+ results")
-            .font(.caption)
-            .foregroundStyle(.orange)
-        } else {
-          Text("\(result.totalCount) results")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+      // Results header with role breakdown and info button
+      HStack(spacing: 6) {
+        resultsBreakdown(result)
+
+        InfoButton(isPresented: $showSearchInfo)
+          .popover(isPresented: $showSearchInfo) {
+            SearchInfoPopover()
+          }
+
         Spacer()
       }
       .padding(.horizontal, 12)
@@ -371,5 +371,96 @@ struct ContextEntryRow: View {
       RoundedRectangle(cornerRadius: 6)
         .strokeBorder(isHighlighted ? Color.contextifyYellow.opacity(0.5) : Color.clear, lineWidth: 1.5)
     )
+  }
+}
+
+// MARK: - Results Breakdown Helper
+
+extension DeepSearchView {
+  /// Formats results count with role breakdown: "47 results (12 user, 35 assistant)"
+  @ViewBuilder
+  func resultsBreakdown(_ result: ConversationSearchResult) -> some View {
+    let userCount = result.hits.filter { $0.role == "user" }.count
+    let assistantCount = result.hits.filter { $0.role == "assistant" }.count
+    let summaryCount = result.hits.filter { $0.role == "summary" }.count
+
+    if result.cappedResults {
+      Text("5000+ results")
+        .font(.caption)
+        .foregroundStyle(.orange)
+    } else {
+      HStack(spacing: 4) {
+        Text("\(result.totalCount) results")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        if result.totalCount > 0 {
+          Text(roleBreakdownText(user: userCount, assistant: assistantCount, summary: summaryCount))
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+      }
+    }
+  }
+
+  private func roleBreakdownText(user: Int, assistant: Int, summary: Int) -> String {
+    var parts: [String] = []
+    if user > 0 { parts.append("\(user) user") }
+    if assistant > 0 { parts.append("\(assistant) assistant") }
+    if summary > 0 { parts.append("\(summary) summary") }
+
+    guard !parts.isEmpty else { return "" }
+    return "(\(parts.joined(separator: ", ")))"
+  }
+}
+
+// MARK: - Search Info Popover
+
+struct SearchInfoPopover: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Search Scope")
+        .font(.headline)
+
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Searching:")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+
+        Label("User prompts", systemImage: "person.fill")
+          .font(.caption)
+        Label("Assistant responses", systemImage: "sparkles")
+          .font(.caption)
+        Label("LLM-generated summaries", systemImage: "text.quote")
+          .font(.caption)
+      }
+
+      Divider()
+
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Not searched:")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+
+        Label("Tool use / function calls", systemImage: "hammer.fill")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+        Label("System events", systemImage: "gearshape.fill")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+
+      Divider()
+
+      HStack {
+        Text("Scope:")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+        Text("All projects")
+          .font(.caption)
+      }
+    }
+    .padding()
+    .frame(width: 220)
   }
 }
