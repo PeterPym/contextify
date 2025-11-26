@@ -161,24 +161,15 @@ struct DeepSearchView: View {
               }
             }
             .listStyle(.plain)
-            .onChange(of: viewModel.contextEntries.first?.id) { _, newFirstId in
+            .onAppear {
+              // Handle initial scroll when view appears with pre-loaded entries
+              // onChange doesn't fire on initial value, only on changes
+              scrollToHitIfNeeded(proxy: proxy, hitId: hitId)
+            }
+            .onChange(of: viewModel.contextEntries.first?.id) { _, _ in
               // Scroll to highlighted entry when context entries change
               // But NOT when loading more entries (shouldScrollToHit = false)
-              guard viewModel.shouldScrollToHit else { return }
-
-              let hitExists = viewModel.contextEntries.contains { $0.id == hitId }
-              if newFirstId != nil && hitExists {
-                // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates
-                // offsets on first call. See: https://stackoverflow.com/a/77042664
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                  proxy.scrollTo(hitId, anchor: .center)
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                  proxy.scrollTo(hitId, anchor: .center)
-                }
-              } else if !hitExists {
-                log.warning("[CONTEXT-PANE] Cannot scroll - hitId \(hitId, privacy: .public) not found in \(viewModel.contextEntries.count) entries")
-              }
+              scrollToHitIfNeeded(proxy: proxy, hitId: hitId)
             }
           }
         }
@@ -189,6 +180,26 @@ struct DeepSearchView: View {
         systemImage: "doc.text.magnifyingglass",
         description: Text("Choose a search result to see the conversation context")
       )
+    }
+  }
+
+  /// Scroll to the highlighted hit entry if conditions are met
+  private func scrollToHitIfNeeded(proxy: ScrollViewProxy, hitId: String) {
+    guard viewModel.shouldScrollToHit else { return }
+    guard !viewModel.contextEntries.isEmpty else { return }
+
+    let hitExists = viewModel.contextEntries.contains { $0.id == hitId }
+    if hitExists {
+      // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates
+      // offsets on first call. See: https://stackoverflow.com/a/77042664
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        proxy.scrollTo(hitId, anchor: .center)
+      }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        proxy.scrollTo(hitId, anchor: .center)
+      }
+    } else {
+      log.warning("[CONTEXT-PANE] Cannot scroll - hitId \(hitId, privacy: .public) not found in \(viewModel.contextEntries.count) entries")
     }
   }
 
