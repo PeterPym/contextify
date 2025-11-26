@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Contextify Updates</title>
+    <link>https://contextify.sh/appcast.xml</link>
+    <description>Most recent updates for Contextify</description>
+    <language>en</language>
+
+    <!-- Latest version should be first -->
+    <item>
+      <title>Version 1.0.0</title>
+      <pubDate>Mon, 25 Nov 2025 12:00:00 -0800</pubDate>
+
+      <!-- Build number (monotonic, for Sparkle comparison) -->
+      <sparkle:version>1</sparkle:version>
+
+      <!-- User-visible version -->
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+
+      <sparkle:releaseNotesLink>
+        https://contextify.sh/release-notes/1.0.0.html
+      </sparkle:releaseNotesLink>
+
+      <enclosure
+        url="https://contextify.sh/releases/Contextify-1.0.0.dmg"
+        sparkle:edSignature="SIGNATURE_PLACEHOLDER"
+        length="0"
+        type="application/octet-stream"
+        sparkle:os="macos"
+      />
+    </item>
+  </channel>
+</rss>
