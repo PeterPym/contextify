@@ -33,20 +33,33 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-25
+**Last Updated:** 2025-11-26
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 34 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 67
+**Total Active Items:** 68
 
 ---
 
-# P0 (Launch Critical) - 1 Item
+# P0 (Launch Critical) - 2 Items
+
+---
+
+## Menu Bar Audit (1 item)
+
+**Status:** Needs investigation
+**Priority:** P0 (may affect production build)
+
+- [ ] #P0-MENU-AUDIT: Audit all menu items for production readiness
+  - Survey all menu bar items and verify each is appropriate for production
+  - Diagnostics menu may have shipped by mistake - evaluate if it should be removed or hidden behind Developer Mode
+  - Check for any other debug/internal menus or items that shouldn't be in production
+  - Document which menus/items should exist in production vs development builds
 
 ---
 
