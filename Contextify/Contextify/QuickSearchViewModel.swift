@@ -146,6 +146,20 @@ final class QuickSearchViewModel {
     exitSearch()
   }
 
+  /// Clear results only (keeps query for re-search)
+  /// Called when user edits the search field to invalidate stale results
+  func clearResults() {
+    searchTask?.cancel()
+    result = nil
+    selectedHitId = nil
+    contextEntries = []
+    isSearching = false
+    searchError = nil
+    if mode != .timeline {
+      mode = .timeline
+    }
+  }
+
   /// Check if FTS index is ready
   private func checkIndexStatus() async {
     do {

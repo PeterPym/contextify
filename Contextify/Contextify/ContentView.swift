@@ -134,6 +134,12 @@ struct ContentView: View {
             let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval
             presentToast(payload, duration: duration)
         }
+        .task {
+            // Clear search when project changes
+            for await _ in StartupCoordinator.shared.updates() {
+                searchVM.clearQuery()
+            }
+        }
         .alert("Project Root", isPresented: Binding(
             get: { model.alertMessage != nil },
             set: { if !$0 { model.alertMessage = nil } }
@@ -231,7 +237,8 @@ struct ContentView: View {
                     }
                 },
                 onDeepSearch: { openDeepSearch() },
-                onClear: { searchVM.clearQuery() }
+                onClear: { searchVM.clearQuery() },
+                onQueryChange: { searchVM.clearResults() }
             )
 
             // Developer-only test buttons (hidden by default)
@@ -428,14 +435,19 @@ private extension ContentView {
             return
         }
 
+        let queryForDeepSearch = searchVM.query
         DeepSearchWindowController.shared.showWindow(
             projectId: context.id,
             projectName: model.projectDisplayName,
-            query: searchVM.query,
+            query: queryForDeepSearch,
             selectedHitId: selectedHitId,
             searchResult: searchVM.result
         )
-        uiLog.info("[SEARCH] Opened Deep Search for query: \(searchVM.query, privacy: .public)")
+
+        // Clear search field and dismiss quick search in main window
+        searchVM.clearQuery()
+
+        uiLog.info("[SEARCH] Opened Deep Search for query: \(queryForDeepSearch, privacy: .public)")
     }
 
     /// Open a specific entry in the timeline

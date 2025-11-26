@@ -11,6 +11,7 @@ struct HUDSearchField: View {
   let onSearch: () -> Void
   let onDeepSearch: () -> Void
   let onClear: () -> Void
+  var onQueryChange: (() -> Void)?  // Called when query is edited (to clear stale results)
 
   @FocusState private var isFocused: Bool
 
@@ -24,6 +25,9 @@ struct HUDSearchField: View {
         .textFieldStyle(.plain)
         .font(.system(size: 13))
         .focused($isFocused)
+        .onChange(of: query) { _, _ in
+          onQueryChange?()
+        }
         .onSubmit {
           if !query.trimmingCharacters(in: .whitespaces).isEmpty {
             onSearch()

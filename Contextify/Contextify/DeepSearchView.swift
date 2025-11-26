@@ -197,8 +197,11 @@ struct DeepSearchView: View {
               }
             }
             .listStyle(.plain)
-            .onAppear {
-              proxy.scrollTo(hitId, anchor: .center)
+            .onChange(of: viewModel.contextEntries.count) { _, count in
+              // Scroll to highlighted entry when context loads
+              if count > 0 {
+                proxy.scrollTo(hitId, anchor: .center)
+              }
             }
             .onChange(of: hitId) { _, newId in
               withAnimation {

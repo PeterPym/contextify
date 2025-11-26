@@ -28,6 +28,10 @@ struct QuickSearchView: View {
         errorState(error)
       }
     }
+    .onKeyPress(.escape) {
+      viewModel.exitSearch()
+      return .handled
+    }
   }
 
   // MARK: - Search Mode Bar
@@ -62,11 +66,15 @@ struct QuickSearchView: View {
         }
       }
 
-      Button("Exit") {
+      Button {
         viewModel.exitSearch()
+      } label: {
+        Image(systemName: "xmark.circle.fill")
+          .font(.system(size: 16))
+          .foregroundStyle(.secondary)
       }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
+      .buttonStyle(.plain)
+      .help("Close search results (Esc)")
 
       Button {
         onDeepSearch(nil)
