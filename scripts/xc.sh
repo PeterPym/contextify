@@ -453,6 +453,7 @@ run_xcodebuild() {
 run_build_for_dist() {
   local selected_scheme="$scheme_dmg"
   local cs_entitlements=""
+  local swift_flags=""
 
   echo "Building for distribution: $dist"
 
@@ -469,45 +470,34 @@ run_build_for_dist() {
   if [[ "$dist" == "appstore" ]]; then
     echo "  Using App Store entitlements (sandboxed)"
     cs_entitlements="$entitlements_appstore"
+    swift_flags="\$(inherited) -DAPPSTORE_BUILD"
   else
-    echo "  Using DMG entitlements (unsandboxed)"
+    echo "  Using DMG entitlements (unsandboxed) with Sparkle"
     cs_entitlements="$entitlements_dmg"
+    swift_flags="\$(inherited) -DSPARKLE"
   fi
 
+  # Note: INFOPLIST_FILE is set in the Xcode project per-configuration
+  # (Debug uses Info-Debug.plist, Release uses Info.plist)
+  # For Sparkle DMG builds, Info-DMG.plist should be configured via xcconfig
+  # or by creating a separate scheme.
+
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
-    if [[ "$dist" == "appstore" ]]; then
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_IDENTITY="-" \
-        DEVELOPMENT_TEAM="" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
-        build
-    else
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_IDENTITY="-" \
-        DEVELOPMENT_TEAM="" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        build
-    fi
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS,arch=arm64" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_IDENTITY="-" \
+      DEVELOPMENT_TEAM="" \
+      CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
+      OTHER_SWIFT_FLAGS="$swift_flags" \
+      build
   else
-    if [[ "$dist" == "appstore" ]]; then
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
-        build
-    else
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        build
-    fi
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS,arch=arm64" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
+      OTHER_SWIFT_FLAGS="$swift_flags" \
+      build
   fi
 
   app_path="$dd/Build/Products/$config/Contextify.app"
