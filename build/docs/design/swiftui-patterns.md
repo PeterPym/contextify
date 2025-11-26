@@ -1240,6 +1240,49 @@ proxy.scrollTo(id, anchor: .center)
 
 ---
 
+### onChange with Prepended Items Triggers Unwanted Scroll
+
+**Problem:** When using `.onChange(of: list.first?.id)` to detect list changes and scroll to a target item, prepending items (e.g., "Load 5 earlier") changes the first item's ID, triggering an unwanted scroll back to the target.
+
+**Symptoms:**
+- User clicks "Load more previous"
+- Earlier entries load correctly
+- View unexpectedly scrolls back to the highlighted/target item
+- "Load more later" works fine (appending doesn't change first ID)
+
+**Workaround:** Add a flag to distinguish between "new selection" (should scroll) and "load more" (preserve position):
+
+```swift
+// ViewModel
+@Observable
+class ContextViewModel {
+  var entries: [Entry] = []
+  var shouldScrollToTarget: Bool = false  // Control flag
+
+  func loadContext(for targetId: String) async {
+    shouldScrollToTarget = true  // New selection → scroll
+    entries = await fetchEntries(around: targetId)
+  }
+
+  func loadMoreEarlier() {
+    shouldScrollToTarget = false  // Load more → preserve position
+    Task { entries = await fetchMoreEarlier() }
+  }
+}
+
+// View
+.onChange(of: viewModel.entries.first?.id) { _, _ in
+  guard viewModel.shouldScrollToTarget else { return }  // Check flag
+  proxy.scrollTo(targetId, anchor: .center)
+}
+```
+
+**Implementation Example:**
+- `Contextify/Contextify/DeepSearchViewModel.swift:31` - `shouldScrollToHit` flag
+- `Contextify/Contextify/DeepSearchView.swift:212` - Guard check before scrolling
+
+---
+
 ## Search Field Conventions
 
 ### Cmd+F Support Requirement
