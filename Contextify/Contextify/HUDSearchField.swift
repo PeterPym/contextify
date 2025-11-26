@@ -21,7 +21,7 @@ struct HUDSearchField: View {
         .foregroundStyle(.secondary)
         .font(.system(size: 12))
 
-      TextField("Search messages...", text: $query)
+      TextField("Search", text: $query)
         .textFieldStyle(.plain)
         .font(.system(size: 13))
         .focused(isFocused)
@@ -70,8 +70,8 @@ struct HUDSearchField: View {
       RoundedRectangle(cornerRadius: 6, style: .continuous)
         .strokeBorder(isFocused.wrappedValue ? Color.accentColor.opacity(0.5) : Color(nsColor: .separatorColor).opacity(0.3), lineWidth: 1)
     )
-    .frame(width: 200)
-    .help("Search messages (Enter), Deep Search (Cmd+Enter)")
+    .frame(width: 150)
+    .help("Search (↩), Deep Search (⌘↩)")
   }
 }
 
