@@ -77,8 +77,13 @@ final class DeepSearchViewModel {
       Task {
         await loadContext(for: firstHit.id)
       }
+    } else if !initialQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+      // No results passed but we have a query - auto-trigger search
+      // This happens when user switches projects and immediately presses Cmd+Enter
+      log.info("[DEEPSEARCH-INIT] No cached results, auto-triggering search for query: '\(initialQuery, privacy: .public)'")
+      search()
     } else {
-      log.debug("[DEEPSEARCH-INIT] No results to select - will need fresh search")
+      log.debug("[DEEPSEARCH-INIT] No query - waiting for user input")
     }
   }
 
