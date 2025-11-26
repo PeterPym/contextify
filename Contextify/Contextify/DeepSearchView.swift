@@ -104,6 +104,14 @@ struct DeepSearchView: View {
               proxy.scrollTo(hitId, anchor: .center)
             }
           }
+          .onChange(of: viewModel.result?.hits.first?.id) { _, newFirstId in
+            // When search results change, scroll to first/selected result
+            if let hitId = viewModel.selectedHitId ?? newFirstId {
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                proxy.scrollTo(hitId, anchor: .center)
+              }
+            }
+          }
         }
       }
     }
@@ -177,6 +185,14 @@ struct DeepSearchView: View {
               guard let targetId = newHitId else { return }
               DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 scrollToHitIfNeeded(proxy: proxy, hitId: targetId)
+              }
+            }
+            .onChange(of: viewModel.isSearching) { wasSearching, isSearching in
+              // When search completes, ensure we scroll to the selected hit
+              if wasSearching && !isSearching, let targetId = viewModel.selectedHitId {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                  scrollToHitIfNeeded(proxy: proxy, hitId: targetId)
+                }
               }
             }
           }
