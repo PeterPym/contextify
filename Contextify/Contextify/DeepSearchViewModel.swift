@@ -55,10 +55,16 @@ final class DeepSearchViewModel {
     self.result = initialResult
     self.searchService = searchService ?? ConversationSearchService()
 
-    // Load context if we have a selected hit
+    // Load context if we have a selected hit, or auto-select first result
     if let hitId = selectedHitId {
       Task {
         await loadContext(for: hitId)
+      }
+    } else if let firstHit = initialResult?.hits.first {
+      // Auto-select first result when opening via Cmd+Enter (no explicit selection)
+      self.selectedHitId = firstHit.id
+      Task {
+        await loadContext(for: firstHit.id)
       }
     }
   }
