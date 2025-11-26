@@ -1,0 +1,226 @@
+import SwiftUI
+import OSLog
+import ContextifyCore
+
+private let log = Logger(subsystem: "dev.contextify", category: "QuickSearch")
+
+/// HUD mode for switching between timeline and search
+enum HUDMode: Equatable {
+  case timeline
+  case quickSearch(query: String)
+}
+
+/// ViewModel for Quick Search functionality in the HUD
+@MainActor
+@Observable
+final class QuickSearchViewModel {
+  // MARK: - Published State
+
+  /// Current search query text
+  var query: String = ""
+
+  /// Search results
+  var result: ConversationSearchResult?
+
+  /// Currently selected hit ID
+  var selectedHitId: String?
+
+  /// Context entries for selected hit
+  var contextEntries: [TranscriptEntry] = []
+
+  /// Is search in progress
+  var isSearching = false
+
+  /// Is FTS index ready
+  var isIndexReady = true
+
+  /// Search error if any
+  var searchError: Error?
+
+  /// Current HUD mode
+  var mode: HUDMode = .timeline
+
+  // MARK: - Private Properties
+
+  private let searchService: ConversationSearchService
+  private var searchTask: Task<Void, Never>?
+
+  // MARK: - Initialization
+
+  init(searchService: ConversationSearchService? = nil) {
+    self.searchService = searchService ?? ConversationSearchService()
+    Task { await checkIndexStatus() }
+  }
+
+  // MARK: - Public Methods
+
+  /// Execute search for the current project
+  /// - Parameter projectId: The project ID to search within
+  func search(projectId: String) {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespaces)
+    guard !trimmedQuery.isEmpty else {
+      exitSearch()
+      return
+    }
+
+    // Cancel any in-flight search
+    searchTask?.cancel()
+
+    isSearching = true
+    searchError = nil
+    mode = .quickSearch(query: trimmedQuery)
+
+    searchTask = Task {
+      do {
+        let request = ConversationSearchRequest(
+          query: trimmedQuery,
+          scope: .project(projectId),
+          limit: 50,
+          offset: 0
+        )
+
+        let searchResult = try await searchService.search(request)
+
+        // Check for cancellation
+        guard !Task.isCancelled else { return }
+
+        result = searchResult
+        log.info("[SEARCH] '\(trimmedQuery)' returned \(searchResult.hits.count) hits (total: \(searchResult.totalCount))")
+
+        // Auto-select first result
+        if let firstHit = searchResult.hits.first {
+          selectedHitId = firstHit.id
+          await loadContext(for: firstHit.id)
+        } else {
+          selectedHitId = nil
+          contextEntries = []
+        }
+      } catch {
+        if !Task.isCancelled {
+          searchError = error
+          log.error("[SEARCH] Error: \(error.localizedDescription)")
+        }
+      }
+
+      isSearching = false
+    }
+  }
+
+  /// Load context entries for a selected hit
+  /// - Parameter entryId: The entry ID to get context for
+  func loadContext(for entryId: String) async {
+    do {
+      let entries = try await searchService.getContext(entryId: entryId)
+      contextEntries = entries
+      log.debug("[CONTEXT] Loaded \(entries.count) context entries for \(entryId)")
+    } catch {
+      contextEntries = []
+      log.error("[CONTEXT] Failed to load context: \(error.localizedDescription)")
+    }
+  }
+
+  /// Select a hit and load its context
+  /// - Parameter hitId: The hit ID to select
+  func selectHit(_ hitId: String) {
+    selectedHitId = hitId
+    Task {
+      await loadContext(for: hitId)
+    }
+  }
+
+  /// Exit search mode and return to timeline
+  func exitSearch() {
+    searchTask?.cancel()
+    mode = .timeline
+    result = nil
+    selectedHitId = nil
+    contextEntries = []
+    isSearching = false
+    searchError = nil
+    // Note: query is preserved for re-use
+  }
+
+  /// Clear the search query
+  func clearQuery() {
+    query = ""
+    exitSearch()
+  }
+
+  /// Check if FTS index is ready
+  private func checkIndexStatus() async {
+    do {
+      isIndexReady = try await searchService.isIndexReady()
+    } catch {
+      isIndexReady = true // Assume ready on error
+    }
+  }
+
+  // MARK: - Copy Actions
+
+  /// Copy the context excerpt to clipboard
+  func copyExcerpt(projectName: String) {
+    guard !contextEntries.isEmpty else { return }
+
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+
+    let first = contextEntries.first!
+    let last = contextEntries.last!
+    let startTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp)))
+    let endTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp)))
+
+    var text = """
+      CONTEXTIFY EXCERPT
+      Project: \(projectName)
+      Time range: \(startTime) - \(endTime)
+      Shown messages: \(contextEntries.count)
+
+      """
+
+    for entry in contextEntries {
+      let time = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)))
+      let role = entry.kind.capitalized
+      text += "[\(role), \(time)]: \(entry.content)\n\n"
+    }
+
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+
+    let count = contextEntries.count
+    log.info("[COPY] Copied excerpt with \(count) messages")
+  }
+
+  /// Copy context in AI-friendly format
+  func copyForAI(projectName: String) {
+    guard !contextEntries.isEmpty else { return }
+
+    let formatter = DateFormatter()
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+
+    let first = contextEntries.first!
+    let last = contextEntries.last!
+    let startTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp)))
+    let endTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp)))
+
+    var text = """
+      CONTEXTIFY CONTEXT EXCERPT
+      Project: \(projectName)
+      Time range: \(startTime) - \(endTime)
+
+      """
+
+    for entry in contextEntries {
+      let time = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)))
+      let role = entry.kind.capitalized
+      text += "[\(role), \(time)]: \(entry.content)\n\n"
+    }
+
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+
+    let count = contextEntries.count
+    log.info("[COPY] Copied AI context with \(count) messages")
+  }
+}

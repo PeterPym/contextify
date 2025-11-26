@@ -43,6 +43,9 @@ struct ContentView: View {
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
 
+    // Quick Search state
+    @State private var searchVM = QuickSearchViewModel()
+
     var body: some View {
         ZStack {
             // Main content
@@ -58,9 +61,28 @@ struct ContentView: View {
                 projectHeader
                 Divider()
 
-                // Timeline - full width, no sidebar
+                // Content area - switches between timeline and quick search
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                    ConversationTimelineView()
+                    switch searchVM.mode {
+                    case .timeline:
+                        ConversationTimelineView()
+                    case .quickSearch:
+                        if let projectId = StartupCoordinator.shared.current?.id {
+                            QuickSearchView(
+                                projectId: projectId,
+                                projectName: model.projectDisplayName,
+                                onDeepSearch: { openDeepSearch() },
+                                onOpenInTimeline: { entryId in openInTimeline(entryId) }
+                            )
+                            .environment(searchVM)
+                        } else {
+                            ContentUnavailableView(
+                                "No Project Selected",
+                                systemImage: "folder.badge.questionmark",
+                                description: Text("Select a project to search")
+                            )
+                        }
+                    }
                 }
                 .frame(
                     minWidth: Layout.timelineMin,
@@ -196,6 +218,21 @@ struct ContentView: View {
                 .accessibilityIdentifier("set-project-root")
             }
             Spacer()
+
+            // Search field
+            HUDSearchField(
+                query: Binding(
+                    get: { searchVM.query },
+                    set: { searchVM.query = $0 }
+                ),
+                onSearch: {
+                    if let projectId = StartupCoordinator.shared.current?.id {
+                        searchVM.search(projectId: projectId)
+                    }
+                },
+                onDeepSearch: { openDeepSearch() },
+                onClear: { searchVM.clearQuery() }
+            )
 
             // Developer-only test buttons (hidden by default)
             if devMode.isEnabled {
@@ -382,5 +419,22 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
+    }
+
+    /// Open Deep Search window with current query
+    func openDeepSearch() {
+        // For now, show toast indicating Deep Search is coming in Phase 1B
+        // TODO: Open Deep Search window when implemented
+        presentToast("Deep Search coming soon...", duration: 2)
+        uiLog.info("[SEARCH] Deep Search requested with query: \(searchVM.query, privacy: .public)")
+    }
+
+    /// Open a specific entry in the timeline
+    func openInTimeline(_ entryId: String) {
+        // Exit search mode and scroll to entry
+        searchVM.exitSearch()
+        // TODO: Implement scroll-to-entry in ConversationTimelineView
+        uiLog.info("[SEARCH] Open in timeline: \(entryId, privacy: .public)")
+        presentToast("Opening in timeline...", duration: 1)
     }
 }
