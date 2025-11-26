@@ -690,6 +690,87 @@ enum DatabaseSchema {
       logger.info("[MIGRATION-v28] FTS5 search index created successfully with \(backfillCount, privacy: .public) entries")
     }
 
+    // ========================================================================
+    // v29: Add summaries to FTS search index
+    // ========================================================================
+    migrator.registerMigration("v29") { db in
+      logger.info("[MIGRATION-v29] Adding summaries to FTS search index...")
+
+      // Drop existing triggers (they filter on user/assistant only)
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_insert")
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_update")
+
+      // Backfill summary entries that aren't already indexed
+      try db.execute(sql: """
+        INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+        SELECT content, id, project_id, kind, created_at
+        FROM transcript_entries
+        WHERE kind = 'summary'
+          AND display_in_timeline = 1
+          AND content IS NOT NULL
+          AND content != ''
+          AND id NOT IN (SELECT entry_id FROM transcript_entries_fts)
+      """)
+
+      let summaryCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries_fts WHERE role = 'summary'
+      """) ?? 0
+
+      // Recreate INSERT trigger with summary included
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_insert
+        AFTER INSERT ON transcript_entries
+        WHEN NEW.kind IN ('user', 'assistant', 'summary')
+          AND NEW.display_in_timeline = 1
+          AND NEW.content IS NOT NULL
+          AND NEW.content != ''
+        BEGIN
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          VALUES (NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at);
+        END
+      """)
+
+      // Recreate UPDATE trigger with summary included
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_update
+        AFTER UPDATE ON transcript_entries
+        BEGIN
+          -- Delete if no longer indexable
+          DELETE FROM transcript_entries_fts
+          WHERE entry_id = OLD.id
+            AND (NEW.kind NOT IN ('user', 'assistant', 'summary')
+                 OR NEW.display_in_timeline = 0
+                 OR NEW.content IS NULL
+                 OR NEW.content = '');
+
+          -- Update if still indexable and was indexable
+          UPDATE transcript_entries_fts
+          SET content = NEW.content,
+              project_id = NEW.project_id,
+              role = NEW.kind,
+              created_at = NEW.created_at
+          WHERE entry_id = OLD.id
+            AND NEW.kind IN ('user', 'assistant', 'summary')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != '';
+
+          -- Insert if newly indexable
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          SELECT NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at
+          WHERE NEW.kind IN ('user', 'assistant', 'summary')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != ''
+            AND NOT EXISTS (SELECT 1 FROM transcript_entries_fts WHERE entry_id = NEW.id);
+        END
+      """)
+
+      // Note: DELETE trigger doesn't need to change (it deletes by entry_id)
+
+      logger.info("[MIGRATION-v29] Added \(summaryCount, privacy: .public) summaries to FTS index")
+    }
+
     return migrator
   }
 
