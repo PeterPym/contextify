@@ -70,14 +70,14 @@ final class DeepSearchViewModel {
     // Load context if we have a selected hit, or auto-select first result
     if let hitId = selectedHitId {
       log.debug("[DEEPSEARCH-INIT] Loading context for explicit selection: \(hitId, privacy: .public)")
-      Task {
+      Task { @MainActor in
         await loadContext(for: hitId)
       }
     } else if let firstHit = initialResult?.hits.first {
       // Auto-select first result when opening via Cmd+Enter (no explicit selection)
       log.debug("[DEEPSEARCH-INIT] Auto-selecting first result: \(firstHit.id, privacy: .public)")
       self.selectedHitId = firstHit.id
-      Task {
+      Task { @MainActor in
         await loadContext(for: firstHit.id)
       }
     } else {
@@ -98,7 +98,7 @@ final class DeepSearchViewModel {
 
     log.info("[DEEPSEARCH-START] query='\(trimmedQuery, privacy: .public)' projectId=\(self.projectId, privacy: .public)")
 
-    searchTask = Task {
+    searchTask = Task { @MainActor in
       do {
         let request = ConversationSearchRequest(
           query: trimmedQuery,
@@ -179,7 +179,7 @@ final class DeepSearchViewModel {
     guard let entryId = selectedHitId else { return }
     contextBefore += 5
     shouldScrollToHit = false  // Don't scroll when loading more
-    Task {
+    Task { @MainActor in
       do {
         let entries = try await searchService.getContext(
           entryId: entryId,
@@ -206,7 +206,7 @@ final class DeepSearchViewModel {
     guard let entryId = selectedHitId else { return }
     contextAfter += 5
     shouldScrollToHit = false  // Don't scroll when loading more
-    Task {
+    Task { @MainActor in
       do {
         let entries = try await searchService.getContext(
           entryId: entryId,
@@ -231,7 +231,7 @@ final class DeepSearchViewModel {
   /// Select a hit and load its context
   func selectHit(_ hitId: String) {
     selectedHitId = hitId
-    Task {
+    Task { @MainActor in
       await loadContext(for: hitId)
     }
   }

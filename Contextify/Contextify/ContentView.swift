@@ -487,16 +487,8 @@ private extension ContentView {
 
     /// Search and open Deep Search only if results are found
     private func searchAndOpenDeepSearch(query: String, projectId: String) async {
-        // Run the search
-        searchVM.search(projectId: projectId)
-
-        // Wait for search to complete (with timeout)
-        for _ in 0..<50 {  // 5 second timeout
-            try? await Task.sleep(for: .milliseconds(100))
-            if !searchVM.isSearching {
-                break
-            }
-        }
+        // Run the search and wait for completion
+        await searchVM.searchAndWait(projectId: projectId)
 
         // Check results
         guard let result = searchVM.result, !result.hits.isEmpty else {

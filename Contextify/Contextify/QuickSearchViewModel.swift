@@ -72,7 +72,7 @@ final class QuickSearchViewModel {
 
     log.info("[SEARCH-START] QuickSearch query='\(trimmedQuery, privacy: .public)' projectId=\(projectId, privacy: .public)")
 
-    searchTask = Task {
+    searchTask = Task { @MainActor in
       do {
         let request = ConversationSearchRequest(
           query: trimmedQuery,
@@ -111,6 +111,13 @@ final class QuickSearchViewModel {
     }
   }
 
+  /// Execute search and wait for completion
+  /// - Parameter projectId: The project ID to search within
+  func searchAndWait(projectId: String) async {
+    search(projectId: projectId)
+    await searchTask?.value
+  }
+
   /// Load context entries for a selected hit
   /// - Parameter entryId: The entry ID to get context for
   func loadContext(for entryId: String) async {
@@ -128,7 +135,7 @@ final class QuickSearchViewModel {
   /// - Parameter hitId: The hit ID to select
   func selectHit(_ hitId: String) {
     selectedHitId = hitId
-    Task {
+    Task { @MainActor in
       await loadContext(for: hitId)
     }
   }

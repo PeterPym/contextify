@@ -171,6 +171,14 @@ struct DeepSearchView: View {
               // But NOT when loading more entries (shouldScrollToHit = false)
               scrollToHitIfNeeded(proxy: proxy, hitId: hitId)
             }
+            .onChange(of: viewModel.selectedHitId) { _, newHitId in
+              // Scroll when selection changes (e.g., after in-window search)
+              // Delay slightly to allow context to load
+              guard let targetId = newHitId else { return }
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                scrollToHitIfNeeded(proxy: proxy, hitId: targetId)
+              }
+            }
           }
         }
       }
