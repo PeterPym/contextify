@@ -202,14 +202,23 @@ struct DeepSearchView: View {
             .onChange(of: viewModel.contextEntries.first?.id) { oldFirstId, newFirstId in
               // Scroll to highlighted entry when context entries change
               // Using first entry ID as a proxy for "entries have changed"
-              log.debug("[CONTEXT-PANE] Entries changed (first: \(oldFirstId ?? "nil", privacy: .public) -> \(newFirstId ?? "nil", privacy: .public)), hitId=\(hitId, privacy: .public)")
-              if newFirstId != nil {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                  log.debug("[CONTEXT-PANE] Scrolling to hitId: \(hitId, privacy: .public)")
-                  withAnimation {
-                    proxy.scrollTo(hitId, anchor: .center)
-                  }
+              let entryIds = viewModel.contextEntries.map { $0.id }
+              let hitExists = entryIds.contains(hitId)
+              log.info("[CONTEXT-PANE] Entries changed: count=\(viewModel.contextEntries.count) hitId=\(hitId, privacy: .public) hitExists=\(hitExists)")
+              log.debug("[CONTEXT-PANE] Entry IDs: first=\(entryIds.first ?? "nil", privacy: .public) last=\(entryIds.last ?? "nil", privacy: .public)")
+              if newFirstId != nil && hitExists {
+                // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates
+                // offsets on first call. See: https://stackoverflow.com/a/77042664
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                  proxy.scrollTo(hitId, anchor: .center)
+                  log.info("[CONTEXT-PANE] First scrollTo hitId=\(hitId, privacy: .public)")
                 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                  proxy.scrollTo(hitId, anchor: .center)
+                  log.info("[CONTEXT-PANE] Second scrollTo hitId=\(hitId, privacy: .public)")
+                }
+              } else if !hitExists {
+                log.warning("[CONTEXT-PANE] Cannot scroll - hitId not found in entries!")
               }
             }
           }
