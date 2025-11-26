@@ -223,6 +223,8 @@ This keeps UI test debt visible and ensures future work can pick up the integrat
 - @MainActor patterns and anti-patterns
 - Implementation examples with file:line references
 
+**Before implementing SwiftUI features:** Do a web search for known issues with the specific APIs you plan to use (e.g., "SwiftUI ScrollViewReader scrollTo not working macOS 2024"). Many SwiftUI APIs have undocumented quirks, platform-specific bugs, or require workarounds that only surface through community experience. Search before coding to avoid debugging issues that have known solutions.
+
 ### State Sync Pattern - Hybrid Model
 
 Contextify uses a **hybrid state synchronization pattern** that balances immediate UI feedback with database-backed consistency.
