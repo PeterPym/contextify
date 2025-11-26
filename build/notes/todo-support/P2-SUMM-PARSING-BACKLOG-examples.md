@@ -9,7 +9,7 @@ description: Catalog of transcript entries that produce unparseable or malformed
 
 # Summarization Parsing Backlog
 
-This document collects examples of messages that fail summarization parsing. Use this to identify patterns and batch-fix root causes in the parser, prompts, or post-processing logic.
+This document collects examples of wonky summaries - messages that fail summarization parsing or produce unhelpful output. Use this to identify patterns and batch-fix root causes in the parser, prompts, or post-processing logic.
 
 ## How to Add Examples
 
@@ -93,6 +93,43 @@ For very short/simple user messages, either:
 1. Add length/complexity threshold: messages under N chars or N words skip LLM summarization
 2. If message is already concise, use it directly without "You said:" wrapper
 3. Consider context-aware summarization that looks at surrounding entries
+
+---
+
+## Example 3: "Claude Code" Prefix on Short Response
+
+**Date Added:** 2025-11-26
+**Category:** attribution error
+**Transcript:** `e922b8f3-1fe5-4453-944f-c7f7adbe7391.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Done.",
+  "entry_id": "df9deda1-91de-4a49-b6ec-7bf21bd2b250",
+  "summary": "Claude Code Done.",
+  "timestamp": "2025-11-26T22:39:41Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify-worker-bee/e922b8f3-1fe5-4453-944f-c7f7adbe7391.jsonl"
+}
+```
+
+**Problem:**
+Summary is "Claude Code Done." for content "Done." - unnecessarily prepending "Claude Code" to a one-word response.
+
+**Expected Summary:**
+For very short responses like "Done.", either:
+- Use the raw message directly: "Done."
+- Or if attribution needed: "Claude Code confirmed completion"
+
+**Root Cause (suspected):**
+- LLM prompt may instruct to always include "Claude Code" attribution
+- No logic to skip attribution for trivially short messages
+- Similar to Example 2 where short messages get unhelpful wrappers
+
+**Fix Approach:**
+1. Add length threshold: responses under N chars skip attribution prefix
+2. Or adjust prompt to say "only add 'Claude Code' attribution when it adds clarity"
+3. Post-processing: detect when summary is just "[Attribution] + [literal content]" pattern
 
 ---
 
