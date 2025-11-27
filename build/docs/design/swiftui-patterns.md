@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-11-17
+**Last Updated:** 2025-11-26
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -1157,6 +1157,242 @@ Do you need a binding?
 
 ---
 
+## Platform Quirks and Workarounds
+
+### ScrollViewReader scrollTo Unreliable on First Call
+
+**Problem:** `ScrollViewReader.scrollTo(_:anchor:)` often scrolls to the wrong position on the first call due to SwiftUI's lazy loading miscalculating offsets before the full layout is complete.
+
+**Symptoms:**
+- List scrolls to wrong item
+- Scroll appears to do nothing
+- Works correctly on second manual scroll
+
+**Workaround:** Call `scrollTo` twice with a delay between calls:
+
+```swift
+ScrollViewReader { proxy in
+  List {
+    ForEach(items) { item in
+      ItemRow(item: item)
+        .id(item.id)
+    }
+  }
+  .onChange(of: selectedItemId) { _, newId in
+    guard let id = newId else { return }
+    // Call twice - first call triggers layout calculation,
+    // second call scrolls to correct position
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+      proxy.scrollTo(id, anchor: .center)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+      proxy.scrollTo(id, anchor: .center)
+    }
+  }
+}
+```
+
+**References:**
+- [Stack Overflow: scrollTo not working reliably](https://stackoverflow.com/a/77042664)
+- [Hacking with Swift Forums: ScrollViewReader issues](https://www.hackingwithswift.com/forums/swiftui/scrollviewreader-and-scrollto-isssues-possible-bug/23128)
+
+**Implementation Example:**
+- `Contextify/Contextify/DeepSearchView.swift:192-200` - Double scrollTo with delays for context pane
+
+**Note:** This affects macOS Lists more than iOS. The new scroll APIs from WWDC 2023+ (`scrollPosition`, `scrollTargetLayout`) do NOT support `List`, only `ScrollView`.
+
+---
+
+### List vs ScrollView for Scroll Control
+
+**Problem:** Apple's newer scroll control APIs (WWDC 2023+) don't support `List`.
+
+**Implication:** `ScrollViewReader` remains the only scroll control API that works with `List`.
+
+**When to use ScrollView + LazyVStack instead of List:**
+- Need precise scroll control
+- Need new scroll APIs (`scrollPosition`, `scrollTargetLayout`)
+- Don't need List's built-in selection, swipe actions, or styling
+
+**When to stick with List:**
+- Need selection behavior
+- Need swipe actions
+- Need sidebar styling
+- Can live with `ScrollViewReader` workarounds
+
+---
+
+### Animation Can Interfere with scrollTo
+
+**Problem:** Wrapping `scrollTo` in `withAnimation` can cause the scroll to fail or animate incorrectly.
+
+**Workaround:** Try without animation first:
+
+```swift
+// May fail:
+withAnimation {
+  proxy.scrollTo(id, anchor: .center)
+}
+
+// More reliable:
+proxy.scrollTo(id, anchor: .center)
+```
+
+---
+
+### onChange with Prepended Items Triggers Unwanted Scroll
+
+**Problem:** When using `.onChange(of: list.first?.id)` to detect list changes and scroll to a target item, prepending items (e.g., "Load 5 earlier") changes the first item's ID, triggering an unwanted scroll back to the target.
+
+**Symptoms:**
+- User clicks "Load more previous"
+- Earlier entries load correctly
+- View unexpectedly scrolls back to the highlighted/target item
+- "Load more later" works fine (appending doesn't change first ID)
+
+**Workaround:** Add a flag to distinguish between "new selection" (should scroll) and "load more" (preserve position):
+
+```swift
+// ViewModel
+@Observable
+class ContextViewModel {
+  var entries: [Entry] = []
+  var shouldScrollToTarget: Bool = false  // Control flag
+
+  func loadContext(for targetId: String) async {
+    shouldScrollToTarget = true  // New selection → scroll
+    entries = await fetchEntries(around: targetId)
+  }
+
+  func loadMoreEarlier() {
+    shouldScrollToTarget = false  // Load more → preserve position
+    Task { entries = await fetchMoreEarlier() }
+  }
+}
+
+// View
+.onChange(of: viewModel.entries.first?.id) { _, _ in
+  guard viewModel.shouldScrollToTarget else { return }  // Check flag
+  proxy.scrollTo(targetId, anchor: .center)
+}
+```
+
+**Implementation Example:**
+- `Contextify/Contextify/DeepSearchViewModel.swift:32` - `shouldScrollToHit` flag
+- `Contextify/Contextify/DeepSearchView.swift:188` - Guard check before scrolling
+
+---
+
+### onChange Does NOT Fire on Initial Value
+
+**Problem:** SwiftUI's `.onChange(of:)` modifier only fires when a value **changes after** the view appears, not when the value is set initially. If a view appears with a pre-populated value, `onChange` never triggers.
+
+**Symptoms:**
+- `.onChange(of: someArray.first?.id)` doesn't fire when the array is already populated on view appear
+- Scroll-to-item logic in `onChange` doesn't work on initial window open
+- Works fine when clicking to change selection (because the value actually changes)
+
+**Workaround:** Use `.onAppear` in addition to `.onChange` to handle the initial state:
+
+```swift
+ScrollViewReader { proxy in
+  List { /* ... */ }
+    .onAppear {
+      // Handle initial value that onChange won't catch
+      scrollToTargetIfNeeded(proxy: proxy)
+    }
+    .onChange(of: viewModel.entries.first?.id) { _, _ in
+      // Handle subsequent changes
+      scrollToTargetIfNeeded(proxy: proxy)
+    }
+}
+
+private func scrollToTargetIfNeeded(proxy: ScrollViewProxy) {
+  guard viewModel.shouldScroll else { return }
+  guard !viewModel.entries.isEmpty else { return }
+  // ... scroll logic
+}
+```
+
+**Key insight:** Extract scroll logic to a helper function to avoid duplication between `onAppear` and `onChange`.
+
+**Implementation Example:**
+- `Contextify/Contextify/DeepSearchView.swift:164-172` - Combined `onAppear` + `onChange` pattern
+- `Contextify/Contextify/DeepSearchView.swift:186-203` - `scrollToHitIfNeeded` helper function
+
+---
+
+## Search Field Conventions
+
+### Cmd+F Support Requirement
+
+All windows with search functionality MUST support Cmd+F to focus the search field. SwiftUI does NOT provide this automatically - manual implementation required for ALL search types.
+
+### Pattern A: Custom TextField
+
+Use when you have a custom search TextField (not using `.searchable()`):
+
+```swift
+struct SomeView: View {
+  @FocusState private var searchFieldFocused: Bool
+
+  var body: some View {
+    VStack {
+      TextField("Search...", text: $query)
+        .focused($searchFieldFocused)
+      // ... other content
+    }
+    // Cmd+F to focus search field
+    .background {
+      Button("") { searchFieldFocused = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
+    }
+  }
+}
+```
+
+### Pattern B: .searchable() Modifier
+
+Use when using SwiftUI's built-in `.searchable()` modifier:
+
+```swift
+struct SomeView: View {
+  @State private var searchText = ""
+  @State private var isSearchFieldPresented = false
+
+  var body: some View {
+    List { /* ... */ }
+      .searchable(text: $searchText, isPresented: $isSearchFieldPresented, prompt: "Search")
+      // Cmd+F to focus search field
+      .background {
+        Button("") { isSearchFieldPresented = true }
+          .keyboardShortcut("f", modifiers: .command)
+          .frame(width: 0, height: 0)
+          .opacity(0)
+      }
+  }
+}
+```
+
+### Implementation References
+
+**Pattern A (Custom TextField):**
+- `Contextify/Contextify/SemanticSearchView.swift` - Semantic Search window
+
+**Pattern B (.searchable):**
+- `Contextify/Contextify/ContentView.swift:111` - Main window search
+- `Contextify/Contextify/DeepSearchView.swift:39` - Deep Search window
+- `Contextify/Contextify/TranscriptInventoryView.swift:232` - Transcript inventory
+- `Contextify/Contextify/ProjectsWindow.swift:116` - Projects browser
+
+### Why This Is Required
+
+SwiftUI's `.searchable()` modifier and custom TextFields do NOT respond to Cmd+F by default. This is a macOS platform quirk that users expect but Apple does not provide automatically. The hidden button pattern intercepts the keyboard shortcut and programmatically focuses the search field.
+
+---
+
 ## References
 
 ### Internal Documentation
@@ -1181,5 +1417,5 @@ Do you need a binding?
 ---
 
 **Document Status:** ✅ Complete
-**Last Code Verification:** 2025-11-17 (verified against 27 SwiftUI files, 6 @Observable classes, 16 views)
+**Last Code Verification:** 2025-11-26 (verified against 27 SwiftUI files, 6 @Observable classes, 16 views)
 **Next Review:** After SwiftUI architecture changes or Swift 6 migration tasks

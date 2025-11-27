@@ -11,6 +11,7 @@ if [ -z "$PRESET" ]; then
     echo "Usage: $0 <preset> [window-number]"
     echo ""
     echo "Available presets:"
+    echo "  search                - Deep Search window (HERO SHOT)"
     echo "  main-hud              - Main HUD with timeline"
     echo "  ai-summaries          - AI-generated summaries"
     echo "  transcript-inventory  - Session history browser"
@@ -19,15 +20,161 @@ if [ -z "$PRESET" ]; then
     echo "  real-time-monitoring  - Live conversation updates"
     echo ""
     echo "Example:"
-    echo "  $0 transcript-inventory 2"
+    echo "  $0 search 2"
     exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 case "$PRESET" in
+    search)
+        SHOT_NAME="01-search"
+        TEXT="Never lose a conversation with <span foreground='#D77757'>Claude Code</span> or Codex again"
+        echo "Setting up Deep Search window..."
+        echo ""
+        echo "⚠️  BEFORE RUNNING: Make sure Deep Search is open with your query!"
+        echo "   1. Open Contextify"
+        echo "   2. Press Cmd+Return to open Deep Search"
+        echo "   3. Search for 'you're absolutely right' (or your preferred query)"
+        echo "   4. Select a result so context pane shows conversation with Claude Code or Codex"
+        echo ""
+        read -p "Press Enter when ready to capture..."
+
+        # Save window positions for restoration
+        SAVED_POSITIONS=$(osascript <<EOF
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            if name of w is "Contextify" then
+                set pos to position of w
+                return "contextify:" & (item 1 of pos) & "," & (item 2 of pos)
+            end if
+        end repeat
+    end tell
+end tell
+return "contextify:0,0"
+EOF
+)
+
+        if [ -n "$WINDOW_INDEX" ]; then
+            SAVED_ITERM_POS=$(osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            return (item 1 of bnds) & "," & (item 2 of bnds)
+        end tell
+    else
+        return "0,0"
+    end if
+end tell
+EOF
+)
+        fi
+
+        # Position Deep Search window centered in capture area, other windows out of frame
+        osascript <<EOF
+tell application "Contextify"
+    activate
+end tell
+delay 0.5
+
+-- Position windows
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            set wName to name of w
+            if wName starts with "Search" then
+                -- Center in 1440x900 capture area at (200, 50)
+                -- Window: 942x595
+                -- Horizontal: 200 + (1440-942)/2 = 449
+                -- Vertical: 280 (room for headline at top)
+                -- Bottom edge: 280 + 595 = 875 (within 950 limit)
+                set position of w to {449, 280}
+                set size of w to {942, 595}
+            else if wName is "Contextify" then
+                -- Move main HUD out of frame
+                set position of w to {2000, 0}
+            end if
+        end repeat
+    end tell
+end tell
+
+-- Move iTerm2 out of frame
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bounds to {2000, 700, 2800, 1300}
+        end tell
+    end if
+end tell
+EOF
+
+        # Capture without running setup-screenshot.sh
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        OUTPUT_DIR="appstore-metadata/screenshots/drafts"
+        mkdir -p "$OUTPUT_DIR"
+        FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}.png"
+
+        echo ""
+        echo "📸 Taking screenshot in 2 seconds..."
+        sleep 2
+
+        # Capture region (1440x900 at 200,50)
+        screencapture -x -R"200,50,1440,900" "$FILENAME"
+        afplay /System/Library/Sounds/Glass.aiff &
+
+        # Add text overlay
+        FINAL_FILENAME="${OUTPUT_DIR}/${SHOT_NAME}-${TIMESTAMP}-with-text.png"
+        NO_AUTO_OPEN=1 "$SCRIPT_DIR/add-text-overlay.sh" "$FILENAME" "$TEXT" "$FINAL_FILENAME" > /dev/null
+
+        echo "✅ Screenshot saved: $FINAL_FILENAME"
+        open "$FINAL_FILENAME"
+
+        # Restore main Contextify window
+        if [[ "$SAVED_POSITIONS" =~ contextify:([0-9]+),([0-9]+) ]]; then
+            CONTEXTIFY_X="${BASH_REMATCH[1]}"
+            CONTEXTIFY_Y="${BASH_REMATCH[2]}"
+            osascript <<EOF
+tell application "System Events"
+    tell process "Contextify"
+        repeat with w in (every window)
+            if name of w is "Contextify" then
+                set position of w to {$CONTEXTIFY_X, $CONTEXTIFY_Y}
+                exit repeat
+            end if
+        end repeat
+    end tell
+end tell
+EOF
+            echo ""
+            echo "Main Contextify window restored to ($CONTEXTIFY_X, $CONTEXTIFY_Y)."
+        fi
+
+        # Restore iTerm2 window
+        if [ -n "$WINDOW_INDEX" ] && [ -n "$SAVED_ITERM_POS" ]; then
+            IFS=',' read -r SAVED_X SAVED_Y <<< "$SAVED_ITERM_POS"
+            if [[ "$SAVED_X" =~ ^-?[0-9]+$ && "$SAVED_Y" =~ ^-?[0-9]+$ ]]; then
+                osascript <<EOF
+tell application "iTerm2"
+    if (count of windows) >= $WINDOW_INDEX then
+        tell window $WINDOW_INDEX
+            set bnds to bounds
+            set w to (item 3 of bnds) - (item 1 of bnds)
+            set h to (item 4 of bnds) - (item 2 of bnds)
+            set bounds to {$SAVED_X, $SAVED_Y, $SAVED_X + w, $SAVED_Y + h}
+        end tell
+    end if
+end tell
+EOF
+                echo "iTerm2 window restored to ($SAVED_X, $SAVED_Y)."
+            fi
+        fi
+        exit 0
+        ;;
+
     main-hud)
-        SHOT_NAME="01-main-hud"
+        SHOT_NAME="02-main-hud"
         TEXT="Stay in the loop during long AI conversations"
         # Main window is already open, no special setup
         # Clear tabs flag in case it lingered from a previous run
@@ -37,7 +184,7 @@ case "$PRESET" in
         ;;
 
     ai-summaries)
-        SHOT_NAME="02-dual-provider"
+        SHOT_NAME="03-dual-provider"
         TEXT="Works seamlessly with both Claude Code and Codex CLI"
         # Show timeline with mixed Claude Code and Codex entries
         # Set flag for setup-screenshot.sh to use tabs positioning
@@ -45,7 +192,7 @@ case "$PRESET" in
         ;;
 
     transcript-inventory)
-        SHOT_NAME="03-transcript-inventory"
+        SHOT_NAME="04-transcript-inventory"
         TEXT="Explore source transcripts and gain insights"
         echo "Setting up transcripts window..."
 

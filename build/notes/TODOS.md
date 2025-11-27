@@ -33,20 +33,33 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-25
+**Last Updated:** 2025-11-26
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
-- **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 34 items - Nice to have, can defer to future releases
+- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
+- **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 67
+**Total Active Items:** 72
 
 ---
 
-# P0 (Launch Critical) - 1 Item
+# P0 (Launch Critical) - 2 Items
+
+---
+
+## Menu Bar Audit (1 item)
+
+**Status:** Needs investigation
+**Priority:** P0 (may affect production build)
+
+- [ ] #P0-MENU-AUDIT: Audit all menu items for production readiness
+  - Survey all menu bar items and verify each is appropriate for production
+  - Diagnostics menu may have shipped by mistake - evaluate if it should be removed or hidden behind Developer Mode
+  - Check for any other debug/internal menus or items that shouldn't be in production
+  - Document which menus/items should exist in production vs development builds
 
 ---
 
@@ -92,7 +105,50 @@ doc_references:
 
 ---
 
-# P1 (High Priority) - 16 Items
+# P1 (High Priority) - 17 Items
+
+---
+
+## Search Context Export (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (enables key user workflow - context reinjection)
+**Effort:** 2-3 hours
+
+- [ ] #P1-CONTEXT-EXPORT: Improve search context pane copy/export for conversation reinjection
+
+**Background:**
+The Deep Search context pane shows conversation context around search hits. Users need to export this context to reinject into new conversations (e.g., "here's what we discussed before...").
+
+**Current State:**
+- `copyExcerpt()` in DeepSearchViewModel copies context to clipboard
+- Basic format: header + timestamped messages
+
+**Improvements Needed:**
+
+1. **Better Export Format** (1 hour)
+   - Markdown-friendly output (code blocks preserved)
+   - Option for compact vs verbose format
+   - Include search query that found this context
+   - Consider XML tags for LLM-friendly structure
+
+2. **Write to File Option** (1 hour)
+   - Save to `/tmp/contextify-excerpt-{timestamp}.md`
+   - Auto-open in default editor or reveal in Finder
+   - Useful for longer excerpts that exceed clipboard comfort
+
+3. **Selection Control** (30 min)
+   - Allow selecting subset of context entries to export
+   - "Export visible" vs "Export all loaded"
+
+**Files:**
+- `Contextify/Contextify/DeepSearchViewModel.swift` (copyExcerpt, new writeToFile)
+- `Contextify/Contextify/DeepSearchView.swift` (export button/menu)
+
+**Acceptance Criteria:**
+- [ ] Exported context is LLM-friendly (can paste into Claude/GPT and it understands structure)
+- [ ] File export works and opens/reveals the file
+- [ ] User can choose which entries to include
 
 ---
 
@@ -986,7 +1042,78 @@ import Sparkle
 
 ---
 
-# P2 (Medium Priority) - 34 Items
+# P2 (Medium Priority) - 37 Items
+
+---
+
+## Search Window Enhancements (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (improves search usability)
+**Effort:** 6-9 hours
+**Spec:** `build/notes/todo-support/P2-SEARCH-UX-spec.md`
+
+- [ ] #P2-SEARCH-UX: Enhance Deep Search window with sorting, multi-select, and sticky date header
+
+**Summary:**
+- Sort control (Date | Relevance | Both) with asc/desc toggle
+- Context pane multi-select (click, shift+click, cmd+click) with Cmd+C copy
+- Sticky date header showing current scroll position
+
+**Related:** #P2-CONTEXT-REINJECTION, #P1-CONTEXT-EXPORT
+
+---
+
+## Context Reinjection Design (1 item)
+
+**Status:** Needs Design
+**Priority:** P2 (enables key workflow - feeding context back to CLI)
+**Effort:** Design: 2-3 hours, Implementation: 4-8 hours
+
+- [ ] #P2-CONTEXT-REINJECTION: Design and implement mechanism to feed selected messages back to CLI
+
+**Problem:**
+Users find relevant conversation context via search and want to reinject it into a new CLI session (Claude Code, Codex). Need a smooth workflow that works across providers and respects App Store sandbox.
+
+**Design Options to Evaluate:**
+
+1. **Clipboard Paste (Fallback)**
+   - Cmd+C copies formatted context
+   - User pastes into CLI
+   - Pro: Universal, no permissions
+   - Con: Large contexts unwieldy, manual step
+
+2. **Temp File + Path Copy**
+   - Write to `/tmp/contextify-context-{timestamp}.md`
+   - Copy `read /tmp/contextify-context-{timestamp}.md` to clipboard
+   - User pastes command into CLI
+   - Pro: Handles large contexts, single paste
+   - Con: Assumes CLI has `read` command, temp file cleanup
+
+3. **Custom Slash Command**
+   - Generate `.claude/commands/inject-context.md` dynamically
+   - User types `/inject-context` in Claude Code
+   - Pro: Native CLI integration
+   - Con: Claude Code specific, file management complexity
+
+4. **IPC/URL Scheme**
+   - `contextify://inject?context=...` URL scheme
+   - CLI tool registers handler
+   - Pro: Direct integration
+   - Con: Requires CLI-side support, provider-specific
+
+**Considerations:**
+- App Store sandbox restrictions on file access
+- Cross-provider compatibility (Claude Code, Codex, future CLIs)
+- Context size limits
+- User discoverability
+
+**Deliverables:**
+- Design doc evaluating options with recommendation
+- Implementation of chosen approach
+- User-facing documentation/tooltips
+
+**Related:** #P1-CONTEXT-EXPORT, #P2-SEARCH-UX
 
 ---
 
@@ -1105,6 +1232,30 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 - Nov 17 documentation audit recommendations
 - codex-cli-transcript-format.md consolidation (completed)
 - claude-code-transcript-format.md rename (completed)
+
+---
+
+## Conversation Search Follow-on (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (performance/UX improvement - not blocking)
+**Effort:** 3-4 hours
+
+- [ ] #P2-SEARCH-FOLLOWON: Conversation search performance and UX improvements
+
+**Background:**
+Follow-on improvements identified during `feat/conversation-search` branch development. Core feature works but has performance edge cases.
+
+**Key Items:**
+1. **Context Load Performance** - Move database work off main actor to prevent 2-3s delays when main thread is busy with UI re-renders (use `Task.detached` pattern)
+2. **ViewModel Test Infrastructure** - ViewModels can't be tested from SPM suite; consider extracting pure functions or setting up separate test target
+3. **QuickSearch Row Highlighting** - Wire up `isSelected` parameter for future keyboard navigation
+
+**Spec:** `build/notes/todo-support/P2-SEARCH-FOLLOWON-spec.md`
+
+**Files:**
+- `Contextify/Contextify/DeepSearchViewModel.swift`
+- `Contextify/Contextify/QuickSearchViewModel.swift`
 
 ---
 
@@ -1954,6 +2105,28 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 **Notes:**
 - Supporting details and future iterations go into `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`.
+
+---
+
+## Clipboard Code Refactoring (1 item)
+
+**Status:** Not Started
+**Priority:** P3 (code quality, no user-visible impact)
+**Effort:** 1-2 hours
+
+- [ ] #P3-CLIPBOARD: Refactor 15+ clipboard copy locations to use shared `String.copyToClipboard()` extension
+
+**Problem:** `NSPasteboard.general.clearContents()` / `setString()` pattern is repeated 15+ times across codebase.
+
+**Solution:** New `String.copyToClipboard()` extension created in `Contextify/Contextify/Extensions/String+Clipboard.swift`. Existing clipboard code can be migrated to use it.
+
+**Files to update:**
+- `SemanticSearchView.swift` (1 location)
+- `QuickSearchViewModel.swift` (2 locations)
+- `TranscriptDetailView.swift` (1 location)
+- `TranscriptInventoryView.swift` (2 locations)
+- `DeepSearchViewModel.swift` (2 locations)
+- `TimelineEntryRow.swift` (1 location)
 
 ---
 

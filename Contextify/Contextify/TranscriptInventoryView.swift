@@ -34,6 +34,7 @@ struct TranscriptInventoryView: View {
 
   @State private var selectedTranscriptId: String?  // Changed from URL to transcript ID
   @State private var searchText = ""
+  @State private var isSearchFieldPresented = false  // Cmd+F support
   @State private var debouncedSearch = ""  // Debounced search for filtering
   @State private var debounceTask: Task<Void, Never>?
   @State private var metadata: [String: TranscriptMetadata] = [:]  // Changed key from URL to transcript ID
@@ -87,6 +88,13 @@ struct TranscriptInventoryView: View {
     }
     .onChange(of: monitor.allSessions) { _, _ in
       updateCounts()
+    }
+    // Cmd+F to focus search field
+    .background {
+      Button("") { isSearchFieldPresented = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
     }
   }
 
@@ -221,7 +229,7 @@ struct TranscriptInventoryView: View {
       ) { visibleIDs in
         replaceVisibleSnapshot(visibleIDs)
       }
-      .searchable(text: $searchText, prompt: "Search")
+      .searchable(text: $searchText, isPresented: $isSearchFieldPresented, prompt: "Search")
       .onChange(of: searchText) { _, newValue in
         // Debounce search input (300ms)
         debounceTask?.cancel()

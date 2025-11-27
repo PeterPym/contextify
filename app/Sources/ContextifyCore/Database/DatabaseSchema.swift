@@ -3,14 +3,14 @@ import GRDB
 import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v27 (added is_queued for queue-operation tracking)
+/// Current version: v28 (added FTS5 full-text search index)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
 /// - High-precision timestamps (mtime_ms, latency_ms, created_ts, last_viewed_ts): Epoch seconds (Double) for unread tracking
 /// - Rationale: Double epoch seconds preserve millisecond precision for unread queries while avoiding float rounding
 enum DatabaseSchema {
-  static let version = 27
+  static let version = 28
   private static let logger = Logger(subsystem: "dev.contextify", category: "DatabaseMigration")
 
   /// Create migrator for schema evolution
@@ -588,6 +588,187 @@ enum DatabaseSchema {
         ON transcript_entries (transcript_id, session_id, is_queued, content_sha256)
       """)
       logger.info("[MIGRATION-v27] Queue state index created successfully")
+    }
+
+    // v28: FTS5 full-text search index for conversation search
+    // Indexes user/assistant messages for Quick Search (project-scoped) and Deep Search (cross-project)
+    migrator.registerMigration("v28_fts_search") { db in
+      logger.info("[MIGRATION-v28] Creating FTS5 search index")
+
+      // Create FTS5 virtual table with underscore as separator for code identifiers
+      // tokenize = 'unicode61 remove_diacritics 2 separators _' allows:
+      // - Case-insensitive matching
+      // - Accent-insensitive matching (remove_diacritics 2)
+      // - Code identifier matching (UNREAD_COUNT_UPDATED matches 'unread', 'count', 'updated')
+      try db.execute(sql: """
+        CREATE VIRTUAL TABLE transcript_entries_fts USING fts5(
+          content,
+          entry_id UNINDEXED,
+          project_id UNINDEXED,
+          role UNINDEXED,
+          created_at UNINDEXED,
+          tokenize = 'unicode61 remove_diacritics 2 separators _'
+        )
+      """)
+
+      // Populate from existing entries (user/assistant only, display_in_timeline)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+        SELECT content, id, project_id, kind, created_at
+        FROM transcript_entries
+        WHERE kind IN ('user', 'assistant')
+          AND display_in_timeline = 1
+          AND content IS NOT NULL
+          AND content != ''
+      """)
+
+      let backfillCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries_fts") ?? 0
+      logger.info("[MIGRATION-v28] FTS index populated with \(backfillCount, privacy: .public) entries")
+
+      // AFTER INSERT trigger - sync new entries to FTS
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_insert
+        AFTER INSERT ON transcript_entries
+        WHEN NEW.kind IN ('user', 'assistant')
+          AND NEW.display_in_timeline = 1
+          AND NEW.content IS NOT NULL
+          AND NEW.content != ''
+        BEGIN
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          VALUES (NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at);
+        END
+      """)
+
+      // AFTER UPDATE trigger - handle all state transitions
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_update
+        AFTER UPDATE ON transcript_entries
+        BEGIN
+          -- Delete if no longer indexable
+          DELETE FROM transcript_entries_fts
+          WHERE entry_id = OLD.id
+            AND (NEW.kind NOT IN ('user', 'assistant')
+                 OR NEW.display_in_timeline = 0
+                 OR NEW.content IS NULL
+                 OR NEW.content = '');
+
+          -- Update if still indexable and was indexable
+          UPDATE transcript_entries_fts
+          SET content = NEW.content,
+              project_id = NEW.project_id,
+              role = NEW.kind,
+              created_at = NEW.created_at
+          WHERE entry_id = OLD.id
+            AND NEW.kind IN ('user', 'assistant')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != '';
+
+          -- Insert if newly indexable
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          SELECT NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at
+          WHERE NEW.kind IN ('user', 'assistant')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != ''
+            AND NOT EXISTS (SELECT 1 FROM transcript_entries_fts WHERE entry_id = NEW.id);
+        END
+      """)
+
+      // AFTER DELETE trigger - remove from FTS
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_delete
+        AFTER DELETE ON transcript_entries
+        BEGIN
+          DELETE FROM transcript_entries_fts WHERE entry_id = OLD.id;
+        END
+      """)
+
+      // Note: We skip logging to system_events here because it has a foreign key
+      // constraint on transcript_id. The backfill count is logged via OSLog instead.
+
+      logger.info("[MIGRATION-v28] FTS5 search index created successfully with \(backfillCount, privacy: .public) entries")
+    }
+
+    // ========================================================================
+    // v29: Add summaries to FTS search index
+    // ========================================================================
+    migrator.registerMigration("v29") { db in
+      logger.info("[MIGRATION-v29] Adding summaries to FTS search index...")
+
+      // Drop existing triggers (they filter on user/assistant only)
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_insert")
+      try db.execute(sql: "DROP TRIGGER IF EXISTS transcript_entries_fts_update")
+
+      // Backfill summary entries that aren't already indexed
+      try db.execute(sql: """
+        INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+        SELECT content, id, project_id, kind, created_at
+        FROM transcript_entries
+        WHERE kind = 'summary'
+          AND display_in_timeline = 1
+          AND content IS NOT NULL
+          AND content != ''
+          AND id NOT IN (SELECT entry_id FROM transcript_entries_fts)
+      """)
+
+      let summaryCount = try Int.fetchOne(db, sql: """
+        SELECT COUNT(*) FROM transcript_entries_fts WHERE role = 'summary'
+      """) ?? 0
+
+      // Recreate INSERT trigger with summary included
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_insert
+        AFTER INSERT ON transcript_entries
+        WHEN NEW.kind IN ('user', 'assistant', 'summary')
+          AND NEW.display_in_timeline = 1
+          AND NEW.content IS NOT NULL
+          AND NEW.content != ''
+        BEGIN
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          VALUES (NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at);
+        END
+      """)
+
+      // Recreate UPDATE trigger with summary included
+      try db.execute(sql: """
+        CREATE TRIGGER transcript_entries_fts_update
+        AFTER UPDATE ON transcript_entries
+        BEGIN
+          -- Delete if no longer indexable
+          DELETE FROM transcript_entries_fts
+          WHERE entry_id = OLD.id
+            AND (NEW.kind NOT IN ('user', 'assistant', 'summary')
+                 OR NEW.display_in_timeline = 0
+                 OR NEW.content IS NULL
+                 OR NEW.content = '');
+
+          -- Update if still indexable and was indexable
+          UPDATE transcript_entries_fts
+          SET content = NEW.content,
+              project_id = NEW.project_id,
+              role = NEW.kind,
+              created_at = NEW.created_at
+          WHERE entry_id = OLD.id
+            AND NEW.kind IN ('user', 'assistant', 'summary')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != '';
+
+          -- Insert if newly indexable
+          INSERT INTO transcript_entries_fts (content, entry_id, project_id, role, created_at)
+          SELECT NEW.content, NEW.id, NEW.project_id, NEW.kind, NEW.created_at
+          WHERE NEW.kind IN ('user', 'assistant', 'summary')
+            AND NEW.display_in_timeline = 1
+            AND NEW.content IS NOT NULL
+            AND NEW.content != ''
+            AND NOT EXISTS (SELECT 1 FROM transcript_entries_fts WHERE entry_id = NEW.id);
+        END
+      """)
+
+      // Note: DELETE trigger doesn't need to change (it deletes by entry_id)
+
+      logger.info("[MIGRATION-v29] Added \(summaryCount, privacy: .public) summaries to FTS index")
     }
 
     return migrator

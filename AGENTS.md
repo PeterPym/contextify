@@ -217,6 +217,24 @@ This keeps UI test debt visible and ensures future work can pick up the integrat
 - File/dir names: kebab-case for non-code folders (e.g., `docs/sessions/active/`)
 - Keep modules small; separate UI (Views), state (ViewModels), and services
 
+**SwiftUI patterns & platform quirks:** See `build/docs/design/swiftui-patterns.md` for:
+- @Observable vs @State vs @Environment decision tree
+- ScrollViewReader workarounds (call scrollTo twice for reliable scrolling)
+- @MainActor patterns and anti-patterns
+- Implementation examples with file:line references
+
+**Before implementing SwiftUI features:** Follow this research checklist:
+
+1. **Audit existing implementations:** Search the codebase for similar patterns (e.g., if adding search, find ALL existing search fields). Ensure changes are consistent across the app.
+
+2. **Verify API assumptions:** Don't assume APIs work as expected. Test behaviors like "does .searchable() support Cmd+F?" before planning. Apple's documentation often omits limitations.
+
+3. **Web search for known issues:** Search for problems with specific APIs (e.g., "SwiftUI ScrollViewReader scrollTo not working macOS 2025"). Many APIs have undocumented quirks that only surface through community experience.
+
+4. **Check multiple sources:** Apple docs describe intended behavior; Stack Overflow/forums reveal actual behavior. Cross-reference both.
+
+5. **Document findings:** Add discovered quirks to `build/docs/design/swiftui-patterns.md` Platform Quirks section with workarounds and implementation references.
+
 ### State Sync Pattern - Hybrid Model
 
 Contextify uses a **hybrid state synchronization pattern** that balances immediate UI feedback with database-backed consistency.

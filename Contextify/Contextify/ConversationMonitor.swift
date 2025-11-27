@@ -1586,8 +1586,8 @@ final class ConversationMonitor {
             let elapsed = Date().timeIntervalSince(startTime)
             log.info("[TIMELINE-HYDRATE-DONE] duration_ms=\(Int(elapsed * 1000), privacy: .public) entries=\(feed.count, privacy: .public)")
             log.info("[TIMELINE-LOAD] primer complete in \(Int(elapsed * 1000))ms")
-            if elapsed > 0.02 {
-                log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 20ms)")
+            if elapsed > 0.035 {
+                log.warning("Feed load took \(Int(elapsed * 1000))ms (threshold: 35ms)")
             }
 
             // Diagnostic: Check entry content

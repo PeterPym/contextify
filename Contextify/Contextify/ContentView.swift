@@ -43,6 +43,10 @@ struct ContentView: View {
     @State private var toastDismissTask: Task<Void, Never>?
     @State private var activeSheet: ActiveSheet?
 
+    // Quick Search state
+    @State private var searchVM = QuickSearchViewModel()
+    @State private var isSearchPresented = false  // Cmd+F support
+
     var body: some View {
         ZStack {
             // Main content
@@ -58,9 +62,28 @@ struct ContentView: View {
                 projectHeader
                 Divider()
 
-                // Timeline - full width, no sidebar
+                // Content area - switches between timeline and quick search
                 SurfaceCard(includeShadow: false, verticalPadding: Layout.containerPadding, horizontalPadding: Layout.cardPadding) {
-                    ConversationTimelineView()
+                    switch searchVM.mode {
+                    case .timeline:
+                        ConversationTimelineView()
+                    case .quickSearch:
+                        if let projectId = StartupCoordinator.shared.current?.id {
+                            QuickSearchView(
+                                projectId: projectId,
+                                projectName: model.projectDisplayName,
+                                onDeepSearch: { selectedHitId in openDeepSearch(selectedHitId: selectedHitId) },
+                                onOpenInTimeline: { entryId in openInTimeline(entryId) }
+                            )
+                            .environment(searchVM)
+                        } else {
+                            ContentUnavailableView(
+                                "No Project Selected",
+                                systemImage: "folder.badge.questionmark",
+                                description: Text("Select a project to search")
+                            )
+                        }
+                    }
                 }
                 .frame(
                     minWidth: Layout.timelineMin,
@@ -85,6 +108,40 @@ struct ContentView: View {
             minWidth: Layout.timelineMin,  // Timeline-only minimum for v1.0
             minHeight: 360
         )
+        .searchable(
+            text: Binding(
+                get: { searchVM.query },
+                set: { newValue in
+                    let oldValue = searchVM.query
+                    searchVM.query = newValue
+                    // Clear results when:
+                    // 1. Query is empty (user cleared field), OR
+                    // 2. Query was completely replaced (select-all + type), not just edited
+                    let isExtension = newValue.hasPrefix(oldValue) || oldValue.hasPrefix(newValue)
+                    if newValue.isEmpty || !isExtension {
+                        searchVM.clearResults()
+                    }
+                }
+            ),
+            isPresented: $isSearchPresented,
+            prompt: "Search"
+        )
+        .onSubmit(of: .search) {
+            if let projectId = StartupCoordinator.shared.current?.id {
+                searchVM.search(projectId: projectId)
+            }
+        }
+        // Cmd+F to focus search field, Cmd+Enter to open search window
+        .background {
+            Button("") { isSearchPresented = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+            Button("") { openDeepSearch() }
+                .keyboardShortcut(.return, modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+        }
         .task {
             // Async startup to avoid blocking main thread with file I/O
             await model.startup()
@@ -111,6 +168,13 @@ struct ContentView: View {
             guard let payload = notification.userInfo?[ToastPayloadKey.message] as? String else { return }
             let duration = notification.userInfo?[ToastPayloadKey.duration] as? TimeInterval
             presentToast(payload, duration: duration)
+        }
+        .task {
+            // Clear search when project changes
+            for await context in StartupCoordinator.shared.updates() {
+                uiLog.info("[SEARCH-PROJECT-SWITCH] Clearing search due to project switch to: \(context.displayName, privacy: .public) (id: \(context.id, privacy: .public))")
+                searchVM.clearQuery()
+            }
         }
         .alert("Project Root", isPresented: Binding(
             get: { model.alertMessage != nil },
@@ -382,5 +446,85 @@ private extension ContentView {
             }
         }
         // If duration is 0, toast persists until manually dismissed
+    }
+
+    /// Open Deep Search window with current query
+    func openDeepSearch(selectedHitId: String? = nil) {
+        guard let context = StartupCoordinator.shared.current else {
+            uiLog.warning("[SEARCH] Cannot open Deep Search - no project context")
+            return
+        }
+
+        let queryForDeepSearch = searchVM.query.trimmingCharacters(in: .whitespaces)
+        guard !queryForDeepSearch.isEmpty else {
+            uiLog.debug("[SEARCH] Cannot open Deep Search - empty query")
+            return
+        }
+
+        // If we have cached results, check if there are any hits
+        if let result = searchVM.result {
+            if result.hits.isEmpty {
+                // No results - just show in main window, don't open Deep Search
+                uiLog.info("[SEARCH] No results for '\(queryForDeepSearch, privacy: .public)' - staying in main window")
+                return
+            }
+
+            // Has results - open Deep Search
+            uiLog.info("[SEARCH] Opening Deep Search: query='\(queryForDeepSearch, privacy: .public)' projectId=\(context.id, privacy: .public) resultCount=\(result.hits.count) selectedHitId=\(selectedHitId ?? "nil", privacy: .public)")
+
+            DeepSearchWindowController.shared.showWindow(
+                projectId: context.id,
+                projectName: model.projectDisplayName,
+                query: queryForDeepSearch,
+                selectedHitId: selectedHitId,
+                searchResult: result
+            )
+
+            // Clear search field and dismiss quick search in main window
+            searchVM.clearQuery()
+            uiLog.info("[SEARCH] Deep Search opened, main window search cleared")
+        } else {
+            // No cached results - run search first, then open if results found
+            uiLog.info("[SEARCH] No cached results, running search first for: '\(queryForDeepSearch, privacy: .public)'")
+            Task {
+                await searchAndOpenDeepSearch(query: queryForDeepSearch, projectId: context.id)
+            }
+        }
+    }
+
+    /// Search and open Deep Search only if results are found
+    private func searchAndOpenDeepSearch(query: String, projectId: String) async {
+        // Run the search and wait for completion
+        await searchVM.searchAndWait(projectId: projectId)
+
+        // Check results
+        guard let result = searchVM.result, !result.hits.isEmpty else {
+            uiLog.info("[SEARCH] Search completed with no results - staying in main window")
+            return
+        }
+
+        // Has results - open Deep Search
+        uiLog.info("[SEARCH] Search found \(result.hits.count) results - opening Deep Search")
+
+        DeepSearchWindowController.shared.showWindow(
+            projectId: projectId,
+            projectName: model.projectDisplayName,
+            query: query,
+            selectedHitId: nil,
+            searchResult: result
+        )
+
+        // Clear search field and dismiss quick search in main window
+        searchVM.clearQuery()
+        uiLog.info("[SEARCH] Deep Search opened, main window search cleared")
+    }
+
+    /// Open a specific entry in the timeline
+    func openInTimeline(_ entryId: String) {
+        // Exit search mode and scroll to entry
+        searchVM.exitSearch()
+        // TODO: Implement scroll-to-entry in ConversationTimelineView
+        uiLog.info("[SEARCH] Open in timeline: \(entryId, privacy: .public)")
+        presentToast("Opening in timeline...", duration: 1)
     }
 }
