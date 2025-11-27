@@ -1051,36 +1051,16 @@ import Sparkle
 **Status:** Not Started
 **Priority:** P2 (improves search usability)
 **Effort:** 6-9 hours
+**Spec:** `build/notes/todo-support/P2-SEARCH-UX-spec.md`
 
-- [ ] #P2-SEARCH-UX: Enhance Deep Search window with sorting and multi-select
+- [ ] #P2-SEARCH-UX: Enhance Deep Search window with sorting, multi-select, and sticky date header
 
-**Features:**
+**Summary:**
+- Sort control (Date | Relevance | Both) with asc/desc toggle
+- Context pane multi-select (click, shift+click, cmd+click) with Cmd+C copy
+- Sticky date header showing current scroll position
 
-1. **Sort Control** (2-3 hours)
-   - Segmented control: Date | Relevance | Both
-   - Click same option twice to toggle asc/desc
-   - Visual indicator for current sort direction
-   - Persist preference per session
-
-2. **Context Pane Multi-Select** (2-3 hours)
-   - Click: single message selection
-   - Shift+Click: select range from last selection
-   - Cmd+Click: toggle individual messages in selection
-   - Cmd+C: copy all selected messages to clipboard
-   - Visual indication of selected messages (checkbox or highlight)
-
-3. **Sticky Date Header** (1-2 hours)
-   - Frozen row at top of context pane showing current date
-   - Updates dynamically as user scrolls through messages
-   - Shows date of topmost visible message(s)
-   - When messages from new day scroll into view, header updates
-
-**Files:**
-- `Contextify/Contextify/DeepSearchView.swift` (sort control, selection UI)
-- `Contextify/Contextify/DeepSearchViewModel.swift` (sort state, selection state)
-- `app/Sources/ContextifyCore/Search/ConversationSearchService.swift` (ORDER BY options)
-
-**Related:** #P2-CONTEXT-REINJECTION (uses multi-select for export)
+**Related:** #P2-CONTEXT-REINJECTION, #P1-CONTEXT-EXPORT
 
 ---
 
