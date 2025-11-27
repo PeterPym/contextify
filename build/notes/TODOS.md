@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 34 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 35 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 68
+**Total Active Items:** 69
 
 ---
 
@@ -999,7 +999,7 @@ import Sparkle
 
 ---
 
-# P2 (Medium Priority) - 34 Items
+# P2 (Medium Priority) - 35 Items
 
 ---
 
@@ -1118,6 +1118,30 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 - Nov 17 documentation audit recommendations
 - codex-cli-transcript-format.md consolidation (completed)
 - claude-code-transcript-format.md rename (completed)
+
+---
+
+## Conversation Search Follow-on (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (performance/UX improvement - not blocking)
+**Effort:** 3-4 hours
+
+- [ ] #P2-SEARCH-FOLLOWON: Conversation search performance and UX improvements
+
+**Background:**
+Follow-on improvements identified during `feat/conversation-search` branch development. Core feature works but has performance edge cases.
+
+**Key Items:**
+1. **Context Load Performance** - Move database work off main actor to prevent 2-3s delays when main thread is busy with UI re-renders (use `Task.detached` pattern)
+2. **ViewModel Test Infrastructure** - ViewModels can't be tested from SPM suite; consider extracting pure functions or setting up separate test target
+3. **QuickSearch Row Highlighting** - Wire up `isSelected` parameter for future keyboard navigation
+
+**Spec:** `build/notes/todo-support/P2-SEARCH-FOLLOWON-spec.md`
+
+**Files:**
+- `Contextify/Contextify/DeepSearchViewModel.swift`
+- `Contextify/Contextify/QuickSearchViewModel.swift`
 
 ---
 
