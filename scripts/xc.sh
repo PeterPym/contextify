@@ -18,7 +18,7 @@ preserve_bookmarks=0  # Preserve security-scoped bookmarks during cleanrun
 # Distribution mode (dmg vs appstore)
 dist="dmg"
 scheme_dmg="Contextify"
-scheme_appstore="Contextify"  # Will use different entitlements
+scheme_appstore="Contextify AppStore"  # Separate target without Sparkle
 entitlements_dmg="Contextify.entitlements"
 entitlements_appstore="Contextify-AppStore.entitlements"
 
@@ -451,7 +451,12 @@ run_xcodebuild() {
 
 # Build for the selected distribution
 run_build_for_dist() {
-  local selected_scheme="$scheme_dmg"
+  local selected_scheme
+  if [[ "$dist" == "appstore" ]]; then
+    selected_scheme="$scheme_appstore"
+  else
+    selected_scheme="$scheme_dmg"
+  fi
   local cs_entitlements=""
 
   echo "Building for distribution: $dist"
@@ -470,44 +475,29 @@ run_build_for_dist() {
     echo "  Using App Store entitlements (sandboxed)"
     cs_entitlements="$entitlements_appstore"
   else
-    echo "  Using DMG entitlements (unsandboxed)"
+    echo "  Using DMG entitlements (unsandboxed) with Sparkle"
     cs_entitlements="$entitlements_dmg"
   fi
 
+  # Note: INFOPLIST_FILE is set in the Xcode project per-configuration
+  # (Debug uses Info-Debug.plist, Release uses Info.plist)
+  # For Sparkle DMG builds, Info-DMG.plist should be configured via xcconfig
+  # or by creating a separate scheme.
+
   if [[ -n "${CI:-}${GITHUB_ACTIONS:-}" ]]; then
-    if [[ "$dist" == "appstore" ]]; then
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_IDENTITY="-" \
-        DEVELOPMENT_TEAM="" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
-        build
-    else
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_IDENTITY="-" \
-        DEVELOPMENT_TEAM="" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        build
-    fi
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS,arch=arm64" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_IDENTITY="-" \
+      DEVELOPMENT_TEAM="" \
+      CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
+      build
   else
-    if [[ "$dist" == "appstore" ]]; then
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
-        build
-    else
-      run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
-        -configuration "$config" -destination "platform=macOS,arch=arm64" \
-        -derivedDataPath "$dd" \
-        CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
-        build
-    fi
+    run_xcodebuild -project "$proj" -scheme "$selected_scheme" \
+      -configuration "$config" -destination "platform=macOS,arch=arm64" \
+      -derivedDataPath "$dd" \
+      CODE_SIGN_ENTITLEMENTS="$cs_entitlements" \
+      build
   fi
 
   app_path="$dd/Build/Products/$config/Contextify.app"
@@ -585,16 +575,21 @@ if [[ "$action" == "archive" ]]; then
   # Always use Release for archives
   config="Release"
 
+  # Select scheme based on distribution
+  if [[ "$dist" == "appstore" ]]; then
+    archive_scheme="$scheme_appstore"
+  else
+    archive_scheme="$scheme_dmg"
+  fi
+
   # Clean previous archive
   rm -rf "$archive_path"
   mkdir -p build
 
-  run_xcodebuild -project "$proj" -scheme "$scheme" \
+  run_xcodebuild -project "$proj" -scheme "$archive_scheme" \
     -configuration Release \
     -destination "generic/platform=macOS" \
     -archivePath "$archive_path" \
-    CODE_SIGN_ENTITLEMENTS="$entitlements_appstore" \
-    OTHER_SWIFT_FLAGS="\$(inherited) -DAPPSTORE_BUILD" \
     archive
 
   echo ""
@@ -605,6 +600,11 @@ if [[ "$action" == "archive" ]]; then
 fi
 
 if [[ "$action" == "export-pkg" ]]; then
+  if [[ "$dist" != "appstore" ]]; then
+    echo "⚠️  Warning: export-pkg is for App Store builds."
+    echo "   You may want to use: bash scripts/xc.sh --dist=appstore archive"
+    echo ""
+  fi
   echo "📦 Exporting archive as .pkg for App Store Connect..."
 
   if [[ ! -d "$archive_path" ]]; then
@@ -643,6 +643,11 @@ if [[ "$action" == "export-pkg" ]]; then
 fi
 
 if [[ "$action" == "upload" ]]; then
+  if [[ "$dist" != "appstore" ]]; then
+    echo "⚠️  Warning: upload is for App Store builds."
+    echo "   You may want to use: bash scripts/xc.sh --dist=appstore archive"
+    echo ""
+  fi
   echo "🚀 Uploading to App Store Connect..."
 
   # Find the pkg

@@ -37,15 +37,23 @@
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>Contextify needs access to read your developer transcripts from external drives.</string>
 
-	<!-- Sparkle Auto-Update Configuration (DMG builds only) -->
+	<!-- Sparkle Auto-Update Configuration -->
 	<key>SUFeedURL</key>
 	<string>https://contextify.sh/appcast.xml</string>
+
+	<!-- Public EdDSA key for signature verification -->
 	<key>SUPublicEDKey</key>
 	<string>zJ8lX0grlNGHwS0tFGbGs5Jv+roMWZv/mjlzXQXHO1M=</string>
+
+	<!-- Check for updates every 24 hours -->
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
+
+	<!-- Require user confirmation before installing updates -->
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
+
+	<!-- Disable anonymous system profiling -->
 	<key>SUEnableSystemProfiling</key>
 	<false/>
 </dict>

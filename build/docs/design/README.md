@@ -19,6 +19,13 @@ This directory contains design documentation for:
 - Dark mode support
 - Implementation references (TimelineEntryRow.swift:192-206)
 
+### [Provider Iconography](providers.md)
+**Topics:** AI provider visual identity
+- Claude Code and Codex CLI logomarks
+- Asset locations and colors
+- Light mode shadow requirement for Codex
+- Reference implementation (TimelineEntryRow.swift:112-124)
+
 ### [Help System](help-tooltip-ux-system.md)
 **Topics:** Help tooltip UX system design
 - Tooltip patterns and hierarchy

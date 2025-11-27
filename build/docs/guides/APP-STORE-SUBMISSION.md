@@ -327,8 +327,28 @@ build/*.xcarchive/
 
 Build commands:
 ```bash
-make appstore-submit  # or individually:
-bash scripts/xc.sh archive
+# Full App Store flow
+bash scripts/xc.sh --dist=appstore Release archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 ```
+
+### Two-Target Architecture
+
+Contextify uses **two separate Xcode targets** to support both distribution channels:
+
+| Target | Scheme | Distribution | Sparkle | Sandbox |
+|--------|--------|--------------|---------|---------|
+| **Contextify** | Contextify | DMG (GitHub) | ✓ Included | No |
+| **Contextify AppStore** | Contextify AppStore | App Store | ✗ Excluded | Yes |
+
+**Why separate targets?**
+- Apple rejects App Store builds containing Sparkle.framework (unsandboxed executables)
+- DMG builds need Sparkle for auto-updates
+- Separate targets with different `packageProductDependencies` cleanly solve this
+
+**Swift compilation flags:**
+- `SPARKLE` - Defined for DMG target, enables Sparkle code paths
+- `APPSTORE_BUILD` - Defined for App Store target, disables Sparkle code paths
+
+The `--dist=appstore` flag automatically selects the correct target/scheme.

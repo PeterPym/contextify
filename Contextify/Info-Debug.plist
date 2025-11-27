@@ -41,5 +41,17 @@
   <string>Contextify needs access to read your developer transcripts from network drives.</string>
   <key>NSRemovableVolumesUsageDescription</key>
   <string>Contextify needs access to read your developer transcripts from external drives.</string>
+
+  <!-- Sparkle Auto-Update Configuration (DMG builds only) -->
+  <key>SUFeedURL</key>
+  <string>https://contextify.sh/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>zJ8lX0grlNGHwS0tFGbGs5Jv+roMWZv/mjlzXQXHO1M=</string>
+  <key>SUScheduledCheckInterval</key>
+  <integer>86400</integer>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
+  <key>SUEnableSystemProfiling</key>
+  <false/>
 </dict>
 </plist>
