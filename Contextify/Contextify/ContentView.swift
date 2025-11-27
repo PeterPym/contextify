@@ -113,7 +113,10 @@ struct ContentView: View {
                 get: { searchVM.query },
                 set: { newValue in
                     searchVM.query = newValue
-                    searchVM.clearResults()  // Clear stale results when query edited
+                    // Only clear results when query is completely emptied (like clicking X)
+                    if newValue.isEmpty {
+                        searchVM.clearResults()
+                    }
                 }
             ),
             isPresented: $isSearchPresented,

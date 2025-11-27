@@ -45,10 +45,10 @@ struct DeepSearchView: View {
       text: Binding(
         get: { viewModel.query },
         set: { newValue in
-          // Only clear results if query actually changed
-          if newValue != viewModel.query {
-            viewModel.query = newValue
-            viewModel.clearResults()  // Clear stale results when query edited
+          viewModel.query = newValue
+          // Only clear results when query is completely emptied (like clicking X)
+          if newValue.isEmpty {
+            viewModel.clearResults()
           }
         }
       ),
@@ -474,13 +474,18 @@ struct ContextEntryRow: View {
     string.copyToClipboard()
   }
 
-  /// Highlight search terms in the content (for non-selected entries)
+  /// Highlight search terms in the content
   private var highlightedContent: AttributedString {
-    guard !isHighlighted, !searchTerms.isEmpty else {
+    guard !searchTerms.isEmpty else {
       return AttributedString(entry.content)
     }
 
     var result = AttributedString(entry.content)
+
+    // Use contrasting color for keyword highlight:
+    // - Highlighted row (yellow background): use orange for visibility
+    // - Normal row: use yellow
+    let keywordColor: Color = isHighlighted ? .orange.opacity(0.5) : .yellow.opacity(0.3)
 
     // Highlight each search term
     for term in searchTerms {
@@ -489,7 +494,7 @@ struct ContextEntryRow: View {
       // Case-insensitive search
       var searchStart = result.startIndex
       while let range = result[searchStart...].range(of: term, options: .caseInsensitive) {
-        result[range].backgroundColor = .yellow.opacity(0.3)
+        result[range].backgroundColor = keywordColor
         searchStart = range.upperBound
       }
     }

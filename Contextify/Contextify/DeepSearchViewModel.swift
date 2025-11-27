@@ -281,25 +281,35 @@ final class DeepSearchViewModel {
     // Cancel any in-flight context load
     contextTask?.cancel()
     selectedHitId = hitId
+    log.debug("[SELECTHIT] Selected hit: \(hitId, privacy: .public)")
 
     let searchService = self.searchService
     contextTask = Task.detached { [searchService, hitId] in
       do {
+        let loadStart = Date()
         let data = try await Self.fetchContextData(
           searchService: searchService,
           entryId: hitId,
           before: 10,
           after: 10
         )
-        guard !Task.isCancelled else { return }
+        let loadDuration = Date().timeIntervalSince(loadStart)
+
+        guard !Task.isCancelled else {
+          await MainActor.run { log.debug("[SELECTHIT] Cancelled after load: \(hitId, privacy: .public)") }
+          return
+        }
+
         await MainActor.run { [weak self] in
-          self?.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+          guard let self else { return }
+          self.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+          log.debug("[SELECTHIT] Context applied: \(data.entries.count) entries in \(String(format: "%.3f", loadDuration))s for \(hitId, privacy: .public)")
         }
       } catch {
         guard !Task.isCancelled else { return }
         await MainActor.run { [weak self] in
           self?.clearContext()
-          log.error("[CONTEXT] Failed to load context for selection: \(error.localizedDescription)")
+          log.error("[SELECTHIT] Failed to load context for \(hitId, privacy: .public): \(error.localizedDescription)")
         }
       }
     }
