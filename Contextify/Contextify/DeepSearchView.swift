@@ -40,22 +40,33 @@ struct DeepSearchView: View {
       text: Binding(
         get: { viewModel.query },
         set: { newValue in
-          viewModel.query = newValue
-          viewModel.clearResults()  // Clear stale results when query edited
+          // Only clear results if query actually changed
+          if newValue != viewModel.query {
+            viewModel.query = newValue
+            viewModel.clearResults()  // Clear stale results when query edited
+          }
         }
       ),
       isPresented: $isSearchPresented,
       prompt: "Search"
     )
     .onSubmit(of: .search) {
+      log.debug("[SEARCH-SUBMIT] Enter pressed, triggering search")
       viewModel.search()
     }
-    // Cmd+F to focus search field
+    // Keyboard shortcuts: Cmd+F to focus, Cmd+Enter to search
     .background {
-      Button("") { isSearchPresented = true }
-        .keyboardShortcut("f", modifiers: .command)
-        .frame(width: 0, height: 0)
-        .opacity(0)
+      Group {
+        Button("") { isSearchPresented = true }
+          .keyboardShortcut("f", modifiers: .command)
+        Button("") {
+          log.debug("[SEARCH-SUBMIT] Cmd+Enter pressed, triggering search")
+          viewModel.search()
+        }
+        .keyboardShortcut(.return, modifiers: .command)
+      }
+      .frame(width: 0, height: 0)
+      .opacity(0)
     }
   }
 
