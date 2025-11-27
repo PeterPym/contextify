@@ -223,15 +223,20 @@ struct DeepSearchView: View {
   private func scrollToHitIfNeeded(proxy: ScrollViewProxy, hitId: String) {
     guard viewModel.shouldScrollToHit else { return }
     guard !viewModel.contextEntries.isEmpty else { return }
+    // Don't scroll if user has already selected a different hit
+    guard viewModel.selectedHitId == hitId else { return }
 
     let hitExists = viewModel.contextEntries.contains { $0.id == hitId }
     if hitExists {
       // Workaround: Call scrollTo twice - SwiftUI lazy loading miscalculates
       // offsets on first call. See: https://stackoverflow.com/a/77042664
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        // Re-check selection hasn't changed during delay
+        guard viewModel.selectedHitId == hitId else { return }
         proxy.scrollTo(hitId, anchor: .center)
       }
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        guard viewModel.selectedHitId == hitId else { return }
         proxy.scrollTo(hitId, anchor: .center)
       }
     } else {

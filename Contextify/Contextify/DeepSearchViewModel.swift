@@ -46,6 +46,7 @@ final class DeepSearchViewModel {
 
   private let searchService: ConversationSearchService
   private var searchTask: Task<Void, Never>?
+  private var contextTask: Task<Void, Never>?
 
   // MARK: - Initialization
 
@@ -162,6 +163,8 @@ final class DeepSearchViewModel {
         before: contextBefore,
         after: contextAfter
       )
+      // Bail out if task was cancelled (user selected different hit)
+      guard !Task.isCancelled else { return }
       contextEntries = entries
 
       // Get counts for "load more" UI
@@ -170,11 +173,13 @@ final class DeepSearchViewModel {
         currentBefore: contextBefore,
         currentAfter: contextAfter
       )
+      guard !Task.isCancelled else { return }
       earlierCount = counts.earlierCount
       laterCount = counts.laterCount
 
       log.debug("[CONTEXT] Loaded \(entries.count) entries (\(self.earlierCount) earlier, \(self.laterCount) later available)")
     } catch {
+      guard !Task.isCancelled else { return }
       contextEntries = []
       earlierCount = 0
       laterCount = 0
@@ -238,8 +243,10 @@ final class DeepSearchViewModel {
 
   /// Select a hit and load its context
   func selectHit(_ hitId: String) {
+    // Cancel any in-flight context load
+    contextTask?.cancel()
     selectedHitId = hitId
-    Task { @MainActor in
+    contextTask = Task { @MainActor in
       await loadContext(for: hitId)
     }
   }
