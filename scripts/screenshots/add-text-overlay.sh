@@ -2,9 +2,13 @@
 # Add text overlay to App Store screenshots (Sketch-style)
 # Usage: ./add-text-overlay.sh <input-image> <text> [output-image]
 #
+# Supports Pango markup for colored text:
+#   <span foreground='#D77757'>Claude Code</span>  - Claude Code orange
+#   <span foreground='#4A90D9'>Codex</span>        - Codex blue
+#
 # Examples:
 #   ./add-text-overlay.sh screenshot.png "Real-time AI monitoring"
-#   ./add-text-overlay.sh input.png "Track multiple projects" output-final.png
+#   ./add-text-overlay.sh input.png "Never lose a conversation with <span foreground='#D77757'>Claude Code</span> or Codex"
 
 set -e
 
@@ -48,7 +52,7 @@ read IMG_WIDTH IMG_HEIGHT <<< "$(magick identify -format "%w %h" "$INPUT_IMAGE")
 
 # Font settings (Sketch-style large serif headline)
 FONT=".New-York-Medium"
-FONT_SIZE=120
+FONT_SIZE=120  # For caption-based single-color text
 TEXT_COLOR="#FFFFFF"  # White text (works on dark backgrounds)
 GRAVITY="north"  # Position at top
 Y_OFFSET=100  # Pixels from top
@@ -57,20 +61,53 @@ Y_OFFSET=100  # Pixels from top
 OVERLAY_WIDTH=$(( IMG_WIDTH * 90 / 100 ))
 OVERLAY_HEIGHT=300  # Tall enough for wrapped text with descenders (g, y, q, p)
 
-# Add text overlay with automatic wrapping for long headlines
-magick "$INPUT_IMAGE" \
-    \( -size ${OVERLAY_WIDTH}x${OVERLAY_HEIGHT} \
-       -background none \
-       -font "$FONT" \
-       -pointsize "$FONT_SIZE" \
-       -fill "$TEXT_COLOR" \
-       -gravity center \
-       caption:"$OVERLAY_TEXT" \
-    \) \
-    -gravity "$GRAVITY" \
-    -geometry "+0+${Y_OFFSET}" \
-    -composite \
-    "$OUTPUT_IMAGE"
+# Check if text contains color markup (e.g., <span foreground='#D77757'>Claude Code</span>)
+if [[ "$OVERLAY_TEXT" == *"<span"* ]]; then
+    # Parse and render multi-color text by appending separate labels
+    # Extract parts: before span, colored text, after span
+    # Pattern: text <span foreground='#COLOR'>colored</span> text
+
+    BEFORE=$(echo "$OVERLAY_TEXT" | sed "s/<span[^>]*>.*<\/span>.*//")
+    COLOR=$(echo "$OVERLAY_TEXT" | sed -n "s/.*<span foreground='\([^']*\)'>.*<\/span>.*/\1/p")
+    COLORED_TEXT=$(echo "$OVERLAY_TEXT" | sed -n "s/.*<span[^>]*>\([^<]*\)<\/span>.*/\1/p")
+    AFTER=$(echo "$OVERLAY_TEXT" | sed "s/.*<\/span>//")
+
+    # Use larger font for multi-color (label doesn't auto-scale like caption)
+    MULTICOLOR_SIZE=120
+
+    # Render two lines: first line has colored text, second line is plain
+    # Line 1: BEFORE + COLORED_TEXT (horizontal append)
+    # Line 2: AFTER (centered below)
+    magick "$INPUT_IMAGE" \
+        \( \
+            \( \
+                \( -background none -font "$FONT" -pointsize "$MULTICOLOR_SIZE" -fill "$TEXT_COLOR" label:"$BEFORE" \) \
+                \( -background none -font "$FONT" -pointsize "$MULTICOLOR_SIZE" -fill "$COLOR" label:"$COLORED_TEXT" \) \
+                +append \
+            \) \
+            \( -background none -font "$FONT" -pointsize "$MULTICOLOR_SIZE" -fill "$TEXT_COLOR" -gravity center label:"$AFTER" \) \
+            -gravity center -append \
+        \) \
+        -gravity "$GRAVITY" \
+        -geometry "+0+${Y_OFFSET}" \
+        -composite \
+        "$OUTPUT_IMAGE"
+else
+    # Standard caption for plain text
+    magick "$INPUT_IMAGE" \
+        \( -size ${OVERLAY_WIDTH}x${OVERLAY_HEIGHT} \
+           -background none \
+           -font "$FONT" \
+           -pointsize "$FONT_SIZE" \
+           -fill "$TEXT_COLOR" \
+           -gravity center \
+           caption:"$OVERLAY_TEXT" \
+        \) \
+        -gravity "$GRAVITY" \
+        -geometry "+0+${Y_OFFSET}" \
+        -composite \
+        "$OUTPUT_IMAGE"
+fi
 
 echo "✅ Text overlay added!"
 echo ""
