@@ -33,20 +33,73 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-25
+**Last Updated:** 2025-11-27
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 70
+**Total Active Items:** 71
 
 ---
 
-# P0 (Launch Critical) - 2 Items
+# P0 (Launch Critical) - 3 Items
+
+---
+
+## Help Menu Audit (1 item)
+
+**Status:** Not Started
+**Priority:** P0 (blocking public launch - non-functional menu items)
+**Effort:** 2-4 hours
+
+- [ ] #P0-HELP-MENU: Audit and fix non-functional Help menu items
+
+**Problem:**
+The Help menu has 10+ items that do nothing when clicked. All `HelpTopic.url` values return `nil`, so `NSWorkspace.shared.open(url)` silently fails. This is unacceptable for App Store release.
+
+**Current Structure (ContextifyApp.swift:57-163):**
+- Getting Started → nil (broken)
+- Feature Guides submenu:
+  - Projects & Discovery → nil (broken)
+  - Timeline Monitoring → nil (broken)
+  - AI Integration → nil (broken)
+  - Database & Sync → nil (broken)
+- Troubleshooting submenu:
+  - AI Unavailable → nil (broken)
+  - Project Not Found → nil (broken)
+  - Database Issues → nil (broken)
+  - LLM Generation Failures → nil (broken)
+- Keyboard Shortcuts → nil (broken)
+- Contact Support... → works (opens email)
+
+**Decision Required:**
+1. **Option A: Remove broken items** - Simplest, ship with minimal Help menu (Contact Support only)
+2. **Option B: Create website help pages** - Add pages to contextify.sh, link from menu
+3. **Option C: Create in-app help** - SwiftUI help views or Help Book bundle
+4. **Option D: Link to GitHub wiki** - Requires public repo first (see #P0-PUBLIC-REPO)
+
+**Recommended Approach (Option B):**
+1. Create minimal help pages on contextify.sh:
+   - `/help/getting-started` - Quick start guide
+   - `/help/keyboard-shortcuts` - Shortcut reference
+   - `/help/troubleshooting` - Common issues
+2. Update `HelpTopic.url` to return website URLs
+3. Remove or consolidate Feature Guides submenu (too granular for v1.0)
+4. Keep Troubleshooting as single page, not 4 separate items
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift` (lines 57-163, HelpCommands + HelpTopic)
+- `website/` (new help pages if Option B)
+
+**Acceptance Criteria:**
+- [ ] Every Help menu item either works or is removed
+- [ ] No silent failures when clicking menu items
+- [ ] Help content is accurate and helpful
+- [ ] Keyboard shortcuts documented (Cmd+Shift+[ and ] for project switching, etc.)
 
 ---
 
