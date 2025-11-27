@@ -71,15 +71,50 @@ final class DeepSearchViewModel {
     // Load context if we have a selected hit, or auto-select first result
     if let hitId = selectedHitId {
       log.debug("[DEEPSEARCH-INIT] Loading context for explicit selection: \(hitId, privacy: .public)")
-      Task { @MainActor in
-        await loadContext(for: hitId)
+      let searchService = self.searchService
+      contextTask = Task.detached { [searchService, hitId] in
+        do {
+          let data = try await Self.fetchContextData(
+            searchService: searchService,
+            entryId: hitId,
+            before: 10,
+            after: 10
+          )
+          guard !Task.isCancelled else { return }
+          await MainActor.run { [weak self] in
+            self?.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+          }
+        } catch {
+          guard !Task.isCancelled else { return }
+          await MainActor.run {
+            log.error("[DEEPSEARCH-INIT] Failed to load context: \(error.localizedDescription)")
+          }
+        }
       }
     } else if let firstHit = initialResult?.hits.first {
       // Auto-select first result when opening via Cmd+Enter (no explicit selection)
       log.debug("[DEEPSEARCH-INIT] Auto-selecting first result: \(firstHit.id, privacy: .public)")
       self.selectedHitId = firstHit.id
-      Task { @MainActor in
-        await loadContext(for: firstHit.id)
+      let searchService = self.searchService
+      let hitId = firstHit.id
+      contextTask = Task.detached { [searchService, hitId] in
+        do {
+          let data = try await Self.fetchContextData(
+            searchService: searchService,
+            entryId: hitId,
+            before: 10,
+            after: 10
+          )
+          guard !Task.isCancelled else { return }
+          await MainActor.run { [weak self] in
+            self?.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+          }
+        } catch {
+          guard !Task.isCancelled else { return }
+          await MainActor.run {
+            log.error("[DEEPSEARCH-INIT] Failed to load context: \(error.localizedDescription)")
+          }
+        }
       }
     } else {
       log.debug("[DEEPSEARCH-INIT] No results to select")
@@ -99,7 +134,12 @@ final class DeepSearchViewModel {
 
     log.info("[DEEPSEARCH-START] query='\(trimmedQuery, privacy: .public)' projectId=\(self.projectId, privacy: .public)")
 
-    searchTask = Task { @MainActor in
+    // Snapshot main-actor state before detaching
+    let searchService = self.searchService
+    let projectId = self.projectId
+    let previousSelection = self.selectedHitId
+
+    searchTask = Task.detached { [searchService, projectId, trimmedQuery, previousSelection] in
       do {
         let searchStart = Date()
         let request = ConversationSearchRequest(
@@ -111,79 +151,66 @@ final class DeepSearchViewModel {
 
         let searchResult = try await searchService.search(request)
         let searchDuration = Date().timeIntervalSince(searchStart)
-        log.debug("[DEEPSEARCH-TIMING] FTS query took \(String(format: "%.3f", searchDuration), privacy: .public)s")
 
         guard !Task.isCancelled else {
-          log.debug("[DEEPSEARCH-CANCEL] Search cancelled for query='\(trimmedQuery, privacy: .public)'")
+          await MainActor.run { log.debug("[DEEPSEARCH-CANCEL] Search cancelled for query='\(trimmedQuery, privacy: .public)'") }
           return
         }
 
-        result = searchResult
-        log.info("[DEEPSEARCH-DONE] query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count)")
-
-        // Validate selection against new results, then auto-select if needed
-        let contextStart = Date()
-        if let hitId = selectedHitId,
+        // Determine selection off main actor using snapshot
+        var selectedId: String? = nil
+        if let hitId = previousSelection,
            searchResult.hits.contains(where: { $0.id == hitId }) {
-          // Previous selection still valid in new results
-          await loadContext(for: hitId)
-        } else if let firstHit = searchResult.hits.first {
-          // No valid selection - select first result
-          selectedHitId = firstHit.id
-          await loadContext(for: firstHit.id)
+          selectedId = hitId
         } else {
-          // No results at all
-          selectedHitId = nil
-          contextEntries = []
+          selectedId = searchResult.hits.first?.id
         }
-        let contextDuration = Date().timeIntervalSince(contextStart)
-        log.debug("[DEEPSEARCH-TIMING] Context load took \(String(format: "%.3f", contextDuration), privacy: .public)s")
+
+        // Fetch context off main actor if we have a selection
+        var contextData: ContextData? = nil
+        if let hitId = selectedId {
+          contextData = try await Self.fetchContextData(
+            searchService: searchService,
+            entryId: hitId,
+            before: 10,
+            after: 10
+          )
+        }
+
+        let totalDuration = Date().timeIntervalSince(searchStart)
+        let contextDuration = totalDuration - searchDuration
+
+        guard !Task.isCancelled else { return }
+
+        // Single hop back to main actor to update ALL UI state
+        await MainActor.run { [weak self] in
+          guard let self else { return }
+
+          self.result = searchResult
+          self.selectedHitId = selectedId
+
+          if let data = contextData {
+            self.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+          } else {
+            self.clearContext()
+          }
+
+          self.isSearching = false
+
+          log.debug("[DEEPSEARCH-TIMING] FTS query took \(String(format: "%.3f", searchDuration), privacy: .public)s")
+          log.debug("[DEEPSEARCH-TIMING] Context load took \(String(format: "%.3f", contextDuration), privacy: .public)s")
+          log.info("[DEEPSEARCH-DONE] query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count)")
+          log.debug("[DEEPSEARCH-TIMING] Search complete, isSearching=false")
+        }
       } catch {
-        if !Task.isCancelled {
-          searchError = error
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          guard let self else { return }
+          self.searchError = error
+          self.isSearching = false
           log.error("[SEARCH] Error: \(error.localizedDescription)")
         }
       }
-
-      isSearching = false
-      log.debug("[DEEPSEARCH-TIMING] Search complete, isSearching=false")
-    }
-  }
-
-  /// Load context entries for a selected hit
-  func loadContext(for entryId: String) async {
-    // Reset context extent when loading new hit
-    contextBefore = 10
-    contextAfter = 10
-    shouldScrollToHit = true  // Scroll to hit on new selection
-
-    do {
-      let entries = try await searchService.getContext(
-        entryId: entryId,
-        before: contextBefore,
-        after: contextAfter
-      )
-      // Bail out if task was cancelled (user selected different hit)
-      guard !Task.isCancelled else { return }
-      contextEntries = entries
-
-      // Get counts for "load more" UI
-      let counts = try await searchService.getContextCounts(
-        entryId: entryId,
-        currentBefore: contextBefore,
-        currentAfter: contextAfter
-      )
-      guard !Task.isCancelled else { return }
-      earlierCount = counts.earlierCount
-      laterCount = counts.laterCount
-
-      log.debug("[CONTEXT] Loaded \(entries.count) entries (\(self.earlierCount) earlier, \(self.laterCount) later available)")
-    } catch {
-      guard !Task.isCancelled else { return }
-      contextEntries = []
-      earlierCount = 0
-      laterCount = 0
-      log.error("[CONTEXT] Failed: \(error.localizedDescription)")
     }
   }
 
@@ -192,24 +219,28 @@ final class DeepSearchViewModel {
     guard let entryId = selectedHitId else { return }
     contextBefore += 5
     shouldScrollToHit = false  // Don't scroll when loading more
-    Task { @MainActor in
-      do {
-        let entries = try await searchService.getContext(
-          entryId: entryId,
-          before: contextBefore,
-          after: contextAfter
-        )
-        contextEntries = entries
 
-        let counts = try await searchService.getContextCounts(
+    let searchService = self.searchService
+    let before = self.contextBefore
+    let after = self.contextAfter
+
+    Task.detached { [searchService, entryId, before, after] in
+      do {
+        let data = try await Self.fetchContextData(
+          searchService: searchService,
           entryId: entryId,
-          currentBefore: contextBefore,
-          currentAfter: contextAfter
+          before: before,
+          after: after
         )
-        earlierCount = counts.earlierCount
-        laterCount = counts.laterCount
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.applyContext(data: data, before: before, after: after, scrollToHit: false)
+        }
       } catch {
-        log.error("[CONTEXT] Load more earlier failed: \(error.localizedDescription)")
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+          log.error("[CONTEXT] Load more earlier failed: \(error.localizedDescription)")
+        }
       }
     }
   }
@@ -219,24 +250,28 @@ final class DeepSearchViewModel {
     guard let entryId = selectedHitId else { return }
     contextAfter += 5
     shouldScrollToHit = false  // Don't scroll when loading more
-    Task { @MainActor in
-      do {
-        let entries = try await searchService.getContext(
-          entryId: entryId,
-          before: contextBefore,
-          after: contextAfter
-        )
-        contextEntries = entries
 
-        let counts = try await searchService.getContextCounts(
+    let searchService = self.searchService
+    let before = self.contextBefore
+    let after = self.contextAfter
+
+    Task.detached { [searchService, entryId, before, after] in
+      do {
+        let data = try await Self.fetchContextData(
+          searchService: searchService,
           entryId: entryId,
-          currentBefore: contextBefore,
-          currentAfter: contextAfter
+          before: before,
+          after: after
         )
-        earlierCount = counts.earlierCount
-        laterCount = counts.laterCount
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.applyContext(data: data, before: before, after: after, scrollToHit: false)
+        }
       } catch {
-        log.error("[CONTEXT] Load more later failed: \(error.localizedDescription)")
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+          log.error("[CONTEXT] Load more later failed: \(error.localizedDescription)")
+        }
       }
     }
   }
@@ -246,8 +281,27 @@ final class DeepSearchViewModel {
     // Cancel any in-flight context load
     contextTask?.cancel()
     selectedHitId = hitId
-    contextTask = Task { @MainActor in
-      await loadContext(for: hitId)
+
+    let searchService = self.searchService
+    contextTask = Task.detached { [searchService, hitId] in
+      do {
+        let data = try await Self.fetchContextData(
+          searchService: searchService,
+          entryId: hitId,
+          before: 10,
+          after: 10
+        )
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.applyContext(data: data, before: 10, after: 10, scrollToHit: true)
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.clearContext()
+          log.error("[CONTEXT] Failed to load context for selection: \(error.localizedDescription)")
+        }
+      }
     }
   }
 
@@ -261,6 +315,50 @@ final class DeepSearchViewModel {
     laterCount = 0
     isSearching = false
     searchError = nil
+  }
+
+  // MARK: - Private Helpers
+
+  /// Data structure for context fetch results (Sendable for cross-actor transfer)
+  private struct ContextData: Sendable {
+    let entries: [TranscriptEntry]
+    let earlierCount: Int
+    let laterCount: Int
+  }
+
+  /// Fetch context data off main actor
+  /// - Note: This is a static helper to ensure it runs off main actor
+  private static func fetchContextData(
+    searchService: ConversationSearchService,
+    entryId: String,
+    before: Int,
+    after: Int
+  ) async throws -> ContextData {
+    let entries = try await searchService.getContext(entryId: entryId, before: before, after: after)
+    let counts = try await searchService.getContextCounts(entryId: entryId, currentBefore: before, currentAfter: after)
+    return ContextData(entries: entries, earlierCount: counts.earlierCount, laterCount: counts.laterCount)
+  }
+
+  /// Apply context data to UI state (must be called on main actor)
+  private func applyContext(
+    data: ContextData,
+    before: Int,
+    after: Int,
+    scrollToHit: Bool
+  ) {
+    contextEntries = data.entries
+    earlierCount = data.earlierCount
+    laterCount = data.laterCount
+    contextBefore = before
+    contextAfter = after
+    shouldScrollToHit = scrollToHit
+  }
+
+  /// Clear context state
+  private func clearContext() {
+    contextEntries = []
+    earlierCount = 0
+    laterCount = 0
   }
 
   // MARK: - Copy Actions

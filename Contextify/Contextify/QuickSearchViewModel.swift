@@ -72,7 +72,10 @@ final class QuickSearchViewModel {
 
     log.info("[SEARCH-START] QuickSearch query='\(trimmedQuery, privacy: .public)' projectId=\(projectId, privacy: .public)")
 
-    searchTask = Task { @MainActor in
+    // Snapshot main-actor state before detaching
+    let searchService = self.searchService
+
+    searchTask = Task.detached { [searchService, projectId, trimmedQuery] in
       do {
         let request = ConversationSearchRequest(
           query: trimmedQuery,
@@ -83,31 +86,40 @@ final class QuickSearchViewModel {
 
         let searchResult = try await searchService.search(request)
 
-        // Check for cancellation
         guard !Task.isCancelled else {
-          log.debug("[SEARCH-CANCEL] QuickSearch cancelled for query='\(trimmedQuery, privacy: .public)'")
+          await MainActor.run { log.debug("[SEARCH-CANCEL] QuickSearch cancelled for query='\(trimmedQuery, privacy: .public)'") }
           return
         }
 
-        result = searchResult
-        log.info("[SEARCH-DONE] QuickSearch query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count) total=\(searchResult.totalCount)")
+        // Determine selection and fetch context off main actor
+        var contextEntries: [TranscriptEntry] = []
+        let selectedId = searchResult.hits.first?.id
+        if let hitId = selectedId {
+          contextEntries = try await searchService.getContext(entryId: hitId)
+        }
 
-        // Auto-select first result
-        if let firstHit = searchResult.hits.first {
-          selectedHitId = firstHit.id
-          await loadContext(for: firstHit.id)
-        } else {
-          selectedHitId = nil
-          contextEntries = []
+        guard !Task.isCancelled else { return }
+
+        // Single hop back to main actor to update ALL UI state
+        await MainActor.run { [weak self] in
+          guard let self else { return }
+
+          self.result = searchResult
+          self.selectedHitId = selectedId
+          self.contextEntries = contextEntries
+          self.isSearching = false
+
+          log.info("[SEARCH-DONE] QuickSearch query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count) total=\(searchResult.totalCount)")
         }
       } catch {
-        if !Task.isCancelled {
-          searchError = error
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          guard let self else { return }
+          self.searchError = error
+          self.isSearching = false
           log.error("[SEARCH] Error: \(error.localizedDescription)")
         }
       }
-
-      isSearching = false
     }
   }
 
@@ -118,25 +130,27 @@ final class QuickSearchViewModel {
     await searchTask?.value
   }
 
-  /// Load context entries for a selected hit
-  /// - Parameter entryId: The entry ID to get context for
-  func loadContext(for entryId: String) async {
-    do {
-      let entries = try await searchService.getContext(entryId: entryId)
-      contextEntries = entries
-      log.debug("[CONTEXT] Loaded \(entries.count) context entries for \(entryId)")
-    } catch {
-      contextEntries = []
-      log.error("[CONTEXT] Failed to load context: \(error.localizedDescription)")
-    }
-  }
-
   /// Select a hit and load its context
   /// - Parameter hitId: The hit ID to select
   func selectHit(_ hitId: String) {
     selectedHitId = hitId
-    Task { @MainActor in
-      await loadContext(for: hitId)
+
+    let searchService = self.searchService
+    Task.detached { [searchService, hitId] in
+      do {
+        let entries = try await searchService.getContext(entryId: hitId)
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.contextEntries = entries
+          log.debug("[CONTEXT] Loaded \(entries.count) context entries for \(hitId)")
+        }
+      } catch {
+        guard !Task.isCancelled else { return }
+        await MainActor.run { [weak self] in
+          self?.contextEntries = []
+          log.error("[CONTEXT] Failed to load context: \(error.localizedDescription)")
+        }
+      }
     }
   }
 
