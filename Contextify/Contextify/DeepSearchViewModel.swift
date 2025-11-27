@@ -110,7 +110,7 @@ final class DeepSearchViewModel {
 
         let searchResult = try await searchService.search(request)
         let searchDuration = Date().timeIntervalSince(searchStart)
-        log.debug("[DEEPSEARCH-TIMING] FTS query took \(String(format: "%.3f", searchDuration))s")
+        log.debug("[DEEPSEARCH-TIMING] FTS query took \(String(format: "%.3f", searchDuration), privacy: .public)s")
 
         guard !Task.isCancelled else {
           log.debug("[DEEPSEARCH-CANCEL] Search cancelled for query='\(trimmedQuery, privacy: .public)'")
@@ -136,7 +136,7 @@ final class DeepSearchViewModel {
           contextEntries = []
         }
         let contextDuration = Date().timeIntervalSince(contextStart)
-        log.debug("[DEEPSEARCH-TIMING] Context load took \(String(format: "%.3f", contextDuration))s")
+        log.debug("[DEEPSEARCH-TIMING] Context load took \(String(format: "%.3f", contextDuration), privacy: .public)s")
       } catch {
         if !Task.isCancelled {
           searchError = error

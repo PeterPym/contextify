@@ -21,12 +21,17 @@ struct DeepSearchView: View {
   var body: some View {
     Group {
       if let result = viewModel.result {
-        HSplitView {
-          resultsList(result)
-            .frame(minWidth: 280, idealWidth: 320)
+        if result.hits.isEmpty {
+          // Full-width no results state (not split view)
+          noResultsState
+        } else {
+          HSplitView {
+            resultsList(result)
+              .frame(minWidth: 280, idealWidth: 320)
 
-          contextPane
-            .frame(minWidth: 350)
+            contextPane
+              .frame(minWidth: 350)
+          }
         }
       } else if viewModel.isSearching {
         loadingState
