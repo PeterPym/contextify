@@ -433,6 +433,17 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
 
 For App Store submissions, **both distributions must be built from the same commit** to ensure version parity.
 
+### Two-Target Architecture
+
+Contextify uses **two separate Xcode targets** for different distribution channels:
+
+| Target | Flag | Distribution | Sparkle | Sandbox |
+|--------|------|--------------|---------|---------|
+| **Contextify** | `--dist=dmg` | DMG (GitHub) | ✓ Included | No |
+| **Contextify AppStore** | `--dist=appstore` | App Store | ✗ Excluded | Yes |
+
+**Why?** Apple rejects App Store builds containing Sparkle.framework (unsandboxed executables). The `--dist` flag selects the correct target automatically.
+
 ### Complete Release Workflow (App Store + DMG)
 
 When submitting a new version to the App Store:
@@ -443,7 +454,7 @@ git status
 
 # 2. Build and upload App Store version
 bash scripts/xc.sh --dist=appstore Release archive
-bash scripts/xc.sh --dist=appstore export-pkg
+bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 
 # 3. Build and sign DMG (MUST do after App Store build to match)
