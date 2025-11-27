@@ -78,6 +78,12 @@ doc_references:
 - [ ] Add "Report Issue" and "Request Feature" links to support page
 - [ ] Ensure support page explains that code is private but issues are public
 
+**Changelog (follow Anthropic/claude-code pattern)**
+- [ ] Research Anthropic's claude-code repo changelog format
+- [ ] Create CHANGELOG.md in public repo
+- [ ] Establish process: update changelog with each release
+- [ ] Link changelog from README and website
+
 **Reference:** `build/notes/todo-support/P0-PUBLIC-REPO-strategy.md`
 
 ---
