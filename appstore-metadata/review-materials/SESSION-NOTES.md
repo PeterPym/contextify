@@ -53,32 +53,78 @@ appstore-metadata/review-materials/
 └── sample-transcripts/             # Output directory (empty until script runs)
 ```
 
-## Next Steps (To Resume)
+## Session 2 - Nov 27, 2025 (Continued)
 
-1. **Cleanup test transcripts** (from earlier testing)
+### Work Completed This Session
+
+1. **Cleaned up test transcripts** - Removed old test data from previous session
+
+2. **Generated full transcript set** - Ran `generate-transcripts.sh`
+   - 4 Claude Code sessions (54 transcripts total)
+   - 3 Codex CLI sessions
+   - Projects: taskflow, weatherly, recipebox
+   - Transcripts in `~/.claude/projects/-Users-rob-code-sample-projects-*/`
+
+3. **Tested with Contextify**
+   - Cleaned database with `./scripts/db_manager.sh clean --force`
+   - Built and launched app: `bash scripts/xc.sh build`
+   - Verified:
+     - 3 sample projects detected in database
+     - 54 transcripts discovered and being processed
+     - 2136 total entries ingested
+     - LLM summarization working (11 cache entries)
+
+4. **Created sample data package**
+   - `appstore-metadata/review-materials/sample-data.zip` (100KB)
+   - Contains 57 transcript files + README.txt
+
+5. **Created website review directory**
+   - `website/review/index.html` - Instructions page for Apple reviewers
+   - `website/review/sample-data.zip` - Sample data package
+
+### Files Created
+
+```
+website/review/
+├── index.html              # Instructions for Apple reviewers
+└── sample-data.zip         # Sample transcript files (100KB)
+
+appstore-metadata/review-materials/
+├── sample-data.zip         # Copy of sample data
+└── sample-transcripts/     # Raw transcript files (57 files)
+```
+
+## Next Steps (Human Required)
+
+1. **Upload to website** - Deploy review materials
    ```bash
-   rm -rf ~/.claude/projects/-private-tmp-*
-   rm -rf /tmp/taskflow /tmp/weatherly /tmp/recipebox
+   ./scripts/deploy-website.sh
+   ```
+   This will upload `website/review/` to `https://contextify.sh/review/`
+
+2. **Record demo video** - Screen recording showing:
+   - First launch and permissions grant
+   - Project detection (sample projects appearing)
+   - Timeline view with conversations
+   - LLM summaries generating
+   - Search functionality
+   - Project switching
+
+3. **Upload demo video** - Add to `website/review/demo-video.mp4`
+
+4. **Update App Store Connect** - Add to App Review Notes:
+   ```
+   DEMO VIDEO:
+   https://contextify.sh/review/demo-video.mp4
+
+   SAMPLE DATA:
+   https://contextify.sh/review/sample-data.zip
+
+   SETUP INSTRUCTIONS:
+   https://contextify.sh/review/
    ```
 
-2. **Run generate-transcripts.sh** - Creates real Claude/Codex sessions
-   ```bash
-   cd ~/code/projects/contextify-worker-bee/appstore-metadata/review-materials
-   ./generate-transcripts.sh
-   ```
-   - Creates projects in `~/code/sample-projects/`
-   - Generates 4 Claude Code sessions + 3 Codex sessions
-   - Takes ~10-15 minutes
-
-3. **Test with Contextify** - Clean DB, verify projects appear, summaries generate
-
-4. **Record demo video** - Screen recording showing full app workflow
-
-5. **Upload materials** - Deploy to contextify.sh/review/
-
-6. **Update App Store Connect** - Add URLs to App Review Notes
-
-7. **Resubmit** - Reply to rejection with materials ready
+5. **Resubmit** - Reply to rejection in App Store Connect
 
 ## Technical Notes
 
