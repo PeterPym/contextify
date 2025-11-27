@@ -1050,7 +1050,7 @@ import Sparkle
 
 **Status:** Not Started
 **Priority:** P2 (improves search usability)
-**Effort:** 4-6 hours
+**Effort:** 6-9 hours
 
 - [ ] #P2-SEARCH-UX: Enhance Deep Search window with sorting and multi-select
 
@@ -1068,6 +1068,12 @@ import Sparkle
    - Cmd+Click: toggle individual messages in selection
    - Cmd+C: copy all selected messages to clipboard
    - Visual indication of selected messages (checkbox or highlight)
+
+3. **Sticky Date Header** (1-2 hours)
+   - Frozen row at top of context pane showing current date
+   - Updates dynamically as user scrolls through messages
+   - Shows date of topmost visible message(s)
+   - When messages from new day scroll into view, header updates
 
 **Files:**
 - `Contextify/Contextify/DeepSearchView.swift` (sort control, selection UI)

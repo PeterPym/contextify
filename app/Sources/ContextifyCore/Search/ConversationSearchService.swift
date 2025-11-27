@@ -152,7 +152,7 @@ public actor ConversationSearchService {
 
       // Order by relevance, then recency as tie-breaker
       sql += """
-        ORDER BY rank, f.created_at DESC
+        ORDER BY rank, e.timestamp DESC
         LIMIT ? OFFSET ?
       """
       arguments.append(request.limit)
@@ -219,27 +219,27 @@ public actor ConversationSearchService {
     let pool = try dbManager.pool
 
     return try await pool.read { db in
-      // Get the hit's project, created_at, and id for ordering
+      // Get the hit's project, timestamp, and id for ordering
       guard let hit = try Row.fetchOne(db, sql: """
-        SELECT project_id, created_at, id FROM transcript_entries WHERE id = ?
+        SELECT project_id, timestamp, id FROM transcript_entries WHERE id = ?
       """, arguments: [entryId]) else {
         return []
       }
 
       let projectId: String = hit["project_id"]
-      let createdAt: Int64 = hit["created_at"]
+      let timestamp: Int64 = hit["timestamp"]
       let hitId: String = hit["id"]
 
       // Get context entries using same predicates as timeline view
-      // Uses (created_at, id) ordering for deterministic results when timestamps collide
+      // Uses (timestamp, id) ordering for deterministic results when timestamps collide
       // The hit is explicitly included via the id comparison
       return try TranscriptEntry.fetchAll(db, sql: """
         SELECT * FROM (
           SELECT * FROM transcript_entries
           WHERE project_id = ?
             AND display_in_timeline = 1
-            AND (created_at < ? OR (created_at = ? AND id < ?))
-          ORDER BY created_at DESC, id DESC
+            AND (timestamp < ? OR (timestamp = ? AND id < ?))
+          ORDER BY timestamp DESC, id DESC
           LIMIT ?
         )
         UNION ALL
@@ -254,15 +254,15 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE project_id = ?
             AND display_in_timeline = 1
-            AND (created_at > ? OR (created_at = ? AND id > ?))
-          ORDER BY created_at ASC, id ASC
+            AND (timestamp > ? OR (timestamp = ? AND id > ?))
+          ORDER BY timestamp ASC, id ASC
           LIMIT ?
         )
-        ORDER BY created_at ASC, id ASC
+        ORDER BY timestamp ASC, id ASC
       """, arguments: [
-        projectId, createdAt, createdAt, hitId, before,  // before entries
+        projectId, timestamp, timestamp, hitId, before,  // before entries
         projectId, hitId,                                  // the hit itself
-        projectId, createdAt, createdAt, hitId, after      // after entries
+        projectId, timestamp, timestamp, hitId, after      // after entries
       ])
     }
   }
@@ -283,15 +283,15 @@ public actor ConversationSearchService {
     let pool = try dbManager.pool
 
     return try await pool.read { db in
-      // Get the hit's project, created_at, and id for ordering
+      // Get the hit's project, timestamp, and id for ordering
       guard let hit = try Row.fetchOne(db, sql: """
-        SELECT project_id, created_at, id FROM transcript_entries WHERE id = ?
+        SELECT project_id, timestamp, id FROM transcript_entries WHERE id = ?
       """, arguments: [entryId]) else {
         return ContextCounts(earlierCount: 0, laterCount: 0)
       }
 
       let projectId: String = hit["project_id"]
-      let createdAt: Int64 = hit["created_at"]
+      let timestamp: Int64 = hit["timestamp"]
       let hitId: String = hit["id"]
 
       // Count entries strictly before the current window
@@ -300,8 +300,8 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE project_id = ?
           AND display_in_timeline = 1
-          AND (created_at < ? OR (created_at = ? AND id < ?))
-      """, arguments: [projectId, createdAt, createdAt, hitId]) ?? 0
+          AND (timestamp < ? OR (timestamp = ? AND id < ?))
+      """, arguments: [projectId, timestamp, timestamp, hitId]) ?? 0
 
       // Subtract entries already shown
       let actualEarlier = max(0, earlierCount - currentBefore)
@@ -311,8 +311,8 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE project_id = ?
           AND display_in_timeline = 1
-          AND (created_at > ? OR (created_at = ? AND id > ?))
-      """, arguments: [projectId, createdAt, createdAt, hitId]) ?? 0
+          AND (timestamp > ? OR (timestamp = ? AND id > ?))
+      """, arguments: [projectId, timestamp, timestamp, hitId]) ?? 0
 
       // Subtract entries already shown
       let actualLater = max(0, laterCount - currentAfter)
