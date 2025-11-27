@@ -640,7 +640,7 @@ USER: This is brilliant. I'll actually use this.
 
 set -e
 
-SAMPLE_URL="https://contextify.sh/review/sample-data.zip"
+SAMPLE_URL="https://contextify.sh/review-4a125b1d/sample-data.zip"
 CLAUDE_DIR="$HOME/.claude/projects"
 CODEX_DIR="$HOME/.codex/sessions"
 DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
@@ -763,6 +763,6 @@ After running qa-test.sh, verify in Contextify:
 - [ ] Verify LLM summaries generate
 - [ ] Package as sample-data.zip
 - [ ] Write reviewer README with setup instructions
-- [ ] Upload to contextify.sh/review/
+- [ ] Upload to contextify.sh/review-4a125b1d/
 - [ ] Test download and setup process end-to-end
 - [ ] Update App Review Notes in App Store Connect

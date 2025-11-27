@@ -100,7 +100,7 @@ appstore-metadata/review-materials/
    ```bash
    ./scripts/deploy-website.sh
    ```
-   This will upload `website/review/` to `https://contextify.sh/review/`
+   This will upload `website/review/` to `https://contextify.sh/review-4a125b1d/`
 
 2. **Record demo video** - Screen recording showing:
    - First launch and permissions grant
@@ -115,13 +115,13 @@ appstore-metadata/review-materials/
 4. **Update App Store Connect** - Add to App Review Notes:
    ```
    DEMO VIDEO:
-   https://contextify.sh/review/demo-video.mp4
+   https://contextify.sh/review-4a125b1d/demo-video.mp4
 
    SAMPLE DATA:
-   https://contextify.sh/review/sample-data.zip
+   https://contextify.sh/review-4a125b1d/sample-data.zip
 
    SETUP INSTRUCTIONS:
-   https://contextify.sh/review/
+   https://contextify.sh/review-4a125b1d/
    ```
 
 5. **Resubmit** - Reply to rejection in App Store Connect

@@ -212,7 +212,7 @@ bash scripts/xc.sh build
 ./scripts/deploy-website.sh
 ```
 
-**Final URL:** `https://contextify.sh/review/demo-video.mp4`
+**Final URL:** `https://contextify.sh/review-4a125b1d/demo-video.mp4`
 
 ---
 

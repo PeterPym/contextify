@@ -31,7 +31,7 @@ Apple needs a video demonstrating the app on a physical macOS device showing all
   - Enough content to trigger LLM summarization
 
 **Hosting:**
-- Upload to `https://contextify.sh/review/sample-data.zip`
+- Upload to `https://contextify.sh/review-4a125b1d/sample-data.zip`
 - Alternative: GitHub release asset (permanent URL)
 
 **File structure to create:**
@@ -64,7 +64,7 @@ sample-data/
 **Location:** `appstore-metadata/review-materials/demo-video/`
 
 **Hosting:**
-- Upload to `https://contextify.sh/review/demo-video.mp4`
+- Upload to `https://contextify.sh/review-4a125b1d/demo-video.mp4`
 - Add URL to App Review Information in App Store Connect
 
 **Script outline:**
@@ -86,11 +86,11 @@ sample-data/
 **Content to add:**
 ```
 DEMO VIDEO:
-https://contextify.sh/review/demo-video.mp4
+https://contextify.sh/review-4a125b1d/demo-video.mp4
 
 SAMPLE DATA:
 Download sample Claude Code transcript files:
-https://contextify.sh/review/sample-data.zip
+https://contextify.sh/review-4a125b1d/sample-data.zip
 
 SETUP INSTRUCTIONS:
 1. Download sample-data.zip from URL above
@@ -125,12 +125,12 @@ Add to "App Store Releases" section:
 Before submitting to App Store, ensure these materials are prepared:
 
 #### Required: Demo Video
-- Location: `https://contextify.sh/review/demo-video.mp4`
+- Location: `https://contextify.sh/review-4a125b1d/demo-video.mp4`
 - Update video when significant UI/feature changes occur
 - Must show: permissions, timeline, search, summaries, file ingestion
 
 #### Required: Sample Data
-- Location: `https://contextify.sh/review/sample-data.zip`
+- Location: `https://contextify.sh/review-4a125b1d/sample-data.zip`
 - Synthetic Claude Code transcripts for testing
 - Update if transcript format changes
 
@@ -149,13 +149,13 @@ Add new section before "Submit for Review":
 Apple requires demonstration materials for apps that access external data.
 
 ### Demo Video (Required)
-- Hosted at: `https://contextify.sh/review/demo-video.mp4`
+- Hosted at: `https://contextify.sh/review-4a125b1d/demo-video.mp4`
 - Add URL to App Review Information → Notes
 - Must be updated for each submission with significant changes
 - Shows: permissions, all features, real device usage
 
 ### Sample Data (Required)
-- Hosted at: `https://contextify.sh/review/sample-data.zip`
+- Hosted at: `https://contextify.sh/review-4a125b1d/sample-data.zip`
 - Synthetic Claude Code transcript files
 - Instructions in README.txt for Apple reviewers
 - Place in ~/.claude/projects/sample-project/
@@ -176,9 +176,9 @@ Update submission checklist to include:
 ```markdown
 ### Before First Submission
 - [ ] Create demo video showing all features
-- [ ] Upload demo video to contextify.sh/review/
+- [ ] Upload demo video to contextify.sh/review-4a125b1d/
 - [ ] Create sample data package with synthetic transcripts
-- [ ] Upload sample data to contextify.sh/review/
+- [ ] Upload sample data to contextify.sh/review-4a125b1d/
 - [ ] Add demo video URL to App Review Notes
 - [ ] Add sample data URL and setup instructions to App Review Notes
 ```
@@ -209,9 +209,9 @@ New file documenting the review materials structure and maintenance.
 - Files go in: `/var/www/contextify/review/`
 
 ### File URLs
-- `https://contextify.sh/review/demo-video.mp4`
-- `https://contextify.sh/review/sample-data.zip`
-- `https://contextify.sh/review/README.txt` (optional - instructions page)
+- `https://contextify.sh/review-4a125b1d/demo-video.mp4`
+- `https://contextify.sh/review-4a125b1d/sample-data.zip`
+- `https://contextify.sh/review-4a125b1d/README.txt` (optional - instructions page)
 
 ---
 

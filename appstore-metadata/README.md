@@ -130,13 +130,13 @@ Apple may request additional materials under Guideline 2.1 when:
 | Sample Data | Test transcript summarization | `review-materials/sample-data.zip` |
 | Instructions | Setup guide for reviewers | `website/review/index.html` |
 
-**Hosting:** Deploy to `https://contextify.sh/review/` via `./scripts/deploy-website.sh`
+**Hosting:** Deploy to `https://contextify.sh/review-4a125b1d/` via `./scripts/deploy-website.sh`
 
 **App Store Connect Notes:**
 ```
-DEMO VIDEO: https://contextify.sh/review/demo-video.mp4
-SAMPLE DATA: https://contextify.sh/review/sample-data.zip
-SETUP INSTRUCTIONS: https://contextify.sh/review/
+DEMO VIDEO: https://contextify.sh/review-4a125b1d/demo-video.mp4
+SAMPLE DATA: https://contextify.sh/review-4a125b1d/sample-data.zip
+SETUP INSTRUCTIONS: https://contextify.sh/review-4a125b1d/
 ```
 
 ## Using Fastlane Deliver

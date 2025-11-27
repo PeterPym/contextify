@@ -31,7 +31,7 @@ review-materials/
 
 **Script:** `DEMO-VIDEO-SCRIPT.md`
 
-**Hosting:** `https://contextify.sh/review/demo-video.mp4`
+**Hosting:** `https://contextify.sh/review-4a125b1d/demo-video.mp4`
 
 **When to update:**
 - Major UI changes
@@ -50,7 +50,7 @@ review-materials/
 - 3 Codex CLI sessions
 - README.txt with setup instructions
 
-**Hosting:** `https://contextify.sh/review/sample-data.zip`
+**Hosting:** `https://contextify.sh/review-4a125b1d/sample-data.zip`
 
 **When to update:**
 - Transcript format changes
@@ -59,7 +59,7 @@ review-materials/
 
 ## Hosted Files
 
-Files are deployed to `https://contextify.sh/review/` via:
+Files are deployed to `https://contextify.sh/review-4a125b1d/` via:
 
 ```bash
 ./scripts/deploy-website.sh
@@ -108,13 +108,13 @@ Add to **App Review Information > Notes**:
 
 ```
 DEMO VIDEO:
-https://contextify.sh/review/demo-video.mp4
+https://contextify.sh/review-4a125b1d/demo-video.mp4
 
 SAMPLE DATA:
-https://contextify.sh/review/sample-data.zip
+https://contextify.sh/review-4a125b1d/sample-data.zip
 
 SETUP INSTRUCTIONS:
-https://contextify.sh/review/
+https://contextify.sh/review-4a125b1d/
 
 The sample data contains Claude Code transcript files. Extract and copy to
 ~/.claude/projects/ to test the app's summarization features.
