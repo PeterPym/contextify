@@ -40,15 +40,20 @@ appstore-metadata/
 │   ├── 07-git-integration.png        # [TO BE CREATED] Git context
 │   ├── alternates/                   # Alternative versions for A/B testing
 │   └── working/                      # Working files and raw captures
-└── app-previews/                     # App Store preview videos
-    ├── APP-PREVIEW-SPECIFICATIONS.md # Detailed video specifications
-    ├── preview-01-overview.mov       # [TO BE CREATED] Product overview (30s)
-    ├── preview-02-features.mov       # [TO BE CREATED] Feature showcase (25s)
-    ├── scripts/                      # Video scripts and storyboards
-    ├── storyboards/                  # Visual storyboards
-    ├── audio/                        # Background music and audio assets
-    ├── alternates/                   # Alternative cuts
-    └── working/                      # Working files and project files
+├── app-previews/                     # App Store preview videos
+│   ├── APP-PREVIEW-SPECIFICATIONS.md # Detailed video specifications
+│   ├── preview-01-overview.mov       # [TO BE CREATED] Product overview (30s)
+│   ├── preview-02-features.mov       # [TO BE CREATED] Feature showcase (25s)
+│   ├── scripts/                      # Video scripts and storyboards
+│   ├── storyboards/                  # Visual storyboards
+│   ├── audio/                        # Background music and audio assets
+│   ├── alternates/                   # Alternative cuts
+│   └── working/                      # Working files and project files
+└── review-materials/                 # App Review compliance (Guideline 2.1)
+    ├── README.md                     # Review materials guide
+    ├── DEMO-VIDEO-SCRIPT.md          # Recording script for demo video
+    ├── sample-data.zip               # Sample transcript files for Apple
+    └── sample-transcripts/           # Raw transcript files
 ```
 
 ## Quick Start
@@ -105,6 +110,34 @@ Follow the detailed guide in `app-previews/APP-PREVIEW-SPECIFICATIONS.md`:
 **Video List**:
 1. `preview-01-overview.mov` - 30s product overview and value proposition
 2. `preview-02-features.mov` - 25s rapid feature showcase
+
+### 5. Prepare Review Materials (If Requested)
+
+Apple may request additional materials under Guideline 2.1 when:
+- App accesses external data sources
+- Features require specific setup to test
+- App behavior isn't immediately apparent
+
+**Location:** `review-materials/`
+
+**See:** `review-materials/README.md` for complete guide
+
+**Required materials:**
+
+| Material | Purpose | Location |
+|----------|---------|----------|
+| Demo Video | Show all features on physical Mac | `review-materials/DEMO-VIDEO-SCRIPT.md` |
+| Sample Data | Test transcript summarization | `review-materials/sample-data.zip` |
+| Instructions | Setup guide for reviewers | `website/review/index.html` |
+
+**Hosting:** Deploy to `https://contextify.sh/review/` via `./scripts/deploy-website.sh`
+
+**App Store Connect Notes:**
+```
+DEMO VIDEO: https://contextify.sh/review/demo-video.mp4
+SAMPLE DATA: https://contextify.sh/review/sample-data.zip
+SETUP INSTRUCTIONS: https://contextify.sh/review/
+```
 
 ## Using Fastlane Deliver
 
@@ -283,9 +316,15 @@ This is a strong privacy position and should be highlighted in marketing.
 - [ ] Test app on macOS 14.0+ (minimum supported version)
 - [ ] Verify app icon is 1024x1024 PNG without transparency
 - [ ] Ensure copyright year is current (2025)
-- [ ] Prepare demo environment for App Review if needed
 - [ ] Review App Store Review Guidelines compliance
 - [ ] Complete App Privacy questions in App Store Connect
+
+**Review Materials (Guideline 2.1 compliance):**
+- [ ] Generate sample transcripts (`review-materials/generate-transcripts.sh`)
+- [ ] Package sample data (`review-materials/sample-data.zip`)
+- [ ] Record demo video following `review-materials/DEMO-VIDEO-SCRIPT.md`
+- [ ] Deploy to website (`./scripts/deploy-website.sh`)
+- [ ] Add review material URLs to App Store Connect notes
 
 ### For Each Update
 
@@ -297,6 +336,11 @@ This is a strong privacy position and should be highlighted in marketing.
 - [ ] Check competitor listings for new trends
 - [ ] Update copyright year if needed
 - [ ] Test on latest macOS version
+
+**Review Materials (required for each submission):**
+- [ ] Record new demo video (Apple requires updated video per submission)
+- [ ] Update sample data if transcript format changed
+- [ ] Redeploy to website if files changed
 
 ### Ongoing Optimization
 
@@ -509,7 +553,7 @@ make appstore-submit
 
 ---
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2025-11-27
 **App Version**: 1.0.0
-**Metadata Version**: 1.0
+**Metadata Version**: 1.1
 **Platform**: macOS App Store
