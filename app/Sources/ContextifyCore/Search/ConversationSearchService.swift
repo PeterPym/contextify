@@ -125,13 +125,14 @@ public actor ConversationSearchService {
           e.provider,
           f.role,
           f.content,
-          e.timestamp as created_at,
+          COALESCE(e.timestamp, f.created_at) as created_at,
           bm25(transcript_entries_fts) as rank,
           snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
         LEFT JOIN transcript_entries e ON e.id = f.entry_id
         WHERE transcript_entries_fts MATCH ?
+          AND e.id IS NOT NULL
       """
 
       var arguments: [DatabaseValueConvertible] = [ftsQuery]
