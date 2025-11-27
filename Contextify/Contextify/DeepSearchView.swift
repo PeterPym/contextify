@@ -51,22 +51,15 @@ struct DeepSearchView: View {
       prompt: "Search"
     )
     .onSubmit(of: .search) {
-      log.debug("[SEARCH-SUBMIT] Enter pressed, triggering search")
+      log.debug("[SEARCH-SUBMIT] Search submitted")
       viewModel.search()
     }
-    // Keyboard shortcuts: Cmd+F to focus, Cmd+Enter to search
+    // Cmd+F to focus search field
     .background {
-      Group {
-        Button("") { isSearchPresented = true }
-          .keyboardShortcut("f", modifiers: .command)
-        Button("") {
-          log.debug("[SEARCH-SUBMIT] Cmd+Enter pressed, triggering search")
-          viewModel.search()
-        }
-        .keyboardShortcut(.return, modifiers: .command)
-      }
-      .frame(width: 0, height: 0)
-      .opacity(0)
+      Button("") { isSearchPresented = true }
+        .keyboardShortcut("f", modifiers: .command)
+        .frame(width: 0, height: 0)
+        .opacity(0)
     }
   }
 

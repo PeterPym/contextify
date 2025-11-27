@@ -100,6 +100,7 @@ final class DeepSearchViewModel {
 
     searchTask = Task { @MainActor in
       do {
+        let searchStart = Date()
         let request = ConversationSearchRequest(
           query: trimmedQuery,
           scope: .project(projectId),
@@ -108,6 +109,9 @@ final class DeepSearchViewModel {
         )
 
         let searchResult = try await searchService.search(request)
+        let searchDuration = Date().timeIntervalSince(searchStart)
+        log.debug("[DEEPSEARCH-TIMING] FTS query took \(String(format: "%.3f", searchDuration))s")
+
         guard !Task.isCancelled else {
           log.debug("[DEEPSEARCH-CANCEL] Search cancelled for query='\(trimmedQuery, privacy: .public)'")
           return
@@ -117,6 +121,7 @@ final class DeepSearchViewModel {
         log.info("[DEEPSEARCH-DONE] query='\(trimmedQuery, privacy: .public)' hits=\(searchResult.hits.count)")
 
         // Validate selection against new results, then auto-select if needed
+        let contextStart = Date()
         if let hitId = selectedHitId,
            searchResult.hits.contains(where: { $0.id == hitId }) {
           // Previous selection still valid in new results
@@ -130,6 +135,8 @@ final class DeepSearchViewModel {
           selectedHitId = nil
           contextEntries = []
         }
+        let contextDuration = Date().timeIntervalSince(contextStart)
+        log.debug("[DEEPSEARCH-TIMING] Context load took \(String(format: "%.3f", contextDuration))s")
       } catch {
         if !Task.isCancelled {
           searchError = error
@@ -138,6 +145,7 @@ final class DeepSearchViewModel {
       }
 
       isSearching = false
+      log.debug("[DEEPSEARCH-TIMING] Search complete, isSearching=false")
     }
   }
 
