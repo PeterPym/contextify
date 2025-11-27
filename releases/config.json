@@ -1,0 +1,58 @@
+{
+  "$schema": "./schemas/config.schema.json",
+  "schema_version": 1,
+
+  "project": {
+    "name": "Contextify",
+    "bundle_id": "sh.contextify.Contextify",
+    "minimum_os": "26.0"
+  },
+
+  "distributions": {
+    "dmg": {
+      "target": "Contextify",
+      "scheme": "Contextify",
+      "build_command": "python3 scripts/release.py --version {version} --yes",
+      "artifact_pattern": "dist/Contextify-{version}.dmg",
+      "signing": {
+        "sparkle_key": ".secrets/sparkle_private_key"
+      }
+    },
+    "appstore": {
+      "target": "Contextify AppStore",
+      "scheme": "Contextify AppStore",
+      "archive_command": "bash scripts/xc.sh --dist=appstore Release archive",
+      "export_command": "bash scripts/xc.sh export-pkg",
+      "upload_command": "bash scripts/xc.sh upload",
+      "archive_path": "build/Contextify.xcarchive",
+      "archive_preserve_path": "build/archives/v{version}.xcarchive"
+    }
+  },
+
+  "review_materials": {
+    "base_url": "https://contextify.sh/review-4a125b1d",
+    "sample_data_source": "appstore-metadata/review-materials/sample-data.zip",
+    "demo_video_script": "appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md"
+  },
+
+  "website": {
+    "deploy_command": "./scripts/deploy-website.sh",
+    "appcast_path": "website/appcast.xml",
+    "release_notes_path": "website/release-notes/{version}.html"
+  },
+
+  "validation": {
+    "pre_release": {
+      "tests_command": "swift test",
+      "warnings_command": "bash scripts/xc.sh build 2>&1 | grep -c 'warning:'",
+      "expected_warnings": 0
+    }
+  },
+
+  "app_store_connect": {
+    "app_id": "6753190666",
+    "team_id": "J8P5B23FK7",
+    "api_key_id": "AG868N57U6",
+    "issuer_id": "69a6de89-2083-47e3-e053-5b8c7c11a4d1"
+  }
+}

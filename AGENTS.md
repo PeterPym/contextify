@@ -342,6 +342,12 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 
 **Strategy:** DMG leads, App Store follows. Both built from same commit. DMG ships immediately; App Store ships after Apple review (24-48h).
 
+**Release Management System:** `releases/` directory at repo root
+- `releases/WORKFLOW.md` - LLM-guided release workflow (start here)
+- `releases/config.json` - Release configuration
+- `releases/manifest.json` - Release history and current state
+- `releases/v{X.Y.Z}/` - Per-release directories with checklists, state, artifacts
+
 **Two distribution channels:**
 
 | Channel | Target | Updates | Build Flag |
@@ -352,6 +358,12 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 ### Quick Commands
 
 ```bash
+# Initialize new release
+./scripts/release/init.sh X.Y.Z
+
+# Check release status
+./scripts/release/status.sh X.Y.Z
+
 # DMG Release (ships immediately)
 python3 scripts/release.py --version X.Y.Z --yes
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
@@ -364,9 +376,13 @@ bash scripts/xc.sh upload
 # Then: complete submission in App Store Connect
 ```
 
-### Pre-Release Checklist
+### Pre-Release Validation
 
-Before any release:
+```bash
+./scripts/release/validate-pre-release.sh X.Y.Z
+```
+
+Or manually:
 1. P0 blockers resolved: `grep "P0" TODOS.md`
 2. Tests pass: `swift test`
 3. Build clean: `bash scripts/xc.sh build` (zero warnings)
@@ -388,6 +404,7 @@ If App Store rejects:
 2. Metadata issue? → Fix in App Store Connect, resubmit
 3. Code issue? → Fix code, rebuild with same commands, re-upload, resubmit
 4. Disagree? → Appeal via Resolution Center
+5. Update `releases/vX.Y.Z/release.json` with rejection details
 
 ### Version Backdating
 
@@ -399,10 +416,10 @@ To release newer code as an older version (e.g., release "1.1.0" code as "1.0.0"
 
 **Only valid if:** DMG not yet public, git tag not yet pushed, App Store not yet approved.
 
-**For complete workflow:** See `build/docs/operations/release/RELEASE-CHECKLIST.md`
+**For complete workflow:** See `releases/WORKFLOW.md` or `build/docs/operations/release/RELEASE-CHECKLIST.md`
 
 **Detailed guides:**
-- `scripts/RELEASE.md` - DMG release automation
+- `releases/WORKFLOW.md` - LLM-guided release workflow
 - `build/docs/guides/APP-STORE-SUBMISSION.md` - App Store process
 - `build/docs/operations/release/sparkle-updates.md` - Sparkle auto-updates
 - `build/docs/operations/release/README.md` - Release operations overview
