@@ -352,3 +352,138 @@ Contextify uses **two separate Xcode targets** to support both distribution chan
 - `APPSTORE_BUILD` - Defined for App Store target, disables Sparkle code paths
 
 The `--dist=appstore` flag automatically selects the correct target/scheme.
+
+---
+
+## Submitting a New Version
+
+When releasing an update to an existing app:
+
+### 1. Build and Upload
+
+```bash
+bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh export-pkg
+bash scripts/xc.sh upload
+```
+
+### 2. Create New Version in App Store Connect
+
+1. Navigate to: App Store → macOS App
+2. Click **+ Version** (or select existing draft)
+3. Enter version number (must match `MARKETING_VERSION` in Xcode)
+
+### 3. Required Updates
+
+| Field | When to Update |
+|-------|----------------|
+| **What's New** | Every version (required) |
+| **Build** | Every version (select uploaded build) |
+| **Screenshots** | If UI changed significantly |
+| **Description** | If features changed |
+| **Keywords** | If targeting new search terms |
+
+### 4. Submit
+
+1. Select the new build
+2. Update "What's New in This Version"
+3. Click **Add for Review**
+4. Submit to App Review
+
+---
+
+## Handling Rejections
+
+### Finding Rejection Details
+
+1. App Store Connect → Your App
+2. Click **Activity** tab
+3. Select the rejected build
+4. Click **Resolution Center**
+
+### Common Rejections and Fixes
+
+| Guideline | Issue | Fix |
+|-----------|-------|-----|
+| **2.1** | App crashes/incomplete | Fix code, rebuild, re-upload |
+| **2.3** | Inaccurate metadata | Update description/screenshots |
+| **4.2** | Minimum functionality | Add features or appeal |
+| **5.1.1** | Privacy policy issue | Update privacy policy URL |
+| **5.1.2** | Data collection undisclosed | Update App Privacy section |
+
+### Response Workflow
+
+**Metadata-only fix:**
+1. Make changes in App Store Connect
+2. Resubmit same build
+
+**Code fix required:**
+```bash
+# Fix the code
+# Commit changes
+
+# Rebuild and upload (same version number is OK)
+bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh export-pkg
+bash scripts/xc.sh upload
+
+# In App Store Connect:
+# - Select new build
+# - Resubmit for review
+```
+
+**Appealing a rejection:**
+1. Go to Resolution Center
+2. Click **Reply**
+3. Be professional, specific, and reference guidelines
+4. Provide evidence (screenshots, documentation) if applicable
+5. Submit appeal
+
+### Tips for Avoiding Rejections
+
+- Test on clean macOS install before submission
+- Ensure all entitlements are justified
+- Privacy policy must be accessible and accurate
+- Screenshots must reflect actual app UI
+- Description must accurately describe features
+
+---
+
+## Version Backdating
+
+**Scenario:** Development has progressed past the submitted version (e.g., code is at "1.1.0" level) but you want to release as the pending version (e.g., "1.0.0").
+
+**When valid:**
+- App Store submission is pending (not yet approved)
+- DMG has NOT been released publicly
+- Git tag for higher version has NOT been pushed
+
+### Procedure
+
+1. **Update Xcode version:**
+   ```bash
+   # Edit MARKETING_VERSION in project.pbxproj to target version
+   # Or use release.py which handles this
+   ```
+
+2. **Clean up git tags:**
+   ```bash
+   # Delete higher version tag if it exists
+   git tag -d v1.1.0
+   git push origin --delete v1.1.0  # if pushed
+   ```
+
+3. **Create correct tag and rebuild:**
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+
+   # Rebuild App Store
+   bash scripts/xc.sh --dist=appstore Release archive
+   bash scripts/xc.sh export-pkg
+   bash scripts/xc.sh upload
+   ```
+
+4. **Select new build in App Store Connect**
+
+**Full details:** See `build/docs/operations/release/RELEASE-CHECKLIST.md`
