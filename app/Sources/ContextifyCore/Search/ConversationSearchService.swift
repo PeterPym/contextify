@@ -219,24 +219,24 @@ public actor ConversationSearchService {
     let pool = try dbManager.pool
 
     return try await pool.read { db in
-      // Get the hit's project, timestamp, and id for ordering
+      // Get the hit's transcript, timestamp, and id for ordering
       guard let hit = try Row.fetchOne(db, sql: """
-        SELECT project_id, timestamp, id FROM transcript_entries WHERE id = ?
+        SELECT transcript_id, timestamp, id FROM transcript_entries WHERE id = ?
       """, arguments: [entryId]) else {
         return []
       }
 
-      let projectId: String = hit["project_id"]
+      let transcriptId: String = hit["transcript_id"]
       let timestamp: Int64 = hit["timestamp"]
       let hitId: String = hit["id"]
 
-      // Get context entries using same predicates as timeline view
+      // Get context entries from the SAME conversation (transcript)
       // Uses (timestamp, id) ordering for deterministic results when timestamps collide
       // The hit is explicitly included via the id comparison
       return try TranscriptEntry.fetchAll(db, sql: """
         SELECT * FROM (
           SELECT * FROM transcript_entries
-          WHERE project_id = ?
+          WHERE transcript_id = ?
             AND display_in_timeline = 1
             AND (timestamp < ? OR (timestamp = ? AND id < ?))
           ORDER BY timestamp DESC, id DESC
@@ -245,14 +245,14 @@ public actor ConversationSearchService {
         UNION ALL
         SELECT * FROM (
           SELECT * FROM transcript_entries
-          WHERE project_id = ?
+          WHERE transcript_id = ?
             AND display_in_timeline = 1
             AND id = ?
         )
         UNION ALL
         SELECT * FROM (
           SELECT * FROM transcript_entries
-          WHERE project_id = ?
+          WHERE transcript_id = ?
             AND display_in_timeline = 1
             AND (timestamp > ? OR (timestamp = ? AND id > ?))
           ORDER BY timestamp ASC, id ASC
@@ -260,9 +260,9 @@ public actor ConversationSearchService {
         )
         ORDER BY timestamp ASC, id ASC
       """, arguments: [
-        projectId, timestamp, timestamp, hitId, before,  // before entries
-        projectId, hitId,                                  // the hit itself
-        projectId, timestamp, timestamp, hitId, after      // after entries
+        transcriptId, timestamp, timestamp, hitId, before,  // before entries
+        transcriptId, hitId,                                  // the hit itself
+        transcriptId, timestamp, timestamp, hitId, after      // after entries
       ])
     }
   }
@@ -283,36 +283,35 @@ public actor ConversationSearchService {
     let pool = try dbManager.pool
 
     return try await pool.read { db in
-      // Get the hit's project, timestamp, and id for ordering
+      // Get the hit's transcript, timestamp, and id for ordering
       guard let hit = try Row.fetchOne(db, sql: """
-        SELECT project_id, timestamp, id FROM transcript_entries WHERE id = ?
+        SELECT transcript_id, timestamp, id FROM transcript_entries WHERE id = ?
       """, arguments: [entryId]) else {
         return ContextCounts(earlierCount: 0, laterCount: 0)
       }
 
-      let projectId: String = hit["project_id"]
+      let transcriptId: String = hit["transcript_id"]
       let timestamp: Int64 = hit["timestamp"]
       let hitId: String = hit["id"]
 
-      // Count entries strictly before the current window
-      // We need to find where the current window starts, then count before that
+      // Count entries strictly before the current window (same conversation)
       let earlierCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
-        WHERE project_id = ?
+        WHERE transcript_id = ?
           AND display_in_timeline = 1
           AND (timestamp < ? OR (timestamp = ? AND id < ?))
-      """, arguments: [projectId, timestamp, timestamp, hitId]) ?? 0
+      """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
       // Subtract entries already shown
       let actualEarlier = max(0, earlierCount - currentBefore)
 
-      // Count entries strictly after the current window
+      // Count entries strictly after the current window (same conversation)
       let laterCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
-        WHERE project_id = ?
+        WHERE transcript_id = ?
           AND display_in_timeline = 1
           AND (timestamp > ? OR (timestamp = ? AND id > ?))
-      """, arguments: [projectId, timestamp, timestamp, hitId]) ?? 0
+      """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
       // Subtract entries already shown
       let actualLater = max(0, laterCount - currentAfter)
