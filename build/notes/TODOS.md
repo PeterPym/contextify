@@ -69,9 +69,13 @@ doc_references:
 - [ ] Add issue templates (bug report, feature request)
 
 **Wiring**
-- [ ] Update in-app "Report a bug" link → `https://github.com/peterpym/contextify/issues/new`
-- [ ] Update website GitHub link
+- [ ] Update website GitHub link → `https://github.com/peterpym/contextify`
 - [ ] Plan release flow: private → public (artifacts only)
+
+**In-App Help Menu**
+- [ ] Help → Report a Bug → `https://github.com/peterpym/contextify/issues/new?template=bug_report.md`
+- [ ] Help → Request a Feature → `https://github.com/peterpym/contextify/issues/new?template=feature_request.md`
+- [ ] Help → Contact Support → email (support@contextify.sh or similar)
 
 **Support Documentation**
 - [ ] Update `website/support.html` to point users to public repo for bugs/features
