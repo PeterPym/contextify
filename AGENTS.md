@@ -338,6 +338,75 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 
 **For details:** See `build/docs/operations/` (DATABASE-LOCATIONS.md, WEBSITE.md, transcript-corruption-detection.md)
 
+## Releases
+
+**Strategy:** DMG leads, App Store follows. Both built from same commit. DMG ships immediately; App Store ships after Apple review (24-48h).
+
+**Two distribution channels:**
+
+| Channel | Target | Updates | Build Flag |
+|---------|-----------|---------|------------|
+| **DMG** | Contextify | Sparkle auto-updates | `--dist=dmg` |
+| **App Store** | Contextify AppStore | Apple updates | `--dist=appstore` |
+
+### Quick Commands
+
+```bash
+# DMG Release (ships immediately)
+python3 scripts/release.py --version X.Y.Z --yes
+./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
+# Then: update appcast.xml, deploy to website
+
+# App Store Release (ships after review)
+bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh export-pkg
+bash scripts/xc.sh upload
+# Then: complete submission in App Store Connect
+```
+
+### Pre-Release Checklist
+
+Before any release:
+1. P0 blockers resolved: `grep "P0" TODOS.md`
+2. Tests pass: `swift test`
+3. Build clean: `bash scripts/xc.sh build` (zero warnings)
+4. Working directory clean: `git status`
+
+### Version Sync Requirement
+
+All sources must match after release:
+- Xcode project (`MARKETING_VERSION`)
+- Git tag (`vX.Y.Z`)
+- Appcast (`sparkle:shortVersionString`)
+- App Store Connect
+- GitHub Release
+
+### Handling Rejections
+
+If App Store rejects:
+1. Read rejection in App Store Connect → Resolution Center
+2. Metadata issue? → Fix in App Store Connect, resubmit
+3. Code issue? → Fix code, rebuild with same commands, re-upload, resubmit
+4. Disagree? → Appeal via Resolution Center
+
+### Version Backdating
+
+To release newer code as an older version (e.g., release "1.1.0" code as "1.0.0"):
+1. Update `MARKETING_VERSION` in project.pbxproj to target version
+2. Delete any git tags for higher version
+3. Create tag for target version
+4. Build both distributions normally
+
+**Only valid if:** DMG not yet public, git tag not yet pushed, App Store not yet approved.
+
+**For complete workflow:** See `build/docs/operations/release/RELEASE-CHECKLIST.md`
+
+**Detailed guides:**
+- `scripts/RELEASE.md` - DMG release automation
+- `build/docs/guides/APP-STORE-SUBMISSION.md` - App Store process
+- `build/docs/operations/release/sparkle-updates.md` - Sparkle auto-updates
+- `build/docs/operations/release/README.md` - Release operations overview
+
 ## Transcript Access (App Store Builds)
 
 Sandbox builds require security-scoped bookmarks for `~/.claude/projects/` and `~/.codex/sessions/`.

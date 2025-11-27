@@ -62,12 +62,15 @@ bash scripts/xc.sh upload
 
 | Document | Purpose |
 |----------|---------|
+| [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) | **Master checklist - start here** |
 | [sparkle-updates.md](sparkle-updates.md) | DMG auto-update system (Sparkle) |
 | [notarization-setup.md](notarization-setup.md) | Apple notarization credentials |
 | [notarization-success.md](notarization-success.md) | Notarization verification |
 | [release-build-verification.md](release-build-verification.md) | Build validation steps |
 | [release-readiness.md](release-readiness.md) | Pre-release checklist |
 | [../guides/APP-STORE-SUBMISSION.md](../guides/APP-STORE-SUBMISSION.md) | App Store process |
+
+**For AI agents:** When user says "I'm ready to release," start with `RELEASE-CHECKLIST.md`.
 
 ## Scripts
 

@@ -79,27 +79,76 @@ length="12345678"
 
 ### 3. Update Appcast
 
-Edit `website/appcast.xml`:
+Edit `website/appcast.xml`. **Add new items at the TOP** (newest first).
+
+#### Step-by-Step
+
+1. **Generate RFC 2822 date:**
+   ```bash
+   date "+%a, %d %b %Y %H:%M:%S %z"
+   # Output: Thu, 28 Nov 2025 14:30:00 -0800
+   ```
+
+2. **Determine build number:**
+   - Check current highest in appcast.xml
+   - Increment by 1 (monotonic integer: 1, 2, 3...)
+   - This is `sparkle:version`, NOT the marketing version
+
+3. **Copy signature and length** from sign.sh output
+
+4. **Add new `<item>` block** immediately after `<channel>` opening tag
+
+#### Complete Example
 
 ```xml
-<item>
-  <title>Version X.Y.Z</title>
-  <pubDate>Mon, 25 Nov 2025 12:00:00 -0800</pubDate>
-  <sparkle:version>BUILD_NUMBER</sparkle:version>
-  <sparkle:shortVersionString>X.Y.Z</sparkle:shortVersionString>
-  <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-  <sparkle:releaseNotesLink>
-    https://contextify.sh/release-notes/X.Y.Z.html
-  </sparkle:releaseNotesLink>
-  <enclosure
-    url="https://contextify.sh/releases/Contextify-X.Y.Z.dmg"
-    sparkle:edSignature="PASTE_SIGNATURE_HERE"
-    length="PASTE_LENGTH_HERE"
-    type="application/octet-stream"
-    sparkle:os="macos"
-  />
-</item>
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Contextify Updates</title>
+    <link>https://contextify.sh/appcast.xml</link>
+    <description>Most recent updates for Contextify</description>
+    <language>en</language>
+
+    <!-- NEWEST VERSION FIRST -->
+    <item>
+      <title>Version 1.1.0</title>
+      <pubDate>Thu, 28 Nov 2025 14:30:00 -0800</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>
+        https://contextify.sh/release-notes/1.1.0.html
+      </sparkle:releaseNotesLink>
+      <enclosure
+        url="https://contextify.sh/releases/Contextify-1.1.0.dmg"
+        sparkle:edSignature="ACTUAL_SIGNATURE_FROM_SIGN_SH"
+        length="16320758"
+        type="application/octet-stream"
+        sparkle:os="macos"
+      />
+    </item>
+
+    <!-- Previous version (keep for rollback) -->
+    <item>
+      <title>Version 1.0.0</title>
+      <!-- ... -->
+    </item>
+  </channel>
+</rss>
 ```
+
+#### Field Reference
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| `title` | `Version X.Y.Z` | User-visible in update dialog |
+| `pubDate` | RFC 2822 format | `date "+%a, %d %b %Y %H:%M:%S %z"` |
+| `sparkle:version` | Integer (1, 2, 3...) | Build number for comparison |
+| `sparkle:shortVersionString` | `X.Y.Z` | Marketing version |
+| `sparkle:minimumSystemVersion` | `26.0` | macOS Tahoe minimum |
+| `sparkle:edSignature` | From sign.sh | EdDSA signature |
+| `length` | From sign.sh | File size in bytes |
+| `url` | Full URL to DMG | Must be HTTPS |
 
 ### 4. Create Release Notes
 
