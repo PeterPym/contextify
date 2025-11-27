@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 35 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 69
+**Total Active Items:** 70
 
 ---
 
@@ -105,7 +105,50 @@ doc_references:
 
 ---
 
-# P1 (High Priority) - 16 Items
+# P1 (High Priority) - 17 Items
+
+---
+
+## Search Context Export (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (enables key user workflow - context reinjection)
+**Effort:** 2-3 hours
+
+- [ ] #P1-CONTEXT-EXPORT: Improve search context pane copy/export for conversation reinjection
+
+**Background:**
+The Deep Search context pane shows conversation context around search hits. Users need to export this context to reinject into new conversations (e.g., "here's what we discussed before...").
+
+**Current State:**
+- `copyExcerpt()` in DeepSearchViewModel copies context to clipboard
+- Basic format: header + timestamped messages
+
+**Improvements Needed:**
+
+1. **Better Export Format** (1 hour)
+   - Markdown-friendly output (code blocks preserved)
+   - Option for compact vs verbose format
+   - Include search query that found this context
+   - Consider XML tags for LLM-friendly structure
+
+2. **Write to File Option** (1 hour)
+   - Save to `/tmp/contextify-excerpt-{timestamp}.md`
+   - Auto-open in default editor or reveal in Finder
+   - Useful for longer excerpts that exceed clipboard comfort
+
+3. **Selection Control** (30 min)
+   - Allow selecting subset of context entries to export
+   - "Export visible" vs "Export all loaded"
+
+**Files:**
+- `Contextify/Contextify/DeepSearchViewModel.swift` (copyExcerpt, new writeToFile)
+- `Contextify/Contextify/DeepSearchView.swift` (export button/menu)
+
+**Acceptance Criteria:**
+- [ ] Exported context is LLM-friendly (can paste into Claude/GPT and it understands structure)
+- [ ] File export works and opens/reveals the file
+- [ ] User can choose which entries to include
 
 ---
 
