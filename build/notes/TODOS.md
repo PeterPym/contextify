@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 35 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 70
+**Total Active Items:** 72
 
 ---
 
@@ -1042,7 +1042,92 @@ import Sparkle
 
 ---
 
-# P2 (Medium Priority) - 35 Items
+# P2 (Medium Priority) - 37 Items
+
+---
+
+## Search Window Enhancements (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (improves search usability)
+**Effort:** 4-6 hours
+
+- [ ] #P2-SEARCH-UX: Enhance Deep Search window with sorting and multi-select
+
+**Features:**
+
+1. **Sort Control** (2-3 hours)
+   - Segmented control: Date | Relevance | Both
+   - Click same option twice to toggle asc/desc
+   - Visual indicator for current sort direction
+   - Persist preference per session
+
+2. **Context Pane Multi-Select** (2-3 hours)
+   - Click: single message selection
+   - Shift+Click: select range from last selection
+   - Cmd+Click: toggle individual messages in selection
+   - Cmd+C: copy all selected messages to clipboard
+   - Visual indication of selected messages (checkbox or highlight)
+
+**Files:**
+- `Contextify/Contextify/DeepSearchView.swift` (sort control, selection UI)
+- `Contextify/Contextify/DeepSearchViewModel.swift` (sort state, selection state)
+- `app/Sources/ContextifyCore/Search/ConversationSearchService.swift` (ORDER BY options)
+
+**Related:** #P2-CONTEXT-REINJECTION (uses multi-select for export)
+
+---
+
+## Context Reinjection Design (1 item)
+
+**Status:** Needs Design
+**Priority:** P2 (enables key workflow - feeding context back to CLI)
+**Effort:** Design: 2-3 hours, Implementation: 4-8 hours
+
+- [ ] #P2-CONTEXT-REINJECTION: Design and implement mechanism to feed selected messages back to CLI
+
+**Problem:**
+Users find relevant conversation context via search and want to reinject it into a new CLI session (Claude Code, Codex). Need a smooth workflow that works across providers and respects App Store sandbox.
+
+**Design Options to Evaluate:**
+
+1. **Clipboard Paste (Fallback)**
+   - Cmd+C copies formatted context
+   - User pastes into CLI
+   - Pro: Universal, no permissions
+   - Con: Large contexts unwieldy, manual step
+
+2. **Temp File + Path Copy**
+   - Write to `/tmp/contextify-context-{timestamp}.md`
+   - Copy `read /tmp/contextify-context-{timestamp}.md` to clipboard
+   - User pastes command into CLI
+   - Pro: Handles large contexts, single paste
+   - Con: Assumes CLI has `read` command, temp file cleanup
+
+3. **Custom Slash Command**
+   - Generate `.claude/commands/inject-context.md` dynamically
+   - User types `/inject-context` in Claude Code
+   - Pro: Native CLI integration
+   - Con: Claude Code specific, file management complexity
+
+4. **IPC/URL Scheme**
+   - `contextify://inject?context=...` URL scheme
+   - CLI tool registers handler
+   - Pro: Direct integration
+   - Con: Requires CLI-side support, provider-specific
+
+**Considerations:**
+- App Store sandbox restrictions on file access
+- Cross-provider compatibility (Claude Code, Codex, future CLIs)
+- Context size limits
+- User discoverability
+
+**Deliverables:**
+- Design doc evaluating options with recommendation
+- Implementation of chosen approach
+- User-facing documentation/tooltips
+
+**Related:** #P1-CONTEXT-EXPORT, #P2-SEARCH-UX
 
 ---
 

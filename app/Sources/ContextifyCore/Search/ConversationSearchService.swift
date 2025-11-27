@@ -125,7 +125,7 @@ public actor ConversationSearchService {
           e.provider,
           f.role,
           f.content,
-          f.created_at,
+          e.timestamp as created_at,
           bm25(transcript_entries_fts) as rank,
           snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
         FROM transcript_entries_fts f
