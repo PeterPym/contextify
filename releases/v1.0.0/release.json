@@ -115,6 +115,11 @@
       "date": "2025-11-27",
       "author": "system",
       "note": "Migrated to new release management system"
+    },
+    {
+      "date": "2025-11-27",
+      "author": "system",
+      "note": "Version strategy: Keep marketing version 1.0.0, increment build to 4. Code from current HEAD (includes search, release infrastructure). Git tag v1.0.0 stays at original commit for GitHub/DMG release."
     }
   ]
 }
