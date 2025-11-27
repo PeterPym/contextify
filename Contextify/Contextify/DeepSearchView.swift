@@ -78,19 +78,22 @@ struct DeepSearchView: View {
 
   private func resultsList(_ result: ConversationSearchResult) -> some View {
     VStack(spacing: 0) {
-      // Results header with role breakdown and info button
+      // Results header with category label and role breakdown
       HStack(spacing: 6) {
+        Text("Conversations")
+          .font(.headline)
+
+        Spacer()
+
         resultsBreakdown(result)
 
         InfoButton(isPresented: $showSearchInfo)
           .popover(isPresented: $showSearchInfo) {
             SearchInfoPopover()
           }
-
-        Spacer()
       }
       .padding(.horizontal, 12)
-      .padding(.vertical, 6)
+      .frame(height: 36)
       .background(Color(nsColor: .controlBackgroundColor))
 
       Divider()
@@ -250,29 +253,33 @@ struct DeepSearchView: View {
 
   private var contextHeader: some View {
     HStack {
-      Text("Conversation Context")
+      Text(conversationTimestamp)
         .font(.headline)
 
       Spacer()
 
       if !viewModel.contextEntries.isEmpty {
-        Menu {
-          Button("Copy Excerpt") {
-            viewModel.copyExcerpt()
-          }
-          Button("Copy for AI") {
-            viewModel.copyForAI()
-          }
+        Button {
+          viewModel.copyVisible()
         } label: {
-          Label("Copy", systemImage: "doc.on.doc")
+          Label("Copy Visible", systemImage: "doc.on.doc")
         }
-        .menuStyle(.borderlessButton)
-        .frame(width: 70)
+        .buttonStyle(.borderless)
       }
     }
     .padding(.horizontal, 12)
-    .padding(.vertical, 8)
+    .frame(height: 36)
     .background(Color(nsColor: .controlBackgroundColor))
+  }
+
+  private var conversationTimestamp: String {
+    guard let hitId = viewModel.selectedHitId,
+          let hit = viewModel.result?.hits.first(where: { $0.id == hitId }) else {
+      return "Conversation Detail"
+    }
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMM d, h:mm a"
+    return formatter.string(from: hit.createdAt)
   }
 
   // MARK: - States
@@ -573,17 +580,17 @@ extension DeepSearchView {
 
     if result.cappedResults {
       Text("5000+ results")
-        .font(.caption)
+        .font(.subheadline)
         .foregroundStyle(.orange)
     } else {
       HStack(spacing: 4) {
         Text("\(result.totalCount) results")
-          .font(.caption)
+          .font(.subheadline)
           .foregroundStyle(.secondary)
 
         if result.totalCount > 0 {
           Text(roleBreakdownText(user: userCount, assistant: assistantCount, summary: summaryCount))
-            .font(.caption)
+            .font(.subheadline)
             .foregroundStyle(.tertiary)
         }
       }

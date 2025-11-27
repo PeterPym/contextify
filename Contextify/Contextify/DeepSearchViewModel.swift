@@ -373,7 +373,7 @@ final class DeepSearchViewModel {
 
   // MARK: - Copy Actions
 
-  func copyExcerpt() {
+  func copyVisible() {
     guard !contextEntries.isEmpty else { return }
 
     let formatter = DateFormatter()
@@ -389,7 +389,6 @@ final class DeepSearchViewModel {
       CONTEXTIFY EXCERPT
       Project: \(projectName)
       Time range: \(startTime) - \(endTime)
-      Messages: \(contextEntries.count)
 
       """
 
@@ -402,37 +401,6 @@ final class DeepSearchViewModel {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
     let count = contextEntries.count
-    log.info("[COPY] Copied excerpt with \(count) messages")
-  }
-
-  func copyForAI() {
-    guard !contextEntries.isEmpty else { return }
-
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .short
-
-    let first = contextEntries.first!
-    let last = contextEntries.last!
-    let startTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp)))
-    let endTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp)))
-
-    var text = """
-      CONTEXTIFY CONTEXT EXCERPT
-      Project: \(projectName)
-      Time range: \(startTime) - \(endTime)
-
-      """
-
-    for entry in contextEntries {
-      let time = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)))
-      let role = entry.kind.capitalized
-      text += "[\(role), \(time)]: \(entry.content)\n\n"
-    }
-
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
-    let count = contextEntries.count
-    log.info("[COPY] Copied AI context with \(count) messages")
+    log.info("[COPY] Copied \(count) visible messages")
   }
 }

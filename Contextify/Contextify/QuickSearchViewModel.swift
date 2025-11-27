@@ -197,8 +197,8 @@ final class QuickSearchViewModel {
 
   // MARK: - Copy Actions
 
-  /// Copy the context excerpt to clipboard
-  func copyExcerpt(projectName: String) {
+  /// Copy visible context entries to clipboard
+  func copyVisible(projectName: String) {
     guard !contextEntries.isEmpty else { return }
 
     let formatter = DateFormatter()
@@ -214,7 +214,6 @@ final class QuickSearchViewModel {
       CONTEXTIFY EXCERPT
       Project: \(projectName)
       Time range: \(startTime) - \(endTime)
-      Shown messages: \(contextEntries.count)
 
       """
 
@@ -228,39 +227,6 @@ final class QuickSearchViewModel {
     NSPasteboard.general.setString(text, forType: .string)
 
     let count = contextEntries.count
-    log.info("[COPY] Copied excerpt with \(count) messages")
-  }
-
-  /// Copy context in AI-friendly format
-  func copyForAI(projectName: String) {
-    guard !contextEntries.isEmpty else { return }
-
-    let formatter = DateFormatter()
-    formatter.dateStyle = .medium
-    formatter.timeStyle = .short
-
-    let first = contextEntries.first!
-    let last = contextEntries.last!
-    let startTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp)))
-    let endTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp)))
-
-    var text = """
-      CONTEXTIFY CONTEXT EXCERPT
-      Project: \(projectName)
-      Time range: \(startTime) - \(endTime)
-
-      """
-
-    for entry in contextEntries {
-      let time = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)))
-      let role = entry.kind.capitalized
-      text += "[\(role), \(time)]: \(entry.content)\n\n"
-    }
-
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(text, forType: .string)
-
-    let count = contextEntries.count
-    log.info("[COPY] Copied AI context with \(count) messages")
+    log.info("[COPY] Copied \(count) visible messages")
   }
 }
