@@ -45,9 +45,13 @@ struct DeepSearchView: View {
       text: Binding(
         get: { viewModel.query },
         set: { newValue in
+          let oldValue = viewModel.query
           viewModel.query = newValue
-          // Only clear results when query is completely emptied (like clicking X)
-          if newValue.isEmpty {
+          // Clear results when:
+          // 1. Query is empty (user cleared field), OR
+          // 2. Query was completely replaced (select-all + type), not just edited
+          let isExtension = newValue.hasPrefix(oldValue) || oldValue.hasPrefix(newValue)
+          if newValue.isEmpty || !isExtension {
             viewModel.clearResults()
           }
         }

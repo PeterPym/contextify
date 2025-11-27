@@ -112,9 +112,13 @@ struct ContentView: View {
             text: Binding(
                 get: { searchVM.query },
                 set: { newValue in
+                    let oldValue = searchVM.query
                     searchVM.query = newValue
-                    // Only clear results when query is completely emptied (like clicking X)
-                    if newValue.isEmpty {
+                    // Clear results when:
+                    // 1. Query is empty (user cleared field), OR
+                    // 2. Query was completely replaced (select-all + type), not just edited
+                    let isExtension = newValue.hasPrefix(oldValue) || oldValue.hasPrefix(newValue)
+                    if newValue.isEmpty || !isExtension {
                         searchVM.clearResults()
                     }
                 }
