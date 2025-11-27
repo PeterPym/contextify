@@ -24,18 +24,60 @@ From rejection feedback (Submission ID: 4a125b1d-7e23-4cb4-be80-09aaa29168cf):
 - Clean desktop background
 - Sample data installed at `~/.claude/projects/`
 
-**Before recording:**
+### Build the App Store Binary
+
+**Critical:** Record using the EXACT binary you'll submit to Apple.
+
+```bash
+# 1. Build App Store archive
+bash scripts/xc.sh --dist=appstore Release archive
+
+# 2. Preserve archive for consistency (recommended)
+mkdir -p build/archives
+cp -r build/Contextify.xcarchive build/archives/Contextify-$(date +%Y%m%d)-appstore.xcarchive
+
+# 3. Run the archived app for demo recording
+open build/Contextify.xcarchive/Products/Applications/Contextify.app
+```
+
+**Alternative - Export first:**
+```bash
+# Export app bundle (not pkg) for local testing
+xcodebuild -exportArchive \
+  -archivePath build/Contextify.xcarchive \
+  -exportPath build/demo-app \
+  -exportOptionsPlist ExportOptions-AppStore.plist
+
+# Run exported app
+open build/demo-app/Contextify.app
+```
+
+### Prepare Environment
+
 ```bash
 # Clean database for fresh start
 ./scripts/db_manager.sh clean --force
 
-# Build app
-bash scripts/xc.sh build
+# Verify sample data is installed
+ls ~/.claude/projects/ | grep -E "taskflow|weatherly|recipebox"
 ```
 
-**Tools:**
+### Recording Tools
 - QuickTime Player (built-in) or ScreenFlow
 - Optional: Cursor highlighter for visibility
+
+### After Recording
+
+Use the SAME archive to upload to App Store:
+```bash
+# Export as .pkg (from same archive used for demo)
+bash scripts/xc.sh export-pkg
+
+# Upload to App Store Connect
+bash scripts/xc.sh upload
+```
+
+**Full workflow:** See `build/docs/operations/release/RELEASE-CHECKLIST.md` → "App Store Review Materials"
 
 ---
 
