@@ -96,6 +96,28 @@ doc_references:
 
 ---
 
+## Sparkle Release Automation (1 item)
+
+**Status:** Design complete, awaiting user answers before implementation
+**Priority:** P1 (release workflow improvement)
+**Effort:** 4-6 hours
+**Design:** `/tmp/sparkle-release-workflow-design.md`
+
+- [ ] #P1-SPARKLE-RELEASE: Extend release.py with guided Sparkle signing, appcast updates, and website deployment
+
+**Summary:**
+Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and website deployment with interactive verification prompts at key checkpoints.
+
+**Blockers:** 6 design questions need answers before implementation (see `/tmp/sparkle-release-workflow-status.md`)
+
+**Key Features:**
+- Phase 2: Sparkle EdDSA signing + appcast update
+- Phase 3: Website deployment (DMG, appcast, release notes)
+- Interactive checkpoints with `--yes` for automation
+- Server directory creation (releases/, release-notes/)
+
+---
+
 ## Automated QA Suite (1 item)
 
 **Status:** Not Started - methodology defined, needs implementation
