@@ -54,6 +54,11 @@
   "screenshots": {
     "macos": [
       {
+        "filename": "01-search.png",
+        "title": "Never lose a conversation with Claude Code or Codex again",
+        "description": "Deep Search window showing full-text search across all AI conversations. Results pane on left with highlighted matches, context pane on right showing surrounding conversation. Search for any message, code snippet, or topic discussed."
+      },
+      {
         "filename": "01-main-hud-20251125-005030-with-text.png",
         "title": "Stay in the loop during long AI conversations",
         "description": "Main HUD showing real-time conversation timeline with Claude Code. Project tabs at top, git branch indicator, timestamped entries with AI-generated summaries. Terminal window shows Claude Code session in progress."
