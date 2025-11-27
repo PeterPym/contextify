@@ -37,16 +37,48 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 69
+**Total Active Items:** 70
 
 ---
 
-# P0 (Launch Critical) - 1 Item
+# P0 (Launch Critical) - 2 Items
+
+---
+
+## Public GitHub Presence (1 item)
+
+**Status:** Not Started
+**Priority:** P0 (blocking public launch)
+**Effort:** 2-4 hours
+
+- [ ] #P0-PUBLIC-REPO: Create `peterpym/contextify` public repo for releases + issues
+
+**Context:** GitHub doesn't support "private code, public issues/releases" on a single repo. Need separate public repo for user-facing GitHub presence.
+
+### Sub-tasks
+
+**Repo Setup**
+- [ ] Create `peterpym/contextify` (public)
+- [ ] Enable Issues, Releases, Discussions
+- [ ] Add README with product description, download instructions, "code is private" note
+- [ ] Add issue templates (bug report, feature request)
+
+**Wiring**
+- [ ] Update in-app "Report a bug" link → `https://github.com/peterpym/contextify/issues/new`
+- [ ] Update website GitHub link
+- [ ] Plan release flow: private → public (artifacts only)
+
+**Support Documentation**
+- [ ] Update `website/support.html` to point users to public repo for bugs/features
+- [ ] Add "Report Issue" and "Request Feature" links to support page
+- [ ] Ensure support page explains that code is private but issues are public
+
+**Reference:** `build/notes/todo-support/P0-PUBLIC-REPO-strategy.md`
 
 ---
 
