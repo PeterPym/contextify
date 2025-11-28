@@ -70,6 +70,9 @@ After completing each phase:
 ./scripts/release/validate-pre-release.sh X.Y.Z
 ./scripts/release/validate-build.sh X.Y.Z
 ./scripts/release/validate-deployment.sh X.Y.Z
+
+# Record demo video (interactive, handles sample data + permissions)
+./scripts/release/demo-recording.sh
 ```
 
 ## Handling Rejections

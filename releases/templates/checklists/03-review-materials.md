@@ -1,6 +1,6 @@
 # Review Materials Checklist
 
-**Release:** {version}
+**Release:** 1.0.0
 **Phase:** 3 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
@@ -19,8 +19,17 @@
 ## Demo Video
 
 ### Record Demo Video
+
+**Automated script (recommended):**
+```bash
+./scripts/release/demo-recording.sh
+```
+
+This script handles: backup real transcripts, install sample data, clean sandboxed DB, reset TCC permissions, launch archived app, guide through scenes, restore real data.
+
+**Manual steps (if needed):**
 - [ ] Read script: `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`
-- [ ] Launch archived app: `open build/Contextify.xcarchive/Products/Applications/Contextify.app`
+- [ ] Launch archived app: `open build/archives/v1.0.0-build4.xcarchive/Products/Applications/Contextify.app`
 - [ ] Set up sample data per script instructions
 - [ ] Record screen capture (QuickTime or similar)
 - [ ] Video duration: ____ seconds (target: 60-90 seconds)
