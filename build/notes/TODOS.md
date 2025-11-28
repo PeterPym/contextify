@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
-- **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 72
+**Total Active Items:** 71
 
 ---
 
@@ -106,7 +106,42 @@ doc_references:
 
 ---
 
-# P1 (High Priority) - 19 Items
+# P1 (High Priority) - 20 Items
+
+---
+
+## Release Status Bar (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (developer experience, release workflow visibility)
+**Effort:** 2-4 hours
+
+- [ ] #P1-RELEASE-STATUS-BAR: Add Claude Code status line showing current release version
+
+**Problem:**
+When working on releases, it's not immediately obvious which release version is active. You have to run `./scripts/release/status.sh` or check `releases/manifest.json` manually.
+
+**Solution:**
+Configure Claude Code's status line to display the current release version being worked on.
+
+**Implementation:**
+1. Check if Claude Code supports custom status line configuration
+2. Create a script that reads `releases/manifest.json` and outputs current version + phase
+3. Configure status line to run this script
+4. Display format: `v1.0.0 (review_materials)` or similar
+
+**Example output:**
+```
+v1.0.0 build:4 phase:review_materials
+```
+
+**Acceptance Criteria:**
+- [ ] Status line shows current release version
+- [ ] Status line shows current phase (pre_release, build, review_materials, etc.)
+- [ ] Updates automatically when release.json changes
+- [ ] Works in Claude Code sessions for this project
+
+**Reference:** Claude Code status line documentation
 
 ---
 

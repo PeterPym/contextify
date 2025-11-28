@@ -6,6 +6,18 @@
 
 ---
 
+## Prerequisites
+
+**Before recording, you MUST have a built archive.** Check release status:
+
+```bash
+./scripts/release/status.sh 1.0.0
+```
+
+If no archive exists, follow the build steps below first.
+
+---
+
 ## Apple's Requirements
 
 From rejection feedback (Submission ID: 4a125b1d-7e23-4cb4-be80-09aaa29168cf):
@@ -16,7 +28,34 @@ From rejection feedback (Submission ID: 4a125b1d-7e23-4cb4-be80-09aaa29168cf):
 
 ---
 
-## Recording Setup
+## Step 1: Build the App Store Binary
+
+**Critical:** Record using the EXACT binary you'll submit to Apple.
+
+```bash
+# Check current release state
+./scripts/release/status.sh 1.0.0
+
+# Build App Store archive (creates build 4 from current HEAD)
+bash scripts/xc.sh --dist=appstore Release archive
+
+# Preserve archive with version label
+cp -r build/Contextify.xcarchive build/archives/v1.0.0-build4.xcarchive
+
+# Verify archive exists
+ls -la build/archives/
+```
+
+**Archive location:** `build/archives/v1.0.0-build4.xcarchive`
+
+This is the binary you will:
+1. Record the demo video with
+2. Export as .pkg
+3. Upload to App Store Connect
+
+---
+
+## Step 2: Recording Setup
 
 **Environment:**
 - Physical Mac (not simulator)
@@ -24,33 +63,14 @@ From rejection feedback (Submission ID: 4a125b1d-7e23-4cb4-be80-09aaa29168cf):
 - Clean desktop background
 - Sample data installed at `~/.claude/projects/`
 
-### Build the App Store Binary
-
-**Critical:** Record using the EXACT binary you'll submit to Apple.
+### Launch the Archived App
 
 ```bash
-# 1. Build App Store archive
-bash scripts/xc.sh --dist=appstore Release archive
-
-# 2. Preserve archive for consistency (recommended)
-mkdir -p build/archives
-cp -r build/Contextify.xcarchive build/archives/Contextify-$(date +%Y%m%d)-appstore.xcarchive
-
-# 3. Run the archived app for demo recording
-open build/Contextify.xcarchive/Products/Applications/Contextify.app
+# Run the archived app for demo recording
+open build/archives/v1.0.0-build4.xcarchive/Products/Applications/Contextify.app
 ```
 
-**Alternative - Export first:**
-```bash
-# Export app bundle (not pkg) for local testing
-xcodebuild -exportArchive \
-  -archivePath build/Contextify.xcarchive \
-  -exportPath build/demo-app \
-  -exportOptionsPlist ExportOptions-AppStore.plist
-
-# Run exported app
-open build/demo-app/Contextify.app
-```
+**Important:** Do NOT run from Xcode or the DMG. Use the archived App Store build.
 
 ### Prepare Environment
 
