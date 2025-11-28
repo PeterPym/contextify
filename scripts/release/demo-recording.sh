@@ -119,21 +119,44 @@ echo "✅ Sample data installed:"
 ls ~/.claude/projects/
 pause
 
-# Step 2: Clean SANDBOXED database (App Store build uses container)
+# Step 2: Quit app and clean all state (matches xc.sh ar behavior)
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 2: Clean Sandboxed Database"
+echo "  STEP 2: Quit App & Clean All State"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "App Store builds use sandboxed container at:"
-echo "  $SANDBOX_APP_SUPPORT"
+
+# Quit any running instance first
+echo "Quitting Contextify if running..."
+osascript -e 'tell application "Contextify" to quit' >/dev/null 2>&1 || true
+pkill -x Contextify >/dev/null 2>&1 || true
+sleep 1
+echo "✅ App quit"
+
+# Clean Application Support (database, bookmarks)
 echo ""
+echo "Cleaning sandboxed container..."
 if [[ -d "$SANDBOX_APP_SUPPORT" ]]; then
-  echo "Removing sandboxed database and state..."
   rm -rf "$SANDBOX_APP_SUPPORT"
-  echo "✅ Sandboxed database cleaned"
-else
-  echo "ℹ️  No sandboxed database found (fresh install)"
+  echo "  Removed: $SANDBOX_APP_SUPPORT"
 fi
+
+# Clean caches
+if [[ -d "$HOME/Library/Caches/$BUNDLE_ID" ]]; then
+  rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
+  echo "  Removed: ~/Library/Caches/$BUNDLE_ID"
+fi
+if [[ -d "$SANDBOX_CONTAINER/Data/Library/Caches" ]]; then
+  rm -rf "$SANDBOX_CONTAINER/Data/Library/Caches"
+  echo "  Removed: Container caches"
+fi
+
+# Clear UserDefaults/preferences
+defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
+rm -f "$SANDBOX_CONTAINER/Data/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
+echo "  Cleared: UserDefaults"
+
+echo "✅ All app state cleaned"
 pause
 
 # Step 3: Reset TCC permissions (so permission dialogs appear)
@@ -142,12 +165,10 @@ echo "  STEP 3: Reset TCC Permissions"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "Resetting macOS privacy permissions for $BUNDLE_ID..."
-echo "This ensures the permission dialog appears on launch."
-echo ""
 tccutil reset All "$BUNDLE_ID" 2>/dev/null || true
 echo "✅ TCC permissions reset"
 echo ""
-echo "NOTE: You should see a permission dialog when the app launches."
+echo "The permission dialog WILL appear when the app launches."
 pause
 
 # Step 4: Launch app
