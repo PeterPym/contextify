@@ -369,7 +369,7 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 ./scripts/release/status.sh               # All releases summary
 ./scripts/release/status.sh X.Y.Z         # Specific version details
 ./scripts/release/status.sh --shipped     # What's in production?
-./scripts/release/status.sh --pending     # What's in progress?
+./scripts/release/status.sh --active      # What needs work?
 
 # Mark as shipped (updates manifest.json)
 ./scripts/release/mark-shipped.sh X.Y.Z --dmg

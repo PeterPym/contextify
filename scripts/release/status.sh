@@ -5,7 +5,7 @@
 #
 # Options:
 #   --shipped      Show only releases that shipped to production
-#   --pending      Show only releases in progress or pending
+#   --active       Show releases needing work (in progress, rejected, etc.)
 #   --dmg          Filter to DMG channel only
 #   --appstore     Filter to App Store channel only
 #   --all          Show all releases (default when no version specified)
@@ -17,7 +17,7 @@
 #   ./scripts/release/status.sh 1.0.0              # Details for v1.0.0
 #   ./scripts/release/status.sh --shipped          # What's in production?
 #   ./scripts/release/status.sh --shipped --dmg    # DMG releases in production
-#   ./scripts/release/status.sh --pending          # What's being worked on?
+#   ./scripts/release/status.sh --active           # What needs work?
 #   ./scripts/release/status.sh --appstore         # App Store status for all versions
 
 set -e
@@ -33,7 +33,7 @@ NC='\033[0m'
 # Parse arguments
 VERSION=""
 FILTER_SHIPPED=false
-FILTER_PENDING=false
+FILTER_ACTIVE=false
 FILTER_DMG=false
 FILTER_APPSTORE=false
 SHOW_ALL=false
@@ -44,8 +44,8 @@ for arg in "$@"; do
     --shipped)
       FILTER_SHIPPED=true
       ;;
-    --pending)
-      FILTER_PENDING=true
+    --active)
+      FILTER_ACTIVE=true
       ;;
     --dmg)
       FILTER_DMG=true
@@ -226,10 +226,10 @@ try:
 except:
     sys.exit(0)
 
-filter_shipped = 'FILTER_SHIPPED' in '${FILTER_SHIPPED}true'
-filter_pending = 'FILTER_PENDING' in '${FILTER_PENDING}true'
-filter_dmg = 'FILTER_DMG' in '${FILTER_DMG}true'
-filter_appstore = 'FILTER_APPSTORE' in '${FILTER_APPSTORE}true'
+filter_shipped = '${FILTER_SHIPPED}' == 'true'
+filter_active = '${FILTER_ACTIVE}' == 'true'
+filter_dmg = '${FILTER_DMG}' == 'true'
+filter_appstore = '${FILTER_APPSTORE}' == 'true'
 
 for ver, info in sorted(data.get('releases', {}).items(), reverse=True):
     dmg = info.get('dmg', {})
@@ -250,14 +250,15 @@ for ver, info in sorted(data.get('releases', {}).items(), reverse=True):
         if not filter_dmg and not filter_appstore and not (dmg_shipped or as_shipped):
             continue
 
-    if filter_pending:
-        dmg_pending = dmg_status in ['pending', 'in_progress', 'building']
-        as_pending = as_status in ['pending', 'in_progress', 'submitted', 'in_review']
-        if filter_dmg and not dmg_pending:
+    if filter_active:
+        # Active = needs work (not shipped/complete/approved)
+        dmg_active = dmg_status in ['pending', 'in_progress', 'building', 'rejected', 'unknown']
+        as_active = as_status in ['pending', 'in_progress', 'submitted', 'in_review', 'rejected', 'unknown']
+        if filter_dmg and not dmg_active:
             continue
-        if filter_appstore and not as_pending:
+        if filter_appstore and not as_active:
             continue
-        if not filter_dmg and not filter_appstore and not (dmg_pending or as_pending):
+        if not filter_dmg and not filter_appstore and not (dmg_active or as_active):
             continue
 
     # Get note snippet
@@ -283,7 +284,7 @@ PYEOF
   echo ""
 
   # What's in production
-  if [ "$FILTER_SHIPPED" = false ] && [ "$FILTER_PENDING" = false ]; then
+  if [ "$FILTER_SHIPPED" = false ] && [ "$FILTER_ACTIVE" = false ]; then
     echo -e "${GREEN}In Production:${NC}"
     python3 << 'PYEOF'
 import json
@@ -322,7 +323,7 @@ fi
 echo "Commands:"
 echo "  ./scripts/release/status.sh <version>     # Details for specific version"
 echo "  ./scripts/release/status.sh --shipped     # What's in production"
-echo "  ./scripts/release/status.sh --pending     # What's in progress"
+echo "  ./scripts/release/status.sh --active      # What needs work"
 echo "  ./scripts/release/init.sh X.Y.Z           # Start new release"
 echo "  ./scripts/release/init.sh X.Y.Z --reset   # Reset for new build"
 echo "  ./scripts/release/build.sh X.Y.Z          # Build both distributions"

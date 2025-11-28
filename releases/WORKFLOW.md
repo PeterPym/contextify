@@ -106,8 +106,8 @@ After completing each phase:
 # What's in production for App Store only?
 ./scripts/release/status.sh --shipped --appstore
 
-# What releases are in progress?
-./scripts/release/status.sh --pending
+# What releases need work? (in progress, rejected, etc.)
+./scripts/release/status.sh --active
 
 # App Store status across all versions
 ./scripts/release/status.sh --appstore
