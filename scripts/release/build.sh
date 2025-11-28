@@ -1,16 +1,42 @@
 #!/bin/bash
-# Release workflow build script - wraps build-release.sh with version tracking
+# ============================================================================
+# build.sh - Build both distributions with release tracking
+# ============================================================================
 #
-# Usage: ./scripts/release/build.sh X.Y.Z [--skip-dmg] [--skip-appstore] [--dry-run]
+# Purpose:
+#   Builds DMG and App Store distributions for a release, archives artifacts,
+#   and updates tracking state in both release.json and manifest.json.
 #
-# This script:
-#   1. Validates release directory exists
-#   2. Runs pre-flight checks (tests, version match)
-#   3. Calls scripts/build-release.sh to build both distributions
-#   4. Archives outputs to build/archives/v{VERSION}/
-#   5. Updates releases/v{VERSION}/release.json with results
+# Usage:
+#   ./scripts/release/build.sh X.Y.Z [OPTIONS]
 #
-# For standalone builds without release tracking, use: scripts/build-release.sh
+# Options:
+#   --skip-dmg       Skip DMG build
+#   --skip-appstore  Skip App Store build
+#   --dry-run        Show what would be done without executing
+#   --no-notarize    Skip notarization (faster for testing)
+#
+# State Changes:
+#   - releases/vX.Y.Z/release.json: Build phase marked complete, artifact paths
+#   - releases/manifest.json: Build status and build_number updated
+#   - build/archives/vX.Y.Z/: Artifacts archived
+#
+# Prerequisites:
+#   - Release directory exists (run init.sh first)
+#   - Xcode MARKETING_VERSION matches X.Y.Z
+#   - All tests must pass
+#
+# Exit Codes:
+#   0 - Success
+#   1 - Error (tests failed, version mismatch, build failed)
+#
+# Examples:
+#   ./scripts/release/build.sh 1.0.0
+#   ./scripts/release/build.sh 1.0.0 --skip-dmg
+#   ./scripts/release/build.sh 1.0.0 --dry-run
+#
+# For standalone builds without tracking: scripts/build-release.sh
+# ============================================================================
 
 set -e
 
@@ -213,6 +239,48 @@ print('Updated release.json')
 EOF
 else
   echo -e "${YELLOW}[dry-run]${NC} Update release.json"
+fi
+
+# Update manifest.json
+echo -e "${BLUE}==>${NC} Updating manifest.json..."
+MANIFEST="$ROOT_DIR/releases/manifest.json"
+if [ "$DRY_RUN" = false ] && [ -f "$MANIFEST" ]; then
+  python3 << EOF
+import json
+from datetime import date, datetime
+
+with open('$MANIFEST', 'r') as f:
+    data = json.load(f)
+
+# Ensure release exists
+if '$VERSION' not in data.get('releases', {}):
+    data.setdefault('releases', {})['$VERSION'] = {
+        'created': str(date.today()),
+        'status': 'in_progress',
+        'dmg': {},
+        'appstore': {}
+    }
+
+release = data['releases']['$VERSION']
+
+# Update DMG status
+if not $SKIP_DMG:
+    release['dmg']['status'] = 'built'
+    release['dmg']['built_at'] = str(date.today())
+
+# Update App Store status
+if not $SKIP_APPSTORE:
+    release['appstore']['status'] = 'built'
+    release['appstore']['build_number'] = int('$BUILD_NUMBER')
+    release['appstore']['built_at'] = str(date.today())
+
+with open('$MANIFEST', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print('Updated manifest.json')
+EOF
+else
+  echo -e "${YELLOW}[dry-run]${NC} Update manifest.json"
 fi
 
 # Summary
