@@ -113,23 +113,58 @@ After completing each phase:
 ./scripts/release/status.sh --appstore
 ```
 
+### Recording App Store Submissions
+
+```bash
+# Record that build was submitted to App Store Connect
+./scripts/release/mark-submitted.sh 1.0.0 --build 5
+
+# With custom date
+./scripts/release/mark-submitted.sh 1.0.0 --build 5 --date 2025-11-28
+```
+
+### Recording App Store Rejections
+
+```bash
+# Interactive mode (prompts for guideline and reason)
+./scripts/release/mark-rejected.sh 1.0.0 --interactive
+
+# Non-interactive
+./scripts/release/mark-rejected.sh 1.0.0 --guideline "2.1" --reason "Needs demo video"
+```
+
+After rejection, fix the issues and reset for a new build:
+```bash
+./scripts/release/init.sh 1.0.0 --reset
+```
+
 ### Marking Releases as Shipped
 
 ```bash
-# Mark DMG as shipped to production
+# Mark DMG as shipped to production (requires built status + artifact)
 ./scripts/release/mark-shipped.sh 1.0.0 --dmg
 
-# Mark App Store as approved (with build number)
+# Mark App Store as approved (requires submitted status)
 ./scripts/release/mark-shipped.sh 1.0.0 --appstore --build 5
+
+# Bypass guards if needed
+./scripts/release/mark-shipped.sh 1.0.0 --dmg --force
 
 # Mark as skipped (decided not to ship this version)
 ./scripts/release/mark-shipped.sh 1.0.0 --dmg --skipped
-
-# Override date
-./scripts/release/mark-shipped.sh 1.0.0 --appstore --date 2025-11-28
 ```
 
 ### Validation
+
+```bash
+# Check state consistency between files
+./scripts/release/check-consistency.sh
+
+# Check specific version
+./scripts/release/check-consistency.sh 1.0.0
+```
+
+### Pre-Release Validation
 
 ```bash
 # Validate pre-release requirements

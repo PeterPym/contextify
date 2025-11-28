@@ -2,6 +2,9 @@
 
 Complete guide for creating and distributing signed DMG releases of Contextify.
 
+> **Note:** For managed releases with state tracking, use the workflow scripts in `scripts/release/`.
+> See `releases/WORKFLOW.md` for the recommended approach with status tracking, guards, and consistency checking.
+
 ## Prerequisites
 
 ### Required Tools
