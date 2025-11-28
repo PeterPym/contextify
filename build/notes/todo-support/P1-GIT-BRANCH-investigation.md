@@ -246,3 +246,72 @@ No filesystem access required beyond transcript folders, making this fully compa
 - Codex: Updates on next session start (minutes to hours, depending on workflow)
 
 Both lags are acceptable for a conversation timeline UI where "current branch" is informational context rather than a critical realtime indicator.
+
+---
+
+## Implementation Plan
+
+### Architecture Requirements
+
+**App Store Build:**
+- Extract branch from transcript data (Claude Code: any message's `gitBranch`, Codex: last `session_meta`)
+- Display branch in UI (status bar/header)
+- Add InfoButton (ⓘ) next to branch with popover explaining:
+  - "Branch determined from conversation transcripts"
+  - "Codex: may lag until next session start"
+  - "For real-time status, grant project directory access" + link/button to trigger permission flow
+- No filesystem access required
+
+**DMG Build:**
+- Track BOTH transcript-based AND filesystem-based branch
+- Log alignment discrepancies internally (especially for Codex)
+- Metric: How often does Codex transcript branch differ from actual `.git/HEAD`?
+- Purpose: Validate transcript-based approach reliability
+
+### Implementation Tasks
+
+1. **Branch Extraction Service** (2-3 hours)
+   - Add `getCurrentBranch()` to `TranscriptOrchestrator` or similar
+   - Query `timeline_entries.git_branch` for most recent entry
+   - Handle Codex special case: Find last `session_meta` record
+   - Return `nil` if no branch data available
+
+2. **UI Display** (2 hours)
+   - Restore branch display in `ContentView.swift` (was hidden in commit `b0abdb4`)
+   - Add InfoButton component next to branch
+   - Implement InfoPopoverContent with explanation and permission upgrade link
+   - Style: Match existing UI patterns
+
+3. **DMG Validation Logging** (1-2 hours)
+   - In DMG builds, compare transcript branch vs filesystem branch
+   - Log discrepancies at `.info` level
+   - Track metrics: mismatch rate, time-to-convergence
+   - Don't block or warn user, just collect data
+
+4. **Testing** (1 hour)
+   - App Store build: Verify branch displays from transcripts
+   - Test Claude Code sessions (immediate updates)
+   - Test Codex sessions (updates on session start)
+   - Test InfoButton popover and permission link
+   - DMG build: Verify dual tracking logs discrepancies
+
+### Files
+
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (branch extraction)
+- `Contextify/Contextify/ContentView.swift` (UI display - restore removed code)
+- `Contextify/Contextify/InfoButton.swift` (existing component, reuse)
+- `Contextify/Contextify/InfoPopoverContent.swift` (new content for branch explanation)
+
+### Acceptance Criteria
+
+- App Store build displays git branch from transcripts (no filesystem access)
+- Branch updates on next message (Claude Code) or session start (Codex)
+- InfoButton explains source and lag behavior
+- Permission upgrade link triggers folder access flow (if possible in popover)
+- DMG build logs transcript vs filesystem discrepancies
+- Zero [GIT-BROKEN] errors in App Store build
+
+### Related
+
+- Supersedes old P0 items #3, #4, #5 (test/verify git disabled)
+- Builds on completed work: commit `b0abdb4` (git monitoring disabled)

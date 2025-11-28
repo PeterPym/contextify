@@ -358,84 +358,19 @@ let set = try await orchestrator.getProviders(forProjectPath: projectPath)
 ## Transcript-Based Git Branch Display (1 item)
 
 **Status:** Not Started
-**Priority:** P1 (Replaces old P0 "disable git" approach - enables branch display in App Store)
+**Priority:** P1 (enables branch display in App Store without filesystem access)
 **Effort:** 6-8 hours
 
 - [ ] #P1-GIT-BRANCH: Implement transcript-based git branch tracking and display for App Store builds
 
-**Background:**
-Old approach (✅ complete 2025-11-15, commit `b0abdb4`) disabled git monitoring entirely in sandboxed builds and hid branch UI. New approach uses transcript data to display branch WITHOUT filesystem access.
+**Goal:** Display git branch in App Store builds using transcript data instead of filesystem access. Old approach (commit `b0abdb4`) disabled git entirely; new approach re-enables display.
 
-**Investigation:** `build/notes/todo-support/P1-GIT-BRANCH-investigation.md`
-**Documentation:** `build/docs/specifications/transcript-formats.md` (lines 56, 95, 360-365, 582)
+**Key Finding:** Both transcript formats already contain branch data:
+- Claude Code: `gitBranch` on every message (immediate updates)
+- Codex: `session_meta.payload.git.branch` (updates on session start)
+- Parser and schema already support extraction
 
-**Key Finding:**
-- ✅ Claude Code: `gitBranch` field on EVERY message → updates immediately
-- ✅ Codex: `session_meta.payload.git.branch` → updates at session start/resume
-- ✅ Database already supports: `git_branch` column exists (schema v23)
-- ✅ Parser already extracts: Both formats handled
-
-**Architecture Requirements:**
-
-**App Store Build:**
-- Extract branch from transcript data (Claude Code: any message's `gitBranch`, Codex: last `session_meta`)
-- Display branch in UI (status bar/header)
-- Add InfoButton (ⓘ) next to branch with popover explaining:
-  - "Branch determined from conversation transcripts"
-  - "Codex: may lag until next session start"
-  - "For real-time status, grant project directory access" + link/button to trigger permission flow
-- No filesystem access required
-
-**DMG Build:**
-- Track BOTH transcript-based AND filesystem-based branch
-- Log alignment discrepancies internally (especially for Codex)
-- Metric: How often does Codex transcript branch differ from actual `.git/HEAD`?
-- Purpose: Validate transcript-based approach reliability
-
-**Implementation Tasks:**
-
-1. **Branch Extraction Service** (2-3 hours)
-   - Add `getCurrentBranch()` to `TranscriptOrchestrator` or similar
-   - Query `timeline_entries.git_branch` for most recent entry
-   - Handle Codex special case: Find last `session_meta` record
-   - Return `nil` if no branch data available
-
-2. **UI Display** (2 hours)
-   - Restore branch display in `ContentView.swift` (was hidden in commit `b0abdb4`)
-   - Add InfoButton component next to branch
-   - Implement InfoPopoverContent with explanation and permission upgrade link
-   - Style: Match existing UI patterns
-
-3. **DMG Validation Logging** (1-2 hours)
-   - In DMG builds, compare transcript branch vs filesystem branch
-   - Log discrepancies at `.info` level
-   - Track metrics: mismatch rate, time-to-convergence
-   - Don't block or warn user, just collect data
-
-4. **Testing** (1 hour)
-   - App Store build: Verify branch displays from transcripts
-   - Test Claude Code sessions (immediate updates)
-   - Test Codex sessions (updates on session start)
-   - Test InfoButton popover and permission link
-   - DMG build: Verify dual tracking logs discrepancies
-
-**Files:**
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift` (branch extraction)
-- `Contextify/Contextify/ContentView.swift` (UI display - restore removed code)
-- `Contextify/Contextify/InfoButton.swift` (existing component, reuse)
-- `Contextify/Contextify/InfoPopoverContent.swift` (new content for branch explanation)
-
-**Acceptance Criteria:**
-- ✅ App Store build displays git branch from transcripts (no filesystem access)
-- ✅ Branch updates on next message (Claude Code) or session start (Codex)
-- ✅ InfoButton explains source and lag behavior
-- ✅ Permission upgrade link triggers folder access flow (if possible in popover)
-- ✅ DMG build logs transcript vs filesystem discrepancies
-- ✅ Zero [GIT-BROKEN] errors in App Store build
-
-**Related:**
-- Supersedes old P0 items #3, #4, #5 (test/verify git disabled)
-- Builds on completed work: commit `b0abdb4` (git monitoring disabled)
+**Investigation & Spec:** `build/notes/todo-support/P1-GIT-BRANCH-investigation.md`
 
 ---
 
@@ -852,159 +787,25 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ## User Message Summarization Quality Improvement (1 item)
 
-**Status:** Planning Complete - Ready to Implement (Phase 1 shipped)
-**Priority:** P1 (High - Quality/UX - mirrors assistant-side improvements)
-**Effort:** 5-7 hours (comprehensive implementation + validation)
-**Coordination:** Combines user prompt rework + permission response handling
+**Status:** Phase 1 shipped, Phase 2 ready to implement
+**Priority:** P1 (High - Quality/UX)
+**Effort:** 5-7 hours
 
 - [ ] #P1-USER-PROMPT-REWORK: Implement comprehensive user message summarization improvements with permission response handling
 
-**Background:**
+**Goal:** Mirror assistant-side summarization improvements (disposition taxonomy, verb-tense rules, structured prompts) for user messages. Includes permission response handling and bug fixes.
 
-Assistant-side summarization was significantly improved with explicit disposition taxonomy, verb-tense rules, and structured prompts. User-side deserves same quality treatment.
+**Phase 1 (SHIPPED ✅):** Expanded negative word list - commit `a8577a9`
 
-**Scope Expansion Note:**
+**Phase 2 scope:**
+- Rewrite user prompt with explicit disposition taxonomy
+- Add `permission_response` disposition for Claude Code permission dialogs
+- Trust `classifyUserIntent` as source of truth in postProcess
+- Fix double-prefix bugs ("You requested Claude Code You...")
 
-Original scope (3-6 hours): User prompt quality improvement only
-**v2 coordinated scope (5-7 hours):** User prompt quality + permission response handling + bug fixes
-
-**Scope has grown ~50% but legitimately:**
-- ✅ Tracks with original intent (improve user summarization quality)
-- ✅ More comprehensive (handles permission response edge cases + prevents bugs)
-- ✅ Mirrors assistant-side SOTA patterns (disposition taxonomy, structured prompts)
-- ✅ Fixes active bugs (broken "Nevermind" summaries, prefixPolicy conflicts)
-
-**Phase 1 (SHIPPED ✅ - commit a8577a9):**
-- Expanded negative word list in classifyUserIntent
-- Fixes: "Nevermind", "wait", "pause" → correct negative classification
-- Zero risk, deterministic, no LLM changes
-- Closes immediate issue
-
-**Phase 2 (Coordinated Implementation - 5-7 hours):**
-
-**Core Improvements (from original P1):**
-1. Rewrite user prompt with explicit disposition taxonomy + examples
-2. Add summary phrasing guidance tied to each disposition (CRITICAL section)
-3. Trust classifyUserIntent as source of truth in postProcess
-4. Maintain simplicity (no complex rule engine)
-
-**Added: Permission Response Handling (NEW):**
-5. Add permission_response disposition to prompt
-6. Add "You responded" to prefixPolicy allowed list (prevents double-prefix bug)
-7. Add Disposition.permissionResponse enum case
-8. Optional: Add permission fast path with cue-word heuristic
-9. Update isDirective calculation to include permission_response
-
-**Bug Fixes (from colleague review):**
-- Fix UserIntent enum references (.other → .unknown)
-- Align with prefixPolicy to prevent "You requested Claude Code You..." bug
-- Add Disposition enum case for proper type safety
-- Include permission_response in directive flag calculation
-
-**Implementation Tasks:**
-
-1. **User Prompt Rewrite** (2-3 hours)
-   - Add disposition taxonomy with examples (directive, question, report, affirmative, negative, permission_response)
-   - Add summary phrasing templates for each disposition
-   - Add special case handling (slash commands, mixed messages)
-   - Mirror assistant-side prompt structure and quality
-
-2. **prefixPolicy Update** (15 min)
-   - Add "You responded" to allowed prefixes
-   - Prevents double-prefix bug for permission responses
-
-3. **postProcess Integration** (1 hour)
-   - Add classifyUserIntent override logic
-   - Log disagreements between LLM and classifier
-   - Exception: preserve permission_response (LLM has special context)
-   - Update isDirective calculation
-
-4. **Disposition Enum** (15 min)
-   - Add Disposition.permissionResponse case
-   - Audit all switch statements for exhaustiveness
-
-5. **Optional: Permission Fast Path** (1 hour)
-   - Add detectPermissionResponse() helper with cue-word heuristic
-   - Prevents false positives ("Thanks" → NOT permission_response)
-   - Can be deferred to Phase 3 if complexity concerns
-
-6. **Validation** (1-2 hours)
-   - Run 15 test cases (directives, questions, reports, permissions, edge cases)
-   - Verify disposition accuracy ≥90%
-   - Verify no double-prefix bugs
-   - Verify no false positive permission responses ("Thanks", "Cool" → NOT permission_response)
-   - Monitor first 100 user messages in production
-
-**Files Modified:**
-- `Contextify/Contextify/FoundationLLM.swift`
-  - User prompt (instructionsForTimeline case .user)
-  - prefixPolicy (add "You responded")
-  - Optional: detectPermissionResponse() helper
-  - Optional: Permission fast path
-  - postProcess user block (classifyUserIntent override)
-- `app/Sources/ContextifyCore/Database/Models.swift`
-  - Add Disposition.permissionResponse enum case
-- Optional: `Contextify/Contextify/TimelineEntryRow.swift`
-  - UI styling for permission_response disposition
-
-**Test Cases:**
-
-**Directives (3):**
-1. "Add logging around retry loop." → "You requested Claude Code to add logging..."
-2. "Can you refactor this?" → "You requested Claude Code to refactor..."
-3. "/review-prep" → "You requested Claude Code to execute the /review-prep command."
-
-**Questions (2):**
-1. "Why is this slow?" → "You asked why this is slow."
-2. "What does this error mean?" → "You asked what the error means."
-
-**Reports (2):**
-1. "App crashes when clicking timeline." → "You reported crashes..."
-2. "CI is failing." → "You reported CI failures."
-
-**Affirmative/Negative (2):**
-1. "Yes, that works." → "You confirmed the approach works."
-2. "No, that's not right." → "You disagreed with..." OR "You requested Claude Code not to proceed."
-
-**Permission Responses (5):**
-1. "Nevermind" → "You requested Claude Code not to proceed." (Phase 1 fast path)
-2. "pause a moment" → "You responded to permission request: pause a moment"
-3. "do X instead" → "You responded to permission request: do X instead"
-4. "THIS IS A TEST" → "You responded to permission request: THIS IS A TEST"
-5. "maybe later" → "You responded to permission request: maybe later"
-
-**Edge Cases (3):**
-1. "Thanks" → affirmative OR unknown → NOT permission_response ✅
-2. "Cool" → affirmative OR unknown → NOT permission_response ✅
-3. "Got it" → affirmative → NOT permission_response ✅
-
-**Success Criteria:**
-- ✅ User prompt quality matches assistant (symmetry)
-- ✅ Disposition accuracy ≥90%
-- ✅ classifyUserIntent vs LLM agreement ≥85%
-- ✅ Zero double-prefix bugs ("You requested Claude Code You...")
-- ✅ Zero false positive permission responses
-- ✅ All test cases pass (≥13/15)
-
-**Risks & Mitigation:**
-- **Risk:** Breaking existing summaries → Test on recent transcripts first
-- **Risk:** classifyUserIntent disagrees with LLM → Log disagreements, monitor patterns
-- **Risk:** Permission heuristic false positives → Tightened with cue words, can defer
-- **Risk:** prefixPolicy conflicts → Explicitly addressed by adding "You responded"
-
-**References:**
-- **Original planning doc:** `build/docs/planning/user-timeline-summarization-improvement.md`
-- **v2 coordinated guide:** `/tmp/permission-response-fix-v2-coordinated.md` (Phase 2)
-- **Scope analysis:** `/tmp/scope-analysis.md`
-- **Phase 1 commit:** `a8577a9` (negative word list expansion - shipped ✅)
-- **Colleague review:** `/private/tmp/here-s-my-review.md` (bug fixes integrated)
-- **Related:** Permission dialog option 3 parsing (commits 204f12e, a8577a9 - completed ✅)
-- **Related:** #P2-SUMMARIZATION-FIX (attribution issues - separate PR)
-
-**Decision Points:**
-1. **Include permission fast path?** Recommended: YES with cue words (safe, handles edge cases)
-2. **Parser metadata (future)?** Defer to Phase 3 if false positives emerge
-3. **Defer lexical seatbelts?** YES - Phase 1 + improved prompt should be sufficient
+**Spec:** `build/notes/todo-support/P1-USER-PROMPT-REWORK-spec.md`
+**Planning:** `build/docs/planning/user-timeline-summarization-improvement.md`
+**Related:** #P2-SUMMARIZATION-FIX (attribution issues - separate)
 
 ## Database Discovery (1 item)
 
@@ -1714,78 +1515,16 @@ Multiple branches created during late-night token burn session with speculative 
 ## Background LLM Processing (1 item)
 
 **Status:** Not Started
-**Priority:** P2 (UX improvement - pre-generate summaries when app is backgrounded)
+**Priority:** P2 (UX improvement)
 **Effort:** 4-6 hours
 
 - [ ] #P2-BACKGROUND-SUMM: Re-implement background LLM summarization for "would-be-visible" entries
 
-**Problem:**
-Currently, when app is backgrounded (user switches away), LLM summary generation is completely disabled. The log message is confusing: "App resigned active - background processing DISABLED". This is a policy decision, not a bug, but it's a missed opportunity.
+**Goal:** When app is backgrounded, continue summarizing entries the user is likely to scroll to. Pre-populates summaries for smoother UX when returning to foreground.
 
-**Previous Implementation:**
-Background summarization used to exist but was removed at some point. Worth investigating git history to see:
-- Why it was removed (performance? battery? user feedback?)
-- What the implementation looked like
-- Any useful code/patterns to reuse
+**Current behavior:** LLM summarization completely disabled when backgrounded (log: "App resigned active - background processing DISABLED"). This is policy, not a bug, but a missed opportunity.
 
-**Proposed Behavior:**
-When app goes to background, continue summarizing entries that would be "visible" if the user scrolled back in timeline. This would:
-- Pre-populate summaries for entries user is likely to see
-- Make timeline feel more responsive when app returns to foreground
-- Avoid wasted work (only summarize what user might actually view)
-
-**Implementation Approach:**
-1. **Define "Would-Be-Visible" Scope** (1 hour)
-   - Current viewport + N entries above/below scroll position
-   - Or: All entries within last X hours/days
-   - Or: Based on user's typical scroll depth
-   - Consider: How far back do users typically scroll?
-
-2. **Background Task Management** (2-3 hours)
-   - Implement low-priority background LLM queue
-   - Respect system resource constraints (low battery, thermal pressure)
-   - Pause during active calls, media playback
-   - Cancel if app terminated
-
-3. **Smart Prioritization** (1 hour)
-   - Prioritize recent entries over old ones
-   - Skip entries already summarized
-   - Deprioritize if user never scrolls back
-
-4. **Logging & Observability** (30 min)
-   - Update confusing log message to explain policy clearly
-   - Log when background processing starts/stops
-   - Track: summaries generated while backgrounded, battery impact
-
-**Git History Investigation:**
-Search for commits related to:
-- "background" + "summarization" or "LLM"
-- `handleAppResignActive()` implementation changes
-- Removal of background processing code
-- Performance issues or user complaints
-
-Commands:
-```bash
-git log --all --grep="background.*summar" -i
-git log --all --grep="resign.*active" -i -- "**/ConversationMonitor.swift"
-git log -S "background processing" --all
-```
-
-**Files:**
-- `Contextify/Contextify/ConversationMonitor.swift:2390-2395` (handleAppResignActive)
-- Likely: LLM queue management code
-- Likely: Timeline cache/priority logic
-
-**Acceptance Criteria:**
-- ✅ Background summarization generates summaries for would-be-visible entries
-- ✅ Respects system resource constraints (battery, thermal)
-- ✅ Logs clearly explain background processing status
-- ✅ No performance degradation when app returns to foreground
-- ✅ User doesn't notice lag when scrolling to pre-summarized content
-
-**Related:**
-- Confusing log message: "App resigned active - background processing DISABLED"
-- Should clarify: This is intentional policy, not a bug
+**Design:** `build/notes/todo-support/P2-BACKGROUND-SUMM-design.md`
 
 ---
 
@@ -1855,169 +1594,32 @@ Some transcript entries produce summaries that fail post-processing or contain u
 ## Git Worktree Support (1 item)
 
 **Status:** Investigation Complete - Ready for Implementation
-**Priority:** P2 (UX enhancement - worktrees as separate projects with visual grouping)
+**Priority:** P2 (UX enhancement)
 **Effort:** 4-6 hours
-**Discovered during:** P3-LOGOMARK debugging
 
 - [ ] #P2-WORKTREE: Add visual grouping for git worktrees and verify transcript isolation
 
+**Goal:** Add subtle background color to project tabs to indicate related worktrees from the same git repository. Core worktree support already works (separate projects, transcript isolation by CWD).
+
+**Main deliverable:** Hash git root path to consistent color, apply as tab background tint.
+
 **Investigation:** `build/notes/todo-support/P2-WORKTREE-investigation.md`
-
-**Background:**
-Contextify has partial worktree support. Core infrastructure works (separate project entries, transcript isolation by CWD), but gaps exist in visual UX and code clarity.
-
-**What Works:**
-- Worktrees in different directories create separate projects
-- Transcripts correctly associated by CWD (not git root)
-- Database uniqueness on `root_path` prevents collisions
-
-**Gaps to Address:**
-
-1. **Visual Worktree Grouping (P2 - main deliverable)**
-   - Add subtle background color to indicate related worktrees
-   - Hash git root path to consistent color
-   - Helps users identify which tabs are from same repo
-   - File: `Contextify/Contextify/ProjectSwitcherView.swift`
-
-2. **projectIdentifier Collision (P3 - cleanup)**
-   - `ProjectContext.projectIdentifier` uses git root, causing collision for worktrees
-   - Not a functional bug (database uses full path), but confusing
-   - File: `Contextify/Contextify/ProjectContext.swift:14`
-
-3. **allProjectPaths() Documentation (P3 - cleanup)**
-   - Clarify when to use aggregation vs isolation
-   - File: `Contextify/Contextify/ProjectContext.swift:74`
-
-**Implementation Tasks:**
-
-1. **Add git root to Project model** (30 min)
-   - Store resolved git root path alongside root_path
-   - Computed during project discovery
-
-2. **Implement color hashing** (1 hour)
-   - Hash git root path to HSB color
-   - Use subtle opacity (0.1-0.15) for background
-
-3. **Update ProjectSwitcherView** (1-2 hours)
-   - Apply group color to tab backgrounds
-   - Ensure colors are distinguishable
-
-4. **Add SPM tests** (1-2 hours)
-   - Path encoding/decoding with hyphens
-   - Git root detection for worktrees
-   - Transcript-project association verification
-
-**Testing Strategy:**
-
-**SPM-Compatible (implement now):**
-- Unit test: Path encoding/decoding with hyphens in project names
-- Unit test: `GitRepositoryResolver.findGitRoot()` with worktree `.git` file
-- Integration test: Transcript-project association by CWD
-
-**Deferred SwiftUI Tests:**
-- Visual worktree grouping (requires UI automation)
-- Tab bar rendering with multiple worktrees
-
-**Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift` (UI changes)
-- `Contextify/Contextify/ProjectContext.swift` (cleanup)
-- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift` (git root extraction)
-- `Tests/ContextifyCoreTests/GitRepositoryResolverTests.swift` (new tests)
-
-**Acceptance Criteria:**
-- [ ] Related worktrees have matching background tint in tab bar
-- [ ] Unrelated projects with same name have different colors
-- [ ] Transcripts appear in correct project (verified by SPM test)
-- [ ] No functional regressions in project switching
-
-**Related:**
-- P3-LOGOMARK (discovered during this work)
-- P1-PROJECT-BADGES-ORCHESTRATOR (similar layering concerns)
 
 ---
 
 ## Project Tab Reordering UX (1 item)
 
 **Status:** Investigation Complete - Ready for Implementation
-**Priority:** P2 (UX improvement - tab reordering precision and keyboard shortcuts)
+**Priority:** P2 (UX improvement)
 **Effort:** 3-4 hours
 
 - [ ] #P2-TAB-REORDER-UX: Fix drag-drop precision and add keyboard shortcuts for tab reordering
 
+**Issues:**
+1. **Vertical drag sensitivity** - Small vertical drift cancels drag unexpectedly (fix: expand hit zone)
+2. **Missing keyboard shortcuts** - Add `Shift-Cmd-Opt-[/]` to move active tab (no wrap-around)
+
 **Investigation:** `build/notes/todo-support/P2-TAB-REORDER-UX-investigation.md`
-
-**Issue 1: Vertical Drag Sensitivity**
-
-**Problem:** Dragging a tab too far vertically causes it to "drop" unexpectedly. Users must exercise excessive precision to keep the drag within a narrow horizontal band.
-
-**Root Cause:** `dropExited()` in `ProjectSwitcherView.swift:151-156` clears drag state when cursor exits the drop zone. The drop zone is vertically constrained to tab bar height, so small vertical drift triggers exit.
-
-**Historical Context:** This was likely a fix for "ghost entries when dragging outside the window" - tabs disappearing when dragged outside and released. The fix may be overly aggressive.
-
-**Proposed Fix (Option A - Recommended):**
-- Expand vertical hit zone significantly (+/- 100px)
-- Keep horizontal precision for slot detection
-- Only cancel drag on true horizontal exit (left/right of tab bar)
-
-**Alternative:** Reimplment drag-drop from scratch using:
-- SwiftUI's native `.draggable()` / `.dropDestination()` (macOS 13+)
-- Custom `DragGesture` with full bounds control
-- Research Safari/Chrome tab bar behavior for reference
-
-**Issue 2: Missing Keyboard Shortcuts**
-
-**Problem:** No keyboard shortcuts exist to move the currently selected tab.
-
-**Requested:** `Shift-Command-Option-[` (move left) and `Shift-Command-Option-]` (move right)
-
-**Behavior:**
-- Move active tab one position in direction
-- **No wrap-around:** At boundaries, do nothing (don't loop to opposite end)
-- Should work regardless of focus state
-
-**Implementation:**
-```swift
-func moveActiveTab(direction: TabMoveDirection) {
-  guard let activeId = activeProjectId,
-        let currentIndex = projects.firstIndex(where: { $0.id == activeId }) else { return }
-
-  switch direction {
-  case .left:
-    guard currentIndex > 0 else { return }  // No wrap
-    // Move to currentIndex - 1
-  case .right:
-    guard currentIndex < projects.count - 1 else { return }  // No wrap
-    // Move to currentIndex + 1
-  }
-  // Persist new order...
-}
-```
-
-**Testing Strategy:**
-
-**SPM-Compatible:**
-- Unit test: `moveActiveTab(direction:)` logic
-- Unit test: No-wrap-around at boundaries
-- Unit test: Tab order persistence
-
-**Deferred SwiftUI Tests:**
-- UI test: Drag with vertical drift maintains state
-- UI test: Keyboard shortcuts trigger reorder
-
-**Files:**
-- `Contextify/Contextify/ProjectSwitcherView.swift` (drag-drop fix, keyboard shortcuts)
-- `Contextify/Contextify/ProjectSwitcherState.swift` (add `moveActiveTab()`)
-- `Tests/ContextifyCoreTests/TabReorderTests.swift` (new)
-
-**Acceptance Criteria:**
-- [ ] Vertical drag drift (reasonable amount) does not cancel drag
-- [ ] Horizontal exit still cancels drag (prevents ghost tabs)
-- [ ] Shift-Cmd-Opt-[ moves active tab left (no wrap)
-- [ ] Shift-Cmd-Opt-] moves active tab right (no wrap)
-- [ ] Keyboard reorder persists like drag-drop reorder
-
-**Related:**
-- #63: Add tests for ProjectSwitcherView drag-drop (P2 Testing)
 
 ---
 
