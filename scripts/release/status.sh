@@ -186,6 +186,32 @@ show_version_details() {
         printf "  %-28s %s/%s\n" "$name" "$done" "$total"
       fi
     done
+
+    # Suggested next action
+    echo ""
+    echo "Suggested next action:"
+    local dmg_status=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$ver',{}).get('dmg',{}).get('status','pending'))" 2>/dev/null || echo "pending")
+    local as_status=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$ver',{}).get('appstore',{}).get('status','pending'))" 2>/dev/null || echo "pending")
+    local as_build=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$ver',{}).get('appstore',{}).get('build_number','?'))" 2>/dev/null || echo "?")
+
+    if [ "$dmg_status" = "pending" ] && [ "$as_status" = "pending" ]; then
+      echo "  -> Build: ./scripts/release/build.sh $ver"
+    elif [ "$dmg_status" = "built" ]; then
+      echo "  -> Ship DMG: ./scripts/release/mark-shipped.sh $ver --dmg"
+    fi
+
+    if [ "$as_status" = "built" ]; then
+      echo "  -> Upload: bash scripts/xc.sh upload"
+      echo "  -> Then: ./scripts/release/mark-submitted.sh $ver --build $as_build"
+    elif [ "$as_status" = "submitted" ]; then
+      echo "  -> Waiting for Apple review..."
+      echo "  -> If approved: ./scripts/release/mark-shipped.sh $ver --appstore --build $as_build"
+      echo "  -> If rejected: ./scripts/release/mark-rejected.sh $ver --interactive"
+    elif [ "$as_status" = "rejected" ]; then
+      echo "  -> Fix issues, then: ./scripts/release/init.sh $ver --reset"
+    elif [ "$dmg_status" = "shipped" ] && [ "$as_status" = "approved" ]; then
+      echo "  -> Release complete!"
+    fi
   else
     echo "No release.json found"
   fi
