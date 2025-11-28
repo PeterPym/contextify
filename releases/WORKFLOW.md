@@ -278,6 +278,20 @@ After a version ships, these must match for that version:
 | `releases/vX.Y.Z/checklists/` | Task tracking with checkboxes |
 | `releases/templates/` | Templates for new releases |
 
+## Canonical State Sources
+
+When state appears in multiple places, these are the authoritative sources:
+
+| Data | Canonical Source | Notes |
+|------|------------------|-------|
+| **Channel status** | `manifest.json` | `releases[version].dmg.status`, `releases[version].appstore.status` |
+| **Artifact existence** | Filesystem | `build/archives/v{VERSION}/dmg/`, `build/archives/v{VERSION}/appstore/` |
+| **Detailed history** | `release.json` | Phase statuses, notes, rejection details |
+
+When files disagree, `manifest.json` wins for guards; `release.json` wins for human review.
+
+See `STATUS-VALUES.md` for allowed status values.
+
 ## Detailed Documentation
 
 For more detailed procedures, see:
