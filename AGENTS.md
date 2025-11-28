@@ -360,23 +360,32 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 ```bash
 # Initialize or reset release
 ./scripts/release/init.sh X.Y.Z           # New release
-./scripts/release/init.sh X.Y.Z --reset   # Reset for new build
+./scripts/release/init.sh X.Y.Z --reset   # Reset for new build (warns if shipped)
 
 # Build both distributions
 ./scripts/release/build.sh X.Y.Z
 
 # Check status
 ./scripts/release/status.sh               # All releases summary
-./scripts/release/status.sh X.Y.Z         # Specific version details
+./scripts/release/status.sh X.Y.Z         # Specific version (shows next steps)
 ./scripts/release/status.sh --shipped     # What's in production?
 ./scripts/release/status.sh --active      # What needs work?
 
-# Mark as shipped (updates manifest.json)
+# Upload to App Store
+bash scripts/xc.sh upload
+
+# Record App Store submission
+./scripts/release/mark-submitted.sh X.Y.Z --build 5
+
+# If rejected by Apple
+./scripts/release/mark-rejected.sh X.Y.Z --interactive
+
+# Mark as shipped (has guards - use --force to bypass)
 ./scripts/release/mark-shipped.sh X.Y.Z --dmg
 ./scripts/release/mark-shipped.sh X.Y.Z --appstore --build 5
 
-# Upload to App Store
-bash scripts/xc.sh upload
+# Check state consistency
+./scripts/release/check-consistency.sh
 ```
 
 ### Build Scripts

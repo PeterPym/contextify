@@ -2,28 +2,23 @@
   "$schema": "./schemas/manifest.schema.json",
   "schema_version": 1,
   "current_version": "1.0.0",
-
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
       "status": "in_progress",
       "git_tag": "v1.0.0",
       "git_commit": "cd6974d5eb3b9cb199cc298be3659e29c99f471b",
-
       "dmg": {
-        "status": "complete",
+        "status": "shipped",
         "released_at": "2025-11-25",
         "github_release_url": "https://github.com/banagale/contextify/releases/tag/v1.0.0"
       },
-
       "appstore": {
-        "status": "rejected",
-        "build_number": 3,
+        "status": "pending",
+        "build_number": 9,
         "submitted_at": "2025-11-25T12:05:00Z",
-        "rejection_reason": "Guideline 2.1 - needs demo video and sample data",
         "approved_at": null
       },
-
       "marketing": {
         "changelog_published": false,
         "announcement_posted": false

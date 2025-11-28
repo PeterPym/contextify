@@ -202,6 +202,9 @@ bash scripts/xc.sh export-pkg
 
 # Upload to App Store Connect
 bash scripts/xc.sh upload
+
+# Record submission (after submitting in App Store Connect)
+./scripts/release/mark-submitted.sh X.Y.Z --build N
 ```
 
 ### 2. Complete in App Store Connect
@@ -404,26 +407,34 @@ gh release list --limit 1
 1. **Read rejection details**
    - App Store Connect → App → Activity → Build → View Resolution Center
 
-2. **Assess the issue**
+2. **Record the rejection:**
+   ```bash
+   ./scripts/release/mark-rejected.sh X.Y.Z --interactive
+   # Or: --guideline "2.1" --reason "Needs demo video"
+   ```
+
+3. **Assess the issue**
    - Metadata only? → Fix in App Store Connect
    - Code required? → Fix, rebuild, re-upload
    - Disagree? → Use Resolution Center to appeal
 
-3. **If code fix needed:**
+4. **If code fix needed:**
    ```bash
    # Fix the issue in code
    # Test thoroughly
 
-   # Rebuild and re-upload (same version number)
-   bash scripts/xc.sh --dist=appstore Release archive
-   bash scripts/xc.sh export-pkg
+   # Reset for new build (increments build number)
+   ./scripts/release/init.sh X.Y.Z --reset
+
+   # Rebuild and re-upload
+   ./scripts/release/build.sh X.Y.Z
    bash scripts/xc.sh upload
 
-   # Select new build in App Store Connect
-   # Resubmit for review
+   # Record new submission
+   ./scripts/release/mark-submitted.sh X.Y.Z --build N
    ```
 
-4. **If appealing:**
+5. **If appealing:**
    - Use Resolution Center in App Store Connect
    - Be professional and specific
    - Reference relevant guidelines

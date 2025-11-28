@@ -40,9 +40,9 @@ doc_references:
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 16 items - Future enhancements
+- **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 73
+**Total Active Items:** 74
 
 ---
 
@@ -1681,7 +1681,36 @@ Some transcript entries produce summaries that fail post-processing or contain u
 
 ---
 
-# P3 (Low Priority / Deferred) - 16 Items
+# P3 (Low Priority / Deferred) - 17 Items
+
+## Release Workflow Python CLI Refactor (1 item)
+
+**Status:** Ready for implementation
+**Priority:** P3 (architectural improvement, no functional change)
+**Effort:** 8-12 hours (incremental migration)
+
+- [ ] #P3-PYTHON-CLI-REFACTOR: Refactor release workflow to Python CLI with thin Bash wrappers
+
+**Problem:**
+The release workflow scripts (`scripts/release/*.sh`) have grown into a small application with embedded Python everywhere. The core operation (read JSON -> apply state transition -> write JSON -> print guidance) is exactly what Python is good at and Bash is awkward for.
+
+**Solution:**
+Create `tools/release_cli.py` as single source of truth with subcommands (init, build, status, mark-submitted, mark-rejected, mark-shipped, check-consistency). Keep existing Bash scripts as thin 5-10 line wrappers that delegate to the Python CLI.
+
+**Benefits:**
+- One language for all state/logic (no more shell/Python hybrid)
+- Real unit tests with pytest around state machine
+- Cleaner error handling and atomic file writes
+- Preserves existing muscle memory (./scripts/release/mark-shipped.sh still works)
+
+**Migration phases:**
+1. Create Python core with minimal commands
+2. Port guard logic and embedded Python incrementally
+3. Stabilize and optionally deprecate Bash wrappers
+
+**Reference:** `build/notes/todo-support/P3-PYTHON-CLI-REFACTOR-reference.md`
+
+---
 
 ## CLI Logomark Display (1 item) ⬇️
 

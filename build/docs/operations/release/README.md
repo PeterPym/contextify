@@ -58,6 +58,22 @@ bash scripts/xc.sh upload
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
 ```
 
+## Managed Release Workflow
+
+For tracked releases with state management, use the scripts in `scripts/release/`:
+
+```bash
+./scripts/release/init.sh X.Y.Z           # Initialize release
+./scripts/release/build.sh X.Y.Z          # Build both distributions
+./scripts/release/mark-submitted.sh X.Y.Z --build N  # Record submission
+./scripts/release/mark-rejected.sh X.Y.Z --interactive  # Record rejection
+./scripts/release/mark-shipped.sh X.Y.Z --dmg  # Mark as shipped
+./scripts/release/status.sh X.Y.Z         # Check status
+./scripts/release/check-consistency.sh    # Validate state
+```
+
+See `releases/WORKFLOW.md` for the complete managed workflow.
+
 ## Documentation Index
 
 | Document | Purpose |
@@ -69,6 +85,8 @@ bash scripts/xc.sh upload
 | [release-build-verification.md](release-build-verification.md) | Build validation steps |
 | [release-readiness.md](release-readiness.md) | Pre-release checklist |
 | [../guides/APP-STORE-SUBMISSION.md](../guides/APP-STORE-SUBMISSION.md) | App Store process |
+| `releases/WORKFLOW.md` | Managed release workflow |
+| `releases/STATUS-VALUES.md` | Allowed status values |
 
 **For AI agents:** When user says "I'm ready to release," start with `RELEASE-CHECKLIST.md`.
 

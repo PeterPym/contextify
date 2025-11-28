@@ -1,9 +1,36 @@
 #!/bin/bash
-# Initialize or reset a release directory
-# Usage: ./scripts/release/init.sh X.Y.Z [--reset]
+# ============================================================================
+# init.sh - Initialize or reset a release directory
+# ============================================================================
+#
+# Purpose:
+#   Creates a new release directory structure with tracking files, or resets
+#   an existing release for a new build attempt (preserving history).
+#
+# Usage:
+#   ./scripts/release/init.sh X.Y.Z [OPTIONS]
 #
 # Options:
 #   --reset    Reset existing release for new build (preserves notes, increments build)
+#
+# State Changes:
+#   - releases/vX.Y.Z/release.json: Created (new) or reset (--reset)
+#   - releases/vX.Y.Z/README.md: Created or updated
+#   - releases/vX.Y.Z/checklists/: Created from templates
+#   - releases/manifest.json: Entry created (new) or build_number updated (--reset)
+#
+# Prerequisites:
+#   - For new release: No existing releases/vX.Y.Z directory
+#   - For reset: Existing releases/vX.Y.Z directory with release.json
+#
+# Exit Codes:
+#   0 - Success
+#   1 - Error (missing version, directory exists without --reset)
+#
+# Examples:
+#   ./scripts/release/init.sh 1.0.0          # Initialize new release
+#   ./scripts/release/init.sh 1.0.0 --reset  # Reset for new build attempt
+# ============================================================================
 
 set -e
 
@@ -37,6 +64,12 @@ if [ -d "$RELEASE_DIR" ]; then
   fi
 
   echo "Resetting release v${VERSION} for new build..."
+
+  # Source guards and check reset safety
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+  source "$ROOT_DIR/scripts/release/lib/guards.sh"
+  check_reset_safety "$VERSION"
 
   # Extract existing notes and build number from release.json
   if [ -f "$RELEASE_DIR/release.json" ]; then
@@ -237,6 +270,58 @@ cat > "$RELEASE_DIR/README.md" << EOF
 ./scripts/release/init.sh ${VERSION} --reset
 \`\`\`
 EOF
+
+# Update manifest.json
+MANIFEST="releases/manifest.json"
+if [ -f "$MANIFEST" ]; then
+  python3 << EOF
+import json
+from datetime import date
+
+with open('$MANIFEST', 'r') as f:
+    data = json.load(f)
+
+# Ensure releases dict exists
+data.setdefault('releases', {})
+
+if '$RESET_MODE' == 'true':
+    # Reset mode: just update build number
+    if '$VERSION' in data['releases']:
+        data['releases']['$VERSION']['appstore']['build_number'] = $NEW_BUILD
+        data['releases']['$VERSION']['appstore']['status'] = 'pending'
+        # Clear any rejection state when rebuilding
+        if 'rejection_reason' in data['releases']['$VERSION']['appstore']:
+            del data['releases']['$VERSION']['appstore']['rejection_reason']
+else:
+    # New release: create entry
+    data['releases']['$VERSION'] = {
+        'created': str(date.today()),
+        'status': 'in_progress',
+        'git_tag': 'v$VERSION',
+        'git_commit': '$CURRENT_COMMIT',
+        'dmg': {
+            'status': 'pending'
+        },
+        'appstore': {
+            'status': 'pending',
+            'build_number': $NEW_BUILD
+        },
+        'marketing': {
+            'changelog_published': False,
+            'announcement_posted': False
+        }
+    }
+    # Update current_version
+    data['current_version'] = '$VERSION'
+
+with open('$MANIFEST', 'w') as f:
+    json.dump(data, f, indent=2)
+
+print('Updated manifest.json')
+EOF
+else
+  echo "Warning: manifest.json not found, skipping"
+fi
 
 if [ "$RESET_MODE" = true ]; then
   echo "Release v${VERSION} reset for build ${NEW_BUILD}"
