@@ -64,10 +64,11 @@ echo "  STEP 1: Backup Real Data & Install Sample Data"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Check if backup already exists
+# Handle backup
 if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
-  echo "⚠️  Backup already exists at ~/.claude/projects-REAL-BACKUP"
-  echo "   Skipping backup step."
+  echo "✅ Backup exists at ~/.claude/projects-REAL-BACKUP"
+  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "   ($BACKUP_COUNT project directories preserved)"
 else
   echo "Backing up real transcripts..."
   mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
