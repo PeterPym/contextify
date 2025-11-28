@@ -36,6 +36,21 @@ fi
 echo "Checking release state consistency..."
 echo ""
 
+# Check 1: Every manifest version has a release.json
+echo "Checking manifest entries have release directories..."
+manifest_versions=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(' '.join(d.get('releases', {}).keys()))" 2>/dev/null || echo "")
+for version in $manifest_versions; do
+    if [ -n "$CHECK_VERSION" ] && [ "$version" != "$CHECK_VERSION" ]; then
+        continue
+    fi
+    release_json="releases/v${version}/release.json"
+    if [ ! -f "$release_json" ]; then
+        echo "  Issue: Manifest has v$version but no $release_json"
+        ((ISSUES++)) || true
+    fi
+done
+echo ""
+
 for release_dir in releases/v*/; do
     version=$(basename "$release_dir" | sed 's/^v//')
     release_json="$release_dir/release.json"
@@ -97,6 +112,22 @@ for release_dir in releases/v*/; do
         echo "  Issue: Legacy DMG status 'complete' should be 'shipped'"
         echo "    Run: ./scripts/release/normalize-statuses.sh"
         ((ISSUES++)) || true
+    fi
+
+    # Check overall release.status sanity
+    overall_status=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('status', 'in_progress'))" 2>/dev/null || echo "in_progress")
+    if [ "$overall_status" = "complete" ]; then
+        # When complete, DMG should be shipped|skipped and appstore should be approved|skipped
+        if [ "$manifest_dmg" != "shipped" ] && [ "$manifest_dmg" != "skipped" ]; then
+            echo "  Issue: release.status is 'complete' but DMG is '$manifest_dmg'"
+            echo "    Expected: shipped or skipped"
+            ((ISSUES++)) || true
+        fi
+        if [ "$manifest_as" != "approved" ] && [ "$manifest_as" != "skipped" ]; then
+            echo "  Issue: release.status is 'complete' but App Store is '$manifest_as'"
+            echo "    Expected: approved or skipped"
+            ((ISSUES++)) || true
+        fi
     fi
 
     echo ""

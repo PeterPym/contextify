@@ -44,54 +44,49 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 FORCE=false
 DRY_RUN=false
 
-for arg in "$@"; do
-  case $arg in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --build)
-      shift
+      BUILD_NUM="$2"
+      shift 2
       ;;
     --build=*)
-      BUILD_NUM="${arg#*=}"
-      ;;
-    --date)
+      BUILD_NUM="${1#*=}"
       shift
       ;;
-    --date=*)
-      DATE="${arg#*=}"
+    --date)
+      DATE="$2"
       TIMESTAMP="${DATE}T12:00:00Z"
+      shift 2
+      ;;
+    --date=*)
+      DATE="${1#*=}"
+      TIMESTAMP="${DATE}T12:00:00Z"
+      shift
       ;;
     --force)
       FORCE=true
+      shift
       ;;
     --dry-run)
       DRY_RUN=true
+      shift
       ;;
     --help|-h)
       head -30 "$0" | tail -28 | sed 's/^# //' | sed 's/^#//'
       exit 0
       ;;
     -*)
-      # Skip flags
+      echo "Unknown option: $1" >&2
+      exit 1
       ;;
     *)
       if [ -z "$VERSION" ]; then
-        VERSION="$arg"
-      elif [ -z "$BUILD_NUM" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
-        BUILD_NUM="$arg"
+        VERSION="$1"
       fi
+      shift
       ;;
   esac
-done
-
-# Handle --build N format
-args=("$@")
-for i in "${!args[@]}"; do
-  if [ "${args[$i]}" = "--build" ] && [ -n "${args[$((i+1))]}" ]; then
-    BUILD_NUM="${args[$((i+1))]}"
-  fi
-  if [ "${args[$i]}" = "--date" ] && [ -n "${args[$((i+1))]}" ]; then
-    DATE="${args[$((i+1))]}"
-    TIMESTAMP="${DATE}T12:00:00Z"
-  fi
 done
 
 if [ -z "$VERSION" ]; then
@@ -140,9 +135,18 @@ fi
 # Update manifest.json
 python3 << EOF
 import json
+import sys
 
-with open('$MANIFEST', 'r') as f:
-    data = json.load(f)
+try:
+    with open('$MANIFEST', 'r') as f:
+        data = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"Error: $MANIFEST is invalid JSON: {e}", file=sys.stderr)
+    print("  Run: ./scripts/release/check-consistency.sh", file=sys.stderr)
+    sys.exit(1)
+except FileNotFoundError:
+    print("Error: $MANIFEST not found", file=sys.stderr)
+    sys.exit(1)
 
 # Ensure release exists
 if '$VERSION' not in data.get('releases', {}):
@@ -171,10 +175,16 @@ EOF
 if [ -f "$RELEASE_JSON" ]; then
   python3 << EOF
 import json
+import sys
 from datetime import date
 
-with open('$RELEASE_JSON', 'r') as f:
-    data = json.load(f)
+try:
+    with open('$RELEASE_JSON', 'r') as f:
+        data = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"Error: $RELEASE_JSON is invalid JSON: {e}", file=sys.stderr)
+    print("  Run: ./scripts/release/check-consistency.sh", file=sys.stderr)
+    sys.exit(1)
 
 data['updated'] = str(date.today())
 

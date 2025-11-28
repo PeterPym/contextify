@@ -51,51 +51,55 @@ DATE=$(date +%Y-%m-%d)
 INTERACTIVE=false
 DRY_RUN=false
 
-# First pass: collect basic args
-for arg in "$@"; do
-  case $arg in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --guideline)
+      GUIDELINE="$2"
+      shift 2
+      ;;
     --guideline=*)
-      GUIDELINE="${arg#*=}"
+      GUIDELINE="${1#*=}"
+      shift
+      ;;
+    --reason)
+      REASON="$2"
+      shift 2
       ;;
     --reason=*)
-      REASON="${arg#*=}"
+      REASON="${1#*=}"
+      shift
+      ;;
+    --date)
+      DATE="$2"
+      shift 2
       ;;
     --date=*)
-      DATE="${arg#*=}"
+      DATE="${1#*=}"
+      shift
       ;;
     --interactive)
       INTERACTIVE=true
+      shift
       ;;
     --dry-run)
       DRY_RUN=true
+      shift
       ;;
     --help|-h)
       head -38 "$0" | tail -36 | sed 's/^# //' | sed 's/^#//'
       exit 0
       ;;
     -*)
-      # Skip flags
+      echo "Unknown option: $1" >&2
+      exit 1
       ;;
     *)
       if [ -z "$VERSION" ]; then
-        VERSION="$arg"
+        VERSION="$1"
       fi
+      shift
       ;;
   esac
-done
-
-# Handle --guideline VALUE and --reason VALUE format
-args=("$@")
-for i in "${!args[@]}"; do
-  if [ "${args[$i]}" = "--guideline" ] && [ -n "${args[$((i+1))]}" ]; then
-    GUIDELINE="${args[$((i+1))]}"
-  fi
-  if [ "${args[$i]}" = "--reason" ] && [ -n "${args[$((i+1))]}" ]; then
-    REASON="${args[$((i+1))]}"
-  fi
-  if [ "${args[$i]}" = "--date" ] && [ -n "${args[$((i+1))]}" ]; then
-    DATE="${args[$((i+1))]}"
-  fi
 done
 
 if [ -z "$VERSION" ]; then
@@ -169,9 +173,18 @@ REASON_ESCAPED=$(echo "$REASON" | sed 's/"/\\"/g' | sed "s/'/\\'/g")
 # Update manifest.json
 python3 << EOF
 import json
+import sys
 
-with open('$MANIFEST', 'r') as f:
-    data = json.load(f)
+try:
+    with open('$MANIFEST', 'r') as f:
+        data = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"Error: $MANIFEST is invalid JSON: {e}", file=sys.stderr)
+    print("  Run: ./scripts/release/check-consistency.sh", file=sys.stderr)
+    sys.exit(1)
+except FileNotFoundError:
+    print("Error: $MANIFEST not found", file=sys.stderr)
+    sys.exit(1)
 
 # Ensure release exists
 if '$VERSION' not in data.get('releases', {}):
@@ -194,10 +207,16 @@ EOF
 if [ -f "$RELEASE_JSON" ]; then
   python3 << EOF
 import json
+import sys
 from datetime import date
 
-with open('$RELEASE_JSON', 'r') as f:
-    data = json.load(f)
+try:
+    with open('$RELEASE_JSON', 'r') as f:
+        data = json.load(f)
+except json.JSONDecodeError as e:
+    print(f"Error: $RELEASE_JSON is invalid JSON: {e}", file=sys.stderr)
+    print("  Run: ./scripts/release/check-consistency.sh", file=sys.stderr)
+    sys.exit(1)
 
 data['updated'] = str(date.today())
 

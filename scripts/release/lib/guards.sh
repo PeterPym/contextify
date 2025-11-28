@@ -33,20 +33,43 @@ MANIFEST="${ROOT_DIR}/releases/manifest.json"
 
 # Get channel status from manifest.json
 # Treats legacy "complete" as "shipped"/"approved" for compatibility
+# Returns "pending" if version not in manifest (with warning)
 get_channel_status() {
     local version="$1"
     local channel="$2"
 
-    python3 -c "
+    local result
+    result=$(python3 -c "
 import json
-with open('$MANIFEST') as f:
-    data = json.load(f)
-status = data.get('releases', {}).get('$version', {}).get('$channel', {}).get('status', 'pending')
-# Legacy compatibility
-if status == 'complete':
-    status = 'shipped' if '$channel' == 'dmg' else 'approved'
-print(status)
-" 2>/dev/null || echo "pending"
+import sys
+try:
+    with open('$MANIFEST') as f:
+        data = json.load(f)
+    release = data.get('releases', {}).get('$version')
+    if release is None:
+        print('__MISSING__')
+    else:
+        status = release.get('$channel', {}).get('status', 'pending')
+        # Legacy compatibility
+        if status == 'complete':
+            status = 'shipped' if '$channel' == 'dmg' else 'approved'
+        print(status)
+except Exception:
+    print('__ERROR__')
+" 2>/dev/null)
+
+    case "$result" in
+        __MISSING__)
+            echo "Warning: v$version not in manifest.json, treating '$channel' as 'pending'" >&2
+            echo "pending"
+            ;;
+        __ERROR__|"")
+            echo "pending"
+            ;;
+        *)
+            echo "$result"
+            ;;
+    esac
 }
 
 # Check if artifact exists
@@ -75,6 +98,12 @@ check_can_ship_dmg() {
     local version="$1"
     local status=$(get_channel_status "$version" "dmg")
 
+    # Already shipped - allow idempotent re-run
+    if [ "$status" = "shipped" ]; then
+        echo "Note: DMG already marked as shipped (idempotent re-run)" >&2
+        return 0
+    fi
+
     # Must be built (or pending with artifacts from legacy flow)
     if [ "$status" != "built" ] && [ "$status" != "pending" ]; then
         echo "Error: Cannot ship DMG - status is '$status'" >&2
@@ -97,6 +126,12 @@ check_can_ship_appstore() {
     local version="$1"
     local status=$(get_channel_status "$version" "appstore")
 
+    # Already approved - allow idempotent re-run
+    if [ "$status" = "approved" ]; then
+        echo "Note: App Store already marked as approved (idempotent re-run)" >&2
+        return 0
+    fi
+
     # Must be submitted (approved comes after review)
     if [ "$status" != "submitted" ]; then
         echo "Error: Cannot mark App Store approved - status is '$status', expected 'submitted'" >&2
@@ -110,6 +145,12 @@ check_can_ship_appstore() {
 check_can_submit() {
     local version="$1"
     local status=$(get_channel_status "$version" "appstore")
+
+    # Already submitted - allow idempotent re-run
+    if [ "$status" = "submitted" ]; then
+        echo "Note: Already marked as submitted (idempotent re-run)" >&2
+        return 0
+    fi
 
     # Must be built
     if [ "$status" != "built" ] && [ "$status" != "pending" ]; then
