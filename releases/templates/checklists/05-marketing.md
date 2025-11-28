@@ -6,6 +6,8 @@
 
 **Note:** Marketing tasks can begin after submission (Phase 4), before App Store approval.
 
+**Reference:** See `build/docs/operations/PUBLIC-SURFACES.md` for complete inventory of public surfaces.
+
 ## Changelog
 
 ### Write Changelog

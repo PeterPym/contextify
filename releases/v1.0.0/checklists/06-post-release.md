@@ -21,6 +21,56 @@
 - [ ] Approval date: ____
 - [ ] Proceed with remaining post-release tasks
 
+## Public Surfaces Review
+
+**Reference:** `build/docs/operations/PUBLIC-SURFACES.md`
+
+Review each public surface and determine if this release requires updates.
+
+### App Store Listing
+- [ ] Parse `appstore-metadata/fastlane/metadata/en-US/description.txt`
+- [ ] System requirements still accurate?
+- [ ] Feature list reflects current capabilities?
+- [ ] Screenshots show current UI? (if UI changed)
+- [ ] Required updates: ____
+
+### Website (contextify.sh)
+- [ ] Parse `website/index.html` - landing page current?
+- [ ] Parse `website/help/index.html` - help docs current?
+- [ ] Parse `website/privacy.html` - privacy policy still accurate?
+- [ ] Parse `website/support.html` - support links working?
+- [ ] New release notes page created? `website/release-notes/1.0.0.html`
+- [ ] Required updates: ____
+
+### Public Repository
+- [ ] Parse `~/code/projects/contextify-public-repo/README.md`
+- [ ] Download links current? (or using dynamic forwarder)
+- [ ] Feature list accurate?
+- [ ] System requirements correct?
+- [ ] Required updates: ____
+
+### Public Repo Demo Video
+- [ ] Record demo video (30-60 sec) showing core functionality
+- [ ] Convert to WebM or MP4 (target <10MB)
+- [ ] Host: repo `assets/` folder or `contextify.sh/assets/`
+- [ ] Embed in README (autoplay, muted, loop)
+- [ ] Content: app launch → timeline populating → LLM summary → project switch
+
+**Format options:**
+- WebM: Best compression, good GitHub support
+- MP4: Universal compatibility
+- Use same archive built for App Store review demo
+
+**Embed syntax:**
+```markdown
+https://github.com/user-attachments/assets/xxxxx
+```
+
+### Appcast (Sparkle)
+- [ ] New `<item>` added to `website/appcast.xml`?
+- [ ] Download URL correct?
+- [ ] Signature included?
+
 ## Documentation Updates
 
 ### Update Website
