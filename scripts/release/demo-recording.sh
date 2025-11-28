@@ -1,10 +1,30 @@
 #!/bin/bash
 # Contextify Demo Recording - Interactive Steps
-# Run: bash /tmp/demo-recording-steps.sh
+# Run: ./scripts/release/demo-recording.sh [version]
+# Example: ./scripts/release/demo-recording.sh 1.0.0-build4
 
 set -e
 
-ARCHIVE_PATH="$HOME/Dropbox/Contextify/archives/v1.0.0-build4.xcarchive"
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Version can be passed as argument or defaults to latest archive
+VERSION="${1:-}"
+if [[ -z "$VERSION" ]]; then
+  # Find latest archive
+  LATEST=$(ls -t build/archives/ 2>/dev/null | head -1)
+  if [[ -z "$LATEST" ]]; then
+    echo "❌ No archives found in build/archives/"
+    echo "   Run: bash scripts/xc.sh --dist=appstore Release archive"
+    exit 1
+  fi
+  ARCHIVE_PATH="build/archives/$LATEST"
+else
+  ARCHIVE_PATH="build/archives/v${VERSION}.xcarchive"
+fi
+
 APP_PATH="$ARCHIVE_PATH/Products/Applications/Contextify.app"
 BUNDLE_ID="sh.contextify.Contextify"
 SANDBOX_CONTAINER="$HOME/Library/Containers/$BUNDLE_ID"
@@ -38,12 +58,26 @@ fi
 echo "✅ Archive verified"
 pause
 
-# Step 1: Install sample data
+# Step 1: Backup real data and install sample data
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 1: Install Sample Data"
+echo "  STEP 1: Backup Real Data & Install Sample Data"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Installing sample transcripts..."
+
+# Check if backup already exists
+if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
+  echo "⚠️  Backup already exists at ~/.claude/projects-REAL-BACKUP"
+  echo "   Skipping backup step."
+else
+  echo "Backing up real transcripts..."
+  mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
+  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
+  echo "✅ Backed up to ~/.claude/projects-REAL-BACKUP"
+fi
+
+echo ""
+echo "Installing sample transcripts (clean install)..."
+rm -rf ~/.claude/projects ~/.codex/sessions
 mkdir -p ~/.claude/projects ~/.codex/sessions
 cp -r appstore-metadata/review-materials/sample-transcripts/claude/projects/* ~/.claude/projects/
 cp -r appstore-metadata/review-materials/sample-transcripts/codex/sessions/* ~/.codex/sessions/
