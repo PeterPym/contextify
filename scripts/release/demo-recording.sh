@@ -2,6 +2,8 @@
 # Contextify Demo Recording - Interactive Steps
 # Run: ./scripts/release/demo-recording.sh [version]
 # Example: ./scripts/release/demo-recording.sh 1.0.0-build4
+#
+# Quick restore: ./scripts/release/demo-recording.sh --restore
 
 set -e
 
@@ -9,6 +11,156 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# Source shared cleanup library
+source "$PROJECT_ROOT/scripts/lib/cleanup.sh"
+
+# Handle --help flag
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  echo "Contextify Demo Recording Script"
+  echo ""
+  echo "Usage: ./scripts/release/demo-recording.sh [command|version]"
+  echo ""
+  echo "Commands:"
+  echo "  (none)      Start interactive demo recording workflow"
+  echo "  --status    Check current transcript state (real vs sample data)"
+  echo "  --clean     Remove sample data only (keeps real projects)"
+  echo "  --restore   Restore real transcripts from backup"
+  echo "  --help      Show this help"
+  echo ""
+  echo "Examples:"
+  echo "  ./scripts/release/demo-recording.sh              # Start demo workflow"
+  echo "  ./scripts/release/demo-recording.sh 1.0.0-build4 # Use specific archive"
+  echo "  ./scripts/release/demo-recording.sh --status     # Check current state"
+  echo "  ./scripts/release/demo-recording.sh --clean      # Remove sample data"
+  echo "  ./scripts/release/demo-recording.sh --restore    # Restore from backup"
+  exit 0
+fi
+
+# Handle --status flag to check current state
+if [[ "${1:-}" == "--status" || "${1:-}" == "status" ]]; then
+  echo "Transcript State Check"
+  echo "======================"
+  echo ""
+
+  # Check backup
+  if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
+    BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
+    echo "✅ Backup exists: ~/.claude/projects-REAL-BACKUP ($BACKUP_COUNT projects)"
+  else
+    echo "⚠️  No backup at ~/.claude/projects-REAL-BACKUP"
+  fi
+  echo ""
+
+  # Check current projects
+  if [[ -d ~/.claude/projects ]]; then
+    CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
+    SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+    REAL_COUNT=$((CURRENT_COUNT - SAMPLE_COUNT))
+
+    if [[ "$SAMPLE_COUNT" -gt 0 && "$REAL_COUNT" -gt 0 ]]; then
+      echo "⚠️  MIXED STATE: ~/.claude/projects/"
+      echo "   $REAL_COUNT real projects + $SAMPLE_COUNT sample projects"
+      echo ""
+      echo "   Sample projects (can be removed):"
+      ls ~/.claude/projects/ 2>/dev/null | grep "sample-projects" | sed 's/^/     /'
+      echo ""
+      echo "   Real projects (first 5):"
+      ls ~/.claude/projects/ 2>/dev/null | grep -v "sample-projects" | head -5 | sed 's/^/     /'
+      if [[ "$REAL_COUNT" -gt 5 ]]; then
+        echo "     ... and $((REAL_COUNT - 5)) more"
+      fi
+    elif [[ "$SAMPLE_COUNT" -gt 0 ]]; then
+      echo "📦 SAMPLE DATA ONLY: ~/.claude/projects/ ($SAMPLE_COUNT sample projects)"
+      echo "   Sample projects:"
+      ls ~/.claude/projects/ 2>/dev/null | grep "sample-projects" | sed 's/^/     /'
+    else
+      echo "✅ REAL DATA: ~/.claude/projects/ ($REAL_COUNT projects)"
+      echo "   Projects (first 5):"
+      ls ~/.claude/projects/ 2>/dev/null | head -5 | sed 's/^/     /'
+      if [[ "$REAL_COUNT" -gt 5 ]]; then
+        echo "     ... and $((REAL_COUNT - 5)) more"
+      fi
+    fi
+  else
+    echo "❌ No projects at ~/.claude/projects"
+  fi
+
+  echo ""
+  echo "Quick commands:"
+  echo "  ./scripts/release/demo-recording.sh --restore  # Restore from backup"
+  echo "  ./scripts/release/demo-recording.sh --clean    # Remove sample data only"
+  echo "  ./scripts/release/demo-recording.sh            # Start demo workflow"
+  exit 0
+fi
+
+# Handle --clean flag to remove sample data without needing backup
+if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
+  echo "Removing sample data..."
+  echo ""
+
+  SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+  if [[ "$SAMPLE_COUNT" -eq 0 ]]; then
+    echo "✅ No sample data found - nothing to remove"
+    exit 0
+  fi
+
+  echo "Removing $SAMPLE_COUNT sample project(s):"
+  for dir in ~/.claude/projects/*sample-projects*; do
+    if [[ -d "$dir" ]]; then
+      echo "  Removing: $(basename "$dir")"
+      rm -rf "$dir"
+    fi
+  done
+
+  # Also remove sample codex sessions if present
+  if ls ~/.codex/sessions/ 2>/dev/null | grep -q "sample"; then
+    echo "  Removing sample Codex sessions..."
+    rm -rf ~/.codex/sessions/*sample* 2>/dev/null || true
+  fi
+
+  echo ""
+  echo "✅ Sample data removed!"
+  echo ""
+  REAL_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "Remaining: $REAL_COUNT real projects"
+  exit 0
+fi
+
+# Handle --restore flag for quick recovery after bailing early
+if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" ]]; then
+  echo "Restoring real transcripts from backup..."
+  echo ""
+
+  if [[ ! -d ~/.claude/projects-REAL-BACKUP ]]; then
+    echo "❌ No backup found at ~/.claude/projects-REAL-BACKUP"
+    echo ""
+    echo "Tip: If you just have mixed data (real + sample), use --clean instead:"
+    echo "  ./scripts/release/demo-recording.sh --clean"
+    exit 1
+  fi
+
+  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "Found backup with $BACKUP_COUNT projects"
+  echo ""
+
+  # Remove current data (sample or mixed)
+  rm -rf ~/.claude/projects ~/.codex/sessions
+
+  # Restore backups
+  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
+  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
+
+  echo "✅ Real transcripts restored!"
+  echo ""
+  echo "Projects now in ~/.claude/projects/:"
+  ls ~/.claude/projects/ 2>/dev/null | head -10
+  COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$COUNT" -gt 10 ]]; then
+    echo "... and $((COUNT - 10)) more"
+  fi
+  exit 0
+fi
 
 # Version can be passed as argument or defaults to latest archive
 VERSION="${1:-}"
@@ -119,7 +271,7 @@ echo "✅ Sample data installed:"
 ls ~/.claude/projects/
 pause
 
-# Step 2: Quit app and clean all state (matches xc.sh ar behavior)
+# Step 2: Quit app and clean all state (uses shared cleanup from xc.sh)
 echo "═══════════════════════════════════════════════════════════════"
 echo "  STEP 2: Quit App & Clean All State"
 echo "═══════════════════════════════════════════════════════════════"
@@ -132,32 +284,18 @@ pkill -x Contextify >/dev/null 2>&1 || true
 sleep 1
 echo "✅ App quit"
 
-# Clean Application Support (database, bookmarks)
+# Use db_manager.sh for database cleanup (single source of truth)
 echo ""
-echo "Cleaning sandboxed container..."
-if [[ -d "$SANDBOX_APP_SUPPORT" ]]; then
-  rm -rf "$SANDBOX_APP_SUPPORT"
-  echo "  Removed: $SANDBOX_APP_SUPPORT"
-fi
+echo "Cleaning database via db_manager.sh..."
+CONTEXTIFY_DIST=appstore "$PROJECT_ROOT/scripts/db_manager.sh" clean --force 2>&1 | grep -E "^[ℹ✓⚠✗]" || true
 
-# Clean caches
-if [[ -d "$HOME/Library/Caches/$BUNDLE_ID" ]]; then
-  rm -rf "$HOME/Library/Caches/$BUNDLE_ID"
-  echo "  Removed: ~/Library/Caches/$BUNDLE_ID"
-fi
-if [[ -d "$SANDBOX_CONTAINER/Data/Library/Caches" ]]; then
-  rm -rf "$SANDBOX_CONTAINER/Data/Library/Caches"
-  echo "  Removed: Container caches"
-fi
-
-# Clear UserDefaults/preferences (both bundle ID and shared suite)
-defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
-defaults delete "dev.contextify" >/dev/null 2>&1 || true
-rm -f "$HOME/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
-rm -f "$HOME/Library/Preferences/dev.contextify.plist" 2>/dev/null || true
-rm -f "$SANDBOX_CONTAINER/Data/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
-rm -f "$SANDBOX_CONTAINER/Data/Library/Preferences/dev.contextify.plist" 2>/dev/null || true
-echo "  Cleared: UserDefaults (bundle + dev.contextify suite)"
+# Clean remaining state (caches, UserDefaults) using shared library
+echo ""
+echo "Cleaning caches and preferences..."
+clean_caches_for_bid "$BUNDLE_ID"
+echo "  Cleared: Caches"
+clean_userdefaults_for_bid "$BUNDLE_ID"
+echo "  Cleared: UserDefaults (bundle + $CONTEXTIFY_SUITE suite)"
 
 echo "✅ All app state cleaned"
 pause
