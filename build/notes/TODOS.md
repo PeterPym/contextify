@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 16 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 71
+**Total Active Items:** 72
 
 ---
 
@@ -187,7 +187,7 @@ The Help menu has 10+ items that do nothing when clicked. All `HelpTopic.url` va
 
 ---
 
-# P1 (High Priority) - 16 Items
+# P1 (High Priority) - 17 Items
 
 ---
 
@@ -210,6 +210,54 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 - Phase 3: Website deployment (DMG, appcast, release notes)
 - Interactive checkpoints with `--yes` for automation
 - Server directory creation (releases/, release-notes/)
+
+---
+
+## Help Documentation Content (1 item)
+
+**Status:** Not Started - research complete, structure defined
+**Priority:** P1 (user education, support reduction, growth)
+**Effort:** 4-8 hours
+**Research:** `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
+
+- [ ] #P1-HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
+
+**Goal:** Populate contextify.sh/help/ with useful content that educates users, reduces support burden, and drives engagement/growth.
+
+**Pages to Create:**
+1. `/help` - Hub page linking to all sections
+2. `/help/getting-started` - 5-minute setup guide
+3. `/help/keyboard-shortcuts` - Reference table
+4. `/help/troubleshooting` - Common issues and solutions
+5. `/help/features` - Feature discovery (post-launch)
+6. `/help/privacy` - Data handling, local-first architecture
+
+**Engagement Hooks to Embed:**
+- Newsletter signup (footer of help pages)
+- "Was this helpful?" feedback widget
+- "Still stuck? Contact us" funnel
+- "Try it now" deep links to app features
+- Feature discovery prompts
+
+**Growth Flywheels:**
+- Help → Feature Discovery → Usage → Referral
+- Troubleshooting → Resolution → Trust → Review
+- Keyboard Shortcuts → Power Users → Advocates
+- Newsletter → Tips → Engagement → Retention
+
+**Analytics to Implement:**
+- Page views per article
+- Time on page
+- Help → Support contact rate
+- Newsletter conversion rate
+- Search queries (content gaps)
+
+**Technical:**
+- UTM params from app: `?ref=app-help-menu`
+- Plausible or Fathom for privacy-respecting analytics
+- Anchor IDs for deep linking
+
+**Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
 
 ---
 
