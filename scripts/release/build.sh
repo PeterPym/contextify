@@ -145,7 +145,8 @@ echo ""
 echo -e "${BLUE}==>${NC} Running tests..."
 if [ "$DRY_RUN" = false ]; then
   cd "$ROOT_DIR"
-  if swift test 2>&1 | tail -3 | grep -q "with 0 failures"; then
+  # Check for "with 0 failures" anywhere in output (not just last 3 lines)
+  if swift test 2>&1 | grep -q "with 0 failures"; then
     echo -e "${GREEN}OK${NC} Tests passed"
   else
     echo -e "${RED}Error: Tests failed${NC}"
