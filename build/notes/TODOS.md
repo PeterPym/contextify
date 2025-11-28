@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 71
+**Total Active Items:** 73
 
 ---
 
-# P0 (Launch Critical) - 1 Item
+# P0 (Launch Critical) - 2 Items
 
 ---
 
@@ -103,6 +103,36 @@ doc_references:
 **Post-Launch**
 - [ ] Homebrew Cask formula
 - [ ] Product Hunt (when ready)
+
+---
+
+## #P0-PROJECT-ROOT-MODAL: Spurious "Stored project root is invalid" modal
+
+**Status:** Bug - recurring, blocks clean first-run experience
+**Priority:** P0 (affects App Store review, demo recording)
+**Effort:** 2-4 hours
+
+**Issue:**
+Modal appears on startup with message: "Stored project root is invalid or unreadable (saved path): /path/to/dir". Blocks user interaction until dismissed.
+
+**Root Cause (partial):**
+- App uses TWO UserDefaults domains: `sh.contextify.Contextify` (bundle ID) and `dev.contextify` (shared suite)
+- Clean scripts only cleared bundle ID defaults, leaving stale `dev.contextify.projectRoot` key
+- Fixed in scripts but modal logic may need hardening
+
+**Remaining Work:**
+1. [ ] Audit why two UserDefaults domains exist - consolidate to bundle ID if possible
+2. [ ] Change modal to non-blocking log message (fall back gracefully)
+3. [ ] Ensure `HUDPreferences.clearPersistedRoot()` is called when path invalid
+4. [ ] Add test for clean first-run experience
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift:264` - error message source
+- `app/Sources/ContextifyCore/HUDCore.swift:22-27` - dual UserDefaults domains
+- `scripts/xc.sh:331-332` - reset logic (now fixed)
+- `scripts/release/demo-recording.sh:153-160` - reset logic (now fixed)
+
+**History:** Previously tracked, thought resolved, recurred during demo recording session.
 
 ---
 
@@ -891,7 +921,35 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-# P2 (Medium Priority) - 36 Items
+# P2 (Medium Priority) - 37 Items
+
+---
+
+## #P2-CONSOLIDATE-USERDEFAULTS: Consolidate UserDefaults to single domain
+
+**Status:** Not Started
+**Priority:** P2 (code cleanup, reduces complexity)
+**Effort:** 1-2 hours
+
+**Issue:**
+App uses two UserDefaults domains:
+- `sh.contextify.Contextify` (bundle ID) - standard
+- `dev.contextify` (shared suite) - for HUDPreferences
+
+This causes confusion when resetting app state (both must be cleared) and was root cause of #P0-PROJECT-ROOT-MODAL recurring.
+
+**Solution:**
+Migrate all preferences to bundle ID domain and remove `dev.contextify` suite.
+
+**Implementation:**
+1. [ ] Identify all keys in `dev.contextify` suite (HUDPreferences)
+2. [ ] Add migration code to move values to bundle ID on first launch
+3. [ ] Update HUDPreferences to use standard UserDefaults
+4. [ ] Remove `dev.contextify` suite initialization
+5. [ ] Update reset scripts to only clear bundle ID
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift:22-27` - sharedDefaults initialization
 
 ---
 
