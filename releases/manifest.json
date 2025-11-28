@@ -9,9 +9,8 @@
       "git_tag": "v1.0.0",
       "git_commit": "cd6974d5eb3b9cb199cc298be3659e29c99f471b",
       "dmg": {
-        "status": "shipped",
-        "released_at": "2025-11-25",
-        "github_release_url": "https://github.com/banagale/contextify/releases/tag/v1.0.0"
+        "status": "built",
+        "build_number": null
       },
       "appstore": {
         "status": "built",
