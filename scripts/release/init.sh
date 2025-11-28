@@ -41,14 +41,16 @@ if [ -d "$RELEASE_DIR" ]; then
   # Extract existing notes and build number from release.json
   if [ -f "$RELEASE_DIR/release.json" ]; then
     EXISTING_NOTES=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(json.dumps(d.get('notes', [])))" 2>/dev/null || echo "[]")
+    NOTES_COUNT=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(len(d.get('notes', [])))" 2>/dev/null || echo "0")
     EXISTING_BUILD=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(d.get('phases',{}).get('build',{}).get('appstore',{}).get('build_number') or 0)" 2>/dev/null || echo "0")
     NEW_BUILD=$((EXISTING_BUILD + 1))
   else
     EXISTING_NOTES="[]"
+    NOTES_COUNT=0
     NEW_BUILD=1
   fi
 
-  echo "  Preserving ${#EXISTING_NOTES} notes"
+  echo "  Preserving $NOTES_COUNT notes"
   echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
 
 else
