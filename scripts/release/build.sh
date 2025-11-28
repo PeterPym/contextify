@@ -214,17 +214,21 @@ data['updated'] = str(date.today())
 # Update build phase
 data['phases']['build']['status'] = 'complete'
 
-if not $SKIP_APPSTORE:
+skip_appstore = '$SKIP_APPSTORE' == 'true'
+skip_dmg = '$SKIP_DMG' == 'true'
+no_notarize = '$NO_NOTARIZE' == 'true'
+
+if not skip_appstore:
     data['phases']['build']['appstore']['archived'] = True
     data['phases']['build']['appstore']['archive_path'] = '$ARCHIVE_DIR/appstore/Contextify.xcarchive'
     data['phases']['build']['appstore']['build_number'] = $BUILD_NUMBER
     data['phases']['build']['appstore']['exported'] = True
 
-if not $SKIP_DMG:
+if not skip_dmg:
     data['phases']['build']['dmg']['built'] = True
     data['phases']['build']['dmg']['path'] = 'dist/Contextify-${VERSION}.dmg'
     data['phases']['build']['dmg']['signed'] = True
-    data['phases']['build']['dmg']['notarized'] = not $NO_NOTARIZE
+    data['phases']['build']['dmg']['notarized'] = not no_notarize
 
 # Add note
 data['notes'].append({
