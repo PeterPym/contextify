@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
-- **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 19 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 70
+**Total Active Items:** 72
 
 ---
 
@@ -106,7 +106,7 @@ doc_references:
 
 ---
 
-# P1 (High Priority) - 17 Items
+# P1 (High Priority) - 19 Items
 
 ---
 
@@ -1002,6 +1002,56 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 **Spec:** `build/notes/todo-support/P1-CONVO-SEARCH-spec.md`
 **Implementation:** `build/notes/todo-support/P1-CONVO-SEARCH-implementation.md`
+
+---
+
+## Context Re-injection (1 item)
+
+**Status:** Research/Design needed
+**Priority:** P1 (enables AI workflow continuity)
+**Effort:** 4-8 hours (Phase 1 MVP)
+
+- [ ] #P1-CONTEXT-REINJECTION: Enable re-injection of found context into new AI conversations
+
+**Problem:** User finds relevant message via search, wants to inject it (with surrounding context) into new Claude Code session. Current "Copy as JSON" lacks db entry ID, AI cannot look up surrounding context.
+
+**Research Areas:**
+1. "Copy with Context" action - fetch N surrounding messages, format as Markdown
+2. Local web server / quasi-MCP - AI queries `localhost:PORT/context?entry_id=X`
+3. File-based handoff - export to `~/.contextify/context-export/latest.md`
+4. Enhanced Copy as JSON - include surrounding_context array
+5. Local LLM summary - generate optimized context summary for re-injection
+
+**Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
+**Related:** P1-CONVO-SEARCH spec section 5.4 (surrounding context query)
+
+---
+
+## Website Redesign (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (public launch quality)
+**Effort:** 8-12 hours
+
+- [ ] #P1-WEBSITE-REDESIGN: Improve contextify.sh style and presentation
+
+**Current State:** Basic landing page with "Rogue Amoeba-inspired aesthetic" (Nov 2025). Functional but needs significant improvement for public launch.
+
+**Needed (from launch-plan-v1.md):**
+- Hero section with compelling headline, subhead, video embed
+- Features section with 3-4 key features + screenshots
+- Screenshots gallery with lightbox
+- Download section (DMG link, SHA256, App Store badge)
+- Improved footer (GitHub, privacy, support, social)
+
+**Nice to Have:**
+- Changelog page
+- FAQ section
+- "Coming soon" roadmap preview
+- Email signup for updates
+
+**Reference:** `build/docs/operations/marketing/launch-plan-v1.md`
+**Design Inspiration:** Rogue Amoeba (rogueamoeba.com) - clean, professional, Mac-native aesthetic
 
 ---
 
