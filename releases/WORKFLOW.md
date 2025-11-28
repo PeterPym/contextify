@@ -60,25 +60,93 @@ After completing each phase:
 2. Find the first incomplete phase in `phases`
 3. Continue from that checklist
 
-## Quick Commands
+## Release Scripts Reference
+
+### Initialization
 
 ```bash
-# Initialize new release (or reset for new build)
-./scripts/release/init.sh X.Y.Z
-./scripts/release/init.sh X.Y.Z --reset
+# Start a new release
+./scripts/release/init.sh 1.0.0
 
-# Build both distributions (DMG + App Store)
-./scripts/release/build.sh X.Y.Z
+# Reset existing release for new build (preserves notes, bumps build number)
+./scripts/release/init.sh 1.0.0 --reset
+```
 
-# Check overall release status
-./scripts/release/status.sh X.Y.Z
+### Building
 
-# Validate specific phase
-./scripts/release/validate-pre-release.sh X.Y.Z
-./scripts/release/validate-build.sh X.Y.Z
+```bash
+# Build both DMG and App Store (recommended)
+./scripts/release/build.sh 1.0.0
 
-# Record demo video (interactive)
+# Build App Store only
+./scripts/release/build.sh 1.0.0 --skip-dmg
+
+# Build DMG only
+./scripts/release/build.sh 1.0.0 --skip-appstore
+
+# Dry run (preview without building)
+./scripts/release/build.sh 1.0.0 --dry-run
+```
+
+### Status & Tracking
+
+```bash
+# Summary of all releases
+./scripts/release/status.sh
+
+# Details for specific version
+./scripts/release/status.sh 1.0.0
+
+# What's currently in production?
+./scripts/release/status.sh --shipped
+
+# What's in production for DMG only?
+./scripts/release/status.sh --shipped --dmg
+
+# What's in production for App Store only?
+./scripts/release/status.sh --shipped --appstore
+
+# What releases are in progress?
+./scripts/release/status.sh --pending
+
+# App Store status across all versions
+./scripts/release/status.sh --appstore
+```
+
+### Marking Releases as Shipped
+
+```bash
+# Mark DMG as shipped to production
+./scripts/release/mark-shipped.sh 1.0.0 --dmg
+
+# Mark App Store as approved (with build number)
+./scripts/release/mark-shipped.sh 1.0.0 --appstore --build 5
+
+# Mark as skipped (decided not to ship this version)
+./scripts/release/mark-shipped.sh 1.0.0 --dmg --skipped
+
+# Override date
+./scripts/release/mark-shipped.sh 1.0.0 --appstore --date 2025-11-28
+```
+
+### Validation
+
+```bash
+# Validate pre-release requirements
+./scripts/release/validate-pre-release.sh 1.0.0
+
+# Validate build artifacts exist
+./scripts/release/validate-build.sh 1.0.0
+```
+
+### Demo Recording
+
+```bash
+# Interactive demo recording (guides through setup)
 ./scripts/release/demo-recording.sh
+
+# For specific version
+./scripts/release/demo-recording.sh 1.0.0
 ```
 
 ## Build Scripts
@@ -88,9 +156,10 @@ Two build scripts serve different purposes:
 | Script | Purpose | Use When |
 |--------|---------|----------|
 | `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
-| `scripts/build-release.sh` | Release builds (DMG + App Store) | Building for release |
+| `scripts/build-release.sh` | Release builds (DMG + App Store) | Standalone release build |
+| `scripts/release/build.sh` | Release workflow build | Building with version tracking |
 
-The release workflow script `scripts/release/build.sh` wraps `build-release.sh` with version tracking and archiving.
+The release workflow script `scripts/release/build.sh` wraps `build-release.sh` with version tracking and archiving to `build/archives/v{VERSION}/`.
 
 ## Handling Rejections
 
