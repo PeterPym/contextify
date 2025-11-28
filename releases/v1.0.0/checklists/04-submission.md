@@ -58,25 +58,28 @@
 
 ## Record Submission
 
-Update `release.json`:
-```json
-{
-  "submission": {
-    "status": "submitted",
-    "submitted_at": "____",
-    "build_number": ____
-  }
-}
+```bash
+# Record in tracking system
+./scripts/release/mark-submitted.sh 1.0.0 --build ____
 ```
+
+This updates both `release.json` and `manifest.json` automatically.
 
 ## Handling Rejection (if applicable)
 
 If rejected:
 - [ ] Read rejection reason in App Store Connect Resolution Center
-- [ ] Document rejection in `release.json` notes
+- [ ] Record rejection:
+  ```bash
+  ./scripts/release/mark-rejected.sh 1.0.0 --interactive
+  ```
 - [ ] Determine fix:
   - Metadata issue? Fix in App Store Connect, resubmit same build
-  - Code issue? Fix code, increment build number, return to Phase 2
+  - Code issue? Fix code, reset for new build:
+    ```bash
+    ./scripts/release/init.sh 1.0.0 --reset
+    # Return to Phase 2 (build)
+    ```
 - [ ] Address rejection and resubmit
 
 **Rejection details (if applicable):**
