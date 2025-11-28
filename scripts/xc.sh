@@ -329,6 +329,7 @@ reset_state_for_bid() {
 
   # Remove preferences
   defaults delete "$bid" >/dev/null 2>&1 || true
+  defaults delete "dev.contextify" >/dev/null 2>&1 || true  # shared preferences suite
   while read -r p; do
     if [[ -f "$p" ]]; then
       echo "  Removing: $p"

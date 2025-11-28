@@ -150,11 +150,14 @@ if [[ -d "$SANDBOX_CONTAINER/Data/Library/Caches" ]]; then
   echo "  Removed: Container caches"
 fi
 
-# Clear UserDefaults/preferences
+# Clear UserDefaults/preferences (both bundle ID and shared suite)
 defaults delete "$BUNDLE_ID" >/dev/null 2>&1 || true
+defaults delete "dev.contextify" >/dev/null 2>&1 || true
 rm -f "$HOME/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
+rm -f "$HOME/Library/Preferences/dev.contextify.plist" 2>/dev/null || true
 rm -f "$SANDBOX_CONTAINER/Data/Library/Preferences/$BUNDLE_ID.plist" 2>/dev/null || true
-echo "  Cleared: UserDefaults"
+rm -f "$SANDBOX_CONTAINER/Data/Library/Preferences/dev.contextify.plist" 2>/dev/null || true
+echo "  Cleared: UserDefaults (bundle + dev.contextify suite)"
 
 echo "✅ All app state cleaned"
 pause
