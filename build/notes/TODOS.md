@@ -37,149 +37,68 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 1 item - Must complete for v1.0 public launch
 - **P1 (High Priority):** 17 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 36 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 16 items - Future enhancements
 
-**Total Active Items:** 72
+**Total Active Items:** 70
 
 ---
 
-# P0 (Launch Critical) - 3 Items
-
----
-
-## Help Menu Audit (1 item)
-
-**Status:** Not Started
-**Priority:** P0 (blocking public launch - non-functional menu items)
-**Effort:** 2-4 hours
-
-- [ ] #P0-HELP-MENU: Audit and fix non-functional Help menu items
-
-**Problem:**
-The Help menu has 10+ items that do nothing when clicked. All `HelpTopic.url` values return `nil`, so `NSWorkspace.shared.open(url)` silently fails. This is unacceptable for App Store release.
-
-**Current Structure (ContextifyApp.swift:57-163):**
-- Getting Started → nil (broken)
-- Feature Guides submenu:
-  - Projects & Discovery → nil (broken)
-  - Timeline Monitoring → nil (broken)
-  - AI Integration → nil (broken)
-  - Database & Sync → nil (broken)
-- Troubleshooting submenu:
-  - AI Unavailable → nil (broken)
-  - Project Not Found → nil (broken)
-  - Database Issues → nil (broken)
-  - LLM Generation Failures → nil (broken)
-- Keyboard Shortcuts → nil (broken)
-- Contact Support... → works (opens email)
-
-**Decision Required:**
-1. **Option A: Remove broken items** - Simplest, ship with minimal Help menu (Contact Support only)
-2. **Option B: Create website help pages** - Add pages to contextify.sh, link from menu
-3. **Option C: Create in-app help** - SwiftUI help views or Help Book bundle
-4. **Option D: Link to GitHub wiki** - Requires public repo first (see #P0-PUBLIC-REPO)
-
-**Recommended Approach (Option B):**
-1. Create minimal help pages on contextify.sh:
-   - `/help/getting-started` - Quick start guide
-   - `/help/keyboard-shortcuts` - Shortcut reference
-   - `/help/troubleshooting` - Common issues
-2. Update `HelpTopic.url` to return website URLs
-3. Remove or consolidate Feature Guides submenu (too granular for v1.0)
-4. Keep Troubleshooting as single page, not 4 separate items
-
-**Files:**
-- `Contextify/Contextify/ContextifyApp.swift` (lines 57-163, HelpCommands + HelpTopic)
-- `website/` (new help pages if Option B)
-
-**Acceptance Criteria:**
-- [ ] Every Help menu item either works or is removed
-- [ ] No silent failures when clicking menu items
-- [ ] Help content is accurate and helpful
-- [ ] Keyboard shortcuts documented (Cmd+Shift+[ and ] for project switching, etc.)
-
----
-
-## Public GitHub Presence (1 item)
-
-**Status:** Not Started
-**Priority:** P0 (blocking public launch)
-**Effort:** 2-4 hours
-
-- [ ] #P0-PUBLIC-REPO: Create `peterpym/contextify` public repo for releases + issues
-
-**Context:** GitHub doesn't support "private code, public issues/releases" on a single repo. Need separate public repo for user-facing GitHub presence.
-
-### Sub-tasks
-
-**Repo Setup**
-- [ ] Create `peterpym/contextify` (public)
-- [ ] Enable Issues, Releases, Discussions
-- [ ] Add README with product description, download instructions, "code is private" note
-- [ ] Add issue templates (bug report, feature request)
-
-**Wiring**
-- [ ] Update website GitHub link → `https://github.com/peterpym/contextify`
-- [ ] Plan release flow: private → public (artifacts only)
-
-**In-App Help Menu**
-- [ ] Help → Report a Bug → `https://github.com/peterpym/contextify/issues/new?template=bug_report.md`
-- [ ] Help → Request a Feature → `https://github.com/peterpym/contextify/issues/new?template=feature_request.md`
-- [ ] Help → Contact Support → email (support@contextify.sh or similar)
-
-**Support Documentation**
-- [ ] Update `website/support.html` to point users to public repo for bugs/features
-- [ ] Add "Report Issue" and "Request Feature" links to support page
-- [ ] Ensure support page explains that code is private but issues are public
-
-**Changelog (follow Anthropic/claude-code pattern)**
-- [ ] Research Anthropic's claude-code repo changelog format
-- [ ] Create CHANGELOG.md in public repo
-- [ ] Establish process: update changelog with each release
-- [ ] Link changelog from README and website
-
-**Reference:** `build/notes/todo-support/P0-PUBLIC-REPO-strategy.md`
+# P0 (Launch Critical) - 1 Item
 
 ---
 
 ## v1.0 Public Launch (1 item)
 
-**Status:** In Progress - App Store submitted, awaiting approval
+**Status:** App Store rejected, resubmission pending
 **Priority:** P0 (blocking public launch)
-**Effort:** 8-16 hours across multiple days
+**Effort:** 4-8 hours remaining
 
 - [ ] #P0-LAUNCH: Complete v1.0 public launch sequence
 
-**Reference:** `build/docs/operations/marketing/launch-plan-v1.md`
+**Current State:**
+- Help menu: DONE (simplified, links to contextify.sh/help/ and GitHub issues)
+- Public repo: DONE (github.com/PeterPym/contextify with issue templates)
+- App Store: REJECTED (Guideline 2.1 - needs demo video + sample data)
+- DMG: Released on GitHub (v1.0.0)
+- Review materials: Sample data ready, demo video script ready
 
-### Sub-tasks
+**Immediate Next Steps (App Store Resubmission):**
+1. [ ] Deploy website with help page and review materials: `./scripts/deploy-website.sh`
+2. [ ] Record demo video following `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`
+3. [ ] Build App Store archive (v1.0.0 build 4): `bash scripts/xc.sh --dist=appstore Release archive`
+4. [ ] Upload and resubmit in App Store Connect
+
+**Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
+
+### Remaining Sub-tasks
 
 **Website (contextify.sh)**
+- [x] Help landing page created
+- [x] Support page updated with GitHub issues links
+- [ ] Deploy current changes
 - [ ] Hero section with headline, subhead, video embed
 - [ ] Features section with screenshots
 - [ ] Download section (DMG link, SHA256, requirements)
 - [ ] App Store badge (when approved)
-- [ ] Upload DMG to contextify.sh/releases/
 
 **Content Creation**
-- [ ] Record 2-minute video demo
+- [x] Demo video script written
+- [ ] Record demo video (60-90 seconds)
 - [ ] Finalize Show HN post
 - [ ] Prepare Twitter announcement thread
-- [ ] Prepare Reddit posts (r/MacApps, r/ClaudeAI)
 
 **Distribution**
-- [ ] App Store approval (submitted, waiting)
-- [ ] DMG available on website
-- [ ] GitHub release (done)
+- [ ] App Store resubmission (rejected, needs demo video)
+- [x] DMG available on GitHub
+- [x] Public repo created (PeterPym/contextify)
 
 **Launch Sequence**
 - [ ] Soft launch: Tweet + Reddit on App Store approval
 - [ ] Show HN post (1-2 days after soft launch)
 - [ ] Monitor and respond to feedback
-- [ ] Expand to other channels (Dev.to, Indie Hackers)
 
 **Post-Launch**
 - [ ] Homebrew Cask formula
