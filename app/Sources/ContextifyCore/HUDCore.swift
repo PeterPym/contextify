@@ -129,8 +129,17 @@ public enum HUDPreferences {
         if stale {
           // Re-store the bookmark to update it
           let canonical = url.resolvingSymlinksInPath()
-          sharedDefaults.set(canonical.path, forKey: pathKey)
-          try? storeBookmark(for: canonical, key: bookmarkKey)
+
+          // For project root, use centralized helper (enforces sandbox filtering)
+          if pathKey == projectRootKey {
+            if !setProjectRootIfAllowed(canonical) {
+              return nil  // Blocked - sandbox container path
+            }
+          } else {
+            // Other bookmarks (e.g., database location) - store directly
+            sharedDefaults.set(canonical.path, forKey: pathKey)
+            try? storeBookmark(for: canonical, key: bookmarkKey)
+          }
         }
         return url
       } catch {
@@ -147,10 +156,32 @@ public enum HUDPreferences {
     return nil
   }
 
-  private static func storeRootURL(_ url: URL) {
+  // MARK: - Centralized Project Root Write Helper
+
+  /// Single enforcement point for all project root writes.
+  /// Ensures sandbox container paths are never persisted.
+  /// - Parameter url: The URL to persist (will be canonicalized)
+  /// - Returns: true if the path was stored, false if blocked
+  @discardableResult
+  private static func setProjectRootIfAllowed(_ url: URL) -> Bool {
     let canonical = url.resolvingSymlinksInPath()
-    sharedDefaults.set(canonical.path, forKey: projectRootKey)
+    let path = canonical.path
+
+    // Never store sandbox container paths - they cause "invalid root" modal on next launch
+    if SandboxPathFilter.isSandboxContainerPath(path) {
+      // Clean up any existing poisoned prefs
+      sharedDefaults.removeObject(forKey: projectRootKey)
+      sharedDefaults.removeObject(forKey: projectRootBookmarkKey)
+      return false
+    }
+
+    sharedDefaults.set(path, forKey: projectRootKey)
     try? storeBookmark(for: canonical, key: projectRootBookmarkKey)
+    return true
+  }
+
+  private static func storeRootURL(_ url: URL) {
+    setProjectRootIfAllowed(url)
   }
 
   private static func storeBookmark(for url: URL, key: String) throws {
@@ -717,11 +748,11 @@ public final class HUDViewModel {
           )
           self.branch = info.branch ?? "—"
           self.projectRootURL = gitRoot
-          HUDPreferences.setPersistedRoot(gitRoot.path)
+          self.persistRootIfNeeded(gitRoot, force: true)
         } else {
           // No git - keep the resolved path
           self.branch = "—"
-          HUDPreferences.setPersistedRoot(resolved.path)
+          self.persistRootIfNeeded(resolved, force: true)
         }
 
         // Update watcher for new git location (or clear if no git)
@@ -869,6 +900,13 @@ public final class HUDViewModel {
   private func persistRootIfNeeded(_ url: URL, force: Bool = false) {
     let canonical = url.resolvingSymlinksInPath()
     let path = canonical.path
+
+    // Never persist sandbox container paths - they trigger "invalid root" modal on next launch
+    if SandboxPathFilter.isSandboxContainerPath(path) {
+      lifecycleLog.debug("[HUD-PERSIST-SKIP] Skipping sandbox container path: \(path, privacy: .public)")
+      return
+    }
+
     let now = Date()
     guard force || path != lastPersistedPath || now.timeIntervalSince(lastPersistedAt) > 5 else { return }
     HUDPreferences.setPersistedRoot(canonical)

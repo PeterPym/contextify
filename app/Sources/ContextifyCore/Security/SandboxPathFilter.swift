@@ -2,9 +2,10 @@ import Foundation
 
 /// Centralized helper for filtering sandbox container paths (e.g. ~/Library/Containers/.../Data).
 public enum SandboxPathFilter {
-  /// Returns true when the provided path resolves inside the app's sandbox container.
+  /// Returns true when the provided path resolves inside ANY app's sandbox container.
+  /// Note: This check works regardless of whether the current app is sandboxed,
+  /// which is important because the ContextifyCore package doesn't see APPSTORE_BUILD flag.
   public static func isSandboxContainerPath(_ path: String) -> Bool {
-    guard Sandbox.isSandboxed else { return false }
     // Standardize path to remove .. components
     let normalized = URL(fileURLWithPath: path).standardizedFileURL.path
     guard normalized.contains("/Library/Containers/") else { return false }
