@@ -337,6 +337,14 @@ reset_state_for_bid() {
     fi
   done < <(prefs_paths_for_bid "$bid")
 
+  # Remove dev.contextify suite from sandbox container (critical for clean first-run)
+  # This is separate from the bundle ID prefs - it's where project root is stored
+  local sandbox_suite_plist="$HOME/Library/Containers/$bid/Data/Library/Preferences/dev.contextify.plist"
+  if [[ -f "$sandbox_suite_plist" ]]; then
+    echo "  Removing: $sandbox_suite_plist"
+    rm -f "$sandbox_suite_plist" 2>/dev/null || true
+  fi
+
   echo "App state reset complete"
 }
 
@@ -508,7 +516,7 @@ run_build_for_dist() {
 # Handle new actions first (before the main case statement)
 if [[ "$action" == "cleanrun" ]]; then
   echo "🧹 Cleaning database..."
-  ./scripts/db_manager.sh clean --force
+  CONTEXTIFY_DIST="$dist" ./scripts/db_manager.sh clean --force
 
   echo "🔨 Building ($dist)..."
   quit_running_app
