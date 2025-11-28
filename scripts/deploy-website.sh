@@ -75,19 +75,47 @@ ssh "$SERVER" "sudo rsync -a --delete $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
 echo -e "${GREEN}✓ Files copied to $REMOTE_DIR${NC}"
 echo ""
 
-# Test site accessibility
+# Test site accessibility - check all HTML pages
 echo -e "${YELLOW}Testing site accessibility...${NC}"
 sleep 2
 
-# Check if site is accessible
-if curl -fsSL https://contextify.sh > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ SUCCESS: Website deployed and accessible!${NC}"
-    echo ""
-    echo -e "${GREEN}✓ Visit: https://contextify.sh${NC}"
-    echo -e "${GREEN}✓ Privacy Policy: https://contextify.sh/privacy.html${NC}"
-    echo -e "${GREEN}✓ Support: https://contextify.sh/support.html${NC}"
+# Build list of URLs to check from local HTML files
+FAILED=0
+PASSED=0
+
+# Find all HTML files and convert to URLs
+while IFS= read -r file; do
+    # Convert local path to URL
+    url_path="${file#$LOCAL_DIR}"
+
+    # Handle index.html -> directory URL
+    if [[ "$url_path" == "/index.html" ]]; then
+        url="https://contextify.sh/"
+    elif [[ "$url_path" == *"/index.html" ]]; then
+        url="https://contextify.sh${url_path%/index.html}/"
+    else
+        url="https://contextify.sh${url_path}"
+    fi
+
+    # Check HTTP status
+    status=$(curl -o /dev/null -s -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+
+    if [[ "$status" == "200" ]]; then
+        echo -e "${GREEN}  ✓ $url (200)${NC}"
+        ((PASSED++))
+    else
+        echo -e "${RED}  ✗ $url ($status)${NC}"
+        ((FAILED++))
+    fi
+done < <(find "$LOCAL_DIR" -name "*.html" -type f | sort)
+
+echo ""
+
+if [[ $FAILED -eq 0 ]]; then
+    echo -e "${GREEN}✓ SUCCESS: All $PASSED pages returned 200${NC}"
 else
-    echo -e "${RED}✗ WARNING: Site may not be accessible yet${NC}"
+    echo -e "${RED}✗ WARNING: $FAILED page(s) failed, $PASSED passed${NC}"
+    echo ""
     echo -e "${YELLOW}This could mean:${NC}"
     echo -e "${YELLOW}  1. DNS hasn't propagated yet (wait 5-10 minutes)${NC}"
     echo -e "${YELLOW}  2. Nginx config needs to be created/reloaded${NC}"
