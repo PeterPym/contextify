@@ -1,80 +1,71 @@
 {
   "$schema": "../schemas/release.schema.json",
   "version": "1.0.0",
-  "created": "2025-11-25",
-  "updated": "2025-11-27",
+  "created": "2025-11-28",
+  "updated": "2025-11-28",
 
   "git": {
     "tag": "v1.0.0",
-    "commit": "cd6974d5eb3b9cb199cc298be3659e29c99f471b",
+    "commit": "a8555cc88566116525b49dbcd7c5b4fae30a769b",
     "branch": "main"
   },
 
   "phases": {
     "pre_release": {
-      "status": "complete",
-      "completed_at": "2025-11-25T10:00:00Z",
+      "status": "pending",
+      "completed_at": null,
       "validation": {
-        "tests_passed": true,
-        "test_count": 46,
-        "warnings": 0,
-        "working_directory_clean": true
+        "tests_passed": null,
+        "test_count": null,
+        "warnings": null,
+        "working_directory_clean": null
       }
     },
 
     "build": {
-      "status": "complete",
+      "status": "pending",
       "dmg": {
-        "built": true,
-        "path": "dist/Contextify-1.0.0.dmg",
+        "built": false,
+        "path": null,
         "sha256": null,
         "size_bytes": null,
-        "signed": true,
-        "notarized": true,
+        "signed": false,
+        "notarized": false,
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": true,
-        "archive_path": "build/archives/v1.0.0.xcarchive",
-        "build_number": 3,
-        "exported": true,
-        "uploaded": true,
+        "archived": false,
+        "archive_path": null,
+        "build_number": 5,
+        "exported": false,
+        "uploaded": false,
         "upload_receipt": null
       }
     },
 
     "review_materials": {
-      "status": "in_progress",
+      "status": "pending",
       "demo_video": {
         "recorded": false,
         "path": null,
         "deployed": false
       },
       "sample_data": {
-        "generated": true,
-        "path": "website/review-4a125b1d/sample-data.zip",
+        "generated": false,
+        "path": null,
         "deployed": false
       }
     },
 
     "submission": {
-      "status": "pending_resubmission",
-      "first_submitted_at": "2025-11-25T12:05:00Z",
-      "rejection": {
-        "date": "2025-11-26",
-        "guideline": "2.1",
-        "reason": "Information Needed - We were unable to review your app as it crashed or requires additional testing resources. To help us proceed with the review, please provide a link to a demo video of your app's functionality in the App Review Information section of your app version information page in App Store Connect. Please ensure the video demonstrates the core functionality of the app and does not require additional hardware or resources to view.",
-        "response_plan": "appstore-metadata/review-materials/README.md"
-      },
-      "resubmission": {
-        "build_number": 4,
-        "notes_updated": true,
-        "materials_deployed": false
-      }
+      "status": "pending",
+      "submitted_at": null,
+      "rejection": null,
+      "resubmission": null
     },
 
     "marketing": {
-      "status": "not_started",
+      "status": "pending",
       "changelog": {
         "written": false,
         "published": false
@@ -88,7 +79,7 @@
     },
 
     "post_release": {
-      "status": "not_started",
+      "status": "pending",
       "documentation_updated": false,
       "support_faq_updated": false,
       "monitoring_enabled": false
@@ -97,29 +88,34 @@
 
   "notes": [
     {
-      "date": "2025-11-25",
-      "author": "system",
-      "note": "Initial submission to App Store (build 3)"
+        "date": "2025-11-25",
+        "author": "system",
+        "note": "Initial submission to App Store (build 3)"
     },
     {
-      "date": "2025-11-26",
-      "author": "apple",
-      "note": "Rejected - Guideline 2.1, needs demo video and sample data"
+        "date": "2025-11-26",
+        "author": "apple",
+        "note": "Rejected - Guideline 2.1, needs demo video and sample data"
     },
     {
-      "date": "2025-11-27",
-      "author": "system",
-      "note": "Created sample transcripts and demo video script"
+        "date": "2025-11-27",
+        "author": "system",
+        "note": "Created sample transcripts and demo video script"
     },
     {
-      "date": "2025-11-27",
-      "author": "system",
-      "note": "Migrated to new release management system"
+        "date": "2025-11-27",
+        "author": "system",
+        "note": "Migrated to new release management system"
     },
     {
-      "date": "2025-11-27",
-      "author": "system",
-      "note": "Version strategy: Keep marketing version 1.0.0, increment build to 4. Code from current HEAD (includes search, release infrastructure). Git tag v1.0.0 stays at original commit for GitHub/DMG release."
+        "date": "2025-11-28",
+        "author": "system",
+        "note": "Build 5: Fixed P0 sandbox bugs (container path persisted, permissions modal missing). Changed Sandbox.isSandboxed to use runtime detection. Added SandboxPathFilter tests."
+    },
+    {
+        "date": "2025-11-28",
+        "author": "system",
+        "note": "Reset for build 5 from commit a8555cc8"
     }
-  ]
+]
 }

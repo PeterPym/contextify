@@ -49,23 +49,6 @@ Review each public surface and determine if this release requires updates.
 - [ ] System requirements correct?
 - [ ] Required updates: ____
 
-### Public Repo Demo Video
-- [ ] Record demo video (30-60 sec) showing core functionality
-- [ ] Convert to WebM or MP4 (target <10MB)
-- [ ] Host: repo `assets/` folder or `contextify.sh/assets/`
-- [ ] Embed in README (autoplay, muted, loop)
-- [ ] Content: app launch → timeline populating → LLM summary → project switch
-
-**Format options:**
-- WebM: Best compression, good GitHub support
-- MP4: Universal compatibility
-- Use same archive built for App Store review demo
-
-**Embed syntax:**
-```markdown
-https://github.com/user-attachments/assets/xxxxx
-```
-
 ### Appcast (Sparkle)
 - [ ] New `<item>` added to `website/appcast.xml`?
 - [ ] Download URL correct?

@@ -1,37 +1,96 @@
 #!/bin/bash
-# Initialize a new release directory from templates
-# Usage: ./scripts/release/init.sh X.Y.Z
+# Initialize or reset a release directory
+# Usage: ./scripts/release/init.sh X.Y.Z [--reset]
+#
+# Options:
+#   --reset    Reset existing release for new build (preserves notes, increments build)
 
 set -e
 
 VERSION="${1}"
+RESET_MODE=false
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --reset)
+      RESET_MODE=true
+      ;;
+  esac
+done
 
 if [ -z "$VERSION" ]; then
-  echo "Usage: $0 X.Y.Z"
+  echo "Usage: $0 X.Y.Z [--reset]"
   echo "Example: $0 1.0.1"
+  echo "Example: $0 1.0.0 --reset  # Reset for new build"
   exit 1
 fi
 
 RELEASE_DIR="releases/v${VERSION}"
 
+# Handle existing directory
 if [ -d "$RELEASE_DIR" ]; then
-  echo "Error: Release directory already exists: $RELEASE_DIR"
-  exit 1
+  if [ "$RESET_MODE" = false ]; then
+    echo "Error: Release directory already exists: $RELEASE_DIR"
+    echo "Use --reset to reset for a new build (preserves notes)"
+    exit 1
+  fi
+
+  echo "Resetting release v${VERSION} for new build..."
+
+  # Extract existing notes and build number from release.json
+  if [ -f "$RELEASE_DIR/release.json" ]; then
+    EXISTING_NOTES=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(json.dumps(d.get('notes', [])))" 2>/dev/null || echo "[]")
+    EXISTING_BUILD=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(d.get('phases',{}).get('build',{}).get('appstore',{}).get('build_number') or 0)" 2>/dev/null || echo "0")
+    NEW_BUILD=$((EXISTING_BUILD + 1))
+  else
+    EXISTING_NOTES="[]"
+    NEW_BUILD=1
+  fi
+
+  echo "  Preserving ${#EXISTING_NOTES} notes"
+  echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
+
+else
+  echo "Initializing release v${VERSION}..."
+  EXISTING_NOTES="[]"
+  NEW_BUILD=1
+
+  # Create directory structure
+  mkdir -p "$RELEASE_DIR/checklists"
+  mkdir -p "$RELEASE_DIR/artifacts"
+  mkdir -p "$RELEASE_DIR/logs"
+  mkdir -p "$RELEASE_DIR/assets"
 fi
-
-echo "Initializing release v${VERSION}..."
-
-# Create directory structure
-mkdir -p "$RELEASE_DIR/checklists"
-mkdir -p "$RELEASE_DIR/artifacts"
-mkdir -p "$RELEASE_DIR/logs"
-mkdir -p "$RELEASE_DIR/assets"
 
 # Copy checklist templates and replace version placeholder
 for template in releases/templates/checklists/*.md; do
   filename=$(basename "$template")
   sed "s/{version}/${VERSION}/g" "$template" > "$RELEASE_DIR/checklists/$filename"
 done
+
+# Get current commit
+CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "null")
+
+# Build notes array - add reset note if resetting
+if [ "$RESET_MODE" = true ]; then
+  RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD from commit ${CURRENT_COMMIT:0:8}\"}"
+  # Append reset note to existing notes
+  NOTES_JSON=$(python3 -c "
+import json
+notes = $EXISTING_NOTES
+notes.append($RESET_NOTE)
+print(json.dumps(notes, indent=4))
+" 2>/dev/null || echo "[{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD\"}]")
+else
+  NOTES_JSON="[
+    {
+      \"date\": \"$(date +%Y-%m-%d)\",
+      \"author\": \"system\",
+      \"note\": \"Release initialized\"
+    }
+  ]"
+fi
 
 # Create release.json
 cat > "$RELEASE_DIR/release.json" << EOF
@@ -43,13 +102,13 @@ cat > "$RELEASE_DIR/release.json" << EOF
 
   "git": {
     "tag": "v${VERSION}",
-    "commit": null,
+    "commit": "${CURRENT_COMMIT}",
     "branch": "main"
   },
 
   "phases": {
     "pre_release": {
-      "status": "not_started",
+      "status": "pending",
       "completed_at": null,
       "validation": {
         "tests_passed": null,
@@ -60,7 +119,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "build": {
-      "status": "not_started",
+      "status": "pending",
       "dmg": {
         "built": false,
         "path": null,
@@ -73,7 +132,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": null,
+        "build_number": ${NEW_BUILD},
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
@@ -81,7 +140,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "review_materials": {
-      "status": "not_started",
+      "status": "pending",
       "demo_video": {
         "recorded": false,
         "path": null,
@@ -95,14 +154,14 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "submission": {
-      "status": "not_started",
+      "status": "pending",
       "submitted_at": null,
       "rejection": null,
       "resubmission": null
     },
 
     "marketing": {
-      "status": "not_started",
+      "status": "pending",
       "changelog": {
         "written": false,
         "published": false
@@ -116,40 +175,35 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "post_release": {
-      "status": "not_started",
+      "status": "pending",
       "documentation_updated": false,
       "support_faq_updated": false,
       "monitoring_enabled": false
     }
   },
 
-  "notes": [
-    {
-      "date": "$(date +%Y-%m-%d)",
-      "author": "system",
-      "note": "Release initialized"
-    }
-  ]
+  "notes": ${NOTES_JSON}
 }
 EOF
 
-# Create README
+# Create/update README
 cat > "$RELEASE_DIR/README.md" << EOF
 # Release v${VERSION}
 
 **Created:** $(date +%Y-%m-%d)
 **Status:** In Progress
+**Build:** ${NEW_BUILD}
 
 ## Quick Status
 
 | Phase | Status |
 |-------|--------|
-| 1. Pre-Release | Not Started |
-| 2. Build | Not Started |
-| 3. Review Materials | Not Started |
-| 4. Submission | Not Started |
-| 5. Marketing | Not Started |
-| 6. Post-Release | Not Started |
+| 1. Pre-Release | Pending |
+| 2. Build | Pending |
+| 3. Review Materials | Pending |
+| 4. Submission | Pending |
+| 5. Marketing | Pending |
+| 6. Post-Release | Pending |
 
 ## Checklists
 
@@ -176,10 +230,18 @@ cat > "$RELEASE_DIR/README.md" << EOF
 
 # Validate pre-release
 ./scripts/release/validate-pre-release.sh ${VERSION}
+
+# Reset for new build (preserves notes)
+./scripts/release/init.sh ${VERSION} --reset
 \`\`\`
 EOF
 
-echo "Release v${VERSION} initialized at: $RELEASE_DIR"
+if [ "$RESET_MODE" = true ]; then
+  echo "Release v${VERSION} reset for build ${NEW_BUILD}"
+else
+  echo "Release v${VERSION} initialized at: $RELEASE_DIR"
+fi
+
 echo ""
 echo "Next steps:"
 echo "  1. Review checklists in $RELEASE_DIR/checklists/"
