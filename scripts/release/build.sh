@@ -129,12 +129,13 @@ else
   echo -e "${YELLOW}[dry-run]${NC} swift test"
 fi
 
-# Create archive directory
-echo -e "${BLUE}==>${NC} Creating archive directory..."
+# Create archive directories
+echo -e "${BLUE}==>${NC} Creating archive directories..."
 if [ "$DRY_RUN" = false ]; then
-  mkdir -p "$ARCHIVE_DIR"
+  mkdir -p "$ARCHIVE_DIR/appstore"
+  mkdir -p "$ARCHIVE_DIR/dmg"
 else
-  echo -e "${YELLOW}[dry-run]${NC} mkdir -p $ARCHIVE_DIR"
+  echo -e "${YELLOW}[dry-run]${NC} mkdir -p $ARCHIVE_DIR/{appstore,dmg}"
 fi
 
 # Run canonical build script
@@ -149,22 +150,24 @@ fi
 # Archive artifacts
 echo -e "${BLUE}==>${NC} Archiving artifacts..."
 if [ "$DRY_RUN" = false ]; then
+  # App Store artifacts
   if [ "$SKIP_APPSTORE" = false ] && [ -d "$ROOT_DIR/build/Contextify.xcarchive" ]; then
-    cp -R "$ROOT_DIR/build/Contextify.xcarchive" "$ARCHIVE_DIR/Contextify-AppStore.xcarchive"
-    echo -e "${GREEN}OK${NC} Archived: Contextify-AppStore.xcarchive"
+    cp -R "$ROOT_DIR/build/Contextify.xcarchive" "$ARCHIVE_DIR/appstore/Contextify.xcarchive"
+    echo -e "${GREEN}OK${NC} Archived: appstore/Contextify.xcarchive"
   fi
 
   if [ "$SKIP_APPSTORE" = false ] && [ -f "$ROOT_DIR/build/appstore/Contextify.pkg" ]; then
-    cp "$ROOT_DIR/build/appstore/Contextify.pkg" "$ARCHIVE_DIR/Contextify-${VERSION}.pkg"
-    echo -e "${GREEN}OK${NC} Archived: Contextify-${VERSION}.pkg"
+    cp "$ROOT_DIR/build/appstore/Contextify.pkg" "$ARCHIVE_DIR/appstore/Contextify-${VERSION}.pkg"
+    echo -e "${GREEN}OK${NC} Archived: appstore/Contextify-${VERSION}.pkg"
   fi
 
+  # DMG artifacts
   if [ "$SKIP_DMG" = false ] && [ -f "$ROOT_DIR/dist/Contextify-${VERSION}.dmg" ]; then
-    cp "$ROOT_DIR/dist/Contextify-${VERSION}.dmg" "$ARCHIVE_DIR/"
-    echo -e "${GREEN}OK${NC} Archived: Contextify-${VERSION}.dmg"
+    cp "$ROOT_DIR/dist/Contextify-${VERSION}.dmg" "$ARCHIVE_DIR/dmg/"
+    echo -e "${GREEN}OK${NC} Archived: dmg/Contextify-${VERSION}.dmg"
   fi
 else
-  echo -e "${YELLOW}[dry-run]${NC} cp artifacts to $ARCHIVE_DIR/"
+  echo -e "${YELLOW}[dry-run]${NC} cp artifacts to $ARCHIVE_DIR/{appstore,dmg}/"
 fi
 
 # Update release.json
@@ -186,7 +189,7 @@ data['phases']['build']['status'] = 'complete'
 
 if not $SKIP_APPSTORE:
     data['phases']['build']['appstore']['archived'] = True
-    data['phases']['build']['appstore']['archive_path'] = '$ARCHIVE_DIR/Contextify-AppStore.xcarchive'
+    data['phases']['build']['appstore']['archive_path'] = '$ARCHIVE_DIR/appstore/Contextify.xcarchive'
     data['phases']['build']['appstore']['build_number'] = $BUILD_NUMBER
     data['phases']['build']['appstore']['exported'] = True
 

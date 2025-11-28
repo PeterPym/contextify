@@ -22,9 +22,9 @@ This script:
 ### Verify Build Output
 
 - [ ] Check archive directory: `ls -la build/archives/v1.0.0/`
-- [ ] Verify App Store archive exists: `Contextify-AppStore.xcarchive`
-- [ ] Verify DMG exists: `Contextify-1.0.0.dmg`
-- [ ] Verify .pkg exists: `Contextify-1.0.0.pkg`
+- [ ] Verify App Store archive: `build/archives/v1.0.0/appstore/Contextify.xcarchive`
+- [ ] Verify .pkg: `build/archives/v1.0.0/appstore/Contextify-1.0.0.pkg`
+- [ ] Verify DMG: `build/archives/v1.0.0/dmg/Contextify-1.0.0.dmg`
 
 ### Record Build Info
 
@@ -72,10 +72,10 @@ bash scripts/xc.sh export-pkg
 ### Archive Artifacts
 
 ```bash
-mkdir -p build/archives/v1.0.0
-cp -R build/Contextify.xcarchive build/archives/v1.0.0/Contextify-AppStore.xcarchive
-cp dist/Contextify-1.0.0.dmg build/archives/v1.0.0/
-cp build/appstore/Contextify.pkg build/archives/v1.0.0/Contextify-1.0.0.pkg
+mkdir -p build/archives/v1.0.0/{appstore,dmg}
+cp -R build/Contextify.xcarchive build/archives/v1.0.0/appstore/Contextify.xcarchive
+cp build/appstore/Contextify.pkg build/archives/v1.0.0/appstore/Contextify-1.0.0.pkg
+cp dist/Contextify-1.0.0.dmg build/archives/v1.0.0/dmg/
 ```
 
 </details>

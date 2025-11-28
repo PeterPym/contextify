@@ -29,7 +29,7 @@ This script handles: backup real transcripts, install sample data, clean sandbox
 
 **Manual steps (if needed):**
 - [ ] Read script: `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`
-- [ ] Launch archived app: `open build/archives/v1.0.0-build4.xcarchive/Products/Applications/Contextify.app`
+- [ ] Launch archived app: `open build/archives/v{version}/appstore/Contextify.xcarchive/Products/Applications/Contextify.app`
 - [ ] Set up sample data per script instructions
 - [ ] Record screen capture (QuickTime or similar)
 - [ ] Video duration: ____ seconds (target: 60-90 seconds)

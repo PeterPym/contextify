@@ -39,13 +39,13 @@ echo ""
 # Check 2: App Store archive exists
 echo "2. Checking App Store archive..."
 ARCHIVE_PATH="build/Contextify.xcarchive"
-PRESERVED_ARCHIVE="build/archives/v${VERSION}.xcarchive"
+PRESERVED_ARCHIVE="build/archives/v${VERSION}/appstore/Contextify.xcarchive"
 
 if [ -d "$ARCHIVE_PATH" ] || [ -d "$PRESERVED_ARCHIVE" ]; then
   if [ -d "$PRESERVED_ARCHIVE" ]; then
-    echo "   PASS: Preserved archive exists"
+    echo "   PASS: Preserved archive exists at appstore/"
   else
-    echo "   INFO: Archive at $ARCHIVE_PATH (not yet preserved)"
+    echo "   INFO: Archive at $ARCHIVE_PATH (not yet archived)"
   fi
 else
   echo "   FAIL: Archive not found"

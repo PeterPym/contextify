@@ -165,16 +165,16 @@ fi
 # Version can be passed as argument or defaults to latest archive
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  # Find latest archive
-  LATEST=$(ls -t build/archives/ 2>/dev/null | head -1)
+  # Find latest version directory
+  LATEST=$(ls -t build/archives/ 2>/dev/null | grep "^v" | head -1)
   if [[ -z "$LATEST" ]]; then
     echo "❌ No archives found in build/archives/"
-    echo "   Run: bash scripts/xc.sh --dist=appstore Release archive"
+    echo "   Run: ./scripts/release/build.sh X.Y.Z"
     exit 1
   fi
-  ARCHIVE_PATH="build/archives/$LATEST"
+  ARCHIVE_PATH="build/archives/$LATEST/appstore/Contextify.xcarchive"
 else
-  ARCHIVE_PATH="build/archives/v${VERSION}.xcarchive"
+  ARCHIVE_PATH="build/archives/v${VERSION}/appstore/Contextify.xcarchive"
 fi
 
 APP_PATH="$ARCHIVE_PATH/Products/Applications/Contextify.app"
