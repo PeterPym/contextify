@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-11-26
+**Last Updated:** 2025-11-28
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -1390,6 +1390,85 @@ struct SomeView: View {
 ### Why This Is Required
 
 SwiftUI's `.searchable()` modifier and custom TextFields do NOT respond to Cmd+F by default. This is a macOS platform quirk that users expect but Apple does not provide automatically. The hidden button pattern intercepts the keyboard shortcut and programmatically focuses the search field.
+
+---
+
+### Swift Package Targets Don't See Xcode Build Flags
+
+**Problem:** Conditional compilation flags defined in Xcode project build settings (like `APPSTORE_BUILD`) are NOT visible to Swift Package code. SPM compiles packages independently of Xcode's build configuration.
+
+**Symptoms:**
+- `#if APPSTORE_BUILD` always evaluates to `false` in package code
+- Behavior that should differ between DMG and App Store builds doesn't
+- Runtime checks work, compile-time checks don't
+
+**Example of the bug:**
+
+```swift
+// In ContextifyCore package (HUDCore.swift)
+public enum Sandbox {
+    public static var isSandboxed: Bool {
+        #if APPSTORE_BUILD  // ❌ NEVER TRUE - package doesn't see this flag
+        return true
+        #else
+        return false  // ← Always returns this
+        #endif
+    }
+}
+
+// In app target (WelcomeModalView.swift)
+if !Sandbox.isSandboxed {  // Always false!
+    return false  // Permissions step always skipped
+}
+```
+
+**Why this happens:**
+1. Xcode build settings only apply to targets in the Xcode project
+2. Swift packages are compiled by SPM, which has its own build system
+3. SPM doesn't receive `-D APPSTORE_BUILD` from Xcode
+4. The flag is undefined in package compilation, so `#if` evaluates to `false`
+
+**Solutions (in order of preference):**
+
+1. **Use runtime detection** (recommended):
+```swift
+public static var isRuntimeSandboxed: Bool {
+    #if os(macOS)
+    if getenv("APP_SANDBOX_CONTAINER_ID") != nil { return true }
+    if ProcessInfo.processInfo.environment["__XPC_SANDBOXED"] == "1" { return true }
+    #endif
+    return false
+}
+```
+
+2. **Inject configuration from app target** at initialization:
+```swift
+// In package
+public enum AppConfig {
+    public static var isAppStore: Bool = false  // Default
+}
+
+// In app target's @main
+AppConfig.isAppStore = true  // Set before any package code runs
+```
+
+3. **Move flag-dependent code to app target** (not always practical)
+
+**What NOT to do:**
+- ❌ Assume Xcode build settings propagate to SPM packages
+- ❌ Use `#if` for distribution-specific behavior in package code
+- ❌ Rely on `Sandbox.isSandboxed` from package code in App Store builds
+
+**Implementation references:**
+- `app/Sources/ContextifyCore/HUDCore.swift:212-218` - `isRuntimeSandboxed` implementation
+- `Contextify/Contextify/WelcomeModalView.swift:373` - Uses `isRuntimeSandboxed`
+
+**Related bug:** This caused two P0 bugs blocking App Store submission - see `/tmp/sandbox-container-path-bug-postmortem.md`
+
+**External references:**
+- [Stack Overflow: Custom build configurations in Swift Package Manager](https://stackoverflow.com/questions/60603181/xcode-custom-build-configurations-in-swift-package-manager)
+- [Swift Forums: Swift package manager and custom build configurations](https://forums.swift.org/t/swift-package-manager-and-custom-build-configurations/29181)
+- [Swift Evolution SE-0238: Package Manager Build Settings](https://github.com/apple/swift-evolution/blob/master/proposals/0238-package-manager-build-settings.md)
 
 ---
 

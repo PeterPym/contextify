@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Source shared cleanup library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/cleanup.sh"
+
 proj="Contextify/Contextify.xcodeproj"
 scheme="Contextify"
 dd=".derived"
@@ -317,24 +321,11 @@ reset_state_for_bid() {
     fi
   fi
 
-  # Remove caches
-  if [[ -d "$HOME/Library/Caches/$bid" ]]; then
-    echo "  Removing: $HOME/Library/Caches/$bid"
-    rm -rf "$HOME/Library/Caches/$bid" 2>/dev/null || true
-  fi
-  if [[ -d "$HOME/Library/Containers/$bid/Data/Library/Caches" ]]; then
-    echo "  Removing: $HOME/Library/Containers/$bid/Data/Library/Caches"
-    rm -rf "$HOME/Library/Containers/$bid/Data/Library/Caches" 2>/dev/null || true
-  fi
-
-  # Remove preferences
-  defaults delete "$bid" >/dev/null 2>&1 || true
-  while read -r p; do
-    if [[ -f "$p" ]]; then
-      echo "  Removing: $p"
-      rm -f "$p" 2>/dev/null || true
-    fi
-  done < <(prefs_paths_for_bid "$bid")
+  # Remove caches and preferences using shared library (scripts/lib/cleanup.sh)
+  echo "  Cleaning caches..."
+  clean_caches_for_bid "$bid"
+  echo "  Cleaning UserDefaults (bundle + $CONTEXTIFY_SUITE suite)..."
+  clean_userdefaults_for_bid "$bid"
 
   echo "App state reset complete"
 }
@@ -507,7 +498,7 @@ run_build_for_dist() {
 # Handle new actions first (before the main case statement)
 if [[ "$action" == "cleanrun" ]]; then
   echo "🧹 Cleaning database..."
-  ./scripts/db_manager.sh clean --force
+  CONTEXTIFY_DIST="$dist" ./scripts/db_manager.sh clean --force
 
   echo "🔨 Building ($dist)..."
   quit_running_app

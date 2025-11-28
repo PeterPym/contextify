@@ -268,6 +268,70 @@ Complete these sections in App Store Connect before you can submit for review:
 
 ---
 
+## App Review Materials (Guideline 2.1)
+
+Apps that access external data or require specific setup may need additional materials for Apple to review.
+
+### When Required
+
+- First submission of apps accessing external files
+- After rejection requesting sample data or demo video
+- When Apple explicitly requests materials
+
+### Materials for Contextify
+
+| Material | Purpose | Location |
+|----------|---------|----------|
+| Sample Data | Test transcript summarization | `appstore-metadata/review-materials/sample-data.zip` |
+| Demo Video | Show all features on physical Mac | Record following script |
+| Review Notes | Setup instructions for Apple | `appstore-metadata/fastlane/metadata/review_information/notes.txt` |
+
+### Hosted URLs (Obscured)
+
+```
+https://contextify.sh/review-4a125b1d/sample-data.zip
+https://contextify.sh/review-4a125b1d/demo-video.mp4
+```
+
+### Workflow
+
+1. **Build App Store archive** (will use for both demo and submission):
+   ```bash
+   bash scripts/xc.sh --dist=appstore Release archive
+   ```
+
+2. **Record demo video** using archived binary:
+   ```bash
+   # Run the archived app
+   open build/Contextify.xcarchive/Products/Applications/Contextify.app
+   # Record following: appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md
+   ```
+
+3. **Save demo video**:
+   ```bash
+   cp ~/path/to/recorded-video.mp4 website/review-4a125b1d/demo-video.mp4
+   ```
+
+4. **Deploy to website**:
+   ```bash
+   ./scripts/deploy-website.sh
+   ```
+
+5. **Upload same archive to App Store**:
+   ```bash
+   bash scripts/xc.sh export-pkg
+   bash scripts/xc.sh upload
+   ```
+
+6. **Add review notes** to App Store Connect → App Review Information → Notes:
+   ```bash
+   cat appstore-metadata/fastlane/metadata/review_information/notes.txt
+   ```
+
+**Full workflow:** See `build/docs/operations/release/RELEASE-CHECKLIST.md` → "App Store Review Materials"
+
+---
+
 ## Submit for Review
 
 Once all required sections are complete:

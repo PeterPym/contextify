@@ -215,6 +215,122 @@ bash scripts/xc.sh upload
 
 ---
 
+## App Store Review Materials (Guideline 2.1)
+
+Apple may request additional materials when reviewing apps that access external data or require specific setup. For Contextify, this includes sample transcript files and a demo video.
+
+### When Required
+
+Review materials are required:
+- First App Store submission
+- After rejection requesting materials (Guideline 2.1)
+- When Apple specifically requests them
+
+### Materials Location
+
+```
+appstore-metadata/review-materials/
+├── README.md                    # Guide to review materials
+├── DEMO-VIDEO-SCRIPT.md         # Recording script
+├── sample-data.zip              # Sample transcripts for Apple
+└── sample-transcripts/          # Raw transcript files (57 files)
+
+website/review-4a125b1d/         # Hosted files (obscure URL)
+├── sample-data.zip              # → https://contextify.sh/review-4a125b1d/sample-data.zip
+└── demo-video.mp4               # → https://contextify.sh/review-4a125b1d/demo-video.mp4
+```
+
+### Recording Demo Video
+
+**Critical:** Record using the EXACT binary you're submitting.
+
+#### 1. Build and Preserve Archive
+
+```bash
+# Build App Store archive
+bash scripts/xc.sh --dist=appstore Release archive
+
+# Archive is at: build/Contextify.xcarchive
+# Preserve it for consistency:
+cp -r build/Contextify.xcarchive build/archives/Contextify-X.Y.Z-appstore.xcarchive
+```
+
+#### 2. Export and Run for Demo
+
+```bash
+# Export the app (not pkg) for local testing
+xcodebuild -exportArchive \
+  -archivePath build/Contextify.xcarchive \
+  -exportPath build/demo-app \
+  -exportOptionsPlist ExportOptions-AppStore.plist
+
+# Run the exported app for demo recording
+open build/demo-app/Contextify.app
+```
+
+**Alternative:** Run directly from archive:
+```bash
+open build/Contextify.xcarchive/Products/Applications/Contextify.app
+```
+
+#### 3. Record Demo Following Script
+
+Follow `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`:
+- Show permission dialogs
+- Demonstrate all features
+- Use sample transcript data
+
+Save as: `website/review-4a125b1d/demo-video.mp4`
+
+#### 4. Upload Same Archive to App Store
+
+```bash
+# Export as .pkg (from same archive)
+bash scripts/xc.sh export-pkg
+
+# Upload
+bash scripts/xc.sh upload
+```
+
+This ensures the demo video shows exactly what Apple will review.
+
+### Updating Review Notes
+
+Copy review notes to App Store Connect → App Review Information → Notes:
+
+```bash
+cat appstore-metadata/fastlane/metadata/review_information/notes.txt
+```
+
+Or see `appstore-metadata/metadata.json` → `review_information.notes`
+
+### Deploy Review Materials
+
+```bash
+# Ensure demo video is in place
+ls website/review-4a125b1d/demo-video.mp4
+
+# Deploy to website
+./scripts/deploy-website.sh
+
+# Verify URLs
+curl -I https://contextify.sh/review-4a125b1d/sample-data.zip
+curl -I https://contextify.sh/review-4a125b1d/demo-video.mp4
+```
+
+### Regenerating Sample Data
+
+If transcript format changes:
+
+```bash
+cd appstore-metadata/review-materials
+./generate-transcripts.sh
+zip -r sample-data.zip sample-transcripts/ -x "*.DS_Store"
+cp sample-data.zip ../../website/review-4a125b1d/
+```
+
+---
+
 ## Post-Release Verification
 
 ### Version Sync Audit

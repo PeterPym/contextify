@@ -26,15 +26,25 @@ FORCE_STALE=false
 mkdir -p "$BACKUP_DIR"
 
 # Discover active database location
+# Priority: explicit path > sandbox container > custom location > default
 discover_database_path() {
-    # Method 1: Check UserDefaults for custom location
+    local dist_mode="${CONTEXTIFY_DIST:-}"
+
+    # Method 1: App Store sandbox container (if dist=appstore or container exists with recent DB)
+    local sandbox_db="$HOME/Library/Containers/sh.contextify.Contextify/Data/Library/Application Support/Contextify/$DB_NAME"
+    if [ "$dist_mode" = "appstore" ]; then
+        echo "$sandbox_db"
+        return 0
+    fi
+
+    # Method 2: Check UserDefaults for custom location
     local custom_dir=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null)
     if [ -n "$custom_dir" ]; then
         echo "$custom_dir/$DB_NAME"
         return 0
     fi
 
-    # Method 2: Default location
+    # Method 3: Default location (DMG builds)
     echo "$HOME/Library/Application Support/Contextify/$DB_NAME"
 }
 

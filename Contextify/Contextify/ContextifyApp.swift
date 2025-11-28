@@ -55,53 +55,29 @@ struct WindowCommands: Commands {
 }
 
 struct HelpCommands: Commands {
-  @Environment(\.openWindow) private var openWindow
+  private static let gitHubIssuesURL = "https://github.com/PeterPym/contextify/issues"
 
   var body: some Commands {
-    // Replace the default help menu with custom structure
     CommandGroup(replacing: .help) {
-      // Quick access to documentation
-      Button("Getting Started") {
-        openHelpTopic(.gettingStarted)
+      Button("Contextify Help") {
+        if let url = URL(string: "https://contextify.sh/help/?ref=app-help-menu") {
+          NSWorkspace.shared.open(url)
+        }
       }
+      .keyboardShortcut("?", modifiers: [.command])
 
       Divider()
 
-      // Feature-specific help
-      Menu("Feature Guides") {
-        Button("Projects & Discovery") {
-          openHelpTopic(.projects)
-        }
-        Button("Timeline Monitoring") {
-          openHelpTopic(.timeline)
-        }
-        Button("AI Integration") {
-          openHelpTopic(.aiIntegration)
-        }
-        Button("Database & Sync") {
-          openHelpTopic(.database)
+      Button("Report a Bug...") {
+        if let url = URL(string: "\(Self.gitHubIssuesURL)/new?template=bug_report.md") {
+          NSWorkspace.shared.open(url)
         }
       }
 
-      Menu("Troubleshooting") {
-        Button("AI Unavailable") {
-          openHelpTopic(.troubleshootingAI)
+      Button("Request a Feature...") {
+        if let url = URL(string: "\(Self.gitHubIssuesURL)/new?template=feature_request.md") {
+          NSWorkspace.shared.open(url)
         }
-        Button("Project Not Found") {
-          openHelpTopic(.troubleshootingProject)
-        }
-        Button("Database Issues") {
-          openHelpTopic(.troubleshootingDatabase)
-        }
-        Button("LLM Generation Failures") {
-          openHelpTopic(.troubleshootingLLM)
-        }
-      }
-
-      Divider()
-
-      Button("Keyboard Shortcuts") {
-        openHelpTopic(.keyboardShortcuts)
       }
 
       Divider()
@@ -109,55 +85,6 @@ struct HelpCommands: Commands {
       Button("Contact Support...") {
         SystemInfo.openSupportEmail()
       }
-    }
-  }
-
-  private func openHelpTopic(_ topic: HelpTopic) {
-    // For now, open a simple help window. In future, this could be:
-    // - Local HTML help book
-    // - Online documentation
-    // - In-app help viewer
-    if let url = topic.url {
-      NSWorkspace.shared.open(url)
-    }
-  }
-}
-
-// MARK: - Help Topics
-
-enum HelpTopic {
-  case gettingStarted
-  case projects
-  case timeline
-  case aiIntegration
-  case database
-  case troubleshootingAI
-  case troubleshootingProject
-  case troubleshootingDatabase
-  case troubleshootingLLM
-  case keyboardShortcuts
-
-  var url: URL? {
-    // For now, return nil to indicate help content not yet implemented
-    // In future, this would return URLs to:
-    // - GitHub wiki pages
-    // - Local help book pages
-    // - Online documentation site
-    return nil
-  }
-
-  var title: String {
-    switch self {
-    case .gettingStarted: return "Getting Started with Contextify"
-    case .projects: return "Projects & Discovery"
-    case .timeline: return "Timeline Monitoring"
-    case .aiIntegration: return "AI Integration"
-    case .database: return "Database & Sync"
-    case .troubleshootingAI: return "Troubleshooting: AI Unavailable"
-    case .troubleshootingProject: return "Troubleshooting: Project Not Found"
-    case .troubleshootingDatabase: return "Troubleshooting: Database Issues"
-    case .troubleshootingLLM: return "Troubleshooting: LLM Failures"
-    case .keyboardShortcuts: return "Keyboard Shortcuts"
     }
   }
 }

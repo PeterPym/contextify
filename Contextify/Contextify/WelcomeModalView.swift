@@ -368,6 +368,8 @@ struct WelcomeModalView: View {
     /// - App Store, second launch: needsPermissions=false → skip to discovery (bookmarks exist)
     private var needsPermissions: Bool {
         // DMG builds never need permissions (have full filesystem access)
+        // Sandbox.isSandboxed delegates to runtime detection, which works from both
+        // app target and ContextifyCore package
         if !Sandbox.isSandboxed {
             return false
         }

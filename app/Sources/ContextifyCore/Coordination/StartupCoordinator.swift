@@ -164,7 +164,10 @@ public final class StartupCoordinator {
         }
 
         guard let candidate = projects.first else { return }
-        let candidatePath = SandboxPathFilter.sanitizedPath(candidate.path.path) ?? candidate.path.path
+        guard let candidatePath = SandboxPathFilter.sanitizedPath(candidate.path.path) else {
+            log.debug("[COORD-DISCOVERY] Skipping candidate - path filtered by SandboxPathFilter")
+            return
+        }
 
         if let current = current {
             if candidatePath == current.path {
@@ -267,9 +270,11 @@ public final class StartupCoordinator {
             return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
         }.value
 
-        // Phase 5: Persist for next launch
+        // Phase 5: Persist for next launch (skip sandbox container paths)
         await Task.detached {
-            HUDPreferences.setPersistedRoot(resolvedPath)
+            if !SandboxPathFilter.isSandboxContainerPath(resolvedPath) {
+                HUDPreferences.setPersistedRoot(resolvedPath)
+            }
         }.value
         log.debug("💾 Persisted project path to UserDefaults for next launch")
 
@@ -546,6 +551,12 @@ public final class StartupCoordinator {
     private func ensureProjectInDatabase(path: String) async throws -> String {
         let funcStart = Date()
         log.info("[UIOPT-COORD-DB-FUNC-START] ensureProjectInDatabase() called")
+
+        // Reject sandbox container paths - they should never become projects
+        guard !SandboxPathFilter.isSandboxContainerPath(path) else {
+            log.warning("[COORD-FILTER] Rejecting sandbox container path: \(path, privacy: .public)")
+            throw StartupError.invalidProjectRoot(path)
+        }
 
         // Run database operation on background thread (inherits cancellation)
         log.info("[UIOPT-COORD-DB-TASK-START] Spawning background Task...")
