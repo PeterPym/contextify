@@ -55,6 +55,8 @@ struct WindowCommands: Commands {
 }
 
 struct HelpCommands: Commands {
+  private static let gitHubIssuesURL = "https://github.com/PeterPym/contextify/issues"
+
   var body: some Commands {
     CommandGroup(replacing: .help) {
       Button("Contextify Help") {
@@ -63,6 +65,20 @@ struct HelpCommands: Commands {
         }
       }
       .keyboardShortcut("?", modifiers: [.command])
+
+      Divider()
+
+      Button("Report a Bug...") {
+        if let url = URL(string: "\(Self.gitHubIssuesURL)/new?template=bug_report.md") {
+          NSWorkspace.shared.open(url)
+        }
+      }
+
+      Button("Request a Feature...") {
+        if let url = URL(string: "\(Self.gitHubIssuesURL)/new?template=feature_request.md") {
+          NSWorkspace.shared.open(url)
+        }
+      }
 
       Divider()
 
