@@ -1094,6 +1094,61 @@ Original scope (3-6 hours): User prompt quality improvement only
 
 ---
 
+## Website Dynamic Forwarders (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (release workflow improvement)
+**Effort:** 2-4 hours
+
+- [ ] #P2-DYNAMIC-FORWARDER: Implement dynamic download links that always point to latest release
+
+**Problem:**
+Download links throughout documentation, README files, and external references point to specific versions. Each release requires updating multiple locations, and stale links in external articles/posts can't be fixed.
+
+**Solution:**
+Implement server-side redirects or static file forwarders:
+
+| Forwarder URL | Target | Purpose |
+|---------------|--------|---------|
+| `contextify.sh/download/latest` | Current DMG | Always points to latest |
+| `contextify.sh/download/latest.dmg` | Current DMG | Explicit DMG download |
+| `contextify.sh/releases/latest` | Release notes | Latest release info |
+
+**Implementation options:**
+
+1. **Nginx redirects (recommended):**
+   ```nginx
+   location /download/latest {
+       return 302 /releases/Contextify-1.0.0.dmg;
+   }
+   ```
+   Update single config file each release.
+
+2. **Symbolic links:**
+   ```bash
+   ln -sf Contextify-1.0.0.dmg website/releases/latest.dmg
+   ```
+   Update symlink as part of release script.
+
+3. **JavaScript redirect:**
+   Static HTML that reads version from JSON and redirects.
+   Works without server config changes.
+
+**Integration:**
+- Add to `scripts/deploy-website.sh` or release workflow
+- Update `build/docs/operations/PUBLIC-SURFACES.md` when implemented
+- Replace hardcoded links in public repo README
+
+**Acceptance criteria:**
+- [ ] `contextify.sh/download/latest` redirects to current DMG
+- [ ] Redirect updated as part of release process
+- [ ] Public repo README uses dynamic link
+- [ ] Old versioned URLs still work (don't break existing links)
+
+**Reference:** `build/docs/operations/PUBLIC-SURFACES.md`
+
+---
+
 ## Pre-macOS 26 Compatibility (1 item)
 
 **Status:** Not Started
@@ -1240,46 +1295,6 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 **Reference samples:** `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/* (mtime 2025-11-11 16:35)`
 
 **Note:** Phase 2 enhancements (auto-repair mode, metrics tracking) in P1 as #85-88 (see Git Activity section)
-
----
-
-## Timeline Flicker (1 item) ✅ FIXED
-
-**Status:** ✅ Fixed (2025-11-16)
-**Commit:** `c69d3c7` - fix(timeline): eliminate flicker by skipping unchanged data updates
-**Branch:** `feature/fix-timeline-flicker`
-
-- [x] #P2-FLICKER: Fix timeline flicker during DMG startup with clean database
-
-**Problem:** Timeline re-rendered identical data multiple times, causing visible flicker during startup and ongoing hoovering.
-
-**Root Cause:** `setEntries()` always updated state and incremented `entriesRevision`, forcing SwiftUI to diff and rerender even when data was unchanged.
-
-**Solution:** Added data-changed check to `setEntries()` before updating state:
-```swift
-if state.entries.count == new.count && state.entries == new {
-    log.debug("[TIMELINE-SKIP] Skipping setEntries - data unchanged")
-    return
-}
-```
-
-**Results (45s test):**
-- Before: 19 loadFeedFromSQL calls → 19 UI updates → constant flicker
-- After:  19 loadFeedFromSQL calls → 1 UI update, 18 skipped → no flicker
-- **95% reduction in unnecessary UI updates**
-
-**Files Changed:**
-- `Contextify/Contextify/ConversationMonitor.swift` (5 lines added to setEntries)
-
-**Evidence:**
-- Test log: `/tmp/transcript-queue-monitor-20251116-005710.log`
-- Analysis: `/tmp/flicker-fix-results.md`
-- Root cause analysis: `/tmp/flicker-root-cause-and-solution.md`
-
-**Impact:**
-- Behavioral: No changes (updates still happen when data changes)
-- Performance: Eliminates unnecessary SwiftUI diff operations
-- Visual: Timeline stays stable, no visible flicker
 
 ---
 
