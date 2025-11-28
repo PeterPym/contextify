@@ -112,14 +112,55 @@ bash scripts/xc.sh upload
 # Then: complete submission in App Store Connect
 ```
 
-## Version Sync Requirement
+## Versions, Builds, and Tags
 
-After release, all sources must match:
+Three distinct concepts:
+
+| Concept | Purpose | Example |
+|---------|---------|---------|
+| **Version** | User-facing release number | `1.0.0` |
+| **Build** | Apple's per-submission counter | `4` |
+| **Tag** | Git commit hash reference | `v1.0.0` → `82cd3dff` |
+
+**Key rules:**
+- Version = what users see (MARKETING_VERSION)
+- Build = increments with each App Store upload (CURRENT_PROJECT_VERSION)
+- Tag = points to exact commit hash, created once code is final
+- Multiple builds can share the same version (rejected → fixed → resubmit)
+- Tag captures the code, not the build number
+
+### Example Timeline
+
+```
+Commit   Build   Version   Channel      Event
+───────────────────────────────────────────────────────────
+abc123   1       1.0.0     App Store    Initial submission
+abc123   2       1.0.0     App Store    Rejected (metadata), resubmit same code
+abc123   3       1.0.0     App Store    Rejected (needs demo video)
+def456   4       1.0.0     App Store    Fixed, rebuilt, resubmit
+                                        ← Tag v1.0.0 created at def456
+def456   -       1.0.0     DMG          Ships immediately (same commit)
+                                        ← App Store approved
+
+ghi789   5       1.0.1     DMG          Bug fix, ships to DMG users
+                                        ← Tag v1.0.1 created at ghi789
+ghi789   6       1.0.1     App Store    Submit bug fix to App Store
+```
+
+**When channels diverge:**
+- DMG can ship updates faster than App Store review cycle
+- Each version gets its own tag pointing to its commit
+- App Store may lag behind DMG by one or more versions
+- Both channels eventually converge on same version
+
+### Version Sync Requirement
+
+After a version ships, these must match for that version:
 - Xcode project (`MARKETING_VERSION`)
 - Git tag (`vX.Y.Z`)
-- Appcast (`sparkle:shortVersionString`)
-- App Store Connect
-- GitHub Release
+- Appcast (`sparkle:shortVersionString`) - DMG only
+- App Store Connect - App Store only
+- GitHub Release (optional)
 
 ## File Locations
 
