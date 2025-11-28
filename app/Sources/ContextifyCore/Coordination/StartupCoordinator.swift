@@ -164,7 +164,10 @@ public final class StartupCoordinator {
         }
 
         guard let candidate = projects.first else { return }
-        let candidatePath = SandboxPathFilter.sanitizedPath(candidate.path.path) ?? candidate.path.path
+        guard let candidatePath = SandboxPathFilter.sanitizedPath(candidate.path.path) else {
+            log.debug("[COORD-DISCOVERY] Skipping candidate - path filtered by SandboxPathFilter")
+            return
+        }
 
         if let current = current {
             if candidatePath == current.path {
