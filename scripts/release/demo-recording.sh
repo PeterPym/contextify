@@ -65,15 +65,47 @@ echo "════════════════════════�
 echo ""
 
 # Handle backup
+SAMPLE_PATTERN="sample-projects"
+CURRENT_HAS_REAL=false
+CURRENT_HAS_SAMPLE=false
+
+if [[ -d ~/.claude/projects ]]; then
+  if ls ~/.claude/projects/ 2>/dev/null | grep -q "$SAMPLE_PATTERN"; then
+    CURRENT_HAS_SAMPLE=true
+  fi
+  if ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | grep -q .; then
+    CURRENT_HAS_REAL=true
+  fi
+fi
+
 if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
-  echo "✅ Backup exists at ~/.claude/projects-REAL-BACKUP"
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "   ($BACKUP_COUNT project directories preserved)"
+
+  if [[ "$CURRENT_HAS_REAL" == "true" ]]; then
+    # Real data exists but backup also exists - might lose new data!
+    CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | wc -l | tr -d ' ')
+    echo "⚠️  WARNING: ~/.claude/projects contains $CURRENT_COUNT real project(s)"
+    echo "   but backup already exists with $BACKUP_COUNT project(s)"
+    echo ""
+    echo "   This may happen if you've used Claude Code since the backup was created."
+    echo "   Options:"
+    echo "     1. Press Enter to MERGE new projects into backup, then continue"
+    echo "     2. Press Ctrl+C to abort and handle manually"
+    echo ""
+    read -r
+    echo "Merging new projects into backup..."
+    cp -rn ~/.claude/projects/* ~/.claude/projects-REAL-BACKUP/ 2>/dev/null || true
+    echo "✅ Backup updated at ~/.claude/projects-REAL-BACKUP"
+  else
+    echo "✅ Backup exists at ~/.claude/projects-REAL-BACKUP"
+    echo "   ($BACKUP_COUNT project directories preserved)"
+  fi
 else
   echo "Backing up real transcripts..."
   mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
   mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
-  echo "✅ Backed up to ~/.claude/projects-REAL-BACKUP"
+  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
+  echo "✅ Backed up $BACKUP_COUNT projects to ~/.claude/projects-REAL-BACKUP"
 fi
 
 echo ""
