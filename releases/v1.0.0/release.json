@@ -3,13 +3,11 @@
   "version": "1.0.0",
   "created": "2025-11-28",
   "updated": "2025-11-28",
-
   "git": {
     "tag": "v1.0.0",
-    "commit": "4ea1ea787ffa75f39cd970888cfe4c62ba8ba465",
+    "commit": "$(git rev-parse HEAD)",
     "branch": "main"
   },
-
   "phases": {
     "pre_release": {
       "status": "pending",
@@ -21,9 +19,8 @@
         "working_directory_clean": null
       }
     },
-
     "build": {
-      "status": "pending",
+      "status": "complete",
       "dmg": {
         "built": false,
         "path": null,
@@ -34,15 +31,14 @@
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": false,
-        "archive_path": null,
-        "build_number": 9,
-        "exported": false,
+        "archived": true,
+        "archive_path": "build/archives/v1.0.0/appstore/Contextify.xcarchive",
+        "build_number": 10,
+        "exported": true,
         "uploaded": false,
         "upload_receipt": null
       }
     },
-
     "review_materials": {
       "status": "pending",
       "demo_video": {
@@ -56,14 +52,12 @@
         "deployed": false
       }
     },
-
     "submission": {
       "status": "pending",
       "submitted_at": null,
       "rejection": null,
       "resubmission": null
     },
-
     "marketing": {
       "status": "pending",
       "changelog": {
@@ -77,7 +71,6 @@
         "product_hunt": false
       }
     },
-
     "post_release": {
       "status": "pending",
       "documentation_updated": false,
@@ -85,57 +78,66 @@
       "monitoring_enabled": false
     }
   },
-
   "notes": [
     {
-        "date": "2025-11-25",
-        "author": "system",
-        "note": "Initial submission to App Store (build 3)"
+      "date": "2025-11-25",
+      "author": "system",
+      "note": "Initial submission to App Store (build 3)"
     },
     {
-        "date": "2025-11-26",
-        "author": "apple",
-        "note": "Rejected - Guideline 2.1, needs demo video and sample data"
+      "date": "2025-11-26",
+      "author": "apple",
+      "note": "Rejected - Guideline 2.1, needs demo video and sample data"
     },
     {
-        "date": "2025-11-27",
-        "author": "system",
-        "note": "Created sample transcripts and demo video script"
+      "date": "2025-11-27",
+      "author": "system",
+      "note": "Created sample transcripts and demo video script"
     },
     {
-        "date": "2025-11-27",
-        "author": "system",
-        "note": "Migrated to new release management system"
+      "date": "2025-11-27",
+      "author": "system",
+      "note": "Migrated to new release management system"
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Build 5: Fixed P0 sandbox bugs (container path persisted, permissions modal missing). Changed Sandbox.isSandboxed to use runtime detection. Added SandboxPathFilter tests."
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Build 5: Fixed P0 sandbox bugs (container path persisted, permissions modal missing). Changed Sandbox.isSandboxed to use runtime detection. Added SandboxPathFilter tests."
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Reset for build 5 from commit a8555cc8"
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 5 from commit a8555cc8"
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Reset for build 6 from commit d1afe688"
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 6 from commit d1afe688"
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Reset for build 7 from commit 4ea1ea78"
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 7 from commit 4ea1ea78"
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Reset for build 8 from commit 4ea1ea78"
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 8 from commit 4ea1ea78"
     },
     {
-        "date": "2025-11-28",
-        "author": "system",
-        "note": "Reset for build 9 from commit 4ea1ea78"
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 9 from commit 4ea1ea78"
+    },
+    {
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Reset for build 10 from commit 27a68f69"
+    },
+    {
+      "date": "2025-11-28",
+      "author": "system",
+      "note": "Build 10 completed (App Store only, DMG already shipped)"
     }
-]
+  ]
 }

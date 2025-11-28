@@ -133,6 +133,29 @@ for release_dir in releases/v*/; do
     echo ""
 done
 
+# Check Xcode build number matches manifest (for current version)
+echo "Checking Xcode project build number sync..."
+CURRENT_VERSION=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('current_version', ''))" 2>/dev/null || echo "")
+if [ -n "$CURRENT_VERSION" ]; then
+    if [ -z "$CHECK_VERSION" ] || [ "$CHECK_VERSION" = "$CURRENT_VERSION" ]; then
+        MANIFEST_BUILD=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$CURRENT_VERSION',{}).get('appstore',{}).get('build_number', 0))" 2>/dev/null || echo "0")
+        PBXPROJ="Contextify/Contextify.xcodeproj/project.pbxproj"
+        if [ -f "$PBXPROJ" ]; then
+            XCODE_BUILD=$(grep -m1 "CURRENT_PROJECT_VERSION" "$PBXPROJ" | sed 's/.*= //' | tr -d ';' | tr -d ' ')
+            if [ "$MANIFEST_BUILD" != "$XCODE_BUILD" ] && [ "$MANIFEST_BUILD" != "0" ]; then
+                echo "  Issue: Build number mismatch for v$CURRENT_VERSION"
+                echo "    Manifest:      $MANIFEST_BUILD"
+                echo "    Xcode project: $XCODE_BUILD"
+                echo "    Fix: ./scripts/release/init.sh $CURRENT_VERSION --reset"
+                ((ISSUES++)) || true
+            else
+                echo "  OK: Build numbers in sync ($XCODE_BUILD)"
+            fi
+        fi
+    fi
+fi
+echo ""
+
 echo "=========================================="
 if [ "$ISSUES" -eq 0 ]; then
     echo "OK: No consistency issues found"

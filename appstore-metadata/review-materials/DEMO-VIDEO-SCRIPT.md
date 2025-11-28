@@ -36,17 +36,14 @@ From rejection feedback (Submission ID: 4a125b1d-7e23-4cb4-be80-09aaa29168cf):
 # Check current release state
 ./scripts/release/status.sh 1.0.0
 
-# Build App Store archive (creates build 4 from current HEAD)
-bash scripts/xc.sh --dist=appstore Release archive
-
-# Preserve archive with version label
-cp -r build/Contextify.xcarchive build/archives/v1.0.0-build4.xcarchive
+# Build App Store archive using release workflow (skipping DMG since already shipped)
+./scripts/release/build.sh 1.0.0 --skip-dmg
 
 # Verify archive exists
-ls -la build/archives/
+ls -la build/archives/v1.0.0/appstore/
 ```
 
-**Archive location:** `build/archives/v1.0.0-build4.xcarchive`
+**Archive location:** `build/archives/v1.0.0/appstore/Contextify.xcarchive`
 
 This is the binary you will:
 1. Record the demo video with
@@ -67,7 +64,7 @@ This is the binary you will:
 
 ```bash
 # Run the archived app for demo recording
-open build/archives/v1.0.0-build4.xcarchive/Products/Applications/Contextify.app
+open build/archives/v1.0.0/appstore/Contextify.xcarchive/Products/Applications/Contextify.app
 ```
 
 **Important:** Do NOT run from Xcode or the DMG. Use the archived App Store build.

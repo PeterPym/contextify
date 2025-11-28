@@ -309,6 +309,48 @@ PYEOF
   echo "─────────────────────────────────────────────────────────────────"
   echo ""
 
+  # Show next steps for active releases
+  if [ "$FILTER_ACTIVE" = true ]; then
+    echo -e "${YELLOW}Next Steps:${NC}"
+    python3 << 'PYEOF'
+import json
+try:
+    with open('releases/manifest.json', 'r') as f:
+        data = json.load(f)
+
+    for ver, info in sorted(data.get('releases', {}).items(), reverse=True):
+        dmg = info.get('dmg', {})
+        appstore = info.get('appstore', {})
+        dmg_status = dmg.get('status', 'pending')
+        as_status = appstore.get('status', 'pending')
+        as_build = appstore.get('build_number', '?')
+
+        # Skip if both shipped
+        if dmg_status in ['shipped', 'complete'] and as_status in ['approved', 'shipped']:
+            continue
+
+        print(f"  v{ver}:")
+
+        if dmg_status == 'pending' and as_status == 'pending':
+            print(f"    -> Build: ./scripts/release/build.sh {ver}")
+        elif dmg_status == 'built':
+            print(f"    -> Ship DMG: ./scripts/release/mark-shipped.sh {ver} --dmg")
+
+        if as_status == 'built':
+            print(f"    -> Upload: bash scripts/xc.sh upload")
+            print(f"    -> Then: ./scripts/release/mark-submitted.sh {ver} --build {as_build}")
+        elif as_status == 'submitted':
+            print(f"    -> Waiting for Apple review...")
+            print(f"    -> If approved: ./scripts/release/mark-shipped.sh {ver} --appstore --build {as_build}")
+        elif as_status == 'rejected':
+            print(f"    -> Fix issues, then: ./scripts/release/init.sh {ver} --reset")
+
+except Exception as e:
+    print(f"  (error: {e})")
+PYEOF
+    echo ""
+  fi
+
   # What's in production
   if [ "$FILTER_SHIPPED" = false ] && [ "$FILTER_ACTIVE" = false ]; then
     echo -e "${GREEN}In Production:${NC}"

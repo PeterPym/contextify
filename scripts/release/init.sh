@@ -18,6 +18,7 @@
 #   - releases/vX.Y.Z/README.md: Created or updated
 #   - releases/vX.Y.Z/checklists/: Created from templates
 #   - releases/manifest.json: Entry created (new) or build_number updated (--reset)
+#   - Contextify.xcodeproj: CURRENT_PROJECT_VERSION updated (--reset only)
 #
 # Prerequisites:
 #   - For new release: No existing releases/vX.Y.Z directory
@@ -85,6 +86,13 @@ if [ -d "$RELEASE_DIR" ]; then
 
   echo "  Preserving $NOTES_COUNT notes"
   echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
+
+  # Update Xcode project build number
+  PBXPROJ="$ROOT_DIR/Contextify/Contextify.xcodeproj/project.pbxproj"
+  if [ -f "$PBXPROJ" ]; then
+    sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$PBXPROJ"
+    echo "  Updated Xcode CURRENT_PROJECT_VERSION to $NEW_BUILD"
+  fi
 
 else
   echo "Initializing release v${VERSION}..."
