@@ -358,23 +358,27 @@ Never skip layers. UI files must not import GRDB. Use `TranscriptOrchestrator` f
 ### Quick Commands
 
 ```bash
-# Initialize new release
+# Initialize new release (or reset for new build)
 ./scripts/release/init.sh X.Y.Z
+./scripts/release/init.sh X.Y.Z --reset
+
+# Build both distributions (DMG + App Store)
+./scripts/release/build.sh X.Y.Z
 
 # Check release status
 ./scripts/release/status.sh X.Y.Z
 
-# DMG Release (ships immediately)
-python3 scripts/release.py --version X.Y.Z --yes
-./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
-# Then: update appcast.xml, deploy to website
-
-# App Store Release (ships after review)
-bash scripts/xc.sh --dist=appstore Release archive
-bash scripts/xc.sh export-pkg
+# Upload App Store build
 bash scripts/xc.sh upload
-# Then: complete submission in App Store Connect
 ```
+
+### Build Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/xc.sh` | Development builds, Xcode operations |
+| `scripts/build-release.sh` | Release builds (DMG + App Store) |
+| `scripts/release/build.sh` | Release workflow build (with tracking) |
 
 ### Pre-Release Validation
 

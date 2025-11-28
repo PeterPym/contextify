@@ -391,11 +391,23 @@ build/*.xcarchive/
 
 Build commands:
 ```bash
-# Full App Store flow
+# Build both distributions (recommended)
+./scripts/release/build.sh X.Y.Z
+# Or standalone: ./scripts/build-release.sh
+
+# Upload to App Store Connect
+bash scripts/xc.sh upload
+```
+
+<details>
+<summary>Manual App Store commands</summary>
+
+```bash
 bash scripts/xc.sh --dist=appstore Release archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 ```
+</details>
 
 ### Two-Target Architecture
 

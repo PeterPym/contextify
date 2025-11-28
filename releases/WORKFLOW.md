@@ -63,17 +63,34 @@ After completing each phase:
 ## Quick Commands
 
 ```bash
+# Initialize new release (or reset for new build)
+./scripts/release/init.sh X.Y.Z
+./scripts/release/init.sh X.Y.Z --reset
+
+# Build both distributions (DMG + App Store)
+./scripts/release/build.sh X.Y.Z
+
 # Check overall release status
 ./scripts/release/status.sh X.Y.Z
 
 # Validate specific phase
 ./scripts/release/validate-pre-release.sh X.Y.Z
 ./scripts/release/validate-build.sh X.Y.Z
-./scripts/release/validate-deployment.sh X.Y.Z
 
-# Record demo video (interactive, handles sample data + permissions)
+# Record demo video (interactive)
 ./scripts/release/demo-recording.sh
 ```
+
+## Build Scripts
+
+Two build scripts serve different purposes:
+
+| Script | Purpose | Use When |
+|--------|---------|----------|
+| `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
+| `scripts/build-release.sh` | Release builds (DMG + App Store) | Building for release |
+
+The release workflow script `scripts/release/build.sh` wraps `build-release.sh` with version tracking and archiving.
 
 ## Handling Rejections
 
@@ -98,22 +115,39 @@ Contextify ships via two channels:
 
 **Strategy:** DMG leads, App Store follows. Both built from same commit.
 
-### DMG Release (ships immediately)
+### Build Both Distributions (Recommended)
 
+```bash
+# Build both DMG and App Store in one command
+./scripts/release/build.sh X.Y.Z
+
+# Or use the standalone build script (no release tracking)
+./scripts/build-release.sh
+
+# Then:
+# - DMG: update appcast.xml, deploy to website
+# - App Store: upload and complete submission
+bash scripts/xc.sh upload
+```
+
+### Manual Build (Alternative)
+
+<details>
+<summary>Individual commands if needed</summary>
+
+**DMG Release:**
 ```bash
 python3 scripts/release.py --version X.Y.Z --yes
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
-# Then: update appcast.xml, deploy to website
 ```
 
-### App Store Release (ships after review)
-
+**App Store Release:**
 ```bash
 bash scripts/xc.sh --dist=appstore Release archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
-# Then: complete submission in App Store Connect
 ```
+</details>
 
 ## Versions, Builds, and Tags
 

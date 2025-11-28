@@ -244,6 +244,6 @@ fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Review checklists in $RELEASE_DIR/checklists/"
-echo "  2. Start with 01-pre-release.md"
-echo "  3. Update release.json as you progress"
+echo "  1. Validate pre-release:  ./scripts/release/validate-pre-release.sh ${VERSION}"
+echo "  2. Build both dists:      ./scripts/release/build.sh ${VERSION}"
+echo "  3. Follow checklists in:  $RELEASE_DIR/checklists/"

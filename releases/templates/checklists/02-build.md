@@ -4,66 +4,89 @@
 **Phase:** 2 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
-## DMG Build
+## Automated Build (Recommended)
 
-### Build DMG
-- [ ] Run: `python3 scripts/release.py --version {version} --yes`
-- [ ] Verify DMG exists: `ls -la dist/Contextify-{version}.dmg`
-- [ ] DMG size (bytes): ____
+Run the release build script:
 
-### Sign for Sparkle
-- [ ] Run: `./scripts/sparkle/sign.sh dist/Contextify-{version}.dmg`
-- [ ] Copy signature for appcast: ____
+```bash
+./scripts/release/build.sh {version}
+```
 
-### Verify DMG
-- [ ] Mount and test app launches
-- [ ] Check code signature: `codesign -dv dist/Contextify-{version}.dmg`
-- [ ] Check notarization: `spctl -a -vv dist/Contextify-{version}.dmg`
+This script:
+- Validates tests pass
+- Builds App Store archive (Release, sandboxed)
+- Builds DMG (Release, signed, notarized)
+- Archives to `build/archives/v{version}/`
+- Updates `release.json` with results
 
-## App Store Build
+### Verify Build Output
 
-### Archive
-- [ ] Run: `bash scripts/xc.sh --dist=appstore Release archive`
-- [ ] Verify archive: `ls -la build/Contextify.xcarchive`
-- [ ] Preserve archive: `cp -R build/Contextify.xcarchive build/archives/v{version}.xcarchive`
+- [ ] Check archive directory: `ls -la build/archives/v{version}/`
+- [ ] Verify App Store archive exists: `Contextify-AppStore.xcarchive`
+- [ ] Verify DMG exists: `Contextify-{version}.dmg`
+- [ ] Verify .pkg exists: `Contextify-{version}.pkg`
 
-### Export Package
-- [ ] Run: `bash scripts/xc.sh export-pkg`
-- [ ] Verify package: `ls -la build/appstore/Contextify.pkg`
+### Record Build Info
 
-### Record Build Number
 - [ ] Build number: ____
-- [ ] Update `release.json` with build number
+- [ ] Commit: ____
+- [ ] DMG SHA256: ____
+
+---
+
+## Build Scripts Reference
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/xc.sh` | Development builds, Xcode operations |
+| `scripts/build-release.sh` | Standalone release build (no tracking) |
+| `scripts/release/build.sh` | Release workflow build (with tracking) |
+
+---
+
+## Manual Build (Alternative)
+
+<details>
+<summary>Use if automated build fails or for partial builds</summary>
+
+### DMG Build
+
+```bash
+python3 scripts/release.py --version {version} --yes
+./scripts/sparkle/sign.sh dist/Contextify-{version}.dmg
+```
+
+- [ ] DMG created: `dist/Contextify-{version}.dmg`
+- [ ] Sparkle signature copied
+
+### App Store Build
+
+```bash
+bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh export-pkg
+```
+
+- [ ] Archive created: `build/Contextify.xcarchive`
+- [ ] Package exported: `build/appstore/Contextify.pkg`
+
+### Archive Artifacts
+
+```bash
+mkdir -p build/archives/v{version}
+cp -R build/Contextify.xcarchive build/archives/v{version}/Contextify-AppStore.xcarchive
+cp dist/Contextify-{version}.dmg build/archives/v{version}/
+cp build/appstore/Contextify.pkg build/archives/v{version}/Contextify-{version}.pkg
+```
+
+</details>
+
+---
 
 ## Validation
 
 Run validation script:
 ```bash
 ./scripts/release/validate-build.sh {version}
-```
-
-Paste output:
-```
-(paste here)
-```
-
-## Artifacts Reference
-
-Update `releases/v{version}/artifacts/`:
-
-```json
-// dmg.json
-{
-  "path": "dist/Contextify-{version}.dmg",
-  "sha256": "____",
-  "sparkle_signature": "____"
-}
-
-// appstore.json
-{
-  "archive_path": "build/archives/v{version}.xcarchive",
-  "build_number": ____
-}
 ```
 
 ## Sign-off

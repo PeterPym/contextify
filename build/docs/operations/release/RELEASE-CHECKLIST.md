@@ -7,18 +7,43 @@ Master checklist for releasing Contextify. Covers both DMG (direct) and App Stor
 ## Quick Reference
 
 ```bash
-# Full release (DMG + App Store)
-# 1. DMG (ships immediately)
+# Initialize or reset release
+./scripts/release/init.sh X.Y.Z          # New release
+./scripts/release/init.sh X.Y.Z --reset  # Reset for new build
+
+# Build both distributions (recommended)
+./scripts/release/build.sh X.Y.Z
+
+# Upload App Store build
+bash scripts/xc.sh upload
+
+# Deploy DMG to website
+scp dist/Contextify-X.Y.Z.dmg web@banagale.com:/var/www/contextify.sh/releases/
+# Update appcast.xml, deploy
+```
+
+## Build Scripts
+
+| Script | Purpose | Use When |
+|--------|---------|----------|
+| `scripts/xc.sh` | Development builds, Xcode operations | Day-to-day development |
+| `scripts/build-release.sh` | Standalone release build | Building without tracking |
+| `scripts/release/build.sh` | Release workflow build | Building with version tracking |
+
+<details>
+<summary>Manual build commands (alternative)</summary>
+
+```bash
+# DMG
 python3 scripts/release.py --version X.Y.Z --yes
 ./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
-# Update appcast.xml, deploy to website
 
-# 2. App Store (ships after review)
+# App Store
 bash scripts/xc.sh --dist=appstore Release archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
-# Complete submission in App Store Connect
 ```
+</details>
 
 ---
 
