@@ -601,14 +601,14 @@ fi
 if [[ "$action" == "export-pkg" ]]; then
   if [[ "$dist" != "appstore" ]]; then
     echo "⚠️  Warning: export-pkg is for App Store builds."
-    echo "   You may want to use: bash scripts/xc.sh --dist=appstore archive"
+    echo "   You may want to use: bash scripts/xc.sh --dist=appstore dev-archive"
     echo ""
   fi
   echo "📦 Exporting archive as .pkg for App Store Connect..."
 
   if [[ ! -d "$archive_path" ]]; then
     echo "❌ Archive not found at: $archive_path"
-    echo "   Run 'bash scripts/xc.sh archive' first"
+    echo "   Run 'bash scripts/xc.sh dev-archive' first"
     exit 1
   fi
 
@@ -644,7 +644,7 @@ fi
 if [[ "$action" == "upload" ]]; then
   if [[ "$dist" != "appstore" ]]; then
     echo "⚠️  Warning: upload is for App Store builds."
-    echo "   You may want to use: bash scripts/xc.sh --dist=appstore archive"
+    echo "   You may want to use: bash scripts/xc.sh --dist=appstore dev-archive"
     echo ""
   fi
   echo "🚀 Uploading to App Store Connect..."
@@ -654,7 +654,7 @@ if [[ "$action" == "upload" ]]; then
 
   if [[ -z "$exported_pkg" ]]; then
     echo "❌ No .pkg found in build/appstore/"
-    echo "   Run 'bash scripts/xc.sh archive' then 'bash scripts/xc.sh export-pkg' first"
+    echo "   Run 'bash scripts/xc.sh dev-archive' then 'bash scripts/xc.sh export-pkg' first"
     exit 1
   fi
 

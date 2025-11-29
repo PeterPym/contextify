@@ -295,15 +295,16 @@ https://contextify.sh/review-4a125b1d/demo-video.mp4
 
 ### Workflow
 
-1. **Build App Store archive** (will use for both demo and submission):
+1. **Build release archive** (will use for both demo and submission):
    ```bash
-   bash scripts/xc.sh --dist=appstore Release archive
+   ./scripts/release/build.sh X.Y.Z
    ```
 
 2. **Record demo video** using archived binary:
    ```bash
-   # Run the archived app
-   open build/Contextify.xcarchive/Products/Applications/Contextify.app
+   # Use the interactive demo recording workflow
+   ./scripts/release/demo-recording.sh
+   # Or manually: open build/archives/vX.Y.Z/appstore/Contextify.xcarchive/Products/Applications/Contextify.app
    # Record following: appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md
    ```
 
@@ -400,10 +401,11 @@ bash scripts/xc.sh upload
 ```
 
 <details>
-<summary>Manual App Store commands</summary>
+<summary>Manual App Store commands (dev builds)</summary>
 
 ```bash
-bash scripts/xc.sh --dist=appstore Release archive
+# dev-archive creates scratch builds at build/Contextify.xcarchive
+bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 ```
@@ -438,7 +440,12 @@ When releasing an update to an existing app:
 ### 1. Build and Upload
 
 ```bash
-bash scripts/xc.sh --dist=appstore Release archive
+# Recommended: Use the release workflow
+./scripts/release/build.sh X.Y.Z
+bash scripts/xc.sh upload
+
+# Alternative: Manual dev builds
+bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 ```

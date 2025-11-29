@@ -68,7 +68,7 @@ doc_references:
 **Immediate Next Steps (App Store Resubmission):**
 1. [ ] Deploy website with help page and review materials: `./scripts/deploy-website.sh`
 2. [ ] Record demo video following `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`
-3. [ ] Build App Store archive (v1.0.0 build 4): `bash scripts/xc.sh --dist=appstore Release archive`
+3. [ ] Build App Store archive (v1.0.0): `./scripts/release/build.sh 1.0.0`
 4. [ ] Upload and resubmit in App Store Connect
 
 **Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`

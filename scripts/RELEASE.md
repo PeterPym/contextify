@@ -452,11 +452,23 @@ Contextify uses **two separate Xcode targets** for different distribution channe
 When submitting a new version to the App Store:
 
 ```bash
+# Recommended: Use the release build script (handles both App Store + DMG)
+./scripts/release/build.sh X.Y.Z
+
+# Then upload to App Store Connect
+bash scripts/xc.sh upload
+
+# Create GitHub release
+gh release create vX.Y.Z build/archives/vX.Y.Z/dmg/Contextify-X.Y.Z.dmg --title "Contextify X.Y.Z"
+```
+
+**Alternative (manual builds):**
+```bash
 # 1. Ensure all changes committed
 git status
 
-# 2. Build and upload App Store version
-bash scripts/xc.sh --dist=appstore Release archive
+# 2. Build and upload App Store version (dev-archive for scratch builds)
+bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 

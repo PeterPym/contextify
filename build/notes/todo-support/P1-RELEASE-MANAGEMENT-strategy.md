@@ -195,7 +195,7 @@ releases/v1.0.0/
     "appstore": {
       "target": "Contextify AppStore",
       "scheme": "Contextify AppStore",
-      "archive_command": "bash scripts/xc.sh --dist=appstore Release archive",
+      "archive_command": "bash scripts/xc.sh --dist=appstore Release dev-archive",
       "export_command": "bash scripts/xc.sh export-pkg",
       "upload_command": "bash scripts/xc.sh upload",
       "archive_path": "build/Contextify.xcarchive",

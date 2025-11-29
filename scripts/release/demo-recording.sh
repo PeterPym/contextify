@@ -255,6 +255,7 @@ if [[ -z "$VERSION" ]]; then
   if [[ -z "$LATEST" ]]; then
     echo "❌ No release archives found in build/archives/"
     echo "   Run: ./scripts/release/build.sh X.Y.Z"
+    echo "   (Do NOT use xc.sh dev-archive - that creates scratch builds)"
     exit 1
   fi
   ARCHIVE_PATH="build/archives/$LATEST/appstore/Contextify.xcarchive"
@@ -294,7 +295,8 @@ echo ""
 # Verify archive exists
 if [[ ! -d "$APP_PATH" ]]; then
   echo "❌ ERROR: Archive not found at $APP_PATH"
-  echo "   Run: bash scripts/xc.sh --dist=appstore Release archive"
+  echo "   Run: ./scripts/release/build.sh X.Y.Z"
+  echo "   (Do NOT use xc.sh dev-archive - that creates scratch builds)"
   exit 1
 fi
 echo "✅ Archive verified"

@@ -67,9 +67,9 @@ release:
 release-dry-run:
 	@python3 scripts/release.py --dry-run
 
-# App Store submission workflow
-archive:
-	@bash scripts/xc.sh archive
+# App Store submission workflow (dev-archive for scratch builds)
+dev-archive:
+	@bash scripts/xc.sh dev-archive
 
 export-pkg:
 	@bash scripts/xc.sh export-pkg
@@ -77,5 +77,5 @@ export-pkg:
 upload:
 	@bash scripts/xc.sh upload
 
-# Full App Store submission (archive + export + upload)
-appstore-submit: archive export-pkg upload
+# Full App Store submission (dev-archive + export + upload)
+appstore-submit: dev-archive export-pkg upload

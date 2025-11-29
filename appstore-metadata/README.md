@@ -518,12 +518,15 @@ Create at: https://developer.apple.com/account/resources/certificates/list
 ### Build & Upload Commands
 ```bash
 # Step by step:
-bash scripts/xc.sh archive      # Create .xcarchive
+bash scripts/xc.sh dev-archive  # Create .xcarchive (scratch build)
 bash scripts/xc.sh export-pkg   # Export as .pkg
 bash scripts/xc.sh upload       # Upload to App Store Connect
 
 # Or all at once:
 make appstore-submit
+
+# For official releases (recommended):
+./scripts/release/build.sh X.Y.Z
 ```
 
 ## Getting Help

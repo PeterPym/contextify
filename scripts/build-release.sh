@@ -80,7 +80,7 @@ cd "$ROOT_DIR"
 if [ "$SKIP_APPSTORE" = false ]; then
   echo -e "${BLUE}==>${NC} Building App Store archive..."
 
-  bash scripts/xc.sh --dist=appstore Release archive
+  bash scripts/xc.sh --dist=appstore Release dev-archive
 
   if [ ! -d "build/Contextify.xcarchive" ]; then
     echo -e "${RED}Error: Archive not created${NC}"

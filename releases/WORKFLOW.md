@@ -267,7 +267,7 @@ python3 scripts/release.py --version X.Y.Z --yes
 
 **App Store Release:**
 ```bash
-bash scripts/xc.sh --dist=appstore Release archive
+bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 bash scripts/xc.sh upload
 ```
