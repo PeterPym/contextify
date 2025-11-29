@@ -187,11 +187,15 @@ After rejection, fix the issues and reset for a new build:
 ### QA Testing
 
 ```bash
-# Launch archived app in clean state (full reset)
+# Launch App Store build in clean state (full reset)
 ./scripts/release/test-app.sh
+
+# Test DMG build instead
+./scripts/release/test-app.sh --dmg
 
 # Test specific version
 ./scripts/release/test-app.sh 1.1.0
+./scripts/release/test-app.sh 1.1.0 --dmg
 
 # Keep existing database (just relaunch)
 ./scripts/release/test-app.sh --keep-db
