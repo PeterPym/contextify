@@ -184,6 +184,22 @@ After rejection, fix the issues and reset for a new build:
 ./scripts/release/demo-recording.sh 1.0.0
 ```
 
+### QA Testing
+
+```bash
+# Launch archived app in clean state (full reset)
+./scripts/release/test-app.sh
+
+# Test specific version
+./scripts/release/test-app.sh 1.1.0
+
+# Keep existing database (just relaunch)
+./scripts/release/test-app.sh --keep-db
+
+# Keep TCC permissions (skip permission dialog)
+./scripts/release/test-app.sh --keep-tcc
+```
+
 ## Build Scripts
 
 Two build scripts serve different purposes:
