@@ -70,7 +70,18 @@ public actor FastPathIngestionCoordinator {
       throw error
     }
 
-    // 2. [CRITICAL FIX] Populate transcripts table BEFORE calling FastPath
+    // 2. Register primer for App Store build path (Option B-Prime)
+    // This ensures ConversationMonitor gets .timelinePrimerReady signal instead of timeout-based retry
+    let entryCount = (try? orchestrator.getEntryCount(forProject: projectId)) ?? 0
+    let primerTarget = ContextifyConfig.shared.primerTargetEntries
+    if entryCount < primerTarget {
+      orchestrator.registerPrimer(projectId: projectId, target: primerTarget)
+      log.info("[JIT-PRIMER-REGISTER] projectId=\(projectId, privacy: .public) entryCount=\(entryCount, privacy: .public) target=\(primerTarget, privacy: .public)")
+    } else {
+      log.debug("[JIT-PRIMER-SKIP] projectId=\(projectId, privacy: .public) entryCount=\(entryCount, privacy: .public) >= target=\(primerTarget, privacy: .public)")
+    }
+
+    // 3. [CRITICAL FIX] Populate transcripts table BEFORE calling FastPath
     // FastPath queries DB for transcripts - if table is empty, it finds nothing
     if !project.transcriptFiles.isEmpty {
       log.info("[JIT-INGEST] Populating DB with \(project.transcriptFiles.count, privacy: .public) transcript records...")
@@ -97,7 +108,7 @@ public actor FastPathIngestionCoordinator {
       log.debug("[JIT-INGEST] No transcript files to upsert (empty project)")
     }
 
-    // 3. Now run FastPath (which queries the DB we just populated)
+    // 4. Now run FastPath (which queries the DB we just populated)
     await runFastPath(projectIds: [projectId], activeProjectId: projectId)
 
     let duration = Date().timeIntervalSince(startTime)
