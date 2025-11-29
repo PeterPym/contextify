@@ -449,29 +449,53 @@ if [[ "$input" != "skip" ]]; then
   cp -R "$APP_PATH" /Applications/
   echo "✅ Installed to /Applications/Contextify.app"
 
-  # Offer to add to Dock
+  # Offer to add to Dock (default: yes)
   echo ""
-  echo "Add to Dock for realistic demo launch? (y/n)"
+  echo "Add to Dock for realistic demo launch? (Y/n)"
   read -r add_dock
-  if [[ "$add_dock" == "y" || "$add_dock" == "Y" ]]; then
+  if [[ "$add_dock" != "n" && "$add_dock" != "N" ]]; then
     # Add to Dock using defaults
     defaults write com.apple.dock persistent-apps -array-add \
       "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>file:///Applications/Contextify.app</string><key>_CFURLStringType</key><integer>15</integer></dict></dict></dict>"
     killall Dock
     sleep 2
     echo "✅ Added to Dock"
+    ADDED_TO_DOCK=true
+  else
+    ADDED_TO_DOCK=false
   fi
 
   LAUNCH_PATH="/Applications/Contextify.app"
 else
   LAUNCH_PATH="$APP_PATH"
+  ADDED_TO_DOCK=false
 fi
 
 echo ""
-echo "Launching from: $LAUNCH_PATH"
-echo ""
-open "$LAUNCH_PATH"
-echo "✅ App launched"
+if [[ "$ADDED_TO_DOCK" == "true" ]]; then
+  echo "Launch app now? (y/N) - or launch from Dock for realistic demo"
+else
+  echo "Launch app now? (Y/n)"
+fi
+read -r do_launch
+
+if [[ "$ADDED_TO_DOCK" == "true" ]]; then
+  # Default no if added to dock (user will launch from dock)
+  if [[ "$do_launch" == "y" || "$do_launch" == "Y" ]]; then
+    open "$LAUNCH_PATH"
+    echo "✅ App launched"
+  else
+    echo "👉 Launch from Dock when ready to record"
+  fi
+else
+  # Default yes if not added to dock
+  if [[ "$do_launch" != "n" && "$do_launch" != "N" ]]; then
+    open "$LAUNCH_PATH"
+    echo "✅ App launched"
+  else
+    echo "👉 Launch manually: open \"$LAUNCH_PATH\""
+  fi
+fi
 echo ""
 echo "VERIFY: The app should:"
 echo "  1. Show a permission dialog for ~/.claude/"
