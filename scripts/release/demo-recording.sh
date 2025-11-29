@@ -25,7 +25,8 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   echo "  (none)      Start interactive demo recording workflow"
   echo "  --status    Check current transcript state (real vs sample data)"
   echo "  --clean     Remove sample data only (keeps real projects)"
-  echo "  --restore   Restore real transcripts from backup"
+  echo "  --restore   Restore real transcripts from backup (auto-merges any real work)"
+  echo "  --reset     Alias for --restore"
   echo "  --help      Show this help"
   echo ""
   echo "Examples:"
@@ -128,7 +129,7 @@ if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
 fi
 
 # Handle --restore flag for quick recovery after bailing early
-if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" ]]; then
+if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" || "${1:-}" == "--reset" || "${1:-}" == "reset" ]]; then
   echo "Restoring real transcripts from backup..."
   echo ""
 
@@ -144,12 +145,84 @@ if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" ]]; then
   echo "Found backup with $BACKUP_COUNT projects"
   echo ""
 
+  # Auto-merge any non-sample work done during demo mode back to backup
+  SAMPLE_PATTERN="sample-projects"
+  MERGED_COUNT=0
+
+  echo "Checking for real work done during demo mode..."
+
+  # Claude Code: merge any non-sample project directories
+  if [[ -d ~/.claude/projects ]]; then
+    for dir in ~/.claude/projects/*/; do
+      dirname=$(basename "$dir")
+      if [[ ! "$dirname" =~ $SAMPLE_PATTERN ]]; then
+        if [[ -d ~/.claude/projects-REAL-BACKUP/"$dirname" ]]; then
+          # Directory exists in backup - merge new files
+          echo "  Merging updates: $dirname"
+          cp -rn "$dir"* ~/.claude/projects-REAL-BACKUP/"$dirname"/ 2>/dev/null || true
+        else
+          # New directory - copy entire thing
+          echo "  Adding new project: $dirname"
+          cp -r "$dir" ~/.claude/projects-REAL-BACKUP/
+        fi
+        MERGED_COUNT=$((MERGED_COUNT + 1))
+      fi
+    done
+  fi
+
+  # Codex: merge any non-sample session files
+  if [[ -d ~/.codex/sessions && -d ~/.codex/sessions-REAL-BACKUP ]]; then
+    # Find session files that aren't in the sample data
+    for year_dir in ~/.codex/sessions/*/; do
+      if [[ -d "$year_dir" ]]; then
+        year=$(basename "$year_dir")
+        for month_dir in "$year_dir"*/; do
+          if [[ -d "$month_dir" ]]; then
+            month=$(basename "$month_dir")
+            for day_dir in "$month_dir"*/; do
+              if [[ -d "$day_dir" ]]; then
+                day=$(basename "$day_dir")
+                # Copy any new session files
+                target_dir=~/.codex/sessions-REAL-BACKUP/"$year"/"$month"/"$day"
+                mkdir -p "$target_dir"
+                for session in "$day_dir"*.jsonl; do
+                  if [[ -f "$session" ]]; then
+                    session_name=$(basename "$session")
+                    if [[ ! -f "$target_dir/$session_name" ]]; then
+                      echo "  Adding Codex session: $year/$month/$day/$session_name"
+                      cp "$session" "$target_dir/"
+                      MERGED_COUNT=$((MERGED_COUNT + 1))
+                    fi
+                  fi
+                done
+              fi
+            done
+          fi
+        done
+      fi
+    done
+  fi
+
+  if [[ "$MERGED_COUNT" -gt 0 ]]; then
+    echo ""
+    echo "✅ Merged $MERGED_COUNT items back to backup"
+  else
+    echo "  No new work to merge"
+  fi
+  echo ""
+
   # Remove current data (sample or mixed)
   rm -rf ~/.claude/projects ~/.codex/sessions
 
   # Restore backups
   mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
   mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
+
+  # Clean up stub project directories
+  if [[ -d ~/code/sample-projects ]]; then
+    rm -rf ~/code/sample-projects
+    echo "✅ Stub project directories removed"
+  fi
 
   echo "✅ Real transcripts restored!"
   echo ""
