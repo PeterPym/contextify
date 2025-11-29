@@ -269,12 +269,12 @@ if '$VERSION' not in data.get('releases', {}):
 release = data['releases']['$VERSION']
 
 # Update DMG status
-if not $SKIP_DMG:
+if '$SKIP_DMG' != 'true':
     release['dmg']['status'] = 'built'
     release['dmg']['built_at'] = str(date.today())
 
 # Update App Store status
-if not $SKIP_APPSTORE:
+if '$SKIP_APPSTORE' != 'true':
     release['appstore']['status'] = 'built'
     release['appstore']['build_number'] = int('$BUILD_NUMBER')
     release['appstore']['built_at'] = str(date.today())
