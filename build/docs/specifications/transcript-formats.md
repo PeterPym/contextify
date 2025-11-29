@@ -29,6 +29,51 @@
 - Append-only (new records added as session progresses)
 - Filename is session UUID with `.jsonl` extension
 
+### Sidechain/Subagent Transcripts
+
+When Claude Code spawns subagents (via the Task tool), each subagent creates its own transcript file with a distinct naming pattern.
+
+**Filename convention:**
+- **Main session:** `{sessionId}.jsonl` (UUID format, e.g., `343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl`)
+- **Subagent:** `agent-{agentId}.jsonl` (e.g., `agent-10bae299.jsonl`)
+
+**Structure:**
+```
+~/.claude/projects/-Users-rob-code-projects-example/
+├── 343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl  # Main conversation (31KB)
+├── agent-10bae299.jsonl                         # Subagent sidechain (851 bytes)
+├── agent-30cc28b5.jsonl                         # Subagent sidechain (851 bytes)
+├── agent-4ff1bfb1.jsonl                         # Subagent sidechain (851 bytes)
+└── ...
+```
+
+**Identification (inside the file):**
+- `agentId` field matches the filename suffix (e.g., `"agentId": "10bae299"`)
+- `sessionId` points to the parent main session UUID
+- `isSidechain: true` on all records
+
+**Content characteristics:**
+- Typically 1 line (single assistant response from the spawned subagent)
+- Contains `isSidechain: true` marker
+- Should be excluded from timeline display (filtered during parsing)
+- May be useful for debugging/auditing subagent behavior
+
+**Example sidechain file content:**
+```json
+{
+  "agentId": "10bae299",
+  "sessionId": "343a0493-bc8b-43de-8ca6-5ae9c7394fa2",
+  "isSidechain": true,
+  "type": "assistant",
+  "message": { "role": "assistant", "content": [...] }
+}
+```
+
+**Discovery implications:**
+- Sidechain files should be deprioritized during ingestion (they produce 0 timeline entries)
+- Main session files contain the user-visible conversation
+- FastPath ingestion prioritizes non-`agent-*` files first
+
 ### Format Overview
 
 Claude Code stores conversation history in **JSONL** (JSON Lines) format, with one record per line. Each transcript file represents a single session and contains mixed record types: conversation messages, file snapshots, system events, and metadata.
@@ -48,7 +93,7 @@ User-originated messages with metadata.
 
 **Fields:**
 - `parentUuid` (nullable string) — **REQUIRED FOR THREADING:** Links to previous assistant message UUID, or `null` for first message
-- `isSidechain` (bool) — `true` for warmup/initialization messages
+- `isSidechain` (bool) — `true` for subagent/sidechain messages and warmup/initialization contexts (see [Sidechain/Subagent Transcripts](#sidechainsubagent-transcripts))
 - `userType` (string, e.g., `"external"`)
 - `cwd` (string) — Current working directory
 - `sessionId` (uuid) — Session identifier

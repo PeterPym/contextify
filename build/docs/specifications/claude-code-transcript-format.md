@@ -15,6 +15,12 @@ Claude Code stores conversation history in **JSONL** (JSON Lines) format, with o
 - `<project-key>` = project path with `/` → `-` (e.g., `-Users-rob-code-projects-contextify`)
 - `<session-uuid>` = unique session identifier (e.g., `ce6e090b-603e-484a-977e-546214573964.jsonl`)
 
+**Filename Convention:**
+- **Main session:** `{sessionId}.jsonl` (UUID format)
+- **Subagent/sidechain:** `agent-{agentId}.jsonl` (e.g., `agent-10bae299.jsonl`)
+
+When Claude Code spawns subagents (via the Task tool), each creates its own transcript file with the `agent-` prefix. These files contain `isSidechain: true` records and typically have minimal content (single assistant response). See [Sidechain Transcript Files](#sidechain-transcript-files) section for details.
+
 **Key Characteristics:**
 - **Append-only:** New records appended as session progresses
 - **Mixed types:** Conversation, metadata, snapshots, system events
@@ -104,7 +110,7 @@ type ContentBlock =
 ```
 
 **Special Cases:**
-- **`isSidechain: true`:** Warmup/initialization messages (e.g., "Warmup" for project context loading). Should be skipped for timeline display but may contain valuable project context.
+- **`isSidechain: true`:** Used for subagent/sidechain messages AND warmup/initialization contexts. Should be skipped for timeline display. See [Sidechain Transcript Files](#sidechain-transcript-files).
 - **`isMeta: true`:** Meta/command wrappers (e.g., "DO NOT respond to these messages..."). System-generated, not user-initiated.
 
 **Frequency:** 6,391 records (34.3%)
@@ -1374,7 +1380,101 @@ CREATE TABLE transcript_corruption (
 );
 ```
 
+---
+
+## Sidechain Transcript Files
+
+**Status:** Documented (2025-11-29)
+**Affects:** Claude Code Task tool (subagent spawning)
+**Impact:** Each subagent creates a separate transcript file with distinct naming convention
+
+### Background
+
+When Claude Code spawns subagents via the Task tool, each subagent creates its own transcript file. These "sidechain" transcripts are separate from the main conversation and contain the subagent's isolated execution context.
+
+### Filename Convention
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| **Main session** | `{sessionId}.jsonl` | `343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl` |
+| **Subagent** | `agent-{agentId}.jsonl` | `agent-10bae299.jsonl` |
+
+### Directory Structure Example
+
+```
+~/.claude/projects/-Users-rob-code-projects-example/
+├── 343a0493-bc8b-43de-8ca6-5ae9c7394fa2.jsonl  # Main conversation (31KB, 31 lines)
+├── agent-10bae299.jsonl                         # Subagent sidechain (851 bytes, 1 line)
+├── agent-30cc28b5.jsonl                         # Subagent sidechain (851 bytes, 1 line)
+├── agent-4ff1bfb1.jsonl                         # Subagent sidechain (1.4KB, 1 line)
+├── agent-5e0aea26.jsonl                         # Subagent sidechain (1.6KB, 1 line)
+└── ...
+```
+
+### Sidechain File Structure
+
+Sidechain transcript files contain records with these identifying characteristics:
+
+```json
+{
+  "agentId": "10bae299",                              // Matches filename suffix
+  "sessionId": "343a0493-bc8b-43de-8ca6-5ae9c7394fa2", // Parent session UUID
+  "isSidechain": true,                                 // Always true
+  "parentUuid": null,                                  // No parent (isolated context)
+  "userType": "external",
+  "type": "assistant",
+  "message": {
+    "model": "claude-opus-4-5-20251101",
+    "role": "assistant",
+    "content": [{ "type": "text", "text": "I'll start by exploring..." }]
+  }
+}
+```
+
+**Key Fields:**
+- `agentId`: Matches the filename (e.g., file `agent-10bae299.jsonl` has `agentId: "10bae299"`)
+- `sessionId`: Points to the parent main session UUID
+- `isSidechain: true`: Always set on all records in the file
+- `parentUuid: null`: Subagent context is isolated from main conversation threading
+
+### Content Characteristics
+
+- **Typically 1 line:** Single assistant response from the spawned subagent
+- **No user messages:** Subagent transcripts usually contain only the assistant's response
+- **Small file size:** 800 bytes to 2KB typical (vs 10-100KB for main conversations)
+- **`isSidechain: true`:** All records marked as sidechain
+
+### Processing Implications
+
+**Parsing:**
+- Records with `isSidechain: true` should be filtered from timeline display
+- Parser correctly returns 0 displayable entries for sidechain-only transcripts
+
+**Ingestion Priority:**
+- Sidechain files (`agent-*.jsonl`) should be deprioritized during FastPath ingestion
+- Main session files contain user-visible conversation content
+- FastPath sorts non-`agent-*` files first to ensure main content is processed quickly
+
+**Discovery:**
+- Sidechain files are legitimate transcript files and should be discovered
+- They belong to the same project as their parent session
+- Useful for debugging/auditing subagent behavior
+
+### Compatibility Notes
+
+- **Claude Code specific:** This naming convention is specific to Claude Code
+- **Safe for other providers:** No known other providers use the `agent-` prefix
+- **Future changes:** If Anthropic changes the convention, Contextify may need updates
+
 ### References
+
+- **Parser implementation:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+- **FastPath prioritization:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
+- **Format overview:** `build/docs/specifications/transcript-formats.md#sidechainsubagent-transcripts`
+
+---
+
+## References
 
 - **Repair utility:** `scripts/transcript-repair/repair_transcript.py`
 - **Operations guide:** `build/docs/operations/transcript-corruption-detection.md`
