@@ -60,7 +60,7 @@ def run(cmd: list[str] | str, *, capture: bool = True, check: bool = True, cwd: 
             text=True,
             cwd=str(cwd) if cwd else None
         )
-        return res.stdout.strip()
+        return res.stdout.strip() if res.stdout else ""
     except subprocess.CalledProcessError as e:
         print(f"\n✖ Command failed: {' '.join(cmd)}")
         if e.stdout:
