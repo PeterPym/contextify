@@ -22,6 +22,48 @@ Common commands:
 
 **Note:** Build commands launch the app by default. Use `CTX_NO_RUN=1` to skip launching.
 
+## Build Locations
+
+Contextify has two build workflows with different output locations:
+
+### Dev/QA Builds (Scratch)
+
+```bash
+bash scripts/xc.sh --dist=appstore dev-archive
+```
+
+**Output:** `build/Contextify.xcarchive`
+
+Use for:
+- Testing code changes
+- Debugging issues
+- Quick iteration
+- Pre-release QA
+
+These builds are **overwritten** each time you run the command.
+
+### Release Builds (Official)
+
+```bash
+./scripts/release/build.sh X.Y.Z
+```
+
+**Output:** `build/archives/v{VERSION}/appstore/Contextify.xcarchive`
+
+Use for:
+- App Store submission
+- Demo video recording
+- Final QA before release
+- Preserving build artifacts
+
+These builds are **versioned and preserved** for audit trail.
+
+### Why Two Locations?
+
+- **Dev builds** are disposable - you might build 10 times while fixing a bug
+- **Release builds** are artifacts - the exact binary submitted to Apple
+- Scripts like `demo-recording.sh` only use release builds to ensure demo matches submission
+
 ## Building on Linux / Non-macOS Environments
 
 **For Claude Code Web users and Linux environments:**

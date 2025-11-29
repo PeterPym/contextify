@@ -48,7 +48,7 @@ parse_arg() {
     Debug|Release)
       config="$value"
       ;;
-    build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|archive|export-pkg|upload)
+    build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|dev-archive|export-pkg|upload)
       action="$value"
       ;;
     ca)
@@ -85,7 +85,7 @@ parse_arg() {
       exit 1
       ;;
     *)
-      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|ca|da|dr|ar|arp]" >&2
+      echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|logs|dev-archive|ca|da|dr|ar|arp]" >&2
       echo "" >&2
       echo "Options:" >&2
       echo "  --dev              Enable developer mode (shows test buttons)" >&2
@@ -103,7 +103,7 @@ parse_arg() {
       echo "  dr                 Fast cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  ar                 Fast App Store cleanrun (db + perms + app, preserves GRDB/deps)" >&2
       echo "  arp                Fast App Store cleanrun PRESERVING BOOKMARKS (for testing)" >&2
-      echo "  archive            Create Xcode archive for App Store submission" >&2
+      echo "  dev-archive        Create dev/QA archive (scratch build, use release/build.sh for releases)" >&2
       echo "  export-pkg         Export archive as .pkg for App Store Connect" >&2
       echo "  upload             Upload .pkg to App Store Connect via altool" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
@@ -555,12 +555,18 @@ if [[ "$action" == "logs" ]]; then
 fi
 
 # Archive for App Store
+# Scratch location for dev/QA builds (overwritten frequently)
+# For official release builds, use: scripts/release/build.sh X.Y.Z
+#   which archives to: build/archives/v{VERSION}/appstore/
 archive_path="build/Contextify.xcarchive"
 pkg_path="build/appstore/Contextify.pkg"
 export_options_plist="ExportOptions-AppStore.plist"
 
-if [[ "$action" == "archive" ]]; then
-  echo "📦 Creating Xcode archive for App Store submission..."
+if [[ "$action" == "dev-archive" ]]; then
+  echo "📦 Creating Xcode archive (dev/QA scratch build)..."
+  echo "   Location: $archive_path"
+  echo ""
+  echo "   Note: For official release builds, use: scripts/release/build.sh X.Y.Z"
   quit_running_app
 
   # Always use Release for archives
@@ -586,7 +592,9 @@ if [[ "$action" == "archive" ]]; then
   echo ""
   echo "✅ Archive created: $archive_path"
   echo ""
-  echo "Next step: Run 'bash scripts/xc.sh export-pkg' to create the .pkg"
+  echo "Next steps:"
+  echo "  - For dev/QA: open $archive_path/Products/Applications/Contextify.app"
+  echo "  - For release: scripts/release/build.sh X.Y.Z (archives to build/archives/)"
   exit 0
 fi
 
@@ -715,7 +723,7 @@ case "$action" in
     fi
     ;;
   *)
-    echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|seed-demo|logs|ca]" >&2
+    echo "usage: $0 [--dev] [--verbose] [--dist=dmg|appstore] [Debug|Release] [build|test|clean|cleanrun|reset-perms|reset-state|reset-all|dev-archive|logs|ca]" >&2
     echo "Run '$0' without arguments for full help" >&2
     exit 2
     ;;
