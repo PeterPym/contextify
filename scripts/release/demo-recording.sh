@@ -422,18 +422,55 @@ echo ""
 echo "The permission dialog WILL appear when the app launches."
 pause
 
-# Step 4: Launch app
+# Step 4: Install to Applications and Launch
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 4: Launch Archived App"
+echo "  STEP 4: Install to Applications & Launch"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Launching App Store archive build from:"
-echo ""
-echo "  $APP_PATH"
-echo ""
+echo "For a realistic demo, we'll install the archived app to /Applications."
 echo "This is the EXACT binary that will be submitted to Apple."
 echo ""
-open "$APP_PATH"
+echo "Source: $APP_PATH"
+echo "Target: /Applications/Contextify.app"
+echo ""
+
+# Check if already installed
+if [[ -d "/Applications/Contextify.app" ]]; then
+  echo "⚠️  Contextify.app already exists in /Applications"
+  echo "   It will be replaced with the archived build."
+  echo ""
+fi
+
+echo "Press Enter to install to /Applications, or type 'skip' to launch from archive..."
+read -r input
+if [[ "$input" != "skip" ]]; then
+  echo "Installing to /Applications..."
+  rm -rf /Applications/Contextify.app 2>/dev/null || true
+  cp -R "$APP_PATH" /Applications/
+  echo "✅ Installed to /Applications/Contextify.app"
+
+  # Offer to add to Dock
+  echo ""
+  echo "Add to Dock for realistic demo launch? (y/n)"
+  read -r add_dock
+  if [[ "$add_dock" == "y" || "$add_dock" == "Y" ]]; then
+    # Add to Dock using defaults
+    defaults write com.apple.dock persistent-apps -array-add \
+      "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>file:///Applications/Contextify.app</string><key>_CFURLStringType</key><integer>15</integer></dict></dict></dict>"
+    killall Dock
+    sleep 2
+    echo "✅ Added to Dock"
+  fi
+
+  LAUNCH_PATH="/Applications/Contextify.app"
+else
+  LAUNCH_PATH="$APP_PATH"
+fi
+
+echo ""
+echo "Launching from: $LAUNCH_PATH"
+echo ""
+open "$LAUNCH_PATH"
 echo "✅ App launched"
 echo ""
 echo "VERIFY: The app should:"
@@ -459,7 +496,7 @@ echo "  DEMO SCENES TO RECORD"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "Scene 1: PERMISSION DIALOG (Critical for Apple)"
-echo "  - If not shown, quit app and re-launch: open \"$APP_PATH\""
+echo "  - If not shown, quit app and re-launch from Dock or /Applications"
 echo "  - Grant access to ~/.claude/ when prompted"
 echo "  - Pause so viewer can see the dialog text"
 pause
