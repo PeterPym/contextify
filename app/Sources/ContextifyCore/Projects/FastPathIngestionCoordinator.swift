@@ -54,7 +54,8 @@ public actor FastPathIngestionCoordinator {
   /// Returns the database project ID (UUID) for use by caller
   public func ingestProjectJIT(_ project: LightweightProject) async throws -> String {
     let startTime = Date()
-    log.info("[JIT-INGEST] Starting JIT ingestion for project: \(project.displayName, privacy: .public)")
+    // VERIFICATION: Log both LightweightProject.id and the display name for correlation
+    log.info("[JIT-INGEST] Starting JIT ingestion for project: \(project.displayName, privacy: .public) lightweightId=\(project.id, privacy: .public)")
 
     let canonicalRootPath = project.canonicalRootPath
 
@@ -62,7 +63,8 @@ public actor FastPathIngestionCoordinator {
     let projectId: String
     do {
       projectId = try orchestrator.getOrCreateProject(name: project.displayName, rootPath: canonicalRootPath)
-      log.debug("[JIT-INGEST] Project ID: \(projectId, privacy: .public) rootPath: \(canonicalRootPath, privacy: .public)")
+      // VERIFICATION: Log both IDs to track ID mapping (LightweightProject.id vs DB project ID)
+      log.info("[JIT-INGEST-ID-MAP] lightweightId=\(project.id, privacy: .public) dbProjectId=\(projectId, privacy: .public) match=\(project.id == projectId, privacy: .public)")
     } catch {
       log.error("[JIT-INGEST] Failed to get/create project: \(error.localizedDescription, privacy: .public)")
       throw error
@@ -141,6 +143,36 @@ public actor FastPathIngestionCoordinator {
     return ordered
   }
 
+  /// Prioritize transcripts for FastPath processing.
+  /// 1. Non-agent files first (main conversations have displayable content)
+  /// 2. Then by file size descending (larger files = more content)
+  ///
+  /// NOTE: agent-*.jsonl is a Claude Code sidechain/subagent convention.
+  /// These files contain `isSidechain: true` messages that are correctly
+  /// filtered out during parsing, resulting in entries=0.
+  /// Safe for other providers since no known formats use this prefix today.
+  /// See: transcript-formats.md#sidechain-subagent-transcripts
+  ///
+  /// - Parameter transcripts: Array of transcripts to prioritize
+  /// - Returns: Sorted array with main conversations first, then by file size
+  func prioritizeForFastPath(_ transcripts: [Transcript]) -> [Transcript] {
+    transcripts.sorted { lhs, rhs in
+      let lhsName = URL(fileURLWithPath: lhs.filePath).lastPathComponent
+      let rhsName = URL(fileURLWithPath: rhs.filePath).lastPathComponent
+
+      let lhsIsAgent = lhsName.hasPrefix("agent-")
+      let rhsIsAgent = rhsName.hasPrefix("agent-")
+
+      // Non-agent files come first (main conversations)
+      if lhsIsAgent != rhsIsAgent {
+        return !lhsIsAgent
+      }
+
+      // Among same type, larger files first (more content)
+      return (lhs.fileSize ?? 0) > (rhs.fileSize ?? 0)
+    }
+  }
+
   private func processProject(projectId: String) async {
     if cancelled || Task.isCancelled {
       log.info("[FAST-PATH] Skipping project \(projectId, privacy: .public) due to cancellation")
@@ -209,7 +241,8 @@ public actor FastPathIngestionCoordinator {
       return
     }
 
-    let subset = Array(targets.prefix(maxTranscriptsPerProject))
+    // Prioritize main conversation files over sidechain/subagent transcripts
+    let subset = Array(prioritizeForFastPath(targets).prefix(maxTranscriptsPerProject))
     log.info("[FAST-PATH-PROJECT] Processing \(subset.count, privacy: .public) transcripts for project \(projectId, privacy: .public)")
 
     // Only notify UI once per project (on first transcript completion)

@@ -40,9 +40,9 @@ doc_references:
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 17 items - Future enhancements
+- **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 74
+**Total Active Items:** 75
 
 ---
 
@@ -1681,7 +1681,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 
 ---
 
-# P3 (Low Priority / Deferred) - 17 Items
+# P3 (Low Priority / Deferred) - 18 Items
 
 ## Release Workflow Python CLI Refactor (1 item)
 
@@ -2021,6 +2021,38 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
   - `TranscriptMetadataFormatters.swift:21` - `fullStrategyLimit = 25`
 - Should be centralized constant or user preference
 - Low priority: current value works fine, just poor code hygiene
+
+---
+
+## Sidechain Transcript Enhancements (1 item)
+
+**Status:** Backlog - v1 fix shipped, future enhancements identified
+**Priority:** P3 (robustness improvements, no immediate user impact)
+**Effort:** 8-12 hours total
+**Reference:** `build/notes/todo-support/sidechain-transcript-enhancements.md`
+
+- [ ] #P3-SIDECHAIN-ENHANCEMENTS: Implement schema-level and UX improvements for sidechain transcript handling
+
+**Context:**
+The v1 fix for the sidechain transcript bug uses a filename heuristic (`agent-*.jsonl`) to deprioritize sidechain transcripts during FastPath ingestion. These enhancements would improve robustness but are not required for the immediate fix.
+
+**Enhancement 1: DB-level Transcript Kind Column**
+- Add `kind` column to transcripts table (`main`, `sidechain`, `unknown`)
+- Populate on first ingest based on `isSidechain` field
+- FastPath can sort by `kind` instead of filename heuristics
+
+**Enhancement 2: Content-Value-Based Prioritization**
+- Order by "likely to contribute timeline entries"
+- Prioritize transcripts already known to have entries
+- More intelligent than pure file size
+
+**Enhancement 3: Timeline Primer UX for Sidechain-Only Projects**
+- Detect when project has only sidechain transcripts
+- Show appropriate message instead of confusing "waiting for primer entries"
+
+**Related:**
+- Bug fix: Sidechain transcript prioritization (FastPathIngestionCoordinator)
+- Docs: `transcript-formats.md` sidechain naming convention
 
 ---
 
