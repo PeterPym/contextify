@@ -269,6 +269,24 @@ cp -r appstore-metadata/review-materials/sample-transcripts/codex/sessions/* ~/.
 echo ""
 echo "✅ Sample data installed:"
 ls ~/.claude/projects/
+
+# Create stub project directories so Claude Code can be launched
+echo ""
+echo "Creating stub project directories for real-time demo..."
+mkdir -p ~/code/sample-projects/taskflow
+mkdir -p ~/code/sample-projects/recipebox
+mkdir -p ~/code/sample-projects/weatherly
+# Initialize as git repos so Claude Code doesn't complain
+for dir in ~/code/sample-projects/{taskflow,recipebox,weatherly}; do
+  if [ ! -d "$dir/.git" ]; then
+    git -C "$dir" init -q
+    echo "# Sample Project" > "$dir/README.md"
+    git -C "$dir" add README.md
+    git -C "$dir" commit -q -m "Initial commit"
+  fi
+done
+echo "✅ Stub directories created at ~/code/sample-projects/"
+echo "   You can now run: cd ~/code/sample-projects/taskflow && claude"
 pause
 
 # Step 2: Quit app and clean all state (uses shared cleanup from xc.sh)
@@ -436,8 +454,11 @@ if [ "$confirm" = "restore" ]; then
   rm -rf ~/.claude/projects ~/.codex/sessions
   mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
   mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
+  # Clean up stub project directories
+  rm -rf ~/code/sample-projects
   echo ""
   echo "✅ Real transcripts restored!"
+  echo "✅ Stub project directories removed"
   echo ""
   echo "You can now resume using Claude Code and Codex."
 else
@@ -446,6 +467,7 @@ else
   echo "  rm -rf ~/.claude/projects ~/.codex/sessions"
   echo "  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects"
   echo "  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions"
+  echo "  rm -rf ~/code/sample-projects  # Remove stub directories"
 fi
 
 echo ""
