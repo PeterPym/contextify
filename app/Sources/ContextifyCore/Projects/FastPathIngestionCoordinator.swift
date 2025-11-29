@@ -151,7 +151,7 @@ public actor FastPathIngestionCoordinator {
   /// These files contain `isSidechain: true` messages that are correctly
   /// filtered out during parsing, resulting in entries=0.
   /// Safe for other providers since no known formats use this prefix today.
-  /// See: transcript-formats.md#sidechain-subagent-transcripts
+  /// See: transcript-formats.md#sidechainsubagent-transcripts
   ///
   /// - Parameter transcripts: Array of transcripts to prioritize
   /// - Returns: Sorted array with main conversations first, then by file size
@@ -160,8 +160,11 @@ public actor FastPathIngestionCoordinator {
       let lhsName = URL(fileURLWithPath: lhs.filePath).lastPathComponent
       let rhsName = URL(fileURLWithPath: rhs.filePath).lastPathComponent
 
-      let lhsIsAgent = lhsName.hasPrefix("agent-")
-      let rhsIsAgent = rhsName.hasPrefix("agent-")
+      // Only treat as sidechain if it's Claude Code AND has agent- prefix
+      let lhsIsClaude = lhs.provider == "claude.code"
+      let rhsIsClaude = rhs.provider == "claude.code"
+      let lhsIsAgent = lhsIsClaude && lhsName.hasPrefix("agent-")
+      let rhsIsAgent = rhsIsClaude && rhsName.hasPrefix("agent-")
 
       // Non-agent files come first (main conversations)
       if lhsIsAgent != rhsIsAgent {
