@@ -454,8 +454,11 @@ if [ "$confirm" = "restore" ]; then
   rm -rf ~/.claude/projects ~/.codex/sessions
   mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
   mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
+  # Clean up stub project directories
+  rm -rf ~/code/sample-projects
   echo ""
   echo "✅ Real transcripts restored!"
+  echo "✅ Stub project directories removed"
   echo ""
   echo "You can now resume using Claude Code and Codex."
 else
@@ -464,6 +467,7 @@ else
   echo "  rm -rf ~/.claude/projects ~/.codex/sessions"
   echo "  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects"
   echo "  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions"
+  echo "  rm -rf ~/code/sample-projects  # Remove stub directories"
 fi
 
 echo ""
