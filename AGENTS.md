@@ -132,6 +132,11 @@ Common commands:
 - Setup with hooks: `make setup`
 - Database management: `make clean-db` (always asks for approval)
 
+**Build locations:**
+- Dev/QA builds (`xc.sh dev-archive`): `build/Contextify.xcarchive` (scratch, overwritten)
+- Release builds (`release/build.sh`): `build/archives/v{VERSION}/` (preserved)
+- Demo recording and release scripts use ONLY the release location
+
 **Xcode GUI:** Open `Contextify/Contextify.xcodeproj`, scheme `Contextify`, Run on "My Mac"
 
 **For detailed commands:** See `build/docs/guides/DEVELOPMENT.md`

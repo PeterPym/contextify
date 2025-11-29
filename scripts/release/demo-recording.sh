@@ -128,8 +128,8 @@ if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
   exit 0
 fi
 
-# Handle --restore flag for quick recovery after bailing early
-if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" || "${1:-}" == "--reset" || "${1:-}" == "reset" ]]; then
+# Restore function - can be called from --restore flag or from pause() during workflow
+do_restore() {
   echo "Restoring real transcripts from backup..."
   echo ""
 
@@ -138,7 +138,7 @@ if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" || "${1:-}" == "--reset" 
     echo ""
     echo "Tip: If you just have mixed data (real + sample), use --clean instead:"
     echo "  ./scripts/release/demo-recording.sh --clean"
-    exit 1
+    return 1
   fi
 
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
@@ -232,16 +232,28 @@ if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" || "${1:-}" == "--reset" 
   if [[ "$COUNT" -gt 10 ]]; then
     echo "... and $((COUNT - 10)) more"
   fi
-  exit 0
+  return 0
+}
+
+# Handle --restore flag for quick recovery after bailing early
+if [[ "${1:-}" == "--restore" || "${1:-}" == "restore" || "${1:-}" == "--reset" || "${1:-}" == "reset" ]]; then
+  do_restore
+  exit $?
 fi
+
+# Demo recording uses ONLY release builds from build/archives/
+# Dev builds (build/Contextify.xcarchive from xc.sh dev-archive) are not used because:
+# 1. Demo should match the exact binary submitted to Apple
+# 2. Release builds are versioned and auditable
+# 3. Dev builds are scratch and may be overwritten frequently
 
 # Version can be passed as argument or defaults to latest archive
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  # Find latest version directory
+  # Find latest version directory in canonical release location
   LATEST=$(ls -t build/archives/ 2>/dev/null | grep "^v" | head -1)
   if [[ -z "$LATEST" ]]; then
-    echo "❌ No archives found in build/archives/"
+    echo "❌ No release archives found in build/archives/"
     echo "   Run: ./scripts/release/build.sh X.Y.Z"
     exit 1
   fi
@@ -257,8 +269,13 @@ SANDBOX_APP_SUPPORT="$SANDBOX_CONTAINER/Data/Library/Application Support/Context
 
 pause() {
   echo ""
-  echo "Press Enter to continue..."
-  read -r
+  echo "Press Enter to continue, or type 'restore' to restore real transcripts and exit..."
+  read -r input
+  if [[ "$input" == "restore" ]]; then
+    echo ""
+    do_restore
+    exit 0
+  fi
   echo ""
 }
 
