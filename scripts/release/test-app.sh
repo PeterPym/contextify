@@ -67,15 +67,10 @@ done
 
 # Set paths based on distribution
 if [ "$DIST" = "dmg" ]; then
-  # DMG build - check multiple locations
+  # DMG build - check archived location or dist folder
   APP_PATH="build/archives/v${VERSION}/dmg/Contextify.app"
   if [ ! -d "$APP_PATH" ]; then
-    # Try mounted DMG or dist folder
     APP_PATH="dist/Contextify.app"
-  fi
-  if [ ! -d "$APP_PATH" ]; then
-    # Try derived data
-    APP_PATH=".derived/Build/Products/Release/Contextify.app"
   fi
   BUNDLE_ID="dev.contextify.Contextify"
 else
