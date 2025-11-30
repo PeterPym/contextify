@@ -300,6 +300,57 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 echo "✅ Archive verified"
+
+# Check if archive is stale compared to main branch
+echo ""
+echo "Checking archive freshness..."
+ARCHIVE_MTIME=$(stat -f "%m" "$ARCHIVE_PATH/Info.plist" 2>/dev/null)
+if [[ -n "$ARCHIVE_MTIME" ]]; then
+  # Get commits on main since archive was built
+  ARCHIVE_DATE=$(date -r "$ARCHIVE_MTIME" "+%Y-%m-%d %H:%M:%S")
+  COMMITS_SINCE=$(git log main --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null)
+  COMMIT_COUNT=$(echo "$COMMITS_SINCE" | grep -c . 2>/dev/null || echo 0)
+
+  if [[ "$COMMIT_COUNT" -gt 0 ]]; then
+    # Check for fix commits specifically
+    FIX_COMMITS=$(echo "$COMMITS_SINCE" | grep -i "fix" || true)
+    FIX_COUNT=$(echo "$FIX_COMMITS" | grep -c . 2>/dev/null || echo 0)
+
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║  ⚠️  WARNING: ARCHIVE MAY BE STALE                            ║"
+    echo "╠═══════════════════════════════════════════════════════════════╣"
+    echo "║  Archive built: $ARCHIVE_DATE"
+    echo "║  Commits on main since then: $COMMIT_COUNT"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    if [[ "$FIX_COUNT" -gt 0 ]]; then
+      echo "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+      echo "🚨  DANGER: $FIX_COUNT FIX COMMIT(S) NOT IN THIS ARCHIVE!      🚨"
+      echo "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+      echo ""
+      echo "Fix commits missing from archive:"
+      echo "$FIX_COMMITS" | sed 's/^/  /'
+      echo ""
+    fi
+
+    echo "Recent commits not in archive:"
+    echo "$COMMITS_SINCE" | head -10 | sed 's/^/  /'
+    if [[ "$COMMIT_COUNT" -gt 10 ]]; then
+      echo "  ... and $((COMMIT_COUNT - 10)) more"
+    fi
+    echo ""
+    echo "To rebuild: ./scripts/release/build.sh $VERSION --skip-dmg"
+    echo ""
+    echo "Press Enter to continue anyway, or Ctrl+C to abort and rebuild..."
+    read -r
+  else
+    echo "✅ Archive is up-to-date with main branch"
+  fi
+else
+  echo "⚠️  Could not determine archive build time"
+fi
 pause
 
 # Step 1: Backup real data and install sample data
