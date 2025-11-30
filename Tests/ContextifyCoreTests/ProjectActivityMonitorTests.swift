@@ -16,6 +16,7 @@ final class ProjectActivityMonitorTests: XCTestCase {
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
     // Set up database and orchestrator
+    // Note: TranscriptOrchestrator.init accesses dbManager.pool which runs migrations
     let dbPath = tempDir.appendingPathComponent("test.db")
     dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
     orchestrator = try TranscriptOrchestrator(dbManager: dbManager)

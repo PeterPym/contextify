@@ -248,7 +248,7 @@ public actor ProjectActivityMonitor {
     log.debug("ProjectActivity: removed observer \(id) (total: \(self.eventObservers.count))")
   }
 
-  internal func emitEvent(_ event: ProjectEvent) {
+  private func emitEvent(_ event: ProjectEvent) {
     log.debug("ProjectActivity: emitting \(event.kind.rawValue) project=\(event.projectId) to \(self.eventObservers.count) observers")
 
     // Fan out to all observers
@@ -259,9 +259,9 @@ public actor ProjectActivityMonitor {
 
   // MARK: - Test Helpers
 
+  #if DEBUG
   /// Test helper to simulate FSEvents-triggered project discovery
   /// This exposes the core logic of handleFileSystemChange for testing
-  @available(*, deprecated, message: "For testing only")
   internal func simulateTranscriptDiscovery(projectPath: String) async throws -> ProjectEvent.Kind {
     let result = try orchestrator.getOrCreateProject(
       name: URL(fileURLWithPath: projectPath).lastPathComponent,
@@ -271,6 +271,7 @@ public actor ProjectActivityMonitor {
     emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
     return eventKind
   }
+  #endif
 
   private func discoverAllProjects() async throws {
     #if APPSTORE_BUILD
