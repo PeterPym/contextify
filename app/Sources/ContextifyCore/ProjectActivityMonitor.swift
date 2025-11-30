@@ -248,13 +248,28 @@ public actor ProjectActivityMonitor {
     log.debug("ProjectActivity: removed observer \(id) (total: \(self.eventObservers.count))")
   }
 
-  private func emitEvent(_ event: ProjectEvent) {
+  internal func emitEvent(_ event: ProjectEvent) {
     log.debug("ProjectActivity: emitting \(event.kind.rawValue) project=\(event.projectId) to \(self.eventObservers.count) observers")
 
     // Fan out to all observers
     for (_, continuation) in eventObservers {
       continuation.yield(event)
     }
+  }
+
+  // MARK: - Test Helpers
+
+  /// Test helper to simulate FSEvents-triggered project discovery
+  /// This exposes the core logic of handleFileSystemChange for testing
+  @available(*, deprecated, message: "For testing only")
+  internal func simulateTranscriptDiscovery(projectPath: String) async throws -> ProjectEvent.Kind {
+    let result = try orchestrator.getOrCreateProject(
+      name: URL(fileURLWithPath: projectPath).lastPathComponent,
+      rootPath: projectPath
+    )
+    let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
+    emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
+    return eventKind
   }
 
   private func discoverAllProjects() async throws {
@@ -679,7 +694,7 @@ public actor ProjectActivityMonitor {
             )
           }
 
-          log.info("✅ Emitted \(result.wasCreated ? ".discovered" : ".transcriptUpdated", privacy: .public) event for project: \(result.projectId, privacy: .public)")
+          log.info("✅ Emitted project event kind=\(eventKind.rawValue, privacy: .public) project=\(result.projectId, privacy: .public)")
         } catch {
           log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }

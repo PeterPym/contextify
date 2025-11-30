@@ -313,6 +313,11 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     return ProjectLookupResult(projectId: projectId, wasCreated: true)
   }
 
+  /// Convenience method for callers that only need the project ID
+  public func getOrCreateProjectId(name: String?, rootPath: String, bookmark: Data? = nil) throws -> String {
+    try getOrCreateProject(name: name, rootPath: rootPath, bookmark: bookmark).projectId
+  }
+
   public func listProjects() throws -> [Project] {
     try projectRepo.list()
   }
