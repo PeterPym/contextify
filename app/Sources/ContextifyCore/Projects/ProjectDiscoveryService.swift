@@ -368,7 +368,9 @@ public actor ProjectDiscoveryService {
       claudeCandidates.forEach {
         recordCandidate(Candidate(projectPath: $0.projectPath, transcriptFile: $0.transcriptFile, mtime: $0.mtime, provider: .claudeCode))
       }
-      let claudeBaseline = Dictionary(uniqueKeysWithValues: claudeCandidates.map { ($0.projectPath.path, $0.mtime) })
+      // Use uniquingKeysWith to handle edge cases where multiple transcripts map to same path
+      // (e.g., orphaned projects that fell through, symlinks, format migrations)
+      let claudeBaseline = Dictionary(claudeCandidates.map { ($0.projectPath.path, $0.mtime) }, uniquingKeysWith: max)
       logger.info("[QUICK-DISCOVERY] Claude scan found \(claudeCandidates.count) projects")
 
       // PART 2: Scan Codex CLI transcripts (~/.codex/sessions/YYYY/MM/DD/*.jsonl)
@@ -639,9 +641,23 @@ public actor ProjectDiscoveryService {
     }
   }
 
+  /// Hint type for path extraction - determines whether parent traversal is allowed
+  enum PathHintKind {
+    case cwdLike   // cwd, workspaceRoot, root, projectRoot - should be exact directory
+    case fileLike  // path, file - may need parent traversal to find project root
+  }
+
   /// Reverses Claude Code directory name back to original project path
   /// Uses JSONL content inspection for robust path detection, with heuristic fallback
-  private nonisolated func reversePathMapping(dirURL: URL) -> URL? {
+  ///
+  /// For cwdLike hints (cwd, workspaceRoot, etc.): returns nil if directory doesn't exist
+  /// (indicates orphaned project - directory was deleted after transcript created)
+  ///
+  /// For fileLike hints (path, file): allows parent traversal to find project root
+  ///
+  /// - Parameter dirURL: The Claude Code transcript directory (e.g., ~/.claude/projects/-Users-rob-code-myproject/)
+  /// - Returns: The resolved project path URL, or nil if the project appears to be orphaned
+  nonisolated func reversePathMapping(dirURL: URL) -> URL? {
     let fm = FileManager.default
 
     // Try to find a JSONL file in this directory
@@ -659,14 +675,14 @@ public actor ProjectDiscoveryService {
     if let data = try? Data(contentsOf: jsonl, options: .mappedIfSafe),
        let text = String(data: data.prefix(131_072), encoding: .utf8) {
 
-      // Look for common fields containing absolute paths
-      let patterns = [
-        #""(?:cwd|workspaceRoot|root|projectRoot)"\s*:\s*"(/[^"]+)""#,
-        #""path"\s*:\s*"(/[^"]+)""#,
-        #""file"\s*:\s*"(/[^"]+)""#
+      // Patterns with their hint types - cwdLike should NOT use parent traversal
+      let hints: [(kind: PathHintKind, pattern: String)] = [
+        (.cwdLike, #""(?:cwd|workspaceRoot|root|projectRoot)"\s*:\s*"(/[^"]+)""#),
+        (.fileLike, #""path"\s*:\s*"(/[^"]+)""#),
+        (.fileLike, #""file"\s*:\s*"(/[^"]+)""#)
       ]
 
-      for pattern in patterns {
+      for (kind, pattern) in hints {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
         let range = NSRange(text.startIndex..., in: text)
 
@@ -676,21 +692,41 @@ public actor ProjectDiscoveryService {
           if let swiftRange = Range(pathRange, in: text) {
             let extractedPath = String(text[swiftRange])
 
-            // Validate it's a directory that exists
             var isDir: ObjCBool = false
-            if fm.fileExists(atPath: extractedPath, isDirectory: &isDir), isDir.boolValue {
-              logger.debug("Found project path via JSONL inspection: \(extractedPath)")
-              return URL(fileURLWithPath: extractedPath)
-            }
 
-            // Try parent directories (in case we found a file path)
-            var parent = URL(fileURLWithPath: extractedPath).deletingLastPathComponent()
-            for _ in 0..<3 {
-              if fm.fileExists(atPath: parent.path, isDirectory: &isDir), isDir.boolValue {
-                logger.debug("Found project path via parent traversal: \(parent.path)")
-                return parent
+            switch kind {
+            case .cwdLike:
+              // For cwd-like hints: path must exist as-is, no parent traversal.
+              // cwd is authoritative - if it's missing, we treat this as an orphaned project
+              // and return nil immediately. We intentionally do NOT fall back to fileLike
+              // hints or reverseManglePath because a stale cwd indicates the project root
+              // was deleted/moved, and guessing from file paths risks mis-mapping multiple
+              // orphans to the same parent directory (which caused the original crash).
+              if fm.fileExists(atPath: extractedPath, isDirectory: &isDir), isDir.boolValue {
+                logger.debug("Found project path via JSONL cwd inspection: \(extractedPath)")
+                return URL(fileURLWithPath: extractedPath)
+              } else {
+                logger.debug("Orphan detected: cwd points to missing directory: \(extractedPath)")
+                return nil
               }
-              parent = parent.deletingLastPathComponent()
+
+            case .fileLike:
+              // For file-like hints: check if it's a directory, or traverse parents
+              if fm.fileExists(atPath: extractedPath, isDirectory: &isDir) {
+                if isDir.boolValue {
+                  logger.debug("Found project path via JSONL file inspection: \(extractedPath)")
+                  return URL(fileURLWithPath: extractedPath)
+                }
+                // It's a file - try parent directories to find project root
+                var parent = URL(fileURLWithPath: extractedPath).deletingLastPathComponent()
+                for _ in 0..<3 {
+                  if fm.fileExists(atPath: parent.path, isDirectory: &isDir), isDir.boolValue {
+                    logger.debug("Found project path via parent traversal: \(parent.path)")
+                    return parent
+                  }
+                  parent = parent.deletingLastPathComponent()
+                }
+              }
             }
           }
         }
