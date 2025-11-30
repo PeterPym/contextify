@@ -44,6 +44,17 @@ public struct ResolvedTranscript: Sendable {
   }
 }
 
+/// Result from getOrCreateProject indicating whether project was newly created
+public struct ProjectLookupResult: Sendable {
+  public let projectId: String
+  public let wasCreated: Bool
+
+  public init(projectId: String, wasCreated: Bool) {
+    self.projectId = projectId
+    self.wasCreated = wasCreated
+  }
+}
+
 /// Pipeline readiness state for gating UI
 public struct PipelineReadiness: Sendable {
   public var discoveryComplete: Bool
@@ -278,14 +289,14 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectRepo.create(name: name, rootPath: rootPath, bookmark: bookmark)
   }
 
-  public func getOrCreateProject(name: String?, rootPath: String, bookmark: Data? = nil) throws -> String {
+  public func getOrCreateProject(name: String?, rootPath: String, bookmark: Data? = nil) throws -> ProjectLookupResult {
     // Try to find existing project by canonicalized path
     let canon = PathUtils.canonicalizePath(rootPath)
     if let existing = try projectRepo.list().first(where: { $0.rootPath == canon }) {
       if LoggingConfig.enableVerboseProjectDiscovery {
         log.debug("Found existing project: \(existing.id) for path: \(canon)")
       }
-      return existing.id
+      return ProjectLookupResult(projectId: existing.id, wasCreated: false)
     }
 
     // Create new project
@@ -299,7 +310,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       log.error("❌ Project creation failed - cannot retrieve project \(projectId)")
     }
 
-    return projectId
+    return ProjectLookupResult(projectId: projectId, wasCreated: true)
   }
 
   public func listProjects() throws -> [Project] {

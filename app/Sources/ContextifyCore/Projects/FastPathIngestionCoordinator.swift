@@ -62,7 +62,7 @@ public actor FastPathIngestionCoordinator {
     // 1. Ensure project exists in DB (mapping Path → UUID)
     let projectId: String
     do {
-      projectId = try orchestrator.getOrCreateProject(name: project.displayName, rootPath: canonicalRootPath)
+      projectId = try orchestrator.getOrCreateProject(name: project.displayName, rootPath: canonicalRootPath).projectId
       // VERIFICATION: Log both IDs to track ID mapping (LightweightProject.id vs DB project ID)
       log.info("[JIT-INGEST-ID-MAP] lightweightId=\(project.id, privacy: .public) dbProjectId=\(projectId, privacy: .public) match=\(project.id == projectId, privacy: .public)")
     } catch {

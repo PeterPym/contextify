@@ -1051,7 +1051,7 @@ public actor ProjectDiscoveryService {
     let projectId = try orchestrator.getOrCreateProject(
       name: deriveProjectName(from: projectPath),
       rootPath: projectPath.path
-    )
+    ).projectId
     logger.info("Ingesting Claude transcripts for project_id: \(projectId, privacy: .public) (path: \(projectPath.path, privacy: .public))")
 
     // Prepare discovered transcripts
@@ -1108,7 +1108,7 @@ public actor ProjectDiscoveryService {
     let projectId = try orchestrator.getOrCreateProject(
       name: deriveProjectName(from: projectPath),
       rootPath: projectPath.path
-    )
+    ).projectId
 
     let discovered = files.map { file in
       DiscoveredTranscript(
