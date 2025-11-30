@@ -33,20 +33,20 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-27
+**Last Updated:** 2025-11-29
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
+- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 75
+**Total Active Items:** 80
 
 ---
 
-# P0 (Launch Critical) - 2 Items
+# P0 (Launch Critical) - 3 Items
 
 ---
 
@@ -136,7 +136,39 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-# P1 (High Priority) - 20 Items
+## #P0-NEW-PROJECT-DISCOVERY: New projects not detected until app restart
+
+**Status:** Bug - confirmed, blocks live monitoring UX
+**Priority:** P0 (core value prop broken)
+**Effort:** 1-2 hours
+
+**Issue:**
+When user creates a new project folder and runs Claude Code in it, Contextify does not detect the new project in real-time. The tab only appears after app restart.
+
+**Root Cause:**
+- FSEvents fires for new `.jsonl` files in `~/.claude/projects/`
+- `handleFileSystemChange()` calls `getOrCreateProject()` which creates project in DB
+- But it always emits `.transcriptUpdated` event, never `.discovered`
+- `.transcriptUpdated` handler only updates unread counts, doesn't refresh project list
+- App Store builds are worse: FSEvents monitoring is disabled entirely (`#if !APPSTORE_BUILD`)
+
+**Fix:**
+1. Change `getOrCreateProject()` to return `(projectId, wasCreated)` tuple
+2. In `handleFileSystemChange()`, emit `.discovered` if `wasCreated == true`
+3. Consider enabling FSEvents for App Store builds (or alternative discovery trigger)
+
+**Files:**
+- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:654-669` - emits wrong event
+- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:281-303` - getOrCreateProject
+- `Contextify/Contextify/ProjectSwitcherState.swift:887-890` - transcriptUpdated handler
+
+**Testing:**
+- Add SPM test: new project creation emits `.discovered` event
+- Add SPM test: existing project update emits `.transcriptUpdated` event
+
+---
+
+# P1 (High Priority) - 22 Items
 
 ---
 
@@ -890,6 +922,83 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 **Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
 **Related:** P1-CONVO-SEARCH spec section 5.4 (surrounding context query)
+
+---
+
+## App Store Permissions Modal (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (critical for App Store build, blocks discovery)
+**Effort:** 1-2 hours
+
+- [ ] #P1-PERMISSIONS-MODAL: Verify Settings permissions modal correctly triggers discovery workflow
+
+**Problem:**
+Need to verify that when user grants permissions via Settings > Permissions modal, the app correctly kicks off the discovery workflow to find and display projects.
+
+**Testing Required:**
+1. Launch App Store build with no permissions granted
+2. Open Settings > Permissions modal
+3. Grant access to ~/.claude and/or ~/.codex
+4. Verify discovery runs and projects appear in tab bar
+5. Verify timeline populates for auto-selected project
+
+**Files:**
+- Settings/Permissions view (grant action handler)
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (discovery trigger)
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`
+
+**Acceptance Criteria:**
+- [ ] Granting permissions triggers discovery workflow
+- [ ] Projects appear in tab bar after granting access
+- [ ] Timeline populates correctly after permissions granted
+- [ ] No manual refresh or restart required
+
+**Related:**
+- #P1-APPSTORE-NO-PERMISSIONS-UX (UI when permissions not granted)
+- #P1-DISCOVERY-QA (project auto-discovery QA)
+
+---
+
+## App Store No-Permissions UX (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (critical for App Store build UX, affects demo/review)
+**Effort:** 2-3 hours
+
+- [ ] #P1-APPSTORE-NO-PERMISSIONS-UX: Improve UI when permissions haven't been granted in App Store builds
+
+**Problem:**
+When App Store build launches without permissions granted:
+1. "Open project..." link is misleading - implies file picker, not permissions
+2. "Loading conversation..." with spinner suggests waiting for data, not waiting for permissions
+
+**Solution:**
+
+**1. Replace "Open project..." link (~30 min)**
+- Change to "Allow Permissions..." or "Grant Access..."
+- Clicking opens the Settings > Permissions modal (not file picker)
+
+**2. Fix Conversation Log empty state (~1.5 hours)**
+- Remove spinner when no permissions granted
+- Display explanatory text: "Contextify needs access to provider transcripts to get started"
+- Offer two actions:
+  - Reference the "Allow Permissions..." link above
+  - "Learn more" link → opens browser to contextify.sh (eventually a dedicated privacy/permissions page)
+
+**Files:**
+- `Contextify/Contextify/ContentView.swift` (Open project link location)
+- `Contextify/Contextify/ConversationMonitor.swift` (loading state detection)
+- `Contextify/Contextify/ConversationTimelineView.swift` (empty state UI)
+
+**Acceptance Criteria:**
+- [ ] "Open project..." replaced with "Allow Permissions..." that opens permissions modal
+- [ ] Conversation Log shows informative message instead of spinner when no permissions
+- [ ] "Learn more" link opens contextify.sh in browser
+
+**Related:**
+- #P1-PERMISSIONS-MODAL (verify modal triggers discovery)
+- App Store demo recording (user needs to understand what to do on first launch)
 
 ---
 
