@@ -983,7 +983,7 @@ struct TranscriptInventoryView: View {
       let projectId = try orchestrator.getOrCreateProject(
         name: projectRoot.lastPathComponent,
         rootPath: projectRoot.path
-      )
+      ).projectId
 
       // Convert TranscriptSessions to DiscoveredTranscripts
       let discovered = sessions.map { session in

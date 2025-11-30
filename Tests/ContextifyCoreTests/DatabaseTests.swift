@@ -841,6 +841,67 @@ final class DatabaseTests: XCTestCase {
     XCTAssertTrue(indexes.contains("idx_tr_ingest_state_updated_at"), "Index for ingest_state should exist")
   }
 
+  // MARK: - Project Discovery Tests
+
+  func testGetOrCreateProjectReturnsWasCreatedTrueForNewProject() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    _ = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    // First call should create a new project
+    let result = try orchestrator.getOrCreateProject(
+      name: "New Project",
+      rootPath: "/test/new-project"
+    )
+
+    XCTAssertTrue(result.wasCreated, "First call should indicate project was created")
+    XCTAssertFalse(result.projectId.isEmpty, "Project ID should not be empty")
+  }
+
+  func testGetOrCreateProjectReturnsWasCreatedFalseForExistingProject() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    _ = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    // First call creates the project
+    let firstResult = try orchestrator.getOrCreateProject(
+      name: "Existing Project",
+      rootPath: "/test/existing-project"
+    )
+    XCTAssertTrue(firstResult.wasCreated, "First call should create project")
+
+    // Second call with same path should find existing project
+    let secondResult = try orchestrator.getOrCreateProject(
+      name: "Existing Project",
+      rootPath: "/test/existing-project"
+    )
+
+    XCTAssertFalse(secondResult.wasCreated, "Second call should find existing project")
+    XCTAssertEqual(secondResult.projectId, firstResult.projectId, "Should return same project ID")
+  }
+
+  func testGetOrCreateProjectReturnsSameIdForSamePath() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    _ = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    // Create project
+    let result1 = try orchestrator.getOrCreateProject(name: "Project", rootPath: "/test/path")
+
+    // Call again with same path but different name (name is ignored for lookup)
+    let result2 = try orchestrator.getOrCreateProject(name: "Different Name", rootPath: "/test/path")
+
+    XCTAssertEqual(result1.projectId, result2.projectId, "Same path should return same project ID")
+    XCTAssertTrue(result1.wasCreated)
+    XCTAssertFalse(result2.wasCreated)
+  }
+
   // MARK: - Helpers
 
   private func makeMigratedPool(at url: URL) throws -> DatabasePool {

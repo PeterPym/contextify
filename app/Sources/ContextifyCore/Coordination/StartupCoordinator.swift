@@ -584,7 +584,7 @@ public final class StartupCoordinator {
                 let projectId = try orchestrator.getOrCreateProject(
                     name: name,
                     rootPath: path
-                )
+                ).projectId
                 self.log.info("[UIOPT-COORD-DB-PROJ-DONE] getOrCreateProject returned in \(String(format: "%.0f", Date().timeIntervalSince(projStart) * 1000), privacy: .public)ms")
 
                 let taskElapsed = Date().timeIntervalSince(taskStart)

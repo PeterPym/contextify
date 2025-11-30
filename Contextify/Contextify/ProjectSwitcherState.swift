@@ -822,7 +822,7 @@ public final class ProjectSwitcherState {
       let projectId = try orchestrator.getOrCreateProject(
         name: currentRoot.lastPathComponent,
         rootPath: projectPath
-      )
+      ).projectId
 
       // Set as active project
       await MainActor.run {

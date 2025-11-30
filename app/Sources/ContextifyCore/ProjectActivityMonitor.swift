@@ -257,6 +257,22 @@ public actor ProjectActivityMonitor {
     }
   }
 
+  // MARK: - Test Helpers
+
+  #if DEBUG
+  /// Test helper to simulate FSEvents-triggered project discovery
+  /// This exposes the core logic of handleFileSystemChange for testing
+  internal func simulateTranscriptDiscovery(projectPath: String) async throws -> ProjectEvent.Kind {
+    let result = try orchestrator.getOrCreateProject(
+      name: URL(fileURLWithPath: projectPath).lastPathComponent,
+      rootPath: projectPath
+    )
+    let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
+    emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
+    return eventKind
+  }
+  #endif
+
   private func discoverAllProjects() async throws {
     #if APPSTORE_BUILD
     log.info("[DISC-SCAN-SKIP] Skipping core discovery in sandbox (app layer handles this)")
@@ -386,7 +402,7 @@ public actor ProjectActivityMonitor {
         let dbProjectId = try orchestrator.getOrCreateProject(
           name: URL(fileURLWithPath: projectPath).lastPathComponent,
           rootPath: projectPath
-        )
+        ).projectId
 
         // Discover and hoover all transcript files for this project
         let transcriptFiles = try FileManager.default.contentsOfDirectory(
@@ -540,7 +556,7 @@ public actor ProjectActivityMonitor {
         let dbProjectId = try orchestrator.getOrCreateProject(
           name: URL(fileURLWithPath: projectPath).lastPathComponent,
           rootPath: projectPath
-        )
+        ).projectId
 
         if discoveredActiveProjectId == nil,
            let activePath = activeProjectPath,
@@ -653,31 +669,33 @@ public actor ProjectActivityMonitor {
       // Hoover first, emit event only after completion
       Task {
         do {
-          let dbProjectId = try await orchestrator.getOrCreateProject(
+          let result = try await orchestrator.getOrCreateProject(
             name: URL(fileURLWithPath: projPath).lastPathComponent,
             rootPath: projPath
           )
           try await orchestrator.discoverTranscript(
-            projectId: dbProjectId,
+            projectId: result.projectId,
             fileURL: url,
             provider: providerString,
             providerSessionId: sessionId,
             startWatching: true,
             progress: nil
           )
-          // Emit only after hoover finishes (use dbProjectId for database lookups)
-          await self.emitEvent(ProjectEvent(projectId: dbProjectId, kind: .transcriptUpdated))
+          // Emit correct event based on whether project was newly created
+          // .discovered triggers project list refresh, .transcriptUpdated only updates unread counts
+          let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
+          await self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
 
           // Also post NotificationCenter event for ConversationMonitor compatibility
           await MainActor.run {
             NotificationCenter.default.post(
               name: Notification.Name("TranscriptUpdated"),
               object: nil,
-              userInfo: ["projectId": dbProjectId]
+              userInfo: ["projectId": result.projectId]
             )
           }
 
-          log.info("✅ Emitted events for transcript update: dbProjectId=\(dbProjectId)")
+          log.info("✅ Emitted project event kind=\(eventKind.rawValue, privacy: .public) project=\(result.projectId, privacy: .public)")
         } catch {
           log.error("FSEvents: hoover failed for \(sessionId, privacy: .public): \(String(describing: error), privacy: .public)")
         }

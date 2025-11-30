@@ -383,7 +383,7 @@ struct ContextifyApp: App {
           do {
             // Ensure project exists in database before switching
             let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
 
             // Now switch to the project
             try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
@@ -405,7 +405,7 @@ struct ContextifyApp: App {
           // Even if no switch, still ingest newest transcript for fast timeline
           do {
             let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
 
             await ingestNewestTranscript(
               projectId: projectId,
@@ -609,7 +609,7 @@ struct ContextifyApp: App {
               do {
                 // Ensure project exists in database before switching
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
 
                 // Now switch to the project
                 try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
@@ -632,7 +632,7 @@ struct ContextifyApp: App {
               // PHASE 2: Even if no switch, still ingest newest transcript for fast timeline
               do {
                 let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path)
+                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
 
                 await Self.ingestNewestTranscript(
                   projectId: projectId,
