@@ -307,25 +307,27 @@ def main() -> None:
 
     sha_path = write_sha_file(dmg_path)
 
-    # Step 6: Create GitHub release
-    release_notes = f"""Contextify {next_ver}
-
-## Installation
-
-1. Download `Contextify-{next_ver}.dmg`
-2. Open the DMG and drag Contextify.app to Applications
-3. Launch Contextify from Applications
-
-## Verification
-
-SHA256: `{sha_path.read_text().split()[0]}`
-
-## Changes
-
-See commit history for details.
-"""
-
-    gh_release(next_ver, dmg_path, sha_path, release_notes)
+    # Step 6: Create GitHub release (disabled for now - using Dropbox archives)
+    # TODO: Re-enable when ready to use GitHub Releases for distribution
+    # release_notes = f"""Contextify {next_ver}
+    #
+    # ## Installation
+    #
+    # 1. Download `Contextify-{next_ver}.dmg`
+    # 2. Open the DMG and drag Contextify.app to Applications
+    # 3. Launch Contextify from Applications
+    #
+    # ## Verification
+    #
+    # SHA256: `{sha_path.read_text().split()[0]}`
+    #
+    # ## Changes
+    #
+    # See commit history for details.
+    # """
+    #
+    # gh_release(next_ver, dmg_path, sha_path, release_notes)
+    print("⏭️  Skipping GitHub release upload (disabled)")
 
     print("\n" + "="*60)
     print("✅ RELEASE COMPLETE!")

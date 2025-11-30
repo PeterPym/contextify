@@ -179,6 +179,8 @@ echo -e "${BLUE}==>${NC} Archiving artifacts..."
 if [ "$DRY_RUN" = false ]; then
   # App Store artifacts
   if [ "$SKIP_APPSTORE" = false ] && [ -d "$ROOT_DIR/build/Contextify.xcarchive" ]; then
+    # Remove existing archive to prevent nesting (cp -R into existing dir creates subdirs)
+    rm -rf "$ARCHIVE_DIR/appstore/Contextify.xcarchive"
     cp -R "$ROOT_DIR/build/Contextify.xcarchive" "$ARCHIVE_DIR/appstore/Contextify.xcarchive"
     echo -e "${GREEN}OK${NC} Archived: appstore/Contextify.xcarchive"
   fi
