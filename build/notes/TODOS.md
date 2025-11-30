@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 80
+**Total Active Items:** 79
 
 ---
 
-# P0 (Launch Critical) - 3 Items
+# P0 (Launch Critical) - 2 Items
 
 ---
 
@@ -133,38 +133,6 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 - `scripts/release/demo-recording.sh:153-160` - reset logic (now fixed)
 
 **History:** Previously tracked, thought resolved, recurred during demo recording session.
-
----
-
-## #P0-NEW-PROJECT-DISCOVERY: New projects not detected until app restart
-
-**Status:** Bug - confirmed, blocks live monitoring UX
-**Priority:** P0 (core value prop broken)
-**Effort:** 1-2 hours
-
-**Issue:**
-When user creates a new project folder and runs Claude Code in it, Contextify does not detect the new project in real-time. The tab only appears after app restart.
-
-**Root Cause:**
-- FSEvents fires for new `.jsonl` files in `~/.claude/projects/`
-- `handleFileSystemChange()` calls `getOrCreateProject()` which creates project in DB
-- But it always emits `.transcriptUpdated` event, never `.discovered`
-- `.transcriptUpdated` handler only updates unread counts, doesn't refresh project list
-- App Store builds are worse: FSEvents monitoring is disabled entirely (`#if !APPSTORE_BUILD`)
-
-**Fix:**
-1. Change `getOrCreateProject()` to return `(projectId, wasCreated)` tuple
-2. In `handleFileSystemChange()`, emit `.discovered` if `wasCreated == true`
-3. Consider enabling FSEvents for App Store builds (or alternative discovery trigger)
-
-**Files:**
-- `app/Sources/ContextifyCore/ProjectActivityMonitor.swift:654-669` - emits wrong event
-- `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift:281-303` - getOrCreateProject
-- `Contextify/Contextify/ProjectSwitcherState.swift:887-890` - transcriptUpdated handler
-
-**Testing:**
-- Add SPM test: new project creation emits `.discovered` event
-- Add SPM test: existing project update emits `.transcriptUpdated` event
 
 ---
 
