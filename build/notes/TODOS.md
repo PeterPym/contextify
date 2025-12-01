@@ -33,16 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-29
+**Last Updated:** 2025-12-01
 **Status:** Active
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 39 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 79
+**Total Active Items:** 81
 
 ---
 
@@ -998,7 +998,7 @@ When App Store build launches without permissions granted:
 
 ---
 
-# P2 (Medium Priority) - 38 Items
+# P2 (Medium Priority) - 39 Items
 
 ---
 
@@ -1035,6 +1035,31 @@ When displaying search results, check if the current project's indexing is compl
 **Related:**
 - #P1-CONVO-SEARCH (search implementation - this todo applies once search exists)
 - `.backgroundIngestProgress` notification (already broadcasts remaining count)
+
+---
+
+## #P2-ACTIVATION-ORCH-UNIFICATION: Single orchestrator + activation façade
+
+**Status:** Not Started
+**Priority:** P2 (architecture hardening)
+**Effort:** 4-6 hours
+
+**Problem:**
+Project activation and ingestion bounce across multiple `TranscriptOrchestrator` instances (AppStateOrchestrator, ProjectSwitcherState fallback, quick-discovery scratch instance). Nil-orchestrator paths in `switchToProject` silently no-op, and sandbox builds risk using orchestrators without access providers. Activation logic is smeared across `ContextifyApp`, quick discovery, ProjectSwitcherState, StartupCoordinator, and AppStateOrchestrator.
+
+**Solution:**
+Unify around one shared orchestrator and a small activation façade so quick-discovery, tab switches, and welcome flows publish contexts through the same path and always have access provider coverage. Add observability for ingestion vs context delays.
+
+**Implementation:**
+1. Configure `ProjectSwitcherState` with the shared orchestrator created in `initializeProjectsSystem` (access-provider aware); treat lazy creation as diagnostics-only.
+2. Extract a lightweight `ProjectActivationService` (AppStateOrchestrator-backed) used by quick discovery, keyboard switching, and welcome modal to publish contexts consistently.
+3. Add time-to-first-feed and entry-count logging in `ConversationMonitor`/`ProjectSwitcherState` to distinguish ingestion lag from context publication.
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift`
+- `Contextify/Contextify/ProjectSwitcherState.swift`
+- `Contextify/Contextify/ConversationMonitor.swift`
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
 
 ---
 

@@ -107,6 +107,31 @@ public final class ProjectSwitcherState {
     self.orchestrator = orchestrator
   }
 
+  // MARK: - Configuration
+
+  @MainActor
+  public func configureSharedOrchestrator(_ orchestrator: TranscriptOrchestrator) {
+    self.orchestrator = orchestrator
+    log.info("[SWITCHER-ORCH] Using shared TranscriptOrchestrator instance")
+  }
+
+  @MainActor
+  private func ensureOrchestrator() -> TranscriptOrchestrator? {
+    if let orchestrator {
+      return orchestrator
+    }
+
+    do {
+      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+      self.orchestrator = orchestrator
+      log.info("[SWITCHER-ORCH] Lazily initialized orchestrator")
+      return orchestrator
+    } catch {
+      log.error("[SWITCHER-ORCH-ERROR] Failed to initialize TranscriptOrchestrator: \(error.localizedDescription)")
+      return nil
+    }
+  }
+
   // MARK: - Lifecycle
 
   /// Start monitoring (idempotent)
@@ -119,17 +144,7 @@ public final class ProjectSwitcherState {
     isStarted = true
     log.info("ProjectSwitcher: starting")
 
-    // Initialize orchestrator if not already set
-    if orchestrator == nil {
-      do {
-        orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-      } catch {
-        log.error("Failed to initialize TranscriptOrchestrator: \(error.localizedDescription)")
-        return
-      }
-    }
-
-    guard let orchestrator = orchestrator else {
+    guard let orchestrator = ensureOrchestrator() else {
       log.error("TranscriptOrchestrator not available")
       return
     }
@@ -265,7 +280,7 @@ public final class ProjectSwitcherState {
 
   /// Refresh projects from database
   public func refreshProjects() async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     log.info("[SWITCHER-REFRESH] Starting refresh of project list")
 
@@ -396,7 +411,7 @@ public final class ProjectSwitcherState {
 
   /// Refresh unread counts for all projects
   public func refreshUnreadCounts() async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     do {
       let counts = try orchestrator.getUnreadCounts()
@@ -411,7 +426,7 @@ public final class ProjectSwitcherState {
 
   /// Refresh unread counts for specific projects (for coalescing)
   private func refreshUnreadCounts(for projectIds: [String]) async {
-    guard let orchestrator = orchestrator, !projectIds.isEmpty else { return }
+    guard let orchestrator = ensureOrchestrator(), !projectIds.isEmpty else { return }
 
     do {
       let pairs = try orchestrator.getUnreadCounts(projectIds: projectIds)
@@ -501,8 +516,9 @@ public final class ProjectSwitcherState {
     let switchStart = Date()
     log.info("[UIOPT-SWITCH-START] switchToProject() called for: \(projectId, privacy: .public)")
 
-    guard let orchestrator = orchestrator else {
-      log.error("[UIOPT-SWITCH-ERROR] No orchestrator available")
+    guard let orchestrator = ensureOrchestrator() else {
+      log.error("[UIOPT-SWITCH-ERROR] Cannot switch: orchestrator unavailable after ensure()")
+      await AppStateOrchestrator.shared.selectProject(id: projectId)
       return
     }
 
@@ -633,13 +649,13 @@ public final class ProjectSwitcherState {
 
   /// Get full project details (for checking orphaned status, etc.)
   public func getProjectDetails(_ projectId: String) async -> Project? {
-    guard let orchestrator = orchestrator else { return nil }
+    guard let orchestrator = ensureOrchestrator() else { return nil }
     return try? orchestrator.getProject(id: projectId)
   }
 
   /// Hide a project from the switcher tabs
   public func hideProject(_ projectId: String) async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     do {
       // Update hidden state
@@ -656,7 +672,7 @@ public final class ProjectSwitcherState {
 
   /// Unhide a project (must be called from management UI)
   public func unhideProject(_ projectId: String) async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     do {
       // Update hidden state
@@ -673,7 +689,7 @@ public final class ProjectSwitcherState {
 
   /// Restore all hidden projects at once
   public func restoreAllHiddenProjects() async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     do {
       // Update all hidden projects in bulk
@@ -690,7 +706,7 @@ public final class ProjectSwitcherState {
 
   /// Reorder projects by updating display_order for all projects atomically
   public func reorderProjects(_ orderedProjectIds: [String]) async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     // OPTIMIZATION: Update UI immediately without waiting for DB/FS operations
     // Reorder visible tab projects first, then append any remaining (orphans)
@@ -804,7 +820,7 @@ public final class ProjectSwitcherState {
   }
 
   private func ensureCurrentProjectInDatabase() async {
-    guard let orchestrator = orchestrator else { return }
+    guard let orchestrator = ensureOrchestrator() else { return }
 
     // Get current project from HUDViewModel
     // Note: On clean startup, this might be nil if HUD hasn't loaded yet.

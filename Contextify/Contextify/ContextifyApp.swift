@@ -168,8 +168,7 @@ struct ContextifyApp: App {
 
       // PHASE 2: Start legacy coordinators (for now - will migrate later)
       await StartupCoordinator.shared.start()
-      ProjectSwitcherState.shared.start()
-      startupLog.info("✅ Legacy coordinators started")
+      startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
     }
   }
 
@@ -377,7 +376,7 @@ struct ContextifyApp: App {
         log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
         do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          let orchestrator = projectsVM.orchestrator
           let projectId = try await activateProjectForQuickDiscovery(
             path: newest.projectPath,
             orchestrator: orchestrator,
@@ -412,6 +411,8 @@ struct ContextifyApp: App {
     let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: path.path).projectId
     let currentPath = StartupCoordinator.shared.current?.path
     let needsSwitch = currentPath == nil || currentPath != path.path
+
+    ProjectSwitcherState.shared.start()
 
     if needsSwitch {
       logger.notice("[QUICK-DISCOVERY-SWITCH] Activating project for path: \(path.path, privacy: .public)")
@@ -496,12 +497,15 @@ struct ContextifyApp: App {
         )
         self.projectsViewModel = vm
         timeline.configureSharedOrchestrator(orchestrator)
+        ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
+        ProjectSwitcherState.shared.start()
       }
 
       guard let vm = projectsViewModel else {
         log.error("ProjectsViewModel not available")
         return
       }
+      let orchestrator = vm.orchestrator
 
       // Show welcome modal for onboarding when database is empty (0 projects).
       // Applies to ALL builds (DMG + App Store).
@@ -512,33 +516,25 @@ struct ContextifyApp: App {
       //
       // See WelcomeModalView.swift for complete onboarding workflow documentation.
 
-      let isEmptyDB: Bool
-      do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        let projectCount = (try? orchestrator.listProjects().count) ?? 0
-        isEmptyDB = projectCount == 0
+      let projectCount = (try? orchestrator.listProjects().count) ?? 0
+      let isEmptyDB = projectCount == 0
 
-        log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
+      log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
 
-        // Show welcome modal for all empty database cases (onboarding workflow)
-        if isEmptyDB {
-          log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
-          log.info("📋 Empty database detected - showing welcome modal for onboarding")
-          // Post notification to show welcome modal BEFORE discovery starts
-          await MainActor.run {
-            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
-          }
-        } else {
-          log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
+      // Show welcome modal for all empty database cases (onboarding workflow)
+      if isEmptyDB {
+        log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
+        log.info("📋 Empty database detected - showing welcome modal for onboarding")
+        // Post notification to show welcome modal BEFORE discovery starts
+        await MainActor.run {
+          NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
         }
-      } catch {
-        log.warning("Failed to check if database is empty: \(error.localizedDescription)")
-        isEmptyDB = false
+      } else {
+        log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
       }
 
       // Reconcile pending assistant_usage records at startup
       do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         try orchestrator.reconcileAssistantUsage()
       } catch {
         log.warning("Failed to reconcile assistant usage: \(error.localizedDescription)")
@@ -550,7 +546,6 @@ struct ContextifyApp: App {
         // Reset display_order for first-launch sorting by activity
         // (On fresh database, all projects should sort by newest entry, not persisted order)
         do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
           try orchestrator.resetDisplayOrder()
           log.info("🔄 Reset display_order for activity-based sorting")
         } catch {
@@ -600,7 +595,7 @@ struct ContextifyApp: App {
             log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
             do {
-              let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+              let orchestrator = vm.orchestrator
               let projectId = try await Self.activateProjectForQuickDiscovery(
                 path: newest.projectPath,
                 orchestrator: orchestrator,
@@ -650,7 +645,7 @@ struct ContextifyApp: App {
         }
       }
 
-      await persistNewestProjectBookmarkIfAvailable(log: log)
+      await persistNewestProjectBookmarkIfAvailable(log: log, orchestrator: orchestrator)
 
       // C4.2: Auto-select most recent project if coordinator has no current project
       var shouldAutoSelect = false
@@ -684,8 +679,6 @@ struct ContextifyApp: App {
 
       if shouldAutoSelect {
         do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-
           // Try to get project with newest transcript entry (most recent work)
           if let mostRecent = try orchestrator.getProjectWithNewestEntry() {
             log.notice("🎯 Auto-selecting project with newest entry: \(mostRecent.rootPath, privacy: .public)")
@@ -800,9 +793,11 @@ struct ContextifyApp: App {
   }
 
   @MainActor
-  private func persistNewestProjectBookmarkIfAvailable(log: Logger) async {
+  private func persistNewestProjectBookmarkIfAvailable(
+    log: Logger,
+    orchestrator: TranscriptOrchestrator
+  ) async {
     do {
-      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
       guard let mostRecent = try orchestrator.getProjectWithNewestEntry() else {
         log.debug("[PERSIST-ROOT] No ingested projects yet; skipping persisted root update")
         return

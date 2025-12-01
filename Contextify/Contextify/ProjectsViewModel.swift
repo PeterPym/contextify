@@ -31,6 +31,7 @@ final class ProjectsViewModel {
 
   // Legacy discovery service (kept for compatibility with old UI that might reference it)
   let discoveryService: ProjectDiscoveryService
+  @ObservationIgnored let orchestrator: TranscriptOrchestrator
 
   @ObservationIgnored private var stateObservationTask: Task<Void, Never>?
 
@@ -40,6 +41,7 @@ final class ProjectsViewModel {
     hudModel: HUDViewModel
   ) {
     self.discoveryService = discoveryService
+    self.orchestrator = orchestrator
 
     logger.info("[VM-INIT] Phase 3 ProjectsViewModel initialized")
 
