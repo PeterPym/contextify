@@ -198,8 +198,20 @@ DMG_STATUS=$(get_status "dmg")
 APPSTORE_STATUS=$(get_status "appstore")
 BUILD_NUM=$(get_build_number)
 BUILD_COMMIT=$(get_build_commit)
-HEAD_COMMIT=$(git rev-parse HEAD 2>/dev/null | cut -c1-8 || echo "unknown")
-CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+
+# P1.1 fix: two-step to avoid pipeline masking git failure
+HEAD_COMMIT_FULL=$(git rev-parse HEAD 2>/dev/null) || HEAD_COMMIT_FULL=""
+if [ -n "$HEAD_COMMIT_FULL" ]; then
+  HEAD_COMMIT=${HEAD_COMMIT_FULL:0:8}
+else
+  HEAD_COMMIT="unknown"
+fi
+
+# P2.1 fix: handle detached HEAD (git branch --show-current returns empty with exit 0)
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+if [ -z "$CURRENT_BRANCH" ]; then
+  CURRENT_BRANCH="(detached HEAD)"
+fi
 
 echo "  DMG:       $DMG_STATUS"
 echo "  App Store: $APPSTORE_STATUS (build $BUILD_NUM)"
@@ -214,7 +226,11 @@ if [ "$CURRENT_BRANCH" != "main" ]; then
   echo -e "  ${YELLOW}   Release builds should typically come from main${NC}"
 fi
 
-if [ "$BUILD_COMMIT" != "none" ] && [ "$BUILD_COMMIT" != "unknown" ] && [ "$BUILD_COMMIT" != "$HEAD_COMMIT" ]; then
+# P2.2 fix: also guard on HEAD_COMMIT being unknown
+if [ "$BUILD_COMMIT" != "none" ] && \
+   [ "$BUILD_COMMIT" != "unknown" ] && \
+   [ "$HEAD_COMMIT" != "unknown" ] && \
+   [ "$BUILD_COMMIT" != "$HEAD_COMMIT" ]; then
   echo ""
   echo -e "  ${YELLOW}⚠️  EXISTING BUILD DOES NOT MATCH HEAD${NC}"
   echo -e "  ${YELLOW}   Rebuild required to include latest changes${NC}"
