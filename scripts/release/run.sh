@@ -158,6 +158,23 @@ except:
 " 2>/dev/null
 }
 
+get_build_commit() {
+  local release_json="$ROOT_DIR/releases/v${VERSION}/release.json"
+  if [ -f "$release_json" ]; then
+    python3 -c "
+import json
+try:
+    with open('$release_json') as f:
+        data = json.load(f)
+    print(data.get('git', {}).get('commit', 'unknown')[:8])
+except:
+    print('unknown')
+" 2>/dev/null
+  else
+    echo "none"
+  fi
+}
+
 # Header
 echo ""
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
@@ -180,9 +197,28 @@ echo ""
 DMG_STATUS=$(get_status "dmg")
 APPSTORE_STATUS=$(get_status "appstore")
 BUILD_NUM=$(get_build_number)
+BUILD_COMMIT=$(get_build_commit)
+HEAD_COMMIT=$(git rev-parse HEAD 2>/dev/null | cut -c1-8 || echo "unknown")
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 
 echo "  DMG:       $DMG_STATUS"
 echo "  App Store: $APPSTORE_STATUS (build $BUILD_NUM)"
+echo ""
+echo "  Branch:       $CURRENT_BRANCH"
+echo "  Build commit: $BUILD_COMMIT"
+echo "  HEAD:         $HEAD_COMMIT"
+
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo ""
+  echo -e "  ${YELLOW}⚠️  NOT ON MAIN BRANCH${NC}"
+  echo -e "  ${YELLOW}   Release builds should typically come from main${NC}"
+fi
+
+if [ "$BUILD_COMMIT" != "none" ] && [ "$BUILD_COMMIT" != "unknown" ] && [ "$BUILD_COMMIT" != "$HEAD_COMMIT" ]; then
+  echo ""
+  echo -e "  ${YELLOW}⚠️  EXISTING BUILD DOES NOT MATCH HEAD${NC}"
+  echo -e "  ${YELLOW}   Rebuild required to include latest changes${NC}"
+fi
 echo ""
 
 # Determine if release exists
