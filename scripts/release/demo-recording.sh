@@ -521,8 +521,6 @@ fi
 echo ""
 echo "Post-production: Crop/trim in iMovie or QuickTime, export to:"
 echo "  website/review-4a125b1d/demo-video.mp4"
-echo ""
-pause
 
 # Step 4: Restore
 echo "═══════════════════════════════════════════════════════════════"
