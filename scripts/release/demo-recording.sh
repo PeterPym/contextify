@@ -302,14 +302,15 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
-# Check if archive is stale compared to main branch
+# Check if archive is stale compared to current HEAD
 echo ""
 echo "Checking archive freshness..."
 ARCHIVE_MTIME=$(stat -f "%m" "$ARCHIVE_PATH/Info.plist" 2>/dev/null)
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
 if [[ -n "$ARCHIVE_MTIME" ]]; then
-  # Get commits on main since archive was built
+  # Get commits on current branch since archive was built
   ARCHIVE_DATE=$(date -r "$ARCHIVE_MTIME" "+%Y-%m-%d %H:%M:%S")
-  COMMITS_SINCE=$(git log main --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null || true)
+  COMMITS_SINCE=$(git log HEAD --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null || true)
   if [[ -n "$COMMITS_SINCE" ]]; then
     COMMIT_COUNT=$(echo "$COMMITS_SINCE" | wc -l | tr -d ' ')
   else
@@ -330,7 +331,7 @@ if [[ -n "$ARCHIVE_MTIME" ]]; then
     echo "║  ⚠️  WARNING: ARCHIVE MAY BE STALE                            ║"
     echo "╠═══════════════════════════════════════════════════════════════╣"
     echo "║  Archive built: $ARCHIVE_DATE"
-    echo "║  Commits on main since then: $COMMIT_COUNT"
+    echo "║  Commits on $CURRENT_BRANCH since then: $COMMIT_COUNT"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -355,7 +356,7 @@ if [[ -n "$ARCHIVE_MTIME" ]]; then
     echo "Press Enter to continue anyway, or Ctrl+C to abort and rebuild..."
     read -r
   else
-    echo "✅ Archive is up-to-date with main branch"
+    echo "✅ Archive is up-to-date with $CURRENT_BRANCH"
   fi
 else
   echo "⚠️  Could not determine archive build time"
