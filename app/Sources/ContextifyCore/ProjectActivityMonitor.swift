@@ -275,8 +275,10 @@ public actor ProjectActivityMonitor {
 
   private func discoverAllProjects() async throws {
     #if APPSTORE_BUILD
-    log.info("[DISC-SCAN-SKIP] Skipping core discovery in sandbox (app layer handles this)")
-    return
+    if Sandbox.isSandboxed {
+      log.info("[DISC-SCAN-SKIP] Skipping core discovery in sandbox (APPSTORE_BUILD + sandboxed)")
+      return
+    }
     #endif
 
     let startTime = Date()

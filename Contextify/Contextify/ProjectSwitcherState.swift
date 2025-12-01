@@ -54,6 +54,7 @@ public final class ProjectSwitcherState {
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
   @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
+  @ObservationIgnored private var discoveryCompleteTask: Task<Void, Never>?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
   @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
@@ -93,6 +94,7 @@ public final class ProjectSwitcherState {
     // Cancel any pending tasks (safety net for tests/non-singleton usage)
     projectObservationTask?.cancel()
     ingestionCompleteTask?.cancel()
+    discoveryCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
     monitorStartTask?.cancel()
@@ -193,6 +195,17 @@ public final class ProjectSwitcherState {
       }
     }
 
+    // Subscribe to discovery complete notifications from AppStateOrchestrator
+    // This ensures tabs refresh when new projects are discovered via lightweight scan
+    discoveryCompleteTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
+      for await _ in notifications {
+        log.info("ProjectSwitcher: received .projectsDiscoveryComplete - refreshing projects")
+        self.scheduleRefresh()
+      }
+    }
+
     // Initial discovery & full unread pass based on current DB
     Task {
       // Get initial context from coordinator (guaranteed to be available)
@@ -245,6 +258,8 @@ public final class ProjectSwitcherState {
     projectObservationTask = nil
     ingestionCompleteTask?.cancel()
     ingestionCompleteTask = nil
+    discoveryCompleteTask?.cancel()
+    discoveryCompleteTask = nil
     coalesceTask?.cancel()
     coalesceTask = nil
     cancelMonitorStartTasks()
@@ -607,22 +622,10 @@ public final class ProjectSwitcherState {
     // 1. handleContextUpdate() in ProjectSwitcherState (sets activeProjectId)
     // 2. handleContextUpdate() in ConversationMonitor (loads new timeline)
     // This ensures UI and data stay in sync with no race condition
-
-    if let coordinator = fastPathCoordinator {
-      var projectIds = allProjects.map { $0.id }
-      if !projectIds.contains(projectId) {
-        projectIds.append(projectId)
-      }
-
-      log.info("[FASTPATH-SWITCH] Triggering fast-path preview for project switch: \(projectId, privacy: .public)")
-      // NOTE: Using Task.detached because fast-path ingestion is a background optimization
-      // that should run independently. UI doesn't wait for completion.
-      Task.detached(priority: .utility) { [coordinator, projectIds, projectId] in
-        await coordinator.runFastPath(projectIds: projectIds, activeProjectId: projectId)
-      }
-    } else {
-      log.info("[FASTPATH-SWITCH] Fast-path coordinator unavailable; skipping preview run")
-    }
+    //
+    // NOTE: FastPath ingestion is now handled by AppStateOrchestrator.selectProject()
+    // which calls ingestProjectJIT() -> runFastPath() internally.
+    // Previous redundant runFastPath() call removed to eliminate duplicate work.
 
     // CXT-11: Update metadata in background (non-blocking)
     Task.detached(priority: .userInitiated) { [weak self, orchestrator] in
