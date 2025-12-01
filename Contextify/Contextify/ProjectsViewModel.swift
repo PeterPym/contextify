@@ -31,9 +31,9 @@ final class ProjectsViewModel {
   private(set) var lastScanTime: Date?
 
   // Legacy discovery service (kept for compatibility with old UI that might reference it)
-  let discoveryService: ProjectDiscoveryService
-  @ObservationIgnored let orchestrator: TranscriptOrchestrator
-  @ObservationIgnored let accessProvider: TranscriptAccessProvider?
+  @ObservationIgnored var discoveryService: ProjectDiscoveryService
+  @ObservationIgnored var orchestrator: TranscriptOrchestrator
+  @ObservationIgnored var accessProvider: TranscriptAccessProvider?
   @ObservationIgnored private let folderAccessController: FolderAccessController?
 
   @ObservationIgnored private var stateObservationTask: Task<Void, Never>?
@@ -86,6 +86,7 @@ final class ProjectsViewModel {
     // Initial update
     Task {
       await updateFromOrchestrator()
+      await refreshAuthorizationStateIfNeeded()
     }
   }
 
@@ -180,6 +181,37 @@ final class ProjectsViewModel {
 
     // Mark that we've received at least one orchestrator update
     hasReceivedInitialState = true
+  }
+
+  @MainActor
+  func refreshAuthorizationStateIfNeeded() async {
+    guard Sandbox.isSandboxed, let controller = folderAccessController else { return }
+    let claude = await controller.authorization(for: .claude)
+    let codex = await controller.authorization(for: .codex)
+    self.hasAuthorizations = (claude?.status == .authorized) || (codex?.status == .authorized)
+    logger.info("[VM-AUTH] Authorization state refreshed (hasAuthorizations=\(self.hasAuthorizations))")
+  }
+
+  /// Rebuilds orchestrator and discovery service when sandbox authorizations change.
+  @MainActor
+  func applyAccessProvider(_ provider: TranscriptAccessProvider?, folderAccessController: FolderAccessController?) {
+    accessProvider = provider
+
+    do {
+      let newOrchestrator = try TranscriptOrchestrator(
+        dbManager: .shared,
+        accessProvider: provider
+      )
+      orchestrator = newOrchestrator
+      discoveryService = ProjectDiscoveryService(
+        db: try DatabaseManager.shared.pool,
+        orchestrator: newOrchestrator,
+        folderAccessController: folderAccessController
+      )
+      logger.info("[VM-AUTH] Rebuilt orchestrator and discovery service with updated access provider")
+    } catch {
+      logger.error("[VM-AUTH-ERROR] Failed to rebuild orchestrator with new access provider: \(error.localizedDescription, privacy: .public)")
+    }
   }
 
   // MARK: - Actions

@@ -42,7 +42,7 @@ doc_references:
 - **P2 (Medium Priority):** 39 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 81
+**Total Active Items:** 82
 
 ---
 
@@ -998,7 +998,7 @@ When App Store build launches without permissions granted:
 
 ---
 
-# P2 (Medium Priority) - 39 Items
+# P2 (Medium Priority) - 40 Items
 
 ---
 
@@ -1060,6 +1060,30 @@ Unify around one shared orchestrator and a small activation façade so quick-dis
 - `Contextify/Contextify/ProjectSwitcherState.swift`
 - `Contextify/Contextify/ConversationMonitor.swift`
 - `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift`
+
+---
+
+## #P2-ACTIVATION-OBS: Activation observability and sandbox retries
+
+**Status:** Not Started
+**Priority:** P2 (diagnostics / stability)
+**Effort:** 3-5 hours
+
+**Problem:**
+Startup lag and blank tabs are hard to diagnose without knowing whether context publication, ingestion, or sandbox access is missing. Quick-discovery currently skips preview ingest if a provider lacks authorization but never retries after bookmarks are granted, forcing slow-path hoover to catch up.
+
+**Solution:**
+Add per-project activation telemetry and a sandbox-only retry for quick discovery once authorizations flip to authorized so preview ingest runs immediately and logs clearly show access failures versus cancellations.
+
+**Implementation:**
+1. Log time-to-first-feed and entry counts per project when ConversationMonitor first loads and when tabs are switched.
+2. Add a sandbox hook to rerun quick discovery after bookmarks are saved or authorization becomes available, rather than skipping ingest entirely.
+3. Log sandbox access failures without redaction so we can distinguish access denied vs cancellation vs parse errors.
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift`
+- `Contextify/Contextify/ProjectSwitcherState.swift`
+- `Contextify/Contextify/ConversationMonitor.swift`
 
 ---
 

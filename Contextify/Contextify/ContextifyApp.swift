@@ -311,7 +311,10 @@ struct ContextifyApp: App {
   /// This rebuilds the SandboxTranscriptAccessProvider with newly granted URLs
   /// and reconfigures AppStateOrchestrator so discovery can succeed.
   @MainActor
-  static func reconfigureAccessProvider(folderAccessController: FolderAccessController) async {
+  static func reconfigureAccessProvider(
+    folderAccessController: FolderAccessController,
+    projectsVM: ProjectsViewModel?
+  ) async {
     #if APPSTORE_BUILD
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
@@ -332,15 +335,27 @@ struct ContextifyApp: App {
 
     log.info("[RECONFIG-ACCESS] Claude: \(claudeURL != nil ? "authorized" : "nil"), Codex: \(codexURL != nil ? "authorized" : "nil")")
 
-    // Create new provider with fresh URLs
+    // Create new provider with fresh URLs (start security scope in init)
     let newProvider = SandboxTranscriptAccessProvider(
       claudeRoot: claudeURL,
       codexRoot: codexURL
     )
 
-    // Reconfigure orchestrator
+    // Reconfigure orchestrators with new provider
+    let sharedOrchestrator = try? TranscriptOrchestrator(
+      dbManager: .shared,
+      accessProvider: newProvider
+    )
+
     await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
-    log.info("[RECONFIG-ACCESS] ✅ AppStateOrchestrator reconfigured with new access provider")
+    if let orchestrator = sharedOrchestrator {
+      ConversationMonitor.shared.configureSharedOrchestrator(orchestrator)
+      ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
+      projectsVM?.applyAccessProvider(newProvider, folderAccessController: folderAccessController)
+      log.info("[RECONFIG-ACCESS] ✅ Shared orchestrators reconfigured with new access provider")
+    } else {
+      log.error("[RECONFIG-ACCESS-ERROR] Failed to build shared orchestrator with new access provider")
+    }
     #endif
   }
 
@@ -372,24 +387,39 @@ struct ContextifyApp: App {
 
       let quickDuration = Date().timeIntervalSince(quickStart)
 
-        if let newest = quickResult {
-          log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
+      if let newest = quickResult {
+        log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-          do {
-            let orchestrator = projectsVM.orchestrator
-            let projectId = try await activateProjectForQuickDiscovery(
-              path: newest.projectPath,
-              orchestrator: orchestrator,
-              logger: log
-            )
+        do {
+          // Skip quick-discovery if we don't have access to this provider (sandbox builds)
+          if let provider = TranscriptProviderID.fromTranscriptURL(newest.transcriptFile),
+             let sandbox = projectsVM.accessProvider as? SandboxTranscriptAccessProvider {
+            if provider == TranscriptProviderID.claude && sandbox.claudeRoot == nil {
+              log.warning("[QUICK-DISCOVERY] Skipping preview ingest (no Claude authorization)")
+              return
+            }
+            if provider == TranscriptProviderID.codex && sandbox.codexRoot == nil {
+              log.warning("[QUICK-DISCOVERY] Skipping preview ingest (no Codex authorization)")
+              return
+            }
+          }
+          // Refresh authorization snapshot in case permissions just changed
+          await projectsVM.refreshAuthorizationStateIfNeeded()
 
-            await ingestNewestTranscript(
-              projectId: projectId,
-              projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile,
-              orchestrator: orchestrator,
-              accessProvider: projectsVM.accessProvider
-            )
+          let orchestrator = projectsVM.orchestrator
+          let projectId = try await activateProjectForQuickDiscovery(
+            path: newest.projectPath,
+            orchestrator: orchestrator,
+            logger: log
+          )
+
+          await ingestNewestTranscript(
+            projectId: projectId,
+            projectPath: newest.projectPath,
+            transcriptFile: newest.transcriptFile,
+            orchestrator: orchestrator,
+            accessProvider: projectsVM.accessProvider
+          )
         } catch {
           log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
         }
@@ -747,10 +777,13 @@ struct ContextifyApp: App {
     do {
       // Determine provider from file path
       let provider: DiscoveredProject.Provider
+      let providerID: String
       if transcriptFile.path.contains("/.claude/projects/") {
         provider = .claudeCode
+        providerID = TranscriptProviderID.claude
       } else if transcriptFile.path.contains("/.codex/sessions/") {
         provider = .codexCLI
+        providerID = TranscriptProviderID.codex
       } else {
         log.warning("[QUICK-DISCOVERY-INGEST] Unknown provider for transcript: \(transcriptFile.path, privacy: .public)")
         return
