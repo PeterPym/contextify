@@ -79,7 +79,7 @@ struct WelcomeModalView: View {
                     completedContent
                 } else if let errorMessage = projectsVM.errorMessage {
                     errorContent(message: errorMessage)
-                } else if !projectsVM.hasReceivedInitialState || (Sandbox.isSandboxed && !projectsVM.hasAnyAuthorizations) {
+                } else if !projectsVM.hasReceivedInitialState || (Sandbox.isSandboxed && !projectsVM.hasAuthorizations) {
                     // Placeholder while waiting for first orchestrator update
                     // Prevents "no projects" flash before discovery/authorization has started
                     initializingContent

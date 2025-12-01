@@ -493,7 +493,8 @@ struct ContextifyApp: App {
         let vm = ProjectsViewModel(
           discoveryService: discoveryService,
           orchestrator: orchestrator,
-          hudModel: HUDViewModel.shared
+          hudModel: HUDViewModel.shared,
+          folderAccessController: controller
         )
         self.projectsViewModel = vm
         timeline.configureSharedOrchestrator(orchestrator)

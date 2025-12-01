@@ -21,17 +21,7 @@ final class ProjectsViewModel {
   // Welcome modal state (for compatibility with existing UI)
   private(set) var isDiscovering = false
   private(set) var isWelcomeReady = false
-
-  // App Store permissions state (used to gate empty-state flashes)
-  var hasAnyAuthorizations: Bool {
-    // For DMG builds, treat as authorized
-    guard Sandbox.isSandboxed else { return true }
-    // FolderAccessController only exists on sandbox builds
-    guard let controller = discoveryService.folderAccessController else { return false }
-    let claude = controller.authorization(for: .claude)
-    let codex = controller.authorization(for: .codex)
-    return (claude?.status == .authorized) || (codex?.status == .authorized)
-  }
+  private(set) var hasAuthorizations: Bool = !Sandbox.isSandboxed
 
   /// Tracks whether we've received at least one AppStateOrchestrator update.
   /// Prevents "no projects" flash before discovery has had a chance to run.
@@ -43,18 +33,32 @@ final class ProjectsViewModel {
   // Legacy discovery service (kept for compatibility with old UI that might reference it)
   let discoveryService: ProjectDiscoveryService
   @ObservationIgnored let orchestrator: TranscriptOrchestrator
+  @ObservationIgnored private let folderAccessController: FolderAccessController?
 
   @ObservationIgnored private var stateObservationTask: Task<Void, Never>?
 
   init(
     discoveryService: ProjectDiscoveryService,
     orchestrator: TranscriptOrchestrator,
-    hudModel: HUDViewModel
+    hudModel: HUDViewModel,
+    folderAccessController: FolderAccessController? = nil
   ) {
     self.discoveryService = discoveryService
     self.orchestrator = orchestrator
+    self.folderAccessController = folderAccessController
 
     logger.info("[VM-INIT] Phase 3 ProjectsViewModel initialized")
+
+    // Prefetch authorization state (sandbox only) to gate empty-state flashes
+    if Sandbox.isSandboxed, let controller = folderAccessController {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        let claude = await controller.authorization(for: .claude)
+        let codex = await controller.authorization(for: .codex)
+        self.hasAuthorizations = (claude?.status == .authorized) || (codex?.status == .authorized)
+        logger.info("[VM-INIT] Authorization state loaded (hasAuthorizations=\(self.hasAuthorizations))")
+      }
+    }
 
     // Start observing AppStateOrchestrator
     startObservingOrchestrator()
