@@ -76,8 +76,12 @@ final class ProjectsViewModel {
 
     switch state {
     case .startup:
+      // Don't set hasReceivedInitialState here - .startup is a placeholder state
+      // that exists before discovery actually begins. Setting the flag here would
+      // cause the welcome modal to flash "no projects" before discovery starts.
       isLoading = true
       loadingMessage = "Initializing..."
+      return
 
     case .discovering:
       isDiscovering = true
