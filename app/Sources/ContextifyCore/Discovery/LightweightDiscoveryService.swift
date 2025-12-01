@@ -196,7 +196,10 @@ public actor LightweightDiscoveryService {
       await withTaskGroup(of: (String, Date, URL)?.self) { group in
         for url in slice {
           group.addTask {
-            guard let cwd = getCWD(url: url) else { return nil }
+            guard let cwd = getCWD(url: url) else {
+              log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .public)")
+              return nil
+            }
             let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
             return (cwd, date, url)
           }
@@ -218,6 +221,8 @@ public actor LightweightDiscoveryService {
 
       index = end
     }
+
+    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts")
 
     // Convert to LightweightProject array
     return projects.map { cwd, data in
