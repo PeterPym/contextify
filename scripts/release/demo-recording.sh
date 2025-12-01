@@ -302,19 +302,23 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
-# Open background image for demo recording (if Preview not already open)
+# Open background image for demo recording
 BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
 if [[ -f "$BACKGROUND_IMG" ]]; then
-  if ! pgrep -x "Preview" >/dev/null; then
-    echo ""
-    echo "Background: build/assets/demo-video-background.jpg"
-    echo "  Set as desktop background before recording"
-    osascript <<EOF
+  PREVIEW_WAS_RUNNING=$(pgrep -x "Preview" >/dev/null && echo "yes" || echo "no")
+  echo ""
+  echo "Background: build/assets/demo-video-background.jpg"
+  echo "  Set as desktop background before recording"
+  osascript <<EOF
 tell application "Preview"
   activate
   open POSIX file "$BACKGROUND_IMG"
-  delay 0.5
+  delay 0.3
 end tell
+EOF
+  # Only configure toolbars if Preview wasn't already running
+  if [[ "$PREVIEW_WAS_RUNNING" == "no" ]]; then
+    osascript <<'EOF'
 tell application "System Events"
   tell process "Preview"
     try
