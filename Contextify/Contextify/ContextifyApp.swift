@@ -188,10 +188,10 @@ struct ContextifyApp: App {
             .background(WindowAccessor())
             .sheet(isPresented: $showWelcomeModal) {
               // C3.4: Welcome modal sheet
-              // User must manually dismiss to ensure they see progress complete
+              // WelcomeModalView handles its own interactiveDismissDisabled internally
+              // Don't add it here - it blocks Cmd+Q from working
               WelcomeModalView(folderAccessController: folderAccessController)
                 .environment(vm)
-                .interactiveDismissDisabled(vm.isDiscovering || vm.isIngesting)
             }
         } else {
           // Initialization loading state (brief)
