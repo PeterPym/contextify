@@ -293,39 +293,45 @@ def main() -> None:
     sign_and_notarize(skip_notarize=args.no_notarize)
 
     # Step 5: Create checksum
-    dmg_path = DIST / DMG_TEMPLATE.format(ver=next_ver)
-    if not dmg_path.exists():
-        # Try without version suffix (sign_and_notarize.py creates Contextify.dmg)
-        dmg_path = DIST / "Contextify.dmg"
-        if dmg_path.exists():
-            # Rename to versioned name
-            versioned_dmg = DIST / DMG_TEMPLATE.format(ver=next_ver)
-            dmg_path.rename(versioned_dmg)
-            dmg_path = versioned_dmg
-        else:
-            sys.exit(f"✖ DMG not found at {DIST}")
+    # sign_and_notarize.py creates Contextify.dmg, we rename to versioned name
+    fresh_dmg = DIST / "Contextify.dmg"
+    versioned_dmg = DIST / DMG_TEMPLATE.format(ver=next_ver)
+
+    if fresh_dmg.exists():
+        # Always prefer freshly built DMG over any existing versioned one
+        if versioned_dmg.exists():
+            versioned_dmg.unlink()  # Delete stale versioned DMG
+        fresh_dmg.rename(versioned_dmg)
+        dmg_path = versioned_dmg
+    elif versioned_dmg.exists():
+        # Fall back to existing versioned DMG (resume scenario)
+        dmg_path = versioned_dmg
+    else:
+        sys.exit(f"✖ DMG not found at {DIST}")
 
     sha_path = write_sha_file(dmg_path)
 
-    # Step 6: Create GitHub release
-    release_notes = f"""Contextify {next_ver}
-
-## Installation
-
-1. Download `Contextify-{next_ver}.dmg`
-2. Open the DMG and drag Contextify.app to Applications
-3. Launch Contextify from Applications
-
-## Verification
-
-SHA256: `{sha_path.read_text().split()[0]}`
-
-## Changes
-
-See commit history for details.
-"""
-
-    gh_release(next_ver, dmg_path, sha_path, release_notes)
+    # Step 6: Create GitHub release (disabled for now - using Dropbox archives)
+    # TODO: Re-enable when ready to use GitHub Releases for distribution
+    # release_notes = f"""Contextify {next_ver}
+    #
+    # ## Installation
+    #
+    # 1. Download `Contextify-{next_ver}.dmg`
+    # 2. Open the DMG and drag Contextify.app to Applications
+    # 3. Launch Contextify from Applications
+    #
+    # ## Verification
+    #
+    # SHA256: `{sha_path.read_text().split()[0]}`
+    #
+    # ## Changes
+    #
+    # See commit history for details.
+    # """
+    #
+    # gh_release(next_ver, dmg_path, sha_path, release_notes)
+    print("⏭️  Skipping GitHub release upload (disabled)")
 
     print("\n" + "="*60)
     print("✅ RELEASE COMPLETE!")

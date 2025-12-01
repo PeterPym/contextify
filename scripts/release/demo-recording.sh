@@ -300,6 +300,57 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 echo "✅ Archive verified"
+
+# Check if archive is stale compared to main branch
+echo ""
+echo "Checking archive freshness..."
+ARCHIVE_MTIME=$(stat -f "%m" "$ARCHIVE_PATH/Info.plist" 2>/dev/null)
+if [[ -n "$ARCHIVE_MTIME" ]]; then
+  # Get commits on main since archive was built
+  ARCHIVE_DATE=$(date -r "$ARCHIVE_MTIME" "+%Y-%m-%d %H:%M:%S")
+  COMMITS_SINCE=$(git log main --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null)
+  COMMIT_COUNT=$(echo "$COMMITS_SINCE" | grep -c . 2>/dev/null || echo 0)
+
+  if [[ "$COMMIT_COUNT" -gt 0 ]]; then
+    # Check for fix commits specifically
+    FIX_COMMITS=$(echo "$COMMITS_SINCE" | grep -i "fix" || true)
+    FIX_COUNT=$(echo "$FIX_COMMITS" | grep -c . 2>/dev/null || echo 0)
+
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║  ⚠️  WARNING: ARCHIVE MAY BE STALE                            ║"
+    echo "╠═══════════════════════════════════════════════════════════════╣"
+    echo "║  Archive built: $ARCHIVE_DATE"
+    echo "║  Commits on main since then: $COMMIT_COUNT"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    if [[ "$FIX_COUNT" -gt 0 ]]; then
+      echo "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+      echo "🚨  DANGER: $FIX_COUNT FIX COMMIT(S) NOT IN THIS ARCHIVE!      🚨"
+      echo "🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨"
+      echo ""
+      echo "Fix commits missing from archive:"
+      echo "$FIX_COMMITS" | sed 's/^/  /'
+      echo ""
+    fi
+
+    echo "Recent commits not in archive:"
+    echo "$COMMITS_SINCE" | head -10 | sed 's/^/  /'
+    if [[ "$COMMIT_COUNT" -gt 10 ]]; then
+      echo "  ... and $((COMMIT_COUNT - 10)) more"
+    fi
+    echo ""
+    echo "To rebuild: ./scripts/release/build.sh $VERSION --skip-dmg"
+    echo ""
+    echo "Press Enter to continue anyway, or Ctrl+C to abort and rebuild..."
+    read -r
+  else
+    echo "✅ Archive is up-to-date with main branch"
+  fi
+else
+  echo "⚠️  Could not determine archive build time"
+fi
 pause
 
 # Step 1: Backup real data and install sample data
@@ -422,19 +473,80 @@ echo ""
 echo "The permission dialog WILL appear when the app launches."
 pause
 
-# Step 4: Launch app
+# Step 4: Install to Applications and Launch
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 4: Launch Archived App"
+echo "  STEP 4: Install to Applications & Launch"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Launching App Store archive build from:"
-echo ""
-echo "  $APP_PATH"
-echo ""
+echo "For a realistic demo, we'll install the archived app to /Applications."
 echo "This is the EXACT binary that will be submitted to Apple."
 echo ""
-open "$APP_PATH"
-echo "✅ App launched"
+echo "Source: $APP_PATH"
+echo "Target: /Applications/Contextify.app"
+echo ""
+
+# Check if already installed
+if [[ -d "/Applications/Contextify.app" ]]; then
+  echo "⚠️  Contextify.app already exists in /Applications"
+  echo "   It will be replaced with the archived build."
+  echo ""
+fi
+
+echo "Press Enter to install to /Applications, or type 'skip' to launch from archive..."
+read -r input
+if [[ "$input" != "skip" ]]; then
+  echo "Installing to /Applications..."
+  rm -rf /Applications/Contextify.app 2>/dev/null || true
+  cp -R "$APP_PATH" /Applications/
+  echo "✅ Installed to /Applications/Contextify.app"
+
+  # Offer to add to Dock (default: yes)
+  echo ""
+  echo "Add to Dock for realistic demo launch? (Y/n)"
+  read -r add_dock
+  if [[ "$add_dock" != "n" && "$add_dock" != "N" ]]; then
+    # Add to Dock using defaults
+    defaults write com.apple.dock persistent-apps -array-add \
+      "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>file:///Applications/Contextify.app</string><key>_CFURLStringType</key><integer>15</integer></dict></dict></dict>"
+    killall Dock
+    sleep 2
+    echo "✅ Added to Dock"
+    ADDED_TO_DOCK=true
+  else
+    ADDED_TO_DOCK=false
+  fi
+
+  LAUNCH_PATH="/Applications/Contextify.app"
+else
+  LAUNCH_PATH="$APP_PATH"
+  ADDED_TO_DOCK=false
+fi
+
+echo ""
+if [[ "$ADDED_TO_DOCK" == "true" ]]; then
+  echo "Launch app now? (y/N) - or launch from Dock for realistic demo"
+else
+  echo "Launch app now? (Y/n)"
+fi
+read -r do_launch
+
+if [[ "$ADDED_TO_DOCK" == "true" ]]; then
+  # Default no if added to dock (user will launch from dock)
+  if [[ "$do_launch" == "y" || "$do_launch" == "Y" ]]; then
+    open "$LAUNCH_PATH"
+    echo "✅ App launched"
+  else
+    echo "👉 Launch from Dock when ready to record"
+  fi
+else
+  # Default yes if not added to dock
+  if [[ "$do_launch" != "n" && "$do_launch" != "N" ]]; then
+    open "$LAUNCH_PATH"
+    echo "✅ App launched"
+  else
+    echo "👉 Launch manually: open \"$LAUNCH_PATH\""
+  fi
+fi
 echo ""
 echo "VERIFY: The app should:"
 echo "  1. Show a permission dialog for ~/.claude/"
@@ -459,7 +571,7 @@ echo "  DEMO SCENES TO RECORD"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "Scene 1: PERMISSION DIALOG (Critical for Apple)"
-echo "  - If not shown, quit app and re-launch: open \"$APP_PATH\""
+echo "  - If not shown, quit app and re-launch from Dock or /Applications"
 echo "  - Grant access to ~/.claude/ when prompted"
 echo "  - Pause so viewer can see the dialog text"
 pause

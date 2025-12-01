@@ -11,7 +11,7 @@
 #   ./scripts/release/run.sh X.Y.Z [OPTIONS]
 #
 # Options:
-#   --from PHASE    Start from specific phase (init|build|demo|upload|review|ship)
+#   --from PHASE    Start from specific phase (init|build|qa|demo|upload|review|ship)
 #   --dry-run       Show steps without executing
 #   --help          Show this help
 #
@@ -158,6 +158,23 @@ except:
 " 2>/dev/null
 }
 
+get_build_commit() {
+  local release_json="$ROOT_DIR/releases/v${VERSION}/release.json"
+  if [ -f "$release_json" ]; then
+    python3 -c "
+import json
+try:
+    with open('$release_json') as f:
+        data = json.load(f)
+    print(data.get('git', {}).get('commit', 'unknown')[:8])
+except:
+    print('unknown')
+" 2>/dev/null
+  else
+    echo "none"
+  fi
+}
+
 # Header
 echo ""
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
@@ -180,9 +197,44 @@ echo ""
 DMG_STATUS=$(get_status "dmg")
 APPSTORE_STATUS=$(get_status "appstore")
 BUILD_NUM=$(get_build_number)
+BUILD_COMMIT=$(get_build_commit)
+
+# P1.1 fix: two-step to avoid pipeline masking git failure
+HEAD_COMMIT_FULL=$(git rev-parse HEAD 2>/dev/null) || HEAD_COMMIT_FULL=""
+if [ -n "$HEAD_COMMIT_FULL" ]; then
+  HEAD_COMMIT=${HEAD_COMMIT_FULL:0:8}
+else
+  HEAD_COMMIT="unknown"
+fi
+
+# P2.1 fix: handle detached HEAD (git branch --show-current returns empty with exit 0)
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+if [ -z "$CURRENT_BRANCH" ]; then
+  CURRENT_BRANCH="(detached HEAD)"
+fi
 
 echo "  DMG:       $DMG_STATUS"
 echo "  App Store: $APPSTORE_STATUS (build $BUILD_NUM)"
+echo ""
+echo "  Branch:       $CURRENT_BRANCH"
+echo "  Build commit: $BUILD_COMMIT"
+echo "  HEAD:         $HEAD_COMMIT"
+
+if [ "$CURRENT_BRANCH" != "main" ]; then
+  echo ""
+  echo -e "  ${YELLOW}⚠️  NOT ON MAIN BRANCH${NC}"
+  echo -e "  ${YELLOW}   Release builds should typically come from main${NC}"
+fi
+
+# P2.2 fix: also guard on HEAD_COMMIT being unknown
+if [ "$BUILD_COMMIT" != "none" ] && \
+   [ "$BUILD_COMMIT" != "unknown" ] && \
+   [ "$HEAD_COMMIT" != "unknown" ] && \
+   [ "$BUILD_COMMIT" != "$HEAD_COMMIT" ]; then
+  echo ""
+  echo -e "  ${YELLOW}⚠️  EXISTING BUILD DOES NOT MATCH HEAD${NC}"
+  echo -e "  ${YELLOW}   Rebuild required to include latest changes${NC}"
+fi
 echo ""
 
 # Determine if release exists
@@ -257,15 +309,56 @@ if [ "$CURRENT_PHASE" = "build" ]; then
     echo "  App Store status: $APPSTORE_STATUS (skipping build)"
   fi
 
+  CURRENT_PHASE="qa"
+fi
+
+# ============================================================================
+# PHASE 4: QA Testing
+# ============================================================================
+if [ "$CURRENT_PHASE" = "qa" ]; then
+  echo ""
+  echo -e "${BOLD}Phase 4: QA Testing${NC}"
+  echo ""
+
+  # Refresh status
+  DMG_STATUS=$(get_status "dmg")
+  APPSTORE_STATUS=$(get_status "appstore")
+
+  echo "  Test the builds with a fresh first-run experience."
+  echo "  This cleans the database, resets permissions, and launches the app."
+  echo ""
+
+  # Test DMG if built
+  if [ "$DMG_STATUS" = "built" ] || [ "$DMG_STATUS" = "shipped" ]; then
+    if prompt "Test DMG build (fresh state)?"; then
+      echo ""
+      run_step "Launch DMG for QA" "./scripts/release/test-app.sh $VERSION --dmg"
+      echo ""
+      echo -e "${YELLOW}  Complete QA testing, then press Enter to continue...${NC}"
+      read -r
+    fi
+  fi
+
+  # Test App Store if built
+  if [ "$APPSTORE_STATUS" = "built" ] || [ "$APPSTORE_STATUS" = "submitted" ]; then
+    if prompt "Test App Store build (fresh state)?"; then
+      echo ""
+      run_step "Launch App Store build for QA" "./scripts/release/test-app.sh $VERSION"
+      echo ""
+      echo -e "${YELLOW}  Complete QA testing, then press Enter to continue...${NC}"
+      read -r
+    fi
+  fi
+
   CURRENT_PHASE="demo"
 fi
 
 # ============================================================================
-# PHASE 4: Demo Video (if needed for App Store)
+# PHASE 5: Demo Video (if needed for App Store)
 # ============================================================================
 if [ "$CURRENT_PHASE" = "demo" ]; then
   echo ""
-  echo -e "${BOLD}Phase 4: Demo Video${NC}"
+  echo -e "${BOLD}Phase 5: Demo Video${NC}"
   echo ""
 
   # Check if demo video exists
@@ -290,11 +383,11 @@ if [ "$CURRENT_PHASE" = "demo" ]; then
 fi
 
 # ============================================================================
-# PHASE 5: Upload to App Store Connect
+# PHASE 6: Upload to App Store Connect
 # ============================================================================
 if [ "$CURRENT_PHASE" = "upload" ]; then
   echo ""
-  echo -e "${BOLD}Phase 5: Upload to App Store Connect${NC}"
+  echo -e "${BOLD}Phase 6: Upload to App Store Connect${NC}"
   echo ""
 
   APPSTORE_STATUS=$(get_status "appstore")
@@ -335,11 +428,11 @@ if [ "$CURRENT_PHASE" = "upload" ]; then
 fi
 
 # ============================================================================
-# PHASE 6: Wait for Review
+# PHASE 7: Wait for Review
 # ============================================================================
 if [ "$CURRENT_PHASE" = "review" ]; then
   echo ""
-  echo -e "${BOLD}Phase 6: App Store Review${NC}"
+  echo -e "${BOLD}Phase 7: App Store Review${NC}"
   echo ""
 
   APPSTORE_STATUS=$(get_status "appstore")
@@ -391,11 +484,11 @@ if [ "$CURRENT_PHASE" = "review" ]; then
 fi
 
 # ============================================================================
-# PHASE 7: Ship DMG
+# PHASE 8: Ship DMG
 # ============================================================================
 if [ "$CURRENT_PHASE" = "ship" ]; then
   echo ""
-  echo -e "${BOLD}Phase 7: Ship DMG${NC}"
+  echo -e "${BOLD}Phase 8: Ship DMG${NC}"
   echo ""
 
   DMG_STATUS=$(get_status "dmg")

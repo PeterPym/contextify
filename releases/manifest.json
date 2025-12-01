@@ -16,7 +16,8 @@
         "status": "built",
         "build_number": 10,
         "submitted_at": "2025-11-25T12:05:00Z",
-        "approved_at": null
+        "approved_at": null,
+        "built_at": "2025-11-30"
       },
       "marketing": {
         "changelog_published": false,

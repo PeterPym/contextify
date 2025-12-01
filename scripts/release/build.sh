@@ -179,6 +179,8 @@ echo -e "${BLUE}==>${NC} Archiving artifacts..."
 if [ "$DRY_RUN" = false ]; then
   # App Store artifacts
   if [ "$SKIP_APPSTORE" = false ] && [ -d "$ROOT_DIR/build/Contextify.xcarchive" ]; then
+    # Remove existing archive to prevent nesting (cp -R into existing dir creates subdirs)
+    rm -rf "$ARCHIVE_DIR/appstore/Contextify.xcarchive"
     cp -R "$ROOT_DIR/build/Contextify.xcarchive" "$ARCHIVE_DIR/appstore/Contextify.xcarchive"
     echo -e "${GREEN}OK${NC} Archived: appstore/Contextify.xcarchive"
   fi
@@ -269,12 +271,12 @@ if '$VERSION' not in data.get('releases', {}):
 release = data['releases']['$VERSION']
 
 # Update DMG status
-if not $SKIP_DMG:
+if '$SKIP_DMG' != 'true':
     release['dmg']['status'] = 'built'
     release['dmg']['built_at'] = str(date.today())
 
 # Update App Store status
-if not $SKIP_APPSTORE:
+if '$SKIP_APPSTORE' != 'true':
     release['appstore']['status'] = 'built'
     release['appstore']['build_number'] = int('$BUILD_NUMBER')
     release['appstore']['built_at'] = str(date.today())

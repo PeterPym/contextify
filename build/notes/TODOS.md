@@ -33,16 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-11-27
+**Last Updated:** 2025-11-29
 **Status:** Active
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 37 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 75
+**Total Active Items:** 79
 
 ---
 
@@ -136,7 +136,7 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-# P1 (High Priority) - 20 Items
+# P1 (High Priority) - 22 Items
 
 ---
 
@@ -893,6 +893,83 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
+## App Store Permissions Modal (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (critical for App Store build, blocks discovery)
+**Effort:** 1-2 hours
+
+- [ ] #P1-PERMISSIONS-MODAL: Verify Settings permissions modal correctly triggers discovery workflow
+
+**Problem:**
+Need to verify that when user grants permissions via Settings > Permissions modal, the app correctly kicks off the discovery workflow to find and display projects.
+
+**Testing Required:**
+1. Launch App Store build with no permissions granted
+2. Open Settings > Permissions modal
+3. Grant access to ~/.claude and/or ~/.codex
+4. Verify discovery runs and projects appear in tab bar
+5. Verify timeline populates for auto-selected project
+
+**Files:**
+- Settings/Permissions view (grant action handler)
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (discovery trigger)
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`
+
+**Acceptance Criteria:**
+- [ ] Granting permissions triggers discovery workflow
+- [ ] Projects appear in tab bar after granting access
+- [ ] Timeline populates correctly after permissions granted
+- [ ] No manual refresh or restart required
+
+**Related:**
+- #P1-APPSTORE-NO-PERMISSIONS-UX (UI when permissions not granted)
+- #P1-DISCOVERY-QA (project auto-discovery QA)
+
+---
+
+## App Store No-Permissions UX (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (critical for App Store build UX, affects demo/review)
+**Effort:** 2-3 hours
+
+- [ ] #P1-APPSTORE-NO-PERMISSIONS-UX: Improve UI when permissions haven't been granted in App Store builds
+
+**Problem:**
+When App Store build launches without permissions granted:
+1. "Open project..." link is misleading - implies file picker, not permissions
+2. "Loading conversation..." with spinner suggests waiting for data, not waiting for permissions
+
+**Solution:**
+
+**1. Replace "Open project..." link (~30 min)**
+- Change to "Allow Permissions..." or "Grant Access..."
+- Clicking opens the Settings > Permissions modal (not file picker)
+
+**2. Fix Conversation Log empty state (~1.5 hours)**
+- Remove spinner when no permissions granted
+- Display explanatory text: "Contextify needs access to provider transcripts to get started"
+- Offer two actions:
+  - Reference the "Allow Permissions..." link above
+  - "Learn more" link → opens browser to contextify.sh (eventually a dedicated privacy/permissions page)
+
+**Files:**
+- `Contextify/Contextify/ContentView.swift` (Open project link location)
+- `Contextify/Contextify/ConversationMonitor.swift` (loading state detection)
+- `Contextify/Contextify/ConversationTimelineView.swift` (empty state UI)
+
+**Acceptance Criteria:**
+- [ ] "Open project..." replaced with "Allow Permissions..." that opens permissions modal
+- [ ] Conversation Log shows informative message instead of spinner when no permissions
+- [ ] "Learn more" link opens contextify.sh in browser
+
+**Related:**
+- #P1-PERMISSIONS-MODAL (verify modal triggers discovery)
+- App Store demo recording (user needs to understand what to do on first launch)
+
+---
+
 ## Website Redesign (1 item)
 
 **Status:** Not Started
@@ -921,7 +998,43 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-# P2 (Medium Priority) - 37 Items
+# P2 (Medium Priority) - 38 Items
+
+---
+
+## #P2-SEARCH-INDEXING-WARNING: Warn when searching incompletely indexed project
+
+**Status:** Not Started
+**Priority:** P2 (UX - inform user about partial results)
+**Effort:** 1-2 hours
+
+**Problem:**
+When a user searches within a project that hasn't finished background indexing, search results may be incomplete. The user has no indication that they might be seeing partial results.
+
+**Context:**
+Background indexing (`AppStateOrchestrator.startBackgroundIndexing()`) processes inactive projects at low priority after the active project loads. A project's transcripts may not be fully indexed if:
+1. User just launched the app and indexing hasn't completed
+2. User switched to a project that was queued for background indexing
+3. Large project set is still being processed
+
+**Solution:**
+When displaying search results, check if the current project's indexing is complete. If not:
+1. Show subtle warning banner: "Some results may not be available yet - indexing in progress"
+2. Optionally show progress indicator for remaining projects
+
+**Implementation:**
+1. Track per-project indexing completion in AppStateOrchestrator or new state
+2. In search results view, check indexing status for queried project
+3. Show dismissible warning if indexing incomplete
+4. Clear warning automatically when indexing completes
+
+**Files:**
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (indexing state tracking)
+- Search results view (TBD - depends on #P1-CONVO-SEARCH implementation)
+
+**Related:**
+- #P1-CONVO-SEARCH (search implementation - this todo applies once search exists)
+- `.backgroundIngestProgress` notification (already broadcasts remaining count)
 
 ---
 
