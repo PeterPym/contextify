@@ -43,6 +43,7 @@ public actor LightweightDiscoveryService {
     if let provider = accessProvider {
       do {
         return try provider.withAccess(for: TranscriptProviderID.claude) { root in
+          log.info("[DISC-LIGHT] Claude root URL from provider: \(root.path, privacy: .public)")
           return scanClaudeDirectory(at: root)
         }
       } catch {
@@ -53,17 +54,29 @@ public actor LightweightDiscoveryService {
       // DMG build: direct filesystem access
       let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
+      log.info("[DISC-LIGHT] Claude root (DMG build): \(root.path, privacy: .public)")
       return scanClaudeDirectory(at: root)
     }
   }
 
   nonisolated private func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
-    guard let dirs = try? FileManager.default.contentsOfDirectory(
-      at: root,
-      includingPropertiesForKeys: [.contentModificationDateKey],
-      options: [.skipsHiddenFiles]
-    ) else {
-      log.debug("[DISC-LIGHT] No Claude projects directory found at \(root.path, privacy: .public)")
+    log.info("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path, privacy: .public)")
+
+    let dirs: [URL]
+    do {
+      dirs = try FileManager.default.contentsOfDirectory(
+        at: root,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+      )
+      log.info("[DISC-LIGHT] Found \(dirs.count, privacy: .public) entries in Claude directory")
+    } catch {
+      log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return []
+    }
+
+    guard !dirs.isEmpty else {
+      log.warning("[DISC-LIGHT] Claude directory is empty: \(root.path, privacy: .public)")
       return []
     }
 
