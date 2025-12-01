@@ -459,7 +459,7 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 3: Record Demo"
+echo "  STEP 3: Start Screen Recording and Perform Demo"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
@@ -488,14 +488,24 @@ DEMO_VIDEO="$DRAFTS_DIR/demo-recording-$COUNTER.mov"
 
 echo "Start recording? (Y/n)"
 echo "  Output: $DEMO_VIDEO"
-echo "  (Press any key or Ctrl+C to stop recording)"
 read -r start_rec
 if [[ "$start_rec" != "n" && "$start_rec" != "N" ]]; then
   echo ""
   echo "Recording #$COUNTER..."
   echo ""
   # -v = video, -k = show clicks, -C = capture cursor
-  screencapture -v -k -C "$DEMO_VIDEO"
+  # Run in background, suppress its prompt, use our own stop prompt
+  screencapture -v -k -C "$DEMO_VIDEO" 2>/dev/null &
+  SCREENCAP_PID=$!
+  sleep 1  # Let screencapture initialize
+
+  echo "Stop recording? (Y/n)"
+  read -r stop_rec
+
+  # Kill screencapture
+  kill "$SCREENCAP_PID" 2>/dev/null || true
+  wait "$SCREENCAP_PID" 2>/dev/null || true
+
   echo ""
   if [[ -f "$DEMO_VIDEO" ]]; then
     echo "✓ Recording saved: $DEMO_VIDEO"
