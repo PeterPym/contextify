@@ -129,33 +129,10 @@ public enum ProjectIdentity {
       return nil
     }
 
-    // Parse each line until we find one with a CWD field
-    // Supports both Claude Code (top-level cwd) and Codex (payload.cwd)
-    struct RecordWithCwd: Codable {
-      let cwd: String?
-    }
-    struct CodexPayload: Codable {
-      let cwd: String?
-    }
-    struct CodexRecord: Codable {
-      let payload: CodexPayload?
-    }
-
+    // Use shared helper to find CWD in any line
     let lines = content.components(separatedBy: .newlines)
     for line in lines where !line.isEmpty {
-      guard let jsonData = line.data(using: .utf8) else {
-        continue
-      }
-
-      // Try Claude Code format (top-level cwd)
-      if let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
-         let cwd = record.cwd {
-        return cwd
-      }
-
-      // Try Codex format (payload.cwd)
-      if let record = try? JSONDecoder().decode(CodexRecord.self, from: jsonData),
-         let cwd = record.payload?.cwd {
+      if let cwd = extractCwdFromJSONLine(line) {
         return cwd
       }
     }
@@ -178,20 +155,12 @@ public enum ProjectIdentity {
       return nil
     }
 
-    // Parse each line until we find one with a CWD field
-    struct RecordWithCwd: Codable {
-      let cwd: String?
-    }
-
+    // Use shared helper to find CWD in any line
     let lines = content.components(separatedBy: .newlines)
     for line in lines where !line.isEmpty {
-      guard let jsonData = line.data(using: .utf8),
-            let record = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
-            let cwd = record.cwd else {
-        continue
+      if let cwd = extractCwdFromJSONLine(line) {
+        return cwd
       }
-
-      return cwd
     }
 
     return nil
