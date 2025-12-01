@@ -302,6 +302,15 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
+# Open background image for demo recording
+BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
+if [[ -f "$BACKGROUND_IMG" ]]; then
+  echo ""
+  echo "Background: build/assets/demo-video-background.jpg"
+  echo "  Set as desktop background before recording"
+  open -a Preview "$BACKGROUND_IMG"
+fi
+
 # Check if archive is stale compared to main branch
 echo ""
 echo "Checking archive freshness..."
