@@ -345,6 +345,7 @@ struct ContextifyApp: App {
     #endif
   }
 
+  @MainActor
   static func runQuickDiscoveryAndIngest(projectsVM: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project (post-authorization)")
@@ -375,47 +376,22 @@ struct ContextifyApp: App {
       if let newest = quickResult {
         log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-        // If different from current, switch immediately
-        if let currentPath = StartupCoordinator.shared.current?.path,
-           currentPath != newest.projectPath.path {
-          log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
+        do {
+          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+          let projectId = try await activateProjectForQuickDiscovery(
+            path: newest.projectPath,
+            orchestrator: orchestrator,
+            logger: log
+          )
 
-          do {
-            // Ensure project exists in database before switching
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-            // Now switch to the project
-            try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
-            log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
-
-            // Ingest newest transcript
-            await ingestNewestTranscript(
-              projectId: projectId,
-              projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile,
-              orchestrator: orchestrator
-            )
-          } catch {
-            log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
-          }
-        } else {
-          log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
-
-          // Even if no switch, still ingest newest transcript for fast timeline
-          do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-            await ingestNewestTranscript(
-              projectId: projectId,
-              projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile,
-              orchestrator: orchestrator
-            )
-          } catch {
-            log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
-          }
+          await ingestNewestTranscript(
+            projectId: projectId,
+            projectPath: newest.projectPath,
+            transcriptFile: newest.transcriptFile,
+            orchestrator: orchestrator
+          )
+        } catch {
+          log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
         }
       } else {
         log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
@@ -424,6 +400,28 @@ struct ContextifyApp: App {
       let quickDuration = Date().timeIntervalSince(quickStart)
       log.error("[QUICK-DISCOVERY] Error: \(error.localizedDescription) (took \(Int(quickDuration * 1000))ms)")
     }
+  }
+
+  /// Ensures quick discovery activates the desired project before ingesting.
+  @MainActor
+  private static func activateProjectForQuickDiscovery(
+    path: URL,
+    orchestrator: TranscriptOrchestrator,
+    logger: Logger
+  ) async throws -> String {
+    let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: path.path).projectId
+    let currentPath = StartupCoordinator.shared.current?.path
+    let needsSwitch = currentPath == nil || currentPath != path.path
+
+    if needsSwitch {
+      logger.notice("[QUICK-DISCOVERY-SWITCH] Activating project for path: \(path.path, privacy: .public)")
+      await ProjectSwitcherState.shared.switchToProject(projectId)
+      logger.info("[QUICK-DISCOVERY-SWITCH] Project activated: \(projectId, privacy: .public)")
+    } else {
+      logger.info("[QUICK-DISCOVERY-SWITCH] Project already active for path: \(path.path, privacy: .public)")
+    }
+
+    return projectId
   }
 
   @MainActor
@@ -601,48 +599,22 @@ struct ContextifyApp: App {
           if let newest = quickResult {
             log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-            // If different from current, switch immediately
-            if let currentPath = StartupCoordinator.shared.current?.path,
-               currentPath != newest.projectPath.path {
-              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
+            do {
+              let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
+              let projectId = try await Self.activateProjectForQuickDiscovery(
+                path: newest.projectPath,
+                orchestrator: orchestrator,
+                logger: log
+              )
 
-              do {
-                // Ensure project exists in database before switching
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-                // Now switch to the project
-                try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
-                log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
-
-                // PHASE 2: Upsert transcript record and trigger FastPath
-                await Self.ingestNewestTranscript(
-                  projectId: projectId,
-                  projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile,
-                  orchestrator: orchestrator
-                )
-              } catch {
-                log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
-                // Continue with full discovery - not fatal
-              }
-            } else {
-              log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
-
-              // PHASE 2: Even if no switch, still ingest newest transcript for fast timeline
-              do {
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-                await Self.ingestNewestTranscript(
-                  projectId: projectId,
-                  projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile,
-                  orchestrator: orchestrator
-                )
-              } catch {
-                log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
-              }
+              await Self.ingestNewestTranscript(
+                projectId: projectId,
+                projectPath: newest.projectPath,
+                transcriptFile: newest.transcriptFile,
+                orchestrator: orchestrator
+              )
+            } catch {
+              log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
             }
           } else {
             log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")

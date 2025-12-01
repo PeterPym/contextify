@@ -87,9 +87,9 @@ public actor FastPathIngestionCoordinator {
       log.info("[JIT-INGEST] Populating DB with \(project.transcriptFiles.count, privacy: .public) transcript records...")
 
       // Derive provider per-file from path (supports merged multi-provider projects)
-      // Claude: ~/.claude/projects/...  Codex: ~/.codex/sessions/...
       let discovered = project.transcriptFiles.map { url in
-        let providerEnum: DiscoveredProject.Provider = url.path.contains("/.claude/") ? .claudeCode : .codexCLI
+        let providerString = TranscriptProviderID.fromTranscriptURL(url) ?? TranscriptProviderID.claude
+        let providerEnum: DiscoveredProject.Provider = providerString == TranscriptProviderID.claude ? .claudeCode : .codexCLI
         return DiscoveredTranscript(
           fileURL: url,
           provider: providerEnum,
