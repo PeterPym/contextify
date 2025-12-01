@@ -152,4 +152,72 @@ final class AppStateOrchestratorTests: XCTestCase {
       )
     }
   }
+
+  // MARK: - LightweightProject.canonicalRootPath Tests
+
+  /// Test canonicalRootPath returns cwd when available
+  func testCanonicalRootPathUsesCwd() {
+    let project = LightweightProject(
+      id: "some-id",
+      path: URL(fileURLWithPath: "/Users/rob/.claude/projects/hash"),
+      displayName: "test",
+      transcriptCount: 1,
+      lastActivity: Date(),
+      provider: "claude.code",
+      cwd: "/Users/rob/code/projects/test",
+      transcriptFiles: []
+    )
+
+    XCTAssertEqual(project.canonicalRootPath, "/Users/rob/code/projects/test")
+  }
+
+  /// Test canonicalRootPath falls back to path when cwd is nil
+  func testCanonicalRootPathFallsBackToPath() {
+    let project = LightweightProject(
+      id: "some-id",
+      path: URL(fileURLWithPath: "/Users/rob/code/projects/test"),
+      displayName: "test",
+      transcriptCount: 1,
+      lastActivity: Date(),
+      provider: "claude.code",
+      cwd: nil,
+      transcriptFiles: []
+    )
+
+    XCTAssertEqual(project.canonicalRootPath, "/Users/rob/code/projects/test")
+  }
+
+  /// Test that projects with same canonicalRootPath can be identified for merging
+  func testProjectsWithSameCanonicalRootPathCanBeMerged() {
+    let claudeProject = LightweightProject(
+      id: "-Users-rob-code-projects-contextify",
+      path: URL(fileURLWithPath: "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify"),
+      displayName: "contextify",
+      transcriptCount: 5,
+      lastActivity: Date(),
+      provider: "claude.code",
+      cwd: "/Users/rob/code/projects/contextify",
+      transcriptFiles: [URL(fileURLWithPath: "/Users/rob/.claude/projects/-Users-rob-code/s1.jsonl")]
+    )
+
+    let codexProject = LightweightProject(
+      id: "L1VzZXJzL3JvYi9jb2RlL3Byb2plY3RzL2NvbnRleHRpZnk",
+      path: URL(fileURLWithPath: "/Users/rob/.codex/sessions/2025/11/30"),
+      displayName: "contextify",
+      transcriptCount: 2,
+      lastActivity: Date(),
+      provider: "codex.cli",
+      cwd: "/Users/rob/code/projects/contextify",
+      transcriptFiles: [URL(fileURLWithPath: "/Users/rob/.codex/sessions/2025/11/30/r1.jsonl")]
+    )
+
+    // Same canonicalRootPath despite different IDs and providers
+    XCTAssertEqual(claudeProject.canonicalRootPath, codexProject.canonicalRootPath)
+    XCTAssertNotEqual(claudeProject.id, codexProject.id)
+    XCTAssertNotEqual(claudeProject.provider, codexProject.provider)
+
+    // Merged transcripts should contain both
+    let mergedFiles = [claudeProject, codexProject].flatMap { $0.transcriptFiles }
+    XCTAssertEqual(mergedFiles.count, 2)
+  }
 }

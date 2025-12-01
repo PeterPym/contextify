@@ -79,6 +79,10 @@ struct WelcomeModalView: View {
                     completedContent
                 } else if let errorMessage = projectsVM.errorMessage {
                     errorContent(message: errorMessage)
+                } else if !projectsVM.hasReceivedInitialState || (Sandbox.isSandboxed && !projectsVM.hasAuthorizations) {
+                    // Placeholder while waiting for first orchestrator update
+                    // Prevents "no projects" flash before discovery/authorization has started
+                    initializingContent
                 } else {
                     noProjectsContent
                 }
@@ -284,6 +288,22 @@ struct WelcomeModalView: View {
         .padding(.vertical, 16)
     }
 
+    private var initializingContent: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+
+            Text("Initializing...")
+                .font(.headline)
+
+            Text("Looking for Claude Code and Codex CLI projects...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 16)
+    }
+
     private var noProjectsContent: some View {
         VStack(spacing: 16) {
             Image(systemName: "folder.badge.questionmark")
@@ -448,16 +468,20 @@ struct WelcomeModalView: View {
                     }
 
                     Button("Continue") {
-                        log.info("User granted permissions, reconfiguring access provider then running discovery")
-                        showPermissionsStep = false
-                        Task {
-                            // Reconfigure access provider with newly granted permissions
-                            // This rebuilds SandboxTranscriptAccessProvider with fresh URLs
-                            await ContextifyApp.reconfigureAccessProvider(folderAccessController: folderAccessController)
+                      log.info("User granted permissions, reconfiguring access provider then running discovery")
+                      showPermissionsStep = false
+                      Task {
+                        // Reconfigure access provider with newly granted permissions
+                        // This rebuilds SandboxTranscriptAccessProvider with fresh URLs
+                        await ContextifyApp.reconfigureAccessProvider(
+                          folderAccessController: folderAccessController,
+                          projectsVM: projectsVM
+                        )
+                        await projectsVM.refreshAuthorizationStateIfNeeded()
 
-                            // Run quick-discovery first to find and ingest newest transcript
-                            // This ensures timeline shows current conversation immediately
-                            await ContextifyApp.runQuickDiscoveryAndIngest(projectsVM: projectsVM)
+                        // Run quick-discovery first to find and ingest newest transcript
+                        // This ensures timeline shows current conversation immediately
+                        await ContextifyApp.runQuickDiscoveryAndIngest(projectsVM: projectsVM)
 
                             // Then run full discovery for all other transcripts
                             await projectsVM.discoverProjects()
@@ -664,9 +688,11 @@ private func mockProjectsVM(
         orchestrator: orchestrator
     )
     let vm = ProjectsViewModel(
-        discoveryService: discoveryService,
-        orchestrator: orchestrator,
-        hudModel: HUDViewModel.shared
+      discoveryService: discoveryService,
+      orchestrator: orchestrator,
+      hudModel: HUDViewModel.shared,
+      folderAccessController: nil,
+      accessProvider: nil
     )
 
     // Note: Mock state cannot be easily injected due to private(set) properties

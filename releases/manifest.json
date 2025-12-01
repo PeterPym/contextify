@@ -10,7 +10,8 @@
       "git_commit": "cd6974d5eb3b9cb199cc298be3659e29c99f471b",
       "dmg": {
         "status": "built",
-        "build_number": null
+        "build_number": null,
+        "built_at": "2025-11-30"
       },
       "appstore": {
         "status": "built",

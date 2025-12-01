@@ -168,8 +168,7 @@ struct ContextifyApp: App {
 
       // PHASE 2: Start legacy coordinators (for now - will migrate later)
       await StartupCoordinator.shared.start()
-      ProjectSwitcherState.shared.start()
-      startupLog.info("✅ Legacy coordinators started")
+      startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
     }
   }
 
@@ -312,7 +311,10 @@ struct ContextifyApp: App {
   /// This rebuilds the SandboxTranscriptAccessProvider with newly granted URLs
   /// and reconfigures AppStateOrchestrator so discovery can succeed.
   @MainActor
-  static func reconfigureAccessProvider(folderAccessController: FolderAccessController) async {
+  static func reconfigureAccessProvider(
+    folderAccessController: FolderAccessController,
+    projectsVM: ProjectsViewModel?
+  ) async {
     #if APPSTORE_BUILD
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
@@ -333,18 +335,31 @@ struct ContextifyApp: App {
 
     log.info("[RECONFIG-ACCESS] Claude: \(claudeURL != nil ? "authorized" : "nil"), Codex: \(codexURL != nil ? "authorized" : "nil")")
 
-    // Create new provider with fresh URLs
+    // Create new provider with fresh URLs (start security scope in init)
     let newProvider = SandboxTranscriptAccessProvider(
       claudeRoot: claudeURL,
       codexRoot: codexURL
     )
 
-    // Reconfigure orchestrator
+    // Reconfigure orchestrators with new provider
+    let sharedOrchestrator = try? TranscriptOrchestrator(
+      dbManager: .shared,
+      accessProvider: newProvider
+    )
+
     await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
-    log.info("[RECONFIG-ACCESS] ✅ AppStateOrchestrator reconfigured with new access provider")
+    if let orchestrator = sharedOrchestrator {
+      ConversationMonitor.shared.configureSharedOrchestrator(orchestrator)
+      ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
+      projectsVM?.applyAccessProvider(newProvider, folderAccessController: folderAccessController)
+      log.info("[RECONFIG-ACCESS] ✅ Shared orchestrators reconfigured with new access provider")
+    } else {
+      log.error("[RECONFIG-ACCESS-ERROR] Failed to build shared orchestrator with new access provider")
+    }
     #endif
   }
 
+  @MainActor
   static func runQuickDiscoveryAndIngest(projectsVM: ProjectsViewModel) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[QUICK-DISCOVERY] Starting lightweight scan for newest project (post-authorization)")
@@ -375,47 +390,38 @@ struct ContextifyApp: App {
       if let newest = quickResult {
         log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-        // If different from current, switch immediately
-        if let currentPath = StartupCoordinator.shared.current?.path,
-           currentPath != newest.projectPath.path {
-          log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
-
-          do {
-            // Ensure project exists in database before switching
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-            // Now switch to the project
-            try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
-            log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
-
-            // Ingest newest transcript
-            await ingestNewestTranscript(
-              projectId: projectId,
-              projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile,
-              orchestrator: orchestrator
-            )
-          } catch {
-            log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
+        do {
+          // Skip quick-discovery if we don't have access to this provider (sandbox builds)
+          if let provider = TranscriptProviderID.fromTranscriptURL(newest.transcriptFile),
+             let sandbox = projectsVM.accessProvider as? SandboxTranscriptAccessProvider {
+            if provider == TranscriptProviderID.claude && sandbox.claudeRoot == nil {
+              log.warning("[QUICK-DISCOVERY] Skipping preview ingest (no Claude authorization)")
+              return
+            }
+            if provider == TranscriptProviderID.codex && sandbox.codexRoot == nil {
+              log.warning("[QUICK-DISCOVERY] Skipping preview ingest (no Codex authorization)")
+              return
+            }
           }
-        } else {
-          log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
+          // Refresh authorization snapshot in case permissions just changed
+          await projectsVM.refreshAuthorizationStateIfNeeded()
 
-          // Even if no switch, still ingest newest transcript for fast timeline
-          do {
-            let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-            let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
+          let orchestrator = projectsVM.orchestrator
+          let projectId = try await activateProjectForQuickDiscovery(
+            path: newest.projectPath,
+            orchestrator: orchestrator,
+            logger: log
+          )
 
-            await ingestNewestTranscript(
-              projectId: projectId,
-              projectPath: newest.projectPath,
-              transcriptFile: newest.transcriptFile,
-              orchestrator: orchestrator
-            )
-          } catch {
-            log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
-          }
+          await ingestNewestTranscript(
+            projectId: projectId,
+            projectPath: newest.projectPath,
+            transcriptFile: newest.transcriptFile,
+            orchestrator: orchestrator,
+            accessProvider: projectsVM.accessProvider
+          )
+        } catch {
+          log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
         }
       } else {
         log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
@@ -424,6 +430,30 @@ struct ContextifyApp: App {
       let quickDuration = Date().timeIntervalSince(quickStart)
       log.error("[QUICK-DISCOVERY] Error: \(error.localizedDescription) (took \(Int(quickDuration * 1000))ms)")
     }
+  }
+
+  /// Ensures quick discovery activates the desired project before ingesting.
+  @MainActor
+  private static func activateProjectForQuickDiscovery(
+    path: URL,
+    orchestrator: TranscriptOrchestrator,
+    logger: Logger
+  ) async throws -> String {
+    let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: path.path).projectId
+    let currentPath = StartupCoordinator.shared.current?.path
+    let needsSwitch = currentPath == nil || currentPath != path.path
+
+    ProjectSwitcherState.shared.start()
+
+    if needsSwitch {
+      logger.notice("[QUICK-DISCOVERY-SWITCH] Activating project for path: \(path.path, privacy: .public)")
+      await ProjectSwitcherState.shared.switchToProject(projectId)
+      logger.info("[QUICK-DISCOVERY-SWITCH] Project activated: \(projectId, privacy: .public)")
+    } else {
+      logger.info("[QUICK-DISCOVERY-SWITCH] Project already active for path: \(path.path, privacy: .public)")
+    }
+
+    return projectId
   }
 
   @MainActor
@@ -494,16 +524,21 @@ struct ContextifyApp: App {
         let vm = ProjectsViewModel(
           discoveryService: discoveryService,
           orchestrator: orchestrator,
-          hudModel: HUDViewModel.shared
+          hudModel: HUDViewModel.shared,
+          folderAccessController: controller,
+          accessProvider: accessProvider
         )
         self.projectsViewModel = vm
         timeline.configureSharedOrchestrator(orchestrator)
+        ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
+        ProjectSwitcherState.shared.start()
       }
 
       guard let vm = projectsViewModel else {
         log.error("ProjectsViewModel not available")
         return
       }
+      let orchestrator = vm.orchestrator
 
       // Show welcome modal for onboarding when database is empty (0 projects).
       // Applies to ALL builds (DMG + App Store).
@@ -514,33 +549,25 @@ struct ContextifyApp: App {
       //
       // See WelcomeModalView.swift for complete onboarding workflow documentation.
 
-      let isEmptyDB: Bool
-      do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-        let projectCount = (try? orchestrator.listProjects().count) ?? 0
-        isEmptyDB = projectCount == 0
+      let projectCount = (try? orchestrator.listProjects().count) ?? 0
+      let isEmptyDB = projectCount == 0
 
-        log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
+      log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
 
-        // Show welcome modal for all empty database cases (onboarding workflow)
-        if isEmptyDB {
-          log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
-          log.info("📋 Empty database detected - showing welcome modal for onboarding")
-          // Post notification to show welcome modal BEFORE discovery starts
-          await MainActor.run {
-            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
-          }
-        } else {
-          log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
+      // Show welcome modal for all empty database cases (onboarding workflow)
+      if isEmptyDB {
+        log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
+        log.info("📋 Empty database detected - showing welcome modal for onboarding")
+        // Post notification to show welcome modal BEFORE discovery starts
+        await MainActor.run {
+          NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
         }
-      } catch {
-        log.warning("Failed to check if database is empty: \(error.localizedDescription)")
-        isEmptyDB = false
+      } else {
+        log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
       }
 
       // Reconcile pending assistant_usage records at startup
       do {
-        let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
         try orchestrator.reconcileAssistantUsage()
       } catch {
         log.warning("Failed to reconcile assistant usage: \(error.localizedDescription)")
@@ -552,7 +579,6 @@ struct ContextifyApp: App {
         // Reset display_order for first-launch sorting by activity
         // (On fresh database, all projects should sort by newest entry, not persisted order)
         do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
           try orchestrator.resetDisplayOrder()
           log.info("🔄 Reset display_order for activity-based sorting")
         } catch {
@@ -601,48 +627,23 @@ struct ContextifyApp: App {
           if let newest = quickResult {
             log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-            // If different from current, switch immediately
-            if let currentPath = StartupCoordinator.shared.current?.path,
-               currentPath != newest.projectPath.path {
-              log.notice("[QUICK-DISCOVERY-SWITCH] Switching from \(currentPath, privacy: .public) to \(newest.projectPath.path, privacy: .public)")
+            do {
+              let orchestrator = vm.orchestrator
+              let projectId = try await Self.activateProjectForQuickDiscovery(
+                path: newest.projectPath,
+                orchestrator: orchestrator,
+                logger: log
+              )
 
-              do {
-                // Ensure project exists in database before switching
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-                // Now switch to the project
-                try await StartupCoordinator.shared.switchProject(to: newest.projectPath.path)
-                log.info("[QUICK-DISCOVERY-SWITCH] ✅ Switch complete, project_id: \(projectId, privacy: .public)")
-
-                // PHASE 2: Upsert transcript record and trigger FastPath
-                await Self.ingestNewestTranscript(
-                  projectId: projectId,
-                  projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile,
-                  orchestrator: orchestrator
-                )
-              } catch {
-                log.error("[QUICK-DISCOVERY-SWITCH] ❌ Switch failed: \(error.localizedDescription)")
-                // Continue with full discovery - not fatal
-              }
-            } else {
-              log.info("[QUICK-DISCOVERY-SWITCH] No switch needed (already at newest project)")
-
-              // PHASE 2: Even if no switch, still ingest newest transcript for fast timeline
-              do {
-                let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-                let projectId = try orchestrator.getOrCreateProject(name: nil, rootPath: newest.projectPath.path).projectId
-
-                await Self.ingestNewestTranscript(
-                  projectId: projectId,
-                  projectPath: newest.projectPath,
-                  transcriptFile: newest.transcriptFile,
-                  orchestrator: orchestrator
-                )
-              } catch {
-                log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed to ingest newest transcript: \(error.localizedDescription)")
-              }
+              await Self.ingestNewestTranscript(
+                projectId: projectId,
+                projectPath: newest.projectPath,
+                transcriptFile: newest.transcriptFile,
+                orchestrator: orchestrator,
+                accessProvider: vm.accessProvider
+              )
+            } catch {
+              log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
             }
           } else {
             log.info("[QUICK-DISCOVERY] No projects found or scan timed out (took \(Int(quickDuration * 1000))ms)")
@@ -678,7 +679,7 @@ struct ContextifyApp: App {
         }
       }
 
-      await persistNewestProjectBookmarkIfAvailable(log: log)
+      await persistNewestProjectBookmarkIfAvailable(log: log, orchestrator: orchestrator)
 
       // C4.2: Auto-select most recent project if coordinator has no current project
       var shouldAutoSelect = false
@@ -712,8 +713,6 @@ struct ContextifyApp: App {
 
       if shouldAutoSelect {
         do {
-          let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-
           // Try to get project with newest transcript entry (most recent work)
           if let mostRecent = try orchestrator.getProjectWithNewestEntry() {
             log.notice("🎯 Auto-selecting project with newest entry: \(mostRecent.rootPath, privacy: .public)")
@@ -769,7 +768,8 @@ struct ContextifyApp: App {
     projectId: String,
     projectPath: URL,
     transcriptFile: URL,
-    orchestrator: TranscriptOrchestrator
+    orchestrator: TranscriptOrchestrator,
+    accessProvider: TranscriptAccessProvider?
   ) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     let startTime = Date()
@@ -777,10 +777,13 @@ struct ContextifyApp: App {
     do {
       // Determine provider from file path
       let provider: DiscoveredProject.Provider
+      let providerID: String
       if transcriptFile.path.contains("/.claude/projects/") {
         provider = .claudeCode
+        providerID = TranscriptProviderID.claude
       } else if transcriptFile.path.contains("/.codex/sessions/") {
         provider = .codexCLI
+        providerID = TranscriptProviderID.codex
       } else {
         log.warning("[QUICK-DISCOVERY-INGEST] Unknown provider for transcript: \(transcriptFile.path, privacy: .public)")
         return
@@ -798,16 +801,30 @@ struct ContextifyApp: App {
         sessionId: sessionId
       )
 
-      // Upsert transcript record
-      let resolved = try orchestrator.upsertTranscripts(
-        projectId: projectId,
-        discovered: [discovered]
-      )
-
-      guard let transcriptId = resolved.first?.transcriptId else {
-        log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
-        return
-      }
+      // Upsert transcript record (requires security scope on App Store)
+      let transcriptId: String = try {
+        if let accessProvider {
+          return try accessProvider.withAccess(for: providerID) { _ in
+            let resolved = try orchestrator.upsertTranscripts(
+              projectId: projectId,
+              discovered: [discovered]
+            )
+            guard let id = resolved.first?.transcriptId else {
+              throw FolderAccessError.bookmarkResolutionFailed
+            }
+            return id
+          }
+        } else {
+          let resolved = try orchestrator.upsertTranscripts(
+            projectId: projectId,
+            discovered: [discovered]
+          )
+          guard let id = resolved.first?.transcriptId else {
+            throw FolderAccessError.bookmarkResolutionFailed
+          }
+          return id
+        }
+      }()
 
       log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
 
@@ -823,14 +840,16 @@ struct ContextifyApp: App {
 
     } catch {
       let duration = Date().timeIntervalSince(startTime)
-      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(error.localizedDescription)")
+      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(String(describing: error), privacy: .public)")
     }
   }
 
   @MainActor
-  private func persistNewestProjectBookmarkIfAvailable(log: Logger) async {
+  private func persistNewestProjectBookmarkIfAvailable(
+    log: Logger,
+    orchestrator: TranscriptOrchestrator
+  ) async {
     do {
-      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
       guard let mostRecent = try orchestrator.getProjectWithNewestEntry() else {
         log.debug("[PERSIST-ROOT] No ingested projects yet; skipping persisted root update")
         return

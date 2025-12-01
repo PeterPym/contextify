@@ -21,23 +21,47 @@ final class ProjectsViewModel {
   // Welcome modal state (for compatibility with existing UI)
   private(set) var isDiscovering = false
   private(set) var isWelcomeReady = false
+  private(set) var hasAuthorizations: Bool = !Sandbox.isSandboxed
+
+  /// Tracks whether we've received at least one AppStateOrchestrator update.
+  /// Prevents "no projects" flash before discovery has had a chance to run.
+  private(set) var hasReceivedInitialState = false
   private(set) var watcherTargetCount = 0
   private(set) var watchersReadyCount = 0
   private(set) var lastScanTime: Date?
 
   // Legacy discovery service (kept for compatibility with old UI that might reference it)
-  let discoveryService: ProjectDiscoveryService
+  @ObservationIgnored var discoveryService: ProjectDiscoveryService
+  @ObservationIgnored var orchestrator: TranscriptOrchestrator
+  @ObservationIgnored var accessProvider: TranscriptAccessProvider?
+  @ObservationIgnored private let folderAccessController: FolderAccessController?
 
   @ObservationIgnored private var stateObservationTask: Task<Void, Never>?
 
   init(
     discoveryService: ProjectDiscoveryService,
     orchestrator: TranscriptOrchestrator,
-    hudModel: HUDViewModel
+    hudModel: HUDViewModel,
+    folderAccessController: FolderAccessController? = nil,
+    accessProvider: TranscriptAccessProvider? = nil
   ) {
     self.discoveryService = discoveryService
+    self.orchestrator = orchestrator
+    self.folderAccessController = folderAccessController
+    self.accessProvider = accessProvider
 
     logger.info("[VM-INIT] Phase 3 ProjectsViewModel initialized")
+
+    // Prefetch authorization state (sandbox only) to gate empty-state flashes
+    if Sandbox.isSandboxed, let controller = folderAccessController {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        let claude = await controller.authorization(for: .claude)
+        let codex = await controller.authorization(for: .codex)
+        self.hasAuthorizations = (claude?.status == .authorized) || (codex?.status == .authorized)
+        logger.info("[VM-INIT] Authorization state loaded (hasAuthorizations=\(self.hasAuthorizations))")
+      }
+    }
 
     // Start observing AppStateOrchestrator
     startObservingOrchestrator()
@@ -62,6 +86,7 @@ final class ProjectsViewModel {
     // Initial update
     Task {
       await updateFromOrchestrator()
+      await refreshAuthorizationStateIfNeeded()
     }
   }
 
@@ -72,8 +97,12 @@ final class ProjectsViewModel {
 
     switch state {
     case .startup:
+      // Don't set hasReceivedInitialState here - .startup is a placeholder state
+      // that exists before discovery actually begins. Setting the flag here would
+      // cause the welcome modal to flash "no projects" before discovery starts.
       isLoading = true
       loadingMessage = "Initializing..."
+      return
 
     case .discovering:
       isDiscovering = true
@@ -148,6 +177,40 @@ final class ProjectsViewModel {
       isLoading = false
       errorMessage = message
       logger.error("[VM-UPDATE] Error: \(message)")
+    }
+
+    // Mark that we've received at least one orchestrator update
+    hasReceivedInitialState = true
+  }
+
+  @MainActor
+  func refreshAuthorizationStateIfNeeded() async {
+    guard Sandbox.isSandboxed, let controller = folderAccessController else { return }
+    let claude = await controller.authorization(for: .claude)
+    let codex = await controller.authorization(for: .codex)
+    self.hasAuthorizations = (claude?.status == .authorized) || (codex?.status == .authorized)
+    logger.info("[VM-AUTH] Authorization state refreshed (hasAuthorizations=\(self.hasAuthorizations))")
+  }
+
+  /// Rebuilds orchestrator and discovery service when sandbox authorizations change.
+  @MainActor
+  func applyAccessProvider(_ provider: TranscriptAccessProvider?, folderAccessController: FolderAccessController?) {
+    accessProvider = provider
+
+    do {
+      let newOrchestrator = try TranscriptOrchestrator(
+        dbManager: .shared,
+        accessProvider: provider
+      )
+      orchestrator = newOrchestrator
+      discoveryService = ProjectDiscoveryService(
+        db: try DatabaseManager.shared.pool,
+        orchestrator: newOrchestrator,
+        folderAccessController: folderAccessController
+      )
+      logger.info("[VM-AUTH] Rebuilt orchestrator and discovery service with updated access provider")
+    } catch {
+      logger.error("[VM-AUTH-ERROR] Failed to rebuild orchestrator with new access provider: \(error.localizedDescription, privacy: .public)")
     }
   }
 
