@@ -270,12 +270,17 @@ SANDBOX_APP_SUPPORT="$SANDBOX_CONTAINER/Data/Library/Application Support/Context
 
 pause() {
   echo ""
-  echo "Press Enter to continue, or type 'restore' to restore real transcripts and exit..."
-  read -r input
-  if [[ "$input" == "restore" ]]; then
-    echo ""
-    do_restore
-    exit 0
+  if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
+    echo "Press Enter to continue, or type 'restore' to restore real transcripts and exit..."
+    read -r input
+    if [[ "$input" == "restore" ]]; then
+      echo ""
+      do_restore
+      exit 0
+    fi
+  else
+    echo "Press Enter to continue..."
+    read -r
   fi
   echo ""
 }
