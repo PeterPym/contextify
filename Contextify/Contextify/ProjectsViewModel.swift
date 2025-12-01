@@ -22,6 +22,17 @@ final class ProjectsViewModel {
   private(set) var isDiscovering = false
   private(set) var isWelcomeReady = false
 
+  // App Store permissions state (used to gate empty-state flashes)
+  var hasAnyAuthorizations: Bool {
+    // For DMG builds, treat as authorized
+    guard Sandbox.isSandboxed else { return true }
+    // FolderAccessController only exists on sandbox builds
+    guard let controller = discoveryService.folderAccessController else { return false }
+    let claude = controller.authorization(for: .claude)
+    let codex = controller.authorization(for: .codex)
+    return (claude?.status == .authorized) || (codex?.status == .authorized)
+  }
+
   /// Tracks whether we've received at least one AppStateOrchestrator update.
   /// Prevents "no projects" flash before discovery has had a chance to run.
   private(set) var hasReceivedInitialState = false

@@ -751,37 +751,50 @@ struct ContextifyApp: App {
         return
       }
 
-      // Extract session ID from filename
-      let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
+      // Ensure App Store builds have security-scoped access before touching the file
+      let accessProvider = AppStateOrchestrator.shared.accessProvider
+      let ingestBlock = {
+        // Extract session ID from filename
+        let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
 
-      log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
+        log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
 
-      // Create discovered transcript
-      let discovered = DiscoveredTranscript(
-        fileURL: transcriptFile,
-        provider: provider,
-        sessionId: sessionId
-      )
+        // Create discovered transcript
+        let discovered = DiscoveredTranscript(
+          fileURL: transcriptFile,
+          provider: provider,
+          sessionId: sessionId
+        )
 
-      // Upsert transcript record
-      let resolved = try orchestrator.upsertTranscripts(
-        projectId: projectId,
-        discovered: [discovered]
-      )
+        // Upsert transcript record
+        let resolved = try orchestrator.upsertTranscripts(
+          projectId: projectId,
+          discovered: [discovered]
+        )
 
-      guard let transcriptId = resolved.first?.transcriptId else {
-        log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
-        return
+        guard let transcriptId = resolved.first?.transcriptId else {
+          log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
+          return
+        }
+
+        log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
+
+        // Trigger preview ingestion (first 25 entries)
+        try orchestrator.ingestTranscript(
+          transcriptId: transcriptId,
+          mode: .preview(entries: 25),
+          notifyUI: true
+        )
       }
 
-      log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
-
-      // Trigger preview ingestion (first 25 entries)
-      try await orchestrator.ingestTranscript(
-        transcriptId: transcriptId,
-        mode: .preview(entries: 25),
-        notifyUI: true
-      )
+      if let accessProvider {
+        try accessProvider.withAccess(for: provider.transcriptProviderID) { _ in
+          try ingestBlock()
+        }
+      } else {
+        // DMG build or missing access provider; proceed without sandbox scope
+        try ingestBlock()
+      }
 
       let duration = Date().timeIntervalSince(startTime)
       log.info("[QUICK-DISCOVERY-INGEST] ✅ Preview ingestion complete in \(Int(duration * 1000))ms")
