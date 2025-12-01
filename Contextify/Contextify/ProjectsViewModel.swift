@@ -21,6 +21,10 @@ final class ProjectsViewModel {
   // Welcome modal state (for compatibility with existing UI)
   private(set) var isDiscovering = false
   private(set) var isWelcomeReady = false
+
+  /// Tracks whether we've received at least one AppStateOrchestrator update.
+  /// Prevents "no projects" flash before discovery has had a chance to run.
+  private(set) var hasReceivedInitialState = false
   private(set) var watcherTargetCount = 0
   private(set) var watchersReadyCount = 0
   private(set) var lastScanTime: Date?
@@ -149,6 +153,9 @@ final class ProjectsViewModel {
       errorMessage = message
       logger.error("[VM-UPDATE] Error: \(message)")
     }
+
+    // Mark that we've received at least one orchestrator update
+    hasReceivedInitialState = true
   }
 
   // MARK: - Actions

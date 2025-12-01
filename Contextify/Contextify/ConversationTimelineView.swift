@@ -85,10 +85,6 @@ struct ConversationTimelineView: View {
                     }
                 }
                 Spacer()
-                if monitor.isProcessing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
                 Button {
                     openWindow(id: "projects")
                 } label: {

@@ -79,6 +79,10 @@ struct WelcomeModalView: View {
                     completedContent
                 } else if let errorMessage = projectsVM.errorMessage {
                     errorContent(message: errorMessage)
+                } else if !projectsVM.hasReceivedInitialState {
+                    // Placeholder while waiting for first orchestrator update
+                    // Prevents "no projects" flash before discovery has started
+                    initializingContent
                 } else {
                     noProjectsContent
                 }
@@ -280,6 +284,22 @@ struct WelcomeModalView: View {
                 .foregroundStyle(.blue)
                 .font(.footnote)
             }
+        }
+        .padding(.vertical, 16)
+    }
+
+    private var initializingContent: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+
+            Text("Initializing...")
+                .font(.headline)
+
+            Text("Looking for Claude Code and Codex CLI projects...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .padding(.vertical, 16)
     }
