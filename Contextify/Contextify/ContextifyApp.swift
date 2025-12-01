@@ -372,23 +372,24 @@ struct ContextifyApp: App {
 
       let quickDuration = Date().timeIntervalSince(quickStart)
 
-      if let newest = quickResult {
-        log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
+        if let newest = quickResult {
+          log.info("[QUICK-DISCOVERY] Found newest: \(newest.projectPath.path, privacy: .public) transcript: \(newest.transcriptFile.lastPathComponent, privacy: .public) (took \(Int(quickDuration * 1000))ms)")
 
-        do {
-          let orchestrator = projectsVM.orchestrator
-          let projectId = try await activateProjectForQuickDiscovery(
-            path: newest.projectPath,
-            orchestrator: orchestrator,
-            logger: log
-          )
+          do {
+            let orchestrator = projectsVM.orchestrator
+            let projectId = try await activateProjectForQuickDiscovery(
+              path: newest.projectPath,
+              orchestrator: orchestrator,
+              logger: log
+            )
 
-          await ingestNewestTranscript(
-            projectId: projectId,
-            projectPath: newest.projectPath,
-            transcriptFile: newest.transcriptFile,
-            orchestrator: orchestrator
-          )
+            await ingestNewestTranscript(
+              projectId: projectId,
+              projectPath: newest.projectPath,
+              transcriptFile: newest.transcriptFile,
+              orchestrator: orchestrator,
+              accessProvider: projectsVM.accessProvider
+            )
         } catch {
           log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
         }
@@ -494,7 +495,8 @@ struct ContextifyApp: App {
           discoveryService: discoveryService,
           orchestrator: orchestrator,
           hudModel: HUDViewModel.shared,
-          folderAccessController: controller
+          folderAccessController: controller,
+          accessProvider: accessProvider
         )
         self.projectsViewModel = vm
         timeline.configureSharedOrchestrator(orchestrator)
@@ -607,7 +609,8 @@ struct ContextifyApp: App {
                 projectId: projectId,
                 projectPath: newest.projectPath,
                 transcriptFile: newest.transcriptFile,
-                orchestrator: orchestrator
+                orchestrator: orchestrator,
+                accessProvider: vm.accessProvider
               )
             } catch {
               log.error("[QUICK-DISCOVERY-SWITCH] ❌ Failed to activate or ingest newest transcript: \(error.localizedDescription)")
@@ -735,7 +738,8 @@ struct ContextifyApp: App {
     projectId: String,
     projectPath: URL,
     transcriptFile: URL,
-    orchestrator: TranscriptOrchestrator
+    orchestrator: TranscriptOrchestrator,
+    accessProvider: TranscriptAccessProvider?
   ) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     let startTime = Date()
@@ -752,50 +756,51 @@ struct ContextifyApp: App {
         return
       }
 
-      // Ensure App Store builds have security-scoped access before touching the file
-      let accessProvider = AppStateOrchestrator.shared.accessProvider
-      let ingestBlock = {
-        // Extract session ID from filename
-        let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
+      // Extract session ID from filename
+      let sessionId = transcriptFile.deletingPathExtension().lastPathComponent
 
-        log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
+      log.info("[QUICK-DISCOVERY-INGEST] Creating transcript record: \(sessionId, privacy: .public)")
 
-        // Create discovered transcript
-        let discovered = DiscoveredTranscript(
-          fileURL: transcriptFile,
-          provider: provider,
-          sessionId: sessionId
-        )
+      // Create discovered transcript
+      let discovered = DiscoveredTranscript(
+        fileURL: transcriptFile,
+        provider: provider,
+        sessionId: sessionId
+      )
 
-        // Upsert transcript record
-        let resolved = try orchestrator.upsertTranscripts(
-          projectId: projectId,
-          discovered: [discovered]
-        )
-
-        guard let transcriptId = resolved.first?.transcriptId else {
-          log.error("[QUICK-DISCOVERY-INGEST] Failed to get transcript ID after upsert")
-          return
+      // Upsert transcript record (requires security scope on App Store)
+      let transcriptId: String = try {
+        if let accessProvider {
+          return try accessProvider.withAccess(for: providerID) { _ in
+            let resolved = try orchestrator.upsertTranscripts(
+              projectId: projectId,
+              discovered: [discovered]
+            )
+            guard let id = resolved.first?.transcriptId else {
+              throw FolderAccessError.bookmarkResolutionFailed
+            }
+            return id
+          }
+        } else {
+          let resolved = try orchestrator.upsertTranscripts(
+            projectId: projectId,
+            discovered: [discovered]
+          )
+          guard let id = resolved.first?.transcriptId else {
+            throw FolderAccessError.bookmarkResolutionFailed
+          }
+          return id
         }
+      }()
 
-        log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
+      log.info("[QUICK-DISCOVERY-INGEST] Transcript record created: \(transcriptId, privacy: .public)")
 
-        // Trigger preview ingestion (first 25 entries)
-        try orchestrator.ingestTranscript(
-          transcriptId: transcriptId,
-          mode: .preview(entries: 25),
-          notifyUI: true
-        )
-      }
-
-      if let accessProvider {
-        try accessProvider.withAccess(for: provider.transcriptProviderID) { _ in
-          try ingestBlock()
-        }
-      } else {
-        // DMG build or missing access provider; proceed without sandbox scope
-        try ingestBlock()
-      }
+      // Trigger preview ingestion (first 25 entries)
+      try await orchestrator.ingestTranscript(
+        transcriptId: transcriptId,
+        mode: .preview(entries: 25),
+        notifyUI: true
+      )
 
       let duration = Date().timeIntervalSince(startTime)
       log.info("[QUICK-DISCOVERY-INGEST] ✅ Preview ingestion complete in \(Int(duration * 1000))ms")

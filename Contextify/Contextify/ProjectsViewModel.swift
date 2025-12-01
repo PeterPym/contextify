@@ -33,6 +33,7 @@ final class ProjectsViewModel {
   // Legacy discovery service (kept for compatibility with old UI that might reference it)
   let discoveryService: ProjectDiscoveryService
   @ObservationIgnored let orchestrator: TranscriptOrchestrator
+  @ObservationIgnored let accessProvider: TranscriptAccessProvider?
   @ObservationIgnored private let folderAccessController: FolderAccessController?
 
   @ObservationIgnored private var stateObservationTask: Task<Void, Never>?
@@ -41,11 +42,13 @@ final class ProjectsViewModel {
     discoveryService: ProjectDiscoveryService,
     orchestrator: TranscriptOrchestrator,
     hudModel: HUDViewModel,
-    folderAccessController: FolderAccessController? = nil
+    folderAccessController: FolderAccessController? = nil,
+    accessProvider: TranscriptAccessProvider? = nil
   ) {
     self.discoveryService = discoveryService
     self.orchestrator = orchestrator
     self.folderAccessController = folderAccessController
+    self.accessProvider = accessProvider
 
     logger.info("[VM-INIT] Phase 3 ProjectsViewModel initialized")
 

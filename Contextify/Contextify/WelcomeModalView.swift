@@ -684,9 +684,11 @@ private func mockProjectsVM(
         orchestrator: orchestrator
     )
     let vm = ProjectsViewModel(
-        discoveryService: discoveryService,
-        orchestrator: orchestrator,
-        hudModel: HUDViewModel.shared
+      discoveryService: discoveryService,
+      orchestrator: orchestrator,
+      hudModel: HUDViewModel.shared,
+      folderAccessController: nil,
+      accessProvider: nil
     )
 
     // Note: Mock state cannot be easily injected due to private(set) properties
