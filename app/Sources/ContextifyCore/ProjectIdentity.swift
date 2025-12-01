@@ -23,6 +23,33 @@ public enum ProjectIdentity {
     return hash.compactMap { String(format: "%02x", $0) }.joined()
   }
 
+  /// Extract CWD from a single JSONL header line.
+  /// Supports both Claude Code (top-level cwd) and Codex (payload.cwd).
+  /// Precedence: top-level cwd > payload.cwd.
+  /// - Parameter line: A single line of JSONL content
+  /// - Returns: The CWD path if found, nil otherwise
+  public static func extractCwdFromJSONLine(_ line: String) -> String? {
+    struct RecordWithCwd: Codable { let cwd: String? }
+    struct CodexPayload: Codable { let cwd: String? }
+    struct CodexRecord: Codable { let payload: CodexPayload? }
+
+    guard let data = line.data(using: .utf8) else { return nil }
+
+    // First: Claude / direct format (top-level cwd)
+    if let direct = try? JSONDecoder().decode(RecordWithCwd.self, from: data),
+       let cwd = direct.cwd {
+      return cwd
+    }
+
+    // Second: Codex payload format (payload.cwd)
+    if let payload = try? JSONDecoder().decode(CodexRecord.self, from: data),
+       let cwd = payload.payload?.cwd {
+      return cwd
+    }
+
+    return nil
+  }
+
   /// Reverse-mangle a project directory name back to absolute project path
   /// - Parameters:
   ///   - provider: Provider name (e.g., "claude.code", "codex.cli")
