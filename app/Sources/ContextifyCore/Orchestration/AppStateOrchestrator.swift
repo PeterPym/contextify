@@ -27,6 +27,15 @@ public final class AppStateOrchestrator: ObservableObject {
 
   // State
   @Published public private(set) var state: AppState = .startup
+
+  /// Returns the active project ID if the orchestrator is in `.active` state.
+  /// Allows components that initialize late to rehydrate from current state
+  /// rather than depending on having seen the `.projectDidActivate` notification.
+  public var activeProjectId: String? {
+    if case .active(let id) = state { return id }
+    return nil
+  }
+
   private var knownProjects: [LightweightProject] = []
   private var projectLookup: [String: LightweightProject] = [:]
   private var backgroundTask: Task<Void, Never>?

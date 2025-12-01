@@ -362,6 +362,16 @@ final class ConversationMonitor {
     private func subscribeToContextUpdates() {
         coordinatorTask = Task { @MainActor [weak self] in
             guard let self else { return }
+
+            // P1-REHYDRATE: Check if orchestrator already has an active project
+            // This handles the case where startup completed before we started listening
+            if let activeId = AppStateOrchestrator.shared.activeProjectId,
+               let context = StartupCoordinator.shared.current,
+               context.id == activeId {
+                log.info("[TIMELINE-REHYDRATE] Found active project on init: \(activeId, privacy: .public)")
+                await self.handleContextUpdate(context)
+            }
+
             for await context in StartupCoordinator.shared.updates() {
                 await self.handleContextUpdate(context)
             }

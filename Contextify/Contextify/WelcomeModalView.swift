@@ -72,7 +72,8 @@ struct WelcomeModalView: View {
                     permissionsContent
                 } else if projectsVM.welcomePhase == .watchers && !projectsVM.isWelcomeReady {
                     watcherWarmupContent
-                } else if projectsVM.isDiscovering || projectsVM.isIngesting {
+                } else if projectsVM.isDiscovering {
+                    // Only gate on discovery, not JIT ingestion - user shouldn't wait for first project load
                     discoveringContent
                 } else if !projectsVM.projects.isEmpty {
                     completedContent
@@ -466,7 +467,8 @@ struct WelcomeModalView: View {
                     .disabled(!hasAnyAuthorizations)
                     .keyboardShortcut(.defaultAction)
                 }
-            } else if !projectsVM.projects.isEmpty && !projectsVM.isDiscovering && !projectsVM.isIngesting {
+            } else if !projectsVM.projects.isEmpty && !projectsVM.isDiscovering {
+                // Show Get Started once discovery completes - don't wait for JIT ingestion
                 Button("Get Started") {
                     log.info("User clicked Get Started - closing welcome modal")
                     dismiss()
@@ -482,14 +484,15 @@ struct WelcomeModalView: View {
                         .multilineTextAlignment(.center)
                         .padding(.top, 4)
                 }
-            } else if !projectsVM.isDiscovering && !projectsVM.isIngesting {
+            } else if !projectsVM.isDiscovering {
+                // No projects found - show Close button once discovery completes
                 Button("Close") {
                     log.info("User closed welcome modal (no projects)")
                     dismiss()
                 }
                 .buttonStyle(.bordered)
             }
-            // No button during discovery/ingestion - modal auto-closes when complete
+            // No button during discovery - modal shows progress
         }
     }
 }
