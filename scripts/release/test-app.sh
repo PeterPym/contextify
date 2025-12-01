@@ -106,23 +106,53 @@ if [ "$DIST" = "dmg" ]; then
   echo "  DMG: $DMG_PATH"
   echo ""
 
-  # Check if already mounted
+  # Always unmount any existing Contextify volume to ensure we test the correct DMG
   if [ -d "/Volumes/Contextify" ]; then
-    echo "Contextify volume already mounted, using existing mount"
-    MOUNTED_VOLUME="/Volumes/Contextify"
-  else
-    echo "Mounting DMG..."
-    # Mount and capture the volume path
-    MOUNT_OUTPUT=$(hdiutil attach "$DMG_PATH" -nobrowse 2>&1)
-    MOUNTED_VOLUME=$(echo "$MOUNT_OUTPUT" | grep "/Volumes/" | awk '{print $NF}')
+    echo "Unmounting existing Contextify volume (may be stale)..."
 
-    if [ -z "$MOUNTED_VOLUME" ] || [ ! -d "$MOUNTED_VOLUME" ]; then
-      echo -e "${RED}Error: Failed to mount DMG${NC}"
-      echo "$MOUNT_OUTPUT"
+    # Aggressively quit app - try graceful, then force kill
+    osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
+    sleep 1
+    pkill -x Contextify 2>/dev/null || true
+    sleep 1
+    # Force kill if still running
+    pkill -9 -x Contextify 2>/dev/null || true
+    sleep 1
+
+    # Try to unmount, retry with force if needed
+    if ! hdiutil detach "/Volumes/Contextify" 2>/dev/null; then
+      echo "  Retrying unmount with force..."
+      hdiutil detach "/Volumes/Contextify" -force 2>/dev/null || true
+      sleep 1
+    fi
+
+    # Verify unmount succeeded
+    if [ -d "/Volumes/Contextify" ]; then
+      echo -e "${RED}Error: Failed to unmount existing Contextify volume${NC}"
+      echo "  The app may still be running or the volume is in use."
+      echo "  Try: diskutil eject \$(diskutil list | grep -B2 Contextify | grep '/dev' | awk '{print \$1}')"
       exit 1
     fi
-    echo "  Mounted at: $MOUNTED_VOLUME"
   fi
+
+  # Record the DMG we're about to mount (for verification)
+  DMG_MODIFIED=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$DMG_PATH")
+  DMG_SIZE=$(stat -f "%z" "$DMG_PATH")
+  echo "  DMG modified: $DMG_MODIFIED"
+  echo "  DMG size: $DMG_SIZE bytes"
+  echo ""
+
+  echo "Mounting DMG..."
+  # Mount and capture the volume path
+  MOUNT_OUTPUT=$(hdiutil attach "$DMG_PATH" -nobrowse 2>&1)
+  MOUNTED_VOLUME=$(echo "$MOUNT_OUTPUT" | grep "/Volumes/" | awk '{print $NF}')
+
+  if [ -z "$MOUNTED_VOLUME" ] || [ ! -d "$MOUNTED_VOLUME" ]; then
+    echo -e "${RED}Error: Failed to mount DMG${NC}"
+    echo "$MOUNT_OUTPUT"
+    exit 1
+  fi
+  echo "  Mounted at: $MOUNTED_VOLUME"
 
   APP_PATH="$MOUNTED_VOLUME/Contextify.app"
   BUNDLE_ID="dev.contextify.Contextify"
@@ -132,6 +162,36 @@ if [ "$DIST" = "dmg" ]; then
     echo "Contents of volume:"
     ls -la "$MOUNTED_VOLUME"
     exit 1
+  fi
+
+  # Verify the mounted app matches the DMG we intended to mount
+  APP_BINARY="$APP_PATH/Contents/MacOS/Contextify"
+  if [ -f "$APP_BINARY" ]; then
+    APP_MODIFIED=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$APP_BINARY")
+    echo "  App binary: $APP_MODIFIED"
+
+    # Compare timestamps - app should be within a few hours of DMG
+    DMG_EPOCH=$(stat -f "%m" "$DMG_PATH")
+    APP_EPOCH=$(stat -f "%m" "$APP_BINARY")
+    TIME_DIFF=$((DMG_EPOCH - APP_EPOCH))
+
+    # If app is more than 2 hours older than DMG, something is wrong
+    if [ $TIME_DIFF -gt 7200 ]; then
+      echo ""
+      echo -e "${RED}⚠️  WARNING: App binary is significantly older than DMG!${NC}"
+      echo -e "${RED}   This may indicate the wrong DMG was mounted.${NC}"
+      echo ""
+      echo "  DMG modified: $DMG_MODIFIED"
+      echo "  App binary:   $APP_MODIFIED"
+      echo ""
+      read -p "Continue anyway? [y/N] " -n 1 -r
+      echo
+      if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborting."
+        hdiutil detach "$MOUNTED_VOLUME" -force 2>/dev/null || true
+        exit 1
+      fi
+    fi
   fi
 else
   # App Store build
