@@ -201,4 +201,93 @@ final class ProjectIdentityTests: XCTestCase {
       }
     }
   }
+
+  // MARK: - extractCwdFromJSONLine Tests
+
+  func testExtractCwdFromJSONLine_TopLevelCwd() {
+    // Given: Claude Code style JSON with top-level cwd
+    let line = """
+      {"cwd":"/path/top-level","timestamp":"2025-01-01T00:00:00Z"}
+      """
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should return top-level cwd
+    XCTAssertEqual(result, "/path/top-level")
+  }
+
+  func testExtractCwdFromJSONLine_PayloadCwd() {
+    // Given: Codex style JSON with payload.cwd
+    let line = """
+      {"type":"session_meta","payload":{"cwd":"/path/codex"}}
+      """
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should return payload.cwd
+    XCTAssertEqual(result, "/path/codex")
+  }
+
+  func testExtractCwdFromJSONLine_BothPresent_PrefersTopLevel() {
+    // Given: JSON with both top-level cwd and payload.cwd (different values)
+    let line = """
+      {"cwd":"/path/direct","payload":{"cwd":"/path/payload"}}
+      """
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should prefer top-level cwd (documented precedence)
+    XCTAssertEqual(result, "/path/direct")
+  }
+
+  func testExtractCwdFromJSONLine_MalformedJSON() {
+    // Given: Malformed JSON
+    let line = "not valid json {"
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should return nil
+    XCTAssertNil(result)
+  }
+
+  func testExtractCwdFromJSONLine_NoCwdField() {
+    // Given: Valid JSON but no cwd field
+    let line = """
+      {"type":"message","content":"hello"}
+      """
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should return nil
+    XCTAssertNil(result)
+  }
+
+  func testExtractCwdFromJSONLine_EmptyLine() {
+    // Given: Empty line
+    let line = ""
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should return nil
+    XCTAssertNil(result)
+  }
+
+  func testExtractCwdFromJSONLine_RealCodexFormat() {
+    // Given: Actual Codex session_meta format from the bug report
+    let line = """
+      {"type":"session_meta","payload":{"cwd":"/Users/rob/code/sample-projects/demo-video","model":"o3","provider":"openai"}}
+      """
+
+    // When: Extracting CWD
+    let result = ProjectIdentity.extractCwdFromJSONLine(line)
+
+    // Then: Should correctly extract the cwd from payload
+    XCTAssertEqual(result, "/Users/rob/code/sample-projects/demo-video")
+  }
 }
