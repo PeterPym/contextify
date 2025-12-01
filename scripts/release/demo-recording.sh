@@ -302,37 +302,6 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
-# Open background image for demo recording
-BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
-if [[ -f "$BACKGROUND_IMG" ]]; then
-  PREVIEW_WAS_RUNNING=$(pgrep -x "Preview" >/dev/null && echo "yes" || echo "no")
-  echo ""
-  echo "Background: build/assets/demo-video-background.jpg"
-  echo "  Set as desktop background before recording"
-  osascript <<EOF
-tell application "Preview"
-  activate
-  open POSIX file "$BACKGROUND_IMG"
-  delay 0.3
-end tell
-EOF
-  # Only configure toolbars if Preview wasn't already running
-  if [[ "$PREVIEW_WAS_RUNNING" == "no" ]]; then
-    osascript <<'EOF'
-tell application "System Events"
-  tell process "Preview"
-    try
-      click menu item "Hide Toolbar" of menu "View" of menu bar 1
-    end try
-    try
-      click menu item "Hide Markup Toolbar" of menu "View" of menu bar 1
-    end try
-  end tell
-end tell
-EOF
-  fi
-fi
-
 # Check if archive is stale compared to main branch
 echo ""
 echo "Checking archive freshness..."
@@ -486,6 +455,34 @@ if [[ "$add_dock" == "y" || "$add_dock" == "Y" ]]; then
   killall Dock
   sleep 2
   echo "✓ Added to Dock"
+fi
+
+# Open background image for desktop
+BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
+if [[ -f "$BACKGROUND_IMG" ]]; then
+  echo ""
+  echo "Open background image in Preview? (Y/n)"
+  read -r open_bg
+  if [[ "$open_bg" != "n" && "$open_bg" != "N" ]]; then
+    osascript <<EOF
+tell application "Preview"
+  activate
+  open POSIX file "$BACKGROUND_IMG"
+  delay 0.3
+end tell
+tell application "System Events"
+  tell process "Preview"
+    try
+      click menu item "Hide Toolbar" of menu "View" of menu bar 1
+    end try
+    try
+      click menu item "Hide Markup Toolbar" of menu "View" of menu bar 1
+    end try
+  end tell
+end tell
+EOF
+    echo "  Set as desktop background, then continue"
+  fi
 fi
 
 echo ""
