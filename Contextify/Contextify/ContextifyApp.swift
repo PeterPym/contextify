@@ -788,7 +788,7 @@ struct ContextifyApp: App {
 
     } catch {
       let duration = Date().timeIntervalSince(startTime)
-      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(error.localizedDescription)")
+      log.error("[QUICK-DISCOVERY-INGEST] ❌ Failed after \(Int(duration * 1000))ms: \(String(describing: error), privacy: .public)")
     }
   }
 
