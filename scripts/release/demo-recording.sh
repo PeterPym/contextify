@@ -488,12 +488,11 @@ DEMO_VIDEO="$DRAFTS_DIR/demo-recording-$COUNTER.mov"
 
 echo "Start recording? (Y/n)"
 echo "  Output: $DEMO_VIDEO"
-echo "  Press Ctrl+C in this terminal to stop."
+echo "  (Press any key or Ctrl+C to stop recording)"
 read -r start_rec
 if [[ "$start_rec" != "n" && "$start_rec" != "N" ]]; then
   echo ""
-  echo "Recording #$COUNTER to: $DEMO_VIDEO"
-  echo "Press Ctrl+C to stop..."
+  echo "Recording #$COUNTER..."
   echo ""
   # -v = video, -k = show clicks, -C = capture cursor
   screencapture -v -k -C "$DEMO_VIDEO"
