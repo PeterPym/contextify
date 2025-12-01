@@ -206,6 +206,15 @@ public final class ProjectSwitcherState {
       }
     }
 
+    // We intentionally listen to both:
+    // - .projectsDiscoveryComplete: lightweight discovery from AppStateOrchestrator
+    //   (metadata-only, no hoover), used for startup/refresh flows.
+    // - .projectsIngestionComplete: legacy full-ingestion path that still powers
+    //   some code paths via ProjectActivityMonitor.
+    //
+    // Both funnel into scheduleRefresh(), which is debounced (100ms) to avoid
+    // refresh spam if multiple notifications fire in quick succession.
+
     // Initial discovery & full unread pass based on current DB
     Task {
       // Get initial context from coordinator (guaranteed to be available)

@@ -274,6 +274,10 @@ public actor ProjectActivityMonitor {
   #endif
 
   private func discoverAllProjects() async throws {
+    // Contract: APPSTORE_BUILD must be defined for the ContextifyCore target in
+    // App Store builds. In that configuration, sandboxed binaries should rely on
+    // LightweightDiscoveryService + the access provider instead of this legacy
+    // home-directory scan against ~/.claude and ~/.codex.
     #if APPSTORE_BUILD
     if Sandbox.isSandboxed {
       log.info("[DISC-SCAN-SKIP] Skipping core discovery in sandbox (APPSTORE_BUILD + sandboxed)")

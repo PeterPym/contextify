@@ -188,11 +188,15 @@ public final class AppStateOrchestrator: ObservableObject {
       canonicalPath = PathUtils.canonicalizePath(id)
     }
 
-    // Find all providers sharing this canonical path
+    // Invariant: canonicalRootPath must be stable and identical across providers
+    // (Claude hash directory vs Codex CWD) for the same real project. If this
+    // changes, multi-provider merging here will silently misbehave.
     let matchingProjects = projectLookup.values.filter { $0.canonicalRootPath == canonicalPath }
 
     // Merge if: multiple providers found, OR direct lookup failed but canonical match exists
     if matchingProjects.count > 1 || (project == nil && !matchingProjects.isEmpty) {
+      precondition(!matchingProjects.isEmpty, "Entered merge branch with empty matchingProjects; check canonicalPath logic.")
+
       log.info("[ORCH-SELECT-CANONICAL] Found \(matchingProjects.count, privacy: .public) project(s) by canonical path: \(canonicalPath, privacy: .public)")
 
       let mergedFiles = matchingProjects.flatMap { $0.transcriptFiles }
@@ -209,7 +213,8 @@ public final class AppStateOrchestrator: ObservableObject {
         transcriptFiles: mergedFiles
       )
 
-      log.info("[ORCH-SELECT-MERGE] Merged \(mergedFiles.count, privacy: .public) transcript files from \(matchingProjects.count, privacy: .public) provider(s)")
+      let providers = Set(matchingProjects.map { $0.provider }).sorted()
+      log.info("[ORCH-SELECT-MERGE] Merged \(mergedFiles.count, privacy: .public) transcript files from \(matchingProjects.count, privacy: .public) provider(s): \(providers, privacy: .public)")
     }
 
     // DB fallback if still not found
