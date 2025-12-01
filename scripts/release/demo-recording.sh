@@ -302,13 +302,31 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
-# Open background image for demo recording
+# Open background image for demo recording (if Preview not already open)
 BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
 if [[ -f "$BACKGROUND_IMG" ]]; then
-  echo ""
-  echo "Background: build/assets/demo-video-background.jpg"
-  echo "  Set as desktop background before recording"
-  open -a Preview "$BACKGROUND_IMG"
+  if ! pgrep -x "Preview" >/dev/null; then
+    echo ""
+    echo "Background: build/assets/demo-video-background.jpg"
+    echo "  Set as desktop background before recording"
+    osascript <<EOF
+tell application "Preview"
+  activate
+  open POSIX file "$BACKGROUND_IMG"
+  delay 0.5
+end tell
+tell application "System Events"
+  tell process "Preview"
+    try
+      click menu item "Hide Toolbar" of menu "View" of menu bar 1
+    end try
+    try
+      click menu item "Hide Markup Toolbar" of menu "View" of menu bar 1
+    end try
+  end tell
+end tell
+EOF
+  fi
 fi
 
 # Check if archive is stale compared to main branch
