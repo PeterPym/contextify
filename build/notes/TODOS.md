@@ -998,7 +998,43 @@ When App Store build launches without permissions granted:
 
 ---
 
-# P2 (Medium Priority) - 37 Items
+# P2 (Medium Priority) - 38 Items
+
+---
+
+## #P2-SEARCH-INDEXING-WARNING: Warn when searching incompletely indexed project
+
+**Status:** Not Started
+**Priority:** P2 (UX - inform user about partial results)
+**Effort:** 1-2 hours
+
+**Problem:**
+When a user searches within a project that hasn't finished background indexing, search results may be incomplete. The user has no indication that they might be seeing partial results.
+
+**Context:**
+Background indexing (`AppStateOrchestrator.startBackgroundIndexing()`) processes inactive projects at low priority after the active project loads. A project's transcripts may not be fully indexed if:
+1. User just launched the app and indexing hasn't completed
+2. User switched to a project that was queued for background indexing
+3. Large project set is still being processed
+
+**Solution:**
+When displaying search results, check if the current project's indexing is complete. If not:
+1. Show subtle warning banner: "Some results may not be available yet - indexing in progress"
+2. Optionally show progress indicator for remaining projects
+
+**Implementation:**
+1. Track per-project indexing completion in AppStateOrchestrator or new state
+2. In search results view, check indexing status for queried project
+3. Show dismissible warning if indexing incomplete
+4. Clear warning automatically when indexing completes
+
+**Files:**
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (indexing state tracking)
+- Search results view (TBD - depends on #P1-CONVO-SEARCH implementation)
+
+**Related:**
+- #P1-CONVO-SEARCH (search implementation - this todo applies once search exists)
+- `.backgroundIngestProgress` notification (already broadcasts remaining count)
 
 ---
 
