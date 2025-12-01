@@ -56,7 +56,7 @@ if [[ "${1:-}" == "--status" || "${1:-}" == "status" ]]; then
   # Check current projects
   if [[ -d ~/.claude/projects ]]; then
     CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
-    SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+    SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" 2>/dev/null) || SAMPLE_COUNT=0
     REAL_COUNT=$((CURRENT_COUNT - SAMPLE_COUNT))
 
     if [[ "$SAMPLE_COUNT" -gt 0 && "$REAL_COUNT" -gt 0 ]]; then
@@ -100,7 +100,7 @@ if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
   echo "Removing sample data..."
   echo ""
 
-  SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+  SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" 2>/dev/null) || SAMPLE_COUNT=0
   if [[ "$SAMPLE_COUNT" -eq 0 ]]; then
     echo "✅ No sample data found - nothing to remove"
     exit 0
@@ -379,6 +379,7 @@ if [[ -d ~/.claude/projects ]]; then
   fi
 fi
 
+# Backup Claude projects
 if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
   if [[ "$CURRENT_HAS_REAL" == "true" ]]; then
@@ -386,12 +387,25 @@ if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
     echo "⚠️  Merging $CURRENT_COUNT new projects into existing backup..."
     cp -rn ~/.claude/projects/* ~/.claude/projects-REAL-BACKUP/ 2>/dev/null || true
   fi
-  echo "✓ Backup: ~/.claude/projects-REAL-BACKUP ($BACKUP_COUNT projects)"
+  echo "✓ Claude backup: ~/.claude/projects-REAL-BACKUP ($BACKUP_COUNT projects)"
 else
   mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
-  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "✓ Backed up $BACKUP_COUNT projects"
+  echo "✓ Backed up $BACKUP_COUNT Claude projects"
+fi
+
+# Backup Codex sessions (separate from Claude backup check)
+if [[ -d ~/.codex/sessions-REAL-BACKUP ]]; then
+  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  # Merge any new Codex sessions into backup
+  if [[ -d ~/.codex/sessions ]]; then
+    cp -rn ~/.codex/sessions/* ~/.codex/sessions-REAL-BACKUP/ 2>/dev/null || true
+  fi
+  echo "✓ Codex backup: ~/.codex/sessions-REAL-BACKUP ($CODEX_BACKUP_COUNT sessions)"
+else
+  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
+  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  echo "✓ Backed up $CODEX_BACKUP_COUNT Codex sessions"
 fi
 
 # --- Install sample data ---
