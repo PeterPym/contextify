@@ -216,7 +216,7 @@ public final class ProjectSwitcherState {
     // refresh spam if multiple notifications fire in quick succession.
 
     // Initial discovery & full unread pass based on current DB
-    Task {
+    Task { @MainActor in
       // Get initial context from coordinator (guaranteed to be available)
       var hasContext = false
       if let context = StartupCoordinator.shared.current {

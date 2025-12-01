@@ -43,7 +43,7 @@ public actor LightweightDiscoveryService {
     if let provider = accessProvider {
       do {
         return try provider.withAccess(for: TranscriptProviderID.claude) { root in
-          log.info("[DISC-LIGHT] Claude root URL from provider: \(root.path, privacy: .public)")
+          log.debug("[DISC-LIGHT] Claude root URL from provider: \(root.path, privacy: .public)")
           return scanClaudeDirectory(at: root)
         }
       } catch {
@@ -54,13 +54,13 @@ public actor LightweightDiscoveryService {
       // DMG build: direct filesystem access
       let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
-      log.info("[DISC-LIGHT] Claude root (DMG build): \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] Claude root (DMG build): \(root.path, privacy: .public)")
       return scanClaudeDirectory(at: root)
     }
   }
 
   nonisolated private func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
-    log.info("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path, privacy: .public)")
+    log.debug("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path, privacy: .public)")
 
     let dirs: [URL]
     do {
@@ -76,7 +76,7 @@ public actor LightweightDiscoveryService {
     }
 
     guard !dirs.isEmpty else {
-      log.warning("[DISC-LIGHT] Claude directory is empty: \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] Claude directory is empty: \(root.path, privacy: .public)")
       return []
     }
 
