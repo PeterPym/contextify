@@ -126,7 +126,37 @@ public final class AppStateOrchestrator: ObservableObject {
     backgroundTask?.cancel()
     await fastPath.cancel()
 
+    // Look up project - first try direct ID match, then canonical path match
     var project = projectLookup[id]
+
+    if project == nil {
+      // ID mismatch: UI uses canonicalRootPath as ID, but cache uses provider-specific IDs
+      // Find all projects matching this canonical path and merge their transcriptFiles
+      let matchingProjects = projectLookup.values.filter { $0.canonicalRootPath == id }
+
+      if !matchingProjects.isEmpty {
+        log.info("[ORCH-SELECT-CANONICAL] Found \(matchingProjects.count, privacy: .public) project(s) by canonical path: \(id, privacy: .public)")
+
+        // Merge transcriptFiles from all matching projects (Claude + Codex)
+        let mergedFiles = matchingProjects.flatMap { $0.transcriptFiles }
+        let primaryProject = matchingProjects.max { $0.lastActivity < $1.lastActivity }!
+
+        project = LightweightProject(
+          id: id,  // Use canonical path as ID for consistency
+          path: primaryProject.path,
+          displayName: primaryProject.displayName,
+          transcriptCount: mergedFiles.count,
+          lastActivity: primaryProject.lastActivity,
+          provider: matchingProjects.count > 1 ? "multi" : primaryProject.provider,
+          cwd: primaryProject.cwd,
+          transcriptFiles: mergedFiles
+        )
+
+        log.info("[ORCH-SELECT-MERGE] Merged \(mergedFiles.count, privacy: .public) transcript files from \(matchingProjects.count, privacy: .public) provider(s)")
+      }
+    }
+
+    // DB fallback if still not found
     if project == nil {
       log.warning("[ORCH-SELECT-MISS] Project ID \(id, privacy: .public) not in cache; attempting DB fallback")
       do {
