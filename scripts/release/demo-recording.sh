@@ -456,35 +456,6 @@ echo "════════════════════════�
 echo "  STEP 3: Record Demo"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Launch sequence:"
-echo "  1. open /Applications/Contextify.app"
-echo "  2. Grant permission when dialog appears"
-echo ""
-
-# Demo video output path
-DEMO_VIDEO="$PROJECT_ROOT/website/review-4a125b1d/demo-video.mov"
-mkdir -p "$(dirname "$DEMO_VIDEO")"
-
-echo "Start recording? (Y/n)"
-echo "  Will record full screen with clicks shown."
-echo "  Press Ctrl+C in this terminal to stop recording."
-read -r start_rec
-if [[ "$start_rec" != "n" && "$start_rec" != "N" ]]; then
-  echo ""
-  echo "Recording to: $DEMO_VIDEO"
-  echo "Press Ctrl+C to stop recording..."
-  echo ""
-  # -v = video, -k = show clicks, -C = capture cursor
-  screencapture -v -k -C "$DEMO_VIDEO"
-  echo ""
-  echo "✓ Recording saved: $DEMO_VIDEO"
-else
-  echo ""
-  echo "Manual recording: Use QuickTime > File > New Screen Recording"
-  echo "Save to: $DEMO_VIDEO"
-fi
-
-echo ""
 echo "╔═══════════════════════════════════════════════════════════════╗"
 echo "║  DEMO CHECKLIST                                               ║"
 echo "╠═══════════════════════════════════════════════════════════════╣"
@@ -494,7 +465,47 @@ echo "║  3. Timeline scroll      │  7. Real-time: claude in terminal  ║"
 echo "║  4. LLM summaries        │  8. Settings (Cmd+,)               ║"
 echo "╚═══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "For real-time demo: cd ~/code/sample-projects/taskflow && claude"
+echo "Launch: open /Applications/Contextify.app"
+echo "Real-time demo: cd ~/code/sample-projects/taskflow && claude"
+echo ""
+
+# Demo video output path - use drafts folder, auto-increment filename
+DRAFTS_DIR="$PROJECT_ROOT/website/review-4a125b1d/drafts"
+mkdir -p "$DRAFTS_DIR"
+
+# Find next available filename
+COUNTER=1
+while [[ -f "$DRAFTS_DIR/demo-recording-$COUNTER.mov" ]]; do
+  COUNTER=$((COUNTER + 1))
+done
+DEMO_VIDEO="$DRAFTS_DIR/demo-recording-$COUNTER.mov"
+
+echo "Start recording? (Y/n)"
+echo "  Output: $DEMO_VIDEO"
+echo "  Press Ctrl+C in this terminal to stop."
+read -r start_rec
+if [[ "$start_rec" != "n" && "$start_rec" != "N" ]]; then
+  echo ""
+  echo "Recording #$COUNTER to: $DEMO_VIDEO"
+  echo "Press Ctrl+C to stop..."
+  echo ""
+  # -v = video, -k = show clicks, -C = capture cursor
+  screencapture -v -k -C "$DEMO_VIDEO"
+  echo ""
+  if [[ -f "$DEMO_VIDEO" ]]; then
+    echo "✓ Recording saved: $DEMO_VIDEO"
+  else
+    echo "⚠️  Recording may have failed. Check $DRAFTS_DIR/"
+  fi
+else
+  echo ""
+  echo "Manual: QuickTime > File > New Screen Recording"
+  echo "Save to: $DRAFTS_DIR/"
+fi
+
+echo ""
+echo "Post-production: Crop/trim in iMovie or QuickTime, export to:"
+echo "  website/review-4a125b1d/demo-video.mp4"
 echo ""
 pause
 
@@ -518,7 +529,11 @@ echo "════════════════════════�
 echo "  NEXT STEPS"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "1. Verify: ls -la website/review-4a125b1d/demo-video.mov"
+echo "1. Post-production:"
+echo "   - Open draft in iMovie or QuickTime"
+echo "   - Crop to app window, trim start/end"
+echo "   - Export as MP4 to: website/review-4a125b1d/demo-video.mp4"
+echo ""
 echo "2. Deploy: ./scripts/deploy-website.sh"
 echo "3. Upload: bash scripts/xc.sh upload"
 echo "4. Submit in App Store Connect"
