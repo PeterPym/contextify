@@ -431,9 +431,6 @@ echo "✓ Caches/prefs cleared"
 tccutil reset All "$BUNDLE_ID" 2>/dev/null || true
 echo "✓ TCC permissions reset (dialog will appear on launch)"
 
-echo ""
-pause
-
 # STEP 2: Install to Applications
 echo "═══════════════════════════════════════════════════════════════"
 echo "  STEP 2: Install App"
