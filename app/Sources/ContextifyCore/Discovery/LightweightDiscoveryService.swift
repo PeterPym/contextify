@@ -46,7 +46,8 @@ public actor LightweightDiscoveryService {
 
   /// Merge projects that point to the same canonical path.
   /// This handles multi-provider scenarios (Claude + Codex for same project).
-  nonisolated private func mergeByCanonicalPath(_ projects: [LightweightProject]) -> [LightweightProject] {
+  /// Internal visibility for testing.
+  nonisolated func mergeByCanonicalPath(_ projects: [LightweightProject]) -> [LightweightProject] {
     var merged: [String: LightweightProject] = [:]
 
     for project in projects {
