@@ -15,7 +15,6 @@ public final class SandboxedDirectoryWatcher {
   private let accessProvider: TranscriptAccessProvider
   // nonisolated(unsafe) required for access in deinit and DispatchSource handlers
   nonisolated(unsafe) private var claudeWatchSource: DispatchSourceFileSystemObject?
-  nonisolated(unsafe) private var claudeFileDescriptor: Int32 = -1
 
   // Debounce state
   private var debounceTask: Task<Void, Never>?
@@ -81,8 +80,6 @@ public final class SandboxedDirectoryWatcher {
       return
     }
 
-    claudeFileDescriptor = fd
-
     let source = DispatchSource.makeFileSystemObjectSource(
       fileDescriptor: fd,
       eventMask: [.write, .delete, .rename],  // .write catches new entries
@@ -110,8 +107,9 @@ public final class SandboxedDirectoryWatcher {
   private func scheduleRefresh() {
     debounceTask?.cancel()
     debounceTask = Task { [weak self] in
+      let interval = self?.debounceInterval ?? 0.25
       do {
-        try await Task.sleep(nanoseconds: UInt64(self?.debounceInterval ?? 0.25 * 1_000_000_000))
+        try await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         guard !Task.isCancelled else { return }
         log.info("[SANDBOX-WATCH] Triggering refreshProjects() after debounce")
         await AppStateOrchestrator.shared.refreshProjects()
@@ -127,5 +125,14 @@ public final class SandboxedDirectoryWatcher {
 extension Notification.Name {
   /// Posted when sandbox access to transcript directories is revoked or unavailable.
   /// Object contains the provider ID (e.g., TranscriptProviderID.claude).
+  ///
+  /// **Current sources:**
+  /// - `SandboxedDirectoryWatcher.startWatching()` - When initial access fails
+  ///
+  /// **TODO:** Also post this notification from `LightweightDiscoveryService` when discovery
+  /// encounters "permission denied" errors after the watcher is already running. This handles
+  /// the case where sandbox access is revoked via System Settings after app startup.
+  ///
+  /// **Expected UI response:** Show a toast/banner prompting user to re-grant access.
   public static let sandboxAccessRevoked = Notification.Name("contextify.sandboxAccessRevoked")
 }

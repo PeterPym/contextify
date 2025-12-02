@@ -81,8 +81,18 @@ public final class AppStateOrchestrator: ObservableObject {
 
   // MARK: - Startup Flow
 
-  /// Performs lightweight startup: filesystem scan only, NO DB writes
+  /// Performs lightweight startup: filesystem scan only, NO DB writes.
   /// Expected duration: <200ms
+  ///
+  /// **App Store builds call sequence:**
+  /// 1. `configureAccessProvider(_:)` - Must be called first to enable sandbox access
+  /// 2. `startup()` - Runs initial discovery, then starts background discovery
+  ///
+  /// **Background discovery lifecycle:**
+  /// Background discovery (Claude watcher + Codex polling) starts once per process and runs
+  /// until termination. This is intentional for the singleton `AppStateOrchestrator.shared`.
+  /// The `stopBackgroundDiscovery()` method exists for cleanup but is not called in normal
+  /// operation since the orchestrator lives for the process lifetime.
   public func startup() async {
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()

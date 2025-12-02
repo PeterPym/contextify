@@ -80,7 +80,8 @@ public final class ProjectSwitcherState {
 
   // Tab order stabilization
   @ObservationIgnored private var isTabOrderFrozen: Bool = false
-  @ObservationIgnored private var tabOrderFreezeTask: Task<Void, Never>?
+  // nonisolated(unsafe) required for access in deinit (DispatchWorkItem is not Sendable)
+  @ObservationIgnored nonisolated(unsafe) private var tabOrderFreezeWorkItem: DispatchWorkItem?
   @ObservationIgnored private var pendingTabProjects: [ProjectInfo]?
   private let tabOrderFreezeInterval: TimeInterval = 4
 
@@ -102,9 +103,14 @@ public final class ProjectSwitcherState {
     coordinatorTask?.cancel()
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
-    tabOrderFreezeTask?.cancel()
+    tabOrderFreezeWorkItem?.cancel()
     refreshDebounceTask?.cancel()
-    // Remove notification observers explicitly
+    removeNotificationObservers()
+  }
+
+  /// Remove notification observers (safe to call multiple times).
+  /// nonisolated because it needs to be callable from deinit.
+  private nonisolated func removeNotificationObservers() {
     if let observer = ingestionCompleteObserver {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -286,15 +292,9 @@ public final class ProjectSwitcherState {
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
-    // Remove notification observers
-    if let observer = ingestionCompleteObserver {
-      NotificationCenter.default.removeObserver(observer)
-      ingestionCompleteObserver = nil
-    }
-    if let observer = discoveryCompleteObserver {
-      NotificationCenter.default.removeObserver(observer)
-      discoveryCompleteObserver = nil
-    }
+    removeNotificationObservers()
+    ingestionCompleteObserver = nil
+    discoveryCompleteObserver = nil
     coalesceTask?.cancel()
     coalesceTask = nil
     cancelMonitorStartTasks()
@@ -826,8 +826,13 @@ public final class ProjectSwitcherState {
         break // Exit after first notification
       }
 
+      // Check for cancellation - the for-await loop exits immediately when cancelled
+      guard !Task.isCancelled else { return }
+
       // Now start the fallback timer (30s to account for large projects)
       try? await Task.sleep(nanoseconds: 30_000_000_000)
+      guard !Task.isCancelled else { return }
+
       log.warning("[SWITCHER-MONITOR] ⚠️ Fallback timeout triggered - notification was NOT received in 30s")
       await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
     }
@@ -894,25 +899,28 @@ public final class ProjectSwitcherState {
 
   private func freezeTabOrdering(reason: String, duration: TimeInterval? = nil) {
     let interval = duration ?? tabOrderFreezeInterval
-    tabOrderFreezeTask?.cancel()
+    tabOrderFreezeWorkItem?.cancel()
     isTabOrderFrozen = true
     log.info("[SWITCHER-SORT-FROZEN] Freeze activated (reason: \(reason)) for \(interval)s")
 
-    tabOrderFreezeTask = Task { [weak self] in
+    // Use DispatchWorkItem instead of Task.sleep + MainActor.run
+    // Task-based timers don't fire reliably when app is in background because
+    // MainActor.run queues work that doesn't execute until app becomes active.
+    // DispatchQueue.main.asyncAfter with DispatchWorkItem runs even when app is unfocused.
+    let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
-      try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-      await MainActor.run {
-        self.unfreezeTabOrdering(reason: "timeout")
-      }
+      self.unfreezeTabOrdering(reason: "timeout")
     }
+    tabOrderFreezeWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
   }
 
   private func unfreezeTabOrdering(reason: String) {
     guard isTabOrderFrozen else { return }
 
     isTabOrderFrozen = false
-    tabOrderFreezeTask?.cancel()
-    tabOrderFreezeTask = nil
+    tabOrderFreezeWorkItem?.cancel()
+    tabOrderFreezeWorkItem = nil
     log.info("[SWITCHER-SORT-UNFROZEN] Tab order thawed (reason: \(reason))")
 
     if let pending = pendingTabProjects {
