@@ -138,7 +138,10 @@ public final class AppStateOrchestrator: ObservableObject {
     // Claude: directory watcher (flat structure)
     // Codex: polling timer (nested date-based structure)
     #if APPSTORE_BUILD
+    log.info("[ORCH-STARTUP] App Store build detected, starting background discovery")
     startBackgroundDiscovery()
+    #else
+    log.debug("[ORCH-STARTUP] DMG build - background discovery disabled (uses FSEvents instead)")
     #endif
   }
 
@@ -219,6 +222,21 @@ public final class AppStateOrchestrator: ObservableObject {
       }
     }
 
+    // Check if active project has new transcript files (e.g., Codex merged into Claude)
+    // If so, re-ingest to pick up the new entries
+    var activeProjectNeedsReIngest = false
+    if case .active(let currentId) = state {
+      if let oldProject = knownProjects.first(where: { $0.id == currentId }),
+         let newProject = projects.first(where: { $0.id == currentId }) {
+        let oldFileCount = oldProject.transcriptFiles.count
+        let newFileCount = newProject.transcriptFiles.count
+        if newFileCount > oldFileCount {
+          log.info("[ORCH-REFRESH] Active project \(currentId, privacy: .public) has new transcript files: \(oldFileCount) -> \(newFileCount)")
+          activeProjectNeedsReIngest = true
+        }
+      }
+    }
+
     // Update state
     self.knownProjects = projects
     rebuildProjectLookup(with: projects)
@@ -234,6 +252,20 @@ public final class AppStateOrchestrator: ObservableObject {
     // Update state (preserve current active project)
     if case .active(let currentId) = state {
       setState(.active(projectId: currentId))
+
+      // Re-ingest active project if new transcript files were discovered
+      // This handles cases like Codex transcripts merging into a Claude project
+      if activeProjectNeedsReIngest, let project = projectLookup[currentId] {
+        log.info("[ORCH-REFRESH] Re-ingesting active project to pick up new transcripts")
+        do {
+          let dbProjectId = try await fastPath.ingestProjectJIT(project)
+          // Notify timeline to refresh
+          NotificationCenter.default.post(name: .projectDidActivate, object: dbProjectId)
+          log.info("[ORCH-REFRESH] Re-ingestion complete, posted .projectDidActivate")
+        } catch {
+          log.error("[ORCH-REFRESH] Re-ingestion failed: \(error.localizedDescription, privacy: .public)")
+        }
+      }
     } else {
       setState(.idle(projects: projects))
     }
