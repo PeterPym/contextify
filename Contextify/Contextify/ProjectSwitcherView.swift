@@ -233,6 +233,8 @@ struct ProjectSwitcherView: View {
   }
 
   var body: some View {
+    // PROBE: Track view body recomputation for background update debugging
+    let _ = log.info("[TABBAR-BODY] body recomputed, tabs=\(state.tabProjects.count, privacy: .public), isActive=\(NSApp.isActive, privacy: .public)")
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 0) {  // No global spacing - use explicit Gap views

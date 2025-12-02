@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OSLog
@@ -53,8 +54,12 @@ public final class ProjectSwitcherState {
 
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
-  @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
-  @ObservationIgnored private var discoveryCompleteTask: Task<Void, Never>?
+  // IMPORTANT: nonisolated(unsafe) is REQUIRED for observer tokens.
+  // NSObjectProtocol is not Sendable, so removing nonisolated(unsafe) causes:
+  // "cannot access property 'X' with a non-Sendable type from nonisolated deinit"
+  // These tokens must be accessed in deinit to removeObserver(), which is nonisolated.
+  @ObservationIgnored nonisolated(unsafe) private var ingestionCompleteObserver: NSObjectProtocol?
+  @ObservationIgnored nonisolated(unsafe) private var discoveryCompleteObserver: NSObjectProtocol?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
   @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
@@ -93,15 +98,19 @@ public final class ProjectSwitcherState {
   deinit {
     // Cancel any pending tasks (safety net for tests/non-singleton usage)
     projectObservationTask?.cancel()
-    ingestionCompleteTask?.cancel()
-    discoveryCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
     tabOrderFreezeTask?.cancel()
     refreshDebounceTask?.cancel()
-    // Note: NotificationCenter automatically removes all observers when self is deallocated
+    // Remove notification observers explicitly
+    if let observer = ingestionCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    if let observer = discoveryCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   /// Initialize with explicit orchestrator (for testing)
@@ -186,22 +195,34 @@ public final class ProjectSwitcherState {
     // startGlobalMonitoring() runs. When watchers already exist, ensureWatcher() skips
     // emitting .discovered events, so we need this notification to trigger refreshProjects().
     // Without this, tabs won't appear after welcome modal ingestion completes.
-    ingestionCompleteTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
-      for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
+    //
+    // NOTE: Uses addObserver(queue: .main) instead of notifications(named:) async sequence.
+    // The async sequence pattern may not reliably deliver notifications when the app is
+    // unfocused, while addObserver with .main queue works consistently (matches ConversationMonitor).
+    ingestionCompleteObserver = NotificationCenter.default.addObserver(
+      forName: .projectsIngestionComplete,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard self != nil else { return }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        log.info("[SWITCHER-NOTIFY-RECV] received .projectsIngestionComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
         self.scheduleRefresh()
       }
     }
 
     // Subscribe to discovery complete notifications from AppStateOrchestrator
     // This ensures tabs refresh when new projects are discovered via lightweight scan
-    discoveryCompleteTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
-      for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsDiscoveryComplete - refreshing projects")
+    discoveryCompleteObserver = NotificationCenter.default.addObserver(
+      forName: .projectsDiscoveryComplete,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard self != nil else { return }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        log.info("[SWITCHER-NOTIFY-RECV] received .projectsDiscoveryComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
         self.scheduleRefresh()
       }
     }
@@ -265,10 +286,15 @@ public final class ProjectSwitcherState {
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
-    ingestionCompleteTask?.cancel()
-    ingestionCompleteTask = nil
-    discoveryCompleteTask?.cancel()
-    discoveryCompleteTask = nil
+    // Remove notification observers
+    if let observer = ingestionCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+      ingestionCompleteObserver = nil
+    }
+    if let observer = discoveryCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+      discoveryCompleteObserver = nil
+    }
     coalesceTask?.cancel()
     coalesceTask = nil
     cancelMonitorStartTasks()
@@ -467,6 +493,7 @@ public final class ProjectSwitcherState {
 
   @MainActor
   private func updateTabProjects(_ projects: [ProjectInfo]) {
+    log.info("[SWITCHER-STATE] updateTabProjects called: before=\(self.tabProjects.count, privacy: .public), after=\(projects.count, privacy: .public), isActive=\(NSApp.isActive, privacy: .public)")
     let previousIds = Set(tabProjects.map { $0.id })
     let nextIds = Set(projects.map { $0.id })
 
@@ -482,6 +509,7 @@ public final class ProjectSwitcherState {
     }
 
     tabProjects = projects
+    log.info("[SWITCHER-STATE] tabProjects updated: count=\(self.tabProjects.count, privacy: .public)")
   }
 
   /// Cycle to previous project (for keyboard shortcut)
