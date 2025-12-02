@@ -115,6 +115,55 @@ public final class AppStateOrchestrator: ObservableObject {
     }
   }
 
+  // MARK: - Project Refresh
+
+  /// Re-run lightweight discovery to find new projects (App Store sandbox builds)
+  /// Called when app becomes active or via manual refresh
+  /// Does NOT change current selection - only updates available projects list
+  public func refreshProjects() async {
+    log.info("[ORCH-REFRESH] Beginning project refresh...")
+    let startTime = Date()
+
+    // Re-run lightweight scan
+    let projects = await discovery.discoverProjectsLightweight()
+
+    // Check for new projects
+    let existingIds = Set(knownProjects.map { $0.id })
+    let newProjects = projects.filter { !existingIds.contains($0.id) }
+
+    if !newProjects.isEmpty {
+      log.info("[ORCH-REFRESH] Found \(newProjects.count, privacy: .public) new project(s)")
+      for project in newProjects {
+        log.info("[ORCH-REFRESH-NEW] \(project.displayName, privacy: .public) at \(project.canonicalRootPath, privacy: .public)")
+      }
+    }
+
+    // Update state
+    self.knownProjects = projects
+    rebuildProjectLookup(with: projects)
+
+    // Update DB metadata for new projects
+    do {
+      try await orchestrator.updateProjectsMetadataOnly(projects)
+      try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
+    } catch {
+      log.error("[ORCH-REFRESH] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
+    }
+
+    // Update state (preserve current active project)
+    if case .active(let currentId) = state {
+      setState(.active(projectId: currentId))
+    } else {
+      setState(.idle(projects: projects))
+    }
+
+    // Notify observers of updated project list
+    NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+
+    let duration = Date().timeIntervalSince(startTime)
+    log.info("[ORCH-REFRESH] Refresh complete in \(String(format: "%.3f", duration), privacy: .public)s. Projects: \(projects.count, privacy: .public)")
+  }
+
   // MARK: - User Selection Flow
 
   /// User clicked a project - perform JIT (Just-In-Time) ingestion
@@ -126,34 +175,46 @@ public final class AppStateOrchestrator: ObservableObject {
     backgroundTask?.cancel()
     await fastPath.cancel()
 
-    // Look up project - first try direct ID match, then canonical path match
+    // Look up project - first try direct ID match
     var project = projectLookup[id]
 
-    if project == nil {
-      // ID mismatch: UI uses canonicalRootPath as ID, but cache uses provider-specific IDs
-      // Find all projects matching this canonical path and merge their transcriptFiles
-      let matchingProjects = projectLookup.values.filter { $0.canonicalRootPath == id }
+    // Derive canonical path for multi-provider merge check
+    let canonicalPath: String
+    if let existing = project {
+      // Normal case: ID is a known project; use its canonicalRootPath
+      canonicalPath = existing.canonicalRootPath
+    } else {
+      // Defensive: if id is actually a path (e.g. canonicalRootPath), canonicalize it
+      canonicalPath = PathUtils.canonicalizePath(id)
+    }
 
-      if !matchingProjects.isEmpty {
-        log.info("[ORCH-SELECT-CANONICAL] Found \(matchingProjects.count, privacy: .public) project(s) by canonical path: \(id, privacy: .public)")
+    // Invariant: canonicalRootPath must be stable and identical across providers
+    // (Claude hash directory vs Codex CWD) for the same real project. If this
+    // changes, multi-provider merging here will silently misbehave.
+    let matchingProjects = projectLookup.values.filter { $0.canonicalRootPath == canonicalPath }
 
-        // Merge transcriptFiles from all matching projects (Claude + Codex)
-        let mergedFiles = matchingProjects.flatMap { $0.transcriptFiles }
-        let primaryProject = matchingProjects.max { $0.lastActivity < $1.lastActivity }!
+    // Merge if: multiple providers found, OR direct lookup failed but canonical match exists
+    if matchingProjects.count > 1 || (project == nil && !matchingProjects.isEmpty) {
+      precondition(!matchingProjects.isEmpty, "Entered merge branch with empty matchingProjects; check canonicalPath logic.")
 
-        project = LightweightProject(
-          id: id,  // Use canonical path as ID for consistency
-          path: primaryProject.path,
-          displayName: primaryProject.displayName,
-          transcriptCount: mergedFiles.count,
-          lastActivity: primaryProject.lastActivity,
-          provider: matchingProjects.count > 1 ? "multi" : primaryProject.provider,
-          cwd: primaryProject.cwd,
-          transcriptFiles: mergedFiles
-        )
+      log.info("[ORCH-SELECT-CANONICAL] Found \(matchingProjects.count, privacy: .public) project(s) by canonical path: \(canonicalPath, privacy: .public)")
 
-        log.info("[ORCH-SELECT-MERGE] Merged \(mergedFiles.count, privacy: .public) transcript files from \(matchingProjects.count, privacy: .public) provider(s)")
-      }
+      let mergedFiles = matchingProjects.flatMap { $0.transcriptFiles }
+      let primaryProject = matchingProjects.max { $0.lastActivity < $1.lastActivity }!
+
+      project = LightweightProject(
+        id: id,  // Preserve the UI/DB ID for downstream consistency
+        path: primaryProject.path,
+        displayName: primaryProject.displayName,
+        transcriptCount: mergedFiles.count,
+        lastActivity: primaryProject.lastActivity,
+        provider: matchingProjects.count > 1 ? "multi" : primaryProject.provider,
+        cwd: primaryProject.cwd,
+        transcriptFiles: mergedFiles
+      )
+
+      let providers = Set(matchingProjects.map { $0.provider }).sorted()
+      log.info("[ORCH-SELECT-MERGE] Merged \(mergedFiles.count, privacy: .public) transcript files from \(matchingProjects.count, privacy: .public) provider(s): \(providers, privacy: .public)")
     }
 
     // DB fallback if still not found

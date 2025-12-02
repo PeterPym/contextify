@@ -19,21 +19,63 @@ public actor LightweightDiscoveryService {
   }
 
   /// Scans filesystem for project metadata. NO DB SIDE EFFECTS.
-  /// Returns projects sorted by last activity (newest first)
+  /// Returns projects sorted by last activity (newest first), merged by canonical path.
   public func discoverProjectsLightweight() async -> [LightweightProject] {
     log.info("[DISC-LIGHT] Starting lightweight scan...")
     let start = Date()
 
-    async let claudeProjects = scanClaudeProjects()
-    async let codexProjects = scanCodexSessions()
+    async let claudeProjectsTask = scanClaudeProjects()
+    async let codexProjectsTask = scanCodexSessions()
 
-    var all = await claudeProjects + codexProjects
+    let claudeProjects = await claudeProjectsTask
+    let codexProjects = await codexProjectsTask
+    let rawProjects = claudeProjects + codexProjects
+    log.debug("[DISC-LIGHT] Raw discoveries: \(rawProjects.count, privacy: .public) (Claude: \(claudeProjects.count, privacy: .public), Codex: \(codexProjects.count, privacy: .public))")
+
+    // Merge projects with same canonical path (e.g., Claude + Codex for same directory)
+    let merged = mergeByCanonicalPath(rawProjects)
+
+    var all = merged
     all.sort { $0.lastActivity > $1.lastActivity }
 
     let duration = Date().timeIntervalSince(start)
-    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration), privacy: .public)s. Found \(all.count, privacy: .public) projects.")
+    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration), privacy: .public)s. Found \(all.count, privacy: .public) projects (merged from \(rawProjects.count, privacy: .public) discoveries).")
 
     return all
+  }
+
+  /// Merge projects that point to the same canonical path.
+  /// This handles multi-provider scenarios (Claude + Codex for same project).
+  /// Internal visibility for testing.
+  nonisolated func mergeByCanonicalPath(_ projects: [LightweightProject]) -> [LightweightProject] {
+    var merged: [String: LightweightProject] = [:]
+
+    for project in projects {
+      let key = project.canonicalRootPath
+
+      if let existing = merged[key] {
+        // Merge: combine transcripts, keep most recent activity, mark as multi-provider
+        let combinedFiles = existing.transcriptFiles + project.transcriptFiles
+        let providers = Set([existing.provider, project.provider])
+        let providerStr = providers.count > 1 ? "multi" : existing.provider
+
+        merged[key] = LightweightProject(
+          id: existing.id,  // Keep first ID for consistency
+          path: existing.path,
+          displayName: existing.displayName,
+          transcriptCount: combinedFiles.count,
+          lastActivity: max(existing.lastActivity, project.lastActivity),
+          provider: providerStr,
+          cwd: existing.cwd ?? project.cwd,
+          transcriptFiles: combinedFiles
+        )
+        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public))")
+      } else {
+        merged[key] = project
+      }
+    }
+
+    return Array(merged.values)
   }
 
   // MARK: - Claude Projects (~/.claude/projects/HASH/*.jsonl)
@@ -43,6 +85,7 @@ public actor LightweightDiscoveryService {
     if let provider = accessProvider {
       do {
         return try provider.withAccess(for: TranscriptProviderID.claude) { root in
+          log.debug("[DISC-LIGHT] Claude root URL from provider: \(root.path, privacy: .public)")
           return scanClaudeDirectory(at: root)
         }
       } catch {
@@ -53,17 +96,29 @@ public actor LightweightDiscoveryService {
       // DMG build: direct filesystem access
       let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
+      log.debug("[DISC-LIGHT] Claude root (DMG build): \(root.path, privacy: .public)")
       return scanClaudeDirectory(at: root)
     }
   }
 
   nonisolated private func scanClaudeDirectory(at root: URL) -> [LightweightProject] {
-    guard let dirs = try? FileManager.default.contentsOfDirectory(
-      at: root,
-      includingPropertiesForKeys: [.contentModificationDateKey],
-      options: [.skipsHiddenFiles]
-    ) else {
-      log.debug("[DISC-LIGHT] No Claude projects directory found at \(root.path, privacy: .public)")
+    log.debug("[DISC-LIGHT] scanClaudeDirectory called with root: \(root.path, privacy: .public)")
+
+    let dirs: [URL]
+    do {
+      dirs = try FileManager.default.contentsOfDirectory(
+        at: root,
+        includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles]
+      )
+      log.info("[DISC-LIGHT] Found \(dirs.count, privacy: .public) entries in Claude directory")
+    } catch {
+      log.error("[DISC-LIGHT] Failed to enumerate Claude directory at \(root.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return []
+    }
+
+    guard !dirs.isEmpty else {
+      log.debug("[DISC-LIGHT] Claude directory is empty: \(root.path, privacy: .public)")
       return []
     }
 
@@ -131,22 +186,25 @@ public actor LightweightDiscoveryService {
     var projects: [String: (files: [URL], maxDate: Date, path: URL)] = [:]
 
     // Helper to peek first line for CWD
-    // This is the ONLY file read we do - just first 256 bytes for header
+    // Uses shared helper that supports both Claude Code and Codex formats
     func getCWD(url: URL) -> String? {
       guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
       defer { try? handle.close() }
 
-      // Read just 256 bytes for header (fast)
-      guard let data = try? handle.read(upToCount: 256),
-            let str = String(data: data, encoding: .utf8),
-            let firstLine = str.components(separatedBy: .newlines).first,
-            let lineData = firstLine.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-            let cwd = json["cwd"] as? String else {
+      // Read 2KB to avoid truncating longer JSON headers (e.g., Codex payload format)
+      guard let data = try? handle.read(upToCount: 2048),
+            let str = String(data: data, encoding: .utf8) else {
         return nil
       }
 
-      return cwd
+      // Use first non-empty line
+      guard let firstLine = str
+              .components(separatedBy: .newlines)
+              .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+        return nil
+      }
+
+      return ProjectIdentity.extractCwdFromJSONLine(firstLine)
     }
 
     // Use FileManager.enumerator to walk tree efficiently
@@ -180,7 +238,10 @@ public actor LightweightDiscoveryService {
       await withTaskGroup(of: (String, Date, URL)?.self) { group in
         for url in slice {
           group.addTask {
-            guard let cwd = getCWD(url: url) else { return nil }
+            guard let cwd = getCWD(url: url) else {
+              log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .public)")
+              return nil
+            }
             let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
             return (cwd, date, url)
           }
@@ -202,6 +263,8 @@ public actor LightweightDiscoveryService {
 
       index = end
     }
+
+    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts")
 
     // Convert to LightweightProject array
     return projects.map { cwd, data in

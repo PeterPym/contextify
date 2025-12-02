@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 39 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 41 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 82
+**Total Active Items:** 83
 
 ---
 
@@ -998,7 +998,36 @@ When App Store build launches without permissions granted:
 
 ---
 
-# P2 (Medium Priority) - 40 Items
+# P2 (Medium Priority) - 41 Items
+
+---
+
+## #P2-PROJECT-COUNT-MISMATCH: Welcome modal project count includes non-displayed projects
+
+**Status:** Not Started
+**Priority:** P2 (UX confusion)
+**Effort:** 1-2 hours
+
+**Problem:**
+Welcome modal shows "Found 6 projects" but only 3 appear in the tab bar. The count includes orphaned Codex projects (transcripts for directories that no longer exist or can't be mapped to a project). These are accessible via the Transcripts window but not shown in the project tab bar, making the count misleading.
+
+**Solution:**
+The welcome modal should use the same project count logic as the tab bar - only count projects that will actually be displayed to the user.
+
+**Implementation:**
+1. Identify where welcome modal gets its project count
+2. Ensure it uses the same filtering as `ProjectSwitcherState` or tab bar display logic
+3. Either filter out orphaned projects from the count, or clarify the message: "Found 6 transcripts across 3 projects"
+
+**Files:**
+- Welcome modal view (TBD - locate)
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift` (discovery count)
+- `Contextify/Contextify/ProjectSwitcherState.swift` (display filtering)
+
+**Acceptance Criteria:**
+- [ ] Welcome modal count matches projects shown in tab bar
+- [ ] OR message clarifies what the count represents
+- [ ] Orphaned transcripts still accessible via Transcripts window
 
 ---
 

@@ -1,4 +1,5 @@
 import AppKit
+import ContextifyCore
 import OSLog
 #if canImport(FoundationModels)
 import FoundationModels
@@ -6,6 +7,9 @@ import FoundationModels
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let log = Logger(subsystem: "dev.contextify", category: "AppDelegate")
+
+  /// Track if this is the first activation (avoid refresh on initial launch)
+  private var hasLaunchedOnce = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     guard isAppleIntelligenceAvailable() else {
@@ -34,6 +38,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
   func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
+
+  func applicationDidBecomeActive(_ notification: Notification) {
+    // Skip refresh on initial launch (startup() handles that)
+    guard hasLaunchedOnce else {
+      hasLaunchedOnce = true
+      return
+    }
+
+    // In App Store (sandbox) builds, FSEvents monitoring is disabled.
+    // Refresh projects when app returns to foreground to detect new projects
+    // created by Claude Code/Codex while we were in background.
+    #if APPSTORE_BUILD
+    log.info("[APP-ACTIVE] App became active - refreshing projects (sandbox mode)")
+    Task { @MainActor in
+      await AppStateOrchestrator.shared.refreshProjects()
+    }
+    #endif
+  }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     if let window = MainWindowTracker.shared.window {

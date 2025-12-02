@@ -77,6 +77,9 @@ appstore-metadata/screenshots/drafts/
 appstore-metadata/screenshots/final/
 appstore-metadata/screenshots/alternates/*.png
 
+# Demo video drafts (raw recordings before post-production)
+website/review-4a125b1d/drafts/
+
 # Environment variables (contains secrets)
 .env
 .secrets/

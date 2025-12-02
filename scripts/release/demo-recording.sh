@@ -56,7 +56,7 @@ if [[ "${1:-}" == "--status" || "${1:-}" == "status" ]]; then
   # Check current projects
   if [[ -d ~/.claude/projects ]]; then
     CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
-    SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+    SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" 2>/dev/null) || SAMPLE_COUNT=0
     REAL_COUNT=$((CURRENT_COUNT - SAMPLE_COUNT))
 
     if [[ "$SAMPLE_COUNT" -gt 0 && "$REAL_COUNT" -gt 0 ]]; then
@@ -100,7 +100,7 @@ if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
   echo "Removing sample data..."
   echo ""
 
-  SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" || echo 0)
+  SAMPLE_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -c "sample-projects" 2>/dev/null) || SAMPLE_COUNT=0
   if [[ "$SAMPLE_COUNT" -eq 0 ]]; then
     echo "✅ No sample data found - nothing to remove"
     exit 0
@@ -270,26 +270,27 @@ SANDBOX_APP_SUPPORT="$SANDBOX_CONTAINER/Data/Library/Application Support/Context
 
 pause() {
   echo ""
-  echo "Press Enter to continue, or type 'restore' to restore real transcripts and exit..."
-  read -r input
-  if [[ "$input" == "restore" ]]; then
-    echo ""
-    do_restore
-    exit 0
+  if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
+    echo "Press Enter to continue, Esc to restore and exit..."
+    read -rsn1 key
+    if [[ "$key" == $'\e' ]]; then
+      echo ""
+      echo "Restoring..."
+      do_restore
+      exit 0
+    fi
+  else
+    echo "Press Enter to continue..."
+    read -rsn1
   fi
   echo ""
 }
 
 echo "═══════════════════════════════════════════════════════════════"
-echo "  Contextify Demo Recording Setup"
+echo "  Contextify Demo Recording"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Your real transcripts have been backed up to:"
-echo "  ~/.claude/projects-REAL-BACKUP"
-echo "  ~/.codex/sessions-REAL-BACKUP"
-echo ""
-echo "Archive path: $ARCHIVE_PATH"
-echo "App path:     $APP_PATH"
+echo "Archive: $ARCHIVE_PATH"
 echo ""
 
 # Verify archive exists
@@ -301,27 +302,36 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 echo "✅ Archive verified"
 
-# Check if archive is stale compared to main branch
+# Check if archive is stale compared to current HEAD
 echo ""
 echo "Checking archive freshness..."
 ARCHIVE_MTIME=$(stat -f "%m" "$ARCHIVE_PATH/Info.plist" 2>/dev/null)
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")
 if [[ -n "$ARCHIVE_MTIME" ]]; then
-  # Get commits on main since archive was built
+  # Get commits on current branch since archive was built
   ARCHIVE_DATE=$(date -r "$ARCHIVE_MTIME" "+%Y-%m-%d %H:%M:%S")
-  COMMITS_SINCE=$(git log main --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null)
-  COMMIT_COUNT=$(echo "$COMMITS_SINCE" | grep -c . 2>/dev/null || echo 0)
+  COMMITS_SINCE=$(git log HEAD --oneline --since="@$ARCHIVE_MTIME" 2>/dev/null || true)
+  if [[ -n "$COMMITS_SINCE" ]]; then
+    COMMIT_COUNT=$(echo "$COMMITS_SINCE" | wc -l | tr -d ' ')
+  else
+    COMMIT_COUNT=0
+  fi
 
   if [[ "$COMMIT_COUNT" -gt 0 ]]; then
     # Check for fix commits specifically
     FIX_COMMITS=$(echo "$COMMITS_SINCE" | grep -i "fix" || true)
-    FIX_COUNT=$(echo "$FIX_COMMITS" | grep -c . 2>/dev/null || echo 0)
+    if [[ -n "$FIX_COMMITS" ]]; then
+      FIX_COUNT=$(echo "$FIX_COMMITS" | wc -l | tr -d ' ')
+    else
+      FIX_COUNT=0
+    fi
 
     echo ""
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║  ⚠️  WARNING: ARCHIVE MAY BE STALE                            ║"
     echo "╠═══════════════════════════════════════════════════════════════╣"
     echo "║  Archive built: $ARCHIVE_DATE"
-    echo "║  Commits on main since then: $COMMIT_COUNT"
+    echo "║  Commits on $CURRENT_BRANCH since then: $COMMIT_COUNT"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -346,80 +356,67 @@ if [[ -n "$ARCHIVE_MTIME" ]]; then
     echo "Press Enter to continue anyway, or Ctrl+C to abort and rebuild..."
     read -r
   else
-    echo "✅ Archive is up-to-date with main branch"
+    echo "✅ Archive is up-to-date with $CURRENT_BRANCH"
   fi
 else
   echo "⚠️  Could not determine archive build time"
 fi
 pause
 
-# Step 1: Backup real data and install sample data
+# STEP 1: Backup, clean state, reset permissions (all automated)
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 1: Backup Real Data & Install Sample Data"
+echo "  STEP 1: Prepare Environment"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
 
-# Handle backup
+# --- Backup real data ---
 SAMPLE_PATTERN="sample-projects"
 CURRENT_HAS_REAL=false
-CURRENT_HAS_SAMPLE=false
 
 if [[ -d ~/.claude/projects ]]; then
-  if ls ~/.claude/projects/ 2>/dev/null | grep -q "$SAMPLE_PATTERN"; then
-    CURRENT_HAS_SAMPLE=true
-  fi
   if ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | grep -q .; then
     CURRENT_HAS_REAL=true
   fi
 fi
 
+# Backup Claude projects
 if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-
   if [[ "$CURRENT_HAS_REAL" == "true" ]]; then
-    # Real data exists but backup also exists - might lose new data!
     CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | wc -l | tr -d ' ')
-    echo "⚠️  WARNING: ~/.claude/projects contains $CURRENT_COUNT real project(s)"
-    echo "   but backup already exists with $BACKUP_COUNT project(s)"
-    echo ""
-    echo "   This may happen if you've used Claude Code since the backup was created."
-    echo "   Options:"
-    echo "     1. Press Enter to MERGE new projects into backup, then continue"
-    echo "     2. Press Ctrl+C to abort and handle manually"
-    echo ""
-    read -r
-    echo "Merging new projects into backup..."
+    echo "⚠️  Merging $CURRENT_COUNT new projects into existing backup..."
     cp -rn ~/.claude/projects/* ~/.claude/projects-REAL-BACKUP/ 2>/dev/null || true
-    echo "✅ Backup updated at ~/.claude/projects-REAL-BACKUP"
-  else
-    echo "✅ Backup exists at ~/.claude/projects-REAL-BACKUP"
-    echo "   ($BACKUP_COUNT project directories preserved)"
   fi
+  echo "✓ Claude backup: ~/.claude/projects-REAL-BACKUP ($BACKUP_COUNT projects)"
 else
-  echo "Backing up real transcripts..."
   mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
-  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
   BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "✅ Backed up $BACKUP_COUNT projects to ~/.claude/projects-REAL-BACKUP"
+  echo "✓ Backed up $BACKUP_COUNT Claude projects"
 fi
 
-echo ""
-echo "Installing sample transcripts (clean install)..."
+# Backup Codex sessions (separate from Claude backup check)
+if [[ -d ~/.codex/sessions-REAL-BACKUP ]]; then
+  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  # Merge any new Codex sessions into backup
+  if [[ -d ~/.codex/sessions ]]; then
+    cp -rn ~/.codex/sessions/* ~/.codex/sessions-REAL-BACKUP/ 2>/dev/null || true
+  fi
+  echo "✓ Codex backup: ~/.codex/sessions-REAL-BACKUP ($CODEX_BACKUP_COUNT sessions)"
+else
+  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
+  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  echo "✓ Backed up $CODEX_BACKUP_COUNT Codex sessions"
+fi
+
+# --- Install sample data ---
 rm -rf ~/.claude/projects ~/.codex/sessions
 mkdir -p ~/.claude/projects ~/.codex/sessions
 cp -r appstore-metadata/review-materials/sample-transcripts/claude/projects/* ~/.claude/projects/
 cp -r appstore-metadata/review-materials/sample-transcripts/codex/sessions/* ~/.codex/sessions/
-echo ""
-echo "✅ Sample data installed:"
-ls ~/.claude/projects/
+echo "✓ Sample data: $(ls ~/.claude/projects/ | tr '\n' ' ')"
 
-# Create stub project directories so Claude Code can be launched
-echo ""
-echo "Creating stub project directories for real-time demo..."
-mkdir -p ~/code/sample-projects/taskflow
-mkdir -p ~/code/sample-projects/recipebox
-mkdir -p ~/code/sample-projects/weatherly
-# Initialize as git repos so Claude Code doesn't complain
+# --- Create stub project directories ---
+mkdir -p ~/code/sample-projects/{taskflow,recipebox,weatherly}
 for dir in ~/code/sample-projects/{taskflow,recipebox,weatherly}; do
   if [ ! -d "$dir/.git" ]; then
     git -C "$dir" init -q
@@ -428,250 +425,156 @@ for dir in ~/code/sample-projects/{taskflow,recipebox,weatherly}; do
     git -C "$dir" commit -q -m "Initial commit"
   fi
 done
-echo "✅ Stub directories created at ~/code/sample-projects/"
-echo "   You can now run: cd ~/code/sample-projects/taskflow && claude"
-pause
+echo "✓ Stub dirs: ~/code/sample-projects/{taskflow,recipebox,weatherly}"
 
-# Step 2: Quit app and clean all state (uses shared cleanup from xc.sh)
-echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 2: Quit App & Clean All State"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-
-# Quit any running instance first
-echo "Quitting Contextify if running..."
+# --- Quit app ---
 osascript -e 'tell application "Contextify" to quit' >/dev/null 2>&1 || true
 pkill -x Contextify >/dev/null 2>&1 || true
 sleep 1
-echo "✅ App quit"
+echo "✓ App quit"
 
-# Use db_manager.sh for database cleanup (single source of truth)
-echo ""
-echo "Cleaning database via db_manager.sh..."
-CONTEXTIFY_DIST=appstore "$PROJECT_ROOT/scripts/db_manager.sh" clean --force 2>&1 | grep -E "^[ℹ✓⚠✗]" || true
+# --- Clean database ---
+CONTEXTIFY_DIST=appstore "$PROJECT_ROOT/scripts/db_manager.sh" clean --force >/dev/null 2>&1
+echo "✓ Database cleaned"
 
-# Clean remaining state (caches, UserDefaults) using shared library
-echo ""
-echo "Cleaning caches and preferences..."
+# --- Clean caches/preferences ---
 clean_caches_for_bid "$BUNDLE_ID"
-echo "  Cleared: Caches"
 clean_userdefaults_for_bid "$BUNDLE_ID"
-echo "  Cleared: UserDefaults (bundle + $CONTEXTIFY_SUITE suite)"
+echo "✓ Caches/prefs cleared"
 
-echo "✅ All app state cleaned"
-pause
-
-# Step 3: Reset TCC permissions (so permission dialogs appear)
-echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 3: Reset TCC Permissions"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "Resetting macOS privacy permissions for $BUNDLE_ID..."
+# --- Reset TCC ---
 tccutil reset All "$BUNDLE_ID" 2>/dev/null || true
-echo "✅ TCC permissions reset"
-echo ""
-echo "The permission dialog WILL appear when the app launches."
-pause
+echo "✓ TCC permissions reset (dialog will appear on launch)"
 
-# Step 4: Install to Applications and Launch
+# STEP 2: Install to Applications
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 4: Install to Applications & Launch"
+echo "  STEP 2: Install App"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "For a realistic demo, we'll install the archived app to /Applications."
-echo "This is the EXACT binary that will be submitted to Apple."
-echo ""
-echo "Source: $APP_PATH"
-echo "Target: /Applications/Contextify.app"
-echo ""
 
-# Check if already installed
-if [[ -d "/Applications/Contextify.app" ]]; then
-  echo "⚠️  Contextify.app already exists in /Applications"
-  echo "   It will be replaced with the archived build."
+echo "Installing to /Applications..."
+rm -rf /Applications/Contextify.app 2>/dev/null || true
+cp -R "$APP_PATH" /Applications/
+echo "✓ Installed: /Applications/Contextify.app"
+
+# Offer to add to Dock (default: no)
+echo ""
+echo "Add to Dock? (y/N)"
+read -r add_dock
+if [[ "$add_dock" == "y" || "$add_dock" == "Y" ]]; then
+  defaults write com.apple.dock persistent-apps -array-add \
+    "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>file:///Applications/Contextify.app</string><key>_CFURLStringType</key><integer>15</integer></dict></dict></dict>"
+  killall Dock
+  sleep 2
+  echo "✓ Added to Dock"
+fi
+
+# Open background image for desktop
+BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
+if [[ -f "$BACKGROUND_IMG" ]]; then
   echo ""
+  echo "Open background image in Preview? (Y/n)"
+  read -r open_bg
+  if [[ "$open_bg" != "n" && "$open_bg" != "N" ]]; then
+    osascript <<EOF
+tell application "Preview"
+  activate
+  open POSIX file "$BACKGROUND_IMG"
+  delay 0.3
+end tell
+tell application "System Events"
+  tell process "Preview"
+    try
+      click menu item "Hide Toolbar" of menu "View" of menu bar 1
+    end try
+    try
+      click menu item "Hide Markup Toolbar" of menu "View" of menu bar 1
+    end try
+  end tell
+end tell
+EOF
+    echo "  Set as desktop background, then continue"
+  fi
 fi
 
-echo "Press Enter to install to /Applications, or type 'skip' to launch from archive..."
-read -r input
-if [[ "$input" != "skip" ]]; then
-  echo "Installing to /Applications..."
-  rm -rf /Applications/Contextify.app 2>/dev/null || true
-  cp -R "$APP_PATH" /Applications/
-  echo "✅ Installed to /Applications/Contextify.app"
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  STEP 3: Start Screen Recording and Perform Demo"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║  DEMO CHECKLIST                                               ║"
+echo "╠═══════════════════════════════════════════════════════════════╣"
+echo "║  1. Permission dialog    │  5. Search (Cmd+F)                 ║"
+echo "║  2. Project tabs         │  6. Deep search (Cmd+Shift+F)      ║"
+echo "║  3. Timeline scroll      │  7. Real-time: claude in terminal  ║"
+echo "║  4. LLM summaries        │  8. Settings (Cmd+,)               ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Launch: open /Applications/Contextify.app"
+echo "Real-time demo: cd ~/code/sample-projects/taskflow && claude"
+echo ""
 
-  # Offer to add to Dock (default: yes)
+# Demo video output path - use drafts folder, auto-increment filename
+DRAFTS_DIR="$PROJECT_ROOT/website/review-4a125b1d/drafts"
+mkdir -p "$DRAFTS_DIR"
+
+# Find next available filename
+COUNTER=1
+while [[ -f "$DRAFTS_DIR/demo-recording-$COUNTER.mov" ]]; do
+  COUNTER=$((COUNTER + 1))
+done
+DEMO_VIDEO="$DRAFTS_DIR/demo-recording-$COUNTER.mov"
+
+echo "Start recording? (Y/n)"
+echo "  Output: $DEMO_VIDEO"
+read -r start_rec
+if [[ "$start_rec" != "n" && "$start_rec" != "N" ]]; then
   echo ""
-  echo "Add to Dock for realistic demo launch? (Y/n)"
-  read -r add_dock
-  if [[ "$add_dock" != "n" && "$add_dock" != "N" ]]; then
-    # Add to Dock using defaults
-    defaults write com.apple.dock persistent-apps -array-add \
-      "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>file:///Applications/Contextify.app</string><key>_CFURLStringType</key><integer>15</integer></dict></dict></dict>"
-    killall Dock
-    sleep 2
-    echo "✅ Added to Dock"
-    ADDED_TO_DOCK=true
-  else
-    ADDED_TO_DOCK=false
-  fi
+  echo "Recording #$COUNTER..."
+  echo ""
+  # -v = video, -k = show clicks, -C = capture cursor
+  # Run in background, suppress its prompt, use our own stop prompt
+  screencapture -v -k -C "$DEMO_VIDEO" 2>/dev/null &
+  SCREENCAP_PID=$!
+  sleep 1  # Let screencapture initialize
 
-  LAUNCH_PATH="/Applications/Contextify.app"
+  echo "Stop recording? (Y/n)"
+  read -r stop_rec
+
+  # Kill screencapture
+  kill "$SCREENCAP_PID" 2>/dev/null || true
+  wait "$SCREENCAP_PID" 2>/dev/null || true
+
+  echo ""
+  if [[ -f "$DEMO_VIDEO" ]]; then
+    echo "✓ Recording saved: $DEMO_VIDEO"
+  else
+    echo "⚠️  Recording may have failed. Check $DRAFTS_DIR/"
+  fi
 else
-  LAUNCH_PATH="$APP_PATH"
-  ADDED_TO_DOCK=false
+  echo ""
+  echo "Manual: QuickTime > File > New Screen Recording"
+  echo "Save to: $DRAFTS_DIR/"
 fi
 
 echo ""
-if [[ "$ADDED_TO_DOCK" == "true" ]]; then
-  echo "Launch app now? (y/N) - or launch from Dock for realistic demo"
-else
-  echo "Launch app now? (Y/n)"
-fi
-read -r do_launch
-
-if [[ "$ADDED_TO_DOCK" == "true" ]]; then
-  # Default no if added to dock (user will launch from dock)
-  if [[ "$do_launch" == "y" || "$do_launch" == "Y" ]]; then
-    open "$LAUNCH_PATH"
-    echo "✅ App launched"
-  else
-    echo "👉 Launch from Dock when ready to record"
-  fi
-else
-  # Default yes if not added to dock
-  if [[ "$do_launch" != "n" && "$do_launch" != "N" ]]; then
-    open "$LAUNCH_PATH"
-    echo "✅ App launched"
-  else
-    echo "👉 Launch manually: open \"$LAUNCH_PATH\""
-  fi
-fi
-echo ""
-echo "VERIFY: The app should:"
-echo "  1. Show a permission dialog for ~/.claude/"
-echo "  2. NOT show any existing projects (fresh database)"
-echo ""
-pause
-
-# Step 5: Recording instructions
-echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 5: Start Recording"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "Open QuickTime Player:"
-echo "  File → New Screen Recording"
-echo ""
-echo "Select the area or full screen, then click Record."
-pause
-
-# Demo scenes
-echo "═══════════════════════════════════════════════════════════════"
-echo "  DEMO SCENES TO RECORD"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "Scene 1: PERMISSION DIALOG (Critical for Apple)"
-echo "  - If not shown, quit app and re-launch from Dock or /Applications"
-echo "  - Grant access to ~/.claude/ when prompted"
-echo "  - Pause so viewer can see the dialog text"
-pause
-
-echo "Scene 2: PROJECT DETECTION"
-echo "  - Show project tabs appearing: taskflow, weatherly, recipebox"
-echo "  - Click through each tab briefly"
-pause
-
-echo "Scene 3: TIMELINE VIEW"
-echo "  - Select a project (e.g., taskflow)"
-echo "  - Scroll through the conversation timeline"
-echo "  - Show timestamps and message content"
-pause
-
-echo "Scene 4: LLM SUMMARIES"
-echo "  - Point out summary badges on entries"
-echo "  - Hover/click to show summary text"
-echo "  - Wait for any summaries still generating"
-pause
-
-echo "Scene 5: SEARCH (Cmd+F)"
-echo "  - Press Cmd+F to open Quick Search"
-echo "  - Type a query (e.g., 'authentication' or 'API')"
-echo "  - Show results filtering in real-time"
-echo "  - Click a result to navigate"
-pause
-
-echo "Scene 6: DEEP SEARCH (Cmd+Shift+F) - if available"
-echo "  - Press Cmd+Shift+F for cross-project search"
-echo "  - Show results from multiple projects"
-pause
-
-echo "Scene 7: REAL-TIME UPDATE (Shows live monitoring)"
-echo "  - Keep Contextify visible"
-echo "  - Open a NEW terminal and run Claude Code on a sample project:"
-echo ""
-echo "    cd ~/.claude/projects/"
-echo "    ls  # should show: taskflow, weatherly, recipebox"
-echo "    # Pick one and use claude --resume or start new session"
-echo ""
-echo "  - Send a simple message like: 'What is 2+2?'"
-echo "  - Watch Contextify detect the new message in real-time"
-echo "  - Show the summary generating for the new entry"
-pause
-
-echo "Scene 8: SETTINGS (Cmd+,)"
-echo "  - Open Settings"
-echo "  - Show database location options"
-echo "  - Close Settings"
-pause
-
-echo "Scene 9: END"
-echo "  - Return to timeline view"
-echo "  - Stop recording"
-pause
-
-# Step 6: Save video
-echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 6: Save Video"
-echo "═══════════════════════════════════════════════════════════════"
-echo ""
-echo "Stop the QuickTime recording and save as:"
+echo "Post-production: Crop/trim in iMovie or QuickTime, export to:"
 echo "  website/review-4a125b1d/demo-video.mp4"
-echo ""
-echo "Or save anywhere and we'll move it."
-pause
 
-# Step 7: Cleanup option
+# Step 4: Restore
 echo "═══════════════════════════════════════════════════════════════"
-echo "  STEP 7: Restore Real Data"
+echo "  STEP 4: Restore Real Data"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "Ready to restore your real transcripts?"
-echo ""
-echo "This will:"
-echo "  - Remove sample data from ~/.claude/projects and ~/.codex/sessions"
-echo "  - Restore your backups"
-echo ""
-echo "Type 'restore' and press Enter to restore, or Ctrl+C to exit:"
+echo "Restore real transcripts? (Y/n)"
 read -r confirm
 
-if [ "$confirm" = "restore" ]; then
-  rm -rf ~/.claude/projects ~/.codex/sessions
-  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
-  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
-  # Clean up stub project directories
-  rm -rf ~/code/sample-projects
-  echo ""
-  echo "✅ Real transcripts restored!"
-  echo "✅ Stub project directories removed"
-  echo ""
-  echo "You can now resume using Claude Code and Codex."
+if [[ "$confirm" != "n" && "$confirm" != "N" ]]; then
+  do_restore
 else
   echo ""
-  echo "Skipped restore. Run manually when ready:"
-  echo "  rm -rf ~/.claude/projects ~/.codex/sessions"
-  echo "  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects"
-  echo "  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions"
-  echo "  rm -rf ~/code/sample-projects  # Remove stub directories"
+  echo "Skipped. Run later: ./scripts/release/demo-recording.sh --restore"
 fi
 
 echo ""
@@ -679,9 +582,13 @@ echo "════════════════════════�
 echo "  NEXT STEPS"
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
-echo "1. Verify video saved to: website/review-4a125b1d/demo-video.mp4"
+echo "1. Post-production:"
+echo "   - Open draft in iMovie or QuickTime"
+echo "   - Crop to app window, trim start/end"
+echo "   - Export as MP4 to: website/review-4a125b1d/demo-video.mp4"
+echo ""
 echo "2. Deploy: ./scripts/deploy-website.sh"
-echo "3. Export & upload: bash scripts/xc.sh export-pkg && bash scripts/xc.sh upload"
-echo "4. Submit in App Store Connect with review notes"
+echo "3. Upload: bash scripts/xc.sh upload"
+echo "4. Submit in App Store Connect"
 echo ""
 echo "Done!"

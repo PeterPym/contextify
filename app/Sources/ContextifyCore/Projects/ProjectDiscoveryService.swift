@@ -24,26 +24,12 @@ public actor ProjectDiscoveryService {
   }
 
   nonisolated private func quickExtractCodexProjectPath(from transcript: URL) -> URL? {
-    struct RecordWithCwd: Codable { let cwd: String? }
-    struct CodexPayload: Codable { let cwd: String? }
-    struct CodexRecord: Codable { let payload: CodexPayload? }
-
     guard let firstLine = readCodexSessionHeaderLine(from: transcript),
-          let jsonData = firstLine.data(using: .utf8) else {
+          let cwd = ProjectIdentity.extractCwdFromJSONLine(firstLine) else {
       return nil
     }
 
-    if let directRecord = try? JSONDecoder().decode(RecordWithCwd.self, from: jsonData),
-       let cwd = directRecord.cwd {
-      return URL(fileURLWithPath: cwd)
-    }
-
-    if let payloadRecord = try? JSONDecoder().decode(CodexRecord.self, from: jsonData),
-       let cwd = payloadRecord.payload?.cwd {
-      return URL(fileURLWithPath: cwd)
-    }
-
-    return nil
+    return URL(fileURLWithPath: cwd)
   }
 
   nonisolated private func readCodexSessionHeaderLine(

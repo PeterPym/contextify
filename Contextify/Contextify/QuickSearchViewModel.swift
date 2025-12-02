@@ -205,10 +205,15 @@ final class QuickSearchViewModel {
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
 
+    // DateFormatter uses non-breaking spaces (U+00A0) - normalize to regular spaces
+    func normalizeSpaces(_ str: String) -> String {
+      str.replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
     let first = contextEntries.first!
     let last = contextEntries.last!
-    let startTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp)))
-    let endTime = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp)))
+    let startTime = normalizeSpaces(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(first.timestamp))))
+    let endTime = normalizeSpaces(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(last.timestamp))))
 
     var text = """
       CONTEXTIFY EXCERPT
@@ -218,7 +223,7 @@ final class QuickSearchViewModel {
       """
 
     for entry in contextEntries {
-      let time = formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp)))
+      let time = normalizeSpaces(formatter.string(from: Date(timeIntervalSince1970: TimeInterval(entry.timestamp))))
       let role = entry.kind.capitalized
       text += "[\(role), \(time)]: \(entry.content)\n\n"
     }
