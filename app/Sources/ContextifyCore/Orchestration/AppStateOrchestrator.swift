@@ -24,6 +24,15 @@ public final class AppStateOrchestrator: ObservableObject {
   private let discovery: LightweightDiscoveryService
   private let orchestrator: TranscriptOrchestrator
   private let fastPath: FastPathIngestionCoordinator
+  private var accessProvider: TranscriptAccessProvider?
+
+  // Background discovery (App Store builds)
+  private var sandboxedWatcher: SandboxedDirectoryWatcher?
+  private var codexPollTimer: Timer?
+  private let codexPollInterval: TimeInterval = 10.0  // 10 seconds
+
+  // Refresh guard (prevents overlapping refreshProjects() calls)
+  private var isRefreshing: Bool = false
 
   // State
   @Published public private(set) var state: AppState = .startup
@@ -57,6 +66,7 @@ public final class AppStateOrchestrator: ObservableObject {
   /// Configure the access provider for sandbox builds
   /// Must be called before startup() in App Store builds
   public func configureAccessProvider(_ provider: TranscriptAccessProvider) async {
+    self.accessProvider = provider
     await discovery.configure(accessProvider: provider)
     log.info("[ORCH-CONFIG] Access provider configured")
   }
@@ -71,8 +81,18 @@ public final class AppStateOrchestrator: ObservableObject {
 
   // MARK: - Startup Flow
 
-  /// Performs lightweight startup: filesystem scan only, NO DB writes
+  /// Performs lightweight startup: filesystem scan only, NO DB writes.
   /// Expected duration: <200ms
+  ///
+  /// **App Store builds call sequence:**
+  /// 1. `configureAccessProvider(_:)` - Must be called first to enable sandbox access
+  /// 2. `startup()` - Runs initial discovery, then starts background discovery
+  ///
+  /// **Background discovery lifecycle:**
+  /// Background discovery (Claude watcher + Codex polling) starts once per process and runs
+  /// until termination. This is intentional for the singleton `AppStateOrchestrator.shared`.
+  /// The `stopBackgroundDiscovery()` method exists for cleanup but is not called in normal
+  /// operation since the orchestrator lives for the process lifetime.
   public func startup() async {
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()
@@ -102,7 +122,7 @@ public final class AppStateOrchestrator: ObservableObject {
 
     // Post notification that discovery is complete (enables ProjectActivityMonitor FSEvents)
     NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
-    log.debug("[ORCH-STARTUP] Posted .projectsDiscoveryComplete notification")
+    log.info("[ORCH-NOTIFY] Posted .projectsDiscoveryComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
 
     // 4. PATCH C: Auto-select most recent project (projects are already sorted by activity)
     if let mostRecent = projects.first {
@@ -113,7 +133,63 @@ public final class AppStateOrchestrator: ObservableObject {
       // 5. Optional: Start background indexing (low priority)
       startBackgroundIndexing()
     }
+
+    // 6. Start background discovery for App Store builds
+    // Claude: directory watcher (flat structure)
+    // Codex: polling timer (nested date-based structure)
+    #if APPSTORE_BUILD
+    log.info("[ORCH-STARTUP] App Store build detected, starting background discovery")
+    startBackgroundDiscovery()
+    #else
+    log.debug("[ORCH-STARTUP] DMG build - background discovery disabled (uses FSEvents instead)")
+    #endif
   }
+
+  // MARK: - Background Discovery (App Store)
+
+  #if APPSTORE_BUILD
+  /// Start background discovery mechanisms for sandboxed builds.
+  /// Claude uses directory watching; Codex uses polling due to nested structure.
+  private func startBackgroundDiscovery() {
+    guard let provider = accessProvider else {
+      log.warning("[ORCH-BACKGROUND-DISCOVERY] Access provider not configured, skipping background discovery")
+      return
+    }
+
+    // Claude: Directory watcher (flat ~/.claude/projects/ structure)
+    sandboxedWatcher = SandboxedDirectoryWatcher(accessProvider: provider)
+    sandboxedWatcher?.startWatching()
+
+    // Codex: Polling timer (nested ~/.codex/sessions/YYYY/MM/DD/ structure)
+    // Directory watching doesn't work for nested structures - new files in existing
+    // date folders won't trigger events on the root directory.
+    startCodexPolling()
+
+    log.info("[ORCH-BACKGROUND-DISCOVERY] Started: Claude=watcher, Codex=\(codexPollInterval)s poll")
+  }
+
+  /// Start polling timer for Codex project discovery.
+  private func startCodexPolling() {
+    codexPollTimer?.invalidate()
+    codexPollTimer = Timer.scheduledTimer(withTimeInterval: codexPollInterval, repeats: true) { [weak self] _ in
+      guard let self else { return }
+      Task { @MainActor in
+        await self.refreshProjects()
+      }
+    }
+    // Fire once immediately to catch any projects created during startup
+    codexPollTimer?.fire()
+  }
+
+  /// Stop background discovery mechanisms.
+  private func stopBackgroundDiscovery() {
+    sandboxedWatcher?.stopWatching()
+    sandboxedWatcher = nil
+    codexPollTimer?.invalidate()
+    codexPollTimer = nil
+    log.info("[ORCH-BACKGROUND-DISCOVERY] Stopped")
+  }
+  #endif
 
   // MARK: - Project Refresh
 
@@ -121,6 +197,14 @@ public final class AppStateOrchestrator: ObservableObject {
   /// Called when app becomes active or via manual refresh
   /// Does NOT change current selection - only updates available projects list
   public func refreshProjects() async {
+    // Reentrancy guard - skip if refresh already in progress
+    guard !isRefreshing else {
+      log.info("[ORCH-REFRESH] Skip - refresh already in progress")
+      return
+    }
+    isRefreshing = true
+    defer { isRefreshing = false }
+
     log.info("[ORCH-REFRESH] Beginning project refresh...")
     let startTime = Date()
 
@@ -135,6 +219,21 @@ public final class AppStateOrchestrator: ObservableObject {
       log.info("[ORCH-REFRESH] Found \(newProjects.count, privacy: .public) new project(s)")
       for project in newProjects {
         log.info("[ORCH-REFRESH-NEW] \(project.displayName, privacy: .public) at \(project.canonicalRootPath, privacy: .public)")
+      }
+    }
+
+    // Check if active project has new transcript files (e.g., Codex merged into Claude)
+    // If so, re-ingest to pick up the new entries
+    var activeProjectNeedsReIngest = false
+    if case .active(let currentId) = state {
+      if let oldProject = knownProjects.first(where: { $0.id == currentId }),
+         let newProject = projects.first(where: { $0.id == currentId }) {
+        let oldFileCount = oldProject.transcriptFiles.count
+        let newFileCount = newProject.transcriptFiles.count
+        if newFileCount > oldFileCount {
+          log.info("[ORCH-REFRESH] Active project \(currentId, privacy: .public) has new transcript files: \(oldFileCount) -> \(newFileCount)")
+          activeProjectNeedsReIngest = true
+        }
       }
     }
 
@@ -153,12 +252,27 @@ public final class AppStateOrchestrator: ObservableObject {
     // Update state (preserve current active project)
     if case .active(let currentId) = state {
       setState(.active(projectId: currentId))
+
+      // Re-ingest active project if new transcript files were discovered
+      // This handles cases like Codex transcripts merging into a Claude project
+      if activeProjectNeedsReIngest, let project = projectLookup[currentId] {
+        log.info("[ORCH-REFRESH] Re-ingesting active project to pick up new transcripts")
+        do {
+          let dbProjectId = try await fastPath.ingestProjectJIT(project)
+          // Notify timeline to refresh
+          NotificationCenter.default.post(name: .projectDidActivate, object: dbProjectId)
+          log.info("[ORCH-REFRESH] Re-ingestion complete, posted .projectDidActivate")
+        } catch {
+          log.error("[ORCH-REFRESH] Re-ingestion failed: \(error.localizedDescription, privacy: .public)")
+        }
+      }
     } else {
       setState(.idle(projects: projects))
     }
 
     // Notify observers of updated project list
     NotificationCenter.default.post(name: .projectsDiscoveryComplete, object: nil)
+    log.info("[ORCH-NOTIFY] Posted .projectsDiscoveryComplete from refresh (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
 
     let duration = Date().timeIntervalSince(startTime)
     log.info("[ORCH-REFRESH] Refresh complete in \(String(format: "%.3f", duration), privacy: .public)s. Projects: \(projects.count, privacy: .public)")

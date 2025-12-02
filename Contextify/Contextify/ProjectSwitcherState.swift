@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OSLog
@@ -53,8 +54,12 @@ public final class ProjectSwitcherState {
 
   // Lifecycle state
   @ObservationIgnored private var projectObservationTask: Task<Void, Never>?
-  @ObservationIgnored private var ingestionCompleteTask: Task<Void, Never>?
-  @ObservationIgnored private var discoveryCompleteTask: Task<Void, Never>?
+  // IMPORTANT: nonisolated(unsafe) is REQUIRED for observer tokens.
+  // NSObjectProtocol is not Sendable, so removing nonisolated(unsafe) causes:
+  // "cannot access property 'X' with a non-Sendable type from nonisolated deinit"
+  // These tokens must be accessed in deinit to removeObserver(), which is nonisolated.
+  @ObservationIgnored nonisolated(unsafe) private var ingestionCompleteObserver: NSObjectProtocol?
+  @ObservationIgnored nonisolated(unsafe) private var discoveryCompleteObserver: NSObjectProtocol?
   @ObservationIgnored private var projectRootObserver: NSObjectProtocol?
   @ObservationIgnored private var isStarted: Bool = false
   @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
@@ -75,7 +80,8 @@ public final class ProjectSwitcherState {
 
   // Tab order stabilization
   @ObservationIgnored private var isTabOrderFrozen: Bool = false
-  @ObservationIgnored private var tabOrderFreezeTask: Task<Void, Never>?
+  // nonisolated(unsafe) required for access in deinit (DispatchWorkItem is not Sendable)
+  @ObservationIgnored nonisolated(unsafe) private var tabOrderFreezeWorkItem: DispatchWorkItem?
   @ObservationIgnored private var pendingTabProjects: [ProjectInfo]?
   private let tabOrderFreezeInterval: TimeInterval = 4
 
@@ -93,15 +99,24 @@ public final class ProjectSwitcherState {
   deinit {
     // Cancel any pending tasks (safety net for tests/non-singleton usage)
     projectObservationTask?.cancel()
-    ingestionCompleteTask?.cancel()
-    discoveryCompleteTask?.cancel()
     coalesceTask?.cancel()
     coordinatorTask?.cancel()
     monitorStartTask?.cancel()
     monitorFallbackTask?.cancel()
-    tabOrderFreezeTask?.cancel()
+    tabOrderFreezeWorkItem?.cancel()
     refreshDebounceTask?.cancel()
-    // Note: NotificationCenter automatically removes all observers when self is deallocated
+    removeNotificationObservers()
+  }
+
+  /// Remove notification observers (safe to call multiple times).
+  /// nonisolated because it needs to be callable from deinit.
+  private nonisolated func removeNotificationObservers() {
+    if let observer = ingestionCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    if let observer = discoveryCompleteObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   /// Initialize with explicit orchestrator (for testing)
@@ -186,22 +201,34 @@ public final class ProjectSwitcherState {
     // startGlobalMonitoring() runs. When watchers already exist, ensureWatcher() skips
     // emitting .discovered events, so we need this notification to trigger refreshProjects().
     // Without this, tabs won't appear after welcome modal ingestion completes.
-    ingestionCompleteTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      let notifications = NotificationCenter.default.notifications(named: .projectsIngestionComplete)
-      for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsIngestionComplete notification - refreshing projects")
+    //
+    // NOTE: Uses addObserver(queue: .main) instead of notifications(named:) async sequence.
+    // The async sequence pattern may not reliably deliver notifications when the app is
+    // unfocused, while addObserver with .main queue works consistently (matches ConversationMonitor).
+    ingestionCompleteObserver = NotificationCenter.default.addObserver(
+      forName: .projectsIngestionComplete,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard self != nil else { return }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        log.info("[SWITCHER-NOTIFY-RECV] received .projectsIngestionComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
         self.scheduleRefresh()
       }
     }
 
     // Subscribe to discovery complete notifications from AppStateOrchestrator
     // This ensures tabs refresh when new projects are discovered via lightweight scan
-    discoveryCompleteTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      let notifications = NotificationCenter.default.notifications(named: .projectsDiscoveryComplete)
-      for await _ in notifications {
-        log.info("ProjectSwitcher: received .projectsDiscoveryComplete - refreshing projects")
+    discoveryCompleteObserver = NotificationCenter.default.addObserver(
+      forName: .projectsDiscoveryComplete,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      guard self != nil else { return }
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        log.info("[SWITCHER-NOTIFY-RECV] received .projectsDiscoveryComplete (isActive=\(NSApp.isActive, privacy: .public), keyWindow=\(NSApp.keyWindow != nil, privacy: .public))")
         self.scheduleRefresh()
       }
     }
@@ -265,10 +292,9 @@ public final class ProjectSwitcherState {
   public func stop() {
     projectObservationTask?.cancel()
     projectObservationTask = nil
-    ingestionCompleteTask?.cancel()
-    ingestionCompleteTask = nil
-    discoveryCompleteTask?.cancel()
-    discoveryCompleteTask = nil
+    removeNotificationObservers()
+    ingestionCompleteObserver = nil
+    discoveryCompleteObserver = nil
     coalesceTask?.cancel()
     coalesceTask = nil
     cancelMonitorStartTasks()
@@ -467,6 +493,7 @@ public final class ProjectSwitcherState {
 
   @MainActor
   private func updateTabProjects(_ projects: [ProjectInfo]) {
+    log.info("[SWITCHER-STATE] updateTabProjects called: before=\(self.tabProjects.count, privacy: .public), after=\(projects.count, privacy: .public), isActive=\(NSApp.isActive, privacy: .public)")
     let previousIds = Set(tabProjects.map { $0.id })
     let nextIds = Set(projects.map { $0.id })
 
@@ -482,6 +509,7 @@ public final class ProjectSwitcherState {
     }
 
     tabProjects = projects
+    log.info("[SWITCHER-STATE] tabProjects updated: count=\(self.tabProjects.count, privacy: .public)")
   }
 
   /// Cycle to previous project (for keyboard shortcut)
@@ -798,8 +826,13 @@ public final class ProjectSwitcherState {
         break // Exit after first notification
       }
 
+      // Check for cancellation - the for-await loop exits immediately when cancelled
+      guard !Task.isCancelled else { return }
+
       // Now start the fallback timer (30s to account for large projects)
       try? await Task.sleep(nanoseconds: 30_000_000_000)
+      guard !Task.isCancelled else { return }
+
       log.warning("[SWITCHER-MONITOR] ⚠️ Fallback timeout triggered - notification was NOT received in 30s")
       await self.startGlobalMonitoringIfNeeded(reason: "fallback-timeout")
     }
@@ -866,25 +899,28 @@ public final class ProjectSwitcherState {
 
   private func freezeTabOrdering(reason: String, duration: TimeInterval? = nil) {
     let interval = duration ?? tabOrderFreezeInterval
-    tabOrderFreezeTask?.cancel()
+    tabOrderFreezeWorkItem?.cancel()
     isTabOrderFrozen = true
     log.info("[SWITCHER-SORT-FROZEN] Freeze activated (reason: \(reason)) for \(interval)s")
 
-    tabOrderFreezeTask = Task { [weak self] in
+    // Use DispatchWorkItem instead of Task.sleep + MainActor.run
+    // Task-based timers don't fire reliably when app is in background because
+    // MainActor.run queues work that doesn't execute until app becomes active.
+    // DispatchQueue.main.asyncAfter with DispatchWorkItem runs even when app is unfocused.
+    let workItem = DispatchWorkItem { [weak self] in
       guard let self else { return }
-      try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
-      await MainActor.run {
-        self.unfreezeTabOrdering(reason: "timeout")
-      }
+      self.unfreezeTabOrdering(reason: "timeout")
     }
+    tabOrderFreezeWorkItem = workItem
+    DispatchQueue.main.asyncAfter(deadline: .now() + interval, execute: workItem)
   }
 
   private func unfreezeTabOrdering(reason: String) {
     guard isTabOrderFrozen else { return }
 
     isTabOrderFrozen = false
-    tabOrderFreezeTask?.cancel()
-    tabOrderFreezeTask = nil
+    tabOrderFreezeWorkItem?.cancel()
+    tabOrderFreezeWorkItem = nil
     log.info("[SWITCHER-SORT-UNFROZEN] Tab order thawed (reason: \(reason))")
 
     if let pending = pendingTabProjects {
