@@ -215,7 +215,7 @@ struct WelcomeModalView: View {
                     .font(.headline)
                     .multilineTextAlignment(.center)
             } else {
-                Text("Found \(projectsVM.projects.count) \(projectsVM.projects.count == 1 ? "project" : "projects")")
+                Text("Tracking \(projectsVM.projects.count) coding \(projectsVM.projects.count == 1 ? "project" : "projects")")
                     .font(.headline)
             }
 

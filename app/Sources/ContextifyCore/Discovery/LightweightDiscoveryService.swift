@@ -19,21 +19,62 @@ public actor LightweightDiscoveryService {
   }
 
   /// Scans filesystem for project metadata. NO DB SIDE EFFECTS.
-  /// Returns projects sorted by last activity (newest first)
+  /// Returns projects sorted by last activity (newest first), merged by canonical path.
   public func discoverProjectsLightweight() async -> [LightweightProject] {
     log.info("[DISC-LIGHT] Starting lightweight scan...")
     let start = Date()
 
-    async let claudeProjects = scanClaudeProjects()
-    async let codexProjects = scanCodexSessions()
+    async let claudeProjectsTask = scanClaudeProjects()
+    async let codexProjectsTask = scanCodexSessions()
 
-    var all = await claudeProjects + codexProjects
+    let claudeProjects = await claudeProjectsTask
+    let codexProjects = await codexProjectsTask
+    let rawProjects = claudeProjects + codexProjects
+    log.debug("[DISC-LIGHT] Raw discoveries: \(rawProjects.count, privacy: .public) (Claude: \(claudeProjects.count, privacy: .public), Codex: \(codexProjects.count, privacy: .public))")
+
+    // Merge projects with same canonical path (e.g., Claude + Codex for same directory)
+    let merged = mergeByCanonicalPath(rawProjects)
+
+    var all = merged
     all.sort { $0.lastActivity > $1.lastActivity }
 
     let duration = Date().timeIntervalSince(start)
-    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration), privacy: .public)s. Found \(all.count, privacy: .public) projects.")
+    log.info("[DISC-LIGHT] Scan complete in \(String(format: "%.3f", duration), privacy: .public)s. Found \(all.count, privacy: .public) projects (merged from \(rawProjects.count, privacy: .public) discoveries).")
 
     return all
+  }
+
+  /// Merge projects that point to the same canonical path.
+  /// This handles multi-provider scenarios (Claude + Codex for same project).
+  nonisolated private func mergeByCanonicalPath(_ projects: [LightweightProject]) -> [LightweightProject] {
+    var merged: [String: LightweightProject] = [:]
+
+    for project in projects {
+      let key = project.canonicalRootPath
+
+      if let existing = merged[key] {
+        // Merge: combine transcripts, keep most recent activity, mark as multi-provider
+        let combinedFiles = existing.transcriptFiles + project.transcriptFiles
+        let providers = Set([existing.provider, project.provider])
+        let providerStr = providers.count > 1 ? "multi" : existing.provider
+
+        merged[key] = LightweightProject(
+          id: existing.id,  // Keep first ID for consistency
+          path: existing.path,
+          displayName: existing.displayName,
+          transcriptCount: combinedFiles.count,
+          lastActivity: max(existing.lastActivity, project.lastActivity),
+          provider: providerStr,
+          cwd: existing.cwd ?? project.cwd,
+          transcriptFiles: combinedFiles
+        )
+        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public))")
+      } else {
+        merged[key] = project
+      }
+    }
+
+    return Array(merged.values)
   }
 
   // MARK: - Claude Projects (~/.claude/projects/HASH/*.jsonl)

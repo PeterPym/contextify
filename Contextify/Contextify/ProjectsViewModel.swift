@@ -253,12 +253,13 @@ final class ProjectsViewModel {
   /// Legacy property for welcome modal compatibility
   var discoveryProgress: DiscoveryProgress? {
     // Phase 3: If we have projects and welcome is ready, show complete
+    let projectWord = projects.count == 1 ? "project" : "projects"
     if isWelcomeReady && !projects.isEmpty {
       return DiscoveryProgress(
         phase: .complete,
         projectsCompleted: projects.count,
         projectsTotal: projects.count,
-        message: "Found \(projects.count) projects"
+        message: "Tracking \(projects.count) coding \(projectWord)"
       )
     } else if isDiscovering {
       return DiscoveryProgress(
@@ -273,7 +274,7 @@ final class ProjectsViewModel {
         phase: .ingesting,
         projectsCompleted: projects.count,
         projectsTotal: projects.count,
-        message: "Found \(projects.count) projects"
+        message: "Tracking \(projects.count) coding \(projectWord)"
       )
     }
     return nil
@@ -294,15 +295,26 @@ final class ProjectsViewModel {
 
   private func convertToDiscoveredProjects(_ lightweight: [LightweightProject]) -> [DiscoveredProject] {
     return lightweight.map { light in
-      // Map provider string to enum
-      let provider: DiscoveredProject.Provider = light.provider == "claude.code" ? .claudeCode : .codexCLI
+      // Map provider string to enum(s)
+      // "multi" indicates both Claude Code and Codex CLI transcripts exist for this project
+      let providers: Set<DiscoveredProject.Provider>
+      switch light.provider {
+      case "claude.code":
+        providers = [.claudeCode]
+      case "codex.cli":
+        providers = [.codexCLI]
+      case "multi":
+        providers = [.claudeCode, .codexCLI]
+      default:
+        providers = [.codexCLI]  // Fallback for unknown providers
+      }
 
       // Phase 3: Use displayName populated during discovery (no need to derive it here)
       return DiscoveredProject(
         id: light.id,
         name: light.displayName,  // Already derived by LightweightDiscoveryService
         path: light.path,
-        providers: [provider],
+        providers: providers,
         transcriptCount: light.transcriptCount,
         entryCount: 0, // Not available in lightweight scan
         lastActivity: light.lastActivity,
