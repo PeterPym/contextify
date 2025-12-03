@@ -4,14 +4,17 @@ https://contextify.sh/review-4a125b1d/sample-data.zip
 DEMO VIDEO:
 https://contextify.sh/review-4a125b1d/demo-video.mp4
 
-SETUP INSTRUCTIONS:
+SETUP INSTRUCTIONS (also in README.txt inside the archive):
 1. Download and extract sample-data.zip
-2. Copy the claude/ folder contents to ~/.claude/projects/
-3. Copy the codex/ folder contents to ~/.codex/sessions/
-4. Launch Contextify
-5. Grant permission when prompted for ~/.claude/ access
-6. App will detect sample projects (taskflow, weatherly, recipebox)
-7. Timeline displays conversations, LLM summaries generate automatically
+2. Create directories (needed if Claude Code/Codex not installed):
+   mkdir -p ~/.claude/projects
+   mkdir -p ~/.codex/sessions
+3. Copy the claude/ folder contents to ~/.claude/projects/
+4. Copy the codex/ folder contents to ~/.codex/sessions/
+5. Launch Contextify
+6. Grant permission when prompted for ~/.claude/ access
+7. App will detect sample projects (taskflow, weatherly, recipebox)
+8. Timeline displays conversations, LLM summaries generate automatically
 
 FEATURES TO TEST:
 • Timeline view - shows conversation history with timestamps

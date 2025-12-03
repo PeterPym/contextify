@@ -7,16 +7,20 @@ the type of data Contextify reads and summarizes.
 
 SETUP INSTRUCTIONS:
 1. Close Contextify if running
-2. Copy transcript files to Claude Code directory:
+2. Create directories and copy transcript files:
 
-   # Copy the claude/projects directory contents to ~/.claude/projects/
+   # Create directories (needed if Claude Code/Codex CLI not installed)
+   mkdir -p ~/.claude/projects
+   mkdir -p ~/.codex/sessions
+
+   # Copy Claude Code transcripts
    cp -r claude/projects/* ~/.claude/projects/
 
-3. (Optional) Copy Codex sessions:
+   # (Optional) Copy Codex CLI sessions
    cp -r codex/sessions/* ~/.codex/sessions/
 
-4. Launch Contextify
-5. The sample projects will appear in the project switcher:
+3. Launch Contextify
+4. The sample projects will appear in the project switcher:
    - taskflow (CLI task manager)
    - weatherly (weather dashboard)
    - recipebox (recipe manager)
