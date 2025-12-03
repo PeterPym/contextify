@@ -1,218 +1,155 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Contextify - Monitor your Claude Code and Codex CLI sessions on macOS">
-    <title>Contextify - AI Session Monitoring for macOS</title>
-    <style>
-        :root {
-            --bg: #ffffff;
-            --text: #2c2c2c;
-            --text-muted: #666666;
-            --accent: #0066cc;
-            --border: #e0e0e0;
-            --code-bg: #f5f5f5;
-        }
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contextify - AI Session Monitoring for macOS</title>
+  <meta name="description" content="Monitor your Claude Code and Codex CLI sessions on macOS">
+  <link rel="canonical" href="https://contextify.sh/">
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <!-- Favicon -->
+  <link rel="icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.6;
-            color: var(--text);
-            background: var(--bg);
-            padding: 20px;
-        }
+  <!-- Open Graph -->
+  <meta property="og:url" content="https://contextify.sh/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Contextify - AI Session Monitoring for macOS">
+  <meta property="og:description" content="Monitor your Claude Code and Codex CLI sessions">
+  <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Contextify - AI Session Monitoring for macOS">
+  <meta name="twitter:description" content="Monitor your Claude Code and Codex CLI sessions">
+  <meta name="twitter:image" content="https://contextify.sh/assets/img/og-banner.png">
 
-        header {
-            margin-bottom: 60px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border);
-        }
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
 
-        h1 {
-            font-size: 2.5rem;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
+  <!-- Custom styles -->
+  <link href="styles.css" rel="stylesheet">
 
-        .tagline {
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            margin-bottom: 0;
-        }
-
-        h2 {
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin: 40px 0 20px 0;
-        }
-
-        h3 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            margin: 30px 0 15px 0;
-        }
-
-        p {
-            margin-bottom: 15px;
-        }
-
-        ul, ol {
-            margin-bottom: 20px;
-            margin-left: 20px;
-        }
-
-        li {
-            margin-bottom: 10px;
-        }
-
-        a {
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-
-        .screenshot {
-            width: 100%;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            margin: 30px 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .download-btn {
-            display: inline-block;
-            background: var(--accent);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-weight: 500;
-            margin: 20px 0;
-        }
-
-        .download-btn:hover {
-            background: #0052a3;
-            text-decoration: none;
-        }
-
-        .requirements {
-            background: var(--code-bg);
-            padding: 20px;
-            border-radius: 6px;
-            margin: 20px 0;
-        }
-
-        .requirements ul {
-            margin-bottom: 0;
-        }
-
-        footer {
-            margin-top: 60px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border);
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        footer a {
-            margin: 0 10px;
-        }
-
-        code {
-            background: var(--code-bg);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: "SF Mono", Monaco, monospace;
-            font-size: 0.9em;
-        }
-
-        @media (max-width: 600px) {
-            h1 {
-                font-size: 2rem;
-            }
-
-            .tagline {
-                font-size: 1.1rem;
-            }
-
-            body {
-                padding: 15px;
-            }
-        }
-    </style>
+  <!-- Dark mode detection -->
+  <script>
+    (function() {
+      var theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-bs-theme', theme);
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+        document.documentElement.setAttribute('data-bs-theme', e.matches ? 'dark' : 'light');
+      });
+    })();
+  </script>
 </head>
+
 <body>
+  <!-- Header -->
+  <nav class="navbar navbar-expand-lg sticky-top">
     <div class="container">
-        <header>
-            <h1>Contextify</h1>
-            <p class="tagline">Monitor your Claude Code and Codex CLI sessions on macOS</p>
-        </header>
-
-        <main>
-            <!-- Screenshot will be added later -->
-            <!-- <img src="screenshot.png" alt="Contextify Screenshot" class="screenshot"> -->
-
-            <h2>What it does</h2>
-            <ul>
-                <li><strong>Real-time timeline</strong> of your AI coding sessions</li>
-                <li><strong>Local database backup</strong> of all conversations</li>
-                <li><strong>LLM-generated summaries</strong> using macOS on-device intelligence</li>
-                <li><strong>Project-centric view</strong> across multiple sessions</li>
-                <li><strong>Transcript repair tool</strong> for corrupted Claude Code Web sessions</li>
-            </ul>
-
-            <h2>Download</h2>
-            <p>Coming soon to the Mac App Store.</p>
-            <!-- When ready, replace with: -->
-            <!-- <a href="Contextify-v1.0.dmg" class="download-btn">Download for macOS</a> -->
-
-            <div class="requirements">
-                <h3>System Requirements</h3>
-                <ul>
-                    <li>macOS 14 (Sonoma) or later</li>
-                    <li>macOS 26 (Sequoia) required for LLM summaries</li>
-                    <li>Works with Claude Code and Codex CLI</li>
-                </ul>
-            </div>
-
-            <h2>Features</h2>
-
-            <h3>Project Discovery</h3>
-            <p>Automatically discovers Claude Code and Codex projects on your Mac. Switch between projects with a single click.</p>
-
-            <h3>Timeline View</h3>
-            <p>See a chronological view of all messages in your AI sessions. Each entry includes a summary generated by macOS's on-device LLM (Sequoia only).</p>
-
-            <h3>Local Storage</h3>
-            <p>All data stored locally in a SQLite database. No cloud services, no tracking, no analytics. Your conversations stay on your Mac.</p>
-
-            <h3>Transcript Repair</h3>
-            <p>Built-in tool to detect and repair corrupted Claude Code Web transcripts that cause API 400 errors when resuming sessions.</p>
-        </main>
-
-        <footer>
-            <p>
-                &copy; 2025 Contextify. All rights reserved.
-                <br>
-                <a href="privacy.html">Privacy Policy</a>
-                <a href="support.html">Support</a>
-                <a href="mailto:hello@contextify.sh">Contact</a>
-            </p>
-        </footer>
+      <a class="navbar-brand d-flex align-items-center" href="./">
+        <img src="assets/img/contextify-icon.png" alt="" height="40" class="me-2">
+        <span>Contextify</span>
+      </a>
+      <a href="#download" class="btn btn-primary d-none d-md-inline-block">Download</a>
     </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="container py-5">
+      <div class="row align-items-center g-5 py-4">
+        <div class="col-lg-5">
+          <h1 class="fw-bold mb-4">Monitor your AI coding sessions</h1>
+          <p class="lead mb-4">
+            Real-time timeline view of Claude Code and Codex CLI conversations on macOS.
+          </p>
+          <a href="#download" class="btn btn-primary btn-lg">Download for Mac</a>
+        </div>
+        <div class="col-lg-7">
+          <div class="screenshot-wrapper">
+            <picture>
+              <source srcset="assets/img/contextify-screenshot-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/img/contextify-screenshot-light.png" alt="Contextify app screenshot" class="img-fluid screenshot">
+            </picture>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Brand Gradient Divider -->
+  <div class="brand-divider"></div>
+
+  <!-- Features Section -->
+  <section id="features" class="py-5">
+    <div class="container py-4">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow-sm card-hover">
+        <h2 class="h3 fw-bold mb-4">Features</h2>
+        <div class="row g-4">
+          <div class="col-md-6">
+            <ul class="list-unstyled mb-0">
+              <li class="mb-3 d-flex align-items-start">
+                <span class="text-success me-3 fs-5">&#10003;</span>
+                <span>Real-time timeline of your AI coding sessions</span>
+              </li>
+              <li class="mb-3 d-flex align-items-start">
+                <span class="text-success me-3 fs-5">&#10003;</span>
+                <span>Local database backup of all conversations</span>
+              </li>
+              <li class="mb-3 d-flex align-items-start">
+                <span class="text-success me-3 fs-5">&#10003;</span>
+                <span>LLM-generated summaries using macOS on-device intelligence</span>
+              </li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <ul class="list-unstyled mb-0">
+              <li class="mb-3 d-flex align-items-start">
+                <span class="text-success me-3 fs-5">&#10003;</span>
+                <span>Project-centric view across multiple sessions</span>
+              </li>
+              <li class="mb-3 d-flex align-items-start">
+                <span class="text-success me-3 fs-5">&#10003;</span>
+                <span>Transcript repair tool for corrupted Claude Code Web sessions</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download Section -->
+  <section id="download" class="py-5">
+    <div class="container">
+      <div class="bg-white p-4 p-md-5 rounded-3 shadow-sm card-hover text-center">
+        <h2 class="h3 fw-bold mb-4">Download</h2>
+        <p class="mb-4">Coming soon to the Mac App Store.</p>
+        <p class="text-body-secondary small mb-0">Requires macOS 26 (Tahoe)</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-4 mt-5">
+    <div class="container text-center">
+      <div class="mb-3">
+        <a href="privacy/" class="mx-2">Privacy</a>
+        <span class="text-secondary">|</span>
+        <a href="terms/" class="mx-2">Terms</a>
+        <span class="text-secondary">|</span>
+        <a href="support/" class="mx-2">Support</a>
+        <span class="text-secondary">|</span>
+        <a href="mailto:hello@contextify.sh" class="mx-2">Contact</a>
+      </div>
+      <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-0">&copy; 2025 Contextify</p>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5.3 JS (for navbar collapse on mobile) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>

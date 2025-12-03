@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contextify Design System</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; }
+
+    /* Brandmark colors as CSS variables */
+    :root {
+      --brand-yellow: #F9B233;
+      --brand-cyan: #4AC4E0;
+      --brand-purple: #8B5CF6;
+      --brand-gradient: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-cyan) 50%, var(--brand-purple) 100%);
+    }
+
+    /* Sticky control bar */
+    .controls {
+      position: sticky;
+      top: 0;
+      background: #111;
+      color: #fff;
+      padding: 0.75rem 2rem;
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      z-index: 1000;
+      flex-wrap: wrap;
+    }
+    .controls label { font-weight: 600; margin-right: 0.5rem; }
+    .controls button {
+      padding: 0.4rem 0.8rem;
+      border: 2px solid #444;
+      background: transparent;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      min-width: 2rem;
+    }
+    .controls button:hover { border-color: #888; }
+    .controls button.active { background: #fff; color: #111; border-color: #fff; }
+    .controls .toggle-group { display: flex; gap: 0.25rem; }
+    .controls .key {
+      display: inline-block;
+      background: #333;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      margin-left: 0.25rem;
+      font-family: ui-monospace, monospace;
+    }
+    .controls .hint {
+      margin-left: auto;
+      opacity: 0.6;
+      font-size: 0.8rem;
+    }
+
+    .lens { display: none; min-height: 100vh; }
+    .lens.active { display: block; }
+
+    /* =========================================================================
+       SHARED COLOR SYSTEM: Slate + Blue
+       ========================================================================= */
+    .lens-light {
+      --primary: #4A7BA7;
+      --primary-hover: #3D6A94;
+      --primary-light: #E8F0F7;
+
+      --text-primary: #1E293B;
+      --text-secondary: #64748B;
+      --text-tertiary: #94A3B8;
+      --text-inverse: #FFFFFF;
+
+      --link-default: #4A7BA7;
+      --link-hover: #3D6A94;
+      --link-visited: #7C68A8;
+
+      --bg-page: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #F1F5F9;
+      --bg-inverse: #1E293B;
+
+      --border-default: #E2E8F0;
+      --border-subtle: #F1F5F9;
+      --border-focus: #4A7BA7;
+
+      --secondary: #9B8B7E;
+      --success: #51A86B;
+      --success-light: #E8F5EC;
+      --warning: #D4A84E;
+      --warning-light: #FDF6E8;
+      --error: #C74E4E;
+      --error-light: #FBEAEA;
+      --info: #4A7BA7;
+      --info-light: #E8F0F7;
+      --accent: #7C68A8;
+
+      --provider-claude: #D97757;
+      --provider-codex: #FFFFFF;
+    }
+
+    .lens-dark {
+      --primary: #6A9BC7;
+      --primary-hover: #7AABDA;
+      --primary-light: #1E3A52;
+
+      --text-primary: #F1F5F9;
+      --text-secondary: #94A3B8;
+      --text-tertiary: #64748B;
+      --text-inverse: #0F172A;
+
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
+
+      --bg-page: #0F172A;
+      --bg-surface: #1E293B;
+      --bg-muted: #334155;
+      --bg-inverse: #F1F5F9;
+
+      --border-default: #334155;
+      --border-subtle: #1E293B;
+      --border-focus: #6A9BC7;
+
+      --secondary: #B5A89D;
+      --success: #6BC885;
+      --success-light: #1A3028;
+      --warning: #E4B85E;
+      --warning-light: #3A3020;
+      --error: #D76E6E;
+      --error-light: #3A2020;
+      --info: #6A9BC7;
+      --info-light: #1A2838;
+      --accent: #9C88C8;
+
+      --provider-claude: #D97757;
+      --provider-codex: #FFFFFF;
+    }
+
+    /* =========================================================================
+       LENS A: Website Mockup
+       ========================================================================= */
+    .lens { background: var(--bg-page); color: var(--text-primary); }
+
+    /* Website layout */
+    .site-nav { padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); border-bottom: 1px solid var(--border-default); }
+    .site-nav-brand { font-weight: 700; font-size: 1.5rem; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); }
+    .site-nav-links { display: flex; gap: 1.5rem; }
+    .site-nav-links a { text-decoration: none; font-weight: 500; color: var(--text-secondary); }
+    .site-nav-links a:hover { color: var(--link-default); }
+
+    .logomark { width: 32px; height: 32px; }
+
+    .site-hero { padding: 4rem 2rem; display: flex; align-items: center; justify-content: center; min-height: 50vh; background: var(--bg-inverse); color: var(--text-inverse); }
+    .site-hero-content { max-width: 600px; text-align: center; }
+    .site-hero h1 { font-size: 2.5rem; margin-bottom: 1rem; line-height: 1.2; color: var(--text-inverse); }
+    .site-hero p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+
+    .btn { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; border: 2px solid transparent; cursor: pointer; font-size: 1rem; }
+    .btn-primary { background: var(--primary); color: var(--text-inverse); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: transparent; border-color: var(--text-secondary); color: var(--text-secondary); margin-left: 0.5rem; }
+
+    .brand-divider { height: 3px; background: var(--brand-gradient); margin: 0; }
+
+    .site-features { padding: 4rem 2rem; }
+    .site-features h2 { text-align: center; margin-bottom: 2rem; font-size: 1.75rem; }
+    .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; max-width: 1000px; margin: 0 auto; }
+    .feature-card { padding: 1.5rem; border-radius: 8px; background: var(--bg-surface); border: 1px solid var(--border-default); position: relative; overflow: hidden; }
+    .feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--brand-gradient); opacity: 0; transition: opacity 0.2s; }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-card h3 { margin-bottom: 0.5rem; font-size: 1.1rem; color: var(--text-primary); }
+    .feature-card p { color: var(--text-secondary); }
+
+    .site-footer { padding: 2rem; text-align: center; background: var(--bg-inverse); color: var(--text-inverse); }
+    .site-footer a { text-decoration: none; margin: 0 1rem; color: var(--text-inverse); opacity: 0.8; }
+    .site-footer a:hover { opacity: 1; }
+    .site-footer p { margin-top: 1rem; opacity: 0.6; font-size: 0.9rem; }
+
+    /* =========================================================================
+       LENS B: Color Specimens
+       ========================================================================= */
+    .specimens { padding: 2rem; }
+    .specimens h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .specimens .subtitle { opacity: 0.7; margin-bottom: 2rem; }
+
+    .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-bottom: 3rem; }
+
+    .spec-card { padding: 1.5rem; border-radius: 8px; background: var(--bg-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .spec-card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary); }
+    .spec-card p { margin-bottom: 1rem; }
+
+    .swatch-row { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+    .swatch { width: 50px; height: 50px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); text-align: center; line-height: 1.2; }
+    .swatch-wide { width: 70px; }
+
+    .btn-small { padding: 0.5rem 1rem; font-size: 0.9rem; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+
+    .link-demo a { margin-right: 1rem; color: var(--link-default); }
+    .link-demo a.hover { color: var(--link-hover); }
+    .link-demo a.visited { color: var(--link-visited); }
+
+    .input-demo input { padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-default); width: 200px; font-size: 1rem; background: var(--bg-surface); color: var(--text-primary); }
+    .input-demo input::placeholder { color: var(--text-tertiary); }
+    .input-demo input:focus { outline: none; border-width: 2px; border-color: var(--border-focus); }
+
+    .alert { padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 4px solid; }
+    .alert-success { background: var(--success-light); border-color: var(--success); color: var(--success); }
+    .alert-warning { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+    .alert-error { background: var(--error-light); border-color: var(--error); color: var(--error); }
+    .alert-info { background: var(--info-light); border-color: var(--info); color: var(--info); }
+
+    .code-demo { font-family: ui-monospace, monospace; padding: 0.125rem 0.375rem; border-radius: 4px; font-size: 0.875em; background: var(--bg-muted); }
+
+    .hero-demo { padding: 2rem; border-radius: 8px; margin-bottom: 2rem; background: var(--bg-inverse); color: var(--text-inverse); }
+    .hero-demo h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .hero-demo p { margin-bottom: 1rem; opacity: 0.9; }
+
+    .footer-demo { padding: 1.5rem; border-radius: 6px; text-align: center; background: var(--bg-inverse); color: var(--text-inverse); }
+    .footer-demo a { margin: 0 0.75rem; text-decoration: none; color: var(--text-inverse); opacity: 0.8; }
+    .footer-demo a:hover { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="controls">
+  <div>
+    <label>Lens:</label>
+    <div class="toggle-group">
+      <button onclick="setLens('a')" id="btn-a" class="active">A: Website<span class="key">a</span></button>
+      <button onclick="setLens('b')" id="btn-b">B: Specimens<span class="key">b</span></button>
+    </div>
+  </div>
+  <div>
+    <label>Mode:</label>
+    <div class="toggle-group">
+      <button onclick="setMode('light')" id="btn-light" class="active">Light<span class="key">l</span></button>
+      <button onclick="setMode('dark')" id="btn-dark">Dark<span class="key">k</span></button>
+    </div>
+  </div>
+  <div class="hint">Slate + Blue: Neutral base, blue actions (#4A7BA7)</div>
+</div>
+
+<!-- LENS A: Website (Light) -->
+<section class="lens lens-light" id="lens-a-light">
+  <nav class="site-nav">
+    <a href="#" class="site-nav-brand">
+      <img src="../../brand/logomark/exports/infinity-32.png" alt="Contextify" class="logomark">
+      Contextify
+    </a>
+    <div class="site-nav-links">
+      <a href="#">Features</a>
+      <a href="#">Download</a>
+      <a href="#">Support</a>
+    </div>
+  </nav>
+
+  <section class="site-hero">
+    <div class="site-hero-content">
+      <h1>Monitor your AI coding sessions</h1>
+      <p>Real-time timeline view of Claude Code and Codex CLI conversations on macOS.</p>
+      <a href="#" class="btn btn-primary">Download for Mac</a>
+      <a href="#" class="btn btn-secondary">Learn More</a>
+    </div>
+  </section>
+
+  <div class="brand-divider"></div>
+
+  <section class="site-features">
+    <h2>Why Contextify?</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Real-time Monitoring</h3>
+        <p>Watch your AI conversations unfold with live updates and summaries.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Project Context</h3>
+        <p>Automatically groups sessions by project and tracks conversation history.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Smart Summaries</h3>
+        <p>LLM-powered summaries help you catch up on long conversations quickly.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Support</a>
+    <p>&copy; 2025 Contextify</p>
+  </footer>
+</section>
+
+<!-- LENS A: Website (Dark) -->
+<section class="lens lens-dark" id="lens-a-dark">
+  <nav class="site-nav">
+    <a href="#" class="site-nav-brand">
+      <img src="../../brand/logomark/exports/infinity-32.png" alt="Contextify" class="logomark">
+      Contextify
+    </a>
+    <div class="site-nav-links">
+      <a href="#">Features</a>
+      <a href="#">Download</a>
+      <a href="#">Support</a>
+    </div>
+  </nav>
+
+  <section class="site-hero">
+    <div class="site-hero-content">
+      <h1>Monitor your AI coding sessions</h1>
+      <p>Real-time timeline view of Claude Code and Codex CLI conversations on macOS.</p>
+      <a href="#" class="btn btn-primary">Download for Mac</a>
+      <a href="#" class="btn btn-secondary">Learn More</a>
+    </div>
+  </section>
+
+  <div class="brand-divider"></div>
+
+  <section class="site-features">
+    <h2>Why Contextify?</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Real-time Monitoring</h3>
+        <p>Watch your AI conversations unfold with live updates and summaries.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Project Context</h3>
+        <p>Automatically groups sessions by project and tracks conversation history.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Smart Summaries</h3>
+        <p>LLM-powered summaries help you catch up on long conversations quickly.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Support</a>
+    <p>&copy; 2025 Contextify</p>
+  </footer>
+</section>
+
+<!-- LENS B: Specimens (Light) -->
+<section class="lens lens-light" id="lens-b-light">
+  <div class="specimens">
+    <h1>Color Specimens: Slate + Blue</h1>
+    <p class="subtitle">Neutral slate foundation with blue (#4A7BA7) for actions. Complements Claude coral (#D97757).</p>
+
+    <div class="hero-demo">
+      <h2>Hero Section</h2>
+      <p>Dark inverse background with light text.</p>
+      <a href="#" class="btn btn-primary btn-small">Primary Action</a>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-card">
+        <h2>Semantic Colors</h2>
+        <p>Core palette:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#4A7BA7">Primary<br>#4A7BA7</div>
+          <div class="swatch swatch-wide" style="background:#9B8B7E">Secondary<br>#9B8B7E</div>
+          <div class="swatch swatch-wide" style="background:#51A86B">Success<br>#51A86B</div>
+          <div class="swatch swatch-wide" style="background:#D4A84E">Warning<br>#D4A84E</div>
+        </div>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#C74E4E">Error<br>#C74E4E</div>
+          <div class="swatch swatch-wide" style="background:#7C68A8">Accent<br>#7C68A8</div>
+        </div>
+        <p>Providers:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#D97757">Claude<br>#D97757</div>
+          <div class="swatch swatch-wide" style="background:#FFFFFF; color:#1E293B; border:1px solid #E2E8F0">Codex<br>#FFFFFF</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Brand Colors</h2>
+        <p>Logomark gradient:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#F9B233">Yellow<br>#F9B233</div>
+          <div class="swatch swatch-wide" style="background:#4AC4E0">Cyan<br>#4AC4E0</div>
+          <div class="swatch swatch-wide" style="background:#8B5CF6">Purple<br>#8B5CF6</div>
+        </div>
+        <div style="height:3px; background:var(--brand-gradient); margin-top:1rem; border-radius:2px;"></div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Backgrounds</h2>
+        <div class="swatch-row">
+          <div class="swatch" style="background:var(--bg-page); color:var(--text-primary); border:1px solid var(--border-default)">Page</div>
+          <div class="swatch" style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-default)">Surface</div>
+          <div class="swatch" style="background:var(--bg-muted); color:var(--text-primary); border:1px solid var(--border-default)">Muted</div>
+          <div class="swatch" style="background:var(--bg-inverse); color:var(--text-inverse)">Inverse</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Typography</h2>
+        <p style="color:var(--text-primary)"><strong>Primary:</strong> Main content text.</p>
+        <p style="color:var(--text-secondary)"><strong>Secondary:</strong> Supporting info.</p>
+        <p style="color:var(--text-tertiary)"><strong>Tertiary:</strong> Timestamps, hints.</p>
+        <p>Inline <span class="code-demo">code snippets</span> for technical content.</p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Buttons</h2>
+        <a href="#" class="btn btn-primary btn-small">Primary</a>
+        <a href="#" class="btn btn-secondary btn-small">Secondary</a>
+      </div>
+
+      <div class="spec-card">
+        <h2>Links</h2>
+        <p class="link-demo">
+          <a href="#">Default</a>
+          <a href="#" class="hover">Hover</a>
+          <a href="#" class="visited">Visited</a>
+        </p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Form Inputs</h2>
+        <div class="input-demo">
+          <input type="text" placeholder="Enter text...">
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Alerts</h2>
+        <div class="alert alert-success">Success message</div>
+        <div class="alert alert-warning">Warning message</div>
+        <div class="alert alert-error">Error message</div>
+        <div class="alert alert-info">Info message</div>
+      </div>
+    </div>
+
+    <div class="footer-demo">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</section>
+
+<!-- LENS B: Specimens (Dark) -->
+<section class="lens lens-dark" id="lens-b-dark">
+  <div class="specimens">
+    <h1>Color Specimens: Slate + Blue (Dark)</h1>
+    <p class="subtitle">Neutral slate foundation with blue (#6A9BC7) for actions. Complements Claude coral (#D97757).</p>
+
+    <div class="hero-demo">
+      <h2>Hero Section</h2>
+      <p>Light inverse background with dark text.</p>
+      <a href="#" class="btn btn-primary btn-small">Primary Action</a>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-card">
+        <h2>Semantic Colors</h2>
+        <p>Core palette (dark mode):</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#6A9BC7">Primary<br>#6A9BC7</div>
+          <div class="swatch swatch-wide" style="background:#B5A89D">Secondary<br>#B5A89D</div>
+          <div class="swatch swatch-wide" style="background:#6BC885">Success<br>#6BC885</div>
+          <div class="swatch swatch-wide" style="background:#E4B85E">Warning<br>#E4B85E</div>
+        </div>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#D76E6E">Error<br>#D76E6E</div>
+          <div class="swatch swatch-wide" style="background:#9C88C8">Accent<br>#9C88C8</div>
+        </div>
+        <p>Providers:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#D97757">Claude<br>#D97757</div>
+          <div class="swatch swatch-wide" style="background:#FFFFFF; color:#1E293B; border:1px solid #334155">Codex<br>#FFFFFF</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Brand Colors</h2>
+        <p>Logomark gradient:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#F9B233">Yellow<br>#F9B233</div>
+          <div class="swatch swatch-wide" style="background:#4AC4E0">Cyan<br>#4AC4E0</div>
+          <div class="swatch swatch-wide" style="background:#8B5CF6">Purple<br>#8B5CF6</div>
+        </div>
+        <div style="height:3px; background:var(--brand-gradient); margin-top:1rem; border-radius:2px;"></div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Backgrounds</h2>
+        <div class="swatch-row">
+          <div class="swatch" style="background:var(--bg-page); color:var(--text-primary); border:1px solid var(--border-default)">Page</div>
+          <div class="swatch" style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-default)">Surface</div>
+          <div class="swatch" style="background:var(--bg-muted); color:var(--text-primary); border:1px solid var(--border-default)">Muted</div>
+          <div class="swatch" style="background:var(--bg-inverse); color:var(--text-inverse)">Inverse</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Typography</h2>
+        <p style="color:var(--text-primary)"><strong>Primary:</strong> Main content text.</p>
+        <p style="color:var(--text-secondary)"><strong>Secondary:</strong> Supporting info.</p>
+        <p style="color:var(--text-tertiary)"><strong>Tertiary:</strong> Timestamps, hints.</p>
+        <p>Inline <span class="code-demo">code snippets</span> for technical content.</p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Buttons</h2>
+        <a href="#" class="btn btn-primary btn-small">Primary</a>
+        <a href="#" class="btn btn-secondary btn-small">Secondary</a>
+      </div>
+
+      <div class="spec-card">
+        <h2>Links</h2>
+        <p class="link-demo">
+          <a href="#">Default</a>
+          <a href="#" class="hover">Hover</a>
+          <a href="#" class="visited">Visited</a>
+        </p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Form Inputs</h2>
+        <div class="input-demo">
+          <input type="text" placeholder="Enter text...">
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Alerts</h2>
+        <div class="alert alert-success">Success message</div>
+        <div class="alert alert-warning">Warning message</div>
+        <div class="alert alert-error">Error message</div>
+        <div class="alert alert-info">Info message</div>
+      </div>
+    </div>
+
+    <div class="footer-demo">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</section>
+
+<script>
+let currentLens = 'a';
+let currentMode = 'light';
+
+function setLens(lens) {
+  currentLens = lens;
+  updateView();
+  document.getElementById('btn-a').classList.toggle('active', lens === 'a');
+  document.getElementById('btn-b').classList.toggle('active', lens === 'b');
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  updateView();
+  document.getElementById('btn-light').classList.toggle('active', mode === 'light');
+  document.getElementById('btn-dark').classList.toggle('active', mode === 'dark');
+}
+
+function updateView() {
+  document.querySelectorAll('.lens').forEach(l => l.classList.remove('active'));
+  document.getElementById(`lens-${currentLens}-${currentMode}`).classList.add('active');
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if (key === 'a') setLens('a');
+  else if (key === 'b') setLens('b');
+  else if (key === 'l') setMode('light');
+  else if (key === 'k') setMode('dark');
+});
+
+// Initialize
+updateView();
+</script>
+
+</body>
+</html>

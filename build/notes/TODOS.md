@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-02
+**Last Updated:** 2025-12-03
 **Status:** Active
 
 **Priority Levels:**
@@ -64,13 +64,14 @@ doc_references:
 - App Store: WAITING_FOR_REVIEW (Build 10, resubmitted Dec 2)
 - DMG: Built but not publicly released on website
 - Review materials: Sample data + demo video deployed to contextify.sh
-- Website: Needs redesign before public launch
+- Website: Design system done, needs screenshots + deploy (see #P1-WEBSITE-REDESIGN)
 
 **Immediate Next Steps:**
-1. [ ] Fix website - currently "jank" (see #P1-WEBSITE-REDESIGN, consider promoting to P0)
-2. [ ] Publish DMG release on website with download link
-3. [ ] Deploy website: `./scripts/deploy-website.sh`
-4. [ ] Wait for App Store approval, then add App Store badge
+1. [x] Fix website styling - design system migration complete (see #P1-WEBSITE-REDESIGN)
+2. [ ] Add app screenshots to website
+3. [ ] Publish DMG release on website with download link
+4. [ ] Deploy website: `./scripts/deploy-website.sh`
+5. [ ] Wait for App Store approval, then add App Store badge
 
 **Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
 
@@ -79,9 +80,12 @@ doc_references:
 **Website (contextify.sh)**
 - [x] Help landing page created
 - [x] Support page updated with GitHub issues links
+- [x] Design system migration (INSPINIA -> design tokens)
+- [x] Brand divider, card hover, navbar styling
+- [x] Hero section with headline and swoopity background
+- [ ] App screenshots (light + dark mode)
+- [ ] OG image for social sharing
 - [ ] Deploy current changes
-- [ ] Hero section with headline, subhead, video embed
-- [ ] Features section with screenshots
 - [ ] Download section (DMG link, SHA256, requirements)
 - [ ] App Store badge (when approved)
 
@@ -966,29 +970,53 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ## Website Redesign (1 item)
 
-**Status:** Not Started
+**Status:** In Progress - design system and styling done, assets needed
 **Priority:** P1 (public launch quality)
-**Effort:** 8-12 hours
+**Effort:** 4-6 hours remaining
+**Branch:** `feature/design-system-and-website`
 
-- [ ] #P1-WEBSITE-REDESIGN: Improve contextify.sh style and presentation
+- [ ] #P1-WEBSITE-REDESIGN: Complete website with screenshots and deploy
 
-**Current State:** Basic landing page with "Rogue Amoeba-inspired aesthetic" (Nov 2025). Functional but needs significant improvement for public launch.
+**Completed (Dec 2025):**
+- [x] Design system established (`build/design/brand/colors.md`)
+- [x] Color migration from INSPINIA to design system tokens
+- [x] Brand gradient divider below hero
+- [x] Card hover effects (lift + shadow)
+- [x] Solid navbar background for sticky behavior
+- [x] Logomark copied to website assets
+- [x] Bootstrap 5 landing page structure
+- [x] Content pages (privacy, terms, support) with shared styling
+- [x] Hero section with swoopity background SVG
 
-**Needed (from launch-plan-v1.md):**
-- Hero section with compelling headline, subhead, video embed
-- Features section with 3-4 key features + screenshots
-- Screenshots gallery with lightbox
-- Download section (DMG link, SHA256, App Store badge)
-- Improved footer (GitHub, privacy, support, social)
+**Remaining Work:**
+1. **Screenshots (HIGH PRIORITY)**
+   - Take app screenshot in light mode
+   - Take app screenshot in dark mode
+   - Export at 2x for retina
+   - Place in `website/assets/img/`
 
-**Nice to Have:**
-- Changelog page
-- FAQ section
-- "Coming soon" roadmap preview
-- Email signup for updates
+2. **OG Image / Social Card**
+   - Create 1200x630 banner for social sharing
+   - `website/assets/img/og-banner.png`
+
+3. **Favicon & Touch Icon**
+   - Verify `website/favicon.ico` exists and is current
+   - Verify `website/apple-touch-icon.png`
+
+4. **Content Verification**
+   - Test privacy.html, terms.html, support.html with new color tokens
+
+5. **Responsive Testing**
+   - Desktop (wide), tablet, mobile
+
+6. **Deploy**
+   - `./scripts/deploy-website.sh` (after screenshots added)
+
+**Design Tools:**
+- Comparator: `build/design/website/specimens/website-comparator.html`
+- Color tokens: `build/design/brand/colors.md`
 
 **Reference:** `build/docs/operations/marketing/launch-plan-v1.md`
-**Design Inspiration:** Rogue Amoeba (rogueamoeba.com) - clean, professional, Mac-native aesthetic
 
 ---
 
