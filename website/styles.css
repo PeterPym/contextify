@@ -249,6 +249,10 @@ footer a:hover {
 /* ==========================================================================
    Page Content (Privacy, Terms, Support)
    ========================================================================== */
+[data-bs-theme="dark"] .page-content.bg-white {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
 .page-content h1 {
   font-size: 2.25rem;
   font-weight: 700;
