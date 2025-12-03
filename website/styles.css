@@ -1,0 +1,247 @@
+/*
+ * Contextify Landing Page Styles
+ * Built on Bootstrap 5.3 with custom overrides
+ */
+
+/* ==========================================================================
+   Color Palette (from ChiefOfStaff/INSPINIA customization)
+   ========================================================================== */
+:root {
+  --air-superiority-blue: #6399bb;
+  --antique-white: #ffeedd;
+  --celadon-blue: #457b9d;
+  --champagne-pink: #e6ccbe;
+  --ghost-white: #f8f7ff;
+  --gunmetal: #0d272f;
+  --hookers-green: #496f5d;
+  --imperial-red: #e63946;
+  --isabelline: #f9f3f0;
+  --midnight-green: #164350;
+  --pale-cerulean: #9cbed3;
+  --prussian-blue: #1d3557;
+  --that-grey: rgb(243, 245, 248);
+  --unbleached-silk: #ffd8be;
+  --dark-text: rgb(73, 80, 87);
+  --dark-charcoal: rgb(51, 51, 51);
+}
+
+/* ==========================================================================
+   Base / Body
+   ========================================================================== */
+body {
+  background-color: var(--that-grey);
+  color: var(--dark-charcoal);
+}
+
+[data-bs-theme="dark"] body {
+  background-color: var(--gunmetal);
+  color: var(--ghost-white);
+}
+
+/* ==========================================================================
+   Navbar
+   ========================================================================== */
+.navbar {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  box-shadow: none !important;
+}
+
+.navbar-brand {
+  color: var(--midnight-green) !important;
+  font-weight: bold;
+  font-size: 1.75rem;
+}
+
+[data-bs-theme="dark"] .navbar-brand {
+  color: var(--ghost-white) !important;
+}
+
+.navbar .btn-primary {
+  background-color: var(--midnight-green);
+  border-color: var(--gunmetal);
+  font-weight: 600;
+}
+
+.navbar .btn-primary:hover {
+  background-color: var(--prussian-blue);
+  border-color: var(--gunmetal);
+}
+
+/* ==========================================================================
+   Hero Section
+   ========================================================================== */
+.hero-section {
+  background-color: var(--gunmetal);
+  background-image: url('../assets/img/swoopity-dark.svg');
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: right center;
+}
+
+.hero-section h1 {
+  font-size: 2.75rem;
+  color: var(--ghost-white);
+  line-height: 1.2;
+}
+
+.hero-section .lead {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  color: var(--ghost-white);
+  opacity: 0.9;
+}
+
+.hero-section .btn-primary {
+  background-color: var(--midnight-green);
+  border-color: var(--gunmetal);
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+}
+
+.hero-section .btn-primary:hover {
+  background-color: var(--prussian-blue);
+  border-color: var(--gunmetal);
+}
+
+/* Screenshot with 3D perspective effect */
+.screenshot-wrapper {
+  margin-left: -50px;
+  margin-right: 30px;
+}
+
+.screenshot {
+  transform: perspective(1500px) rotateY(-10deg);
+  border-radius: 0.5rem;
+  box-shadow: rgba(0, 0, 0, 0.25) 0 25px 50px -12px;
+  transition: transform 1s ease 0s;
+}
+
+.screenshot:hover {
+  transform: perspective(3000px) rotateY(5deg);
+}
+
+/* Disable 3D effect on touch devices */
+@media only screen and (hover: none) and (pointer: coarse) {
+  .screenshot {
+    transform: none;
+    transition: none;
+  }
+  .screenshot:hover {
+    transform: none;
+  }
+}
+
+[data-bs-theme="dark"] .screenshot {
+  box-shadow: 0 2px 0 #000, 0 2px 5px #000;
+}
+
+/* ==========================================================================
+   Features Section
+   ========================================================================== */
+#features {
+  background-color: var(--that-grey);
+}
+
+[data-bs-theme="dark"] #features {
+  background-color: var(--gunmetal);
+}
+
+#features h2 {
+  color: var(--dark-text);
+}
+
+[data-bs-theme="dark"] #features h2 {
+  color: var(--ghost-white);
+}
+
+#features li {
+  color: var(--dark-text);
+  font-size: 1.125rem;
+}
+
+[data-bs-theme="dark"] #features li {
+  color: var(--ghost-white);
+}
+
+/* ==========================================================================
+   Download Section
+   ========================================================================== */
+#download {
+  background-color: var(--ghost-white);
+  border: 1px solid rgb(212, 220, 229);
+  border-radius: 10px;
+  margin: 0 4%;
+}
+
+[data-bs-theme="dark"] #download {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+#download h2 {
+  color: var(--dark-text);
+}
+
+[data-bs-theme="dark"] #download h2 {
+  color: var(--ghost-white);
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+footer {
+  background-color: var(--gunmetal) !important;
+  padding: 3rem 0;
+}
+
+footer a {
+  color: var(--ghost-white);
+  text-decoration: none;
+}
+
+footer a:hover {
+  color: var(--hookers-green);
+}
+
+.footer-brand {
+  color: var(--ghost-white);
+}
+
+/* ==========================================================================
+   Responsive Adjustments
+   ========================================================================== */
+@media (max-width: 991.98px) {
+  .hero-section {
+    background-image: none;
+  }
+
+  .screenshot-wrapper {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 0 1rem;
+  }
+
+  .hero-section h1 {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 767.98px) {
+  #download {
+    margin: 0 1rem;
+  }
+}
+
+/* ==========================================================================
+   Typography Scale
+   ========================================================================== */
+@media (min-width: 992px) {
+  .hero-section h1 {
+    font-size: 3rem;
+  }
+
+  #features li {
+    font-size: 1.25rem;
+  }
+}
