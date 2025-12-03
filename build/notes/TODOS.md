@@ -33,43 +33,44 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-01
+**Last Updated:** 2025-12-02
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 2 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 41 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 18 items - Future enhancements
+- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
+- **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** 42 items - Nice to have, can defer to future releases
+- **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 83
+**Total Active Items:** 82
 
 ---
 
-# P0 (Launch Critical) - 2 Items
+# P0 (Launch Critical) - 3 Items
 
 ---
 
 ## v1.0 Public Launch (1 item)
 
-**Status:** App Store rejected, resubmission pending
+**Status:** App Store resubmitted (WAITING_FOR_REVIEW), website/DMG release pending
 **Priority:** P0 (blocking public launch)
-**Effort:** 4-8 hours remaining
+**Effort:** 4-6 hours remaining
 
 - [ ] #P0-LAUNCH: Complete v1.0 public launch sequence
 
 **Current State:**
 - Help menu: DONE (simplified, links to contextify.sh/help/ and GitHub issues)
 - Public repo: DONE (github.com/PeterPym/contextify with issue templates)
-- App Store: REJECTED (Guideline 2.1 - needs demo video + sample data)
-- DMG: Released on GitHub (v1.0.0)
-- Review materials: Sample data ready, demo video script ready
+- App Store: WAITING_FOR_REVIEW (Build 10, resubmitted Dec 2)
+- DMG: Built but not publicly released on website
+- Review materials: Sample data + demo video deployed to contextify.sh
+- Website: Needs redesign before public launch
 
-**Immediate Next Steps (App Store Resubmission):**
-1. [ ] Deploy website with help page and review materials: `./scripts/deploy-website.sh`
-2. [ ] Record demo video following `appstore-metadata/review-materials/DEMO-VIDEO-SCRIPT.md`
-3. [ ] Build App Store archive (v1.0.0): `./scripts/release/build.sh 1.0.0`
-4. [ ] Upload and resubmit in App Store Connect
+**Immediate Next Steps:**
+1. [ ] Fix website - currently "jank" (see #P1-WEBSITE-REDESIGN, consider promoting to P0)
+2. [ ] Publish DMG release on website with download link
+3. [ ] Deploy website: `./scripts/deploy-website.sh`
+4. [ ] Wait for App Store approval, then add App Store badge
 
 **Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
 
@@ -136,7 +137,77 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-# P1 (High Priority) - 22 Items
+## #P0-SETTINGS-OVERHAUL: Fix Settings window and permissions UX
+
+**Status:** Broken - Settings window missing permissions tab, poor UX
+**Priority:** P0 (blocks App Store users from granting permissions)
+**Effort:** 4-6 hours
+
+**Problems Identified:**
+
+1. **Settings window is broken:**
+   - Only shows Database tab, no way to access Transcript Sources (permissions)
+   - `TranscriptSourcesSettingsView` is in a separate window, not a tab
+   - Huge empty space at top (fixed 400px height too tall for content)
+   - Users cannot find where to grant permissions
+
+2. **Empty state UX is confusing:**
+   - "Loading conversation..." spinner shows indefinitely when no permissions granted
+   - No indication that permissions are needed
+   - "Open project..." link is misleading (implies file picker, not permissions)
+
+3. **Permission grant may not trigger discovery:**
+   - Need to verify granting permissions kicks off discovery workflow
+   - Projects should appear in tab bar after granting access
+
+**Solution:**
+
+1. **Combine Settings into tabbed view:**
+   ```swift
+   Settings {
+     TabView {
+       SettingsView()
+         .tabItem { Label("Database", systemImage: "cylinder") }
+       TranscriptSourcesSettingsView(...)
+         .tabItem { Label("Permissions", systemImage: "folder.badge.plus") }
+     }
+   }
+   ```
+
+2. **Fix Database tab layout:**
+   - Remove fixed height or reduce to fit content
+   - Clean up empty space at top
+
+3. **Improve empty state messaging:**
+   - Replace spinner with explanatory text when no permissions
+   - "Contextify needs access to transcript folders to get started"
+   - Button to open Settings > Permissions tab directly
+   - "Learn more" link to contextify.sh
+
+4. **Verify permission → discovery flow:**
+   - Test: Grant permission → projects appear → timeline populates
+   - Fix if broken
+
+**Files:**
+- `Contextify/Contextify/ContextifyApp.swift:240-248` - Settings window definition
+- `Contextify/Contextify/SettingsView.swift:178` - Fixed height
+- `Contextify/Contextify/Settings/TranscriptSourcesSettingsView.swift`
+- `Contextify/Contextify/ConversationTimelineView.swift` - Empty state
+
+**Acceptance Criteria:**
+- [ ] Settings window has Database and Permissions tabs
+- [ ] Database tab fits content without huge empty space
+- [ ] Empty timeline shows "permissions needed" message, not spinner
+- [ ] Clear path from empty state to granting permissions
+- [ ] Granting permissions triggers discovery and populates UI
+
+**Supersedes:** #P1-PERMISSIONS-MODAL, #P1-APPSTORE-NO-PERMISSIONS-UX
+
+---
+
+# P1 (High Priority) - 20 Items
+
+Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL
 
 ---
 
@@ -890,83 +961,6 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 **Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
 **Related:** P1-CONVO-SEARCH spec section 5.4 (surrounding context query)
-
----
-
-## App Store Permissions Modal (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (critical for App Store build, blocks discovery)
-**Effort:** 1-2 hours
-
-- [ ] #P1-PERMISSIONS-MODAL: Verify Settings permissions modal correctly triggers discovery workflow
-
-**Problem:**
-Need to verify that when user grants permissions via Settings > Permissions modal, the app correctly kicks off the discovery workflow to find and display projects.
-
-**Testing Required:**
-1. Launch App Store build with no permissions granted
-2. Open Settings > Permissions modal
-3. Grant access to ~/.claude and/or ~/.codex
-4. Verify discovery runs and projects appear in tab bar
-5. Verify timeline populates for auto-selected project
-
-**Files:**
-- Settings/Permissions view (grant action handler)
-- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (discovery trigger)
-- `app/Sources/ContextifyCore/Discovery/LightweightDiscoveryService.swift`
-
-**Acceptance Criteria:**
-- [ ] Granting permissions triggers discovery workflow
-- [ ] Projects appear in tab bar after granting access
-- [ ] Timeline populates correctly after permissions granted
-- [ ] No manual refresh or restart required
-
-**Related:**
-- #P1-APPSTORE-NO-PERMISSIONS-UX (UI when permissions not granted)
-- #P1-DISCOVERY-QA (project auto-discovery QA)
-
----
-
-## App Store No-Permissions UX (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (critical for App Store build UX, affects demo/review)
-**Effort:** 2-3 hours
-
-- [ ] #P1-APPSTORE-NO-PERMISSIONS-UX: Improve UI when permissions haven't been granted in App Store builds
-
-**Problem:**
-When App Store build launches without permissions granted:
-1. "Open project..." link is misleading - implies file picker, not permissions
-2. "Loading conversation..." with spinner suggests waiting for data, not waiting for permissions
-
-**Solution:**
-
-**1. Replace "Open project..." link (~30 min)**
-- Change to "Allow Permissions..." or "Grant Access..."
-- Clicking opens the Settings > Permissions modal (not file picker)
-
-**2. Fix Conversation Log empty state (~1.5 hours)**
-- Remove spinner when no permissions granted
-- Display explanatory text: "Contextify needs access to provider transcripts to get started"
-- Offer two actions:
-  - Reference the "Allow Permissions..." link above
-  - "Learn more" link → opens browser to contextify.sh (eventually a dedicated privacy/permissions page)
-
-**Files:**
-- `Contextify/Contextify/ContentView.swift` (Open project link location)
-- `Contextify/Contextify/ConversationMonitor.swift` (loading state detection)
-- `Contextify/Contextify/ConversationTimelineView.swift` (empty state UI)
-
-**Acceptance Criteria:**
-- [ ] "Open project..." replaced with "Allow Permissions..." that opens permissions modal
-- [ ] Conversation Log shows informative message instead of spinner when no permissions
-- [ ] "Learn more" link opens contextify.sh in browser
-
-**Related:**
-- #P1-PERMISSIONS-MODAL (verify modal triggers discovery)
-- App Store demo recording (user needs to understand what to do on first launch)
 
 ---
 
@@ -1872,36 +1866,57 @@ Some transcript entries produce summaries that fail post-processing or contain u
 
 ---
 
-# P3 (Low Priority / Deferred) - 18 Items
-
 ## Release Workflow Python CLI Refactor (1 item)
 
 **Status:** Ready for implementation
-**Priority:** P3 (architectural improvement, no functional change)
-**Effort:** 8-12 hours (incremental migration)
+**Priority:** P2 (architectural improvement + App Store status integration)
+**Effort:** 12-16 hours (incremental migration)
 
-- [ ] #P3-PYTHON-CLI-REFACTOR: Refactor release workflow to Python CLI with thin Bash wrappers
+- [ ] #P2-PYTHON-CLI-REFACTOR: Refactor release workflow to Python CLI with App Store Connect API integration
 
 **Problem:**
-The release workflow scripts (`scripts/release/*.sh`) have grown into a small application with embedded Python everywhere. The core operation (read JSON -> apply state transition -> write JSON -> print guidance) is exactly what Python is good at and Bash is awkward for.
+The release workflow scripts (`scripts/release/*.sh`) have grown into a small application with embedded Python everywhere. Bash associative arrays are fragile, JSON manipulation via `jq` is awkward, and the state machine logic is hard to maintain. Most critically, the system cannot verify actual App Store submission status - it relies on manual user reporting.
 
 **Solution:**
-Create `tools/release_cli.py` as single source of truth with subcommands (init, build, status, mark-submitted, mark-rejected, mark-shipped, check-consistency). Keep existing Bash scripts as thin 5-10 line wrappers that delegate to the Python CLI.
+Create `tools/release_cli.py` as single source of truth with subcommands (init, build, status, mark-submitted, mark-rejected, mark-shipped, check-consistency, poll-appstore). Keep existing Bash scripts as thin 5-10 line wrappers that delegate to the Python CLI.
+
+**Key Features:**
+1. **App Store Connect API integration** - Query actual submission status from Apple
+2. **Apple state enum** - Proper Python enum with all 20 AppStoreVersionState values
+3. **State category mapping** - Map Apple states to workflow categories (not_submitted, in_review, approved, rejected, removed)
+4. **Automatic state sync** - Detect drift between local tracking and Apple's actual state
+5. **Status validation** - Validate submission states as part of release workflow
 
 **Benefits:**
 - One language for all state/logic (no more shell/Python hybrid)
 - Real unit tests with pytest around state machine
+- Native JSON/dict handling
+- Proper data structures for Apple state mapping
+- App Store Connect API has Python clients available
 - Cleaner error handling and atomic file writes
 - Preserves existing muscle memory (./scripts/release/mark-shipped.sh still works)
 
 **Migration phases:**
-1. Create Python core with minimal commands
-2. Port guard logic and embedded Python incrementally
-3. Stabilize and optionally deprecate Bash wrappers
+1. Create Python core with minimal commands + Apple state enum
+2. Implement `poll-appstore` command with API integration
+3. Port remaining guard logic and embedded Python
+4. Integrate status polling into workflow validation
+5. Stabilize and optionally deprecate Bash wrappers
 
-**Reference:** `build/notes/todo-support/P3-PYTHON-CLI-REFACTOR-reference.md`
+**Interim solution:**
+`scripts/release/poll-appstore-status.sh` provides basic status checking via `xcrun altool --list-apps`. This will be replaced by the Python implementation.
+
+**Apple States to Support:**
+See `releases/schemas/appstore-states.schema.json` for complete enum and category mapping.
+
+**Reference:**
+- `releases/STATUS-VALUES.md` - State definitions and Apple mapping
+- `releases/schemas/` - JSON schemas for state tracking
+- `scripts/release/poll-appstore-status.sh` - Interim bash implementation
 
 ---
+
+# P3 (Low Priority / Deferred) - 17 Items
 
 ## CLI Logomark Display (1 item) ⬇️
 
