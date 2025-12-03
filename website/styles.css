@@ -1,41 +1,130 @@
 /*
  * Contextify Landing Page Styles
  * Built on Bootstrap 5.3 with custom overrides
+ *
+ * COLOR SYSTEM
+ * Canonical source: build/design/brand/colors.md
+ * Consult that file before modifying any color tokens below.
+ * Keep this file in sync with the specification.
  */
 
 /* ==========================================================================
-   Color Palette (from ChiefOfStaff/INSPINIA customization)
+   Color System (Contextify Design System)
    ========================================================================== */
 :root {
-  --air-superiority-blue: #6399bb;
-  --antique-white: #ffeedd;
-  --celadon-blue: #457b9d;
-  --champagne-pink: #e6ccbe;
-  --ghost-white: #f8f7ff;
-  --gunmetal: #0d272f;
-  --hookers-green: #496f5d;
-  --imperial-red: #e63946;
-  --isabelline: #f9f3f0;
-  --midnight-green: #164350;
-  --pale-cerulean: #9cbed3;
-  --prussian-blue: #1d3557;
-  --that-grey: rgb(243, 245, 248);
-  --unbleached-silk: #ffd8be;
-  --dark-text: rgb(73, 80, 87);
-  --dark-charcoal: rgb(51, 51, 51);
+  /* Semantic Colors */
+  --contextify-primary: #4A7BA7;
+  --contextify-primary-hover: #3D6A94;
+  --contextify-primary-light: #E8F0F7;
+  --contextify-secondary: #9B8B7E;
+  --contextify-success: #51A86B;
+  --contextify-success-light: #E8F5EC;
+  --contextify-warning: #D4A84E;
+  --contextify-warning-light: #FDF6E8;
+  --contextify-error: #C74E4E;
+  --contextify-error-light: #FBEAEA;
+  --contextify-info: #4A7BA7;
+  --contextify-info-light: #E8F0F7;
+  --contextify-accent: #7C68A8;
+
+  /* Neutral Scale (Tailwind Slate) */
+  --slate-50: #F8FAFC;
+  --slate-100: #F1F5F9;
+  --slate-200: #E2E8F0;
+  --slate-300: #CBD5E1;
+  --slate-400: #94A3B8;
+  --slate-500: #64748B;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1E293B;
+  --slate-900: #0F172A;
+  --slate-950: #020617;
+
+  /* Derived Tokens - Light Mode */
+  --text-primary: var(--slate-800);
+  --text-secondary: var(--slate-500);
+  --text-tertiary: var(--slate-400);
+  --text-disabled: var(--slate-300);
+  --text-inverse: #FFFFFF;
+
+  --bg-page: var(--slate-50);
+  --bg-surface: #FFFFFF;
+  --bg-muted: var(--slate-100);
+  --bg-elevated: #FFFFFF;
+  --bg-inverse: var(--slate-800);
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+
+  --border-default: var(--slate-200);
+  --border-subtle: var(--slate-100);
+  --border-strong: var(--slate-300);
+  --border-focus: var(--contextify-primary);
+
+  --link-default: var(--contextify-primary);
+  --link-hover: var(--contextify-primary-hover);
+  --link-visited: var(--contextify-accent);
+  --link-active: var(--contextify-primary-hover);
+
+  /* Brand Colors */
+  --brand-yellow: #F9B233;
+  --brand-cyan: #4AC4E0;
+  --brand-purple: #8B5CF6;
+  --brand-gradient: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-cyan) 50%, var(--brand-purple) 100%);
+
+  /* Provider Colors */
+  --provider-claude: #D97757;
+  --provider-codex: #FFFFFF;
+}
+
+/* Dark Mode Tokens */
+[data-bs-theme="dark"] {
+  --contextify-primary: #6A9BC7;
+  --contextify-primary-hover: #7AABDA;
+  --contextify-primary-light: #1E3A52;
+  --contextify-secondary: #B5A89D;
+  --contextify-success: #6BC885;
+  --contextify-success-light: #1A3028;
+  --contextify-warning: #E4B85E;
+  --contextify-warning-light: #3A3020;
+  --contextify-error: #D76E6E;
+  --contextify-error-light: #3A2020;
+  --contextify-info: #6A9BC7;
+  --contextify-info-light: #1A2838;
+  --contextify-accent: #9C88C8;
+
+  --text-primary: var(--slate-100);
+  --text-secondary: var(--slate-400);
+  --text-tertiary: var(--slate-500);
+  --text-disabled: var(--slate-600);
+  --text-inverse: var(--slate-900);
+
+  --bg-page: var(--slate-900);
+  --bg-surface: var(--slate-800);
+  --bg-muted: var(--slate-700);
+  --bg-elevated: var(--slate-700);
+  --bg-inverse: var(--slate-100);
+  --bg-overlay: rgba(0, 0, 0, 0.7);
+
+  --border-default: var(--slate-700);
+  --border-subtle: var(--slate-800);
+  --border-strong: var(--slate-600);
+  --border-focus: var(--contextify-primary);
+
+  --link-hover: #8ABBDD;
+  --link-visited: #9C88C8;
+  --link-active: #7AABDA;
 }
 
 /* ==========================================================================
    Base / Body
    ========================================================================== */
 body {
-  background-color: var(--that-grey);
-  color: var(--dark-charcoal);
+  background-color: var(--bg-page);
+  color: var(--text-primary);
 }
 
 [data-bs-theme="dark"] body {
-  background-color: var(--gunmetal);
-  color: var(--ghost-white);
+  background-color: var(--bg-page);
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
@@ -48,31 +137,31 @@ body {
 }
 
 .navbar-brand {
-  color: var(--midnight-green) !important;
+  color: var(--contextify-primary) !important;
   font-weight: bold;
   font-size: 1.75rem;
 }
 
 [data-bs-theme="dark"] .navbar-brand {
-  color: var(--ghost-white) !important;
+  color: var(--text-inverse) !important;
 }
 
 .navbar .btn-primary {
-  background-color: var(--midnight-green);
-  border-color: var(--gunmetal);
+  background-color: var(--contextify-primary);
+  border-color: var(--contextify-primary-hover);
   font-weight: 600;
 }
 
 .navbar .btn-primary:hover {
-  background-color: var(--prussian-blue);
-  border-color: var(--gunmetal);
+  background-color: var(--contextify-primary-hover);
+  border-color: var(--contextify-primary-hover);
 }
 
 /* ==========================================================================
    Hero Section
    ========================================================================== */
 .hero-section {
-  background-color: var(--gunmetal);
+  background-color: var(--slate-900);
   background-image: url('../assets/img/swoopity-dark.svg');
   background-size: contain;
   background-repeat: no-repeat;
@@ -81,27 +170,27 @@ body {
 
 .hero-section h1 {
   font-size: 2.75rem;
-  color: var(--ghost-white);
+  color: var(--slate-50);
   line-height: 1.2;
 }
 
 .hero-section .lead {
   font-size: 1.25rem;
   line-height: 1.75rem;
-  color: var(--ghost-white);
+  color: var(--slate-100);
   opacity: 0.9;
 }
 
 .hero-section .btn-primary {
-  background-color: var(--midnight-green);
-  border-color: var(--gunmetal);
+  background-color: var(--contextify-primary);
+  border-color: var(--contextify-primary-hover);
   font-weight: 600;
   padding: 0.75rem 1.5rem;
 }
 
 .hero-section .btn-primary:hover {
-  background-color: var(--prussian-blue);
-  border-color: var(--gunmetal);
+  background-color: var(--contextify-primary-hover);
+  border-color: var(--contextify-primary-hover);
 }
 
 /* Screenshot with 3D perspective effect */
@@ -140,72 +229,72 @@ body {
    Features Section
    ========================================================================== */
 #features {
-  background-color: var(--that-grey);
+  background-color: var(--bg-page);
 }
 
 [data-bs-theme="dark"] #features {
-  background-color: var(--gunmetal);
+  background-color: var(--bg-page);
 }
 
 #features h2 {
-  color: var(--dark-text);
+  color: var(--text-primary);
 }
 
 [data-bs-theme="dark"] #features h2 {
-  color: var(--ghost-white);
+  color: var(--text-primary);
 }
 
 #features li {
-  color: var(--dark-text);
+  color: var(--text-primary);
   font-size: 1.125rem;
 }
 
 [data-bs-theme="dark"] #features li {
-  color: var(--ghost-white);
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
    Download Section
    ========================================================================== */
 #download {
-  background-color: var(--ghost-white);
-  border: 1px solid rgb(212, 220, 229);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
   margin: 0 4%;
 }
 
 [data-bs-theme="dark"] #download {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--bg-elevated);
+  border-color: var(--border-default);
 }
 
 #download h2 {
-  color: var(--dark-text);
+  color: var(--text-primary);
 }
 
 [data-bs-theme="dark"] #download h2 {
-  color: var(--ghost-white);
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
    Footer
    ========================================================================== */
 footer {
-  background-color: var(--gunmetal) !important;
+  background-color: var(--slate-900) !important;
   padding: 3rem 0;
 }
 
 footer a {
-  color: var(--ghost-white);
+  color: var(--slate-100);
   text-decoration: none;
 }
 
 footer a:hover {
-  color: var(--hookers-green);
+  color: var(--contextify-primary);
 }
 
 .footer-brand {
-  color: var(--ghost-white);
+  color: var(--slate-50);
 }
 
 /* ==========================================================================
@@ -250,7 +339,7 @@ footer a:hover {
    Page Content (Privacy, Terms, Support)
    ========================================================================== */
 [data-bs-theme="dark"] .page-content.bg-white {
-  background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: var(--bg-surface) !important;
 }
 
 .page-content h1 {
@@ -263,11 +352,11 @@ footer a:hover {
   font-weight: 600;
   margin-top: 2rem;
   margin-bottom: 1rem;
-  color: var(--midnight-green);
+  color: var(--contextify-primary);
 }
 
 [data-bs-theme="dark"] .page-content h2 {
-  color: var(--pale-cerulean);
+  color: var(--contextify-primary);
 }
 
 .page-content h3 {
@@ -291,28 +380,28 @@ footer a:hover {
 }
 
 .page-content code {
-  background-color: var(--that-grey);
+  background-color: var(--bg-muted);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
 }
 
 [data-bs-theme="dark"] .page-content code {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--bg-muted);
 }
 
 .page-content a {
-  color: var(--midnight-green);
+  color: var(--link-default);
 }
 
 [data-bs-theme="dark"] .page-content a {
-  color: var(--pale-cerulean);
+  color: var(--link-default);
 }
 
 .page-content a:hover {
-  color: var(--prussian-blue);
+  color: var(--link-hover);
 }
 
 [data-bs-theme="dark"] .page-content a:hover {
-  color: var(--ghost-white);
+  color: var(--link-hover);
 }
