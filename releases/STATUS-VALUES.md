@@ -11,14 +11,77 @@
 
 ## App Store Channel
 
+### Local Tracking Status
+
 | Status | Meaning | Set By |
 |--------|---------|--------|
 | `pending` | Not yet built | `init.sh` |
 | `built` | Archive/pkg ready | `build.sh` |
-| `submitted` | Uploaded and submitted for review | `mark-submitted.sh` |
-| `approved` | Available on App Store | `mark-shipped.sh --appstore` |
-| `rejected` | Rejected by Apple | `mark-rejected.sh` |
+| `uploaded` | Uploaded to App Store Connect | `mark-uploaded.sh` |
 | `skipped` | Will not ship this version | `mark-shipped.sh --appstore --skipped` |
+
+### Apple State (from App Store Connect API)
+
+The `apple_state` field contains the actual state from Apple. Use `poll-appstore-status.sh` to sync.
+
+#### Submission States
+
+| Apple State | Category | Meaning | Action Required |
+|-------------|----------|---------|-----------------|
+| `PREPARE_FOR_SUBMISSION` | not_submitted | Draft version, metadata incomplete | Complete metadata, submit |
+| `READY_FOR_REVIEW` | not_submitted | Ready but not submitted | Click "Submit for Review" |
+| `WAITING_FOR_REVIEW` | in_review | Submitted, in Apple's queue | Wait |
+| `IN_REVIEW` | in_review | Under active review | Wait |
+| `WAITING_FOR_EXPORT_COMPLIANCE` | in_review | Needs export compliance answer | Answer in ASC |
+| `PENDING_CONTRACT` | in_review | Waiting on legal/contract | Resolve in ASC |
+
+#### Approved States
+
+| Apple State | Category | Meaning | Action Required |
+|-------------|----------|---------|-----------------|
+| `PENDING_DEVELOPER_RELEASE` | approved | Approved, awaiting manual release | Click "Release" in ASC |
+| `PENDING_APPLE_RELEASE` | approved | Approved, scheduled release pending | Wait for date |
+| `PROCESSING_FOR_APP_STORE` | approved | Being processed to go live | Wait (minutes) |
+| `READY_FOR_SALE` | approved | Live on App Store | None (terminal) |
+| `PREORDER_READY_FOR_SALE` | approved | Pre-order available | None |
+| `ACCEPTED` | approved | Accepted (legacy state) | None |
+
+#### Rejected States
+
+| Apple State | Category | Meaning | Action Required |
+|-------------|----------|---------|-----------------|
+| `METADATA_REJECTED` | rejected | Metadata rejected | Fix in ASC, resubmit same build |
+| `REJECTED` | rejected | Binary rejected | Fix code, rebuild, re-upload |
+| `INVALID_BINARY` | rejected | Corrupt/invalid binary | Rebuild, re-upload |
+
+#### Removed States
+
+| Apple State | Category | Meaning | Action Required |
+|-------------|----------|---------|-----------------|
+| `DEVELOPER_REJECTED` | removed | Developer cancelled submission | Resubmit when ready |
+| `DEVELOPER_REMOVED_FROM_SALE` | removed | Developer pulled from sale | Re-enable if desired |
+| `REMOVED_FROM_SALE` | removed | Removed by Apple | Contact Apple |
+
+#### Other States
+
+| Apple State | Category | Meaning | Action Required |
+|-------------|----------|---------|-----------------|
+| `REPLACED_WITH_NEW_VERSION` | other | Superseded by newer version | None (terminal) |
+| `NOT_APPLICABLE` | other | N/A | None |
+
+### State Category Mapping
+
+For workflow logic, Apple states map to categories:
+
+```
+not_submitted: PREPARE_FOR_SUBMISSION, READY_FOR_REVIEW
+in_review:     WAITING_FOR_REVIEW, IN_REVIEW, WAITING_FOR_EXPORT_COMPLIANCE, PENDING_CONTRACT
+approved:      PENDING_DEVELOPER_RELEASE, PENDING_APPLE_RELEASE, PROCESSING_FOR_APP_STORE,
+               READY_FOR_SALE, PREORDER_READY_FOR_SALE, ACCEPTED
+rejected:      METADATA_REJECTED, REJECTED, INVALID_BINARY
+removed:       DEVELOPER_REJECTED, DEVELOPER_REMOVED_FROM_SALE, REMOVED_FROM_SALE
+other:         REPLACED_WITH_NEW_VERSION, NOT_APPLICABLE
+```
 
 ## Overall Release Status
 
@@ -31,9 +94,29 @@ The top-level `release.status` field in manifest.json tracks the overall release
 
 **Note:** `complete` is the *overall release* status, NOT a per-channel status. A release is automatically marked `complete` when:
 - DMG is `shipped` or `skipped`, AND
-- App Store is `approved` or `skipped`
+- App Store `apple_state` is `READY_FOR_SALE` or status is `skipped`
+
+## Syncing with App Store Connect
+
+To check actual Apple status:
+
+```bash
+# Query current status
+./scripts/release/poll-appstore-status.sh 1.0.0
+
+# Auto-update local state from Apple
+./scripts/release/poll-appstore-status.sh 1.0.0 --sync
+```
+
+## Schema Reference
+
+See `releases/schemas/` for JSON Schema definitions:
+- `appstore-states.schema.json` - All Apple states with category mapping
+- `manifest.schema.json` - manifest.json structure
+- `release.schema.json` - Per-release detail structure
+- `config.schema.json` - Static configuration
 
 ## Notes
 
-- `building` and `in_review` are not tracked (synchronous build, no ASC polling)
 - Legacy value `complete` in DMG status is treated as `shipped` for compatibility
+- Legacy values `submitted`, `approved`, `rejected` in App Store status are deprecated; use `apple_state` instead

@@ -2,10 +2,10 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.0.0",
   "created": "2025-11-28",
-  "updated": "2025-11-30",
+  "updated": "2025-12-02",
   "git": {
     "tag": "v1.0.0",
-    "commit": "4cd7fb9cad904b13940c972942086389566b2573",
+    "commit": "f2af49bd5b234cee202feabd0c5b10e5017d1c31",
     "branch": "main"
   },
   "phases": {
@@ -56,7 +56,8 @@
       "status": "pending",
       "submitted_at": null,
       "rejection": null,
-      "resubmission": null
+      "resubmission": null,
+      "apple_state": "WAITING_FOR_REVIEW"
     },
     "marketing": {
       "status": "pending",
@@ -158,6 +159,46 @@
       "date": "2025-11-30",
       "author": "system",
       "note": "Build 10 completed (commit 4cd7fb9c)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit 8afc3a56)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit 8e12841d)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit 8e12841d)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit b8dec746)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit 4cd4a7e7)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit a9831d14)"
+    },
+    {
+      "date": "2025-12-01",
+      "author": "system",
+      "note": "Build 10 completed (commit cf98d744)"
+    },
+    {
+      "date": "2025-12-02",
+      "author": "system",
+      "note": "Build 10 completed (commit f2af49bd)"
     }
   ]
 }

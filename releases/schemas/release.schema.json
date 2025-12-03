@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "release.schema.json",
+  "title": "Release Detail",
+  "description": "Detailed per-release tracking with full phase history",
+
+  "type": "object",
+  "required": ["version", "created", "updated", "git", "phases"],
+
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "updated": {
+      "type": "string",
+      "format": "date"
+    },
+    "git": {
+      "$ref": "#/definitions/GitInfo"
+    },
+    "phases": {
+      "$ref": "#/definitions/Phases"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Note"
+      }
+    }
+  },
+
+  "definitions": {
+    "GitInfo": {
+      "type": "object",
+      "required": ["tag", "commit", "branch"],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "branch": {
+          "type": "string"
+        }
+      }
+    },
+
+    "Phases": {
+      "type": "object",
+      "properties": {
+        "pre_release": {
+          "$ref": "#/definitions/PreReleasePhase"
+        },
+        "build": {
+          "$ref": "#/definitions/BuildPhase"
+        },
+        "review_materials": {
+          "$ref": "#/definitions/ReviewMaterialsPhase"
+        },
+        "submission": {
+          "$ref": "#/definitions/SubmissionPhase"
+        },
+        "marketing": {
+          "$ref": "#/definitions/MarketingPhase"
+        },
+        "post_release": {
+          "$ref": "#/definitions/PostReleasePhase"
+        }
+      }
+    },
+
+    "PreReleasePhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "complete"]
+        },
+        "completed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "tests_passed": {
+              "type": ["boolean", "null"]
+            },
+            "test_count": {
+              "type": ["integer", "null"]
+            },
+            "warnings": {
+              "type": ["integer", "null"]
+            },
+            "working_directory_clean": {
+              "type": ["boolean", "null"]
+            }
+          }
+        }
+      }
+    },
+
+    "BuildPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "in_progress", "complete"]
+        },
+        "dmg": {
+          "type": "object",
+          "properties": {
+            "built": { "type": "boolean" },
+            "path": { "type": ["string", "null"] },
+            "sha256": { "type": ["string", "null"] },
+            "size_bytes": { "type": ["integer", "null"] },
+            "signed": { "type": "boolean" },
+            "notarized": { "type": "boolean" },
+            "sparkle_signature": { "type": ["string", "null"] }
+          }
+        },
+        "appstore": {
+          "type": "object",
+          "properties": {
+            "archived": { "type": "boolean" },
+            "archive_path": { "type": ["string", "null"] },
+            "build_number": { "type": ["integer", "null"] },
+            "exported": { "type": "boolean" },
+            "uploaded": { "type": "boolean" },
+            "upload_receipt": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+
+    "ReviewMaterialsPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "complete"]
+        },
+        "demo_video": {
+          "type": "object",
+          "properties": {
+            "recorded": { "type": "boolean" },
+            "path": { "type": ["string", "null"] },
+            "deployed": { "type": "boolean" }
+          }
+        },
+        "sample_data": {
+          "type": "object",
+          "properties": {
+            "generated": { "type": "boolean" },
+            "path": { "type": ["string", "null"] },
+            "deployed": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "SubmissionPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "submitted", "in_review", "approved", "rejected"]
+        },
+        "apple_state": {
+          "type": ["string", "null"],
+          "description": "Current state from App Store Connect API",
+          "enum": [
+            null,
+            "ACCEPTED",
+            "DEVELOPER_REJECTED",
+            "DEVELOPER_REMOVED_FROM_SALE",
+            "IN_REVIEW",
+            "INVALID_BINARY",
+            "METADATA_REJECTED",
+            "NOT_APPLICABLE",
+            "PENDING_APPLE_RELEASE",
+            "PENDING_CONTRACT",
+            "PENDING_DEVELOPER_RELEASE",
+            "PREORDER_READY_FOR_SALE",
+            "PREPARE_FOR_SUBMISSION",
+            "PROCESSING_FOR_APP_STORE",
+            "READY_FOR_REVIEW",
+            "READY_FOR_SALE",
+            "REJECTED",
+            "REMOVED_FROM_SALE",
+            "REPLACED_WITH_NEW_VERSION",
+            "WAITING_FOR_EXPORT_COMPLIANCE",
+            "WAITING_FOR_REVIEW"
+          ]
+        },
+        "apple_state_history": {
+          "type": "array",
+          "description": "History of state transitions from Apple",
+          "items": {
+            "type": "object",
+            "properties": {
+              "state": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "submitted_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "rejection": {
+          "type": ["object", "null"],
+          "properties": {
+            "date": { "type": "string", "format": "date" },
+            "guideline": { "type": "string" },
+            "reason": { "type": "string" },
+            "type": {
+              "type": "string",
+              "enum": ["REJECTED", "METADATA_REJECTED", "INVALID_BINARY"]
+            }
+          }
+        },
+        "resubmission": {
+          "type": ["object", "null"],
+          "properties": {
+            "count": { "type": "integer" },
+            "last_date": { "type": "string", "format": "date" }
+          }
+        }
+      }
+    },
+
+    "MarketingPhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "complete"]
+        },
+        "changelog": {
+          "type": "object",
+          "properties": {
+            "written": { "type": "boolean" },
+            "published": { "type": "boolean" }
+          }
+        },
+        "announcements": {
+          "type": "object",
+          "properties": {
+            "twitter": { "type": "boolean" },
+            "mastodon": { "type": "boolean" },
+            "hacker_news": { "type": "boolean" },
+            "product_hunt": { "type": "boolean" }
+          }
+        }
+      }
+    },
+
+    "PostReleasePhase": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "complete"]
+        },
+        "documentation_updated": { "type": "boolean" },
+        "support_faq_updated": { "type": "boolean" },
+        "monitoring_enabled": { "type": "boolean" }
+      }
+    },
+
+    "Note": {
+      "type": "object",
+      "required": ["date", "author", "note"],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "author": {
+          "type": "string",
+          "enum": ["system", "apple", "user"]
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

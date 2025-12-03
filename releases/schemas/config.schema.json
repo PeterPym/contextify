@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "config.schema.json",
+  "title": "Release Configuration",
+  "description": "Static configuration for the release system",
+
+  "type": "object",
+  "required": ["schema_version", "project", "distributions", "app_store_connect"],
+
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "bundle_id", "minimum_os"],
+      "properties": {
+        "name": { "type": "string" },
+        "bundle_id": { "type": "string" },
+        "minimum_os": { "type": "string" }
+      }
+    },
+    "distributions": {
+      "type": "object",
+      "properties": {
+        "dmg": {
+          "type": "object",
+          "properties": {
+            "target": { "type": "string" },
+            "scheme": { "type": "string" },
+            "build_command": { "type": "string" },
+            "artifact_pattern": { "type": "string" },
+            "signing": {
+              "type": "object",
+              "properties": {
+                "sparkle_key": { "type": "string" }
+              }
+            }
+          }
+        },
+        "appstore": {
+          "type": "object",
+          "properties": {
+            "target": { "type": "string" },
+            "scheme": { "type": "string" },
+            "archive_command": { "type": "string" },
+            "export_command": { "type": "string" },
+            "upload_command": { "type": "string" },
+            "archive_path": { "type": "string" },
+            "archive_preserve_path": { "type": "string" }
+          }
+        }
+      }
+    },
+    "review_materials": {
+      "type": "object",
+      "properties": {
+        "base_url": { "type": "string", "format": "uri" },
+        "sample_data_source": { "type": "string" },
+        "demo_video_script": { "type": "string" }
+      }
+    },
+    "website": {
+      "type": "object",
+      "properties": {
+        "deploy_command": { "type": "string" },
+        "appcast_path": { "type": "string" },
+        "release_notes_path": { "type": "string" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "pre_release": {
+          "type": "object",
+          "properties": {
+            "tests_command": { "type": "string" },
+            "warnings_command": { "type": "string" },
+            "expected_warnings": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "app_store_connect": {
+      "type": "object",
+      "required": ["app_id", "team_id", "api_key_id", "issuer_id"],
+      "properties": {
+        "app_id": {
+          "type": "string",
+          "description": "App Store Connect App ID"
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Apple Developer Team ID"
+        },
+        "api_key_id": {
+          "type": "string",
+          "description": "App Store Connect API Key ID"
+        },
+        "issuer_id": {
+          "type": "string",
+          "description": "App Store Connect API Issuer ID"
+        }
+      }
+    }
+  }
+}
