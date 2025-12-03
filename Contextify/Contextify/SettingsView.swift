@@ -12,18 +12,25 @@ struct SettingsView: View {
   @ObservedObject var folderAccessController: FolderAccessController
 
   var body: some View {
-    TabView {
-      DatabaseSettingsTab()
-        .tabItem {
-          Label("Database", systemImage: "cylinder")
-        }
+    if Sandbox.isSandboxed {
+      // App Store build: show both Database and Permissions tabs
+      TabView {
+        DatabaseSettingsTab()
+          .tabItem {
+            Label("Database", systemImage: "cylinder")
+          }
 
-      PermissionsSettingsTab(folderAccessController: folderAccessController)
-        .tabItem {
-          Label("Permissions", systemImage: "folder.badge.plus")
-        }
+        PermissionsSettingsTab(folderAccessController: folderAccessController)
+          .tabItem {
+            Label("Permissions", systemImage: "folder.badge.plus")
+          }
+      }
+      .frame(width: 450)
+    } else {
+      // DMG build: only Database tab (no permissions needed)
+      DatabaseSettingsTab()
+        .frame(width: 450)
     }
-    .frame(width: 450)
   }
 }
 
