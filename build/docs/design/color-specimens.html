@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contextify Color Specimen Sheet</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; }
+
+    /* Switcher */
+    .switcher {
+      position: sticky;
+      top: 0;
+      background: #111;
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+      z-index: 1000;
+      flex-wrap: wrap;
+    }
+    .switcher label { font-weight: 600; margin-right: 0.5rem; }
+    .switcher button {
+      padding: 0.4rem 1rem;
+      border: 2px solid #444;
+      background: transparent;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .switcher button:hover { border-color: #888; }
+    .switcher button.active { background: #fff; color: #111; border-color: #fff; }
+    .switcher .toggle-group { display: flex; gap: 0.25rem; }
+
+    .specimen { display: none; min-height: 100vh; padding: 2rem; }
+    .specimen.active { display: block; }
+    .specimen h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .specimen .subtitle { opacity: 0.7; margin-bottom: 2rem; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-bottom: 3rem; }
+
+    .card { padding: 1.5rem; border-radius: 8px; }
+    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+    .card p { margin-bottom: 1rem; }
+
+    .swatch-row { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+    .swatch { width: 50px; height: 50px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); text-align: center; line-height: 1.2; }
+
+    .btn { display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-weight: 600; margin-right: 0.5rem; margin-bottom: 0.5rem; border: 2px solid transparent; cursor: pointer; }
+    .btn-secondary { background: transparent; }
+
+    .link-demo a { margin-right: 1rem; }
+
+    .input-demo input { padding: 0.5rem; border-radius: 4px; border: 1px solid; width: 200px; margin-right: 1rem; font-size: 1rem; }
+    .input-demo input:focus { outline: none; border-width: 2px; }
+
+    .alert { padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 4px solid; }
+
+    .nav-demo { padding: 1rem; border-radius: 6px; margin-bottom: 2rem; }
+    .nav-demo a { margin-right: 1.5rem; text-decoration: none; font-weight: 500; }
+
+    .footer-demo { padding: 2rem; border-radius: 6px; text-align: center; }
+    .footer-demo a { margin: 0 0.75rem; text-decoration: none; }
+
+    .code-demo { font-family: ui-monospace, monospace; padding: 0.125rem 0.375rem; border-radius: 4px; font-size: 0.875em; }
+
+    .hero-demo { padding: 3rem 2rem; border-radius: 8px; margin-bottom: 2rem; }
+    .hero-demo h2 { font-size: 2rem; margin-bottom: 1rem; }
+    .hero-demo p { font-size: 1.1rem; margin-bottom: 1.5rem; opacity: 0.9; }
+
+    /* =========================================================================
+       DIRECTION A: Blue Foundation - LIGHT
+       ========================================================================= */
+    .direction-a-light {
+      --brand-primary: #4A7BA7;
+      --brand-primary-hover: #3D6A94;
+      --brand-primary-light: #E8F0F7;
+      --brand-secondary: #9B8B7E;
+
+      --text-primary: #2C3E50;
+      --text-secondary: #5D6D7E;
+      --text-tertiary: #8B9AAB;
+      --text-inverse: #FFFFFF;
+
+      --link-default: #4A7BA7;
+      --link-hover: #3D6A94;
+      --link-visited: #7C68A8;
+
+      --bg-page: #F5F7FA;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #EDF1F5;
+      --bg-inverse: #1E3A52;
+
+      --border-default: #D1D9E0;
+      --border-subtle: #E8ECF0;
+      --border-focus: #4A7BA7;
+
+      --success: #51A86B;
+      --success-light: #E8F5EC;
+      --warning: #D4A84E;
+      --warning-light: #FDF6E8;
+      --error: #C74E4E;
+      --error-light: #FBEAEA;
+      --info: #4A7BA7;
+      --info-light: #E8F0F7;
+    }
+
+    /* DIRECTION A: Blue Foundation - DARK */
+    .direction-a-dark {
+      --brand-primary: #6A9BC7;
+      --brand-primary-hover: #7AABDA;
+      --brand-primary-light: #1E3A52;
+      --brand-secondary: #B5A89D;
+
+      --text-primary: #E8ECF0;
+      --text-secondary: #A8B8C8;
+      --text-tertiary: #6A7A8A;
+      --text-inverse: #0F1A24;
+
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
+
+      --bg-page: #0F1A24;
+      --bg-surface: #1A2836;
+      --bg-muted: #243444;
+      --bg-inverse: #E8ECF0;
+
+      --border-default: #2E4254;
+      --border-subtle: #243444;
+      --border-focus: #6A9BC7;
+
+      --success: #6BC885;
+      --success-light: #1A3028;
+      --warning: #E4B85E;
+      --warning-light: #3A3020;
+      --error: #D76E6E;
+      --error-light: #3A2020;
+      --info: #6A9BC7;
+      --info-light: #1A2838;
+    }
+
+    /* =========================================================================
+       DIRECTION B: Taupe Foundation - LIGHT
+       ========================================================================= */
+    .direction-b-light {
+      --brand-primary: #4A7BA7;
+      --brand-primary-hover: #3D6A94;
+      --brand-secondary: #9B8B7E;
+      --brand-secondary-dark: #7A6D62;
+
+      --text-primary: #3D3632;
+      --text-secondary: #6B5F56;
+      --text-tertiary: #9B8B7E;
+      --text-inverse: #FAF8F6;
+
+      --link-default: #4A7BA7;
+      --link-hover: #3D6A94;
+      --link-visited: #7C68A8;
+
+      --bg-page: #F7F5F3;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #EFEBE8;
+      --bg-inverse: #3D3632;
+
+      --border-default: #D9D2CC;
+      --border-subtle: #EBE6E2;
+      --border-focus: #4A7BA7;
+
+      --success: #51A86B;
+      --success-light: #EDF6EF;
+      --warning: #D4A84E;
+      --warning-light: #FCF6EB;
+      --error: #C74E4E;
+      --error-light: #FAEDED;
+      --info: #4A7BA7;
+      --info-light: #EDF3F8;
+    }
+
+    /* DIRECTION B: Taupe Foundation - DARK */
+    .direction-b-dark {
+      --brand-primary: #6A9BC7;
+      --brand-primary-hover: #7AABDA;
+      --brand-secondary: #B5A89D;
+      --brand-secondary-dark: #D5C8BD;
+
+      --text-primary: #F5F2F0;
+      --text-secondary: #C5B8AD;
+      --text-tertiary: #8A7D72;
+      --text-inverse: #1A1816;
+
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
+
+      --bg-page: #1A1816;
+      --bg-surface: #2A2624;
+      --bg-muted: #3A3634;
+      --bg-inverse: #F5F2F0;
+
+      --border-default: #4A4644;
+      --border-subtle: #3A3634;
+      --border-focus: #6A9BC7;
+
+      --success: #6BC885;
+      --success-light: #1A2A1E;
+      --warning: #E4B85E;
+      --warning-light: #2A2618;
+      --error: #D76E6E;
+      --error-light: #2A1A1A;
+      --info: #6A9BC7;
+      --info-light: #1A2430;
+    }
+
+    /* =========================================================================
+       DIRECTION C: Deep Navy - LIGHT
+       ========================================================================= */
+    .direction-c-light {
+      --brand-primary: #4A7BA7;
+      --brand-primary-hover: #5A8BB7;
+      --brand-primary-dark: #1A3A5C;
+      --brand-accent: #51A86B;
+
+      --text-primary: #1A2836;
+      --text-secondary: #4A5C6A;
+      --text-tertiary: #7A8C9A;
+      --text-inverse: #FFFFFF;
+
+      --link-default: #4A7BA7;
+      --link-hover: #5A8BB7;
+      --link-visited: #7C68A8;
+
+      --bg-page: #F0F4F8;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #E4EAF0;
+      --bg-inverse: #1A3A5C;
+      --bg-inverse-alt: #0F2840;
+
+      --border-default: #C8D4E0;
+      --border-subtle: #DFE7EF;
+      --border-focus: #4A7BA7;
+
+      --success: #51A86B;
+      --success-light: #E6F4EA;
+      --warning: #D4A84E;
+      --warning-light: #FBF4E4;
+      --error: #C74E4E;
+      --error-light: #FAE8E8;
+      --info: #4A7BA7;
+      --info-light: #E6EFF7;
+    }
+
+    /* DIRECTION C: Deep Navy - DARK */
+    .direction-c-dark {
+      --brand-primary: #6A9BC7;
+      --brand-primary-hover: #7AABDA;
+      --brand-primary-dark: #8ABBDD;
+      --brand-accent: #6BC885;
+
+      --text-primary: #E4EAF0;
+      --text-secondary: #A4B4C4;
+      --text-tertiary: #6A7A8A;
+      --text-inverse: #0A1828;
+
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
+
+      --bg-page: #0A1828;
+      --bg-surface: #142838;
+      --bg-muted: #1E3848;
+      --bg-inverse: #E4EAF0;
+      --bg-inverse-alt: #F4F8FC;
+
+      --border-default: #2A4A60;
+      --border-subtle: #1E3848;
+      --border-focus: #6A9BC7;
+
+      --success: #6BC885;
+      --success-light: #0A2818;
+      --warning: #E4B85E;
+      --warning-light: #282010;
+      --error: #D76E6E;
+      --error-light: #281010;
+      --info: #6A9BC7;
+      --info-light: #0A1828;
+    }
+
+    /* =========================================================================
+       DIRECTION D: Minimal Gray - LIGHT
+       ========================================================================= */
+    .direction-d-light {
+      --brand-primary: #4A7BA7;
+      --brand-primary-hover: #3D6A94;
+      --brand-accent: #51A86B;
+
+      --text-primary: #1F1F1F;
+      --text-secondary: #555555;
+      --text-tertiary: #888888;
+      --text-inverse: #FFFFFF;
+
+      --link-default: #4A7BA7;
+      --link-hover: #3D6A94;
+      --link-visited: #7C68A8;
+
+      --bg-page: #FAFAFA;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #F0F0F0;
+      --bg-inverse: #1F1F1F;
+
+      --border-default: #E0E0E0;
+      --border-subtle: #EEEEEE;
+      --border-focus: #4A7BA7;
+
+      --success: #51A86B;
+      --success-light: #F0F9F2;
+      --warning: #D4A84E;
+      --warning-light: #FFFBF0;
+      --error: #C74E4E;
+      --error-light: #FDF0F0;
+      --info: #4A7BA7;
+      --info-light: #F0F5FA;
+    }
+
+    /* DIRECTION D: Minimal Gray - DARK */
+    .direction-d-dark {
+      --brand-primary: #6A9BC7;
+      --brand-primary-hover: #7AABDA;
+      --brand-accent: #6BC885;
+
+      --text-primary: #F0F0F0;
+      --text-secondary: #AAAAAA;
+      --text-tertiary: #666666;
+      --text-inverse: #1F1F1F;
+
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
+
+      --bg-page: #121212;
+      --bg-surface: #1E1E1E;
+      --bg-muted: #2A2A2A;
+      --bg-inverse: #F0F0F0;
+
+      --border-default: #3A3A3A;
+      --border-subtle: #2A2A2A;
+      --border-focus: #6A9BC7;
+
+      --success: #6BC885;
+      --success-light: #1A2A1E;
+      --warning: #E4B85E;
+      --warning-light: #2A2618;
+      --error: #D76E6E;
+      --error-light: #2A1A1A;
+      --info: #6A9BC7;
+      --info-light: #1A2430;
+    }
+
+    /* =========================================================================
+       Shared styling (applied via variables)
+       ========================================================================= */
+    .specimen { background: var(--bg-page); color: var(--text-primary); }
+    .specimen h1 { color: var(--text-primary); }
+    .specimen .card { background: var(--bg-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .specimen .card h2 { color: var(--brand-primary); }
+    .specimen .btn-primary { background: var(--brand-primary); color: var(--text-inverse); }
+    .specimen .btn-primary:hover { background: var(--brand-primary-hover); }
+    .specimen .btn-secondary { border-color: var(--brand-primary); color: var(--brand-primary); }
+    .specimen .link-demo a { color: var(--link-default); }
+    .specimen .link-demo a.hover { color: var(--link-hover); }
+    .specimen .link-demo a.visited { color: var(--link-visited); }
+    .specimen .input-demo input { border-color: var(--border-default); background: var(--bg-surface); color: var(--text-primary); }
+    .specimen .input-demo input::placeholder { color: var(--text-tertiary); }
+    .specimen .input-demo input:focus { border-color: var(--border-focus); }
+    .specimen .alert-success { background: var(--success-light); border-color: var(--success); color: var(--success); }
+    .specimen .alert-warning { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+    .specimen .alert-error { background: var(--error-light); border-color: var(--error); color: var(--error); }
+    .specimen .alert-info { background: var(--info-light); border-color: var(--info); color: var(--info); }
+    .specimen .nav-demo { background: var(--bg-surface); border: 1px solid var(--border-subtle); }
+    .specimen .nav-demo a { color: var(--text-secondary); }
+    .specimen .nav-demo a:hover { color: var(--brand-primary); }
+    .specimen .nav-demo a.active { color: var(--brand-primary); }
+    .specimen .hero-demo { background: var(--bg-inverse); color: var(--text-inverse); }
+    .specimen .hero-demo .btn-primary { background: var(--brand-primary); }
+    .specimen .footer-demo { background: var(--bg-inverse); color: var(--text-inverse); }
+    .specimen .footer-demo a { color: var(--text-inverse); opacity: 0.8; }
+    .specimen .footer-demo a:hover { opacity: 1; }
+    .specimen .code-demo { background: var(--bg-muted); color: var(--text-primary); }
+
+    /* Direction C special: dark nav */
+    .direction-c-light .nav-demo,
+    .direction-c-dark .nav-demo { background: var(--bg-inverse); border-color: transparent; }
+    .direction-c-light .nav-demo a,
+    .direction-c-dark .nav-demo a { color: var(--text-inverse); opacity: 0.8; }
+    .direction-c-light .nav-demo a:hover,
+    .direction-c-dark .nav-demo a:hover { opacity: 1; }
+    .direction-c-light .nav-demo a.active,
+    .direction-c-dark .nav-demo a.active { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div class="switcher">
+  <div>
+    <label>Direction:</label>
+    <div class="toggle-group">
+      <button onclick="setDirection('a')" id="btn-a" class="active">A: Blue</button>
+      <button onclick="setDirection('b')" id="btn-b">B: Taupe</button>
+      <button onclick="setDirection('c')" id="btn-c">C: Navy</button>
+      <button onclick="setDirection('d')" id="btn-d">D: Gray</button>
+    </div>
+  </div>
+  <div>
+    <label>Mode:</label>
+    <div class="toggle-group">
+      <button onclick="setMode('light')" id="btn-light" class="active">Light</button>
+      <button onclick="setMode('dark')" id="btn-dark">Dark</button>
+    </div>
+  </div>
+  <div style="margin-left:auto; opacity:0.6; font-size:0.85rem;">
+    Core: Blue #4A7BA7 | Green #51A86B | Taupe #9B8B7E | Red #C74E4E | Yellow #D4A84E | Purple #7C68A8
+  </div>
+</div>
+
+<!-- DIRECTION A -->
+<section class="specimen direction-a-light" id="specimen-a-light">
+  <h1>Direction A: Blue Foundation</h1>
+  <p class="subtitle">Derives backgrounds from contextifyBlue (#4A7BA7). Cool, professional, tech-forward.</p>
+  <div id="content-a-light"></div>
+</section>
+<section class="specimen direction-a-dark" id="specimen-a-dark">
+  <h1>Direction A: Blue Foundation (Dark)</h1>
+  <p class="subtitle">Derives backgrounds from contextifyBlue (#4A7BA7). Cool, professional, tech-forward.</p>
+  <div id="content-a-dark"></div>
+</section>
+
+<!-- DIRECTION B -->
+<section class="specimen direction-b-light" id="specimen-b-light">
+  <h1>Direction B: Taupe Foundation</h1>
+  <p class="subtitle">Warm, earthy feel derived from contextifyTaupe (#9B8B7E). Approachable, calm.</p>
+  <div id="content-b-light"></div>
+</section>
+<section class="specimen direction-b-dark" id="specimen-b-dark">
+  <h1>Direction B: Taupe Foundation (Dark)</h1>
+  <p class="subtitle">Warm, earthy feel derived from contextifyTaupe (#9B8B7E). Approachable, calm.</p>
+  <div id="content-b-dark"></div>
+</section>
+
+<!-- DIRECTION C -->
+<section class="specimen direction-c-light" id="specimen-c-light">
+  <h1>Direction C: Deep Navy</h1>
+  <p class="subtitle">Bold, modern. Dark sections use deep shade of primary blue. Strong brand presence.</p>
+  <div id="content-c-light"></div>
+</section>
+<section class="specimen direction-c-dark" id="specimen-c-dark">
+  <h1>Direction C: Deep Navy (Dark)</h1>
+  <p class="subtitle">Bold, modern. Dark sections use deep shade of primary blue. Strong brand presence.</p>
+  <div id="content-c-dark"></div>
+</section>
+
+<!-- DIRECTION D -->
+<section class="specimen direction-d-light" id="specimen-d-light">
+  <h1>Direction D: Minimal Gray + Color Pops</h1>
+  <p class="subtitle">Neutral gray foundation. Color only for semantic/interactive elements. Clean, understated.</p>
+  <div id="content-d-light"></div>
+</section>
+<section class="specimen direction-d-dark" id="specimen-d-dark">
+  <h1>Direction D: Minimal Gray + Color Pops (Dark)</h1>
+  <p class="subtitle">Neutral gray foundation. Color only for semantic/interactive elements. Clean, understated.</p>
+  <div id="content-d-dark"></div>
+</section>
+
+<script>
+const contentTemplate = `
+  <div class="hero-demo">
+    <h2>Monitor your AI coding sessions</h2>
+    <p>Real-time timeline view of Claude Code and Codex CLI conversations on macOS.</p>
+    <a href="#" class="btn btn-primary">Download for Mac</a>
+  </div>
+
+  <div class="nav-demo">
+    <a href="#" class="active">Contextify</a>
+    <a href="#">Features</a>
+    <a href="#">Download</a>
+    <a href="#">Support</a>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Color Swatches</h2>
+      <p>Core palette (from app):</p>
+      <div class="swatch-row">
+        <div class="swatch" style="background:#4A7BA7">Blue</div>
+        <div class="swatch" style="background:#51A86B">Green</div>
+        <div class="swatch" style="background:#9B8B7E">Taupe</div>
+        <div class="swatch" style="background:#C74E4E">Red</div>
+        <div class="swatch" style="background:#D4A84E">Yellow</div>
+        <div class="swatch" style="background:#7C68A8">Purple</div>
+      </div>
+      <p>Derived backgrounds:</p>
+      <div class="swatch-row">
+        <div class="swatch" style="background:var(--bg-page); color:var(--text-primary); border:1px solid var(--border-default)">Page</div>
+        <div class="swatch" style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-default)">Surface</div>
+        <div class="swatch" style="background:var(--bg-muted); color:var(--text-primary); border:1px solid var(--border-default)">Muted</div>
+        <div class="swatch" style="background:var(--bg-inverse); color:var(--text-inverse)">Inverse</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Typography</h2>
+      <p style="color:var(--text-primary)"><strong>Primary text:</strong> Main content goes here.</p>
+      <p style="color:var(--text-secondary)"><strong>Secondary text:</strong> Supporting information.</p>
+      <p style="color:var(--text-tertiary)"><strong>Tertiary text:</strong> Timestamps, hints.</p>
+      <p>Inline <span class="code-demo">code snippets</span> for technical content.</p>
+    </div>
+
+    <div class="card">
+      <h2>Buttons</h2>
+      <a href="#" class="btn btn-primary">Primary Action</a>
+      <a href="#" class="btn btn-secondary">Secondary</a>
+    </div>
+
+    <div class="card">
+      <h2>Links</h2>
+      <p class="link-demo">
+        <a href="#">Default link</a>
+        <a href="#" class="hover">Hover state</a>
+        <a href="#" class="visited">Visited link</a>
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Form Inputs</h2>
+      <div class="input-demo">
+        <input type="text" placeholder="Enter text...">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Alerts / Status</h2>
+      <div class="alert alert-success">Success: Operation completed.</div>
+      <div class="alert alert-warning">Warning: Check your input.</div>
+      <div class="alert alert-error">Error: Something went wrong.</div>
+      <div class="alert alert-info">Info: Here's some info.</div>
+    </div>
+  </div>
+
+  <div class="footer-demo">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Support</a>
+    <a href="#">Contact</a>
+    <p style="margin-top:1rem; opacity:0.6">&copy; 2025 Contextify</p>
+  </div>
+`;
+
+// Populate all specimens
+['a', 'b', 'c', 'd'].forEach(dir => {
+  ['light', 'dark'].forEach(mode => {
+    document.getElementById(`content-${dir}-${mode}`).innerHTML = contentTemplate;
+  });
+});
+
+let currentDirection = 'a';
+let currentMode = 'light';
+
+function setDirection(dir) {
+  currentDirection = dir;
+  updateView();
+  document.querySelectorAll('.switcher button[id^="btn-"]').forEach(b => {
+    if (b.id.startsWith('btn-') && b.id.length === 5) {
+      b.classList.toggle('active', b.id === `btn-${dir}`);
+    }
+  });
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  updateView();
+  document.getElementById('btn-light').classList.toggle('active', mode === 'light');
+  document.getElementById('btn-dark').classList.toggle('active', mode === 'dark');
+}
+
+function updateView() {
+  document.querySelectorAll('.specimen').forEach(s => s.classList.remove('active'));
+  document.getElementById(`specimen-${currentDirection}-${currentMode}`).classList.add('active');
+}
+
+// Initialize
+updateView();
+</script>
+
+</body>
+</html>
