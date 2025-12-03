@@ -2,16 +2,26 @@
 
 Design documentation for the marketing website.
 
-## Status: Active Development
+## Status: Design System Complete, Assets Needed
 
-Website design is actively being developed on `feature/design-system-and-website` branch.
+Website styling complete on `feature/design-system-and-website` branch. Needs screenshots before deploy.
 
-## Current Work
+## Completed Work
 
-- **Design comparator:** `specimens/website-comparator.html` (Lens A: Website, Lens B: Specimens)
-- **Color system:** `../brand/colors.md` (Slate + Blue, full inventory)
-- **Landing page:** Bootstrap 5, hero section, feature cards
-- **Content pages:** Privacy, terms, support (styled)
+- **Design system:** Color tokens in `../brand/colors.md` (Slate + Blue, semantic colors)
+- **CSS migration:** INSPINIA -> design system tokens in `website/styles.css`
+- **Visual polish:** Brand divider, card hover effects, solid navbar background
+- **Landing page:** Bootstrap 5, hero with swoopity SVG, feature cards
+- **Content pages:** Privacy, terms, support (styled with new tokens)
+- **Logomark:** Copied to `website/assets/img/contextify-icon.png`
+
+## Remaining Work
+
+- **App screenshots:** Light + dark mode, 2x for retina
+- **OG image:** 1200x630 banner for social sharing
+- **Favicon:** Verify current or create new
+- **Responsive testing:** Desktop, tablet, mobile
+- **Deploy:** `./scripts/deploy-website.sh`
 
 ## Design Decisions
 
@@ -50,9 +60,11 @@ website/                  # Static files, directly uploadable
 ## Next Steps
 
 1. ~~**Finalize color palette**~~ Done - see `../brand/colors.md`
-2. **Apply color system** to production `website/styles.css`
-3. **Document component styles** (buttons, cards, forms)
-4. **Define responsive breakpoints**
+2. ~~**Apply color system**~~ Done - migrated from INSPINIA to design tokens
+3. **Add app screenshots** (light + dark mode, 2x for retina)
+4. **Create OG image** for social sharing (1200x630)
+5. **Document component styles** (buttons, cards, forms)
+6. **Define responsive breakpoints**
 
 ## Future: Build Pipeline
 
