@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "manifest.schema.json",
+  "title": "Release Manifest",
+  "description": "Tracks all releases and their current status",
+
+  "type": "object",
+  "required": ["schema_version", "current_version", "releases"],
+
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "current_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "The version currently being worked on"
+    },
+    "releases": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Release"
+      }
+    }
+  },
+
+  "definitions": {
+    "Release": {
+      "type": "object",
+      "required": ["created", "status", "git_tag", "git_commit", "dmg", "appstore"],
+      "properties": {
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Date release was initialized"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["in_progress", "complete"],
+          "description": "Overall release status"
+        },
+        "git_tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "git_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "dmg": {
+          "$ref": "#/definitions/DmgChannel"
+        },
+        "appstore": {
+          "$ref": "#/definitions/AppStoreChannel"
+        },
+        "marketing": {
+          "$ref": "#/definitions/Marketing"
+        }
+      }
+    },
+
+    "DmgChannel": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "built", "shipped", "skipped"],
+          "description": "DMG distribution status"
+        },
+        "build_number": {
+          "type": ["integer", "null"]
+        },
+        "built_at": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "shipped_at": {
+          "type": ["string", "null"],
+          "format": "date"
+        }
+      }
+    },
+
+    "AppStoreChannel": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pending", "built", "uploaded", "skipped"],
+          "description": "Local tracking status (pre-submission)"
+        },
+        "apple_state": {
+          "type": ["string", "null"],
+          "description": "Actual state from App Store Connect API",
+          "enum": [
+            null,
+            "ACCEPTED",
+            "DEVELOPER_REJECTED",
+            "DEVELOPER_REMOVED_FROM_SALE",
+            "IN_REVIEW",
+            "INVALID_BINARY",
+            "METADATA_REJECTED",
+            "NOT_APPLICABLE",
+            "PENDING_APPLE_RELEASE",
+            "PENDING_CONTRACT",
+            "PENDING_DEVELOPER_RELEASE",
+            "PREORDER_READY_FOR_SALE",
+            "PREPARE_FOR_SUBMISSION",
+            "PROCESSING_FOR_APP_STORE",
+            "READY_FOR_REVIEW",
+            "READY_FOR_SALE",
+            "REJECTED",
+            "REMOVED_FROM_SALE",
+            "REPLACED_WITH_NEW_VERSION",
+            "WAITING_FOR_EXPORT_COMPLIANCE",
+            "WAITING_FOR_REVIEW"
+          ]
+        },
+        "apple_state_updated_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "When apple_state was last checked"
+        },
+        "build_number": {
+          "type": ["integer", "null"]
+        },
+        "built_at": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "uploaded_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "submitted_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "approved_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      }
+    },
+
+    "Marketing": {
+      "type": "object",
+      "properties": {
+        "changelog_published": {
+          "type": "boolean",
+          "default": false
+        },
+        "announcement_posted": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}

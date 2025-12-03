@@ -35,13 +35,35 @@ if [ ! -d "$LOCAL_DIR" ]; then
     exit 1
 fi
 
-# List files to deploy
+# Exclusions
+EXCLUDES=(
+    '.DS_Store'
+    '.git'
+    'drafts'
+    '*.mov'
+)
+
+# Build rsync exclude args
+EXCLUDE_ARGS=""
+for pattern in "${EXCLUDES[@]}"; do
+    EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude '$pattern'"
+done
+
+# List files to deploy (respecting exclusions)
 echo -e "${YELLOW}Files to deploy:${NC}"
-find "$LOCAL_DIR" -type f | sed "s|^$LOCAL_DIR/||" | sort
+find "$LOCAL_DIR" -type f \
+    -not -name '.DS_Store' \
+    -not -name '*.mov' \
+    -not -path '*/drafts/*' \
+    | sed "s|^$LOCAL_DIR/||" | sort
 echo ""
 
 # Count files
-FILE_COUNT=$(find "$LOCAL_DIR" -type f | wc -l | tr -d ' ')
+FILE_COUNT=$(find "$LOCAL_DIR" -type f \
+    -not -name '.DS_Store' \
+    -not -name '*.mov' \
+    -not -path '*/drafts/*' \
+    | wc -l | tr -d ' ')
 echo "Total files: $FILE_COUNT"
 echo ""
 
@@ -59,6 +81,8 @@ echo -e "${YELLOW}Uploading files...${NC}"
 rsync -avz --delete \
     --exclude '.DS_Store' \
     --exclude '.git' \
+    --exclude 'drafts' \
+    --exclude '*.mov' \
     "$LOCAL_DIR/" \
     "$SERVER:$TEMP_UPLOAD_DIR/"
 

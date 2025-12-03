@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "appstore-states.schema.json",
+  "title": "App Store Connect Version States",
+  "description": "All possible AppStoreVersionState values from Apple's App Store Connect API",
+
+  "definitions": {
+    "AppleAppStoreVersionState": {
+      "type": "string",
+      "description": "Apple's AppStoreVersionState enum - the authoritative state from App Store Connect",
+      "enum": [
+        "ACCEPTED",
+        "DEVELOPER_REJECTED",
+        "DEVELOPER_REMOVED_FROM_SALE",
+        "IN_REVIEW",
+        "INVALID_BINARY",
+        "METADATA_REJECTED",
+        "NOT_APPLICABLE",
+        "PENDING_APPLE_RELEASE",
+        "PENDING_CONTRACT",
+        "PENDING_DEVELOPER_RELEASE",
+        "PREORDER_READY_FOR_SALE",
+        "PREPARE_FOR_SUBMISSION",
+        "PROCESSING_FOR_APP_STORE",
+        "READY_FOR_REVIEW",
+        "READY_FOR_SALE",
+        "REJECTED",
+        "REMOVED_FROM_SALE",
+        "REPLACED_WITH_NEW_VERSION",
+        "WAITING_FOR_EXPORT_COMPLIANCE",
+        "WAITING_FOR_REVIEW"
+      ]
+    },
+
+    "LocalAppStoreStatus": {
+      "type": "string",
+      "description": "Local tracking status (legacy, for backwards compatibility)",
+      "enum": [
+        "pending",
+        "built",
+        "submitted",
+        "approved",
+        "rejected",
+        "skipped"
+      ]
+    },
+
+    "StateCategory": {
+      "type": "string",
+      "description": "Logical grouping of Apple states for workflow decisions",
+      "enum": [
+        "not_submitted",
+        "in_review",
+        "approved",
+        "rejected",
+        "removed",
+        "other"
+      ]
+    }
+  },
+
+  "appleStateMapping": {
+    "description": "Maps Apple states to local categories for workflow logic",
+    "mapping": {
+      "PREPARE_FOR_SUBMISSION": { "category": "not_submitted", "actionable": true, "terminal": false },
+      "READY_FOR_REVIEW": { "category": "not_submitted", "actionable": true, "terminal": false },
+      "WAITING_FOR_REVIEW": { "category": "in_review", "actionable": false, "terminal": false },
+      "IN_REVIEW": { "category": "in_review", "actionable": false, "terminal": false },
+      "WAITING_FOR_EXPORT_COMPLIANCE": { "category": "in_review", "actionable": true, "terminal": false },
+      "PENDING_CONTRACT": { "category": "in_review", "actionable": true, "terminal": false },
+      "PENDING_DEVELOPER_RELEASE": { "category": "approved", "actionable": true, "terminal": false },
+      "PENDING_APPLE_RELEASE": { "category": "approved", "actionable": false, "terminal": false },
+      "PROCESSING_FOR_APP_STORE": { "category": "approved", "actionable": false, "terminal": false },
+      "READY_FOR_SALE": { "category": "approved", "actionable": false, "terminal": true },
+      "PREORDER_READY_FOR_SALE": { "category": "approved", "actionable": false, "terminal": false },
+      "ACCEPTED": { "category": "approved", "actionable": false, "terminal": false },
+      "METADATA_REJECTED": { "category": "rejected", "actionable": true, "terminal": false },
+      "REJECTED": { "category": "rejected", "actionable": true, "terminal": false },
+      "INVALID_BINARY": { "category": "rejected", "actionable": true, "terminal": false },
+      "DEVELOPER_REJECTED": { "category": "removed", "actionable": true, "terminal": false },
+      "DEVELOPER_REMOVED_FROM_SALE": { "category": "removed", "actionable": true, "terminal": false },
+      "REMOVED_FROM_SALE": { "category": "removed", "actionable": false, "terminal": true },
+      "REPLACED_WITH_NEW_VERSION": { "category": "other", "actionable": false, "terminal": true },
+      "NOT_APPLICABLE": { "category": "other", "actionable": false, "terminal": false }
+    }
+  }
+}
