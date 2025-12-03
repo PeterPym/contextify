@@ -12,6 +12,7 @@
     {
       "layers" : [
         {
+          "glass" : false,
           "image-name" : "Infinity.png",
           "name" : "Infinity"
         }
