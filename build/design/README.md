@@ -27,11 +27,11 @@ build/design/
 
 | Area | Location | Status |
 |------|----------|--------|
-| **Color Tokens** | `brand/colors.md` | Done - semantic, brand, provider |
+| **Color System** | `brand/colors.md` | Done - full inventory with dark mode |
+| **Design Comparator** | `website/specimens/website-comparator.html` | Active - Lens A (website) / Lens B (specimens) |
 | **Logomark** | `brand/logomark/` | Done - source + exports |
 | **Providers** | `brand/providers/` | Done - icons + presentation rules |
 | **App Icon** | `application/icon/` | Done - symlink to Icon Composer |
-| **Website** | `website/` | Active - color exploration |
 | **Marketing** | `marketing/` | Scaffold |
 | **Research** | `research/` | Ready for use |
 
@@ -46,35 +46,49 @@ build/design/
 
 ## Color Token System
 
-All colors are defined in `brand/colors.md` with unified naming:
+Canonical source: `brand/colors.md`
 
-### Semantic Colors (`contextify-*`)
+### Overview
 
-| Token | Hex | Usage |
-|-------|-----|-------|
-| `contextify-primary` | #4A7BA7 | User actions, links |
-| `contextify-secondary` | #9B8B7E | Assistant content |
-| `contextify-success` | #51A86B | Completion states |
-| `contextify-warning` | #D4A84E | Warnings |
-| `contextify-error` | #C74E4E | Errors |
-| `contextify-accent` | #7C68A8 | Metadata |
+| Category | Description |
+|----------|-------------|
+| **Semantic** | 7 purpose-driven colors (primary, secondary, success, warning, error, info, accent) |
+| **Neutrals** | Tailwind Slate scale (11 steps: slate-50 to slate-950) |
+| **Derived** | Text, background, border, link tokens mapped from neutrals |
+| **Brand** | Logomark gradient colors (yellow, cyan, purple) |
+| **Provider** | Third-party AI provider colors (Claude, Codex) |
+| **Dark Mode** | Systematic derivation (inversion, lifting) documented |
 
-### Brand Colors (`contextify-brand-*`)
+### Semantic Colors
+
+| Token | Light | Dark | Usage |
+|-------|-------|------|-------|
+| `primary` | #4A7BA7 | #6A9BC7 | Actions, links |
+| `secondary` | #9B8B7E | #B5A89D | Assistant content |
+| `success` | #51A86B | #6BC885 | Completion states |
+| `warning` | #D4A84E | #E4B85E | Warnings |
+| `error` | #C74E4E | #D76E6E | Errors |
+| `info` | #4A7BA7 | #6A9BC7 | Informational |
+| `accent` | #7C68A8 | #9C88C8 | Metadata |
+
+### Brand Colors
 
 | Token | Hex | Source |
 |-------|-----|--------|
-| `contextify-brand-yellow` | #F9B233 | Logomark left |
-| `contextify-brand-cyan` | #4AC4E0 | Logomark center |
-| `contextify-brand-purple` | #8B5CF6 | Logomark right |
+| `brand-yellow` | #F9B233 | Logomark left |
+| `brand-cyan` | #4AC4E0 | Logomark center |
+| `brand-purple` | #8B5CF6 | Logomark right |
 
-### Provider Colors (`provider-*`)
+### Provider Colors
 
 | Token | Hex | Provider |
 |-------|-----|----------|
-| `provider-claude` | #D97757 | Claude Code |
+| `provider-claude` | #D97757 | Claude Code (Anthropic coral) |
 | `provider-codex` | #FFFFFF | Codex CLI (needs shadow) |
 
 **Naming:** CSS uses kebab-case (`--contextify-primary`), Swift uses camelCase (`contextifyPrimary`).
+
+**Full details:** See `brand/colors.md` for neutral scale, derived tokens, dark mode derivation rules, and implementation examples.
 
 ## Brand Voice (Stub)
 
