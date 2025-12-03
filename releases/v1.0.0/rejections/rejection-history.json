@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "submission_id": "4a125b1d-7e23-4cb4-be80-09aaa29168cf",
+  "rejections": [
+    {
+      "index": 1,
+      "date": "2025-11-26",
+      "time": "09:18",
+      "build_number": 3,
+      "guidelines": ["2.1"],
+      "rejection_type": "REJECTED",
+      "rejection_reason_code": "2.1.0 Performance: App Completeness (macOS)",
+      "issues": [
+        {
+          "guideline": "2.1",
+          "title": "Information Needed - Sample Files",
+          "summary": "Need sample files of Claude project files to review summarize feature",
+          "next_steps": "Provide sample files hosted at a location that will remain available for future reviews"
+        },
+        {
+          "guideline": "2.1",
+          "title": "Information Needed - Demo Video",
+          "summary": "Need video demonstrating app on physical macOS device",
+          "next_steps": "Provide link to video in App Review Information section; video must show app on physical device and document all features"
+        }
+      ],
+      "resolved": true,
+      "resolution": {
+        "date": "2025-11-27",
+        "actions": [
+          "Created sample transcripts (54 Claude Code files, 3 Codex files)",
+          "Recorded demo video showing app functionality",
+          "Deployed sample-data.zip to https://contextify.sh/review-4a125b1d/sample-data.zip",
+          "Deployed demo-video.mp4 to https://contextify.sh/review-4a125b1d/demo-video.mp4",
+          "Updated review notes with URLs and setup instructions"
+        ],
+        "resubmit_build": 5
+      }
+    },
+    {
+      "index": 2,
+      "date": "2025-12-03",
+      "time": "12:49",
+      "build_number": 10,
+      "guidelines": ["2.4.5(i)"],
+      "rejection_type": "REJECTED",
+      "rejection_reason_code": null,
+      "preamble": "The issues we previously identified still need your attention.",
+      "issues": [
+        {
+          "guideline": "2.4.5(i)",
+          "title": "Performance - User Data Storage Location",
+          "summary": "App saves user data to app's container which is not user accessible",
+          "detail": "Container is hidden location not for user documents. It is for files that your app uses, along with databases, caches, and other app-specific data.",
+          "next_steps": "Save user files to a location selected by or available to users using standard Save dialogs",
+          "reference_url": "https://developer.apple.com/library/archive/documentation/Security/Conceptual/AppSandboxDesignGuide/AboutAppSandbox/AboutAppSandbox.html"
+        }
+      ],
+      "resolved": false,
+      "resolution": null
+    }
+  ]
+}

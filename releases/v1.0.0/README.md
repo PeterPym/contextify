@@ -31,6 +31,20 @@
 - `artifacts/` - Build artifact references
 - `logs/` - Validation outputs
 - `assets/` - Screenshots, receipts
+- `rejections/` - Rejection history, research, and deliberations
+
+## Rejections
+
+| # | Date | Build | Guideline | Status |
+|---|------|-------|-----------|--------|
+| 1 | Nov 26 | 3 | 2.1 (App Completeness) | Resolved |
+| 2 | Dec 3 | 10 | 2.4.5(i) (User Data Location) | Active |
+
+**Files:**
+- [`messages.md`](rejections/messages.md) - Full rejection text from Apple
+- [`rejection-history.json`](rejections/rejection-history.json) - Structured rejection data
+- [`rejection-2-deliberation.md`](rejections/rejection-2-deliberation.md) - Analysis and decision record
+- [`macos-sandbox-database-storage-tech-brief.md`](rejections/macos-sandbox-database-storage-tech-brief.md) - Research on sandbox/database guidelines
 
 ## Commands
 

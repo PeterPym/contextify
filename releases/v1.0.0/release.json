@@ -2,7 +2,7 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.0.0",
   "created": "2025-11-28",
-  "updated": "2025-12-02",
+  "updated": "2025-12-03",
   "git": {
     "tag": "v1.0.0",
     "commit": "f2af49bd5b234cee202feabd0c5b10e5017d1c31",
@@ -53,11 +53,41 @@
       }
     },
     "submission": {
-      "status": "pending",
-      "submitted_at": null,
-      "rejection": null,
-      "resubmission": null,
-      "apple_state": "WAITING_FOR_REVIEW"
+      "status": "rejected",
+      "submitted_at": "2025-11-28T00:00:00Z",
+      "rejection": {
+        "date": "2025-12-03",
+        "guideline": "2.4.5(i)",
+        "reason": "App saves user data to app container which is not user accessible. Must save to user-selected location via Save dialog.",
+        "type": "REJECTED",
+        "build_number": 10,
+        "details_file": "releases/v1.0.0/rejections/messages.md"
+      },
+      "resubmission": {
+        "count": 2,
+        "last_date": "2025-11-28"
+      },
+      "apple_state": "REJECTED",
+      "apple_state_history": [
+        {
+          "state": "WAITING_FOR_REVIEW",
+          "timestamp": "2025-11-25T12:00:00Z"
+        },
+        {
+          "state": "REJECTED",
+          "timestamp": "2025-11-26T09:18:00Z",
+          "note": "Build 3 - Guideline 2.1"
+        },
+        {
+          "state": "WAITING_FOR_REVIEW",
+          "timestamp": "2025-11-28T00:00:00Z"
+        },
+        {
+          "state": "REJECTED",
+          "timestamp": "2025-12-03T12:49:00Z",
+          "note": "Build 10 - Guideline 2.4.5(i)"
+        }
+      ]
     },
     "marketing": {
       "status": "pending",
@@ -199,6 +229,11 @@
       "date": "2025-12-02",
       "author": "system",
       "note": "Build 10 completed (commit f2af49bd)"
+    },
+    {
+      "date": "2025-12-03",
+      "author": "apple",
+      "note": "Rejected - Guideline 2.4.5(i): App saves user data to app container (not user accessible). Must use Save dialog for user-selected location."
     }
   ]
 }
