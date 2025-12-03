@@ -3,10 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Contextify Website Color Comparator</title>
+  <title>Contextify Design System</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; }
+
+    /* Brandmark colors as CSS variables */
+    :root {
+      --brand-yellow: #F9B233;
+      --brand-cyan: #4AC4E0;
+      --brand-purple: #8B5CF6;
+      --brand-gradient: linear-gradient(135deg, var(--brand-yellow) 0%, var(--brand-cyan) 50%, var(--brand-purple) 100%);
+    }
 
     /* Sticky control bar */
     .controls {
@@ -49,306 +57,175 @@
       opacity: 0.6;
       font-size: 0.8rem;
     }
-    .controls .color-chip {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 2px;
-      margin-right: 4px;
-      vertical-align: middle;
+
+    .lens { display: none; min-height: 100vh; }
+    .lens.active { display: block; }
+
+    /* =========================================================================
+       SHARED COLOR SYSTEM: Slate + Blue
+       ========================================================================= */
+    .lens-light {
+      --primary: #4A7BA7;
+      --primary-hover: #3D6A94;
+      --primary-light: #E8F0F7;
+
+      --text-primary: #1E293B;
+      --text-secondary: #64748B;
+      --text-tertiary: #94A3B8;
+      --text-inverse: #FFFFFF;
+
+      --link-default: #4A7BA7;
+      --link-hover: #3D6A94;
+      --link-visited: #7C68A8;
+
+      --bg-page: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-muted: #F1F5F9;
+      --bg-inverse: #1E293B;
+
+      --border-default: #E2E8F0;
+      --border-subtle: #F1F5F9;
+      --border-focus: #4A7BA7;
+
+      --success: #51A86B;
+      --success-light: #E8F5EC;
+      --warning: #D4A84E;
+      --warning-light: #FDF6E8;
+      --error: #C74E4E;
+      --error-light: #FBEAEA;
+      --info: #4A7BA7;
+      --info-light: #E8F0F7;
+
+      --provider-claude: #D97757;
     }
 
-    .specimen { display: none; min-height: 100vh; }
-    .specimen.active { display: block; }
+    .lens-dark {
+      --primary: #6A9BC7;
+      --primary-hover: #7AABDA;
+      --primary-light: #1E3A52;
 
-    /* Layout */
-    .nav { padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
-    .nav-brand { font-weight: 700; font-size: 1.5rem; text-decoration: none; }
-    .nav-links { display: flex; gap: 1.5rem; }
-    .nav-links a { text-decoration: none; font-weight: 500; }
+      --text-primary: #F1F5F9;
+      --text-secondary: #94A3B8;
+      --text-tertiary: #64748B;
+      --text-inverse: #0F172A;
 
-    .hero { padding: 4rem 2rem; display: flex; align-items: center; justify-content: center; min-height: 50vh; }
-    .hero-content { max-width: 600px; text-align: center; }
-    .hero h1 { font-size: 2.5rem; margin-bottom: 1rem; line-height: 1.2; }
-    .hero p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+      --link-default: #6A9BC7;
+      --link-hover: #8ABBDD;
+      --link-visited: #9C88C8;
 
-    .btn {
-      display: inline-block;
-      padding: 0.75rem 1.5rem;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 600;
-      border: 2px solid transparent;
-      cursor: pointer;
-      font-size: 1rem;
+      --bg-page: #0F172A;
+      --bg-surface: #1E293B;
+      --bg-muted: #334155;
+      --bg-inverse: #F1F5F9;
+
+      --border-default: #334155;
+      --border-subtle: #1E293B;
+      --border-focus: #6A9BC7;
+
+      --success: #6BC885;
+      --success-light: #1A3028;
+      --warning: #E4B85E;
+      --warning-light: #3A3020;
+      --error: #D76E6E;
+      --error-light: #3A2020;
+      --info: #6A9BC7;
+      --info-light: #1A2838;
+
+      --provider-claude: #D97757;
     }
-    .btn-secondary { background: transparent; margin-left: 0.5rem; }
 
-    .features { padding: 4rem 2rem; }
-    .features h2 { text-align: center; margin-bottom: 2rem; font-size: 1.75rem; }
+    /* =========================================================================
+       LENS A: Website Mockup
+       ========================================================================= */
+    .lens { background: var(--bg-page); color: var(--text-primary); }
+
+    /* Website layout */
+    .site-nav { padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); border-bottom: 1px solid var(--border-default); }
+    .site-nav-brand { font-weight: 700; font-size: 1.5rem; text-decoration: none; display: flex; align-items: center; gap: 0.5rem; color: var(--text-primary); }
+    .site-nav-links { display: flex; gap: 1.5rem; }
+    .site-nav-links a { text-decoration: none; font-weight: 500; color: var(--text-secondary); }
+    .site-nav-links a:hover { color: var(--link-default); }
+
+    .logomark { width: 32px; height: 32px; }
+
+    .site-hero { padding: 4rem 2rem; display: flex; align-items: center; justify-content: center; min-height: 50vh; background: var(--bg-inverse); color: var(--text-inverse); }
+    .site-hero-content { max-width: 600px; text-align: center; }
+    .site-hero h1 { font-size: 2.5rem; margin-bottom: 1rem; line-height: 1.2; color: var(--text-inverse); }
+    .site-hero p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+
+    .btn { display: inline-block; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; border: 2px solid transparent; cursor: pointer; font-size: 1rem; }
+    .btn-primary { background: var(--primary); color: var(--text-inverse); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: transparent; border-color: var(--text-secondary); color: var(--text-secondary); margin-left: 0.5rem; }
+
+    .brand-divider { height: 3px; background: var(--brand-gradient); margin: 0; }
+
+    .site-features { padding: 4rem 2rem; }
+    .site-features h2 { text-align: center; margin-bottom: 2rem; font-size: 1.75rem; }
     .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2rem; max-width: 1000px; margin: 0 auto; }
-    .feature-card { padding: 1.5rem; border-radius: 8px; }
-    .feature-card h3 { margin-bottom: 0.5rem; font-size: 1.1rem; }
+    .feature-card { padding: 1.5rem; border-radius: 8px; background: var(--bg-surface); border: 1px solid var(--border-default); position: relative; overflow: hidden; }
+    .feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--brand-gradient); opacity: 0; transition: opacity 0.2s; }
+    .feature-card:hover::before { opacity: 1; }
+    .feature-card h3 { margin-bottom: 0.5rem; font-size: 1.1rem; color: var(--text-primary); }
+    .feature-card p { color: var(--text-secondary); }
 
-    .footer { padding: 2rem; text-align: center; }
-    .footer a { text-decoration: none; margin: 0 1rem; }
-    .footer p { margin-top: 1rem; opacity: 0.6; font-size: 0.9rem; }
-
-    /* Swatches - dynamic per direction */
-    .swatches { display: flex; gap: 0.25rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
-    .swatch { width: 50px; height: 50px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
-
-    /* =========================================================================
-       DIRECTION A: Blue (Bootstrap baseline)
-       Primary: #4A7BA7 | Complements coral at ~196° (near-complement)
-       ========================================================================= */
-    .dir-a-light {
-      --primary: #4A7BA7; --primary-hover: #3D6A94; --primary-dark: #1E3A52;
-      --bg-page: #F5F7FA; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #1E3A52; --bg-footer: #1E3A52;
-      --text-page: #2C3E50; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #5D6D7E;
-      --link: #4A7BA7; --link-hover: #3D6A94;
-      --btn-primary-bg: #4A7BA7; --btn-primary-text: #FFFFFF; --btn-primary-hover: #3D6A94;
-      --btn-secondary-border: #4A7BA7; --btn-secondary-text: #4A7BA7;
-      --card-bg: #FFFFFF; --card-border: #E8ECF0;
-      --border-nav: #E8ECF0;
-    }
-    .dir-a-dark {
-      --primary: #6A9BC7; --primary-hover: #7AABDA; --primary-dark: #0A1420;
-      --bg-page: #0F1A24; --bg-surface: #1A2836; --bg-nav: #1A2836; --bg-hero: #0A1420; --bg-footer: #0A1420;
-      --text-page: #E8ECF0; --text-hero: #E8ECF0; --text-footer: #E8ECF0; --text-muted: #8A9AAA;
-      --link: #6A9BC7; --link-hover: #8ABBDD;
-      --btn-primary-bg: #6A9BC7; --btn-primary-text: #0F1A24; --btn-primary-hover: #7AABDA;
-      --btn-secondary-border: #6A9BC7; --btn-secondary-text: #6A9BC7;
-      --card-bg: #1A2836; --card-border: #2E4254;
-      --border-nav: #2E4254;
-    }
+    .site-footer { padding: 2rem; text-align: center; background: var(--bg-inverse); color: var(--text-inverse); }
+    .site-footer a { text-decoration: none; margin: 0 1rem; color: var(--text-inverse); opacity: 0.8; }
+    .site-footer a:hover { opacity: 1; }
+    .site-footer p { margin-top: 1rem; opacity: 0.6; font-size: 0.9rem; }
 
     /* =========================================================================
-       DIRECTION B: Teal
-       Primary: #0D9488 | Hue ~175° (split-complement to coral)
-       Fresh, modern, distinctive - NOT Bootstrap
+       LENS B: Color Specimens
        ========================================================================= */
-    .dir-b-light {
-      --primary: #0D9488; --primary-hover: #0F766E; --primary-dark: #134E4A;
-      --bg-page: #F0FDFA; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #134E4A; --bg-footer: #134E4A;
-      --text-page: #1F2937; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #4B5563;
-      --link: #0D9488; --link-hover: #0F766E;
-      --btn-primary-bg: #0D9488; --btn-primary-text: #FFFFFF; --btn-primary-hover: #0F766E;
-      --btn-secondary-border: #0D9488; --btn-secondary-text: #0D9488;
-      --card-bg: #FFFFFF; --card-border: #D1FAE5;
-      --border-nav: #D1FAE5;
-    }
-    .dir-b-dark {
-      --primary: #2DD4BF; --primary-hover: #5EEAD4; --primary-dark: #042F2E;
-      --bg-page: #042F2E; --bg-surface: #0D3D3B; --bg-nav: #0D3D3B; --bg-hero: #021716; --bg-footer: #021716;
-      --text-page: #E0F2F1; --text-hero: #E0F2F1; --text-footer: #E0F2F1; --text-muted: #80CBC4;
-      --link: #2DD4BF; --link-hover: #5EEAD4;
-      --btn-primary-bg: #2DD4BF; --btn-primary-text: #042F2E; --btn-primary-hover: #5EEAD4;
-      --btn-secondary-border: #2DD4BF; --btn-secondary-text: #2DD4BF;
-      --card-bg: #0D3D3B; --card-border: #1A4A48;
-      --border-nav: #1A4A48;
-    }
+    .specimens { padding: 2rem; }
+    .specimens h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .specimens .subtitle { opacity: 0.7; margin-bottom: 2rem; }
 
-    /* =========================================================================
-       DIRECTION C: Emerald
-       Primary: #059669 | Hue ~160° (split-complement to coral)
-       Sophisticated, calm, premium feel
-       ========================================================================= */
-    .dir-c-light {
-      --primary: #059669; --primary-hover: #047857; --primary-dark: #064E3B;
-      --bg-page: #F0FDF4; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #064E3B; --bg-footer: #064E3B;
-      --text-page: #1F2937; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #4B5563;
-      --link: #059669; --link-hover: #047857;
-      --btn-primary-bg: #059669; --btn-primary-text: #FFFFFF; --btn-primary-hover: #047857;
-      --btn-secondary-border: #059669; --btn-secondary-text: #059669;
-      --card-bg: #FFFFFF; --card-border: #D1FAE5;
-      --border-nav: #D1FAE5;
-    }
-    .dir-c-dark {
-      --primary: #34D399; --primary-hover: #6EE7B7; --primary-dark: #022C22;
-      --bg-page: #022C22; --bg-surface: #064E3B; --bg-nav: #064E3B; --bg-hero: #011812; --bg-footer: #011812;
-      --text-page: #D1FAE5; --text-hero: #D1FAE5; --text-footer: #D1FAE5; --text-muted: #6EE7B7;
-      --link: #34D399; --link-hover: #6EE7B7;
-      --btn-primary-bg: #34D399; --btn-primary-text: #022C22; --btn-primary-hover: #6EE7B7;
-      --btn-secondary-border: #34D399; --btn-secondary-text: #34D399;
-      --card-bg: #064E3B; --card-border: #0A6E50;
-      --border-nav: #0A6E50;
-    }
+    .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin-bottom: 3rem; }
 
-    /* =========================================================================
-       DIRECTION D: Violet
-       Primary: #7C3AED | Hue ~263° (triadic to coral)
-       Bold, distinctive, creative
-       ========================================================================= */
-    .dir-d-light {
-      --primary: #7C3AED; --primary-hover: #6D28D9; --primary-dark: #4C1D95;
-      --bg-page: #FAF5FF; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #4C1D95; --bg-footer: #4C1D95;
-      --text-page: #1F2937; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #4B5563;
-      --link: #7C3AED; --link-hover: #6D28D9;
-      --btn-primary-bg: #7C3AED; --btn-primary-text: #FFFFFF; --btn-primary-hover: #6D28D9;
-      --btn-secondary-border: #7C3AED; --btn-secondary-text: #7C3AED;
-      --card-bg: #FFFFFF; --card-border: #EDE9FE;
-      --border-nav: #EDE9FE;
-    }
-    .dir-d-dark {
-      --primary: #A78BFA; --primary-hover: #C4B5FD; --primary-dark: #1E1033;
-      --bg-page: #1E1033; --bg-surface: #2E1A4A; --bg-nav: #2E1A4A; --bg-hero: #0F0820; --bg-footer: #0F0820;
-      --text-page: #EDE9FE; --text-hero: #EDE9FE; --text-footer: #EDE9FE; --text-muted: #C4B5FD;
-      --link: #A78BFA; --link-hover: #C4B5FD;
-      --btn-primary-bg: #A78BFA; --btn-primary-text: #1E1033; --btn-primary-hover: #C4B5FD;
-      --btn-secondary-border: #A78BFA; --btn-secondary-text: #A78BFA;
-      --card-bg: #2E1A4A; --card-border: #4C2A7A;
-      --border-nav: #4C2A7A;
-    }
+    .spec-card { padding: 1.5rem; border-radius: 8px; background: var(--bg-surface); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .spec-card h2 { font-size: 1.1rem; margin-bottom: 1rem; color: var(--primary); }
+    .spec-card p { margin-bottom: 1rem; }
 
-    /* =========================================================================
-       DIRECTION E: Deep Teal (darker, more premium)
-       Primary: #0F766E | Hue ~175° (split-complement)
-       Premium, understated, professional
-       ========================================================================= */
-    .dir-e-light {
-      --primary: #0F766E; --primary-hover: #115E59; --primary-dark: #134E4A;
-      --bg-page: #FAFAFA; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #115E59; --bg-footer: #115E59;
-      --text-page: #18181B; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #52525B;
-      --link: #0F766E; --link-hover: #115E59;
-      --btn-primary-bg: #0F766E; --btn-primary-text: #FFFFFF; --btn-primary-hover: #115E59;
-      --btn-secondary-border: #0F766E; --btn-secondary-text: #0F766E;
-      --card-bg: #FFFFFF; --card-border: #E4E4E7;
-      --border-nav: #E4E4E7;
-    }
-    .dir-e-dark {
-      --primary: #14B8A6; --primary-hover: #2DD4BF; --primary-dark: #042F2E;
-      --bg-page: #18181B; --bg-surface: #27272A; --bg-nav: #27272A; --bg-hero: #0C0C0D; --bg-footer: #0C0C0D;
-      --text-page: #FAFAFA; --text-hero: #FAFAFA; --text-footer: #FAFAFA; --text-muted: #A1A1AA;
-      --link: #14B8A6; --link-hover: #2DD4BF;
-      --btn-primary-bg: #14B8A6; --btn-primary-text: #042F2E; --btn-primary-hover: #2DD4BF;
-      --btn-secondary-border: #14B8A6; --btn-secondary-text: #14B8A6;
-      --card-bg: #27272A; --card-border: #3F3F46;
-      --border-nav: #3F3F46;
-    }
+    .swatch-row { display: flex; gap: 0.5rem; margin: 1rem 0; flex-wrap: wrap; }
+    .swatch { width: 50px; height: 50px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.5); text-align: center; line-height: 1.2; }
+    .swatch-wide { width: 70px; }
 
-    /* =========================================================================
-       DIRECTION F: Slate + Teal accent
-       Neutral gray base with teal for actions only
-       Minimal, modern, Apple-ish
-       ========================================================================= */
-    .dir-f-light {
-      --primary: #0D9488; --primary-hover: #0F766E; --primary-dark: #1E293B;
-      --bg-page: #F8FAFC; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #1E293B; --bg-footer: #1E293B;
-      --text-page: #1E293B; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #64748B;
-      --link: #0D9488; --link-hover: #0F766E;
-      --btn-primary-bg: #0D9488; --btn-primary-text: #FFFFFF; --btn-primary-hover: #0F766E;
-      --btn-secondary-border: #64748B; --btn-secondary-text: #64748B;
-      --card-bg: #FFFFFF; --card-border: #E2E8F0;
-      --border-nav: #E2E8F0;
-    }
-    .dir-f-dark {
-      --primary: #2DD4BF; --primary-hover: #5EEAD4; --primary-dark: #0F172A;
-      --bg-page: #0F172A; --bg-surface: #1E293B; --bg-nav: #1E293B; --bg-hero: #020617; --bg-footer: #020617;
-      --text-page: #F1F5F9; --text-hero: #F1F5F9; --text-footer: #F1F5F9; --text-muted: #94A3B8;
-      --link: #2DD4BF; --link-hover: #5EEAD4;
-      --btn-primary-bg: #2DD4BF; --btn-primary-text: #0F172A; --btn-primary-hover: #5EEAD4;
-      --btn-secondary-border: #94A3B8; --btn-secondary-text: #94A3B8;
-      --card-bg: #1E293B; --card-border: #334155;
-      --border-nav: #334155;
-    }
+    .btn-small { padding: 0.5rem 1rem; font-size: 0.9rem; margin-right: 0.5rem; margin-bottom: 0.5rem; }
 
-    /* =========================================================================
-       DIRECTION G: Warm Slate + Emerald
-       Slightly warm gray with green accents
-       Approachable, professional
-       ========================================================================= */
-    .dir-g-light {
-      --primary: #059669; --primary-hover: #047857; --primary-dark: #292524;
-      --bg-page: #FAFAF9; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #292524; --bg-footer: #292524;
-      --text-page: #292524; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #78716C;
-      --link: #059669; --link-hover: #047857;
-      --btn-primary-bg: #059669; --btn-primary-text: #FFFFFF; --btn-primary-hover: #047857;
-      --btn-secondary-border: #78716C; --btn-secondary-text: #78716C;
-      --card-bg: #FFFFFF; --card-border: #E7E5E4;
-      --border-nav: #E7E5E4;
-    }
-    .dir-g-dark {
-      --primary: #34D399; --primary-hover: #6EE7B7; --primary-dark: #1C1917;
-      --bg-page: #1C1917; --bg-surface: #292524; --bg-nav: #292524; --bg-hero: #0C0A09; --bg-footer: #0C0A09;
-      --text-page: #FAFAF9; --text-hero: #FAFAF9; --text-footer: #FAFAF9; --text-muted: #A8A29E;
-      --link: #34D399; --link-hover: #6EE7B7;
-      --btn-primary-bg: #34D399; --btn-primary-text: #1C1917; --btn-primary-hover: #6EE7B7;
-      --btn-secondary-border: #A8A29E; --btn-secondary-text: #A8A29E;
-      --card-bg: #292524; --card-border: #44403C;
-      --border-nav: #44403C;
-    }
+    .link-demo a { margin-right: 1rem; color: var(--link-default); }
+    .link-demo a.hover { color: var(--link-hover); }
+    .link-demo a.visited { color: var(--link-visited); }
 
-    /* =========================================================================
-       DIRECTION H: Indigo (blue-violet, more distinctive than pure blue)
-       Primary: #6366F1 | Hue ~239°
-       Modern, tech-forward but not Bootstrap blue
-       ========================================================================= */
-    .dir-h-light {
-      --primary: #6366F1; --primary-hover: #4F46E5; --primary-dark: #312E81;
-      --bg-page: #F5F3FF; --bg-surface: #FFFFFF; --bg-nav: #FFFFFF; --bg-hero: #312E81; --bg-footer: #312E81;
-      --text-page: #1F2937; --text-hero: #FFFFFF; --text-footer: #FFFFFF; --text-muted: #4B5563;
-      --link: #6366F1; --link-hover: #4F46E5;
-      --btn-primary-bg: #6366F1; --btn-primary-text: #FFFFFF; --btn-primary-hover: #4F46E5;
-      --btn-secondary-border: #6366F1; --btn-secondary-text: #6366F1;
-      --card-bg: #FFFFFF; --card-border: #E0E7FF;
-      --border-nav: #E0E7FF;
-    }
-    .dir-h-dark {
-      --primary: #818CF8; --primary-hover: #A5B4FC; --primary-dark: #1E1B4B;
-      --bg-page: #1E1B4B; --bg-surface: #312E81; --bg-nav: #312E81; --bg-hero: #0F0D28; --bg-footer: #0F0D28;
-      --text-page: #E0E7FF; --text-hero: #E0E7FF; --text-footer: #E0E7FF; --text-muted: #A5B4FC;
-      --link: #818CF8; --link-hover: #A5B4FC;
-      --btn-primary-bg: #818CF8; --btn-primary-text: #1E1B4B; --btn-primary-hover: #A5B4FC;
-      --btn-secondary-border: #818CF8; --btn-secondary-text: #818CF8;
-      --card-bg: #312E81; --card-border: #4338CA;
-      --border-nav: #4338CA;
-    }
+    .input-demo input { padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-default); width: 200px; font-size: 1rem; background: var(--bg-surface); color: var(--text-primary); }
+    .input-demo input::placeholder { color: var(--text-tertiary); }
+    .input-demo input:focus { outline: none; border-width: 2px; border-color: var(--border-focus); }
 
-    /* =========================================================================
-       Apply variables
-       ========================================================================= */
-    .specimen { background: var(--bg-page); color: var(--text-page); }
-    .specimen .nav { background: var(--bg-nav); border-bottom: 1px solid var(--border-nav); }
-    .specimen .nav-brand { color: var(--text-page); }
-    .specimen .nav-links a { color: var(--text-muted); }
-    .specimen .nav-links a:hover { color: var(--link); }
+    .alert { padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; border-left: 4px solid; }
+    .alert-success { background: var(--success-light); border-color: var(--success); color: var(--success); }
+    .alert-warning { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+    .alert-error { background: var(--error-light); border-color: var(--error); color: var(--error); }
+    .alert-info { background: var(--info-light); border-color: var(--info); color: var(--info); }
 
-    .specimen .hero { background: var(--bg-hero); color: var(--text-hero); }
-    .specimen .hero h1 { color: var(--text-hero); }
+    .code-demo { font-family: ui-monospace, monospace; padding: 0.125rem 0.375rem; border-radius: 4px; font-size: 0.875em; background: var(--bg-muted); }
 
-    .specimen .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-text); }
-    .specimen .btn-primary:hover { background: var(--btn-primary-hover); }
-    .specimen .btn-secondary { border-color: var(--btn-secondary-border); color: var(--btn-secondary-text); }
+    .hero-demo { padding: 2rem; border-radius: 8px; margin-bottom: 2rem; background: var(--bg-inverse); color: var(--text-inverse); }
+    .hero-demo h2 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .hero-demo p { margin-bottom: 1rem; opacity: 0.9; }
 
-    .specimen .features { background: var(--bg-page); }
-    .specimen .features h2 { color: var(--text-page); }
-    .specimen .feature-card { background: var(--card-bg); border: 1px solid var(--card-border); }
-    .specimen .feature-card h3 { color: var(--text-page); }
-    .specimen .feature-card p { color: var(--text-muted); }
-
-    .specimen .footer { background: var(--bg-footer); color: var(--text-footer); }
-    .specimen .footer a { color: var(--text-footer); opacity: 0.8; }
-    .specimen .footer a:hover { opacity: 1; }
-
-    /* Dynamic swatch based on primary */
-    .specimen .swatch-primary { background: var(--primary); }
+    .footer-demo { padding: 1.5rem; border-radius: 6px; text-align: center; background: var(--bg-inverse); color: var(--text-inverse); }
+    .footer-demo a { margin: 0 0.75rem; text-decoration: none; color: var(--text-inverse); opacity: 0.8; }
+    .footer-demo a:hover { opacity: 1; }
   </style>
 </head>
 <body>
 
 <div class="controls">
   <div>
-    <label>Direction:</label>
+    <label>Lens:</label>
     <div class="toggle-group">
-      <button onclick="setDir('a')" id="btn-a" class="active">A<span class="key">a</span></button>
-      <button onclick="setDir('b')" id="btn-b">B<span class="key">b</span></button>
-      <button onclick="setDir('c')" id="btn-c">C<span class="key">c</span></button>
-      <button onclick="setDir('d')" id="btn-d">D<span class="key">d</span></button>
-      <button onclick="setDir('e')" id="btn-e">E<span class="key">e</span></button>
-      <button onclick="setDir('f')" id="btn-f">F<span class="key">f</span></button>
-      <button onclick="setDir('g')" id="btn-g">G<span class="key">g</span></button>
-      <button onclick="setDir('h')" id="btn-h">H<span class="key">h</span></button>
+      <button onclick="setLens('a')" id="btn-a" class="active">A: Website<span class="key">a</span></button>
+      <button onclick="setLens('b')" id="btn-b">B: Specimens<span class="key">b</span></button>
     </div>
   </div>
   <div>
@@ -358,51 +235,25 @@
       <button onclick="setMode('dark')" id="btn-dark">Dark<span class="key">k</span></button>
     </div>
   </div>
-  <div class="hint" id="hint"></div>
+  <div class="hint">Slate + Blue: Neutral base, blue actions (#4A7BA7)</div>
 </div>
 
-<!-- All specimens -->
-<section class="specimen dir-a-light active" id="specimen-a-light"></section>
-<section class="specimen dir-a-dark" id="specimen-a-dark"></section>
-<section class="specimen dir-b-light" id="specimen-b-light"></section>
-<section class="specimen dir-b-dark" id="specimen-b-dark"></section>
-<section class="specimen dir-c-light" id="specimen-c-light"></section>
-<section class="specimen dir-c-dark" id="specimen-c-dark"></section>
-<section class="specimen dir-d-light" id="specimen-d-light"></section>
-<section class="specimen dir-d-dark" id="specimen-d-dark"></section>
-<section class="specimen dir-e-light" id="specimen-e-light"></section>
-<section class="specimen dir-e-dark" id="specimen-e-dark"></section>
-<section class="specimen dir-f-light" id="specimen-f-light"></section>
-<section class="specimen dir-f-dark" id="specimen-f-dark"></section>
-<section class="specimen dir-g-light" id="specimen-g-light"></section>
-<section class="specimen dir-g-dark" id="specimen-g-dark"></section>
-<section class="specimen dir-h-light" id="specimen-h-light"></section>
-<section class="specimen dir-h-dark" id="specimen-h-dark"></section>
-
-<script>
-const directions = {
-  a: { label: 'A: Blue (Bootstrap baseline)', hex: '#4A7BA7', desc: 'Near-complement to coral. Familiar but generic.' },
-  b: { label: 'B: Teal', hex: '#0D9488', desc: 'Split-complement. Fresh, modern, distinctive.' },
-  c: { label: 'C: Emerald', hex: '#059669', desc: 'Split-complement. Sophisticated, calm.' },
-  d: { label: 'D: Violet', hex: '#7C3AED', desc: 'Triadic. Bold, creative, stands out.' },
-  e: { label: 'E: Deep Teal', hex: '#0F766E', desc: 'Premium, understated, professional.' },
-  f: { label: 'F: Slate + Teal', hex: '#0D9488', desc: 'Neutral gray base, teal accents. Minimal.' },
-  g: { label: 'G: Warm Slate + Emerald', hex: '#059669', desc: 'Warm gray, green accents. Approachable.' },
-  h: { label: 'H: Indigo', hex: '#6366F1', desc: 'Blue-violet. Tech-forward, not Bootstrap.' }
-};
-
-const contentTemplate = `
-  <nav class="nav">
-    <a href="#" class="nav-brand">Contextify</a>
-    <div class="nav-links">
+<!-- LENS A: Website (Light) -->
+<section class="lens lens-light" id="lens-a-light">
+  <nav class="site-nav">
+    <a href="#" class="site-nav-brand">
+      <img src="../../brand/logomark/exports/infinity-32.png" alt="Contextify" class="logomark">
+      Contextify
+    </a>
+    <div class="site-nav-links">
       <a href="#">Features</a>
       <a href="#">Download</a>
       <a href="#">Support</a>
     </div>
   </nav>
 
-  <section class="hero">
-    <div class="hero-content">
+  <section class="site-hero">
+    <div class="site-hero-content">
       <h1>Monitor your AI coding sessions</h1>
       <p>Real-time timeline view of Claude Code and Codex CLI conversations on macOS.</p>
       <a href="#" class="btn btn-primary">Download for Mac</a>
@@ -410,7 +261,9 @@ const contentTemplate = `
     </div>
   </section>
 
-  <section class="features">
+  <div class="brand-divider"></div>
+
+  <section class="site-features">
     <h2>Why Contextify?</h2>
     <div class="feature-grid">
       <div class="feature-card">
@@ -426,47 +279,268 @@ const contentTemplate = `
         <p>LLM-powered summaries help you catch up on long conversations quickly.</p>
       </div>
     </div>
-
-    <div class="swatches">
-      <div class="swatch swatch-primary">Primary</div>
-      <div class="swatch" style="background:#D97757">Coral</div>
-    </div>
-    <p style="text-align:center; margin-top:0.5rem; font-size:0.75rem; opacity:0.6;">
-      Primary complements Anthropic coral without using it directly
-    </p>
   </section>
 
-  <footer class="footer">
+  <footer class="site-footer">
     <a href="#">Privacy</a>
     <a href="#">Terms</a>
     <a href="#">Support</a>
     <p>&copy; 2025 Contextify</p>
   </footer>
-`;
+</section>
 
-// Populate all specimens
-['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].forEach(dir => {
-  ['light', 'dark'].forEach(mode => {
-    document.getElementById(`specimen-${dir}-${mode}`).innerHTML = contentTemplate;
-  });
-});
+<!-- LENS A: Website (Dark) -->
+<section class="lens lens-dark" id="lens-a-dark">
+  <nav class="site-nav">
+    <a href="#" class="site-nav-brand">
+      <img src="../../brand/logomark/exports/infinity-32.png" alt="Contextify" class="logomark">
+      Contextify
+    </a>
+    <div class="site-nav-links">
+      <a href="#">Features</a>
+      <a href="#">Download</a>
+      <a href="#">Support</a>
+    </div>
+  </nav>
 
-let currentDir = 'a';
+  <section class="site-hero">
+    <div class="site-hero-content">
+      <h1>Monitor your AI coding sessions</h1>
+      <p>Real-time timeline view of Claude Code and Codex CLI conversations on macOS.</p>
+      <a href="#" class="btn btn-primary">Download for Mac</a>
+      <a href="#" class="btn btn-secondary">Learn More</a>
+    </div>
+  </section>
+
+  <div class="brand-divider"></div>
+
+  <section class="site-features">
+    <h2>Why Contextify?</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Real-time Monitoring</h3>
+        <p>Watch your AI conversations unfold with live updates and summaries.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Project Context</h3>
+        <p>Automatically groups sessions by project and tracks conversation history.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Smart Summaries</h3>
+        <p>LLM-powered summaries help you catch up on long conversations quickly.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Support</a>
+    <p>&copy; 2025 Contextify</p>
+  </footer>
+</section>
+
+<!-- LENS B: Specimens (Light) -->
+<section class="lens lens-light" id="lens-b-light">
+  <div class="specimens">
+    <h1>Color Specimens: Slate + Blue</h1>
+    <p class="subtitle">Neutral slate foundation with blue (#4A7BA7) for actions. Complements Claude coral (#D97757).</p>
+
+    <div class="hero-demo">
+      <h2>Hero Section</h2>
+      <p>Dark inverse background with light text.</p>
+      <a href="#" class="btn btn-primary btn-small">Primary Action</a>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-card">
+        <h2>Semantic Colors</h2>
+        <p>Core palette:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#4A7BA7">Primary<br>#4A7BA7</div>
+          <div class="swatch swatch-wide" style="background:#51A86B">Success<br>#51A86B</div>
+          <div class="swatch swatch-wide" style="background:#D4A84E">Warning<br>#D4A84E</div>
+          <div class="swatch swatch-wide" style="background:#C74E4E">Error<br>#C74E4E</div>
+        </div>
+        <p>Provider:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#D97757">Claude<br>#D97757</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Brand Colors</h2>
+        <p>Logomark gradient:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#F9B233">Yellow<br>#F9B233</div>
+          <div class="swatch swatch-wide" style="background:#4AC4E0">Cyan<br>#4AC4E0</div>
+          <div class="swatch swatch-wide" style="background:#8B5CF6">Purple<br>#8B5CF6</div>
+        </div>
+        <div style="height:3px; background:var(--brand-gradient); margin-top:1rem; border-radius:2px;"></div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Backgrounds</h2>
+        <div class="swatch-row">
+          <div class="swatch" style="background:var(--bg-page); color:var(--text-primary); border:1px solid var(--border-default)">Page</div>
+          <div class="swatch" style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-default)">Surface</div>
+          <div class="swatch" style="background:var(--bg-muted); color:var(--text-primary); border:1px solid var(--border-default)">Muted</div>
+          <div class="swatch" style="background:var(--bg-inverse); color:var(--text-inverse)">Inverse</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Typography</h2>
+        <p style="color:var(--text-primary)"><strong>Primary:</strong> Main content text.</p>
+        <p style="color:var(--text-secondary)"><strong>Secondary:</strong> Supporting info.</p>
+        <p style="color:var(--text-tertiary)"><strong>Tertiary:</strong> Timestamps, hints.</p>
+        <p>Inline <span class="code-demo">code snippets</span> for technical content.</p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Buttons</h2>
+        <a href="#" class="btn btn-primary btn-small">Primary</a>
+        <a href="#" class="btn btn-secondary btn-small">Secondary</a>
+      </div>
+
+      <div class="spec-card">
+        <h2>Links</h2>
+        <p class="link-demo">
+          <a href="#">Default</a>
+          <a href="#" class="hover">Hover</a>
+          <a href="#" class="visited">Visited</a>
+        </p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Form Inputs</h2>
+        <div class="input-demo">
+          <input type="text" placeholder="Enter text...">
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Alerts</h2>
+        <div class="alert alert-success">Success message</div>
+        <div class="alert alert-warning">Warning message</div>
+        <div class="alert alert-error">Error message</div>
+        <div class="alert alert-info">Info message</div>
+      </div>
+    </div>
+
+    <div class="footer-demo">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</section>
+
+<!-- LENS B: Specimens (Dark) -->
+<section class="lens lens-dark" id="lens-b-dark">
+  <div class="specimens">
+    <h1>Color Specimens: Slate + Blue (Dark)</h1>
+    <p class="subtitle">Neutral slate foundation with blue (#6A9BC7) for actions. Complements Claude coral (#D97757).</p>
+
+    <div class="hero-demo">
+      <h2>Hero Section</h2>
+      <p>Light inverse background with dark text.</p>
+      <a href="#" class="btn btn-primary btn-small">Primary Action</a>
+    </div>
+
+    <div class="spec-grid">
+      <div class="spec-card">
+        <h2>Semantic Colors</h2>
+        <p>Core palette (dark mode):</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#6A9BC7">Primary<br>#6A9BC7</div>
+          <div class="swatch swatch-wide" style="background:#6BC885">Success<br>#6BC885</div>
+          <div class="swatch swatch-wide" style="background:#E4B85E">Warning<br>#E4B85E</div>
+          <div class="swatch swatch-wide" style="background:#D76E6E">Error<br>#D76E6E</div>
+        </div>
+        <p>Provider:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#D97757">Claude<br>#D97757</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Brand Colors</h2>
+        <p>Logomark gradient:</p>
+        <div class="swatch-row">
+          <div class="swatch swatch-wide" style="background:#F9B233">Yellow<br>#F9B233</div>
+          <div class="swatch swatch-wide" style="background:#4AC4E0">Cyan<br>#4AC4E0</div>
+          <div class="swatch swatch-wide" style="background:#8B5CF6">Purple<br>#8B5CF6</div>
+        </div>
+        <div style="height:3px; background:var(--brand-gradient); margin-top:1rem; border-radius:2px;"></div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Backgrounds</h2>
+        <div class="swatch-row">
+          <div class="swatch" style="background:var(--bg-page); color:var(--text-primary); border:1px solid var(--border-default)">Page</div>
+          <div class="swatch" style="background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-default)">Surface</div>
+          <div class="swatch" style="background:var(--bg-muted); color:var(--text-primary); border:1px solid var(--border-default)">Muted</div>
+          <div class="swatch" style="background:var(--bg-inverse); color:var(--text-inverse)">Inverse</div>
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Typography</h2>
+        <p style="color:var(--text-primary)"><strong>Primary:</strong> Main content text.</p>
+        <p style="color:var(--text-secondary)"><strong>Secondary:</strong> Supporting info.</p>
+        <p style="color:var(--text-tertiary)"><strong>Tertiary:</strong> Timestamps, hints.</p>
+        <p>Inline <span class="code-demo">code snippets</span> for technical content.</p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Buttons</h2>
+        <a href="#" class="btn btn-primary btn-small">Primary</a>
+        <a href="#" class="btn btn-secondary btn-small">Secondary</a>
+      </div>
+
+      <div class="spec-card">
+        <h2>Links</h2>
+        <p class="link-demo">
+          <a href="#">Default</a>
+          <a href="#" class="hover">Hover</a>
+          <a href="#" class="visited">Visited</a>
+        </p>
+      </div>
+
+      <div class="spec-card">
+        <h2>Form Inputs</h2>
+        <div class="input-demo">
+          <input type="text" placeholder="Enter text...">
+        </div>
+      </div>
+
+      <div class="spec-card">
+        <h2>Alerts</h2>
+        <div class="alert alert-success">Success message</div>
+        <div class="alert alert-warning">Warning message</div>
+        <div class="alert alert-error">Error message</div>
+        <div class="alert alert-info">Info message</div>
+      </div>
+    </div>
+
+    <div class="footer-demo">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</section>
+
+<script>
+let currentLens = 'a';
 let currentMode = 'light';
 
-function updateHint(dir) {
-  const d = directions[dir];
-  document.getElementById('hint').innerHTML =
-    `<span class="color-chip" style="background:${d.hex}"></span>${d.label} - ${d.desc}`;
-}
-
-function setDir(dir) {
-  currentDir = dir;
+function setLens(lens) {
+  currentLens = lens;
   updateView();
-  ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].forEach(d => {
-    document.getElementById(`btn-${d}`).classList.toggle('active', d === dir);
-  });
-  updateHint(dir);
+  document.getElementById('btn-a').classList.toggle('active', lens === 'a');
+  document.getElementById('btn-b').classList.toggle('active', lens === 'b');
 }
 
 function setMode(mode) {
@@ -477,24 +551,20 @@ function setMode(mode) {
 }
 
 function updateView() {
-  document.querySelectorAll('.specimen').forEach(s => s.classList.remove('active'));
-  document.getElementById(`specimen-${currentDir}-${currentMode}`).classList.add('active');
+  document.querySelectorAll('.lens').forEach(l => l.classList.remove('active'));
+  document.getElementById(`lens-${currentLens}-${currentMode}`).classList.add('active');
 }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
-  if (['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].includes(key)) {
-    setDir(key);
-  } else if (key === 'l') {
-    setMode('light');
-  } else if (key === 'k') {
-    setMode('dark');
-  }
+  if (key === 'a') setLens('a');
+  else if (key === 'b') setLens('b');
+  else if (key === 'l') setMode('light');
+  else if (key === 'k') setMode('dark');
 });
 
 // Initialize
-updateHint('a');
 updateView();
 </script>
 
