@@ -4,7 +4,7 @@ Design documentation for the marketing website.
 
 ## Status: Active Development
 
-Website design is actively being developed on `feature/static-landing-page` branch.
+Website design is actively being developed on `feature/design-system-and-website` branch.
 
 ## Current Work
 

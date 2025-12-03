@@ -6,7 +6,7 @@ Visual identity for Anthropic's Claude Code AI assistant.
 
 | Token | Hex | RGB |
 |-------|-----|-----|
-| `provider-claude` | #F97316 | 249, 115, 22 |
+| `provider-claude` | #D97757 | 217, 119, 87 |
 
 ## Icon
 
@@ -19,12 +19,12 @@ Visual identity for Anthropic's Claude Code AI assistant.
 ```swift
 Image("claude-code-icon")
     .renderingMode(.template)
-    .foregroundStyle(Color.providerClaude)  // #F97316
+    .foregroundStyle(Color.providerClaude)  // #D97757
 ```
 
 ```css
 .claude-icon {
-    color: var(--provider-claude);  /* #F97316 */
+    color: var(--provider-claude);  /* #D97757 */
 }
 ```
 

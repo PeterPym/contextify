@@ -71,7 +71,7 @@ All colors are defined in `brand/colors.md` with unified naming:
 
 | Token | Hex | Provider |
 |-------|-----|----------|
-| `provider-claude` | #F97316 | Claude Code |
+| `provider-claude` | #D97757 | Claude Code |
 | `provider-codex` | #FFFFFF | Codex CLI (needs shadow) |
 
 **Naming:** CSS uses kebab-case (`--contextify-primary`), Swift uses camelCase (`contextifyPrimary`).

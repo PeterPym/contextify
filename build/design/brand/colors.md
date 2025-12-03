@@ -49,7 +49,7 @@ Third-party brand colors for AI providers. These are not Contextify colors - the
 
 | Token | Hex | Provider | Notes |
 |-------|-----|----------|-------|
-| `provider-claude` | #F97316 | Claude Code | Anthropic orange |
+| `provider-claude` | #D97757 | Claude Code | Anthropic coral |
 | `provider-codex` | #FFFFFF | Codex CLI | Requires shadow on light backgrounds |
 
 See `providers/` for presentation rules and assets.
@@ -76,7 +76,7 @@ See `providers/` for presentation rules and assets.
   --contextify-brand-purple: #8B5CF6;
 
   /* Provider (third-party) */
-  --provider-claude: #F97316;
+  --provider-claude: #D97757;
   --provider-codex: #FFFFFF;
 }
 ```
@@ -99,7 +99,7 @@ extension Color {
     static let contextifyBrandPurple = Color(red: 0.545, green: 0.361, blue: 0.965) // #8B5CF6
 
     // Provider (third-party)
-    static let providerClaude = Color(red: 0.976, green: 0.451, blue: 0.086)       // #F97316
+    static let providerClaude = Color(red: 0.851, green: 0.467, blue: 0.341)       // #D97757
     static let providerCodex = Color.white                                          // #FFFFFF
 }
 ```
