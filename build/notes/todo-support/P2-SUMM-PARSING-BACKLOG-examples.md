@@ -133,6 +133,46 @@ For very short responses like "Done.", either:
 
 ---
 
+## Example 4: Parse Error on CSS Token Content
+
+**Date Added:** 2025-12-03
+**Category:** format issue (parse error)
+**Transcript:** `99fb88c7-8c81-4ea9-98a8-8b2eb09a0187.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Done. Added all missing tokens for full parity:\n\n**Light mode additions:**\n- `--contextify-info: #4A7BA7`\n- `--contextify-info-light: #E8F0F7`\n- `--text-disabled: var(--slate-300)`\n- `--bg-overlay: rgba(0, 0, 0, 0.5)`\n- `--border-focus: var(--contextify-primary)`\n- `--link-active: var(--contextify-primary-hover)`\n\n**Dark mode additions:**\n- `--contextify-info: #6A9BC7`\n- `--contextify-info-light: #1A2838`\n- `--text-disabled: var(--slate-600)`\n- `--bg-overlay: rgba(0, 0, 0, 0.7)`\n- `--border-focus: var(--contextify-primary)`\n- `--link-active: #7AABDA`\n\nThe CSS now has 100% parity with `build/design/brand/colors.md`. Refresh the browser to verify nothing broke visually.",
+  "entry_id": "01dd3975-4c18-46ce-82b8-51086e60f555",
+  "summary": "Done. Added all missing tokens for full parity:\n\n**Light mode additions:**\n- `--contextify-info: #4A…",
+  "timestamp": "2025-12-03T21:03:07Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/99fb88c7-8c81-4ea9-98a8-8b2eb09a0187.jsonl"
+}
+```
+
+**Error Message:**
+> "The AI generated a response in an unexpected format that could not be parsed. This is usually caused by malformed system output (bash commands, git output, etc.) in the conversation. The entry remains accessible without a summary."
+
+**Problem:**
+Summarization threw a parse error. The summary field shows truncated content, but this is likely fallback behavior after the error. The actual failure was the AI response couldn't be parsed.
+
+**Expected Summary:**
+A concise prose summary like:
+- "Claude Code added 6 missing CSS color tokens (info, disabled, overlay, focus, active) to both light and dark modes for full parity with the design system."
+
+**Root Cause (suspected):**
+- CSS variable syntax (`--contextify-info`, `var(--slate-300)`, `rgba(0, 0, 0, 0.5)`) may be interpreted as code/commands
+- Inline code backticks with dashes and parentheses may trigger format detection heuristics
+- The combination of markdown bold (`**`), bullet lists, and code spans may produce output the parser doesn't expect
+
+**Fix Approach:**
+1. Pre-process content to escape or strip CSS-like patterns before summarization
+2. Catch parse errors and retry with a simpler prompt or stripped content
+3. Investigate what "unexpected format" means in the parser - is it JSON structure, markdown, or something else?
+4. Consider marking entries with heavy code content for a different summarization path
+
+---
+
 ## Template for New Examples
 
 ```markdown
