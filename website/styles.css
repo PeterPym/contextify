@@ -200,8 +200,8 @@ body {
 
 /* Screenshot with 3D perspective effect */
 .screenshot-wrapper {
-  margin-left: -50px;
-  margin-right: 30px;
+  display: flex;
+  justify-content: center;
 }
 
 .screenshot {
@@ -209,6 +209,8 @@ body {
   border-radius: 0.5rem;
   box-shadow: rgba(0, 0, 0, 0.25) 0 25px 50px -12px;
   transition: transform 1s ease 0s;
+  max-width: 420px;
+  width: 100%;
 }
 
 .screenshot:hover {
@@ -331,8 +333,6 @@ footer a:hover {
   }
 
   .screenshot-wrapper {
-    margin-left: 0;
-    margin-right: 0;
     padding: 0 1rem;
   }
 
