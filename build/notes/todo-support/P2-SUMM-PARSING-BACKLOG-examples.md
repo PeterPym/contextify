@@ -173,6 +173,114 @@ A concise prose summary like:
 
 ---
 
+## Example 5: Misattributed Action as Question
+
+**Date Added:** 2025-12-03
+**Category:** attribution error
+**Transcript:** `abc5d89b-7e3b-4cd1-93f0-44a03e3a0ce7.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Committed. Now let me find how the codebase detects App Store vs DMG builds:",
+  "entry_id": "e99f247e-42f0-425f-a762-94ed5cc5538d",
+  "summary": "Claude Code asked how the codebase detects App Store vs DMG builds.",
+  "timestamp": "2025-12-03T22:41:59Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify-worker-bee/abc5d89b-7e3b-4cd1-93f0-44a03e3a0ce7.jsonl"
+}
+```
+
+**Problem:**
+The summary says Claude "asked" something, but the detail shows Claude stating an action ("Committed. Now let me find..."). Claude isn't asking a question - it's announcing what it's about to do. The colon at the end indicates Claude is about to perform a search, not pose a question.
+
+**Expected Summary:**
+- "Claude Code committed changes and searched for how App Store vs DMG builds are detected."
+- Or: "Claude Code investigated build distribution detection logic."
+
+**Root Cause (suspected):**
+- The phrase "how the codebase detects" was interpreted as a question rather than the object of the verb "find"
+- Prompt may not distinguish between "asking" (dialogue) and "investigating" (action)
+- The colon at end may be stripped, losing context that output follows
+
+**Fix Approach:**
+1. Adjust prompt to distinguish dialogue questions ("Can you help?") from investigation statements ("Let me find X")
+2. Recognize patterns like "let me find/check/see how..." as actions, not questions
+3. Consider the full sentence structure: "Let me find how X" = investigation action
+
+---
+
+## Example 6: Literal Echo with Attribution Prefix
+
+**Date Added:** 2025-12-03
+**Category:** attribution error (echo/passthrough)
+**Transcript:** `c7ba294f-3ef9-4cae-8947-d5d1d489bf5e.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Found the document. Adding the new example:",
+  "entry_id": "3983abd4-2fd4-40a9-88ba-34c2eec0a029",
+  "summary": "Claude Code Found the document. Adding the new example:",
+  "timestamp": "2025-12-03T22:47:53Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/c7ba294f-3ef9-4cae-8947-d5d1d489bf5e.jsonl"
+}
+```
+
+**Problem:**
+The summary is just "Claude Code" + the exact detail text verbatim. No summarization occurred - it's a literal echo with attribution slapped on. Also grammatically awkward: "Claude Code Found" (capital F carried over).
+
+**Expected Summary:**
+- "Claude Code located the target document and added a new entry."
+- Or simply use the detail as-is without the prefix (it's already concise).
+
+**Root Cause (suspected):**
+- Similar to Examples 2 and 3: short/simple messages trigger passthrough behavior
+- LLM may have decided the content is already concise enough and just echoed it
+- No post-processing to detect "summary == prefix + detail" pattern
+
+**Fix Approach:**
+1. Detect echo pattern: if `summary.removePrefix("Claude Code ") == detail`, skip the prefix entirely
+2. For transitional phrases ("Found X. Doing Y:"), summarize the action not the announcement
+3. Add instruction to prompt: "If the content is already concise, use it directly without adding attribution"
+
+---
+
+## Example 7: Nested JSON Content Misinterpreted
+
+**Date Added:** 2025-12-03
+**Category:** context confusion (nested content)
+**Transcript:** `c7ba294f-3ef9-4cae-8947-d5d1d489bf5e.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "this too seems poorly summarized:\n {\n  \"detail\" : \"Found the document. Adding the new example:\",\n  \"entry_id\" : \"3983abd4-2fd4-40a9-88ba-34c2eec0a029\",\n  \"summary\" : \"Claude Code Found the document. Adding the new example:\",\n  ...\n}",
+  "entry_id": "c4b1523f-998a-428c-90cd-591f947367d0",
+  "summary": "You mentioned adding the new example.",
+  "timestamp": "2025-12-03T22:49:12Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/c7ba294f-3ef9-4cae-8947-d5d1d489bf5e.jsonl"
+}
+```
+
+**Problem:**
+The user's message was "this too seems poorly summarized:" followed by a JSON blob as evidence. The summary says "You mentioned adding the new example" - which is a fragment from the *nested* JSON content, not the user's actual intent. The LLM confused the outer message with the quoted inner content.
+
+**Expected Summary:**
+- "You reported another poorly summarized entry for the bloopers document."
+- Or: "You submitted a second summarization blooper example."
+
+**Root Cause (suspected):**
+- Nested JSON/quoted content confuses the LLM about what's the "real" message vs. quoted data
+- The phrase "Adding the new example" in the nested JSON was misattributed to the user
+- No instruction to treat JSON blobs as quoted/referenced content rather than user speech
+
+**Fix Approach:**
+1. Pre-process: detect JSON blobs in user messages and mark them as "quoted content" or strip for summarization
+2. Add prompt instruction: "When the message contains JSON or code blocks, summarize the user's framing text, not the quoted content"
+3. Look for patterns like "this [adjective]:" followed by code/JSON as a "reporting" pattern
+
+---
+
 ## Template for New Examples
 
 ```markdown
