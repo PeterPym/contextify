@@ -131,9 +131,14 @@ body {
    Navbar
    ========================================================================== */
 .navbar {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
-  box-shadow: none !important;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+  background-color: var(--bg-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+[data-bs-theme="dark"] .navbar {
+  background-color: var(--slate-900);
 }
 
 .navbar-brand {
@@ -223,6 +228,26 @@ body {
 
 [data-bs-theme="dark"] .screenshot {
   box-shadow: 0 2px 0 #000, 0 2px 5px #000;
+}
+
+/* ==========================================================================
+   Brand Gradient Divider
+   ========================================================================== */
+.brand-divider {
+  height: 4px;
+  background: var(--brand-gradient);
+}
+
+/* ==========================================================================
+   Card Styles & Hover Effects
+   ========================================================================== */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 /* ==========================================================================
