@@ -1,0 +1,55 @@
+# Website Design (contextify.sh)
+
+Design documentation for the marketing website.
+
+## Status: Active Development
+
+Website design is actively being developed on `feature/static-landing-page` branch.
+
+## Current Work
+
+- **Color exploration:** `specimens/color-specimens.html`
+- **Landing page:** Bootstrap 5, hero section, feature cards
+- **Content pages:** Privacy, terms, support (styled)
+
+## Planned Contents
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `color-palette.md` | Website color scheme (may differ from brand) | In Progress |
+| `components.md` | Buttons, cards, nav, footer specs | TODO |
+| `typography.md` | Web fonts, sizing, line heights | TODO |
+| `pages/` | Page-specific design notes | TODO |
+| `PIPELINE.md` | Build/deploy process (when needed) | Deferred |
+
+## Current Architecture
+
+```
+website/                  # Static files, directly uploadable
+├── index.html
+├── privacy.html
+├── terms.html
+├── support.html
+└── assets/
+    ├── css/
+    └── img/
+        └── swoopity-dark.svg
+```
+
+**Deploy:** `scripts/deploy-website.sh` uploads directly to server. No build step currently.
+
+## To Fill Out This Section
+
+1. **Finalize color palette** from specimens exploration
+2. **Document component styles** (buttons, cards, forms)
+3. **Define responsive breakpoints**
+4. **Create page wireframes/specs** if needed
+
+## Future: Build Pipeline
+
+Currently all website files are static and directly uploadable. A build pipeline would be needed for:
+- Asset optimization (image compression)
+- Generated content (if help docs become generated)
+- Template rendering (if moving to static site generator)
+
+When implemented, document in `PIPELINE.md`.

@@ -1,13 +1,15 @@
-# Design Documentation
+# App UI Design Documentation
 
-Design decisions, UX patterns, and visual design specifications.
+Design decisions, UX patterns, and visual design specifications **for the macOS app**.
+
+> **Note:** For brand identity, website, and marketing design, see [`build/design/`](../../design/README.md).
 
 ## Purpose
 
 This directory contains design documentation for:
-- Visual design (color scheme, typography)
+- In-app color scheme and typography
 - UX patterns and interactions
-- Design system decisions
+- SwiftUI design patterns
 - Accessibility considerations
 
 ## Documents
@@ -75,9 +77,11 @@ This directory contains design documentation for:
 - Examples and screenshots where helpful
 
 **What NOT to include:**
-- Design explorations or mockups (use Figma or /tmp/)
-- A/B test plans (use /tmp/)
-- User feedback or feature requests (use GitHub issues or TODOS.md)
+- Design explorations or mockups → `build/design/research/`
+- Brand identity documentation → `build/design/brand/`
+- Website design → `build/design/website/`
+- Marketing/social assets → `build/design/marketing/`
+- User feedback or feature requests → GitHub issues or TODOS.md
 
 ---
 
