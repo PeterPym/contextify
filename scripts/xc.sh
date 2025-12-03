@@ -452,7 +452,10 @@ run_build_for_dist() {
 
   echo "Building for distribution: $dist"
 
-  if [[ $fast_clean -eq 1 ]]; then
+  if [[ "$action" == "build" ]]; then
+    # Plain build: incremental (no clean) for speed
+    echo "  Incremental build (use 'clean' or 'cleanrun' for fresh build)..."
+  elif [[ $fast_clean -eq 1 ]]; then
     echo "  Fast clean: removing Contextify app artifacts (preserving dependencies)..."
     rm -rf "$dd/Build/Intermediates.noindex/Contextify.build" 2>/dev/null || true
     rm -rf "$dd/Build/Products/$config/Contextify.app" 2>/dev/null || true
