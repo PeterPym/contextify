@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 42 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 43 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 82
+**Total Active Items:** 83
 
 ---
 
@@ -1713,6 +1713,47 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 - ROADMAP.md#P4-AUTONOMOUS-DEVELOPMENT (future vision - full autonomy)
 - `build/notes/todo-support/` directory (supporting docs)
 - TODOS.md front matter (standards and workflows)
+
+---
+
+## TODO System Refactoring (1 item)
+
+**Status:** Research Complete
+**Priority:** P2 (workflow improvement - current file is 2k+ lines)
+**Effort:** 4-6 hours
+**Research:** `build/notes/todo-support/P2-TODOS-REFACTOR-research.md`
+
+- [ ] #P2-TODOS-REFACTOR: Refactor TODO system to reduce file size and improve AI efficiency
+
+**Problem:**
+- TODOS.md is 2k+ lines, AI must read full file to update one status
+- Priority embedded in task IDs (e.g., `#P1-WEBSITE`) makes reprioritization awkward
+- No clear rules on when entry needs backing file
+- Ad-hoc detail file structure
+
+**Proposed Solution (from research):**
+Split into small index + detail files:
+```
+todos/
+├── TODOS.md          # ~100 lines: ID + title + checkbox only
+└── active/
+    ├── WEBSITE.md    # Full details
+    ├── SETTINGS.md
+    └── ...
+```
+
+**Key changes:**
+- Priority is section header, not part of ID
+- Index file stays under 150 lines
+- Details only loaded when working on specific task
+- Completed items archived to `todos/archive/`
+
+**Migration steps:**
+1. Create `todos/` directory structure
+2. Extract detail content to individual files
+3. Reduce main TODOS.md to index format
+4. Update AGENTS.md references
+5. Archive completed items
 
 ---
 
