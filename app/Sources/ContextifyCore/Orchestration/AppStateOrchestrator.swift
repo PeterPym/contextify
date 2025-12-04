@@ -93,7 +93,19 @@ public final class AppStateOrchestrator: ObservableObject {
   /// until termination. This is intentional for the singleton `AppStateOrchestrator.shared`.
   /// The `stopBackgroundDiscovery()` method exists for cleanup but is not called in normal
   /// operation since the orchestrator lives for the process lifetime.
+  ///
+  /// **Precondition (App Store builds):**
+  /// Onboarding must be complete before startup() is called. This is enforced via
+  /// precondition to catch any code path that bypasses the pipeline gate.
   public func startup() async {
+    // Defense-in-depth: Catch any code path that bypasses the onboarding gate
+    #if APPSTORE_BUILD
+    precondition(
+      !Sandbox.isSandboxed || HUDPreferences.hasCompletedAppStoreOnboarding(),
+      "AppStateOrchestrator.startup() called before App Store onboarding complete"
+    )
+    #endif
+
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()
 
