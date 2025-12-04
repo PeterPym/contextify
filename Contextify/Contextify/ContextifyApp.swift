@@ -99,6 +99,7 @@ struct ContextifyApp: App {
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
   @StateObject private var folderAccessController = FolderAccessController()  // App Store authorization
+  @StateObject private var onboardingCoordinator = AppStoreOnboardingCoordinator.shared  // App Store onboarding gate
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
@@ -147,7 +148,14 @@ struct ContextifyApp: App {
     }
 
     // Phase 3: Start AppStateOrchestrator (replaces old startup logic)
+    // Gate startup behind onboarding completion for App Store builds
     Task { @MainActor in
+      // App Store builds: defer startup until onboarding is complete
+      if Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding() {
+        startupLog.notice("[STARTUP-GATE] App Store build without onboarding - deferring startup to post-onboarding")
+        return
+      }
+
       // PHASE 0: Pre-warm LLM health check (makes first StatusBarViewModel instant)
       #if canImport(FoundationModels)
       if #available(macOS 26.0, *) {
@@ -170,7 +178,28 @@ struct ContextifyApp: App {
   var body: some Scene {
     Window("Contextify", id: "main") {
       Group {
-        if let vm = projectsViewModel {
+        // App Store builds: show onboarding wizard if not complete
+        if onboardingCoordinator.shouldShowWizard {
+          AppStoreOnboardingView(
+            folderAccessController: folderAccessController,
+            onComplete: {
+              // Mark onboarding complete and trigger app startup
+              onboardingCoordinator.markComplete()
+
+              // Now run the deferred startup sequence
+              Task { @MainActor in
+                let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
+                startupLog.info("[POST-ONBOARD] Running deferred startup sequence")
+
+                await AppStateOrchestrator.shared.startup()
+                await StartupCoordinator.shared.start()
+
+                // Initialize projects system now that we have DB access
+                await initializeProjectsSystem()
+              }
+            }
+          )
+        } else if let vm = projectsViewModel {
           // C2.2: Pass ProjectsViewModel via environment
           ContentView()
             .frame(minHeight: 500)
@@ -199,6 +228,8 @@ struct ContextifyApp: App {
       }
       .task {
         // Initialize projects system and auto-discover at app launch
+        // Skip if onboarding is still required (handled by wizard completion)
+        guard !onboardingCoordinator.shouldShowWizard else { return }
         await initializeProjectsSystem()
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
@@ -206,6 +237,12 @@ struct ContextifyApp: App {
         startupLog.info("[WELCOME-TRIGGERED] Welcome modal notification received")
         startupLog.info("[WELCOME-STATE] Setting showWelcomeModal = true")
         showWelcomeModal = true
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .databaseLocationReset)) { _ in
+        // User reset database in Settings - trigger re-onboarding
+        let startupLog = Logger(subsystem: "dev.contextify", category: "Onboarding")
+        startupLog.notice("[DB-RESET] Database location reset - triggering re-onboarding")
+        onboardingCoordinator.markBookmarkStale()
       }
     }
     // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
