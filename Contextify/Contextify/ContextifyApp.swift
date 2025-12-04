@@ -151,10 +151,13 @@ struct ContextifyApp: App {
     // Gate startup behind onboarding completion for App Store builds
     Task { @MainActor in
       // App Store builds: defer startup until onboarding is complete
-      if Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding() {
+      // NOTE: Must use compile-time check, not runtime Sandbox.isSandboxed
+      #if APPSTORE_BUILD
+      if !HUDPreferences.hasCompletedAppStoreOnboarding() {
         startupLog.notice("[STARTUP-GATE] App Store build without onboarding - deferring startup to post-onboarding")
         return
       }
+      #endif
 
       // PHASE 0: Pre-warm LLM health check (makes first StatusBarViewModel instant)
       #if canImport(FoundationModels)
