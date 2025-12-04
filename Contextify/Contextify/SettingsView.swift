@@ -367,7 +367,15 @@ struct DatabaseSettingsTab: View {
   private func resetToDefaultLocation() {
     guard HUDPreferences.getCustomDatabaseLocation() != nil else { return }
 
-    // Run the heavy migration work off the main thread
+    // App Store builds: clear onboarding state and show wizard instead of migrating
+    if Sandbox.isSandboxed {
+      log.info("[DB-RESET] App Store build - clearing onboarding state to re-show wizard")
+      HUDPreferences.clearAppStoreOnboardingState()
+      NotificationCenter.default.post(name: .databaseLocationReset, object: nil)
+      return
+    }
+
+    // DMG builds: run the heavy migration work off the main thread
     Task.detached(priority: .userInitiated) {
       // Capture old path before migration
       let oldPath = (try? DatabaseManager.shared.databasePath().deletingLastPathComponent().path) ?? "previous location"

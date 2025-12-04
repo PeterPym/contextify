@@ -385,8 +385,8 @@ struct WelcomeModalView: View {
     ///
     /// **Example flows:**
     /// - DMG, first launch: needsPermissions=false → skip to discovery
-    /// - App Store, first launch: needsPermissions=true → show permissions → then discovery
-    /// - App Store, second launch: needsPermissions=false → skip to discovery (bookmarks exist)
+    /// - App Store, first launch: handled by AppStoreOnboardingView wizard (not WelcomeModal)
+    /// - App Store, subsequent launches: needsPermissions=false → skip to discovery (wizard already complete)
     private var needsPermissions: Bool {
         // DMG builds never need permissions (have full filesystem access)
         // Sandbox.isSandboxed delegates to runtime detection, which works from both
@@ -395,14 +395,11 @@ struct WelcomeModalView: View {
             return false
         }
 
-        // App Store builds: check if user already granted permissions
-        // If permissions step is already visible, keep it visible
-        if showPermissionsStep {
-            return true
-        }
-
-        // Show permissions step if no saved bookmarks exist
-        return !hasAnyAuthorizations
+        // App Store builds: onboarding wizard handles permissions, so WelcomeModal
+        // should never show permissions step. If we're showing WelcomeModal in an
+        // App Store build, onboarding must be complete (which means permissions granted).
+        // The wizard wouldn't complete without permissions.
+        return false
     }
 
     private var hasAnyAuthorizations: Bool {

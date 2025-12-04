@@ -46,6 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
+    // Refresh onboarding state to detect stale bookmarks (folder deleted while in background)
+    Task { @MainActor in
+      AppStoreOnboardingCoordinator.shared.refreshState()
+    }
+
     // In App Store (sandbox) builds, FSEvents monitoring is disabled.
     // Refresh projects when app returns to foreground to detect new projects
     // created by Claude Code/Codex while we were in background.
