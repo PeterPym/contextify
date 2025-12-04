@@ -12,6 +12,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import ContextifyCore
 import OSLog
 
@@ -94,14 +95,29 @@ struct DatabaseLocationStepView: View {
 
   // MARK: - Folder Card
 
+  /// Returns the appropriate folder icon:
+  /// - If a folder is selected, shows that folder's actual icon (respects custom icons)
+  /// - Otherwise, shows the generic system folder icon
+  /// - Falls back to SF Symbol with brand blue if system APIs fail
+  private var folderIcon: some View {
+    let nsImage: NSImage
+    if let path = selectedPath {
+      nsImage = NSWorkspace.shared.icon(forFile: path)
+    } else {
+      nsImage = NSWorkspace.shared.icon(for: .folder)
+    }
+
+    return Image(nsImage: nsImage)
+      .resizable()
+      .aspectRatio(contentMode: .fit)
+      .frame(width: 40, height: 40)
+  }
+
   private var folderCard: some View {
     Button(action: { openFolderPicker() }) {
       HStack(spacing: 16) {
-        // Folder icon
-        Image(systemName: "folder.fill")
-          .font(.system(size: 32))
-          .foregroundStyle(.blue)
-          .frame(width: 40, height: 40)
+        // Folder icon - uses real macOS system icon
+        folderIcon
 
         // Folder name and path
         VStack(alignment: .leading, spacing: 4) {
