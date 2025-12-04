@@ -28,8 +28,8 @@ struct AppStoreOnboardingView: View {
     VStack(spacing: 0) {
       // Header with icon and welcome text
       header
-        .padding(.top, 24)
-        .padding(.bottom, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
 
       // Divider below header
       Divider()
@@ -46,12 +46,12 @@ struct AppStoreOnboardingView: View {
           )
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
 
       // Bottom navigation bar
       bottomBar
     }
-    .frame(width: 520, height: 480)
+    .frame(width: 520)
+    .fixedSize(horizontal: false, vertical: true)
     .background(Color(nsColor: .windowBackgroundColor))
     .background(OnboardingWindowConfigurator())
     .onAppear {
@@ -83,20 +83,8 @@ struct AppStoreOnboardingView: View {
     VStack(spacing: 0) {
       Divider()
 
-      HStack {
-        // Previous button (only on step 2)
-        if currentStep > 1 {
-          Button("Previous") {
-            withAnimation {
-              currentStep -= 1
-            }
-          }
-          .buttonStyle(.bordered)
-        }
-
-        Spacer()
-
-        // Progress dots (centered)
+      ZStack {
+        // Progress dots (truly centered)
         HStack(spacing: 8) {
           ForEach(1...totalSteps, id: \.self) { step in
             Circle()
@@ -105,23 +93,33 @@ struct AppStoreOnboardingView: View {
           }
         }
 
-        Spacer()
-
-        // Next button (step 1) or empty space (step 2 has its own Done button)
-        if currentStep < totalSteps {
-          Button("Next") {
-            withAnimation {
-              currentStep += 1
+        // Buttons aligned to edges
+        HStack {
+          // Previous button (only on step 2)
+          if currentStep > 1 {
+            Button("Previous") {
+              withAnimation {
+                currentStep -= 1
+              }
             }
+            .buttonStyle(.bordered)
           }
-          .buttonStyle(.borderedProminent)
-          .disabled(!databaseLocationConfigured)
-        } else {
-          // Placeholder to balance the Previous button
-          Color.clear.frame(width: 80)
+
+          Spacer()
+
+          // Next button (step 1) or empty space (step 2 has its own Done button)
+          if currentStep < totalSteps {
+            Button("Next") {
+              withAnimation {
+                currentStep += 1
+              }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!databaseLocationConfigured)
+          }
         }
       }
-      .padding(.vertical, 16)
+      .padding(.vertical, 12)
       .padding(.horizontal, 24)
     }
   }
@@ -162,6 +160,9 @@ private struct OnboardingWindowConfigurator: NSViewRepresentable {
 
     // Prevent resizing
     window.styleMask.remove(.resizable)
+
+    // Set explicit content size to prevent Window scene from using cached size
+    window.setContentSize(NSSize(width: 520, height: 380))
   }
 }
 

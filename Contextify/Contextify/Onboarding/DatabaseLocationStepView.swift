@@ -54,10 +54,7 @@ struct DatabaseLocationStepView: View {
   }
 
   var body: some View {
-    VStack(spacing: 24) {
-      Spacer()
-        .frame(height: 8)
-
+    VStack(spacing: 16) {
       // Main heading and description
       VStack(spacing: 12) {
         Text("Choose where Contextify saves your data")
@@ -84,16 +81,15 @@ struct DatabaseLocationStepView: View {
           .padding(.horizontal, 40)
       }
 
-      Spacer()
-
       // Tip text
       Text("Tip: You can also pick a folder in Dropbox, iCloud Drive, or another location that provides automatic backup.")
         .font(.caption)
         .foregroundStyle(.tertiary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 40)
-        .padding(.bottom, 16)
+        .padding(.bottom, 8)
     }
+    .padding(.top, 12)
   }
 
   // MARK: - Folder Card
