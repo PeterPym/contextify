@@ -19,6 +19,9 @@ public enum HUDPreferences {
   public static let customDatabaseLocationKey = "dev.contextify.customDatabaseLocation"
   public static let customDatabaseBookmarkKey = "dev.contextify.customDatabaseBookmark"
 
+  // App Store onboarding
+  public static let appStoreOnboardingCompletedKey = "dev.contextify.appStoreOnboardingCompleted"
+
   nonisolated(unsafe) private static let sharedDefaults: UserDefaults = {
     if let suite = UserDefaults(suiteName: "dev.contextify"), probeDefaultsWriteability(suite) {
       return suite
@@ -100,6 +103,27 @@ public enum HUDPreferences {
   public static func resolveDatabaseBookmark() -> URL? {
     guard let data = sharedDefaults.data(forKey: customDatabaseBookmarkKey) else { return nil }
     return resolveBookmarkData(data, pathKey: customDatabaseLocationKey, bookmarkKey: customDatabaseBookmarkKey)
+  }
+
+  // MARK: - App Store Onboarding
+
+  /// Returns true if the user has completed the App Store onboarding wizard.
+  /// For DMG builds, this always returns true (onboarding not required).
+  public static func hasCompletedAppStoreOnboarding() -> Bool {
+    sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey)
+  }
+
+  /// Sets the App Store onboarding completion state.
+  public static func setAppStoreOnboardingCompleted(_ completed: Bool) {
+    sharedDefaults.set(completed, forKey: appStoreOnboardingCompletedKey)
+  }
+
+  /// Clears both the onboarding completion flag AND the database bookmark.
+  /// Used when user resets database location in Settings or when bookmark becomes stale.
+  public static func clearAppStoreOnboardingState() {
+    sharedDefaults.removeObject(forKey: appStoreOnboardingCompletedKey)
+    sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
+    sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
   }
 
   private static func storeDatabaseURL(_ url: URL) {
@@ -220,11 +244,22 @@ public enum HUDPreferences {
 // MARK: - Sandbox
 
 public enum Sandbox {
+  #if DEBUG
+  /// Override for unit tests to simulate sandboxed/unsandboxed environment.
+  /// Only available in DEBUG builds.
+  nonisolated(unsafe) public static var isSandboxedOverrideForTests: Bool?
+  #endif
+
   /// Returns true when running in a sandboxed environment.
   /// Uses runtime detection because compile-time flags (#if APPSTORE_BUILD)
   /// don't propagate to Swift package code.
   public static var isSandboxed: Bool {
-    isRuntimeSandboxed
+    #if DEBUG
+    if let override = isSandboxedOverrideForTests {
+      return override
+    }
+    #endif
+    return isRuntimeSandboxed
   }
 
   /// Runtime check via environment variables set by macOS for sandboxed apps.
