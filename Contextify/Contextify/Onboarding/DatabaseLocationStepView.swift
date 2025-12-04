@@ -84,8 +84,8 @@ struct DatabaseLocationStepView: View {
 
       // Tip text
       Text("Tip: You can also pick a folder in Dropbox, iCloud Drive, or another location that provides automatic backup.")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
+        .font(.callout)
+        .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 40)
         .padding(.bottom, 8)
@@ -96,21 +96,38 @@ struct DatabaseLocationStepView: View {
   // MARK: - Folder Card
 
   /// Returns the appropriate folder icon:
-  /// - If a folder is selected, shows that folder's actual icon (respects custom icons)
+  /// - If Dropbox folder is selected, shows custom Dropbox folder icon (system icon doesn't work reliably)
+  /// - If another folder is selected, shows that folder's actual icon (respects custom icons)
   /// - Otherwise, shows the generic system folder icon
-  /// - Falls back to SF Symbol with brand blue if system APIs fail
   private var folderIcon: some View {
-    let nsImage: NSImage
-    if let path = selectedPath {
-      nsImage = NSWorkspace.shared.icon(forFile: path)
+    let image: Image
+
+    if let path = selectedPath, isDropboxPath(path) {
+      // Use custom Dropbox folder icon - system icon doesn't show correctly on recent macOS
+      image = Image("dropbox-folder")
+    } else if let path = selectedPath {
+      image = Image(nsImage: NSWorkspace.shared.icon(forFile: path))
     } else {
-      nsImage = NSWorkspace.shared.icon(for: .folder)
+      image = Image(nsImage: NSWorkspace.shared.icon(for: .folder))
     }
 
-    return Image(nsImage: nsImage)
+    return image
       .resizable()
       .aspectRatio(contentMode: .fit)
       .frame(width: 40, height: 40)
+  }
+
+  /// Detects if a path is inside Dropbox storage
+  private func isDropboxPath(_ path: String) -> Bool {
+    // Modern macOS CloudStorage location
+    if path.contains("/Library/CloudStorage/Dropbox") {
+      return true
+    }
+    // Legacy Dropbox location
+    if path.contains("/Dropbox/") || path.hasSuffix("/Dropbox") {
+      return true
+    }
+    return false
   }
 
   private var folderCard: some View {
@@ -139,17 +156,17 @@ struct DatabaseLocationStepView: View {
         if isConfigured {
           Image(systemName: "checkmark.circle.fill")
             .font(.title2)
-            .foregroundStyle(.green)
+            .foregroundStyle(Color.contextifyGreen)
         }
       }
       .padding(16)
       .background(
         RoundedRectangle(cornerRadius: 10)
-          .fill(isConfigured ? Color.accentColor.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
+          .fill(isConfigured ? Color.contextifyBlue.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
       )
       .overlay(
         RoundedRectangle(cornerRadius: 10)
-          .stroke(isConfigured ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isConfigured ? 2 : 1)
+          .stroke(isConfigured ? Color.contextifyBlue : Color(nsColor: .separatorColor), lineWidth: isConfigured ? 2 : 1)
       )
       .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }

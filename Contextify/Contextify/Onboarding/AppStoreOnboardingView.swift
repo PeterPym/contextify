@@ -88,7 +88,7 @@ struct AppStoreOnboardingView: View {
         HStack(spacing: 8) {
           ForEach(1...totalSteps, id: \.self) { step in
             Circle()
-              .fill(step == currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
+              .fill(step == currentStep ? Color.contextifyBlue : Color.secondary.opacity(0.3))
               .frame(width: 8, height: 8)
           }
         }
@@ -115,6 +115,7 @@ struct AppStoreOnboardingView: View {
               }
             }
             .buttonStyle(.borderedProminent)
+            .tint(Color.contextifyBlue)
             .disabled(!databaseLocationConfigured)
           }
         }

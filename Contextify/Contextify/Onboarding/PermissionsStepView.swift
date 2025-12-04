@@ -64,7 +64,7 @@ struct PermissionsStepView: View {
         if hasAnyAuthorizations {
           HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
-              .foregroundStyle(.green)
+              .foregroundStyle(Color.contextifyGreen)
             Text("Ready to go!")
               .font(.subheadline)
               .fontWeight(.medium)
@@ -84,6 +84,7 @@ struct PermissionsStepView: View {
         completeOnboarding()
       }
       .buttonStyle(.borderedProminent)
+      .tint(Color.contextifyBlue)
       .controlSize(.large)
       .disabled(!hasAnyAuthorizations)
       .keyboardShortcut(.defaultAction)
