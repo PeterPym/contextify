@@ -143,69 +143,45 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ## #P0-SETTINGS-OVERHAUL: Fix Settings window and permissions UX
 
-**Status:** Broken - Settings window missing permissions tab, poor UX
+**Status:** In Progress - Settings tabs implemented, need to verify permission flow
 **Priority:** P0 (blocks App Store users from granting permissions)
-**Effort:** 4-6 hours
+**Effort:** 1-2 hours remaining
 
 **Problems Identified:**
 
-1. **Settings window is broken:**
-   - Only shows Database tab, no way to access Transcript Sources (permissions)
-   - `TranscriptSourcesSettingsView` is in a separate window, not a tab
-   - Huge empty space at top (fixed 400px height too tall for content)
-   - Users cannot find where to grant permissions
+1. **Settings window is broken:** ✅ FIXED
+   - ~~Only shows Database tab, no way to access Transcript Sources (permissions)~~
+   - ~~`TranscriptSourcesSettingsView` is in a separate window, not a tab~~
+   - ~~Huge empty space at top (fixed 400px height too tall for content)~~
+   - ~~Users cannot find where to grant permissions~~
 
-2. **Empty state UX is confusing:**
-   - "Loading conversation..." spinner shows indefinitely when no permissions granted
-   - No indication that permissions are needed
-   - "Open project..." link is misleading (implies file picker, not permissions)
-
-3. **Permission grant may not trigger discovery:**
+2. **Permission grant may not trigger discovery:**
    - Need to verify granting permissions kicks off discovery workflow
    - Projects should appear in tab bar after granting access
 
 **Solution:**
 
-1. **Combine Settings into tabbed view:**
-   ```swift
-   Settings {
-     TabView {
-       SettingsView()
-         .tabItem { Label("Database", systemImage: "cylinder") }
-       TranscriptSourcesSettingsView(...)
-         .tabItem { Label("Permissions", systemImage: "folder.badge.plus") }
-     }
-   }
-   ```
+1. **Combine Settings into tabbed view:** ✅ DONE
+   - App Store builds: TabView with Database + Permissions tabs
+   - DMG builds: Database tab only (no permissions needed)
+   - Fixed width to 450px (matches Messages app style)
 
-2. **Fix Database tab layout:**
-   - Remove fixed height or reduce to fit content
-   - Clean up empty space at top
-
-3. **Improve empty state messaging:**
-   - Replace spinner with explanatory text when no permissions
-   - "Contextify needs access to transcript folders to get started"
-   - Button to open Settings > Permissions tab directly
-   - "Learn more" link to contextify.sh
-
-4. **Verify permission → discovery flow:**
+2. **Verify permission → discovery flow:**
    - Test: Grant permission → projects appear → timeline populates
    - Fix if broken
 
 **Files:**
-- `Contextify/Contextify/ContextifyApp.swift:240-248` - Settings window definition
-- `Contextify/Contextify/SettingsView.swift:178` - Fixed height
-- `Contextify/Contextify/Settings/TranscriptSourcesSettingsView.swift`
-- `Contextify/Contextify/ConversationTimelineView.swift` - Empty state
+- `Contextify/Contextify/ContextifyApp.swift` - Settings window definition
+- `Contextify/Contextify/SettingsView.swift` - Tabbed settings view
 
 **Acceptance Criteria:**
-- [ ] Settings window has Database and Permissions tabs
-- [ ] Database tab fits content without huge empty space
-- [ ] Empty timeline shows "permissions needed" message, not spinner
-- [ ] Clear path from empty state to granting permissions
+- [x] Settings window has Database and Permissions tabs (App Store only)
+- [x] Database tab fits content without huge empty space
 - [ ] Granting permissions triggers discovery and populates UI
 
-**Supersedes:** #P1-PERMISSIONS-MODAL, #P1-APPSTORE-NO-PERMISSIONS-UX
+**Commits:**
+- `76a5fb1c` feat(settings): show Permissions tab only for App Store builds
+- `93a5f82b` feat(settings): combine Database and Permissions into tabbed Settings view
 
 ---
 
@@ -1020,7 +996,38 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-# P2 (Medium Priority) - 41 Items
+# P2 (Medium Priority) - 42 Items
+
+---
+
+## #P2-EMPTY-STATE-PERMISSIONS-UX: Show "permissions needed" instead of spinner
+
+**Status:** Not Started
+**Priority:** P2 (UX clarity for App Store builds)
+**Effort:** 2-3 hours
+
+**Problem:**
+When an App Store user launches Contextify without having granted folder permissions, the timeline shows an indefinite "Loading conversation..." spinner. Users think the app is broken when really they just need to grant permissions.
+
+**Current behavior:**
+- Spinner shows indefinitely
+- No indication permissions are needed
+- User has no guidance to fix it
+
+**Desired behavior:**
+- Clear message: "Contextify needs access to transcript folders"
+- Button/link to open Settings > Permissions tab
+- Only show spinner when actively loading (not when blocked on permissions)
+
+**Files:**
+- `Contextify/Contextify/ConversationTimelineView.swift` - Empty state view
+
+**Acceptance Criteria:**
+- [ ] Empty timeline shows explanatory message when no permissions (not spinner)
+- [ ] Clear path from empty state to granting permissions
+- [ ] Spinner only appears during actual loading operations
+
+**Split from:** #P0-SETTINGS-OVERHAUL
 
 ---
 

@@ -6,7 +6,37 @@ import AppKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "Settings")
 
+// MARK: - Main Settings View (Tabbed)
+
 struct SettingsView: View {
+  @ObservedObject var folderAccessController: FolderAccessController
+
+  var body: some View {
+    if Sandbox.isSandboxed {
+      // App Store build: show both Database and Permissions tabs
+      TabView {
+        DatabaseSettingsTab()
+          .tabItem {
+            Label("Database", systemImage: "cylinder")
+          }
+
+        PermissionsSettingsTab(folderAccessController: folderAccessController)
+          .tabItem {
+            Label("Permissions", systemImage: "folder.badge.plus")
+          }
+      }
+      .frame(width: 450)
+    } else {
+      // DMG build: only Database tab (no permissions needed)
+      DatabaseSettingsTab()
+        .frame(width: 450)
+    }
+  }
+}
+
+// MARK: - Database Settings Tab
+
+struct DatabaseSettingsTab: View {
   @State private var currentLocation: String = ""
   @State private var isCustomLocation: Bool = false
   @State private var isMigrating: Bool = false
@@ -26,11 +56,6 @@ struct SettingsView: View {
   var body: some View {
     Form {
       Section {
-        Text("Settings")
-          .font(.headline)
-
-        Divider()
-
         // Conflict warning (if present)
         if let warning = conflictWarning {
           HStack(spacing: 8) {
@@ -175,7 +200,6 @@ struct SettingsView: View {
       }
     }
     .padding()
-    .frame(width: 480, height: 400)
     .fileImporter(
       isPresented: $showingFilePicker,
       allowedContentTypes: [.folder],
@@ -382,6 +406,54 @@ struct SettingsView: View {
 
 }
 
+// MARK: - Permissions Settings Tab
+
+struct PermissionsSettingsTab: View {
+  @ObservedObject var folderAccessController: FolderAccessController
+  @State private var authorizations: [SourceID: SourceAuthorization] = [:]
+
+  var body: some View {
+    VStack(spacing: 24) {
+      VStack(spacing: 8) {
+        Text("Transcript Sources")
+          .font(.headline)
+
+        Text("Grant access to folders containing Claude Code and Codex transcripts.")
+          .font(.body)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
+      .padding(.top, 8)
+
+      VStack(spacing: 12) {
+        ForEach(SourceID.allCases, id: \.self) { source in
+          SourceAuthorizationRow(
+            source: source,
+            controller: folderAccessController,
+            authorization: authorizations[source]
+          ) { updatedAuth in
+            authorizations[source] = updatedAuth
+            log.info("[SETTINGS] Updated authorization for \(source.rawValue)")
+          }
+        }
+      }
+
+      Spacer()
+    }
+    .padding()
+    .task {
+      await loadAuthorizations()
+    }
+  }
+
+  private func loadAuthorizations() async {
+    let allAuths = await folderAccessController.allAuthorizations()
+    for auth in allAuths {
+      authorizations[auth.id] = auth
+    }
+  }
+}
+
 private struct DropboxBadge: View {
   var body: some View {
     HStack(spacing: 8) {
@@ -416,5 +488,9 @@ private struct DropboxBadge: View {
 }
 
 #Preview {
-  SettingsView()
+  SettingsView(folderAccessController: FolderAccessController())
+}
+
+#Preview("Database Tab") {
+  DatabaseSettingsTab()
 }
