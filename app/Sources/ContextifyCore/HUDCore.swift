@@ -108,9 +108,20 @@ public enum HUDPreferences {
   // MARK: - App Store Onboarding
 
   /// Returns true if the user has completed the App Store onboarding wizard.
-  /// For DMG builds, this always returns true (onboarding not required).
+  ///
+  /// **App Store builds:** Requires BOTH the completion flag AND a resolvable database bookmark.
+  /// This ensures we don't proceed with DB access if the user's chosen folder was deleted.
+  ///
+  /// **DMG builds:** Always returns true at compile-time (onboarding not required).
   public static func hasCompletedAppStoreOnboarding() -> Bool {
-    sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey)
+    #if APPSTORE_BUILD
+    // Require both the flag AND a valid bookmark
+    guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
+    return resolveDatabaseBookmark() != nil
+    #else
+    // DMG builds never gate on onboarding
+    return true
+    #endif
   }
 
   /// Sets the App Store onboarding completion state.
