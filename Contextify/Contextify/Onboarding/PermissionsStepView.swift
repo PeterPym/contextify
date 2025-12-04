@@ -107,10 +107,7 @@ struct PermissionsStepView: View {
   private func completeOnboarding() {
     log.info("[ONBOARD-PERMISSIONS] Completing onboarding with \(authorizations.values.filter { $0.status == .authorized }.count) authorized sources")
 
-    // Mark onboarding as complete
-    HUDPreferences.setAppStoreOnboardingCompleted(true)
-
-    // Notify parent
+    // Notify parent - coordinator owns the flag write via markComplete()
     onComplete()
   }
 }

@@ -6,8 +6,10 @@ private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager
 
 // MARK: - Onboarding Error
 
-/// Error thrown when App Store build attempts to access database before onboarding is complete.
-/// This error triggers re-display of the onboarding wizard.
+/// Guard error for App Store builds attempting DB access before onboarding.
+///
+/// This should not be reachable if UI gating is correct - the wizard blocks
+/// all code paths that would access the database. Exists as defense-in-depth.
 public struct OnboardingRequiredError: Error, LocalizedError {
   public var errorDescription: String? {
     "Database cannot be accessed until onboarding is complete. Please select a database location."

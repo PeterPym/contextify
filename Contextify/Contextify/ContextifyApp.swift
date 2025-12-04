@@ -99,7 +99,7 @@ struct ContextifyApp: App {
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
   @StateObject private var folderAccessController = FolderAccessController()  // App Store authorization
-  @StateObject private var onboardingCoordinator = AppStoreOnboardingCoordinator.shared  // App Store onboarding gate
+  @ObservedObject private var onboardingCoordinator = AppStoreOnboardingCoordinator.shared  // Singleton, use @ObservedObject not @StateObject
   @State private var projectsViewModel: ProjectsViewModel?
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
@@ -182,6 +182,7 @@ struct ContextifyApp: App {
     Window("Contextify", id: "main") {
       Group {
         // App Store builds: show onboarding wizard if not complete
+        // Note: shouldShowWizard returns false for DMG builds (isComplete always true)
         if onboardingCoordinator.shouldShowWizard {
           AppStoreOnboardingView(
             folderAccessController: folderAccessController,

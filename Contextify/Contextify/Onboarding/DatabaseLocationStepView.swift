@@ -129,17 +129,15 @@ struct DatabaseLocationStepView: View {
     isSelecting = true
     errorMessage = nil
 
-    Task { @MainActor in
-      do {
-        try await configureLocation(URL(fileURLWithPath: suggestedPath))
-        isConfigured = true
-        log.info("[ONBOARD-DB] Using suggested location: \(suggestedPath)")
-      } catch {
-        errorMessage = error.localizedDescription
-        log.error("[ONBOARD-DB] Failed to configure suggested location: \(error.localizedDescription)")
-      }
-      isSelecting = false
+    do {
+      try configureLocation(URL(fileURLWithPath: suggestedPath))
+      isConfigured = true
+      log.info("[ONBOARD-DB] Using suggested location: \(suggestedPath)")
+    } catch {
+      errorMessage = error.localizedDescription
+      log.error("[ONBOARD-DB] Failed to configure suggested location: \(error.localizedDescription)")
     }
+    isSelecting = false
   }
 
   private func openFolderPicker() {
@@ -161,26 +159,24 @@ struct DatabaseLocationStepView: View {
     isSelecting = true
     errorMessage = nil
 
-    Task { @MainActor in
-      do {
-        // Auto-append Contextify subfolder if not already named Contextify
-        var finalURL = selectedURL
-        if selectedURL.lastPathComponent.lowercased() != "contextify" {
-          finalURL = selectedURL.appendingPathComponent("Contextify")
-        }
-
-        try await configureLocation(finalURL)
-        isConfigured = true
-        log.info("[ONBOARD-DB] Using custom location: \(finalURL.path)")
-      } catch {
-        errorMessage = error.localizedDescription
-        log.error("[ONBOARD-DB] Failed to configure custom location: \(error.localizedDescription)")
+    do {
+      // Auto-append Contextify subfolder if not already named Contextify
+      var finalURL = selectedURL
+      if selectedURL.lastPathComponent.lowercased() != "contextify" {
+        finalURL = selectedURL.appendingPathComponent("Contextify")
       }
-      isSelecting = false
+
+      try configureLocation(finalURL)
+      isConfigured = true
+      log.info("[ONBOARD-DB] Using custom location: \(finalURL.path)")
+    } catch {
+      errorMessage = error.localizedDescription
+      log.error("[ONBOARD-DB] Failed to configure custom location: \(error.localizedDescription)")
     }
+    isSelecting = false
   }
 
-  private func configureLocation(_ url: URL) async throws {
+  private func configureLocation(_ url: URL) throws {
     let fm = FileManager.default
 
     // Create directory if needed
