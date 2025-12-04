@@ -1024,6 +1024,40 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
+## Permissions UI Card Redesign (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (UX improvement, follows Loopback pattern)
+**Effort:** 4-6 hours
+
+- [ ] #P1-PERMISSIONS-CARD-UI: Redesign permissions UI with Loopback-style cards
+
+**Goal:** Replace current permissions list UI with card-based layout inspired by Loopback's permissions window.
+
+**Scope:**
+- App Store Onboarding wizard step 2
+- Settings > Permissions tab
+
+Both should use identical card components for consistency.
+
+**Design:**
+- Card per provider (Claude Code, Codex CLI)
+- Each card shows: icon, name, path, description, Enable/Granted status
+- Visual indication that at least one must be enabled
+- Clean, modern appearance matching Loopback's style
+
+**Reference:**
+- Loopback permissions UI: `build/design/research/ux/loopback-permissions/`
+- Current implementation: `Contextify/Contextify/Settings/TranscriptSourcesSettingsView.swift`
+
+**Acceptance Criteria:**
+- [ ] Card-based UI for both wizard and Settings
+- [ ] Visual consistency between wizard and Settings
+- [ ] Clear affordance for enable/disable actions
+- [ ] Matches overall app design language
+
+---
+
 # P2 (Medium Priority) - 42 Items
 
 ---
