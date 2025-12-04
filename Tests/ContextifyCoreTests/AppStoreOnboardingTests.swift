@@ -171,21 +171,25 @@ final class AppStoreOnboardingTests: XCTestCase {
   }
 
   #if DEBUG
-  func testSandbox_guardPattern_sandboxedWithoutOnboarding() {
+  func testSandbox_guardPattern_sandboxedWithoutOnboarding() throws {
     // This tests the pattern: Sandbox.isSandboxed && !hasCompletedAppStoreOnboarding()
-    // In actual App Store builds, this would block DB access
+    // When sandboxed AND onboarding not complete, guard should trigger
     Sandbox.isSandboxedOverrideForTests = true
 
-    // Even in sandbox mode, hasCompletedAppStoreOnboarding() returns true in DMG builds
-    // So the guard would NOT trigger in this test environment
-    #if !APPSTORE_BUILD
-    // DMG build: getter always returns true, so guard doesn't trigger
-    XCTAssertFalse(Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding())
-    #endif
+    // With sandbox override and no onboarding, guard SHOULD trigger (returns true)
+    // because hasCompletedAppStoreOnboarding() now uses runtime Sandbox.isSandboxed check
+    XCTAssertTrue(Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding())
   }
 
-  func testSandbox_guardPattern_sandboxedWithOnboarding() {
+  func testSandbox_guardPattern_sandboxedWithOnboarding() throws {
+    // Set up temp directory for bookmark
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ContextifyOnboardingTest-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
     Sandbox.isSandboxedOverrideForTests = true
+    HUDPreferences.setCustomDatabaseLocation(tempDir)  // Creates bookmark
     HUDPreferences.setAppStoreOnboardingCompleted(true)
 
     // Guard should not trigger when onboarding is complete
