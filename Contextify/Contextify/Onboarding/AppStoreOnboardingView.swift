@@ -53,7 +53,7 @@ struct AppStoreOnboardingView: View {
         .padding(.vertical, 16)
         .padding(.horizontal, 24)
     }
-    .frame(width: 520, height: 480)
+    .frame(width: 520, height: 560)
     .background(Color(nsColor: .windowBackgroundColor))
     .onAppear {
       log.info("[ONBOARD-WIZARD] Wizard appeared, step \(currentStep)")
