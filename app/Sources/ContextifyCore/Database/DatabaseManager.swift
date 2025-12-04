@@ -66,16 +66,14 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
-    // Guard: In App Store builds, require onboarding completion before DB access
+    // Guard: In sandboxed builds, require onboarding completion before DB access
     // This prevents accidental creation of database in container location
-    // NOTE: Must use compile-time check, not runtime Sandbox.isSandboxed, because
-    // runtime detection can return true for DMG builds under certain conditions.
-    #if APPSTORE_BUILD
-    if !HUDPreferences.hasCompletedAppStoreOnboarding() {
-      log.warning("[DB-GUARD] App Store build attempted DB access before onboarding")
+    // NOTE: Must use runtime Sandbox.isSandboxed check instead of #if APPSTORE_BUILD
+    // because compile-time flags don't propagate to Swift package code.
+    if Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding() {
+      log.warning("[DB-GUARD] Sandboxed build attempted DB access before onboarding")
       throw OnboardingRequiredError()
     }
-    #endif
 
     // Start security-scoped access if using bookmark (sandboxed builds only)
     if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
