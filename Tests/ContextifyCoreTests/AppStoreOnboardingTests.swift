@@ -85,7 +85,7 @@ final class AppStoreOnboardingTests: XCTestCase {
   #endif
 
   func testHasCompletedAppStoreOnboarding_deletedFolder_returnsFalse_appStoreSemanticsInTests() throws {
-    #if !APPSTORE_BUILD
+    #if DEBUG && !APPSTORE_BUILD
     // Use testing helper to exercise App Store semantics in non-App Store builds
     let tempDir = FileManager.default.temporaryDirectory
       .appendingPathComponent("ContextifyOnboarding-\(UUID().uuidString)")
