@@ -16,7 +16,7 @@ private let log = Logger(subsystem: "dev.contextify", category: "Onboarding")
 /// User must grant access to at least one transcript source before completing.
 struct PermissionsStepView: View {
   @ObservedObject var folderAccessController: FolderAccessController
-  let onComplete: () -> Void
+  @Binding var isConfigured: Bool
 
   @State private var authorizations: [SourceID: SourceAuthorization] = [:]
 
@@ -39,7 +39,7 @@ struct PermissionsStepView: View {
 
         Text("Your transcript data stays private on your machine and is never sent to the internet.")
           .font(.callout)
-          .foregroundStyle(.tertiary)
+          .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
       }
@@ -54,45 +54,25 @@ struct PermissionsStepView: View {
             authorization: authorizations[source]
           ) { updatedAuth in
             authorizations[source] = updatedAuth
+            // Update parent's configured state
+            isConfigured = hasAnyAuthorizations
           }
         }
       }
       .padding(.horizontal, 32)
 
-      // Status message
-      VStack(spacing: 8) {
-        if hasAnyAuthorizations {
-          HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-              .foregroundStyle(Color.contextifyGreen)
-            Text("Ready to go!")
-              .font(.subheadline)
-              .fontWeight(.medium)
-          }
-        } else {
-          Text("Grant access to at least one folder to continue")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+      // Hint when no authorizations yet
+      if !hasAnyAuthorizations {
+        Text("Grant access to at least one folder to continue")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .padding(.top, 8)
       }
-      .padding(.top, 8)
-
-      Spacer()
-
-      // Done button
-      Button("Get Started") {
-        completeOnboarding()
-      }
-      .buttonStyle(.borderedProminent)
-      .tint(Color.contextifyBlue)
-      .controlSize(.large)
-      .disabled(!hasAnyAuthorizations)
-      .keyboardShortcut(.defaultAction)
-      .padding(.bottom, 24)
     }
     .padding(.top, 24)
     .task {
       await loadAuthorizations()
+      isConfigured = hasAnyAuthorizations
     }
   }
 
@@ -104,19 +84,12 @@ struct PermissionsStepView: View {
       authorizations[auth.id] = auth
     }
   }
-
-  private func completeOnboarding() {
-    log.info("[ONBOARD-PERMISSIONS] Completing onboarding with \(authorizations.values.filter { $0.status == .authorized }.count) authorized sources")
-
-    // Notify parent - coordinator owns the flag write via markComplete()
-    onComplete()
-  }
 }
 
 #Preview {
   PermissionsStepView(
     folderAccessController: FolderAccessController(),
-    onComplete: {}
+    isConfigured: .constant(false)
   )
   .frame(width: 520, height: 400)
 }

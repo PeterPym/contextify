@@ -23,6 +23,7 @@ struct AppStoreOnboardingView: View {
   @State private var databaseLocationConfigured = false
   @State private var selectedPath: String?
   @State private var selectedFolderName: String?
+  @State private var permissionsConfigured = false
 
   private let totalSteps = 2
 
@@ -48,7 +49,7 @@ struct AppStoreOnboardingView: View {
         } else {
           PermissionsStepView(
             folderAccessController: folderAccessController,
-            onComplete: onComplete
+            isConfigured: $permissionsConfigured
           )
         }
       }
@@ -113,8 +114,8 @@ struct AppStoreOnboardingView: View {
 
           Spacer()
 
-          // Next button (step 1) or empty space (step 2 has its own Done button)
-          if currentStep < totalSteps {
+          // Next button (step 1) or Continue button (step 2)
+          if currentStep == 1 {
             Button("Next") {
               withAnimation {
                 currentStep += 1
@@ -123,6 +124,13 @@ struct AppStoreOnboardingView: View {
             .buttonStyle(.borderedProminent)
             .tint(Color.contextifyBlue)
             .disabled(!databaseLocationConfigured)
+          } else {
+            Button("Continue") {
+              onComplete()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.contextifyBlue)
+            .disabled(!permissionsConfigured)
           }
         }
       }
