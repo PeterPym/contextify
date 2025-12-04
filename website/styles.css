@@ -127,6 +127,12 @@ body {
   color: var(--text-primary);
 }
 
+/* Override Bootstrap bg-white for dark mode */
+[data-bs-theme="dark"] .bg-white {
+  background-color: var(--slate-800) !important;
+  color: var(--text-primary);
+}
+
 /* ==========================================================================
    Navbar
    ========================================================================== */
