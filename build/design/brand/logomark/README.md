@@ -9,8 +9,9 @@ logomark/
 ├── README.md           # This file
 ├── HISTORY.md          # Version history with hashes
 ├── source/
-│   ├── infinity.svg    # Vector source (TODO)
-│   └── infinity-1024.png  # High-res master
+│   ├── infinity-1024.png     # Canonical master (flat, true 1024x1024)
+│   ├── infinity-904-glass.png # Historical variant (904px, glass effect)
+│   └── infinity.svg          # Vector source (TODO)
 └── exports/
     ├── infinity-512.png
     ├── infinity-256.png
@@ -30,7 +31,8 @@ The logomark can be used:
 
 ## File Notes
 
-- **source/infinity-1024.png**: Uncompressed master (matches Icon Composer asset)
+- **source/infinity-1024.png**: Canonical master, flat style, true 1024x1024
+- **source/infinity-904-glass.png**: Historical variant with glass effect (904px)
 - **exports/*.png**: Compressed with `oxipng` for web/app use
 
 ## Regenerating Exports
@@ -45,7 +47,7 @@ done
 oxipng -o 4 --strip safe exports/infinity-*.png
 ```
 
-**Note:** Do not compress `source/infinity-1024.png` - keep it identical to the Icon Composer asset for hash consistency.
+**Note:** Do not compress `source/infinity-1024.png` to preserve hash consistency.
 
 ## TODO
 
