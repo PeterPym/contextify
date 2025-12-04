@@ -33,20 +33,20 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-03
+**Last Updated:** 2025-12-04
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 20 items - Important for quality/UX, ship soon after launch
+- **P0 (Launch Critical):** 4 items - Must complete for v1.0 public launch
+- **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 43 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 83
+**Total Active Items:** 84
 
 ---
 
-# P0 (Launch Critical) - 3 Items
+# P0 (Launch Critical) - 4 Items
 
 ---
 
@@ -182,6 +182,34 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 **Commits:**
 - `76a5fb1c` feat(settings): show Permissions tab only for App Store builds
 - `93a5f82b` feat(settings): combine Database and Permissions into tabbed Settings view
+
+---
+
+## #P0-ENTRY-METADATA-BADGES: Timeline entry badges don't clear after state changes
+
+**Status:** Bug - investigated, ready to fix
+**Priority:** P0 (visual bugs visible in demo, confusing UX)
+**Effort:** 1-2 hours
+
+**Problem:**
+Two metadata indicators in timeline entries persist incorrectly after their conditions have cleared:
+1. **QUEUED badge** - Shows on user messages sent while Claude was working; doesn't clear after Claude processes them
+2. **Pulsing hourglass** - Shows during active summarization; doesn't clear after summary appears
+
+**Root Causes:**
+1. **Queued:** Claude Code's `remove` queue operation doesn't include content; our parser requires content to match, so remove operations are silently skipped
+2. **Hourglass:** `refreshCachedEntries` only clears `.unsummarized` action to `.none`, but not `.generatingActive`
+
+**Solution:**
+1. **Queued:** Use FIFO matching - on `remove`, clear oldest queued entry for that session from our DB
+2. **Hourglass:** Include `.generatingActive` in the action-clearing condition
+
+**Files to Change:**
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift:928` - Remove content requirement for `.remove`
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift:842` - FIFO query instead of content-hash match
+- `Contextify/Contextify/ConversationMonitor.swift:2672` - Add `.generatingActive` to clear condition
+
+**Investigation:** `build/notes/todo-support/P0-ENTRY-METADATA-BADGES-investigation.md`
 
 ---
 
