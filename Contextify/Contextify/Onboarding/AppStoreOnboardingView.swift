@@ -21,6 +21,8 @@ struct AppStoreOnboardingView: View {
 
   @State private var currentStep: Int = 1
   @State private var databaseLocationConfigured = false
+  @State private var selectedPath: String?
+  @State private var selectedFolderName: String?
 
   private let totalSteps = 2
 
@@ -38,7 +40,11 @@ struct AppStoreOnboardingView: View {
       // Step content
       Group {
         if currentStep == 1 {
-          DatabaseLocationStepView(isConfigured: $databaseLocationConfigured)
+          DatabaseLocationStepView(
+            isConfigured: $databaseLocationConfigured,
+            selectedPath: $selectedPath,
+            selectedFolderName: $selectedFolderName
+          )
         } else {
           PermissionsStepView(
             folderAccessController: folderAccessController,

@@ -26,9 +26,9 @@ private let log = Logger(subsystem: "dev.contextify", category: "Onboarding")
 /// 2. Obtain security-scoped bookmark for persistent access
 struct DatabaseLocationStepView: View {
   @Binding var isConfigured: Bool
+  @Binding var selectedPath: String?
+  @Binding var selectedFolderName: String?
 
-  @State private var selectedPath: String?
-  @State private var selectedFolderName: String?
   @State private var isSelecting = false
   @State private var errorMessage: String?
 
@@ -254,11 +254,19 @@ struct DatabaseLocationStepView: View {
 }
 
 #Preview {
-  DatabaseLocationStepView(isConfigured: .constant(false))
-    .frame(width: 520, height: 400)
+  DatabaseLocationStepView(
+    isConfigured: .constant(false),
+    selectedPath: .constant(nil),
+    selectedFolderName: .constant(nil)
+  )
+  .frame(width: 520, height: 400)
 }
 
 #Preview("Configured") {
-  DatabaseLocationStepView(isConfigured: .constant(true))
-    .frame(width: 520, height: 400)
+  DatabaseLocationStepView(
+    isConfigured: .constant(true),
+    selectedPath: .constant("/Users/demo/Documents/Contextify"),
+    selectedFolderName: .constant("Contextify")
+  )
+  .frame(width: 520, height: 400)
 }
