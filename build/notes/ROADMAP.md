@@ -241,6 +241,54 @@ HTTP server removed before initial App Store release (security/complexity concer
 
 ---
 
+### P4-AWAY-SUMMARY: Summarize Activity While User Was Away
+
+**Status:** Not started
+**Priority:** P4 (future consideration, UX innovation)
+**Effort:** Medium-Large (6-10 hours)
+
+- [ ] Detect user idle/away state and summarize conversation activity on return
+
+**Motivation:**
+When users step away from their machine (lunch, meetings, overnight), Claude Code sessions may continue running long tasks. Upon return, users currently must scroll through potentially dozens of entries to understand what happened.
+
+**Core Features:**
+1. **Idle Detection:** Monitor system idle time (mouse/keyboard inactivity)
+2. **Away Threshold:** Configurable threshold (e.g., 15 minutes) to trigger "away" state
+3. **Return Summary:** When user returns and > N entries added during absence, show concise summary
+4. **Action Items:** Surface any action items, errors, or decisions requiring attention
+
+**UX Concepts:**
+- **Banner/Toast:** "While you were away: 47 new entries across 3 projects"
+- **Summary Panel:** Expandable panel with key highlights
+- **Action Queue:** List items needing user attention (errors, prompts, completions)
+
+**Implementation Considerations:**
+1. **Idle Detection:** Use `NSEvent.addGlobalMonitorForEvents` or `IOKit` for HID idle time
+2. **Entry Threshold:** Only summarize if > N entries (e.g., 10) added during absence
+3. **Summary Generation:** Use existing LLM infrastructure or simple heuristics
+4. **Per-Project vs Global:** Summary could be project-specific or aggregate
+5. **Dismissal:** User can dismiss or "mark as read" to clear away state
+
+**Edge Cases:**
+- User returns mid-task: Don't interrupt active work
+- Multiple short absences: Debounce to avoid repeated summaries
+- Very long absences: Cap summary scope (last 24h or 200 entries)
+- Background tasks: Distinguish between human-initiated and background activity
+
+**Research Questions:**
+1. What's the right idle threshold? (5min too short, 1hr too long)
+2. Should summary auto-dismiss after viewing, or require explicit action?
+3. How to handle multiple projects with activity?
+4. Should action items persist until explicitly resolved?
+
+**Related:**
+- Existing LLM summarization infrastructure (TimelineCacheMissGenerator)
+- Toast notification system
+- System idle time APIs (IOKit, NSEvent)
+
+---
+
 ## P5 (Research / Exploratory)
 
 ### P5-INVESTIGATE-TRANSCRIPT-PROVIDERS: Other AI Tool Transcript Support

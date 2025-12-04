@@ -4,6 +4,18 @@ import OSLog
 
 private let log = Logger(subsystem: "dev.contextify", category: "DatabaseManager")
 
+// MARK: - Onboarding Error
+
+/// Guard error for App Store builds attempting DB access before onboarding.
+///
+/// This should not be reachable if UI gating is correct - the wizard blocks
+/// all code paths that would access the database. Exists as defense-in-depth.
+public struct OnboardingRequiredError: Error, LocalizedError {
+  public var errorDescription: String? {
+    "Database cannot be accessed until onboarding is complete. Please select a database location."
+  }
+}
+
 /// Manages the SQLite database connection and lifecycle
 /// Thread-safe singleton - GRDB pool handles concurrency internally
 public final class DatabaseManager: @unchecked Sendable {
@@ -54,6 +66,15 @@ public final class DatabaseManager: @unchecked Sendable {
 
   /// Opens or creates the database at the default location
   private func openDatabase() throws -> DatabasePool {
+    // Guard: In sandboxed builds, require onboarding completion before DB access
+    // This prevents accidental creation of database in container location
+    // NOTE: Must use runtime Sandbox.isSandboxed check instead of #if APPSTORE_BUILD
+    // because compile-time flags don't propagate to Swift package code.
+    if Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding() {
+      log.warning("[DB-GUARD] Sandboxed build attempted DB access before onboarding")
+      throw OnboardingRequiredError()
+    }
+
     // Start security-scoped access if using bookmark (sandboxed builds only)
     if let bookmarkURL = HUDPreferences.resolveDatabaseBookmark() {
       if Sandbox.isSandboxed {
@@ -160,46 +181,80 @@ public final class DatabaseManager: @unchecked Sendable {
   }
 
   /// Returns default database path
+  /// DMG builds: ~/Documents/Contextify/ (user-accessible)
+  /// App Store builds: Should never reach here without onboarding (guarded in openDatabase)
   private func defaultDatabasePath() throws -> URL {
-    let appSupport = try FileManager.default.url(
+    let fm = FileManager.default
+
+    // New default location: ~/Documents/Contextify/
+    let documentsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Contextify", isDirectory: true)
+
+    // Legacy location: ~/Library/Application Support/Contextify/
+    let appSupport = try fm.url(
       for: .applicationSupportDirectory,
       in: .userDomainMask,
       appropriateFor: nil,
       create: true
     )
-    let contextifyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
-    try FileManager.default.createDirectory(at: contextifyDir, withIntermediateDirectories: true)
+    let legacyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
+
+    let documentsDB = documentsDir.appendingPathComponent("contextify.db")
+    let legacyDB = legacyDir.appendingPathComponent("contextify.db")
+    let legacyOldDB = legacyDir.appendingPathComponent("transcripts.db")
 
     // ========================================================================
-    // FILE MIGRATION: transcripts.db → contextify.db
+    // MIGRATION PRIORITY:
+    // 1. If Documents/Contextify/contextify.db exists -> use it (already migrated)
+    // 2. If legacy Application Support DB exists -> migrate to Documents
+    // 3. Otherwise -> create fresh DB in Documents
     // ========================================================================
-    let oldPath = contextifyDir.appendingPathComponent("transcripts.db")
-    let newPath = contextifyDir.appendingPathComponent("contextify.db")
 
-    // Only migrate if new doesn't exist but old does
-    if !FileManager.default.fileExists(atPath: newPath.path),
-       FileManager.default.fileExists(atPath: oldPath.path) {
-
-      let oldWal = URL(fileURLWithPath: oldPath.path + "-wal")
-      let oldShm = URL(fileURLWithPath: oldPath.path + "-shm")
-      let newWal = URL(fileURLWithPath: newPath.path + "-wal")
-      let newShm = URL(fileURLWithPath: newPath.path + "-shm")
-
-      // Move main database file
-      try FileManager.default.moveItem(at: oldPath, to: newPath)
-      log.info("Migrated database: transcripts.db → contextify.db")
-
-      // Move WAL and SHM if they exist
-      if FileManager.default.fileExists(atPath: oldWal.path) {
-        try? FileManager.default.moveItem(at: oldWal, to: newWal)
-      }
-      if FileManager.default.fileExists(atPath: oldShm.path) {
-        try? FileManager.default.moveItem(at: oldShm, to: newShm)
-      }
+    if fm.fileExists(atPath: documentsDB.path) {
+      log.info("[DB-PATH] Using existing Documents database")
+      return documentsDB
     }
-    // ========================================================================
 
-    return contextifyDir.appendingPathComponent("contextify.db")
+    // Check for legacy database and migrate if found
+    let legacySource: URL?
+    if fm.fileExists(atPath: legacyDB.path) {
+      legacySource = legacyDB
+    } else if fm.fileExists(atPath: legacyOldDB.path) {
+      legacySource = legacyOldDB
+    } else {
+      legacySource = nil
+    }
+
+    if let source = legacySource {
+      // Create Documents/Contextify/ directory
+      try fm.createDirectory(at: documentsDir, withIntermediateDirectories: true)
+
+      // Copy database files (keep legacy as backup)
+      try fm.copyItem(at: source, to: documentsDB)
+      log.info("[DB-MIGRATE] Copied database from \(source.path) to \(documentsDB.path)")
+
+      // Copy WAL and SHM files if they exist
+      let sourceWal = URL(fileURLWithPath: source.path + "-wal")
+      let sourceShm = URL(fileURLWithPath: source.path + "-shm")
+      let destWal = URL(fileURLWithPath: documentsDB.path + "-wal")
+      let destShm = URL(fileURLWithPath: documentsDB.path + "-shm")
+
+      if fm.fileExists(atPath: sourceWal.path) {
+        try? fm.copyItem(at: sourceWal, to: destWal)
+        log.debug("[DB-MIGRATE] Copied WAL file")
+      }
+      if fm.fileExists(atPath: sourceShm.path) {
+        try? fm.copyItem(at: sourceShm, to: destShm)
+        log.debug("[DB-MIGRATE] Copied SHM file")
+      }
+
+      log.notice("[DB-MIGRATE] Database migrated to Documents. Legacy files kept at: \(legacyDir.path)")
+      return documentsDB
+    }
+
+    // No existing database - create fresh one in Documents
+    try fm.createDirectory(at: documentsDir, withIntermediateDirectories: true)
+    log.info("[DB-PATH] Creating new database in Documents")
+    return documentsDB
   }
 
   /// Validates database integrity

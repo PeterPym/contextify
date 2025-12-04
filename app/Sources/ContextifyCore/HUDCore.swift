@@ -19,6 +19,9 @@ public enum HUDPreferences {
   public static let customDatabaseLocationKey = "dev.contextify.customDatabaseLocation"
   public static let customDatabaseBookmarkKey = "dev.contextify.customDatabaseBookmark"
 
+  // App Store onboarding
+  public static let appStoreOnboardingCompletedKey = "dev.contextify.appStoreOnboardingCompleted"
+
   nonisolated(unsafe) private static let sharedDefaults: UserDefaults = {
     if let suite = UserDefaults(suiteName: "dev.contextify"), probeDefaultsWriteability(suite) {
       return suite
@@ -92,6 +95,15 @@ public enum HUDPreferences {
     storeDatabaseURL(url)
   }
 
+  /// Sets custom database location with pre-created bookmark data.
+  /// Use this when you already have security-scoped access (e.g., from NSOpenPanel)
+  /// and have created the bookmark while in scope.
+  public static func setCustomDatabaseLocation(_ url: URL, bookmarkData: Data) {
+    let canonical = url.resolvingSymlinksInPath()
+    sharedDefaults.set(canonical.path, forKey: customDatabaseLocationKey)
+    sharedDefaults.set(bookmarkData, forKey: customDatabaseBookmarkKey)
+  }
+
   public static func clearCustomDatabaseLocation() {
     sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
     sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
@@ -100,6 +112,68 @@ public enum HUDPreferences {
   public static func resolveDatabaseBookmark() -> URL? {
     guard let data = sharedDefaults.data(forKey: customDatabaseBookmarkKey) else { return nil }
     return resolveBookmarkData(data, pathKey: customDatabaseLocationKey, bookmarkKey: customDatabaseBookmarkKey)
+  }
+
+  // MARK: - App Store Onboarding
+
+  /// Returns true if the user has completed the App Store onboarding wizard.
+  ///
+  /// **Sandboxed builds:** Requires BOTH the completion flag AND a resolvable database bookmark.
+  /// This ensures we don't proceed with DB access if the user's chosen folder was deleted.
+  ///
+  /// **Unsandboxed builds:** Always returns true (onboarding not required).
+  ///
+  /// NOTE: Uses runtime `Sandbox.isSandboxed` check instead of compile-time `#if APPSTORE_BUILD`
+  /// because compile-time flags don't propagate to Swift package code.
+  public static func hasCompletedAppStoreOnboarding() -> Bool {
+    // Use runtime sandbox detection - compile-time flags don't work in Swift packages
+    guard Sandbox.isSandboxed else {
+      // Unsandboxed (DMG) builds never gate on onboarding
+      return true
+    }
+
+    // 1) Flag must be set
+    guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
+
+    // 2) Bookmark must resolve
+    guard let url = resolveDatabaseBookmark() else { return false }
+
+    // 3) Resolved URL must exist and be a directory
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+          isDirectory.boolValue else {
+      return false
+    }
+
+    return true
+  }
+
+  #if DEBUG
+  /// Testing helper that evaluates App Store onboarding completeness using
+  /// App Store semantics even in non-App Store builds.
+  internal static func hasCompletedAppStoreOnboardingForTesting() -> Bool {
+    guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
+    guard let url = resolveDatabaseBookmark() else { return false }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+          isDirectory.boolValue else {
+      return false
+    }
+    return true
+  }
+  #endif
+
+  /// Sets the App Store onboarding completion state.
+  public static func setAppStoreOnboardingCompleted(_ completed: Bool) {
+    sharedDefaults.set(completed, forKey: appStoreOnboardingCompletedKey)
+  }
+
+  /// Clears both the onboarding completion flag AND the database bookmark.
+  /// Used when user resets database location in Settings or when bookmark becomes stale.
+  public static func clearAppStoreOnboardingState() {
+    sharedDefaults.removeObject(forKey: appStoreOnboardingCompletedKey)
+    sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
+    sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
   }
 
   private static func storeDatabaseURL(_ url: URL) {
@@ -220,11 +294,22 @@ public enum HUDPreferences {
 // MARK: - Sandbox
 
 public enum Sandbox {
+  #if DEBUG
+  /// Override for unit tests to simulate sandboxed/unsandboxed environment.
+  /// Only available in DEBUG builds.
+  nonisolated(unsafe) public static var isSandboxedOverrideForTests: Bool?
+  #endif
+
   /// Returns true when running in a sandboxed environment.
   /// Uses runtime detection because compile-time flags (#if APPSTORE_BUILD)
   /// don't propagate to Swift package code.
   public static var isSandboxed: Bool {
-    isRuntimeSandboxed
+    #if DEBUG
+    if let override = isSandboxedOverrideForTests {
+      return override
+    }
+    #endif
+    return isRuntimeSandboxed
   }
 
   /// Runtime check via environment variables set by macOS for sandboxed apps.

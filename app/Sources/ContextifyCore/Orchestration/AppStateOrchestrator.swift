@@ -22,8 +22,9 @@ public final class AppStateOrchestrator: ObservableObject {
 
   // Dependencies
   private let discovery: LightweightDiscoveryService
-  private let orchestrator: TranscriptOrchestrator
-  private let fastPath: FastPathIngestionCoordinator
+  // Optional: nil until onboarding completes in sandboxed builds
+  private var orchestrator: TranscriptOrchestrator?
+  private var fastPath: FastPathIngestionCoordinator?
   private var accessProvider: TranscriptAccessProvider?
 
   // Background discovery (App Store builds)
@@ -45,22 +46,68 @@ public final class AppStateOrchestrator: ObservableObject {
     return nil
   }
 
+  /// Whether the orchestrator has been fully initialized with database access.
+  /// In sandboxed builds, this is false until onboarding completes.
+  public var isInitialized: Bool {
+    orchestrator != nil
+  }
+
   private var knownProjects: [LightweightProject] = []
   private var projectLookup: [String: LightweightProject] = [:]
   private var backgroundTask: Task<Void, Never>?
 
   private init() {
-    let db = DatabaseManager.shared
-    self.orchestrator = try! TranscriptOrchestrator(dbManager: db)
     self.discovery = LightweightDiscoveryService()
-    let fastPath = FastPathIngestionCoordinator(orchestrator: orchestrator)
-    self.fastPath = fastPath
 
-    Task(priority: .background) {
-      log.info("[ORCH-FASTPATH-RESUME] Starting resumePendingCompletions()")
-      await fastPath.resumePendingCompletions()
-      log.info("[ORCH-FASTPATH-RESUME] Finished resumePendingCompletions()")
+    // In sandboxed builds without onboarding, defer database initialization
+    if Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding() {
+      log.info("[ORCH-INIT] Sandboxed build, onboarding not complete - deferring DB init")
+      self.orchestrator = nil
+      self.fastPath = nil
+      return
     }
+
+    // Normal initialization path (DMG builds, or App Store after onboarding)
+    initializeDatabaseComponents()
+  }
+
+  /// Initialize database-dependent components. Called during init for DMG builds,
+  /// or after onboarding completes for App Store builds.
+  private func initializeDatabaseComponents() {
+    guard orchestrator == nil else {
+      log.warning("[ORCH-INIT] Database components already initialized")
+      return
+    }
+
+    do {
+      let db = DatabaseManager.shared
+      let orch = try TranscriptOrchestrator(dbManager: db)
+      self.orchestrator = orch
+      let fp = FastPathIngestionCoordinator(orchestrator: orch)
+      self.fastPath = fp
+
+      Task(priority: .background) {
+        log.info("[ORCH-FASTPATH-RESUME] Starting resumePendingCompletions()")
+        await fp.resumePendingCompletions()
+        log.info("[ORCH-FASTPATH-RESUME] Finished resumePendingCompletions()")
+      }
+
+      log.info("[ORCH-INIT] Database components initialized successfully")
+    } catch {
+      log.error("[ORCH-INIT] Failed to initialize database components: \(error.localizedDescription)")
+      // Leave orchestrator/fastPath nil - startup() will fail gracefully
+    }
+  }
+
+  /// Complete initialization after onboarding. Called by the onboarding flow.
+  public func completeOnboardingInitialization() {
+    guard !isInitialized else {
+      log.info("[ORCH-ONBOARDING] Already initialized, skipping")
+      return
+    }
+
+    log.info("[ORCH-ONBOARDING] Completing post-onboarding initialization")
+    initializeDatabaseComponents()
   }
 
   /// Configure the access provider for sandbox builds
@@ -93,7 +140,19 @@ public final class AppStateOrchestrator: ObservableObject {
   /// until termination. This is intentional for the singleton `AppStateOrchestrator.shared`.
   /// The `stopBackgroundDiscovery()` method exists for cleanup but is not called in normal
   /// operation since the orchestrator lives for the process lifetime.
+  ///
+  /// **Precondition (App Store builds):**
+  /// Onboarding must be complete before startup() is called. This is enforced via
+  /// precondition to catch any code path that bypasses the pipeline gate.
   public func startup() async {
+    // Defense-in-depth: Catch any code path that bypasses the onboarding gate
+    #if APPSTORE_BUILD
+    precondition(
+      !Sandbox.isSandboxed || HUDPreferences.hasCompletedAppStoreOnboarding(),
+      "AppStateOrchestrator.startup() called before App Store onboarding complete"
+    )
+    #endif
+
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()
 
@@ -106,12 +165,16 @@ public final class AppStateOrchestrator: ObservableObject {
     log.info("[ORCH-STARTUP] Discovered \(projects.count, privacy: .public) projects")
 
     // 2. Update projects table metadata ONLY (single transaction, no transcripts)
-    do {
-      try await orchestrator.updateProjectsMetadataOnly(projects)
-      log.debug("[ORCH-STARTUP] Updated projects table metadata")
-      try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
-    } catch {
-      log.error("[ORCH-STARTUP] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
+    if let orchestrator {
+      do {
+        try await orchestrator.updateProjectsMetadataOnly(projects)
+        log.debug("[ORCH-STARTUP] Updated projects table metadata")
+        try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
+      } catch {
+        log.error("[ORCH-STARTUP] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
+      }
+    } else {
+      log.warning("[ORCH-STARTUP] Orchestrator not initialized, skipping metadata update")
     }
 
     // 3. Show UI immediately
@@ -242,11 +305,13 @@ public final class AppStateOrchestrator: ObservableObject {
     rebuildProjectLookup(with: projects)
 
     // Update DB metadata for new projects
-    do {
-      try await orchestrator.updateProjectsMetadataOnly(projects)
-      try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
-    } catch {
-      log.error("[ORCH-REFRESH] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
+    if let orchestrator {
+      do {
+        try await orchestrator.updateProjectsMetadataOnly(projects)
+        try orchestrator.seedDisplayOrderFromDiscoveryIfUnset(projects)
+      } catch {
+        log.error("[ORCH-REFRESH] Failed to update project metadata: \(error.localizedDescription, privacy: .public)")
+      }
     }
 
     // Update state (preserve current active project)
@@ -255,7 +320,7 @@ public final class AppStateOrchestrator: ObservableObject {
 
       // Re-ingest active project if new transcript files were discovered
       // This handles cases like Codex transcripts merging into a Claude project
-      if activeProjectNeedsReIngest, let project = projectLookup[currentId] {
+      if activeProjectNeedsReIngest, let project = projectLookup[currentId], let fastPath {
         log.info("[ORCH-REFRESH] Re-ingesting active project to pick up new transcripts")
         do {
           let dbProjectId = try await fastPath.ingestProjectJIT(project)
@@ -287,7 +352,7 @@ public final class AppStateOrchestrator: ObservableObject {
 
     // 1. Cancel background work
     backgroundTask?.cancel()
-    await fastPath.cancel()
+    await fastPath?.cancel()
 
     // Look up project - first try direct ID match
     var project = projectLookup[id]
@@ -332,7 +397,7 @@ public final class AppStateOrchestrator: ObservableObject {
     }
 
     // DB fallback if still not found
-    if project == nil {
+    if project == nil, let orchestrator {
       log.warning("[ORCH-SELECT-MISS] Project ID \(id, privacy: .public) not in cache; attempting DB fallback")
       do {
         if let dbProject = try orchestrator.getProject(id: id) {
@@ -367,6 +432,12 @@ public final class AppStateOrchestrator: ObservableObject {
 
     let startTime = Date()
     log.info("[ORCH-SELECT] Loading project: \(project.path.lastPathComponent, privacy: .public)")
+
+    guard let fastPath else {
+      log.error("[ORCH-SELECT] FastPath not initialized - onboarding may not be complete")
+      setState(.error("Database not ready. Please complete onboarding."))
+      return
+    }
 
     do {
       // 3. JIT Ingestion (FastPath with batching)
@@ -440,8 +511,12 @@ public final class AppStateOrchestrator: ObservableObject {
         }
 
         // Ingest this project
+        guard let fastPath = self.fastPath else {
+          log.warning("[ORCH-BACKGROUND] FastPath not initialized, stopping background indexing")
+          break
+        }
         do {
-          try await self.fastPath.ingestProjectJIT(project)
+          try await fastPath.ingestProjectJIT(project)
           log.debug("[ORCH-BACKGROUND] Ingested project: \(project.id, privacy: .public)")
         } catch {
           log.warning("[ORCH-BACKGROUND] Failed to ingest \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")

@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D4APPSTORE00000000000001 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4APPSTORE00000000000010 /* ContextifyCore */; };
+		D4APPSTORE00000000000002 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 		D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
 		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
 		D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 		D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
-		D4APPSTORE00000000000001 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4APPSTORE00000000000010 /* ContextifyCore */; };
-		D4APPSTORE00000000000002 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,8 +38,8 @@
 		D4A7739D2E76936700747100 /* Contextify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4A773AA2E76936800747100 /* ContextifyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4A773B42E76936800747100 /* ContextifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D4APPSTORE00000000000003 /* Contextify AppStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Contextify AppStore.app"; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "icon-composer-project.icon"; sourceTree = "<group>"; };
-		D4APPSTORE00000000000003 /* Contextify AppStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Contextify AppStore.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -504,10 +504,10 @@
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SPARKLE $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG SPARKLE $(inherited)";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -777,6 +777,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D4APPSTORE00000000000010 /* ContextifyCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
+			productName = ContextifyCore;
+		};
 		D4C0A0062E77AAAA00747100 /* ContextifyCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
@@ -791,11 +796,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4SPAR00010000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
-		};
-		D4APPSTORE00000000000010 /* ContextifyCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D4C0A0052E77AAAA00747100 /* XCLocalSwiftPackageReference ".." */;
-			productName = ContextifyCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

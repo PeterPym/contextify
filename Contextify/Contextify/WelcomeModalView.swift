@@ -385,8 +385,8 @@ struct WelcomeModalView: View {
     ///
     /// **Example flows:**
     /// - DMG, first launch: needsPermissions=false → skip to discovery
-    /// - App Store, first launch: needsPermissions=true → show permissions → then discovery
-    /// - App Store, second launch: needsPermissions=false → skip to discovery (bookmarks exist)
+    /// - App Store, first launch: handled by AppStoreOnboardingView wizard (not WelcomeModal)
+    /// - App Store, subsequent launches: needsPermissions=false → skip to discovery (wizard already complete)
     private var needsPermissions: Bool {
         // DMG builds never need permissions (have full filesystem access)
         // Sandbox.isSandboxed delegates to runtime detection, which works from both
@@ -395,14 +395,11 @@ struct WelcomeModalView: View {
             return false
         }
 
-        // App Store builds: check if user already granted permissions
-        // If permissions step is already visible, keep it visible
-        if showPermissionsStep {
-            return true
-        }
-
-        // Show permissions step if no saved bookmarks exist
-        return !hasAnyAuthorizations
+        // App Store builds: onboarding wizard handles permissions, so WelcomeModal
+        // should never show permissions step. If we're showing WelcomeModal in an
+        // App Store build, onboarding must be complete (which means permissions granted).
+        // The wizard wouldn't complete without permissions.
+        return false
     }
 
     private var hasAnyAuthorizations: Bool {
@@ -517,115 +514,6 @@ struct WelcomeModalView: View {
                 .buttonStyle(.bordered)
             }
             // No button during discovery - modal shows progress
-        }
-    }
-}
-
-// MARK: - Source Authorization Row
-
-struct SourceAuthorizationRow: View {
-    let source: SourceID
-    @ObservedObject var controller: FolderAccessController
-    let authorization: SourceAuthorization?
-    let onAuthorizationChanged: (SourceAuthorization) -> Void
-
-    @State private var isRequesting = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                // Source name
-                Text(source.displayName)
-                    .font(.headline)
-
-                Spacer()
-
-                // Status chip
-                statusChip
-
-                // Action button
-                actionButton
-            }
-
-            // Error message (if any)
-            if let errorMessage = errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding()
-        .background(Color(nsColor: .controlBackgroundColor))
-        .cornerRadius(8)
-    }
-
-    private var statusChip: some View {
-        let status = authorization?.status ?? .notAuthorized
-        let (text, color) = statusDisplay(for: status)
-
-        return Text(text)
-            .font(.caption)
-            .fontWeight(.medium)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.2))
-            .foregroundColor(color)
-            .cornerRadius(4)
-    }
-
-    private var actionButton: some View {
-        Group {
-            if authorization?.status == .broken {
-                Button("Re-link...") {
-                    requestAccess()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isRequesting)
-            } else if authorization?.status == .authorized {
-                Button {} label: {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-            } else {
-                Button("Grant Access...") {
-                    requestAccess()
-                }
-                .buttonStyle(.bordered)
-                .disabled(isRequesting)
-            }
-        }
-    }
-
-    private func statusDisplay(for status: AuthorizationStatus) -> (String, Color) {
-        switch status {
-        case .authorized: return ("Authorized", .green)
-        case .notAuthorized: return ("Awaiting access", .secondary)
-        case .broken: return ("Broken", .orange)
-        }
-    }
-
-    private func requestAccess() {
-        isRequesting = true
-        errorMessage = nil
-
-        Task { @MainActor in
-            do {
-                let auths = try await controller.requestAccess(for: [source])
-                if let auth = auths.first {
-                    onAuthorizationChanged(auth)
-                    log.info("[PERMISSIONS] Granted access for \(source.rawValue)")
-                }
-            } catch FolderAccessError.userCancelled {
-                log.info("[PERMISSIONS] User cancelled access for \(source.rawValue)")
-            } catch {
-                log.error("[PERMISSIONS] Failed to grant access for \(source.rawValue): \(error.localizedDescription)")
-                errorMessage = error.localizedDescription
-            }
-            isRequesting = false
         }
     }
 }

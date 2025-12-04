@@ -12,6 +12,14 @@ These cause real problems when violated:
 4. **Use project ID, not path** - Always `ActiveProjectContext.id` for queries, never raw paths.
 5. **Sandbox file access** - All FileManager ops must be inside `accessProvider.withAccess()` closure.
 6. **Never skip layers** - UI -> ViewModel -> Orchestrator -> Repository -> Database. No GRDB imports in UI.
+7. **Verify build type before debugging** - When investigating runtime behavior, ALWAYS check which build is running:
+   ```bash
+   ps aux | grep Contextify | grep -v grep | head -1
+   ```
+   - `.derived/Build/Products/Debug/` = DMG build (no sandbox, no onboarding wizard)
+   - `Contextify AppStore.app` = App Store build (sandboxed, requires onboarding)
+
+   App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
 
 ---
 
