@@ -30,6 +30,10 @@ clean_userdefaults_for_bid() {
   local container="$HOME/Library/Containers/$bid/Data/Library/Preferences"
   rm -f "$container/$bid.plist" 2>/dev/null || true
   rm -f "$container/$CONTEXTIFY_SUITE.plist" 2>/dev/null || true
+
+  # Restart cfprefsd to clear preference cache (required for sandboxed apps)
+  # Without this, deleted preferences remain cached and are returned to the app
+  killall cfprefsd 2>/dev/null || true
 }
 
 # Clean caches for a bundle ID
