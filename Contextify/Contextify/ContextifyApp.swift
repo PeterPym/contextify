@@ -241,12 +241,8 @@ struct ContextifyApp: App {
         startupLog.info("[WELCOME-STATE] Setting showWelcomeModal = true")
         showWelcomeModal = true
       }
-      .onReceive(NotificationCenter.default.publisher(for: .databaseLocationReset)) { _ in
-        // User reset database in Settings - trigger re-onboarding
-        let startupLog = Logger(subsystem: "dev.contextify", category: "Onboarding")
-        startupLog.notice("[DB-RESET] Database location reset - triggering re-onboarding")
-        onboardingCoordinator.markBookmarkStale()
-      }
+      // NOTE: Database reset in App Store builds requires restart.
+      // No hot-swap notification handling needed - next launch shows wizard.
     }
     // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
     // Height minimum: 360 (ContentView.minHeight) + ~25 (titlebar)

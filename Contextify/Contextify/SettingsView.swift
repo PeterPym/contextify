@@ -45,6 +45,7 @@ struct DatabaseSettingsTab: View {
   @State private var showingFilePicker: Bool = false
   @State private var conflictWarning: String?
   @State private var showLocationInfo: Bool = false
+  @State private var pendingRestart: Bool = false  // App Store: restart required after reset
 
   private let devMode = DeveloperMode.shared
 
@@ -186,6 +187,27 @@ struct DatabaseSettingsTab: View {
             .background(Color.red.opacity(0.1))
             .cornerRadius(4)
             .padding(.top, 8)
+        }
+
+        // Restart required (App Store builds after reset)
+        if pendingRestart {
+          HStack(spacing: 8) {
+            Image(systemName: "arrow.clockwise.circle.fill")
+              .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Restart Required")
+                .font(.caption)
+                .fontWeight(.semibold)
+              Text("Database location has been reset. Please restart Contextify to choose a new location.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(Color.orange.opacity(0.1))
+          .cornerRadius(4)
+          .padding(.top, 8)
         }
 
         if devMode.isEnabled {
@@ -367,13 +389,15 @@ struct DatabaseSettingsTab: View {
   private func resetToDefaultLocation() {
     guard HUDPreferences.getCustomDatabaseLocation() != nil else { return }
 
-    // App Store builds: clear onboarding state and show wizard instead of migrating
-    if Sandbox.isSandboxed {
-      log.info("[DB-RESET] App Store build - clearing onboarding state to re-show wizard")
-      HUDPreferences.clearAppStoreOnboardingState()
-      NotificationCenter.default.post(name: .databaseLocationReset, object: nil)
-      return
-    }
+    // App Store builds: clear state and require restart
+    // Hot-swapping database location while running is complex and error-prone.
+    // Simpler approach: clear state and let next launch show the onboarding wizard.
+    #if APPSTORE_BUILD
+    log.info("[DB-RESET] App Store build - clearing onboarding state, restart required")
+    HUDPreferences.clearAppStoreOnboardingState()
+    pendingRestart = true
+    return
+    #endif
 
     // DMG builds: run the heavy migration work off the main thread
     Task.detached(priority: .userInitiated) {
