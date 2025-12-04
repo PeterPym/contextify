@@ -95,6 +95,15 @@ public enum HUDPreferences {
     storeDatabaseURL(url)
   }
 
+  /// Sets custom database location with pre-created bookmark data.
+  /// Use this when you already have security-scoped access (e.g., from NSOpenPanel)
+  /// and have created the bookmark while in scope.
+  public static func setCustomDatabaseLocation(_ url: URL, bookmarkData: Data) {
+    let canonical = url.resolvingSymlinksInPath()
+    sharedDefaults.set(canonical.path, forKey: customDatabaseLocationKey)
+    sharedDefaults.set(bookmarkData, forKey: customDatabaseBookmarkKey)
+  }
+
   public static func clearCustomDatabaseLocation() {
     sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
     sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
@@ -109,12 +118,20 @@ public enum HUDPreferences {
 
   /// Returns true if the user has completed the App Store onboarding wizard.
   ///
-  /// **App Store builds:** Requires BOTH the completion flag AND a resolvable database bookmark.
+  /// **Sandboxed builds:** Requires BOTH the completion flag AND a resolvable database bookmark.
   /// This ensures we don't proceed with DB access if the user's chosen folder was deleted.
   ///
-  /// **DMG builds:** Always returns true at compile-time (onboarding not required).
+  /// **Unsandboxed builds:** Always returns true (onboarding not required).
+  ///
+  /// NOTE: Uses runtime `Sandbox.isSandboxed` check instead of compile-time `#if APPSTORE_BUILD`
+  /// because compile-time flags don't propagate to Swift package code.
   public static func hasCompletedAppStoreOnboarding() -> Bool {
-    #if APPSTORE_BUILD
+    // Use runtime sandbox detection - compile-time flags don't work in Swift packages
+    guard Sandbox.isSandboxed else {
+      // Unsandboxed (DMG) builds never gate on onboarding
+      return true
+    }
+
     // 1) Flag must be set
     guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
 
@@ -129,10 +146,6 @@ public enum HUDPreferences {
     }
 
     return true
-    #else
-    // DMG builds never gate on onboarding
-    return true
-    #endif
   }
 
   #if DEBUG
