@@ -57,6 +57,10 @@ public final class AppStoreOnboardingCoordinator: ObservableObject {
     isComplete = true
     lastRefreshTime = Date()
     log.info("[ONBOARD-COMPLETE] Onboarding marked complete")
+
+    // Initialize database-dependent components now that onboarding is complete
+    AppStateOrchestrator.shared.completeOnboardingInitialization()
+    log.info("[ONBOARD-COMPLETE] AppStateOrchestrator initialized")
   }
 
   /// Mark the database bookmark as stale/invalid.
