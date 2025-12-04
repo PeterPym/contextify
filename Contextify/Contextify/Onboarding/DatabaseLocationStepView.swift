@@ -5,6 +5,10 @@
 //  Step 1 of the App Store onboarding wizard.
 //  Allows user to select where to store their database.
 //
+//  IMPORTANT: Sandboxed apps MUST use NSOpenPanel to get security-scoped
+//  access to folders outside the container. There is no way to programmatically
+//  access ~/Documents without user consent via the open panel.
+//
 
 import SwiftUI
 import AppKit
@@ -15,6 +19,10 @@ private let log = Logger(subsystem: "dev.contextify", category: "Onboarding")
 
 /// Step 1: Database location selection.
 /// User must choose a location before proceeding to step 2.
+///
+/// For sandboxed App Store builds, we MUST use NSOpenPanel to:
+/// 1. Get user consent for folder access
+/// 2. Obtain security-scoped bookmark for persistent access
 struct DatabaseLocationStepView: View {
   @Binding var isConfigured: Bool
 
@@ -22,10 +30,18 @@ struct DatabaseLocationStepView: View {
   @State private var isSelecting = false
   @State private var errorMessage: String?
 
-  private let suggestedPath: String = {
-    let home = FileManager.default.homeDirectoryForCurrentUser
-    return home.appendingPathComponent("Documents/Contextify").path
-  }()
+  /// Suggested path for display only - actual access requires NSOpenPanel
+  private var suggestedDisplayPath: String {
+    let username = NSUserName()
+    return "/Users/\(username)/Documents/Contextify"
+  }
+
+  /// URL to pre-navigate the open panel to Documents folder
+  private var documentsURL: URL {
+    // Try to get real Documents folder, not sandbox container
+    let username = NSUserName()
+    return URL(fileURLWithPath: "/Users/\(username)/Documents")
+  }
 
   var body: some View {
     VStack(spacing: 24) {
@@ -49,18 +65,18 @@ struct DatabaseLocationStepView: View {
             HStack {
               Image(systemName: "folder.fill")
                 .foregroundStyle(.blue)
-              Text("Suggested Location")
+              Text("Recommended: Documents Folder")
                 .font(.subheadline)
                 .fontWeight(.medium)
             }
 
-            Text(suggestedPath)
+            Text(suggestedDisplayPath)
               .font(.system(.caption, design: .monospaced))
               .foregroundStyle(.secondary)
               .textSelection(.enabled)
 
-            Button("Use This Location") {
-              selectSuggestedLocation()
+            Button("Select Documents Folder...") {
+              openFolderPicker(startingAt: documentsURL)
             }
             .buttonStyle(.borderedProminent)
             .disabled(isSelecting)
@@ -73,8 +89,8 @@ struct DatabaseLocationStepView: View {
           .font(.caption)
           .foregroundStyle(.tertiary)
 
-        Button("Choose Different Folder...") {
-          openFolderPicker()
+        Button("Choose Different Location...") {
+          openFolderPicker(startingAt: nil)
         }
         .buttonStyle(.bordered)
         .disabled(isSelecting)
@@ -99,13 +115,18 @@ struct DatabaseLocationStepView: View {
           .padding(.horizontal, 32)
       }
 
-      if isConfigured {
-        HStack(spacing: 8) {
-          Image(systemName: "checkmark.circle.fill")
-            .foregroundStyle(.green)
-          Text("Database location configured")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+      if isConfigured, let path = selectedPath {
+        VStack(spacing: 4) {
+          HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+              .foregroundStyle(.green)
+            Text("Location configured")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+          }
+          Text(path)
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(.tertiary)
         }
         .padding(.top, 8)
       }
@@ -125,70 +146,81 @@ struct DatabaseLocationStepView: View {
 
   // MARK: - Actions
 
-  private func selectSuggestedLocation() {
-    isSelecting = true
-    errorMessage = nil
-
-    do {
-      try configureLocation(URL(fileURLWithPath: suggestedPath))
-      isConfigured = true
-      log.info("[ONBOARD-DB] Using suggested location: \(suggestedPath)")
-    } catch {
-      errorMessage = error.localizedDescription
-      log.error("[ONBOARD-DB] Failed to configure suggested location: \(error.localizedDescription)")
-    }
-    isSelecting = false
-  }
-
-  private func openFolderPicker() {
+  /// Opens NSOpenPanel for folder selection.
+  /// This is REQUIRED for sandboxed apps to get security-scoped access.
+  private func openFolderPicker(startingAt directoryURL: URL?) {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
     panel.canCreateDirectories = true
     panel.prompt = "Select"
-    panel.message = "Choose where to store your Contextify database. A 'Contextify' subfolder will be created if needed."
+    panel.message = "Choose where to store your Contextify database.\nA 'Contextify' subfolder will be created automatically."
 
-    // Start at Documents
-    panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")
+    // Pre-navigate to suggested location if provided
+    if let dir = directoryURL {
+      panel.directoryURL = dir
+    }
 
     guard panel.runModal() == .OK, let selectedURL = panel.url else {
+      log.info("[ONBOARD-DB] User cancelled folder selection")
       return
     }
 
+    log.info("[ONBOARD-DB] User selected: \(selectedURL.path)")
     isSelecting = true
     errorMessage = nil
 
     do {
-      // Auto-append Contextify subfolder if not already named Contextify
+      // The panel grants temporary security-scoped access - use it now
+      guard selectedURL.startAccessingSecurityScopedResource() else {
+        throw NSError(domain: "Contextify", code: 1, userInfo: [
+          NSLocalizedDescriptionKey: "Could not access the selected folder. Please try again."
+        ])
+      }
+      defer { selectedURL.stopAccessingSecurityScopedResource() }
+
+      // Determine final path - append Contextify subfolder if needed
       var finalURL = selectedURL
       if selectedURL.lastPathComponent.lowercased() != "contextify" {
         finalURL = selectedURL.appendingPathComponent("Contextify")
       }
 
-      try configureLocation(finalURL)
+      // Create directory if needed (we have access from the panel)
+      let fm = FileManager.default
+      if !fm.fileExists(atPath: finalURL.path) {
+        try fm.createDirectory(at: finalURL, withIntermediateDirectories: true)
+        log.info("[ONBOARD-DB] Created directory: \(finalURL.path)")
+      }
+
+      // Create security-scoped bookmark for persistent access
+      // This is what allows the app to access this folder after restart
+      try createAndStoreBookmark(for: finalURL)
+
+      selectedPath = finalURL.path
       isConfigured = true
-      log.info("[ONBOARD-DB] Using custom location: \(finalURL.path)")
+      log.info("[ONBOARD-DB] Configured database location: \(finalURL.path)")
+
     } catch {
       errorMessage = error.localizedDescription
-      log.error("[ONBOARD-DB] Failed to configure custom location: \(error.localizedDescription)")
+      log.error("[ONBOARD-DB] Failed to configure location: \(error.localizedDescription)")
     }
+
     isSelecting = false
   }
 
-  private func configureLocation(_ url: URL) throws {
-    let fm = FileManager.default
+  /// Creates a security-scoped bookmark and stores it in preferences.
+  private func createAndStoreBookmark(for url: URL) throws {
+    // Create bookmark with security scope for persistent access
+    let bookmarkData = try url.bookmarkData(
+      options: [.withSecurityScope],
+      includingResourceValuesForKeys: nil,
+      relativeTo: nil
+    )
 
-    // Create directory if needed
-    if !fm.fileExists(atPath: url.path) {
-      try fm.createDirectory(at: url, withIntermediateDirectories: true)
-    }
-
-    // Create security-scoped bookmark
-    HUDPreferences.setCustomDatabaseLocation(url)
-
-    // Mark onboarding step as complete (bookmark created)
-    selectedPath = url.path
+    // Store both the path and bookmark in preferences
+    HUDPreferences.setCustomDatabaseLocation(url, bookmarkData: bookmarkData)
+    log.info("[ONBOARD-DB] Created security-scoped bookmark for: \(url.path)")
   }
 }
 
