@@ -135,6 +135,21 @@ public enum HUDPreferences {
     #endif
   }
 
+  #if DEBUG
+  /// Testing helper that evaluates App Store onboarding completeness using
+  /// App Store semantics even in non-App Store builds.
+  public static func hasCompletedAppStoreOnboardingForTesting() -> Bool {
+    guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
+    guard let url = resolveDatabaseBookmark() else { return false }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+          isDirectory.boolValue else {
+      return false
+    }
+    return true
+  }
+  #endif
+
   /// Sets the App Store onboarding completion state.
   public static func setAppStoreOnboardingCompleted(_ completed: Bool) {
     sharedDefaults.set(completed, forKey: appStoreOnboardingCompletedKey)

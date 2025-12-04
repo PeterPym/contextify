@@ -84,6 +84,23 @@ final class AppStoreOnboardingTests: XCTestCase {
   }
   #endif
 
+  func testHasCompletedAppStoreOnboarding_deletedFolder_returnsFalse_appStoreSemanticsInTests() throws {
+    #if !APPSTORE_BUILD
+    // Use testing helper to exercise App Store semantics in non-App Store builds
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ContextifyOnboarding-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+    HUDPreferences.setCustomDatabaseLocation(tempDir)
+    HUDPreferences.setAppStoreOnboardingCompleted(true)
+    XCTAssertTrue(HUDPreferences.hasCompletedAppStoreOnboardingForTesting())
+
+    try FileManager.default.removeItem(at: tempDir)
+
+    XCTAssertFalse(HUDPreferences.hasCompletedAppStoreOnboardingForTesting())
+    #endif
+  }
+
   // MARK: - Sandbox Override Tests (DEBUG only)
 
   #if DEBUG
