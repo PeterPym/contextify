@@ -115,9 +115,20 @@ public enum HUDPreferences {
   /// **DMG builds:** Always returns true at compile-time (onboarding not required).
   public static func hasCompletedAppStoreOnboarding() -> Bool {
     #if APPSTORE_BUILD
-    // Require both the flag AND a valid bookmark
+    // 1) Flag must be set
     guard sharedDefaults.bool(forKey: appStoreOnboardingCompletedKey) else { return false }
-    return resolveDatabaseBookmark() != nil
+
+    // 2) Bookmark must resolve
+    guard let url = resolveDatabaseBookmark() else { return false }
+
+    // 3) Resolved URL must exist and be a directory
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+          isDirectory.boolValue else {
+      return false
+    }
+
+    return true
     #else
     // DMG builds never gate on onboarding
     return true

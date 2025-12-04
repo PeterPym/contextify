@@ -65,6 +65,25 @@ final class AppStoreOnboardingTests: XCTestCase {
     #endif
   }
 
+  #if APPSTORE_BUILD
+  func testHasCompletedAppStoreOnboarding_deletedFolder_returnsFalse() throws {
+    // Arrange: create a temp directory and store bookmark + flag
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ContextifyOnboarding-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+    HUDPreferences.setCustomDatabaseLocation(tempDir)
+    HUDPreferences.setAppStoreOnboardingCompleted(true)
+    XCTAssertTrue(HUDPreferences.hasCompletedAppStoreOnboarding())
+
+    // Act: delete the directory to simulate user removing the folder
+    try FileManager.default.removeItem(at: tempDir)
+
+    // Assert: onboarding is no longer considered complete
+    XCTAssertFalse(HUDPreferences.hasCompletedAppStoreOnboarding())
+  }
+  #endif
+
   // MARK: - Sandbox Override Tests (DEBUG only)
 
   #if DEBUG
