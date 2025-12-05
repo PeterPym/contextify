@@ -62,7 +62,9 @@ python3 scripts/release.py --version 1.0.0 --yes
 ### App Store Build
 
 ```bash
-bash scripts/xc.sh --dist=appstore Release archive
+# dev-archive creates a scratch build at build/Contextify.xcarchive
+# This is for manual/partial builds only - prefer release/build.sh for official releases
+bash scripts/xc.sh --dist=appstore Release dev-archive
 bash scripts/xc.sh export-pkg
 ```
 
@@ -72,6 +74,7 @@ bash scripts/xc.sh export-pkg
 ### Archive Artifacts
 
 ```bash
+# Copy dev build to release location (only needed for manual builds)
 mkdir -p build/archives/v1.0.0/{appstore,dmg}
 cp -R build/Contextify.xcarchive build/archives/v1.0.0/appstore/Contextify.xcarchive
 cp build/appstore/Contextify.pkg build/archives/v1.0.0/appstore/Contextify-1.0.0.pkg
