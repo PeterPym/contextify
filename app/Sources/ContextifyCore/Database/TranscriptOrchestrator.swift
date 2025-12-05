@@ -1835,6 +1835,32 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     try projectVisitsRepo.markSelected(projectId: projectId)
   }
 
+  /// Result of activating a project (consolidated from 3 separate operations)
+  public struct ProjectActivationResult {
+    public let visit: ProjectVisit
+    public let unreadCount: Int
+  }
+
+  /// Unified method to mark a project as activated (selected + viewed) and get fresh unread count.
+  ///
+  /// This consolidates three separate orchestrator calls into one atomic operation:
+  /// 1. markProjectSelected() - updates last_selected_at
+  /// 2. markProjectViewed() - updates last_viewed_at
+  /// 3. getUnreadCount() - returns fresh count after updates
+  ///
+  /// Using this single method prevents foot-guns where callers forget one of the operations.
+  ///
+  /// - Parameters:
+  ///   - projectId: The project ID to activate
+  ///   - timestamp: ISO8601 timestamp for when the project was viewed
+  /// - Returns: Combined result with visit state and unread count
+  public func markProjectActivated(projectId: String, timestamp: String) throws -> ProjectActivationResult {
+    try markProjectSelected(projectId: projectId)
+    let visit = try markProjectViewed(projectId: projectId, timestamp: timestamp)
+    let unreadCount = try getUnreadCount(projectId: projectId)
+    return ProjectActivationResult(visit: visit, unreadCount: unreadCount)
+  }
+
   /// Get unread count for a specific project
   public func getUnreadCount(projectId: String) throws -> Int {
     try projectVisitsRepo.getUnreadCount(projectId: projectId)

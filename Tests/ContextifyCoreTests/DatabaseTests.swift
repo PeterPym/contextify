@@ -902,6 +902,60 @@ final class DatabaseTests: XCTestCase {
     XCTAssertFalse(result2.wasCreated)
   }
 
+  // MARK: - Project Activation Tests (#P1-PROJECT-ACTIVATED)
+
+  /// Tests that markProjectActivated() consolidates three separate calls into one atomic operation.
+  /// This is the red-green test for #P1-PROJECT-ACTIVATED.
+  func testMarkProjectActivated_ReturnsVisitAndUnreadCount() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    // Create a project first
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated", bookmark: nil)
+
+    // Call the new unified method
+    let timestamp = "2025-01-15T10:30:00Z"
+    let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp)
+
+    // Verify it returns both the visit and unread count
+    XCTAssertEqual(result.visit.projectId, projectId)
+    XCTAssertEqual(result.visit.lastViewedAt, timestamp)
+    XCTAssertNotNil(result.visit.lastSelectedAt, "lastSelectedAt should be set by markProjectSelected")
+    XCTAssertEqual(result.unreadCount, 0, "New project should have 0 unread count")
+  }
+
+  /// Tests that markProjectActivated() properly updates all three pieces of state atomically.
+  func testMarkProjectActivated_UpdatesAllState() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    // Create project and add some entries to generate unread count
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated2", bookmark: nil)
+
+    // First activation
+    let timestamp1 = "2025-01-15T10:30:00Z"
+    let result1 = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp1)
+
+    // Verify initial state
+    XCTAssertEqual(result1.visit.lastViewedAt, timestamp1)
+
+    // Second activation with later timestamp
+    let timestamp2 = "2025-01-15T11:00:00Z"
+    let result2 = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp2)
+
+    // Verify state was updated
+    XCTAssertEqual(result2.visit.lastViewedAt, timestamp2)
+    XCTAssertNotNil(result2.visit.lastSelectedAt)
+  }
+
   // MARK: - Helpers
 
   private func makeMigratedPool(at url: URL) throws -> DatabasePool {
