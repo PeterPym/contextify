@@ -153,6 +153,22 @@ public final class AppStateOrchestrator: ObservableObject {
     )
     #endif
 
+    // Defense-in-depth: Ensure access provider is configured in sandbox builds
+    #if DEBUG
+    if Sandbox.isSandboxed {
+      precondition(
+        accessProvider != nil,
+        "AppStateOrchestrator.startup() called in sandbox without configured TranscriptAccessProvider. " +
+        "Call configureAccessProvider() first."
+      )
+    }
+    #else
+    // Release builds: log error instead of crashing
+    if Sandbox.isSandboxed && accessProvider == nil {
+      log.error("[ORCH-STARTUP] BUG: startup() called without a configured access provider in sandbox build. Discovery will fail.")
+    }
+    #endif
+
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
     let startTime = Date()
 
@@ -193,6 +209,14 @@ public final class AppStateOrchestrator: ObservableObject {
       await selectProject(id: mostRecent.id)
     } else {
       log.info("[ORCH-STARTUP] No projects found - showing empty state")
+
+      // Sandbox builds: Show welcome modal after discovery confirms no projects
+      // DMG builds handle this in initializeProjectsSystem() based on DB state
+      if Sandbox.isSandboxed {
+        log.info("[ORCH-STARTUP] No projects found after discovery (sandbox) - triggering welcome modal")
+        NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+      }
+
       // 5. Optional: Start background indexing (low priority)
       startBackgroundIndexing()
     }
