@@ -985,7 +985,7 @@ extension ParserError: LocalizedError {
 }
 
 /// Types of transcript corruption we can detect and potentially recover from
-public enum CorruptionType: String {
+public enum CorruptionType: String, Sendable {
   case orphanedToolResult = "orphaned_tool_result"
   case stopReasonMismatch = "stop_reason_mismatch"
   case missingParent = "missing_parent"
