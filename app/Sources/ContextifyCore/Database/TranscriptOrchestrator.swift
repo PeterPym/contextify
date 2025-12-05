@@ -594,7 +594,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// - Parameter projectPath: Absolute path to project root
   /// - Returns: Set of provider types found in project's transcripts
   public func getProviders(forProjectPath projectPath: String) async throws -> Set<DiscoveredProject.Provider> {
-    try await dbManager.pool.read { db in
+    try await Self.getProviders(forProjectPath: projectPath, pool: dbManager.pool)
+  }
+
+  /// Static helper for querying providers without instantiating a full orchestrator.
+  /// Use this for lightweight queries from Views where creating a full orchestrator is wasteful.
+  public static func getProviders(forProjectPath projectPath: String, pool: DatabasePool) async throws -> Set<DiscoveredProject.Provider> {
+    try await pool.read { db in
       let sql = """
         SELECT GROUP_CONCAT(DISTINCT t.provider) AS providers
         FROM projects p
