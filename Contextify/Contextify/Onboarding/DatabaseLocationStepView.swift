@@ -166,7 +166,7 @@ struct DatabaseLocationStepView: View {
       )
       .overlay(
         RoundedRectangle(cornerRadius: 10)
-          .stroke(isConfigured ? Color.contextifyBlue : Color(nsColor: .separatorColor), lineWidth: isConfigured ? 2 : 1)
+          .stroke(Color.contextifyBlue, lineWidth: isConfigured ? 2 : 1)
       )
       .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
