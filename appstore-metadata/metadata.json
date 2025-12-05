@@ -12,10 +12,10 @@
     "en-US": {
       "name": "Contextify",
       "subtitle": "CLI AI Command Center",
-      "promotional_text": "Track your Claude Code sessions with real-time AI summaries. Never lose context across conversations.",
-      "description": "Stop losing track of AI coding conversations. Contextify monitors your Claude Code and Codex sessions, generates intelligent summaries, and organizes every project automatically.\n\n⚡ KEY FEATURES\n\n• Real-time Session Tracking – Never manually refresh. See every conversation update instantly, even mid-message.\n• AI-Powered Summaries – Get intelligent recaps at a glance. Understand conversation flow without re-reading everything.\n• Project-Centric Organization – Switch between projects instantly. Contextify automatically organizes every session, no setup required.\n• Timestamped Artifacts – Every interaction creates a timestamped Markdown record. Review any past conversation anytime.\n• Drag & Drop Ingestion – Drop files or URLs directly to create instant artifacts. No copy-paste needed.\n• Session Checkpoints – Mark important moments in your development workflow with one click.\n• Timeline Visualization – See your entire conversation history with visual timeline navigation. Jump to any point instantly.\n• Git Integration – Automatically tracks git repository context for each session. Know exactly which branch you were working on.\n\n🎯 PERFECT FOR\n\n• Software developers using AI coding assistants daily\n• Teams maintaining context across multiple AI-assisted projects\n• Developers who need to review and reference past AI interactions\n• Anyone wanting organized, searchable Claude Code conversation history\n\n💡 HOW IT WORKS\n\nContextify runs as a lightweight native macOS HUD that monitors your ~/.claude/projects/ and ~/.codex/sessions/ directories. When you start a conversation with Claude Code or Codex, Contextify automatically detects it, tracks the conversation timeline in real-time, and generates intelligent summaries using advanced LLM processing.\n\nAll data is stored locally in a SQLite database with full support for custom locations (Dropbox, iCloud Drive). Your conversations remain private and under your control—nothing leaves your Mac.\n\n🔒 PRIVACY & SECURITY\n\n• All data stored locally on your Mac—never transmitted to external servers\n• No cloud sync, no analytics, no tracking\n• Security-scoped bookmark system for safe file access in sandboxed builds\n• Full control over your conversation data with exportable Markdown artifacts\n\n🛠 TECHNICAL DETAILS\n\n• Built with Swift 6 and SwiftUI for native macOS performance\n• Lightweight background monitoring with minimal CPU impact\n• Real-time file system monitoring using FSEvents\n• GRDB SQLite backend for fast queries and efficient storage\n• Support for custom database locations (local, Dropbox, iCloud Drive)\n• Universal binary for both Intel and Apple Silicon Macs\n\n📊 SYSTEM REQUIREMENTS\n\n• macOS 26.0 (Tahoe) or later\n• Claude Code or Codex CLI installed and configured\n• 50 MB free disk space (database grows with conversation history)\n\nDownload Contextify today and never lose context again. Join developers building better software with AI coding assistants. All data stays private on your Mac—try it risk-free.",
+      "promotional_text": "Search your entire Claude Code and Codex history instantly. Real-time tracking, AI summaries, all on your Mac.",
+      "description": "Stop losing track of AI coding conversations. Contextify monitors your Claude Code and Codex sessions, generates intelligent summaries and organizes every project automatically.\n\nKEY FEATURES\n\n• Full-Text Search – Find any conversation, code snippet, or topic across all your AI sessions instantly.\n• Real-time Session Tracking – See every conversation update instantly, with directives from you mapped to completion responses from the AI.\n• AI-Powered Summaries – Get intelligent recaps at a glance. Understand conversation flow without re-reading everything. All on your device.\n• Project-Centric Organization – Switch between projects instantly. Contextify automatically organizes every session, no setup required.\n\nGREAT FOR\n\n• Software developers using AI coding assistants daily\n• Developers who need to review and reference past AI interactions\n• Anyone wanting organized Claude Code and Codex conversation history\n\nHOW IT WORKS\n\nContextify runs as a lightweight native macOS HUD that monitors your ~/.claude/projects/ and ~/.codex/sessions/ directories. When you start a conversation with Claude Code or Codex, Contextify automatically detects it, tracks the conversation timeline in real-time, and generates intelligent summaries using advanced LLM processing.\n\nAll data is stored locally in a SQLite database with full support for custom locations (Dropbox, iCloud Drive). Your conversations remain private and under your control, nothing leaves your Mac.\n\nPRIVACY & SECURITY\n\n• All data stored locally on your Mac. It is never transmitted to external servers\n• No cloud sync, no analytics, no tracking\n• Security-scoped bookmark system for safe file access in sandboxed builds\n• Full control over your conversation data with exportable Markdown artifacts\n\nTECHNICAL DETAILS\n\n• Built with Swift 6 and SwiftUI for native macOS performance\n• Lightweight background monitoring with minimal CPU impact\n• Real-time file system monitoring\n• SQLite backend for fast queries and efficient storage\n• Support for custom database locations (local, Dropbox, iCloud Drive)",
 
-      "keywords": "AI,Claude,developer,productivity,conversation,session,context,timeline,organization,tracking,git",
+      "keywords": "AI,Claude,developer,productivity,conversation,search,context,timeline,code,tracking,Codex",
 
       "release_notes": "Initial release of Contextify!\n\n• Real-time conversation monitoring for Claude Code and Codex CLI\n• AI-powered session summaries\n• Project-centric organization with automatic git detection\n• Drag & drop file and URL ingestion\n• Timestamped Markdown artifacts\n• Session checkpoints\n• Timeline visualization\n• Custom database location support (Dropbox, iCloud Drive)\n• Native macOS performance with Swift 6",
 
@@ -59,24 +59,24 @@
         "description": "Deep Search window showing full-text search across all AI conversations. Results pane on left with highlighted matches, context pane on right showing surrounding conversation. Search for any message, code snippet, or topic discussed."
       },
       {
-        "filename": "01-main-hud-20251125-005030-with-text.png",
+        "filename": "02-main-hud-20251125-005030-with-text.png",
         "title": "Stay in the loop during long AI conversations",
         "description": "Main HUD showing real-time conversation timeline with Claude Code. Project tabs at top, git branch indicator, timestamped entries with AI-generated summaries. Terminal window shows Claude Code session in progress."
       },
       {
-        "filename": "02-dual-provider-20251125-003504-with-text.png",
-        "title": "Works seamlessly with both Claude Code and Codex CLI",
+        "filename": "03-dual-provider-20251205-with-text.png",
+        "title": "Codex sessions, right alongside Claude",
         "description": "Demonstrates dual provider support. Contextify tracks both Claude Code and OpenAI Codex sessions. Shows conversation log with entries from both providers, with Codex terminal visible."
       },
       {
-        "filename": "03-transcript-inventory-20251120-004532-with-text.png",
+        "filename": "04-transcript-inventory-20251120-004532-with-text.png",
         "title": "Explore source transcripts and gain insights",
         "description": "Transcript Inventory view with searchable list of all conversations. Shows conversation metadata, AI-generated summaries with topic tags, file details, and regenerate option. Filter by Conversations, Metadata, or All."
       },
       {
-        "filename": "05-settings-20251120-015643-with-text.png",
-        "title": "Centralize scattered transcripts into one queryable database",
-        "description": "Settings panel showing custom database location in Dropbox. Supports Default or Custom storage locations including Dropbox and iCloud Drive for multi-machine sync."
+        "filename": "05-onboarding-20251205-010119-with-text.png",
+        "title": "Your AI history, synced and searchable",
+        "description": "Onboarding wizard showing database location selection with Dropbox folder. Store your conversation history in Dropbox, iCloud Drive, or any location you control for automatic backup and multi-machine sync."
       }
     ]
   }
