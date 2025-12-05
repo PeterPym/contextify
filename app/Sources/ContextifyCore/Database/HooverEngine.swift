@@ -528,10 +528,11 @@ public final class HooverEngine {
       }
       buffer.append(chunk)
 
-      // NEW: Check buffer size for runaway growth (diagnostic for hang investigation)
-      if buffer.count > 10_000_000 {  // 10MB limit
+      // Safety limit for runaway buffer growth. 35MB accommodates Claude's 30MB file upload
+      // limit plus headroom. See #P3-BLOB-STORAGE for future extraction of large content.
+      if buffer.count > 35_000_000 {  // 35MB limit
         log.error("[HOOVER-BUFFER-OVERFLOW] Buffer size: \(buffer.count) bytes at line \(lineNo) - aborting. Line may exceed maximum size.")
-        throw ParserError.invalidFormat("Line \(lineNo) exceeds maximum size (buffer >10MB)")
+        throw ParserError.invalidFormat("Line \(lineNo) exceeds maximum size (buffer >35MB)")
       }
     }
 
