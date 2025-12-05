@@ -11,14 +11,14 @@
       "dmg": {
         "status": "built",
         "build_number": null,
-        "built_at": "2025-12-02"
+        "built_at": "2025-12-05"
       },
       "appstore": {
-        "status": "submitted",
+        "status": "built",
         "build_number": 11,
         "submitted_at": "2025-12-05T09:20:10Z",
         "approved_at": null,
-        "built_at": "2025-12-02",
+        "built_at": "2025-12-05",
         "apple_state": "REJECTED",
         "apple_state_updated_at": "2025-12-03T21:31:43Z"
       },

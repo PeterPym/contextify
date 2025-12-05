@@ -186,34 +186,6 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-## #P0-ENTRY-METADATA-BADGES: Timeline entry badges don't clear after state changes
-
-**Status:** Bug - investigated, ready to fix
-**Priority:** P0 (visual bugs visible in demo, confusing UX)
-**Effort:** 1-2 hours
-
-**Problem:**
-Two metadata indicators in timeline entries persist incorrectly after their conditions have cleared:
-1. **QUEUED badge** - Shows on user messages sent while Claude was working; doesn't clear after Claude processes them
-2. **Pulsing hourglass** - Shows during active summarization; doesn't clear after summary appears
-
-**Root Causes:**
-1. **Queued:** Claude Code's `remove` queue operation doesn't include content; our parser requires content to match, so remove operations are silently skipped
-2. **Hourglass:** `refreshCachedEntries` only clears `.unsummarized` action to `.none`, but not `.generatingActive`
-
-**Solution:**
-1. **Queued:** Use FIFO matching - on `remove`, clear oldest queued entry for that session from our DB
-2. **Hourglass:** Include `.generatingActive` in the action-clearing condition
-
-**Files to Change:**
-- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift:928` - Remove content requirement for `.remove`
-- `app/Sources/ContextifyCore/Database/HooverEngine.swift:842` - FIFO query instead of content-hash match
-- `Contextify/Contextify/ConversationMonitor.swift:2672` - Add `.generatingActive` to clear condition
-
-**Investigation:** `build/notes/todo-support/P0-ENTRY-METADATA-BADGES-investigation.md`
-
----
-
 # P1 (High Priority) - 20 Items
 
 Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL

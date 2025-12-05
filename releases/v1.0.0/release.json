@@ -20,21 +20,21 @@
       }
     },
     "build": {
-      "status": "pending",
+      "status": "complete",
       "dmg": {
-        "built": false,
-        "path": null,
+        "built": true,
+        "path": "dist/Contextify-1.0.0.dmg",
         "sha256": null,
         "size_bytes": null,
-        "signed": false,
-        "notarized": false,
+        "signed": true,
+        "notarized": true,
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": false,
-        "archive_path": null,
+        "archived": true,
+        "archive_path": "/Users/rob/code/projects/contextify/build/archives/v1.0.0/appstore/Contextify.xcarchive",
         "build_number": 11,
-        "exported": false,
+        "exported": true,
         "uploaded": true,
         "upload_receipt": null
       }
@@ -213,6 +213,11 @@
       "date": "2025-12-05",
       "author": "system",
       "note": "Submitted build 11 to App Store Connect"
+    },
+    {
+      "date": "2025-12-05",
+      "author": "system",
+      "note": "Build 11 completed (commit be735f22)"
     }
   ]
 }
