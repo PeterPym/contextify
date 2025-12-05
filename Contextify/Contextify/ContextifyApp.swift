@@ -238,6 +238,9 @@ struct ContextifyApp: App {
               // Now run the deferred startup sequence
               // This Task owns the full pipeline; .task is blocked by isHandlingCompletion
               Task { @MainActor in
+                // Yield immediately to let SwiftUI process the state change and dismiss wizard
+                await Task.yield()
+
                 let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
                 startupLog.info("[POST-ONBOARD] Running deferred startup sequence")
 
