@@ -281,6 +281,68 @@ The user's message was "this too seems poorly summarized:" followed by a JSON bl
 
 ---
 
+## Example 8: Subject Misattribution in Question
+
+**Date Added:** 2025-12-04
+**Category:** attribution error
+**Transcript:** `24bbc369-4035-4afa-bfeb-294eb1177212.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "are you stuck?",
+  "entry_id": "a1b7e57b-3bcb-4a9f-a1c3-8646a0b4ac85",
+  "summary": "You asked Claude Code if you were stuck.",
+  "timestamp": "2025-12-05T03:52:06Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/24bbc369-4035-4afa-bfeb-294eb1177212.jsonl"
+}
+```
+
+**Problem:**
+TODO
+
+**Expected Summary:**
+TODO
+
+**Root Cause (suspected):**
+TODO
+
+**Fix Approach:**
+TODO
+
+---
+
+## Example 9: Raw Markup Echo as Summary
+
+**Date Added:** 2025-12-04
+**Category:** attribution error (echo/passthrough)
+**Transcript:** `a2d7ae22-e6f8-4f4e-a2ba-ceb271776215.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "<bash-input>gs</bash-input>",
+  "entry_id": "d614b86e-eaad-48f8-9bd3-e9708145b318",
+  "summary": "<bash-input>gs</bash-input>",
+  "timestamp": "2025-12-05T03:52:41Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/a2d7ae22-e6f8-4f4e-a2ba-ceb271776215.jsonl"
+}
+```
+
+**Problem:**
+TODO
+
+**Expected Summary:**
+TODO
+
+**Root Cause (suspected):**
+TODO
+
+**Fix Approach:**
+TODO
+
+---
+
 ## Template for New Examples
 
 ```markdown
