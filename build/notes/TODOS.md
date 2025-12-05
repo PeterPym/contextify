@@ -143,9 +143,9 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ## #P0-SETTINGS-OVERHAUL: Fix Settings window and permissions UX
 
-**Status:** In Progress - Settings tabs implemented, need to verify permission flow
+**Status:** DONE - All acceptance criteria complete
 **Priority:** P0 (blocks App Store users from granting permissions)
-**Effort:** 1-2 hours remaining
+**Effort:** Complete
 
 **Problems Identified:**
 
@@ -177,11 +177,12 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 **Acceptance Criteria:**
 - [x] Settings window has Database and Permissions tabs (App Store only)
 - [x] Database tab fits content without huge empty space
-- [ ] Granting permissions triggers discovery and populates UI
+- [x] Granting permissions triggers discovery and populates UI
 
 **Commits:**
 - `76a5fb1c` feat(settings): show Permissions tab only for App Store builds
 - `93a5f82b` feat(settings): combine Database and Permissions into tabbed Settings view
+- `06513056` Merge feat/appstore-onboarding-wizard (onboarding UX fixes)
 
 ---
 
