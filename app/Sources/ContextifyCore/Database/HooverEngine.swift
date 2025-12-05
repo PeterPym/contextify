@@ -841,26 +841,22 @@ public final class HooverEngine {
             log.info("[QUEUE-OP-CLEAR] \(op.kind.rawValue, privacy: .public) cleared \(changes, privacy: .public) entries after \(String(format: "%.1f", elapsed), privacy: .public)s transcript=\(op.transcriptId.prefix(8), privacy: .public)")
 
           case .remove:
-            guard let contentSha256 = op.contentSha256 else {
-              log.warning("[QUEUE-OP] remove operation without contentSha256; skipping transcript \(op.transcriptId, privacy: .public)")
-              continue
-            }
-
-            // NOTE: `remove` is defined as "clear all queued messages in this transcript/session
-            // that match the same content hash". If Claude ever allows multiple queued messages
-            // with identical content, this will clear all of them by design.
+            // FIFO: clear oldest queued entry for this session
+            // Claude Code's remove doesn't include content, so we match by order
             try db.execute(sql: """
               UPDATE transcript_entries
               SET is_queued = 0
-              WHERE transcript_id = ?
-                AND session_id = ?
-                AND is_queued = 1
-                AND content_sha256 = ?
-            """, arguments: [op.transcriptId, op.sessionId, contentSha256])
+              WHERE id = (
+                SELECT id FROM transcript_entries
+                WHERE transcript_id = ? AND session_id = ? AND is_queued = 1
+                ORDER BY timestamp ASC
+                LIMIT 1
+              )
+            """, arguments: [op.transcriptId, op.sessionId])
 
             let changes = db.changesCount
             let elapsed = Date().timeIntervalSince(op.timestamp)
-            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes, privacy: .public) entries after \(String(format: "%.1f", elapsed), privacy: .public)s content_sha256=\(contentSha256.prefix(8), privacy: .public)")
+            log.info("[QUEUE-OP-CLEAR] remove cleared \(changes, privacy: .public) entries (FIFO) after \(String(format: "%.1f", elapsed), privacy: .public)s transcript=\(op.transcriptId.prefix(8), privacy: .public)")
           }
         }
 

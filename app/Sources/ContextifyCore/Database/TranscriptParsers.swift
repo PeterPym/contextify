@@ -925,11 +925,8 @@ public struct ClaudeCodeMetadataParser: TranscriptMetadataParser {
       var contentSha256: String? = nil
       switch kind {
       case .remove:
-        guard let content = json["content"] as? String, !content.isEmpty else {
-          parserLog.warning("[QUEUE-OP] remove without content; skipping line=\(lineNumber, privacy: .public) transcript=\(transcriptId, privacy: .public)")
-          return MetadataParseResult()
-        }
-        contentSha256 = SHA256Utils.hash(content)
+        // Claude Code's remove doesn't include content; use FIFO matching in HooverEngine
+        contentSha256 = nil
 
       case .popAll, .dequeue:
         // Full-queue clear for the session; no per-message content hash needed
