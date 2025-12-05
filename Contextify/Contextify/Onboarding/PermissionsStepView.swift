@@ -61,12 +61,15 @@ struct PermissionsStepView: View {
       }
       .padding(.horizontal, 32)
 
-      // Hint when no authorizations yet
+      // Centered hint section - fills remaining vertical space
       if !hasAnyAuthorizations {
+        Spacer(minLength: 0)
         Text("Grant access to at least one folder to continue")
           .font(.callout)
           .foregroundStyle(.secondary)
-          .padding(.top, 8)
+        Spacer(minLength: 0)
+      } else {
+        Spacer(minLength: 0)
       }
     }
     .padding(.top, 24)
