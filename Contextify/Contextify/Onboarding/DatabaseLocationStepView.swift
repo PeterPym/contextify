@@ -12,6 +12,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import ContextifyCore
 import OSLog
 
@@ -25,9 +26,9 @@ private let log = Logger(subsystem: "dev.contextify", category: "Onboarding")
 /// 2. Obtain security-scoped bookmark for persistent access
 struct DatabaseLocationStepView: View {
   @Binding var isConfigured: Bool
+  @Binding var selectedPath: String?
+  @Binding var selectedFolderName: String?
 
-  @State private var selectedPath: String?
-  @State private var selectedFolderName: String?
   @State private var isSelecting = false
   @State private var errorMessage: String?
 
@@ -54,10 +55,7 @@ struct DatabaseLocationStepView: View {
   }
 
   var body: some View {
-    VStack(spacing: 24) {
-      Spacer()
-        .frame(height: 8)
-
+    VStack(spacing: 16) {
       // Main heading and description
       VStack(spacing: 12) {
         Text("Choose where Contextify saves your data")
@@ -84,28 +82,59 @@ struct DatabaseLocationStepView: View {
           .padding(.horizontal, 40)
       }
 
-      Spacer()
-
       // Tip text
       Text("Tip: You can also pick a folder in Dropbox, iCloud Drive, or another location that provides automatic backup.")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
+        .font(.callout)
+        .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 40)
-        .padding(.bottom, 16)
+        .padding(.bottom, 8)
     }
+    .padding(.top, 12)
   }
 
   // MARK: - Folder Card
 
+  /// Returns the appropriate folder icon:
+  /// - If Dropbox folder is selected, shows custom Dropbox folder icon (system icon doesn't work reliably)
+  /// - If another folder is selected, shows that folder's actual icon (respects custom icons)
+  /// - Otherwise, shows the generic system folder icon
+  private var folderIcon: some View {
+    let image: Image
+
+    if let path = selectedPath, isDropboxPath(path) {
+      // Use custom Dropbox folder icon - system icon doesn't show correctly on recent macOS
+      image = Image("dropbox-folder")
+    } else if let path = selectedPath {
+      image = Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+    } else {
+      image = Image(nsImage: NSWorkspace.shared.icon(for: .folder))
+    }
+
+    return image
+      .resizable()
+      .aspectRatio(contentMode: .fit)
+      .frame(width: 40, height: 40)
+  }
+
+  /// Detects if a path is inside Dropbox storage
+  private func isDropboxPath(_ path: String) -> Bool {
+    // Modern macOS CloudStorage location
+    if path.contains("/Library/CloudStorage/Dropbox") {
+      return true
+    }
+    // Legacy Dropbox location
+    if path.contains("/Dropbox/") || path.hasSuffix("/Dropbox") {
+      return true
+    }
+    return false
+  }
+
   private var folderCard: some View {
     Button(action: { openFolderPicker() }) {
       HStack(spacing: 16) {
-        // Folder icon
-        Image(systemName: "folder.fill")
-          .font(.system(size: 32))
-          .foregroundStyle(.blue)
-          .frame(width: 40, height: 40)
+        // Folder icon - uses real macOS system icon
+        folderIcon
 
         // Folder name and path
         VStack(alignment: .leading, spacing: 4) {
@@ -127,17 +156,17 @@ struct DatabaseLocationStepView: View {
         if isConfigured {
           Image(systemName: "checkmark.circle.fill")
             .font(.title2)
-            .foregroundStyle(.green)
+            .foregroundStyle(Color.contextifyGreen)
         }
       }
       .padding(16)
       .background(
         RoundedRectangle(cornerRadius: 10)
-          .fill(isConfigured ? Color.accentColor.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
+          .fill(isConfigured ? Color.contextifyBlue.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
       )
       .overlay(
         RoundedRectangle(cornerRadius: 10)
-          .stroke(isConfigured ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isConfigured ? 2 : 1)
+          .stroke(Color.contextifyBlue, lineWidth: isConfigured ? 2 : 1)
       )
       .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
@@ -225,11 +254,19 @@ struct DatabaseLocationStepView: View {
 }
 
 #Preview {
-  DatabaseLocationStepView(isConfigured: .constant(false))
-    .frame(width: 520, height: 400)
+  DatabaseLocationStepView(
+    isConfigured: .constant(false),
+    selectedPath: .constant(nil),
+    selectedFolderName: .constant(nil)
+  )
+  .frame(width: 520, height: 400)
 }
 
 #Preview("Configured") {
-  DatabaseLocationStepView(isConfigured: .constant(true))
-    .frame(width: 520, height: 400)
+  DatabaseLocationStepView(
+    isConfigured: .constant(true),
+    selectedPath: .constant("/Users/demo/Documents/Contextify"),
+    selectedFolderName: .constant("Contextify")
+  )
+  .frame(width: 520, height: 400)
 }

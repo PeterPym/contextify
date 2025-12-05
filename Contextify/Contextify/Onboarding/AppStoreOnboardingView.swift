@@ -21,6 +21,9 @@ struct AppStoreOnboardingView: View {
 
   @State private var currentStep: Int = 1
   @State private var databaseLocationConfigured = false
+  @State private var selectedPath: String?
+  @State private var selectedFolderName: String?
+  @State private var permissionsConfigured = false
 
   private let totalSteps = 2
 
@@ -28,8 +31,8 @@ struct AppStoreOnboardingView: View {
     VStack(spacing: 0) {
       // Header with icon and welcome text
       header
-        .padding(.top, 24)
-        .padding(.bottom, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
 
       // Divider below header
       Divider()
@@ -38,20 +41,24 @@ struct AppStoreOnboardingView: View {
       // Step content
       Group {
         if currentStep == 1 {
-          DatabaseLocationStepView(isConfigured: $databaseLocationConfigured)
+          DatabaseLocationStepView(
+            isConfigured: $databaseLocationConfigured,
+            selectedPath: $selectedPath,
+            selectedFolderName: $selectedFolderName
+          )
         } else {
           PermissionsStepView(
             folderAccessController: folderAccessController,
-            onComplete: onComplete
+            isConfigured: $permissionsConfigured
           )
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
 
       // Bottom navigation bar
       bottomBar
     }
-    .frame(width: 520, height: 480)
+    .frame(width: 520)
+    .fixedSize(horizontal: false, vertical: true)
     .background(Color(nsColor: .windowBackgroundColor))
     .background(OnboardingWindowConfigurator())
     .onAppear {
@@ -83,45 +90,61 @@ struct AppStoreOnboardingView: View {
     VStack(spacing: 0) {
       Divider()
 
-      HStack {
-        // Previous button (only on step 2)
-        if currentStep > 1 {
-          Button("Previous") {
-            withAnimation {
-              currentStep -= 1
-            }
-          }
-          .buttonStyle(.bordered)
-        }
-
-        Spacer()
-
-        // Progress dots (centered)
+      ZStack {
+        // Progress dots (truly centered)
         HStack(spacing: 8) {
           ForEach(1...totalSteps, id: \.self) { step in
             Circle()
-              .fill(step == currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
+              .fill(step == currentStep ? Color.contextifyBlue : Color.secondary.opacity(0.3))
               .frame(width: 8, height: 8)
           }
         }
 
-        Spacer()
+        // Buttons aligned to edges
+        HStack {
+          // Previous button (only on step 2)
+          if currentStep > 1 {
+            Button("Previous") {
+              withAnimation {
+                currentStep -= 1
+              }
+            }
+            .buttonStyle(.bordered)
+          }
 
-        // Next button (step 1) or empty space (step 2 has its own Done button)
-        if currentStep < totalSteps {
-          Button("Next") {
-            withAnimation {
-              currentStep += 1
+          Spacer()
+
+          // Next button (step 1) or Continue button (step 2)
+          // Enabled: borderedProminent with brand color (filled, vibrant)
+          // Disabled: bordered (outline only, visually recedes)
+          if currentStep == 1 {
+            if databaseLocationConfigured {
+              Button("Next") {
+                withAnimation { currentStep += 1 }
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+            } else {
+              Button("Next") {}
+                .buttonStyle(.bordered)
+                .disabled(true)
+            }
+          } else {
+            if permissionsConfigured {
+              Button("Continue") {
+                onComplete()
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+            } else {
+              Button("Continue") {}
+                .buttonStyle(.bordered)
+                .disabled(true)
             }
           }
-          .buttonStyle(.borderedProminent)
-          .disabled(!databaseLocationConfigured)
-        } else {
-          // Placeholder to balance the Previous button
-          Color.clear.frame(width: 80)
         }
       }
-      .padding(.vertical, 16)
+      .padding(.vertical, 12)
       .padding(.horizontal, 24)
     }
   }
@@ -162,6 +185,9 @@ private struct OnboardingWindowConfigurator: NSViewRepresentable {
 
     // Prevent resizing
     window.styleMask.remove(.resizable)
+
+    // Set explicit content size to prevent Window scene from using cached size
+    window.setContentSize(NSSize(width: 520, height: 380))
   }
 }
 

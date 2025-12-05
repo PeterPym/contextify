@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-11-28
+**Last Updated:** 2025-12-04
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -1469,6 +1469,64 @@ AppConfig.isAppStore = true  // Set before any package code runs
 - [Stack Overflow: Custom build configurations in Swift Package Manager](https://stackoverflow.com/questions/60603181/xcode-custom-build-configurations-in-swift-package-manager)
 - [Swift Forums: Swift package manager and custom build configurations](https://forums.swift.org/t/swift-package-manager-and-custom-build-configurations/29181)
 - [Swift Evolution SE-0238: Package Manager Build Settings](https://github.com/apple/swift-evolution/blob/master/proposals/0238-package-manager-build-settings.md)
+
+---
+
+### .borderedProminent Disabled State Not Visible (macOS 26)
+
+**Problem:** On macOS 26, `.borderedProminent` buttons with `.disabled(true)` do NOT visually dim or gray out. The button remains fully colored (using the accent color or custom `.tint()`), making it impossible to tell the button is disabled.
+
+**Symptoms:**
+- Button looks fully clickable (solid blue/tinted fill)
+- Button is actually disabled (doesn't respond to clicks)
+- Users can't tell they need to complete an action before proceeding
+
+**What doesn't work:**
+```swift
+// ❌ Button stays fully blue even when disabled
+Button("Next") { action() }
+  .buttonStyle(.borderedProminent)
+  .tint(Color.contextifyBlue)
+  .disabled(!isReady)
+
+// ❌ tint(nil) falls back to accent color, not "no tint"
+Button("Next") { action() }
+  .buttonStyle(.borderedProminent)
+  .tint(isReady ? Color.contextifyBlue : nil)
+  .disabled(!isReady)
+
+// ❌ Conditional gray tint still shows as prominent/clickable
+Button("Next") { action() }
+  .buttonStyle(.borderedProminent)
+  .tint(isReady ? Color.contextifyBlue : Color.gray)
+  .disabled(!isReady)
+```
+
+**Workaround:** Use different button styles for enabled vs disabled states:
+
+```swift
+// ✅ Enabled: borderedProminent (filled, vibrant)
+// ✅ Disabled: bordered (outline only, visually recedes)
+if isReady {
+  Button("Next") { action() }
+    .buttonStyle(.borderedProminent)
+    .tint(Color.contextifyBlue)
+} else {
+  Button("Next") {}
+    .buttonStyle(.bordered)
+    .disabled(true)
+}
+```
+
+**Why this works:**
+- `.borderedProminent` = filled button (calls to action)
+- `.bordered` = outline-only button (secondary action appearance)
+- The visual difference is unambiguous regardless of SwiftUI's disabled state rendering
+
+**Implementation Example:**
+- `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift:119-143` - Next/Continue buttons
+
+**Note:** This may be a macOS 26-specific bug. The workaround is safe for all versions since it doesn't rely on the built-in disabled appearance working correctly.
 
 ---
 

@@ -110,8 +110,18 @@ public final class AppStateOrchestrator: ObservableObject {
     initializeDatabaseComponents()
   }
 
-  /// Configure the access provider for sandbox builds
-  /// Must be called before startup() in App Store builds
+  /// Configure the access provider for sandbox builds.
+  ///
+  /// **MUST be called before startup() in App Store builds.**
+  ///
+  /// Components that depend on this being set before use:
+  /// - `LightweightDiscoveryService`: Uses provider to resolve security-scoped bookmark paths
+  /// - `startup()`: Runs discovery which needs the provider for correct filesystem access
+  /// - JIT ingest and sandbox file watchers (via TranscriptOrchestrator)
+  ///
+  /// The ordering is enforced by:
+  /// - DEBUG precondition in `startup()` that checks `accessProvider != nil` for sandbox builds
+  /// - Release error logging if startup runs without provider configured
   public func configureAccessProvider(_ provider: TranscriptAccessProvider) async {
     self.accessProvider = provider
     await discovery.configure(accessProvider: provider)
@@ -151,6 +161,22 @@ public final class AppStateOrchestrator: ObservableObject {
       !Sandbox.isSandboxed || HUDPreferences.hasCompletedAppStoreOnboarding(),
       "AppStateOrchestrator.startup() called before App Store onboarding complete"
     )
+    #endif
+
+    // Defense-in-depth: Ensure access provider is configured in sandbox builds
+    #if DEBUG
+    if Sandbox.isSandboxed {
+      precondition(
+        accessProvider != nil,
+        "AppStateOrchestrator.startup() called in sandbox without configured TranscriptAccessProvider. " +
+        "Call configureAccessProvider() first."
+      )
+    }
+    #else
+    // Release builds: log error instead of crashing
+    if Sandbox.isSandboxed && accessProvider == nil {
+      log.error("[ORCH-STARTUP] BUG: startup() called without a configured access provider in sandbox build. Discovery will fail.")
+    }
     #endif
 
     log.info("[ORCH-STARTUP] Beginning lightweight startup...")
@@ -193,6 +219,14 @@ public final class AppStateOrchestrator: ObservableObject {
       await selectProject(id: mostRecent.id)
     } else {
       log.info("[ORCH-STARTUP] No projects found - showing empty state")
+
+      // Sandbox builds: Show welcome modal after discovery confirms no projects
+      // DMG builds handle this in initializeProjectsSystem() based on DB state
+      if Sandbox.isSandboxed {
+        log.info("[ORCH-STARTUP] No projects found after discovery (sandbox) - triggering welcome modal")
+        NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
+      }
+
       // 5. Optional: Start background indexing (low priority)
       startBackgroundIndexing()
     }
@@ -216,6 +250,13 @@ public final class AppStateOrchestrator: ObservableObject {
   private func startBackgroundDiscovery() {
     guard let provider = accessProvider else {
       log.warning("[ORCH-BACKGROUND-DISCOVERY] Access provider not configured, skipping background discovery")
+      return
+    }
+
+    // Idempotency: avoid re-creating watcher/timer if already running
+    // This prevents leaking watchers if startup() is called multiple times
+    if sandboxedWatcher != nil || codexPollTimer != nil {
+      log.info("[ORCH-BACKGROUND-DISCOVERY] Already running, skipping restart")
       return
     }
 
@@ -427,7 +468,7 @@ public final class AppStateOrchestrator: ObservableObject {
       return
     }
 
-    // 2. UI Loading State
+    // 2. UI Loading State (brief - we'll activate quickly)
     setState(.loading(projectId: id))
 
     let startTime = Date()
@@ -439,40 +480,62 @@ public final class AppStateOrchestrator: ObservableObject {
       return
     }
 
-    do {
-      // 3. JIT Ingestion (FastPath with batching)
-      // This will: Ensure DB Project Row -> Populate Transcripts Table -> Process Entries
-      let dbProjectId = try await fastPath.ingestProjectJIT(project)
-      log.debug("[ORCH-SELECT] JIT ingestion complete, DB project ID: \(dbProjectId, privacy: .public)")
-
-      // 4. Legacy Compatibility Wiring
-      // Tell StartupCoordinator about the switch so it can notify ConversationMonitor and other legacy components
-      // CRITICAL: Use real project path (cwd) if available, NOT hash folder path
-      do {
-        let realPath = project.cwd ?? project.path.path
-        try await StartupCoordinator.shared.handleExternalProjectSwitch(id: dbProjectId, path: realPath)
-        log.debug("[ORCH-SELECT] StartupCoordinator notified with path: \(realPath, privacy: .public)")
-      } catch {
-        log.warning("[ORCH-SELECT] Failed to notify StartupCoordinator: \(error.localizedDescription, privacy: .public)")
-        // Non-fatal - continue with activation
-      }
-
-      // 5. Activate
-      setState(.active(projectId: id))
-
-      let duration = Date().timeIntervalSince(startTime)
-      log.info("[ORCH-SELECT] Project ready in \(String(format: "%.3f", duration), privacy: .public)s")
-
-      // 6. Notify other components (Timeline, etc.)
-      NotificationCenter.default.post(name: .projectDidActivate, object: id)
-
-    } catch {
-      log.error("[ORCH-SELECT] Failed to load project: \(error.localizedDescription, privacy: .public)")
-      setState(.error("Failed to load project: \(error.localizedDescription)"))
+    guard let orchestrator else {
+      log.error("[ORCH-SELECT] Orchestrator not initialized")
+      setState(.error("Database not ready."))
+      return
     }
 
-    // 6. Resume background work
-    startBackgroundIndexing()
+    // 3. Fast project setup (non-blocking)
+    // Get/create DB project row immediately so we can notify components
+    let dbProjectId: String
+    do {
+      let canonicalRootPath = project.canonicalRootPath
+      dbProjectId = try orchestrator.getOrCreateProject(name: project.displayName, rootPath: canonicalRootPath).projectId
+      log.debug("[ORCH-SELECT] DB project ID: \(dbProjectId, privacy: .public)")
+    } catch {
+      log.error("[ORCH-SELECT] Failed to get/create project: \(error.localizedDescription, privacy: .public)")
+      setState(.error("Failed to load project: \(error.localizedDescription)"))
+      return
+    }
+
+    // 4. Notify StartupCoordinator IMMEDIATELY (unblocks timeline)
+    // This is the critical path - timeline needs to know which project is active
+    let realPath = project.cwd ?? project.path.path
+    do {
+      try await StartupCoordinator.shared.handleExternalProjectSwitch(id: dbProjectId, path: realPath)
+      log.debug("[ORCH-SELECT] StartupCoordinator notified with path: \(realPath, privacy: .public)")
+    } catch {
+      log.warning("[ORCH-SELECT] Failed to notify StartupCoordinator: \(error.localizedDescription, privacy: .public)")
+      // Non-fatal - continue with activation
+    }
+
+    // 5. Activate immediately (UI unblocks here)
+    setState(.active(projectId: id))
+
+    let activationDuration = Date().timeIntervalSince(startTime)
+    log.info("[ORCH-SELECT] Project activated in \(String(format: "%.3f", activationDuration), privacy: .public)s (JIT ingest runs in background)")
+
+    // 6. Notify other components
+    NotificationCenter.default.post(name: .projectDidActivate, object: id)
+
+    // 7. Start JIT ingestion in background (populates timeline entries)
+    // This is the slow part - runs async while UI is already showing
+    Task {
+      do {
+        _ = try await fastPath.ingestProjectJIT(project)
+        let totalDuration = Date().timeIntervalSince(startTime)
+        log.info("[ORCH-SELECT] Background JIT complete in \(String(format: "%.3f", totalDuration), privacy: .public)s")
+      } catch {
+        log.error("[ORCH-SELECT] Background JIT failed: \(error.localizedDescription, privacy: .public)")
+        // Non-fatal - project is already active, just missing some entries
+      }
+
+      // Resume background indexing after JIT completes
+      await MainActor.run {
+        self.startBackgroundIndexing()
+      }
+    }
   }
 
   // MARK: - Background Indexing

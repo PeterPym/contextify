@@ -93,10 +93,14 @@ public actor LightweightDiscoveryService {
         return []
       }
     } else {
-      // DMG build: direct filesystem access
+      // No access provider - this is expected for DMG builds but a BUG for sandbox builds
+      if Sandbox.isSandboxed {
+        log.error("[DISC-LIGHT] BUG: no access provider in sandbox; this path should be unreachable. Discovery will use container path and find 0 projects.")
+      }
+
       let root = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/projects")
-      log.debug("[DISC-LIGHT] Claude root (DMG build): \(root.path, privacy: .public)")
+      log.debug("[DISC-LIGHT] Claude root (no access provider - fallback): \(root.path, privacy: .public)")
       return scanClaudeDirectory(at: root)
     }
   }

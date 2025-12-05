@@ -39,10 +39,10 @@ doc_references:
 **Priority Levels:**
 - **P0 (Launch Critical):** 4 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 43 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 44 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 84
+**Total Active Items:** 85
 
 ---
 
@@ -1058,7 +1058,7 @@ Both should use identical card components for consistency.
 
 ---
 
-# P2 (Medium Priority) - 42 Items
+# P2 (Medium Priority) - 43 Items
 
 ---
 
@@ -1090,6 +1090,44 @@ When an App Store user launches Contextify without having granted folder permiss
 - [ ] Spinner only appears during actual loading operations
 
 **Split from:** #P0-SETTINGS-OVERHAUL
+
+---
+
+## #P2-IMAGE-RENDERING: Render images inline in timeline and search results
+
+**Status:** Not Started
+**Priority:** P2 (visual differentiator)
+**Effort:** 4-6 hours
+
+**Problem:**
+Claude Code transcripts contain embedded images (base64-encoded). Currently we show `[image]` placeholder text. The CLIs also only show text representations. Rendering actual images would be a meaningful differentiator.
+
+**Feature:**
+- Render thumbnail images inline in conversation timeline entries
+- Click thumbnail to expand to full size (modal or popover)
+- Also render in search results when an entry contains images
+- Handle multiple images per entry
+
+**Implementation approach:**
+1. Detect image content in transcript entries (base64 data URI patterns)
+2. Decode base64 to NSImage/Image
+3. Render as thumbnail (constrained size, aspect ratio preserved)
+4. Add tap/click handler for full-size view
+5. Consider lazy loading for performance
+
+**Files:**
+- `Contextify/Contextify/ConversationTimelineView.swift` - timeline entry rendering
+- `Contextify/Contextify/SearchResultsView.swift` - search result rendering (if exists)
+- May need new `ImageThumbnailView` component
+
+**Acceptance Criteria:**
+- [ ] Images render as thumbnails in timeline (not `[image]` placeholder)
+- [ ] Click/tap expands to full size
+- [ ] Multiple images per entry supported
+- [ ] Search results show image thumbnails
+- [ ] Performance acceptable (lazy loading if needed)
+
+**Related:** See #P4-BLOB-STORAGE in ROADMAP.md for future optimization of binary content storage.
 
 ---
 

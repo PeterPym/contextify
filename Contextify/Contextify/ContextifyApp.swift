@@ -95,6 +95,33 @@ final class AppLifecycleState {
 
 @main
 struct ContextifyApp: App {
+  // MARK: - Sandbox Startup Contract
+  //
+  // The startup sequence differs between DMG and App Store builds to ensure the
+  // TranscriptAccessProvider is configured BEFORE discovery runs in sandbox builds.
+  //
+  // **DMG builds:**
+  //   init() -> startup() -> [window .task] -> initializeProjectsSystem()
+  //   (PassthroughAccessProvider doesn't need configuration; order doesn't matter)
+  //
+  // **App Store builds (first launch):**
+  //   init() -> [exits early] -> [onboarding wizard] ->
+  //   buildAndConfigureAccessProvider() -> completeOnboardingInitialization() ->
+  //   startup() -> initializeProjectsSystem(existingProvider:)
+  //
+  // **App Store builds (subsequent launches):**
+  //   init() -> [logs and returns] -> [window .task] -> initializeProjectsSystem() ->
+  //   buildAndConfigureAccessProvider() -> startup() -> StartupCoordinator.start()
+  //
+  // Key invariants:
+  // 1. In App Store builds, startup() must NEVER be called from init(); it is only
+  //    invoked from post-onboarding flows and initializeProjectsSystem().
+  // 2. buildAndConfigureAccessProvider() MUST be called before startup() in sandbox builds.
+  // 3. buildAndConfigureAccessProvider() is startup-only; use reconfigureAccessProvider() mid-session.
+  // 4. reconfigureAccessProvider() does NOT update sharedAccessProvider (different code path).
+  // 5. After onboarding, the onComplete Task owns the startup sequence (isHandlingCompletion flag
+  //    prevents the window's .task from racing).
+
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
@@ -104,6 +131,17 @@ struct ContextifyApp: App {
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
   @State private var showWelcomeModal = false  // C3.2: Welcome modal state
+
+  /// Startup-only cache for the access provider. Ensures single construction per process.
+  /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
+  /// Do not call buildAndConfigureAccessProvider() after reconfigure.
+  @State private var sharedAccessProvider: TranscriptAccessProvider?
+
+  /// DEBUG flag: tracks whether reconfigureAccessProvider() has been called this process.
+  /// Used to detect misuse of buildAndConfigureAccessProvider() after mid-session reconfigure.
+  #if DEBUG
+  private static var hasReconfiguredAccessProvider = false
+  #endif
 
   #if SPARKLE
   /// Sparkle updater controller for DMG distribution auto-updates.
@@ -148,17 +186,23 @@ struct ContextifyApp: App {
     }
 
     // Phase 3: Start AppStateOrchestrator (replaces old startup logic)
-    // Gate startup behind onboarding completion for App Store builds
+    //
+    // For App Store builds: startup() is called from initializeProjectsSystem() AFTER
+    // the access provider is properly configured. This ensures discovery works correctly.
+    // For DMG builds: startup() is called here since no access provider configuration needed.
+    #if APPSTORE_BUILD
+    // App Store builds: defer startup to initializeProjectsSystem()
+    // This ensures the access provider is configured BEFORE discovery runs.
     Task { @MainActor in
-      // App Store builds: defer startup until onboarding is complete
-      // NOTE: Must use compile-time check, not runtime Sandbox.isSandboxed
-      #if APPSTORE_BUILD
       if !HUDPreferences.hasCompletedAppStoreOnboarding() {
         startupLog.notice("[STARTUP-GATE] App Store build without onboarding - deferring startup to post-onboarding")
-        return
+      } else {
+        startupLog.notice("[STARTUP-GATE] App Store subsequent launch - deferring startup to initializeProjectsSystem()")
       }
-      #endif
-
+    }
+    #else
+    // DMG builds: run startup immediately
+    Task { @MainActor in
       // PHASE 0: Pre-warm LLM health check (makes first StatusBarViewModel instant)
       #if canImport(FoundationModels)
       if #available(macOS 26.0, *) {
@@ -176,6 +220,7 @@ struct ContextifyApp: App {
       await StartupCoordinator.shared.start()
       startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
     }
+    #endif
   }
 
   var body: some Scene {
@@ -191,15 +236,30 @@ struct ContextifyApp: App {
               onboardingCoordinator.markComplete()
 
               // Now run the deferred startup sequence
+              // This Task owns the full pipeline; .task is blocked by isHandlingCompletion
               Task { @MainActor in
+                // Give SwiftUI time to process the state change and dismiss wizard.
+                // Task.yield() alone isn't enough - we need to let the render cycle complete.
+                // 50ms is enough for one frame at 60fps plus some buffer.
+                try? await Task.sleep(for: .milliseconds(50))
+
                 let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
                 startupLog.info("[POST-ONBOARD] Running deferred startup sequence")
+
+                // CRITICAL: Configure access provider BEFORE startup
+                let provider = await buildAndConfigureAccessProvider()
+
+                // Initialize DB components (moved from markComplete() to avoid blocking UI)
+                AppStateOrchestrator.shared.completeOnboardingInitialization()
 
                 await AppStateOrchestrator.shared.startup()
                 await StartupCoordinator.shared.start()
 
-                // Initialize projects system now that we have DB access
-                await initializeProjectsSystem()
+                // Pass the already-built provider to avoid reconstruction
+                await initializeProjectsSystem(existingProvider: provider)
+
+                // Signal completion - allows .task to run on subsequent view updates
+                onboardingCoordinator.finishHandlingCompletion()
               }
             }
           )
@@ -232,8 +292,11 @@ struct ContextifyApp: App {
       }
       .task {
         // Initialize projects system and auto-discover at app launch
-        // Skip if onboarding is still required (handled by wizard completion)
-        guard !onboardingCoordinator.shouldShowWizard else { return }
+        // Skip if:
+        // - Onboarding wizard is still visible (handled by wizard completion)
+        // - Onboarding just completed (onComplete Task owns the startup sequence)
+        guard !onboardingCoordinator.shouldShowWizard,
+              !onboardingCoordinator.isHandlingCompletion else { return }
         await initializeProjectsSystem()
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
@@ -330,17 +393,84 @@ struct ContextifyApp: App {
     }
   }
 
-  /// Run quick-discovery and ingest newest transcript (called after authorization granted in App Store builds)
+  // MARK: - Access Provider Management
 
-  /// Reconfigures the access provider after permissions are granted.
+  /// Builds and configures the TranscriptAccessProvider for the current build type.
+  /// MUST be called before AppStateOrchestrator.startup() in all sandbox paths.
+  /// Returns the cached provider if already built (idempotent).
+  ///
+  /// Startup-only; not used after mid-session reconfigureAccessProvider().
+  @MainActor
+  private func buildAndConfigureAccessProvider() async -> TranscriptAccessProvider {
+    // Guard against misuse: this function should never be called after reconfigureAccessProvider()
+    #if DEBUG
+    assert(
+      !Self.hasReconfiguredAccessProvider || sharedAccessProvider == nil,
+      "buildAndConfigureAccessProvider() called after reconfigureAccessProvider(). " +
+      "This would return a stale cached provider. Use reconfigureAccessProvider() for mid-session changes."
+    )
+    #endif
+
+    // Return cached provider if already built
+    if let existing = sharedAccessProvider {
+      return existing
+    }
+
+    let log = Logger(subsystem: "dev.contextify", category: "AccessProvider")
+
+    #if APPSTORE_BUILD
+    let claudeAuth = await folderAccessController.authorization(for: .claude)
+    let codexAuth  = await folderAccessController.authorization(for: .codex)
+
+    var claudeURL: URL? = nil
+    if let auth = claudeAuth, auth.status == .authorized {
+      claudeURL = try? await folderAccessController.resolve(auth).url
+      log.info("[ACCESS-PROVIDER] Claude authorized: \(claudeURL?.path ?? "nil", privacy: .public)")
+    } else {
+      log.info("[ACCESS-PROVIDER] Claude not authorized")
+    }
+
+    var codexURL: URL? = nil
+    if let auth = codexAuth, auth.status == .authorized {
+      codexURL = try? await folderAccessController.resolve(auth).url
+      log.info("[ACCESS-PROVIDER] Codex authorized: \(codexURL?.path ?? "nil", privacy: .public)")
+    } else {
+      log.info("[ACCESS-PROVIDER] Codex not authorized")
+    }
+
+    let provider = SandboxTranscriptAccessProvider(
+      claudeRoot: claudeURL,
+      codexRoot: codexURL
+    )
+    log.info("[ACCESS-PROVIDER] Created SandboxTranscriptAccessProvider")
+
+    #else
+    let provider = PassthroughAccessProvider()
+    log.info("[ACCESS-PROVIDER] Created PassthroughAccessProvider (DMG build)")
+    #endif
+
+    await AppStateOrchestrator.shared.configureAccessProvider(provider)
+    sharedAccessProvider = provider
+    return provider
+  }
+
+  /// Reconfigures the access provider after permissions are granted mid-session.
   /// This rebuilds the SandboxTranscriptAccessProvider with newly granted URLs
   /// and reconfigures AppStateOrchestrator so discovery can succeed.
+  ///
+  /// NOTE: Does not update ContextifyApp.sharedAccessProvider. Do not call
+  /// buildAndConfigureAccessProvider() after reconfigure in the same process.
   @MainActor
   static func reconfigureAccessProvider(
     folderAccessController: FolderAccessController,
     projectsVM: ProjectsViewModel?
   ) async {
     #if APPSTORE_BUILD
+    // Mark that reconfigure has been called - buildAndConfigureAccessProvider() should not be used after this
+    #if DEBUG
+    hasReconfiguredAccessProvider = true
+    #endif
+
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
 
@@ -482,7 +612,7 @@ struct ContextifyApp: App {
   }
 
   @MainActor
-  private func initializeProjectsSystem() async {
+  private func initializeProjectsSystem(existingProvider: TranscriptAccessProvider? = nil) async {
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("🔍 Initializing projects system at app launch")
 
@@ -503,38 +633,28 @@ struct ContextifyApp: App {
         log.info("[INIT-SANDBOX-CHECK] Sandbox.isSandboxed = \(Sandbox.isSandboxed, privacy: .public)")
         log.info("[INIT-CONTROLLER] FolderAccessController: \(controller == nil ? "nil" : "present", privacy: .public)")
 
-        // Build TranscriptAccessProvider
+        // Reuse existing provider, or cached provider, or build new one
         let accessProvider: TranscriptAccessProvider
+        if let existing = existingProvider {
+          accessProvider = existing
+          log.info("[INIT] Reusing existing access provider")
+        } else if let cached = sharedAccessProvider {
+          accessProvider = cached
+          log.info("[INIT] Reusing cached access provider")
+        } else {
+          accessProvider = await buildAndConfigureAccessProvider()
+          log.info("[INIT] Built new access provider")
 
-        #if APPSTORE_BUILD
-        // App Store build: security-scoped URLs from FolderAccessController
-        let claudeAuth = await folderAccessController.authorization(for: .claude)
-        let codexAuth  = await folderAccessController.authorization(for: .codex)
-
-        var claudeURL: URL? = nil
-        if let auth = claudeAuth, auth.status == .authorized {
-          claudeURL = try? await folderAccessController.resolve(auth).url
+          // App Store subsequent launches: run startup() now that provider is configured
+          // (startup was deferred from init to here to ensure provider is ready)
+          #if APPSTORE_BUILD
+          if HUDPreferences.hasCompletedAppStoreOnboarding() {
+            log.info("[INIT] Running deferred startup sequence (App Store subsequent launch)")
+            await AppStateOrchestrator.shared.startup()
+            await StartupCoordinator.shared.start()
+          }
+          #endif
         }
-
-        var codexURL: URL? = nil
-        if let auth = codexAuth, auth.status == .authorized {
-          codexURL = try? await folderAccessController.resolve(auth).url
-        }
-
-        accessProvider = SandboxTranscriptAccessProvider(
-          claudeRoot: claudeURL,
-          codexRoot: codexURL
-        )
-        log.info("[INIT] Created sandbox access provider (claude: \(claudeAuth?.status.rawValue ?? "none"), codex: \(codexAuth?.status.rawValue ?? "none"))")
-
-        #else
-        // DMG build: direct filesystem access
-        accessProvider = PassthroughAccessProvider()
-        log.info("[INIT] Created passthrough access provider (DMG build)")
-        #endif
-
-        // Configure AppStateOrchestrator with access provider
-        await AppStateOrchestrator.shared.configureAccessProvider(accessProvider)
 
         // Initialize orchestrator with access provider
         let orchestrator = try TranscriptOrchestrator(
@@ -565,30 +685,19 @@ struct ContextifyApp: App {
       }
       let orchestrator = vm.orchestrator
 
-      // Show welcome modal for onboarding when database is empty (0 projects).
-      // Applies to ALL builds (DMG + App Store).
-      //
-      // The modal handles conditional logic internally:
-      // - App Store builds: show permissions step first (if no bookmarks exist)
-      // - DMG builds: skip permissions, go straight to discovery progress
-      //
-      // See WelcomeModalView.swift for complete onboarding workflow documentation.
+      // Welcome modal decision:
+      // - DMG builds: No modal. Discovery runs in background, app shows content as it arrives.
+      // - Sandbox builds: Defer to AppStateOrchestrator.startup() which checks AFTER discovery
+      //   (shows modal only if no projects found after full discovery scan)
 
       let projectCount = (try? orchestrator.listProjects().count) ?? 0
       let isEmptyDB = projectCount == 0
-
       log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
 
-      // Show welcome modal for all empty database cases (onboarding workflow)
-      if isEmptyDB {
-        log.info("[WELCOME-DECISION] DB empty = WILL show modal (sandboxed: \(Sandbox.isSandboxed, privacy: .public))")
-        log.info("📋 Empty database detected - showing welcome modal for onboarding")
-        // Post notification to show welcome modal BEFORE discovery starts
-        await MainActor.run {
-          NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
-        }
+      if Sandbox.isSandboxed {
+        log.info("[WELCOME-DECISION] Sandbox build - deferring to post-discovery check in AppStateOrchestrator")
       } else {
-        log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
+        log.info("[WELCOME-DECISION] DMG build - no welcome modal, discovery runs in background")
       }
 
       // Reconcile pending assistant_usage records at startup
