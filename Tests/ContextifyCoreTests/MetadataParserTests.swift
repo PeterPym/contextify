@@ -180,6 +180,69 @@ final class MetadataParserTests: XCTestCase {
     XCTAssertEqual(result.assistantUsage?.ephemeral1hTokens, 50)
   }
 
+  // MARK: - Queue Operations
+
+  func testParseQueueOperation_RemoveWithoutContent() throws {
+    // Claude Code's "remove" operation does NOT include the message content,
+    // only the sessionId. We must parse it anyway (using FIFO matching in HooverEngine).
+    let json = """
+    {
+      "uuid": "queue-uuid",
+      "type": "queue-operation",
+      "timestamp": "2025-01-15T10:30:00.000Z",
+      "operation": "remove",
+      "sessionId": "session-abc123"
+    }
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json,
+      lineNumber: 1,
+      transcriptId: "test-transcript",
+      projectId: "test-project",
+      provider: "claude.code",
+      entryId: nil
+    )
+
+    // Must produce a QueueOperation even without content
+    XCTAssertEqual(result.queueOperations.count, 1)
+    let op = result.queueOperations[0]
+    XCTAssertEqual(op.kind, .remove)
+    XCTAssertEqual(op.sessionId, "session-abc123")
+    XCTAssertEqual(op.transcriptId, "test-transcript")
+    XCTAssertNil(op.contentSha256, "Remove op should have nil contentSha256 for FIFO matching")
+  }
+
+  func testParseQueueOperation_PopAllClearsAllQueued() throws {
+    // "popAll" clears all queued messages for a session
+    let json = """
+    {
+      "uuid": "queue-uuid",
+      "type": "queue-operation",
+      "timestamp": "2025-01-15T10:30:00.000Z",
+      "operation": "popAll",
+      "sessionId": "session-abc123"
+    }
+    """
+
+    let parser = ClaudeCodeMetadataParser()
+    let result = try parser.parseMetadata(
+      line: json,
+      lineNumber: 1,
+      transcriptId: "test-transcript",
+      projectId: "test-project",
+      provider: "claude.code",
+      entryId: nil
+    )
+
+    XCTAssertEqual(result.queueOperations.count, 1)
+    let op = result.queueOperations[0]
+    XCTAssertEqual(op.kind, .popAll)
+    XCTAssertEqual(op.sessionId, "session-abc123")
+    XCTAssertNil(op.contentSha256, "popAll clears all, no content hash needed")
+  }
+
   // MARK: - No Metadata
 
   func testParseUserMessage_NoMetadata() throws {
