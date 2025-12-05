@@ -24,6 +24,10 @@ extension Color {
     static let contextifyRed = Color(red: 0.780, green: 0.306, blue: 0.306)    // #C74E4E - Errors/destructive actions
     static let contextifyYellow = Color(red: 0.831, green: 0.659, blue: 0.306) // #D4A84E - Warnings/pending states
     static let contextifyPurple = Color(red: 0.486, green: 0.408, blue: 0.659) // #7C68A8 - Metadata/generated content
+
+    // Provider colors (third-party brand colors)
+    static let providerClaude = Color(red: 0.851, green: 0.467, blue: 0.341)   // #D97757 - Anthropic coral/orange (Claude Code)
+    static let providerCodex = Color.white                                      // Codex CLI (requires shadow on light bg)
 }
 
 // MARK: - Date Formatting Extensions

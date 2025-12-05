@@ -150,7 +150,7 @@ struct TimelineEntryRow: View, Equatable {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.8))
+                    .background(Color.providerClaude)
                     .cornerRadius(3)
                 InfoButton(isPresented: $showQueuedInfo)
                     .popover(isPresented: $showQueuedInfo) {
