@@ -95,6 +95,29 @@ final class AppLifecycleState {
 
 @main
 struct ContextifyApp: App {
+  // MARK: - Sandbox Startup Contract
+  //
+  // The startup sequence differs between DMG and App Store builds to ensure the
+  // TranscriptAccessProvider is configured BEFORE discovery runs in sandbox builds.
+  //
+  // **DMG builds:**
+  //   init() -> startup() -> [window .task] -> initializeProjectsSystem()
+  //   (PassthroughAccessProvider doesn't need configuration; order doesn't matter)
+  //
+  // **App Store builds (first launch):**
+  //   init() -> [exits early] -> [onboarding wizard] ->
+  //   buildAndConfigureAccessProvider() -> completeOnboardingInitialization() ->
+  //   startup() -> initializeProjectsSystem(existingProvider:)
+  //
+  // **App Store builds (subsequent launches):**
+  //   init() -> [logs and returns] -> [window .task] -> initializeProjectsSystem() ->
+  //   buildAndConfigureAccessProvider() -> startup() -> StartupCoordinator.start()
+  //
+  // Key invariants:
+  // - buildAndConfigureAccessProvider() MUST be called before startup() in sandbox builds
+  // - buildAndConfigureAccessProvider() is startup-only; use reconfigureAccessProvider() mid-session
+  // - reconfigureAccessProvider() does NOT update sharedAccessProvider (different code path)
+
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   private let model = HUDViewModel.shared
   private let timeline = ConversationMonitor.shared
@@ -109,6 +132,12 @@ struct ContextifyApp: App {
   /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
   /// Do not call buildAndConfigureAccessProvider() after reconfigure.
   @State private var sharedAccessProvider: TranscriptAccessProvider?
+
+  /// DEBUG flag: tracks whether reconfigureAccessProvider() has been called this process.
+  /// Used to detect misuse of buildAndConfigureAccessProvider() after mid-session reconfigure.
+  #if DEBUG
+  private static var hasReconfiguredAccessProvider = false
+  #endif
 
   #if SPARKLE
   /// Sparkle updater controller for DMG distribution auto-updates.
@@ -357,6 +386,15 @@ struct ContextifyApp: App {
   /// Startup-only; not used after mid-session reconfigureAccessProvider().
   @MainActor
   private func buildAndConfigureAccessProvider() async -> TranscriptAccessProvider {
+    // Guard against misuse: this function should never be called after reconfigureAccessProvider()
+    #if DEBUG
+    assert(
+      !Self.hasReconfiguredAccessProvider || sharedAccessProvider == nil,
+      "buildAndConfigureAccessProvider() called after reconfigureAccessProvider(). " +
+      "This would return a stale cached provider. Use reconfigureAccessProvider() for mid-session changes."
+    )
+    #endif
+
     // Return cached provider if already built
     if let existing = sharedAccessProvider {
       return existing
@@ -412,6 +450,11 @@ struct ContextifyApp: App {
     projectsVM: ProjectsViewModel?
   ) async {
     #if APPSTORE_BUILD
+    // Mark that reconfigure has been called - buildAndConfigureAccessProvider() should not be used after this
+    #if DEBUG
+    hasReconfiguredAccessProvider = true
+    #endif
+
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
     log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
 

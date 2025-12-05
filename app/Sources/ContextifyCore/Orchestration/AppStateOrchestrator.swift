@@ -110,8 +110,18 @@ public final class AppStateOrchestrator: ObservableObject {
     initializeDatabaseComponents()
   }
 
-  /// Configure the access provider for sandbox builds
-  /// Must be called before startup() in App Store builds
+  /// Configure the access provider for sandbox builds.
+  ///
+  /// **MUST be called before startup() in App Store builds.**
+  ///
+  /// Components that depend on this being set before use:
+  /// - `LightweightDiscoveryService`: Uses provider to resolve security-scoped bookmark paths
+  /// - `startup()`: Runs discovery which needs the provider for correct filesystem access
+  /// - JIT ingest and sandbox file watchers (via TranscriptOrchestrator)
+  ///
+  /// The ordering is enforced by:
+  /// - DEBUG precondition in `startup()` that checks `accessProvider != nil` for sandbox builds
+  /// - Release error logging if startup runs without provider configured
   public func configureAccessProvider(_ provider: TranscriptAccessProvider) async {
     self.accessProvider = provider
     await discovery.configure(accessProvider: provider)
