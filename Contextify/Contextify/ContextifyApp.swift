@@ -680,31 +680,19 @@ struct ContextifyApp: App {
       }
       let orchestrator = vm.orchestrator
 
-      // Welcome modal decision differs by build type:
-      // - DMG: Check DB immediately, show modal if empty (fast first-run experience)
-      // - Sandbox: Defer to AppStateOrchestrator.startup() which checks AFTER discovery
-      //   (avoids false "no projects" when we just haven't scanned yet)
-      //
-      // See WelcomeModalView.swift for complete onboarding workflow documentation.
+      // Welcome modal decision:
+      // - DMG builds: No modal. Discovery runs in background, app shows content as it arrives.
+      // - Sandbox builds: Defer to AppStateOrchestrator.startup() which checks AFTER discovery
+      //   (shows modal only if no projects found after full discovery scan)
 
       let projectCount = (try? orchestrator.listProjects().count) ?? 0
       let isEmptyDB = projectCount == 0
-
       log.info("[INIT-DB-STATE] Database has \(projectCount, privacy: .public) projects, isEmpty: \(isEmptyDB, privacy: .public)")
 
-      if !Sandbox.isSandboxed {
-        // DMG build: immediate DB check
-        if isEmptyDB {
-          log.info("[WELCOME-DECISION] DB empty (DMG build) = WILL show modal")
-          log.info("📋 Empty database detected - showing welcome modal for onboarding")
-          await MainActor.run {
-            NotificationCenter.default.post(name: .startupRequiresWelcomeModal, object: nil)
-          }
-        } else {
-          log.info("[WELCOME-DECISION] DB not empty (\(projectCount, privacy: .public) projects) = will NOT show modal")
-        }
-      } else {
+      if Sandbox.isSandboxed {
         log.info("[WELCOME-DECISION] Sandbox build - deferring to post-discovery check in AppStateOrchestrator")
+      } else {
+        log.info("[WELCOME-DECISION] DMG build - no welcome modal, discovery runs in background")
       }
 
       // Reconcile pending assistant_usage records at startup
