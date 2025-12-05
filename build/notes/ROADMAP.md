@@ -289,6 +289,51 @@ When users step away from their machine (lunch, meetings, overnight), Claude Cod
 
 ---
 
+### P4-BLOB-STORAGE: Extract binary content from SQLite to local file storage
+
+**Status:** Not started
+**Priority:** P4 (future optimization)
+**Effort:** Medium-Large (architecture change)
+
+- [ ] Design and implement content-addressable blob storage for large/binary transcript content
+
+**Problem:**
+Claude Code transcripts contain large binary content (base64 images, big file reads, command outputs). Currently stored inline in SQLite which:
+- Bloats database size
+- Causes memory pressure during parsing (see 35MB buffer limit in HooverEngine)
+- Inefficient for repeated access (decode base64 every render)
+- Redundant storage (original + transcript + DB)
+
+**Proposed Solution:**
+Extract large/binary content to local file storage, store references in DB.
+
+**Design considerations:**
+1. **Content-addressable storage** - SHA256 hash as filename for deduplication
+2. **Storage location** - `~/Library/Application Support/Contextify/blobs/{hash}`
+3. **Detection** - Identify extractable content by size threshold, base64 patterns, MIME hints
+4. **DB schema** - Placeholder in content field: `[blob:sha256:abc123]` or separate blob_ref column
+5. **Lazy extraction** - Extract on first access, not during initial ingest
+6. **Cleanup/GC** - Remove orphaned blobs after transcript deletion
+7. **Migration** - Extract existing large entries from DB
+
+**Scope:**
+- Images (base64 data URIs)
+- Large file read results (>100KB?)
+- Large command outputs
+- Other binary content
+
+**Research Questions:**
+1. What's the right size threshold for extraction vs inline?
+2. How to handle the case where blob file is missing (deleted externally)?
+3. Should extraction be eager (ingest time) or lazy (first access)?
+4. Migration strategy for existing databases with large content?
+
+**Related:**
+- TODOS.md#P2-IMAGE-RENDERING - Would benefit from blob storage for efficient image loading
+- `app/Sources/ContextifyCore/Database/HooverEngine.swift:531-536` - 35MB buffer limit references this TODO
+
+---
+
 ## P5 (Research / Exploratory)
 
 ### P5-INVESTIGATE-TRANSCRIPT-PROVIDERS: Other AI Tool Transcript Support
