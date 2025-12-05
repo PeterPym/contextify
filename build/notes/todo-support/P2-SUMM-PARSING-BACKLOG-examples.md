@@ -343,6 +343,41 @@ TODO
 
 ---
 
+## Example 10: Suggestion Misattributed as Request
+
+**Date Added:** 2025-12-05
+**Category:** attribution error
+**Transcript:** `1365595a-e23a-4a9e-ad03-dfad69afabe2.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "we should have docs on this",
+  "entry_id": "queue-6945144986004572220-8685581187740856739",
+  "summary": "You requested Claude Code to create documentation on this topic.",
+  "timestamp": "2025-12-05T17:13:35Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/1365595a-e23a-4a9e-ad03-dfad69afabe2.jsonl"
+}
+```
+
+**Problem:**
+The user made a casual observation/suggestion ("we should have docs on this"), but the summary misinterprets this as a direct request to Claude Code. "We should have" is a general statement about documentation gaps, not "please create documentation."
+
+**Expected Summary:**
+- "You noted documentation should exist for this topic."
+- Or: "You suggested adding documentation."
+
+**Root Cause (suspected):**
+- The phrase "should have docs" was interpreted as an imperative request rather than an observation
+- LLM may be over-interpreting suggestions as actionable requests
+- No distinction between "we should X" (suggestion/observation) vs "please do X" (request)
+
+**Fix Approach:**
+1. Adjust prompt to distinguish observations ("we should...", "it would be nice to...") from direct requests ("please...", "can you...", "do X")
+2. For suggestion patterns, use verbs like "suggested", "noted", "observed" rather than "requested"
+
+---
+
 ## Template for New Examples
 
 ```markdown
