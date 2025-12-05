@@ -54,10 +54,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // In App Store (sandbox) builds, FSEvents monitoring is disabled.
     // Refresh projects when app returns to foreground to detect new projects
     // created by Claude Code/Codex while we were in background.
+    // NOTE: Only refresh after onboarding is complete - the access provider
+    // isn't configured during onboarding, so discovery would fail.
     #if APPSTORE_BUILD
-    log.info("[APP-ACTIVE] App became active - refreshing projects (sandbox mode)")
-    Task { @MainActor in
-      await AppStateOrchestrator.shared.refreshProjects()
+    if HUDPreferences.hasCompletedAppStoreOnboarding() {
+      log.info("[APP-ACTIVE] App became active - refreshing projects (sandbox mode)")
+      Task { @MainActor in
+        await AppStateOrchestrator.shared.refreshProjects()
+      }
+    } else {
+      log.info("[APP-ACTIVE] App became active - skipping refresh (onboarding not complete)")
     }
     #endif
   }

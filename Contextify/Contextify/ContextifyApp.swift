@@ -114,9 +114,13 @@ struct ContextifyApp: App {
   //   buildAndConfigureAccessProvider() -> startup() -> StartupCoordinator.start()
   //
   // Key invariants:
-  // - buildAndConfigureAccessProvider() MUST be called before startup() in sandbox builds
-  // - buildAndConfigureAccessProvider() is startup-only; use reconfigureAccessProvider() mid-session
-  // - reconfigureAccessProvider() does NOT update sharedAccessProvider (different code path)
+  // 1. In App Store builds, startup() must NEVER be called from init(); it is only
+  //    invoked from post-onboarding flows and initializeProjectsSystem().
+  // 2. buildAndConfigureAccessProvider() MUST be called before startup() in sandbox builds.
+  // 3. buildAndConfigureAccessProvider() is startup-only; use reconfigureAccessProvider() mid-session.
+  // 4. reconfigureAccessProvider() does NOT update sharedAccessProvider (different code path).
+  // 5. After onboarding, the onComplete Task owns the startup sequence (isHandlingCompletion flag
+  //    prevents the window's .task from racing).
 
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   private let model = HUDViewModel.shared
@@ -232,6 +236,7 @@ struct ContextifyApp: App {
               onboardingCoordinator.markComplete()
 
               // Now run the deferred startup sequence
+              // This Task owns the full pipeline; .task is blocked by isHandlingCompletion
               Task { @MainActor in
                 let startupLog = Logger(subsystem: "dev.contextify", category: "Startup")
                 startupLog.info("[POST-ONBOARD] Running deferred startup sequence")
@@ -239,7 +244,7 @@ struct ContextifyApp: App {
                 // CRITICAL: Configure access provider BEFORE startup
                 let provider = await buildAndConfigureAccessProvider()
 
-                // Ensure DB components are initialized
+                // Initialize DB components (moved from markComplete() to avoid blocking UI)
                 AppStateOrchestrator.shared.completeOnboardingInitialization()
 
                 await AppStateOrchestrator.shared.startup()
@@ -247,6 +252,9 @@ struct ContextifyApp: App {
 
                 // Pass the already-built provider to avoid reconstruction
                 await initializeProjectsSystem(existingProvider: provider)
+
+                // Signal completion - allows .task to run on subsequent view updates
+                onboardingCoordinator.finishHandlingCompletion()
               }
             }
           )
@@ -279,8 +287,11 @@ struct ContextifyApp: App {
       }
       .task {
         // Initialize projects system and auto-discover at app launch
-        // Skip if onboarding is still required (handled by wizard completion)
-        guard !onboardingCoordinator.shouldShowWizard else { return }
+        // Skip if:
+        // - Onboarding wizard is still visible (handled by wizard completion)
+        // - Onboarding just completed (onComplete Task owns the startup sequence)
+        guard !onboardingCoordinator.shouldShowWizard,
+              !onboardingCoordinator.isHandlingCompletion else { return }
         await initializeProjectsSystem()
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in

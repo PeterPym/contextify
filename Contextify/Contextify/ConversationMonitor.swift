@@ -1686,6 +1686,11 @@ final class ConversationMonitor {
             followMode = .automatic
             return
         }
+        guard let orchestrator = orchestrator else {
+            log.debug("loadPolicyForCurrentProject: orchestrator not ready yet, defaulting to automatic")
+            followMode = .automatic
+            return
+        }
         do {
             if let row = try await orchestrator.getFollowPolicy(projectId: pid) {
                 if row.mode == 0 {

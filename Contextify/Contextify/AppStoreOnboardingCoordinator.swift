@@ -35,6 +35,11 @@ public final class AppStoreOnboardingCoordinator: ObservableObject {
   /// For DMG builds: always true.
   @Published public private(set) var isComplete: Bool
 
+  /// True while the onComplete Task is running the post-onboarding startup sequence.
+  /// Used to prevent the main window's .task from racing with onComplete.
+  /// Set by markComplete(), cleared by the onComplete Task when done.
+  @Published public private(set) var isHandlingCompletion: Bool = false
+
   /// Throttle refreshState() calls to avoid expensive bookmark resolution
   private var lastRefreshTime: Date?
   private let refreshThrottleDuration: TimeInterval = 5.0
@@ -52,15 +57,29 @@ public final class AppStoreOnboardingCoordinator: ObservableObject {
   }
 
   /// Mark onboarding as complete. Called when user finishes the wizard.
+  ///
+  /// Sets `isHandlingCompletion = true` BEFORE `isComplete = true` to prevent the
+  /// main window's `.task` from racing with the `onComplete` Task. The onComplete
+  /// Task owns the full startup sequence and must call `finishHandlingCompletion()`
+  /// when done.
   public func markComplete() {
+    // CRITICAL: Set this BEFORE isComplete to prevent race with .task
+    isHandlingCompletion = true
+
     HUDPreferences.setAppStoreOnboardingCompleted(true)
     isComplete = true
     lastRefreshTime = Date()
-    log.info("[ONBOARD-COMPLETE] Onboarding marked complete")
+    log.info("[ONBOARD-COMPLETE] Onboarding marked complete (isHandlingCompletion=true)")
 
-    // Initialize database-dependent components now that onboarding is complete
-    AppStateOrchestrator.shared.completeOnboardingInitialization()
-    log.info("[ONBOARD-COMPLETE] AppStateOrchestrator initialized")
+    // NOTE: DB initialization moved to onComplete async Task to avoid blocking UI.
+    // The wizard dismisses immediately; startup sequence runs in background.
+  }
+
+  /// Called by the onComplete Task after the post-onboarding startup sequence finishes.
+  /// Clears `isHandlingCompletion` flag.
+  public func finishHandlingCompletion() {
+    isHandlingCompletion = false
+    log.info("[ONBOARD-COMPLETE] Startup sequence finished (isHandlingCompletion=false)")
   }
 
   /// Mark the database bookmark as stale/invalid.

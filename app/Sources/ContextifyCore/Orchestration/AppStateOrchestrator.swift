@@ -253,6 +253,13 @@ public final class AppStateOrchestrator: ObservableObject {
       return
     }
 
+    // Idempotency: avoid re-creating watcher/timer if already running
+    // This prevents leaking watchers if startup() is called multiple times
+    if sandboxedWatcher != nil || codexPollTimer != nil {
+      log.info("[ORCH-BACKGROUND-DISCOVERY] Already running, skipping restart")
+      return
+    }
+
     // Claude: Directory watcher (flat ~/.claude/projects/ structure)
     sandboxedWatcher = SandboxedDirectoryWatcher(accessProvider: provider)
     sandboxedWatcher?.startWatching()

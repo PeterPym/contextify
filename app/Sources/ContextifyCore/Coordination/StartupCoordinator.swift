@@ -219,6 +219,15 @@ public final class StartupCoordinator {
             return
         }
 
+        // If a project was already set via handleExternalProjectSwitch (e.g., after
+        // AppStateOrchestrator.startup() auto-selected a discovered project), complete
+        // the remaining setup (persist, bookmark, publish) instead of running full resolution.
+        if let existingContext = current {
+            log.info("🚀 StartupCoordinator: completing setup for externally-set project: \(existingContext.path, privacy: .public)")
+            await completeSetupForExternalProject(existingContext)
+            return
+        }
+
         log.info("🚀 StartupCoordinator starting...")
 
         // Phase 1: Resolve project root (with graceful failure)
@@ -294,6 +303,49 @@ public final class StartupCoordinator {
         isStarted = true
 
         log.notice("✅ StartupCoordinator ready: \(context.displayName) (id: \(projectId, privacy: .public))")
+    }
+
+    /// Complete setup for a project that was already set via `handleExternalProjectSwitch`.
+    ///
+    /// This runs the remaining phases that `handleExternalProjectSwitch` skips:
+    /// - Create security-scoped bookmark
+    /// - Persist path for next launch
+    /// - Re-publish with complete context (including bookmark)
+    ///
+    /// Called from `start()` when it detects `current` is already set.
+    private func completeSetupForExternalProject(_ existingContext: ActiveProjectContext) async {
+        let path = existingContext.path
+
+        // Phase 4: Create bookmark from path
+        let bookmark = await Task.detached {
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+        }.value
+
+        // Phase 5: Persist for next launch (skip sandbox container paths)
+        await Task.detached {
+            if !SandboxPathFilter.isSandboxContainerPath(path) {
+                HUDPreferences.setPersistedRoot(path)
+            }
+        }.value
+        log.debug("💾 Persisted project path to UserDefaults for next launch")
+
+        // Phase 6: Create complete context (with bookmark)
+        let completeContext = ActiveProjectContext(
+            id: existingContext.id,
+            path: path,
+            displayName: existingContext.displayName,
+            branch: existingContext.branch,
+            bookmark: bookmark
+        )
+
+        // Phase 7: Publish (updates current and notifies observers)
+        await publishContext(completeContext)
+
+        // Mark started
+        isStarted = true
+
+        log.notice("✅ StartupCoordinator ready (external): \(completeContext.displayName) (id: \(existingContext.id, privacy: .public))")
     }
 
     /// Wait for initial context (blocking with timeout).

@@ -115,22 +115,32 @@ struct AppStoreOnboardingView: View {
           Spacer()
 
           // Next button (step 1) or Continue button (step 2)
+          // Enabled: borderedProminent with brand color (filled, vibrant)
+          // Disabled: bordered (outline only, visually recedes)
           if currentStep == 1 {
-            Button("Next") {
-              withAnimation {
-                currentStep += 1
+            if databaseLocationConfigured {
+              Button("Next") {
+                withAnimation { currentStep += 1 }
               }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+            } else {
+              Button("Next") {}
+                .buttonStyle(.bordered)
+                .disabled(true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.contextifyBlue)
-            .disabled(!databaseLocationConfigured)
           } else {
-            Button("Continue") {
-              onComplete()
+            if permissionsConfigured {
+              Button("Continue") {
+                onComplete()
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+            } else {
+              Button("Continue") {}
+                .buttonStyle(.bordered)
+                .disabled(true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.contextifyBlue)
-            .disabled(!permissionsConfigured)
           }
         }
       }
