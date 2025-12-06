@@ -38,9 +38,10 @@
         "dmg"
       ],
       "git_tag": "v1.0.1",
-      "git_commit": "ec3a28c3f4257a7367a060816153fdc7025cc69c",
+      "git_commit": "72f57fc725918a4a035392416b70495de09b0a43",
       "dmg": {
-        "status": "pending"
+        "status": "built",
+        "built_at": "2025-12-06"
       },
       "appstore": {
         "status": "skipped"
