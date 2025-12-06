@@ -259,11 +259,16 @@ Use the hybrid model (optimistic for user-visible changes, database-driven for b
 ### Quick Commands
 
 ```bash
-# Initialize or reset release
-./scripts/release/init.sh X.Y.Z           # New release
-./scripts/release/init.sh X.Y.Z --reset   # Reset for new build (warns if shipped)
+# Session context (run when starting release work)
+./scripts/release/context.sh              # Shows active release, targets, next action
 
-# Build both distributions
+# Initialize release (must specify target channels)
+./scripts/release/init.sh X.Y.Z --dmg     # DMG-only release
+./scripts/release/init.sh X.Y.Z --appstore # App Store-only release
+./scripts/release/init.sh X.Y.Z --both    # Both channels
+./scripts/release/init.sh X.Y.Z --reset   # Reset for new build (preserves targets)
+
+# Build (auto-skips non-targeted channels)
 ./scripts/release/build.sh X.Y.Z
 
 # Check status

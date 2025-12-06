@@ -379,11 +379,18 @@ if [ "$DRY_RUN" = false ]; then
 fi
 echo ""
 echo "Next steps:"
-if [ "$SKIP_APPSTORE" = false ]; then
-  echo "  1. Upload to App Store: bash scripts/xc.sh upload"
+STEP=1
+if [ "$SKIP_APPSTORE" = false ] && [ "$APPSTORE_TARGETED" = true ]; then
+  echo "  $STEP. Upload to App Store: bash scripts/xc.sh upload"
+  STEP=$((STEP + 1))
 fi
-if [ "$SKIP_DMG" = false ]; then
-  echo "  2. Update appcast.xml and deploy to website"
+if [ "$SKIP_DMG" = false ] && [ "$DMG_TARGETED" = true ]; then
+  echo "  $STEP. Update appcast.xml and deploy to website"
+  STEP=$((STEP + 1))
 fi
-echo "  3. Continue with Phase 3: releases/v${VERSION}/checklists/03-review-materials.md"
+if [ "$APPSTORE_TARGETED" = true ]; then
+  echo "  $STEP. Continue with Phase 3: releases/v${VERSION}/checklists/03-review-materials.md"
+else
+  echo "  $STEP. Continue with Phase 5: releases/v${VERSION}/checklists/05-marketing.md"
+fi
 echo ""

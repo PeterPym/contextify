@@ -29,13 +29,24 @@ Each release goes through 6 phases. Work through them in order:
 ### 1. Initialize Release Directory
 
 ```bash
-./scripts/release/init.sh X.Y.Z
+# DMG-only release (direct download)
+./scripts/release/init.sh X.Y.Z --dmg
+
+# App Store-only release
+./scripts/release/init.sh X.Y.Z --appstore
+
+# Both channels
+./scripts/release/init.sh X.Y.Z --both
 ```
 
+**You must specify which channels to target.** This is immutable after initialization.
+
 This creates `releases/vX.Y.Z/` with:
-- `release.json` (from template)
-- `checklists/` (from templates)
+- `release.json` (from template, with target_channels)
+- `checklists/` (from templates, channel-appropriate)
 - `README.md` (generated)
+
+**Note:** For DMG-only releases, Phases 3 and 4 are automatically marked complete (no App Store review materials or submission needed).
 
 ### 2. Follow Phase Checklists
 
@@ -65,11 +76,20 @@ After completing each phase:
 ### Initialization
 
 ```bash
-# Start a new release
-./scripts/release/init.sh 1.0.0
+# Start a new release (must specify target channels)
+./scripts/release/init.sh 1.0.0 --dmg        # DMG only
+./scripts/release/init.sh 1.0.0 --appstore   # App Store only
+./scripts/release/init.sh 1.0.0 --both       # Both channels
 
-# Reset existing release for new build (preserves notes, bumps build number)
+# Reset existing release for new build (preserves notes, target_channels, bumps build number)
 ./scripts/release/init.sh 1.0.0 --reset
+```
+
+### Session Context
+
+```bash
+# Quick summary of current release state (for Claude Code sessions)
+./scripts/release/context.sh
 ```
 
 ### Building

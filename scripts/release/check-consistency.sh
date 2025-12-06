@@ -68,42 +68,118 @@ for release_dir in releases/v*/; do
         continue
     fi
 
-    # Compare build numbers
-    manifest_build=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('appstore',{}).get('build_number', 'N/A'))" 2>/dev/null || echo "N/A")
-    release_build=$(python3 -c "import json; d=json.load(open('$release_json')); print(d.get('phases',{}).get('build',{}).get('appstore',{}).get('build_number', 'N/A'))" 2>/dev/null || echo "N/A")
+    # Check target_channels consistency
+    target_channels=$(python3 -c "import json; d=json.load(open('$release_json')); tc=d.get('target_channels'); print(' '.join(tc) if tc else '')" 2>/dev/null || echo "")
+    manifest_target_channels=$(python3 -c "import json; d=json.load(open('$MANIFEST')); tc=d.get('releases',{}).get('$version',{}).get('target_channels'); print(' '.join(tc) if tc else '')" 2>/dev/null || echo "")
 
-    if [ "$manifest_build" != "$release_build" ]; then
-        echo "  Issue: Build number mismatch"
-        echo "    manifest.json: $manifest_build"
-        echo "    release.json:  $release_build"
-        ((ISSUES++)) || true
+    # Check for missing target_channels (backward compat: treat as both)
+    if [ -z "$target_channels" ]; then
+        echo "  Warning: No target_channels in release.json (defaulting to both)"
+    else
+        # Check for invalid channel values
+        for channel in $target_channels; do
+            if [ "$channel" != "dmg" ] && [ "$channel" != "appstore" ]; then
+                echo "  Error: Invalid target_channel '$channel'"
+                ((ISSUES++)) || true
+            fi
+        done
     fi
 
-    # Check DMG artifact matches claimed state
-    manifest_dmg=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('dmg',{}).get('status', 'pending'))" 2>/dev/null || echo "pending")
-    dmg_path="build/archives/v${version}/dmg/Contextify-${version}.dmg"
-
-    if [ "$manifest_dmg" = "shipped" ] || [ "$manifest_dmg" = "built" ]; then
-        if [ ! -f "$dmg_path" ]; then
-            echo "  Issue: DMG marked '$manifest_dmg' but archive missing"
-            echo "    Expected: $dmg_path"
+    # Check manifest and release.json agree on target_channels
+    if [ -n "$target_channels" ] && [ -n "$manifest_target_channels" ]; then
+        # Sort and compare
+        tc_sorted=$(echo $target_channels | tr ' ' '\n' | sort | tr '\n' ' ')
+        mtc_sorted=$(echo $manifest_target_channels | tr ' ' '\n' | sort | tr '\n' ' ')
+        if [ "$tc_sorted" != "$mtc_sorted" ]; then
+            echo "  Issue: target_channels mismatch"
+            echo "    release.json:  $target_channels"
+            echo "    manifest.json: $manifest_target_channels"
             ((ISSUES++)) || true
-        else
-            echo "  OK: DMG archive exists"
         fi
     fi
 
-    # Check App Store archive matches claimed state
+    # Determine targeting (default to both if missing)
+    dmg_targeted=false
+    appstore_targeted=false
+    if [ -z "$target_channels" ]; then
+        dmg_targeted=true
+        appstore_targeted=true
+    else
+        [[ " $target_channels " == *" dmg "* ]] && dmg_targeted=true
+        [[ " $target_channels " == *" appstore "* ]] && appstore_targeted=true
+    fi
+
+    # Check channel status matches targeting
+    manifest_dmg=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('dmg',{}).get('status', 'pending'))" 2>/dev/null || echo "pending")
     manifest_as=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('appstore',{}).get('status', 'pending'))" 2>/dev/null || echo "pending")
+
+    if [ "$dmg_targeted" = false ] && [ "$manifest_dmg" != "skipped" ]; then
+        echo "  Issue: DMG not targeted but status is '$manifest_dmg', expected 'skipped'"
+        ((ISSUES++)) || true
+    fi
+    if [ "$dmg_targeted" = true ] && [ "$manifest_dmg" = "skipped" ]; then
+        echo "  Warning: DMG is targeted but status is 'skipped'"
+        # This is a warning, not an error - might be intentional abort
+    fi
+    if [ "$appstore_targeted" = false ] && [ "$manifest_as" != "skipped" ]; then
+        echo "  Issue: App Store not targeted but status is '$manifest_as', expected 'skipped'"
+        ((ISSUES++)) || true
+    fi
+    if [ "$appstore_targeted" = true ] && [ "$manifest_as" = "skipped" ]; then
+        echo "  Warning: App Store is targeted but status is 'skipped'"
+        # This is a warning, not an error - might be intentional abort
+    fi
+
+    # Compare build numbers (only for App Store-targeted releases)
+    if [ "$appstore_targeted" = true ]; then
+        manifest_build=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('releases',{}).get('$version',{}).get('appstore',{}).get('build_number', 'N/A'))" 2>/dev/null || echo "N/A")
+        release_build=$(python3 -c "import json; d=json.load(open('$release_json')); print(d.get('phases',{}).get('build',{}).get('appstore',{}).get('build_number', 'N/A'))" 2>/dev/null || echo "N/A")
+
+        if [ "$manifest_build" != "$release_build" ]; then
+            echo "  Issue: Build number mismatch"
+            echo "    manifest.json: $manifest_build"
+            echo "    release.json:  $release_build"
+            ((ISSUES++)) || true
+        fi
+    fi
+
+    # Check DMG artifact matches claimed state (only if targeted)
+    dmg_path="build/archives/v${version}/dmg/Contextify-${version}.dmg"
+
+    if [ "$dmg_targeted" = true ]; then
+        if [ "$manifest_dmg" = "shipped" ] || [ "$manifest_dmg" = "built" ]; then
+            if [ ! -f "$dmg_path" ]; then
+                echo "  Issue: DMG marked '$manifest_dmg' but archive missing"
+                echo "    Expected: $dmg_path"
+                ((ISSUES++)) || true
+            else
+                echo "  OK: DMG archive exists"
+            fi
+        fi
+    else
+        # Warn if non-targeted channel has artifacts
+        if [ -f "$dmg_path" ]; then
+            echo "  Warning: DMG not targeted but artifact exists at $dmg_path"
+        fi
+    fi
+
+    # Check App Store archive matches claimed state (only if targeted)
     archive_path="build/archives/v${version}/appstore/Contextify.xcarchive"
 
-    if [ "$manifest_as" = "submitted" ] || [ "$manifest_as" = "approved" ] || [ "$manifest_as" = "built" ]; then
-        if [ ! -d "$archive_path" ]; then
-            echo "  Issue: App Store marked '$manifest_as' but archive missing"
-            echo "    Expected: $archive_path"
-            ((ISSUES++)) || true
-        else
-            echo "  OK: App Store archive exists"
+    if [ "$appstore_targeted" = true ]; then
+        if [ "$manifest_as" = "submitted" ] || [ "$manifest_as" = "approved" ] || [ "$manifest_as" = "built" ]; then
+            if [ ! -d "$archive_path" ]; then
+                echo "  Issue: App Store marked '$manifest_as' but archive missing"
+                echo "    Expected: $archive_path"
+                ((ISSUES++)) || true
+            else
+                echo "  OK: App Store archive exists"
+            fi
+        fi
+    else
+        # Warn if non-targeted channel has artifacts
+        if [ -d "$archive_path" ]; then
+            echo "  Warning: App Store not targeted but archive exists at $archive_path"
         fi
     fi
 
