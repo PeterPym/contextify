@@ -174,8 +174,27 @@ else
 fi
 
 # Copy checklist templates and replace version placeholder
+# Use stub templates for non-targeted phases
 for template in releases/templates/checklists/*.md; do
   filename=$(basename "$template")
+
+  # Skip .dmg-only.md files - they're only used as alternates
+  if [[ "$filename" == *.dmg-only.md ]]; then
+    continue
+  fi
+
+  # For DMG-only releases, use stub templates for App Store phases
+  if [ "$TARGET_APPSTORE" != "true" ]; then
+    case "$filename" in
+      03-review-materials.md)
+        template="releases/templates/checklists/03-review-materials.dmg-only.md"
+        ;;
+      04-submission.md)
+        template="releases/templates/checklists/04-submission.dmg-only.md"
+        ;;
+    esac
+  fi
+
   sed "s/{version}/${VERSION}/g" "$template" > "$RELEASE_DIR/checklists/$filename"
 done
 

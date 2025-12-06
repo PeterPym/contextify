@@ -6,7 +6,9 @@
     "1.0.0": {
       "created": "2025-11-25",
       "status": "in_progress",
-      "target_channels": ["appstore"],
+      "target_channels": [
+        "appstore"
+      ],
       "git_tag": "v1.0.0",
       "git_commit": "3af47cadedb983ce6ee0e1eb616db79318a500f4",
       "dmg": {
@@ -32,7 +34,9 @@
     "1.0.1": {
       "created": "2025-12-05",
       "status": "in_progress",
-      "target_channels": ["dmg"],
+      "target_channels": [
+        "dmg"
+      ],
       "git_tag": "v1.0.1",
       "git_commit": "ec3a28c3f4257a7367a060816153fdc7025cc69c",
       "dmg": {
