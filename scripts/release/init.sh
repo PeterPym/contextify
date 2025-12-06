@@ -8,10 +8,17 @@
 #   an existing release for a new build attempt (preserving history).
 #
 # Usage:
-#   ./scripts/release/init.sh X.Y.Z [OPTIONS]
+#   ./scripts/release/init.sh X.Y.Z (--dmg | --appstore | --both | --reset)
 #
 # Options:
-#   --reset    Reset existing release for new build (preserves notes, increments build)
+#   --dmg       Target DMG channel only
+#   --appstore  Target App Store channel only
+#   --both      Target both DMG and App Store channels
+#   --reset     Reset existing release for new build (preserves notes, target_channels)
+#
+# Note: Exactly one option is required.
+#   - For new releases: use --dmg, --appstore, or --both
+#   - For existing releases: use --reset to regenerate checklists
 #
 # State Changes:
 #   - releases/vX.Y.Z/release.json: Created (new) or reset (--reset)
@@ -29,14 +36,18 @@
 #   1 - Error (missing version, directory exists without --reset)
 #
 # Examples:
-#   ./scripts/release/init.sh 1.0.0          # Initialize new release
-#   ./scripts/release/init.sh 1.0.0 --reset  # Reset for new build attempt
+#   ./scripts/release/init.sh 1.0.0 --dmg       # DMG-only release
+#   ./scripts/release/init.sh 1.0.1 --appstore  # App Store-only release
+#   ./scripts/release/init.sh 1.1.0 --both      # Both channels
+#   ./scripts/release/init.sh 1.0.0 --reset     # Reset for new build attempt
 # ============================================================================
 
 set -e
 
 VERSION="${1}"
 RESET_MODE=false
+TARGET_DMG=false
+TARGET_APPSTORE=false
 
 # Parse arguments
 for arg in "$@"; do
@@ -44,14 +55,57 @@ for arg in "$@"; do
     --reset)
       RESET_MODE=true
       ;;
+    --dmg)
+      TARGET_DMG=true
+      ;;
+    --appstore)
+      TARGET_APPSTORE=true
+      ;;
+    --both)
+      TARGET_DMG=true
+      TARGET_APPSTORE=true
+      ;;
   esac
 done
 
 if [ -z "$VERSION" ]; then
-  echo "Usage: $0 X.Y.Z [--reset]"
-  echo "Example: $0 1.0.1"
-  echo "Example: $0 1.0.0 --reset  # Reset for new build"
+  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --both | --reset)"
+  echo ""
+  echo "For new releases:"
+  echo "  $0 1.0.1 --dmg       # DMG only"
+  echo "  $0 1.0.2 --appstore  # App Store only"
+  echo "  $0 1.1.0 --both      # Both channels"
+  echo ""
+  echo "For existing releases:"
+  echo "  $0 1.0.0 --reset     # Reset for new build"
   exit 1
+fi
+
+# Validate mutually exclusive options
+OPT_COUNT=0
+[ "$RESET_MODE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
+[ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
+[ "$TARGET_APPSTORE" = true ] && [ "$TARGET_DMG" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
+[ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
+
+# If no targeting option provided
+if [ "$TARGET_DMG" = false ] && [ "$TARGET_APPSTORE" = false ] && [ "$RESET_MODE" = false ]; then
+  echo "Error: Must specify one of --dmg, --appstore, --both, or --reset"
+  echo ""
+  echo "Usage: $0 X.Y.Z (--dmg | --appstore | --both | --reset)"
+  exit 1
+fi
+
+# Build target_channels array string for JSON
+if [ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = true ]; then
+  TARGET_CHANNELS='["dmg", "appstore"]'
+  TARGET_CHANNELS_DISPLAY="dmg, appstore"
+elif [ "$TARGET_DMG" = true ]; then
+  TARGET_CHANNELS='["dmg"]'
+  TARGET_CHANNELS_DISPLAY="dmg"
+elif [ "$TARGET_APPSTORE" = true ]; then
+  TARGET_CHANNELS='["appstore"]'
+  TARGET_CHANNELS_DISPLAY="appstore"
 fi
 
 RELEASE_DIR="releases/v${VERSION}"
@@ -72,19 +126,31 @@ if [ -d "$RELEASE_DIR" ]; then
   source "$ROOT_DIR/scripts/release/lib/guards.sh"
   check_reset_safety "$VERSION"
 
-  # Extract existing notes and build number from release.json
+  # Extract existing notes, build number, and target_channels from release.json
   if [ -f "$RELEASE_DIR/release.json" ]; then
     EXISTING_NOTES=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(json.dumps(d.get('notes', [])))" 2>/dev/null || echo "[]")
     NOTES_COUNT=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(len(d.get('notes', [])))" 2>/dev/null || echo "0")
     EXISTING_BUILD=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); print(d.get('phases',{}).get('build',{}).get('appstore',{}).get('build_number') or 0)" 2>/dev/null || echo "0")
     NEW_BUILD=$((EXISTING_BUILD + 1))
+    # Preserve target_channels from existing release
+    TARGET_CHANNELS=$(python3 -c "import json; f=open('$RELEASE_DIR/release.json'); d=json.load(f); tc=d.get('target_channels', ['dmg','appstore']); print(json.dumps(tc))" 2>/dev/null || echo '["dmg", "appstore"]')
+    TARGET_CHANNELS_DISPLAY=$(python3 -c "import json; tc=$TARGET_CHANNELS; print(', '.join(tc))" 2>/dev/null || echo "dmg, appstore")
+    # Set TARGET_DMG and TARGET_APPSTORE based on preserved target_channels
+    TARGET_DMG=$(python3 -c "import json; tc=$TARGET_CHANNELS; print('true' if 'dmg' in tc else 'false')" 2>/dev/null || echo "true")
+    TARGET_APPSTORE=$(python3 -c "import json; tc=$TARGET_CHANNELS; print('true' if 'appstore' in tc else 'false')" 2>/dev/null || echo "true")
   else
     EXISTING_NOTES="[]"
     NOTES_COUNT=0
     NEW_BUILD=1
+    # Default to both channels if no release.json exists
+    TARGET_CHANNELS='["dmg", "appstore"]'
+    TARGET_CHANNELS_DISPLAY="dmg, appstore"
+    TARGET_DMG=true
+    TARGET_APPSTORE=true
   fi
 
   echo "  Preserving $NOTES_COUNT notes"
+  echo "  Preserving target_channels: $TARGET_CHANNELS_DISPLAY"
   echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
 
   # Update Xcode project build number
@@ -96,6 +162,7 @@ if [ -d "$RELEASE_DIR" ]; then
 
 else
   echo "Initializing release v${VERSION}..."
+  echo "  Target channels: $TARGET_CHANNELS_DISPLAY"
   EXISTING_NOTES="[]"
   NEW_BUILD=1
 
@@ -135,11 +202,22 @@ else
   ]"
 fi
 
+# Determine phase statuses based on targeting
+# DMG-only releases don't need review_materials or submission phases
+if [ "$TARGET_APPSTORE" = "true" ]; then
+  REVIEW_MATERIALS_STATUS="pending"
+  SUBMISSION_STATUS="pending"
+else
+  REVIEW_MATERIALS_STATUS="complete"
+  SUBMISSION_STATUS="complete"
+fi
+
 # Create release.json
 cat > "$RELEASE_DIR/release.json" << EOF
 {
   "\$schema": "../schemas/release.schema.json",
   "version": "${VERSION}",
+  "target_channels": ${TARGET_CHANNELS},
   "created": "$(date +%Y-%m-%d)",
   "updated": "$(date +%Y-%m-%d)",
 
@@ -183,7 +261,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "review_materials": {
-      "status": "pending",
+      "status": "${REVIEW_MATERIALS_STATUS}",
       "demo_video": {
         "recorded": false,
         "path": null,
@@ -197,7 +275,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
     },
 
     "submission": {
-      "status": "pending",
+      "status": "${SUBMISSION_STATUS}",
       "submitted_at": null,
       "rejection": null,
       "resubmission": null
@@ -293,25 +371,35 @@ with open('$MANIFEST', 'r') as f:
 data.setdefault('releases', {})
 
 if '$RESET_MODE' == 'true':
-    # Reset mode: just update build number
+    # Reset mode: just update build number, preserve target_channels
     if '$VERSION' in data['releases']:
-        data['releases']['$VERSION']['appstore']['build_number'] = $NEW_BUILD
-        data['releases']['$VERSION']['appstore']['status'] = 'pending'
-        # Clear any rejection state when rebuilding
-        if 'rejection_reason' in data['releases']['$VERSION']['appstore']:
-            del data['releases']['$VERSION']['appstore']['rejection_reason']
+        # Only reset appstore build number if appstore is targeted
+        if 'appstore' in data['releases']['$VERSION'].get('target_channels', ['dmg', 'appstore']):
+            data['releases']['$VERSION']['appstore']['build_number'] = $NEW_BUILD
+            if data['releases']['$VERSION']['appstore'].get('status') not in ['approved', 'skipped']:
+                data['releases']['$VERSION']['appstore']['status'] = 'pending'
+            # Clear any rejection state when rebuilding
+            if 'rejection_reason' in data['releases']['$VERSION']['appstore']:
+                del data['releases']['$VERSION']['appstore']['rejection_reason']
 else:
-    # New release: create entry
+    # New release: create entry with target_channels
+    target_channels = $TARGET_CHANNELS
+
+    # Set channel statuses based on targeting
+    dmg_status = 'pending' if 'dmg' in target_channels else 'skipped'
+    appstore_status = 'pending' if 'appstore' in target_channels else 'skipped'
+
     data['releases']['$VERSION'] = {
         'created': str(date.today()),
         'status': 'in_progress',
+        'target_channels': target_channels,
         'git_tag': 'v$VERSION',
         'git_commit': '$CURRENT_COMMIT',
         'dmg': {
-            'status': 'pending'
+            'status': dmg_status
         },
         'appstore': {
-            'status': 'pending',
+            'status': appstore_status,
             'build_number': $NEW_BUILD
         },
         'marketing': {

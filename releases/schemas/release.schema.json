@@ -5,11 +5,21 @@
   "description": "Detailed per-release tracking with full phase history",
 
   "type": "object",
-  "required": ["version", "created", "updated", "git", "phases"],
+  "required": ["version", "created", "updated", "git", "phases", "target_channels"],
 
   "properties": {
     "$schema": {
       "type": "string"
+    },
+    "target_channels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["dmg", "appstore"]
+      },
+      "uniqueItems": true,
+      "minItems": 1,
+      "description": "Which distribution channels this release targets"
     },
     "version": {
       "type": "string",
