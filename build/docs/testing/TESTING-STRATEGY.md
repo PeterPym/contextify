@@ -47,6 +47,73 @@ This rule prevents the configuration split that caused commit 9936b081 to fail.
 
 ---
 
+## Red-Green Testing (Required for New Features)
+
+### The Process
+
+**RED phase:** Write a test that COMPILES and FAILS on an assertion.
+- ❌ Wrong: Test fails because method doesn't exist (compile error)
+- ✅ Right: Test compiles, runs, and fails on `XCTAssertEqual` or similar
+
+**GREEN phase:** Write minimum code to make the test pass.
+
+**REFACTOR phase:** Clean up while keeping tests green.
+
+### What Makes a Test Meaningful
+
+Before writing implementation, ask: "What would this test catch if the implementation were wrong?"
+
+**Superficial test (bad):**
+```swift
+func testMarkProjectActivated_ReturnsResult() throws {
+  let result = try orchestrator.markProjectActivated(projectId: id, timestamp: ts)
+  XCTAssertNotNil(result)  // ← Passes if method returns anything
+}
+```
+
+**Meaningful test (good):**
+```swift
+func testMarkProjectActivated_ComputesUnreadCountRelativeToTimestamp() throws {
+  // Create entry BEFORE timestamp
+  // Create entry AFTER timestamp
+  let result = try orchestrator.markProjectActivated(projectId: id, timestamp: ts)
+  XCTAssertEqual(result.unreadCount, 1)  // ← Only newer entry is unread
+}
+```
+
+### Required Test Scenarios
+
+**For any method claiming to be "atomic" or "transactional":**
+- Test rollback on failure (inject error mid-operation, verify no partial state)
+
+**For any method with boundary conditions:**
+- Test behavior at the boundary (timestamp exactly equal, empty input, etc.)
+
+**For any method returning computed values:**
+- Test that computation is correct, not just that a value is returned
+
+### Specify Scenarios Before Implementation
+
+Before writing code, list test scenarios:
+```
+- Happy path: normal activation updates all state
+- Boundary: entries exactly at timestamp boundary
+- Failure: rollback when middle operation fails
+- Edge: non-existent project ID
+```
+
+Then write tests for ALL of them. Don't cherry-pick the easy ones.
+
+### Skepticism Checklist
+
+After writing tests, answer honestly:
+- [ ] Would these tests fail if I returned hardcoded values?
+- [ ] Do I test failure modes, not just success paths?
+- [ ] If I claim "atomic", do I have a rollback test?
+- [ ] What behavior is NOT covered by these tests?
+
+---
+
 ## Test Creation Rules
 
 ### 1. Where to Put Tests

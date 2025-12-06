@@ -373,6 +373,7 @@ Do NOT merge if either fails.
 
 - **New features:** happy path + edge case + error case tests
 - **Bug fixes:** regression test that would have caught the bug
+- **Red-green required:** Tests must fail on behavior (not compile) before implementation
 
 **Full guidelines:** `build/docs/testing/TESTING-STRATEGY.md`
 
