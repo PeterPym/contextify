@@ -135,7 +135,7 @@ public final class ProjectRepositoryImpl: ProjectRepository {
   }
 
   public func delete(id: String) throws {
-    try db.write { db in
+    _ = try db.write { db in
       try Project.deleteOne(db, key: id)
     }
   }
@@ -293,7 +293,7 @@ public final class TranscriptRepositoryImpl: TranscriptRepository {
   }
 
   public func delete(id: String) throws {
-    try db.write { db in
+    _ = try db.write { db in
       // Delete transcript (CASCADE will handle related entries via FK constraints)
       try Transcript.deleteOne(db, key: id)
     }
