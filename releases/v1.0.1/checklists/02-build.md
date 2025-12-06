@@ -60,7 +60,7 @@ python3 scripts/release.py --version 1.0.1 --yes
 
 ```bash
 # Copy dev build to release location (only needed for manual builds)
-mkdir -p build/archives/v1.0.1/{appstore,dmg}
+mkdir -p build/archives/v1.0.1/dmg
 cp dist/Contextify-1.0.1.dmg build/archives/v1.0.1/dmg/
 ```
 

@@ -280,14 +280,19 @@ CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "null")
 
 # Build notes array - add reset note if resetting
 if [ "$RESET_MODE" = true ]; then
-  RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD from commit ${CURRENT_COMMIT:0:8}\"}"
+  # Use appropriate wording based on targeting
+  if [ "$TARGET_APPSTORE" = "true" ]; then
+    RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD from commit ${CURRENT_COMMIT:0:8}\"}"
+  else
+    RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset from commit ${CURRENT_COMMIT:0:8}\"}"
+  fi
   # Append reset note to existing notes
   NOTES_JSON=$(python3 -c "
 import json
 notes = $EXISTING_NOTES
 notes.append($RESET_NOTE)
 print(json.dumps(notes, indent=4))
-" 2>/dev/null || echo "[{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD\"}]")
+" 2>/dev/null || echo "[{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset\"}]")
 else
   NOTES_JSON="[
     {

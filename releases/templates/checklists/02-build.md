@@ -89,12 +89,13 @@ bash scripts/xc.sh export-pkg
 
 ```bash
 # Copy dev build to release location (only needed for manual builds)
-mkdir -p build/archives/v{version}/{appstore,dmg}
 <!-- IF:appstore -->
+mkdir -p build/archives/v{version}/appstore
 cp -R build/Contextify.xcarchive build/archives/v{version}/appstore/Contextify.xcarchive
 cp build/appstore/Contextify.pkg build/archives/v{version}/appstore/Contextify-{version}.pkg
 <!-- ENDIF:appstore -->
 <!-- IF:dmg -->
+mkdir -p build/archives/v{version}/dmg
 cp dist/Contextify-{version}.dmg build/archives/v{version}/dmg/
 <!-- ENDIF:dmg -->
 ```
