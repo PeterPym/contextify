@@ -7,7 +7,7 @@
 
   "git": {
     "tag": "v1.0.1",
-    "commit": "a0f2789fa5437c0b41f36d01aefc1a185a68f291",
+    "commit": "a8e937d5ba506d2e4563021f489b0f26317521aa",
     "branch": "main"
   },
 
@@ -37,7 +37,7 @@
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": 2,
+        "build_number": 13,
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
@@ -97,6 +97,11 @@
         "date": "2025-12-05",
         "author": "system",
         "note": "Reset for build 2 from commit a0f2789f"
+    },
+    {
+        "date": "2025-12-05",
+        "author": "system",
+        "note": "Reset for build 13 from commit a8e937d5"
     }
 ]
 }

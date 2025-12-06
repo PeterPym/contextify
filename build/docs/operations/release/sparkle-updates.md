@@ -1,5 +1,7 @@
 # Sparkle Auto-Updates (DMG Distribution)
 
+**Note:** This documentation applies only to releases that target the DMG channel. Releases with `target_channels: ["appstore"]` (App Store-only) do not require Sparkle configuration. Check targeting with `./scripts/release/context.sh`.
+
 DMG builds use Sparkle for auto-updates. App Store builds use Apple's update mechanism.
 
 ## Architecture
