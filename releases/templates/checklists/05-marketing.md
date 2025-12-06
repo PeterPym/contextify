@@ -8,16 +8,30 @@
 
 **Reference:** See `build/docs/operations/PUBLIC-SURFACES.md` for complete inventory of public surfaces.
 
-## Changelog
+## Changelog (App Only)
 
-### Write Changelog
-- [ ] Create changelog entry for {version}
-- [ ] Include: New features, improvements, bug fixes
-- [ ] Save to: `releases/v{version}/assets/changelog.md`
+### Verify Scope
+- [ ] Confirm `releases/config/app-paths.txt` lists correct app directories
 
-### Publish Changelog
-- [ ] Update public changelog (when public repo exists)
-- [ ] Update website release notes: `website/release-notes/{version}.html`
+### Generate Draft
+- [ ] Run: `./scripts/release/generate-release-notes.sh {version} --from v{prev_version}`
+- [ ] If "No app changes" reported, verify this is expected or adjust `--from`
+
+### Edit and Finalize
+- [ ] Review: `releases/v{version}/assets/changelog.llm.md`
+- [ ] Edit for clarity and user focus
+- [ ] Save as: `releases/v{version}/assets/changelog.final.md`
+
+### Update CHANGELOG.md
+- [ ] Rename `[Unreleased]` to `[{version}] - YYYY-MM-DD`
+- [ ] Insert content from `changelog.final.md`
+- [ ] Add new empty `[Unreleased]` section
+- [ ] Commit: `chore(release): update changelog for {version}`
+
+### Generate Derived Formats
+- [ ] Copy to App Store: `appstore-metadata/fastlane/metadata/en-US/release_notes.txt`
+- [ ] Generate HTML: `website/release-notes/{version}.html`
+- [ ] Verify Sparkle appcast will use: `<sparkle:releaseNotesLink>`
 
 ## Appcast (Sparkle)
 
