@@ -192,18 +192,6 @@ Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into 
 
 ---
 
-## Task.detached Sendability Audit (1 item)
-
-**Status:** Completed
-**Priority:** P1 (strict concurrency readiness)
-**Effort:** 2 hours
-
-- [x] #P1-TASK-DETACHED-SENDABILITY: Review and fix Task.detached Sendability issues with strict concurrency (2h)
-
-**Outcome:** Ran `swift test -Xswiftc -strict-concurrency=complete` with zero sendability/actor warnings. Audited detached sites in HUDCore, ProjectSwitcherState, StartupWarmup, and FastPathIngestionCoordinator; captures are Sendable or already marked @unchecked Sendable, so no additional fixes were required.
-
----
-
 ## Release Status Bar (1 item)
 
 **Status:** Not Started
