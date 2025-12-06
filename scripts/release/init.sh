@@ -163,13 +163,18 @@ if [ -d "$RELEASE_DIR" ]; then
 
   echo "  Preserving $NOTES_COUNT notes"
   echo "  Preserving target_channels: $TARGET_CHANNELS_DISPLAY"
-  echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
 
-  # Update Xcode project build number
+  # Only update Xcode build number if App Store is targeted
+  # DMG-only releases don't need build number bumps
   PBXPROJ="$ROOT_DIR/Contextify/Contextify.xcodeproj/project.pbxproj"
-  if [ -f "$PBXPROJ" ]; then
-    sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$PBXPROJ"
-    echo "  Updated Xcode CURRENT_PROJECT_VERSION to $NEW_BUILD"
+  if [ "$TARGET_APPSTORE" = "true" ]; then
+    echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
+    if [ -f "$PBXPROJ" ]; then
+      sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$PBXPROJ"
+      echo "  Updated Xcode CURRENT_PROJECT_VERSION to $NEW_BUILD"
+    fi
+  else
+    echo "  Build number: n/a (DMG-only release)"
   fi
 
 else
@@ -187,52 +192,61 @@ fi
 
 # Process checklist template with conditional markers
 # Usage: process_checklist_template <template> <output> <dmg_targeted> <appstore_targeted>
+#
+# Supported conditions:
+#   <!-- IF:dmg -->...<!-- ENDIF:dmg -->           - included when DMG is targeted
+#   <!-- IF:appstore -->...<!-- ENDIF:appstore --> - included when App Store is targeted
+#   <!-- IF:dmgonly -->...<!-- ENDIF:dmgonly -->   - included when DMG-only (no App Store)
+#
 process_checklist_template() {
   local template="$1"
   local output="$2"
   local dmg_targeted="$3"
   local appstore_targeted="$4"
 
+  # Derive dmgonly condition
+  local dmgonly="false"
+  if [ "$dmg_targeted" = "true" ] && [ "$appstore_targeted" != "true" ]; then
+    dmgonly="true"
+  fi
+
   local content
   content="$(cat "$template")"
 
-  # Remove non-targeted channel sections
-  if [ "$dmg_targeted" != "true" ]; then
-    # Remove <!-- IF:dmg -->...<!-- ENDIF:dmg --> blocks
-    content="$(echo "$content" | python3 -c "
+  # Remove non-targeted channel sections using Python for reliable multiline handling
+  content="$(printf '%s' "$content" | python3 -c "
 import sys, re
 text = sys.stdin.read()
-# Remove IF:dmg blocks (non-greedy, handles nested newlines)
-text = re.sub(r'<!-- IF:dmg -->\n?.*?<!-- ENDIF:dmg -->\n?', '', text, flags=re.DOTALL)
+
+dmg_targeted = '$dmg_targeted' == 'true'
+appstore_targeted = '$appstore_targeted' == 'true'
+dmgonly = '$dmgonly' == 'true'
+
+# Remove IF:dmg blocks if DMG not targeted
+if not dmg_targeted:
+    text = re.sub(r'<!-- IF:dmg -->\n?.*?<!-- ENDIF:dmg -->\n?', '', text, flags=re.DOTALL)
+
+# Remove IF:appstore blocks if App Store not targeted
+if not appstore_targeted:
+    text = re.sub(r'<!-- IF:appstore -->\n?.*?<!-- ENDIF:appstore -->\n?', '', text, flags=re.DOTALL)
+
+# Remove IF:dmgonly blocks if not DMG-only
+if not dmgonly:
+    text = re.sub(r'<!-- IF:dmgonly -->\n?.*?<!-- ENDIF:dmgonly -->\n?', '', text, flags=re.DOTALL)
+
+# Strip remaining marker comments (for conditions that passed)
+text = re.sub(r'<!-- (?:END)?IF:(?:dmg|appstore|dmgonly) -->\n?', '', text)
+
 print(text, end='')
 ")"
-  fi
-
-  if [ "$appstore_targeted" != "true" ]; then
-    # Remove <!-- IF:appstore -->...<!-- ENDIF:appstore --> blocks
-    content="$(echo "$content" | python3 -c "
-import sys, re
-text = sys.stdin.read()
-# Remove IF:appstore blocks (non-greedy, handles nested newlines)
-text = re.sub(r'<!-- IF:appstore -->\n?.*?<!-- ENDIF:appstore -->\n?', '', text, flags=re.DOTALL)
-print(text, end='')
-")"
-  fi
-
-  # Remove remaining marker comments (for targeted channels)
-  content="$(echo "$content" | sed 's/<!-- IF:dmg -->//g; s/<!-- ENDIF:dmg -->//g')"
-  content="$(echo "$content" | sed 's/<!-- IF:appstore -->//g; s/<!-- ENDIF:appstore -->//g')"
-
-  # Remove any UNLESS markers (used for exclusive conditions)
-  content="$(echo "$content" | sed 's/<!-- UNLESS:.*-->//g; s/<!-- ENDUNLESS:.*-->//g')"
 
   # Replace version placeholder
-  content="$(echo "$content" | sed "s/{version}/${VERSION}/g")"
+  content="$(printf '%s' "$content" | sed "s/{version}/${VERSION}/g")"
 
   # Clean up extra blank lines
-  content="$(echo "$content" | cat -s)"
+  content="$(printf '%s' "$content" | cat -s)"
 
-  echo "$content" > "$output"
+  printf '%s\n' "$content" > "$output"
 }
 
 # Copy checklist templates with conditional processing
@@ -284,14 +298,16 @@ else
   ]"
 fi
 
-# Determine phase statuses based on targeting
+# Determine phase statuses and build number based on targeting
 # DMG-only releases don't need review_materials or submission phases
 if [ "$TARGET_APPSTORE" = "true" ]; then
   REVIEW_MATERIALS_STATUS="pending"
   SUBMISSION_STATUS="pending"
+  APPSTORE_BUILD_NUMBER="${NEW_BUILD}"
 else
   REVIEW_MATERIALS_STATUS="complete"
   SUBMISSION_STATUS="complete"
+  APPSTORE_BUILD_NUMBER="null"  # Not targeted, no build number needed
 fi
 
 # Create release.json
@@ -335,7 +351,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": ${NEW_BUILD},
+        "build_number": ${APPSTORE_BUILD_NUMBER},
         "exported": false,
         "uploaded": false,
         "upload_receipt": null

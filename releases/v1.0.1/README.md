@@ -1,8 +1,8 @@
 # Release v1.0.1
 
-**Created:** 2025-12-05
+**Created:** 2025-12-06
 **Status:** In Progress
-**Build:** 13
+**Build:** 1
 **Targeting:** DMG only
 
 ## Quick Status

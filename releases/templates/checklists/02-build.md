@@ -117,11 +117,9 @@ Run validation script:
 <!-- IF:appstore -->
 - [ ] Ready for Phase 3: Review Materials
 <!-- ENDIF:appstore -->
-<!-- IF:dmg -->
-<!-- UNLESS:appstore -->
+<!-- IF:dmgonly -->
 - [ ] Ready for Phase 5: Marketing (DMG-only release)
-<!-- ENDUNLESS:appstore -->
-<!-- ENDIF:dmg -->
+<!-- ENDIF:dmgonly -->
 
 **Completed by:** ____
 **Date:** ____

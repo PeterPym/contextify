@@ -27,7 +27,6 @@
 - [ ] Commit: `chore(release): update changelog for 1.0.1`
 
 ### Generate Derived Formats
-
 - [ ] Generate HTML: `website/release-notes/1.0.1.html`
 - [ ] Verify Sparkle appcast will use: `<sparkle:releaseNotesLink>`
 
@@ -80,10 +79,8 @@
 ## Sign-off
 
 - [ ] Changelog published
-
 - [ ] Appcast updated and deployed
 - [ ] GitHub release created
-
 - [ ] Ready for Phase 6: Post-Release
 
 **Completed by:** ____

@@ -90,7 +90,6 @@ Review each public surface and determine if this release requires updates.
 
 - [ ] DMG available via GitHub and website
 - [ ] Sparkle updates working
-
 - [ ] Documentation updated
 - [ ] Monitoring in place
 - [ ] Release complete
@@ -104,7 +103,6 @@ Review each public surface and determine if this release requires updates.
 
 **Version:** 1.0.1
 **Released:** ____
-
 **DMG:** https://github.com/banagale/contextify/releases/tag/v1.0.1
 
 **Highlights:**
