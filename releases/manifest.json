@@ -7,7 +7,7 @@
       "created": "2025-11-25",
       "status": "in_progress",
       "git_tag": "v1.0.0",
-      "git_commit": "cd6974d5eb3b9cb199cc298be3659e29c99f471b",
+      "git_commit": "3af47cadedb983ce6ee0e1eb616db79318a500f4",
       "dmg": {
         "status": "built",
         "build_number": null,
@@ -19,8 +19,8 @@
         "submitted_at": "2025-12-05T09:20:10Z",
         "approved_at": null,
         "built_at": "2025-12-05",
-        "apple_state": "REJECTED",
-        "apple_state_updated_at": "2025-12-03T21:31:43Z"
+        "apple_state": "IN_REVIEW",
+        "apple_state_updated_at": "2025-12-06T02:18:35Z"
       },
       "marketing": {
         "changelog_published": false,
