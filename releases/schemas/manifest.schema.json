@@ -31,8 +31,18 @@
   "definitions": {
     "Release": {
       "type": "object",
-      "required": ["created", "status", "git_tag", "git_commit", "dmg", "appstore"],
+      "required": ["created", "status", "git_tag", "git_commit", "dmg", "appstore", "target_channels"],
       "properties": {
+        "target_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["dmg", "appstore"]
+          },
+          "uniqueItems": true,
+          "minItems": 1,
+          "description": "Which distribution channels this release targets"
+        },
         "created": {
           "type": "string",
           "format": "date",
@@ -92,8 +102,8 @@
       "properties": {
         "status": {
           "type": "string",
-          "enum": ["pending", "built", "uploaded", "skipped"],
-          "description": "Local tracking status (pre-submission)"
+          "enum": ["pending", "built", "submitted", "approved", "rejected", "skipped"],
+          "description": "Local tracking status"
         },
         "apple_state": {
           "type": ["string", "null"],

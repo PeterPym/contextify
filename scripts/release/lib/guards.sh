@@ -14,6 +14,8 @@
 #     source "$ROOT_DIR/scripts/release/lib/guards.sh"
 #
 # Functions:
+#   get_target_channels VERSION         - Get target channels from manifest.json
+#   is_channel_targeted VERSION CHANNEL - Check if channel is targeted
 #   get_channel_status VERSION CHANNEL  - Get current status from manifest.json
 #   artifact_exists VERSION TYPE        - Check if artifact exists on filesystem
 #   check_can_ship_dmg VERSION          - Precondition for mark-shipped.sh --dmg
@@ -30,6 +32,38 @@ if [ -z "$ROOT_DIR" ]; then
 fi
 
 MANIFEST="${ROOT_DIR}/releases/manifest.json"
+
+# Get target channels from manifest.json
+# Returns space-separated channel names (e.g., "dmg" or "appstore" or "dmg appstore")
+# Defaults to "dmg appstore" if target_channels is missing (backward compat)
+get_target_channels() {
+    local version="$1"
+
+    python3 -c "
+import json
+try:
+    with open('$MANIFEST') as f:
+        data = json.load(f)
+    release = data.get('releases', {}).get('$version', {})
+    channels = release.get('target_channels')
+    if not channels:
+        print('dmg appstore')  # backward compat
+    else:
+        print(' '.join(sorted(channels)))
+except Exception:
+    print('dmg appstore')
+" 2>/dev/null
+}
+
+# Check if a channel is targeted for a version
+# Returns 0 if targeted, 1 if not
+is_channel_targeted() {
+    local version="$1"
+    local channel="$2"
+    local targets
+    targets="$(get_target_channels "$version")"
+    [[ " $targets " == *" $channel "* ]]
+}
 
 # Get channel status from manifest.json
 # Treats legacy "complete" as "shipped"/"approved" for compatibility
@@ -96,6 +130,14 @@ artifact_exists() {
 # Precondition check for mark-shipped.sh --dmg
 check_can_ship_dmg() {
     local version="$1"
+
+    # Must target DMG channel
+    if ! is_channel_targeted "$version" dmg; then
+        echo "Error: v$version does not target the DMG channel" >&2
+        echo "  target_channels: $(get_target_channels "$version")" >&2
+        return 1
+    fi
+
     local status=$(get_channel_status "$version" "dmg")
 
     # Already shipped - allow idempotent re-run
@@ -124,6 +166,14 @@ check_can_ship_dmg() {
 # Precondition check for mark-shipped.sh --appstore
 check_can_ship_appstore() {
     local version="$1"
+
+    # Must target App Store channel
+    if ! is_channel_targeted "$version" appstore; then
+        echo "Error: v$version does not target the App Store channel" >&2
+        echo "  target_channels: $(get_target_channels "$version")" >&2
+        return 1
+    fi
+
     local status=$(get_channel_status "$version" "appstore")
 
     # Already approved - allow idempotent re-run
@@ -144,6 +194,14 @@ check_can_ship_appstore() {
 # Precondition check for mark-submitted.sh
 check_can_submit() {
     local version="$1"
+
+    # Must target App Store channel
+    if ! is_channel_targeted "$version" appstore; then
+        echo "Error: v$version does not target the App Store" >&2
+        echo "  target_channels: $(get_target_channels "$version")" >&2
+        return 1
+    fi
+
     local status=$(get_channel_status "$version" "appstore")
 
     # Already submitted - allow idempotent re-run
@@ -172,6 +230,14 @@ check_can_submit() {
 # Precondition check for mark-rejected.sh
 check_can_reject() {
     local version="$1"
+
+    # Must target App Store channel
+    if ! is_channel_targeted "$version" appstore; then
+        echo "Error: v$version does not target the App Store" >&2
+        echo "  target_channels: $(get_target_channels "$version")" >&2
+        return 1
+    fi
+
     local status=$(get_channel_status "$version" "appstore")
 
     # Must be submitted
