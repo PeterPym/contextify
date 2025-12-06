@@ -2,12 +2,12 @@
   "$schema": "../schemas/release.schema.json",
   "version": "1.0.1",
   "target_channels": ["dmg"],
-  "created": "2025-12-05",
-  "updated": "2025-12-05",
+  "created": "2025-12-06",
+  "updated": "2025-12-06",
 
   "git": {
     "tag": "v1.0.1",
-    "commit": "a0f2789fa5437c0b41f36d01aefc1a185a68f291",
+    "commit": "2b1d0e0f0b46c79291ba3eff911d2e0dbb819e8b",
     "branch": "main"
   },
 
@@ -37,7 +37,7 @@
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": 2,
+        "build_number": null,
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
@@ -97,6 +97,21 @@
         "date": "2025-12-05",
         "author": "system",
         "note": "Reset for build 2 from commit a0f2789f"
+    },
+    {
+        "date": "2025-12-05",
+        "author": "system",
+        "note": "Reset for build 13 from commit a8e937d5"
+    },
+    {
+        "date": "2025-12-06",
+        "author": "system",
+        "note": "Reset for build 1 from commit f1161dc5"
+    },
+    {
+        "date": "2025-12-06",
+        "author": "system",
+        "note": "Reset from commit 2b1d0e0f"
     }
 ]
 }

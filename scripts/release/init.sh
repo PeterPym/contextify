@@ -82,15 +82,27 @@ if [ -z "$VERSION" ]; then
 fi
 
 # Validate mutually exclusive options
+# --reset cannot be combined with targeting flags
+if [ "$RESET_MODE" = true ]; then
+  if [ "$TARGET_DMG" = true ] || [ "$TARGET_APPSTORE" = true ]; then
+    echo "Error: --reset cannot be combined with --dmg, --appstore, or --both"
+    echo ""
+    echo "  --reset preserves existing target_channels and only regenerates checklists."
+    echo "  If you need to change channel targeting, create a new version instead."
+    exit 1
+  fi
+fi
+
+# Count targeting options (--dmg alone, --appstore alone, or --both)
 OPT_COUNT=0
 [ "$RESET_MODE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
 [ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
 [ "$TARGET_APPSTORE" = true ] && [ "$TARGET_DMG" = false ] && OPT_COUNT=$((OPT_COUNT + 1))
 [ "$TARGET_DMG" = true ] && [ "$TARGET_APPSTORE" = true ] && OPT_COUNT=$((OPT_COUNT + 1))
 
-# If no targeting option provided
-if [ "$TARGET_DMG" = false ] && [ "$TARGET_APPSTORE" = false ] && [ "$RESET_MODE" = false ]; then
-  echo "Error: Must specify one of --dmg, --appstore, --both, or --reset"
+# Enforce exactly one option
+if [ "$OPT_COUNT" -ne 1 ]; then
+  echo "Error: Exactly one of --dmg, --appstore, --both, or --reset is required"
   echo ""
   echo "Usage: $0 X.Y.Z (--dmg | --appstore | --both | --reset)"
   exit 1
@@ -151,13 +163,18 @@ if [ -d "$RELEASE_DIR" ]; then
 
   echo "  Preserving $NOTES_COUNT notes"
   echo "  Preserving target_channels: $TARGET_CHANNELS_DISPLAY"
-  echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
 
-  # Update Xcode project build number
+  # Only update Xcode build number if App Store is targeted
+  # DMG-only releases don't need build number bumps
   PBXPROJ="$ROOT_DIR/Contextify/Contextify.xcodeproj/project.pbxproj"
-  if [ -f "$PBXPROJ" ]; then
-    sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$PBXPROJ"
-    echo "  Updated Xcode CURRENT_PROJECT_VERSION to $NEW_BUILD"
+  if [ "$TARGET_APPSTORE" = "true" ]; then
+    echo "  Incrementing build: $EXISTING_BUILD -> $NEW_BUILD"
+    if [ -f "$PBXPROJ" ]; then
+      sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEW_BUILD;/g" "$PBXPROJ"
+      echo "  Updated Xcode CURRENT_PROJECT_VERSION to $NEW_BUILD"
+    fi
+  else
+    echo "  Build number: n/a (DMG-only release)"
   fi
 
 else
@@ -173,7 +190,66 @@ else
   mkdir -p "$RELEASE_DIR/assets"
 fi
 
-# Copy checklist templates and replace version placeholder
+# Process checklist template with conditional markers
+# Usage: process_checklist_template <template> <output> <dmg_targeted> <appstore_targeted>
+#
+# Supported conditions:
+#   <!-- IF:dmg -->...<!-- ENDIF:dmg -->           - included when DMG is targeted
+#   <!-- IF:appstore -->...<!-- ENDIF:appstore --> - included when App Store is targeted
+#   <!-- IF:dmgonly -->...<!-- ENDIF:dmgonly -->   - included when DMG-only (no App Store)
+#
+process_checklist_template() {
+  local template="$1"
+  local output="$2"
+  local dmg_targeted="$3"
+  local appstore_targeted="$4"
+
+  # Derive dmgonly condition
+  local dmgonly="false"
+  if [ "$dmg_targeted" = "true" ] && [ "$appstore_targeted" != "true" ]; then
+    dmgonly="true"
+  fi
+
+  local content
+  content="$(cat "$template")"
+
+  # Remove non-targeted channel sections using Python for reliable multiline handling
+  content="$(printf '%s' "$content" | python3 -c "
+import sys, re
+text = sys.stdin.read()
+
+dmg_targeted = '$dmg_targeted' == 'true'
+appstore_targeted = '$appstore_targeted' == 'true'
+dmgonly = '$dmgonly' == 'true'
+
+# Remove IF:dmg blocks if DMG not targeted
+if not dmg_targeted:
+    text = re.sub(r'<!-- IF:dmg -->\n?.*?<!-- ENDIF:dmg -->\n?', '', text, flags=re.DOTALL)
+
+# Remove IF:appstore blocks if App Store not targeted
+if not appstore_targeted:
+    text = re.sub(r'<!-- IF:appstore -->\n?.*?<!-- ENDIF:appstore -->\n?', '', text, flags=re.DOTALL)
+
+# Remove IF:dmgonly blocks if not DMG-only
+if not dmgonly:
+    text = re.sub(r'<!-- IF:dmgonly -->\n?.*?<!-- ENDIF:dmgonly -->\n?', '', text, flags=re.DOTALL)
+
+# Strip remaining marker comments (for conditions that passed)
+text = re.sub(r'<!-- (?:END)?IF:(?:dmg|appstore|dmgonly) -->\n?', '', text)
+
+print(text, end='')
+")"
+
+  # Replace version placeholder
+  content="$(printf '%s' "$content" | sed "s/{version}/${VERSION}/g")"
+
+  # Clean up extra blank lines
+  content="$(printf '%s' "$content" | cat -s)"
+
+  printf '%s\n' "$content" > "$output"
+}
+
+# Copy checklist templates with conditional processing
 # Use stub templates for non-targeted phases
 for template in releases/templates/checklists/*.md; do
   filename=$(basename "$template")
@@ -195,7 +271,8 @@ for template in releases/templates/checklists/*.md; do
     esac
   fi
 
-  sed "s/{version}/${VERSION}/g" "$template" > "$RELEASE_DIR/checklists/$filename"
+  # Process template with conditionals
+  process_checklist_template "$template" "$RELEASE_DIR/checklists/$filename" "$TARGET_DMG" "$TARGET_APPSTORE"
 done
 
 # Get current commit
@@ -203,14 +280,19 @@ CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "null")
 
 # Build notes array - add reset note if resetting
 if [ "$RESET_MODE" = true ]; then
-  RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD from commit ${CURRENT_COMMIT:0:8}\"}"
+  # Use appropriate wording based on targeting
+  if [ "$TARGET_APPSTORE" = "true" ]; then
+    RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD from commit ${CURRENT_COMMIT:0:8}\"}"
+  else
+    RESET_NOTE="{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset from commit ${CURRENT_COMMIT:0:8}\"}"
+  fi
   # Append reset note to existing notes
   NOTES_JSON=$(python3 -c "
 import json
 notes = $EXISTING_NOTES
 notes.append($RESET_NOTE)
 print(json.dumps(notes, indent=4))
-" 2>/dev/null || echo "[{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset for build $NEW_BUILD\"}]")
+" 2>/dev/null || echo "[{\"date\": \"$(date +%Y-%m-%d)\", \"author\": \"system\", \"note\": \"Reset\"}]")
 else
   NOTES_JSON="[
     {
@@ -221,14 +303,16 @@ else
   ]"
 fi
 
-# Determine phase statuses based on targeting
+# Determine phase statuses and build number based on targeting
 # DMG-only releases don't need review_materials or submission phases
 if [ "$TARGET_APPSTORE" = "true" ]; then
   REVIEW_MATERIALS_STATUS="pending"
   SUBMISSION_STATUS="pending"
+  APPSTORE_BUILD_NUMBER="${NEW_BUILD}"
 else
   REVIEW_MATERIALS_STATUS="complete"
   SUBMISSION_STATUS="complete"
+  APPSTORE_BUILD_NUMBER="null"  # Not targeted, no build number needed
 fi
 
 # Create release.json
@@ -272,7 +356,7 @@ cat > "$RELEASE_DIR/release.json" << EOF
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": ${NEW_BUILD},
+        "build_number": ${APPSTORE_BUILD_NUMBER},
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
@@ -326,6 +410,21 @@ cat > "$RELEASE_DIR/release.json" << EOF
 }
 EOF
 
+# Build target description for README
+if [ "$TARGET_DMG" = "true" ] && [ "$TARGET_APPSTORE" = "true" ]; then
+  TARGET_DESC="Both (DMG + App Store)"
+  PHASE3_STATUS="Pending"
+  PHASE4_STATUS="Pending"
+elif [ "$TARGET_DMG" = "true" ]; then
+  TARGET_DESC="DMG only"
+  PHASE3_STATUS="Complete (n/a - DMG only)"
+  PHASE4_STATUS="Complete (n/a - DMG only)"
+else
+  TARGET_DESC="App Store only"
+  PHASE3_STATUS="Pending"
+  PHASE4_STATUS="Pending"
+fi
+
 # Create/update README
 cat > "$RELEASE_DIR/README.md" << EOF
 # Release v${VERSION}
@@ -333,6 +432,7 @@ cat > "$RELEASE_DIR/README.md" << EOF
 **Created:** $(date +%Y-%m-%d)
 **Status:** In Progress
 **Build:** ${NEW_BUILD}
+**Targeting:** ${TARGET_DESC}
 
 ## Quick Status
 
@@ -340,8 +440,8 @@ cat > "$RELEASE_DIR/README.md" << EOF
 |-------|--------|
 | 1. Pre-Release | Pending |
 | 2. Build | Pending |
-| 3. Review Materials | Pending |
-| 4. Submission | Pending |
+| 3. Review Materials | ${PHASE3_STATUS} |
+| 4. Submission | ${PHASE4_STATUS} |
 | 5. Marketing | Pending |
 | 6. Post-Release | Pending |
 
@@ -390,16 +490,18 @@ with open('$MANIFEST', 'r') as f:
 data.setdefault('releases', {})
 
 if '$RESET_MODE' == 'true':
-    # Reset mode: just update build number, preserve target_channels
+    # Reset mode: only bump build number, preserve target_channels AND channel statuses
+    # Per v3 plan: "preserve existing channel statuses, only regenerate checklists"
     if '$VERSION' in data['releases']:
-        # Only reset appstore build number if appstore is targeted
+        # Only update appstore build number if appstore is targeted
         if 'appstore' in data['releases']['$VERSION'].get('target_channels', ['dmg', 'appstore']):
             data['releases']['$VERSION']['appstore']['build_number'] = $NEW_BUILD
-            if data['releases']['$VERSION']['appstore'].get('status') not in ['approved', 'skipped']:
+            # Only clear rejection state if currently rejected (allows retry)
+            if data['releases']['$VERSION']['appstore'].get('status') == 'rejected':
                 data['releases']['$VERSION']['appstore']['status'] = 'pending'
-            # Clear any rejection state when rebuilding
-            if 'rejection_reason' in data['releases']['$VERSION']['appstore']:
-                del data['releases']['$VERSION']['appstore']['rejection_reason']
+                if 'rejection_reason' in data['releases']['$VERSION']['appstore']:
+                    del data['releases']['$VERSION']['appstore']['rejection_reason']
+            # Do NOT reset submitted/built/approved statuses - preserve them
 else:
     # New release: create entry with target_channels
     target_channels = $TARGET_CHANNELS
@@ -426,8 +528,8 @@ else:
             'announcement_posted': False
         }
     }
-    # Update current_version
-    data['current_version'] = '$VERSION'
+    # NOTE: Do NOT update current_version here - it represents "latest shipped"
+    # and should only be updated by mark-shipped.sh when a release goes live
 
 with open('$MANIFEST', 'w') as f:
     json.dump(data, f, indent=2)

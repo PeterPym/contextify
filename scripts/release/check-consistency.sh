@@ -72,9 +72,10 @@ for release_dir in releases/v*/; do
     target_channels=$(python3 -c "import json; d=json.load(open('$release_json')); tc=d.get('target_channels'); print(' '.join(tc) if tc else '')" 2>/dev/null || echo "")
     manifest_target_channels=$(python3 -c "import json; d=json.load(open('$MANIFEST')); tc=d.get('releases',{}).get('$version',{}).get('target_channels'); print(' '.join(tc) if tc else '')" 2>/dev/null || echo "")
 
-    # Check for missing target_channels (backward compat: treat as both)
+    # Check for missing target_channels (backward compat: treat as both, but warn)
     if [ -z "$target_channels" ]; then
         echo "  Warning: No target_channels in release.json (defaulting to both)"
+        echo "    Suggest: Add target_channels to release.json"
     else
         # Check for invalid channel values
         for channel in $target_channels; do
@@ -85,7 +86,23 @@ for release_dir in releases/v*/; do
         done
     fi
 
-    # Check manifest and release.json agree on target_channels
+    # Check manifest has target_channels if release.json has them
+    if [ -n "$target_channels" ] && [ -z "$manifest_target_channels" ]; then
+        echo "  Issue: release.json has target_channels but manifest.json is missing them"
+        echo "    release.json:  $target_channels"
+        echo "    manifest.json: (missing)"
+        ((ISSUES++)) || true
+    fi
+
+    # Check release.json has target_channels if manifest.json has them
+    if [ -z "$target_channels" ] && [ -n "$manifest_target_channels" ]; then
+        echo "  Issue: manifest.json has target_channels but release.json is missing them"
+        echo "    manifest.json: $manifest_target_channels"
+        echo "    release.json:  (missing)"
+        ((ISSUES++)) || true
+    fi
+
+    # Check manifest and release.json agree on target_channels when both present
     if [ -n "$target_channels" ] && [ -n "$manifest_target_channels" ]; then
         # Sort and compare
         tc_sorted=$(echo $target_channels | tr ' ' '\n' | sort | tr '\n' ' ')
@@ -118,16 +135,20 @@ for release_dir in releases/v*/; do
         ((ISSUES++)) || true
     fi
     if [ "$dmg_targeted" = true ] && [ "$manifest_dmg" = "skipped" ]; then
-        echo "  Warning: DMG is targeted but status is 'skipped'"
-        # This is a warning, not an error - might be intentional abort
+        # Per v3 plan: targeted+skipped is invalid (no abort semantics in v1)
+        echo "  Issue: DMG is targeted but status is 'skipped' (invalid per target_channels)"
+        echo "    Note: v1 has no abort semantics. Create a new version if strategy changes."
+        ((ISSUES++)) || true
     fi
     if [ "$appstore_targeted" = false ] && [ "$manifest_as" != "skipped" ]; then
         echo "  Issue: App Store not targeted but status is '$manifest_as', expected 'skipped'"
         ((ISSUES++)) || true
     fi
     if [ "$appstore_targeted" = true ] && [ "$manifest_as" = "skipped" ]; then
-        echo "  Warning: App Store is targeted but status is 'skipped'"
-        # This is a warning, not an error - might be intentional abort
+        # Per v3 plan: targeted+skipped is invalid (no abort semantics in v1)
+        echo "  Issue: App Store is targeted but status is 'skipped' (invalid per target_channels)"
+        echo "    Note: v1 has no abort semantics. Create a new version if strategy changes."
+        ((ISSUES++)) || true
     fi
 
     # Compare build numbers (only for App Store-targeted releases)

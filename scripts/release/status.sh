@@ -241,7 +241,7 @@ show_version_details() {
       fi
     fi
 
-    # Check for release complete
+    # Check for release complete (all targeted channels shipped)
     local dmg_done=true
     local as_done=true
     if [ "$dmg_targeted" = "true" ] && [ "$dmg_status_m" != "shipped" ]; then
@@ -250,8 +250,23 @@ show_version_details() {
     if [ "$appstore_targeted" = "true" ] && [ "$as_status_m" != "approved" ]; then
       as_done=false
     fi
+
     if [ "$dmg_done" = true ] && [ "$as_done" = true ]; then
-      echo "  -> Release complete!"
+      # Check phase completion for full release status
+      local marketing_status=$(grep -A2 '"marketing":' "$release_json" | grep '"status"' | head -1 | sed 's/.*: *"//' | sed 's/".*//')
+      local post_release_status=$(grep -A2 '"post_release":' "$release_json" | grep '"status"' | head -1 | sed 's/.*: *"//' | sed 's/".*//')
+
+      if [ "$marketing_status" = "complete" ] && [ "$post_release_status" = "complete" ]; then
+        echo "  -> Release complete!"
+      else
+        echo "  -> All targeted channels shipped!"
+        if [ "$marketing_status" != "complete" ]; then
+          echo "  -> Marketing pending: releases/v${ver}/checklists/05-marketing.md"
+        fi
+        if [ "$post_release_status" != "complete" ]; then
+          echo "  -> Post-release pending: releases/v${ver}/checklists/06-post-release.md"
+        fi
+      fi
     fi
   else
     echo "No release.json found"

@@ -1,8 +1,9 @@
 # Release v1.0.1
 
-**Created:** 2025-12-05
+**Created:** 2025-12-06
 **Status:** In Progress
-**Build:** 2
+**Build:** 1
+**Targeting:** DMG only
 
 ## Quick Status
 
@@ -10,8 +11,8 @@
 |-------|--------|
 | 1. Pre-Release | Pending |
 | 2. Build | Pending |
-| 3. Review Materials | Pending |
-| 4. Submission | Pending |
+| 3. Review Materials | Complete (n/a - DMG only) |
+| 4. Submission | Complete (n/a - DMG only) |
 | 5. Marketing | Pending |
 | 6. Post-Release | Pending |
 

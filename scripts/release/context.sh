@@ -108,6 +108,9 @@ if previous:
     print(f"PREV_AS_BUILD={appstore.get('build_number', '?')}")
 
 # Check for incomplete marketing on shipped releases
+# Actually verify by reading phase status from release.json
+import os
+
 for ver, info in sorted(releases.items(), key=lambda x: tuple(map(int, x[0].split('.'))), reverse=True):
     dmg = info.get('dmg', {})
     appstore = info.get('appstore', {})
@@ -117,10 +120,28 @@ for ver, info in sorted(releases.items(), key=lambda x: tuple(map(int, x[0].spli
     as_done = appstore.get('status') in ['approved', 'skipped'] or 'appstore' not in tc
 
     if dmg_done and as_done and info.get('status') != 'complete':
-        # Shipped but not complete - likely marketing pending
-        print(f"MARKETING_VER={ver}")
-        print(f"MARKETING_TARGETS={','.join(tc)}")
-        break
+        # Channels are shipped but release not complete - check what's actually pending
+        release_json_path = f'releases/v{ver}/release.json'
+        if os.path.exists(release_json_path):
+            try:
+                with open(release_json_path, 'r') as rf:
+                    release_data = json.load(rf)
+                phases = release_data.get('phases', {})
+                marketing = phases.get('marketing', {}).get('status', 'pending')
+                post_release = phases.get('post_release', {}).get('status', 'pending')
+
+                # Only report as marketing pending if actually pending
+                if marketing != 'complete' or post_release != 'complete':
+                    print(f"MARKETING_VER={ver}")
+                    print(f"MARKETING_TARGETS={','.join(tc)}")
+                    print(f"MARKETING_STATUS={marketing}")
+                    print(f"POST_RELEASE_STATUS={post_release}")
+                    break
+            except:
+                # Fallback to heuristic if can't read release.json
+                print(f"MARKETING_VER={ver}")
+                print(f"MARKETING_TARGETS={','.join(tc)}")
+                break
 PYEOF
 )
 

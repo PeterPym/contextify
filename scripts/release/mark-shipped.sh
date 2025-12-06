@@ -209,6 +209,22 @@ as_done = release.get('appstore', {}).get('status') in ['approved', 'skipped']
 if dmg_done and as_done:
     release['status'] = 'complete'
 
+# Update current_version if this is a shipped (not skipped) status
+# current_version represents "latest version shipped to any channel"
+if '$STATUS' in ['shipped', 'approved']:
+    current = data.get('current_version')
+    if current is None:
+        data['current_version'] = '$VERSION'
+    else:
+        # Compare versions: set if this version is >= current
+        def parse_version(v):
+            try:
+                return tuple(int(x) for x in v.split('.'))
+            except:
+                return (0, 0, 0)
+        if parse_version('$VERSION') >= parse_version(current):
+            data['current_version'] = '$VERSION'
+
 with open('$MANIFEST', 'w') as f:
     json.dump(data, f, indent=2)
 

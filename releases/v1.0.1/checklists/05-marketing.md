@@ -4,8 +4,6 @@
 **Phase:** 5 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
-**Note:** Marketing tasks can begin after submission (Phase 4), before App Store approval.
-
 **Reference:** See `build/docs/operations/PUBLIC-SURFACES.md` for complete inventory of public surfaces.
 
 ## Changelog (App Only)
@@ -29,7 +27,6 @@
 - [ ] Commit: `chore(release): update changelog for 1.0.1`
 
 ### Generate Derived Formats
-- [ ] Copy to App Store: `appstore-metadata/fastlane/metadata/en-US/release_notes.txt`
 - [ ] Generate HTML: `website/release-notes/1.0.1.html`
 - [ ] Verify Sparkle appcast will use: `<sparkle:releaseNotesLink>`
 
@@ -60,9 +57,7 @@
 - [ ] DMG downloadable
 - [ ] Release notes render correctly
 
-## Announcements (After App Store Approval)
-
-**Wait for App Store approval before announcing publicly.**
+## Announcements
 
 ### Social Media
 - [ ] Twitter/X announcement drafted
@@ -86,7 +81,6 @@
 - [ ] Changelog published
 - [ ] Appcast updated and deployed
 - [ ] GitHub release created
-- [ ] Announcements posted (after approval)
 - [ ] Ready for Phase 6: Post-Release
 
 **Completed by:** ____

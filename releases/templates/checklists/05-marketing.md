@@ -4,7 +4,9 @@
 **Phase:** 5 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
+<!-- IF:appstore -->
 **Note:** Marketing tasks can begin after submission (Phase 4), before App Store approval.
+<!-- ENDIF:appstore -->
 
 **Reference:** See `build/docs/operations/PUBLIC-SURFACES.md` for complete inventory of public surfaces.
 
@@ -29,10 +31,15 @@
 - [ ] Commit: `chore(release): update changelog for {version}`
 
 ### Generate Derived Formats
+<!-- IF:appstore -->
 - [ ] Copy to App Store: `appstore-metadata/fastlane/metadata/en-US/release_notes.txt`
+<!-- ENDIF:appstore -->
+<!-- IF:dmg -->
 - [ ] Generate HTML: `website/release-notes/{version}.html`
 - [ ] Verify Sparkle appcast will use: `<sparkle:releaseNotesLink>`
+<!-- ENDIF:dmg -->
 
+<!-- IF:dmg -->
 ## Appcast (Sparkle)
 
 ### Update Appcast
@@ -59,10 +66,13 @@
 - [ ] Release page accessible
 - [ ] DMG downloadable
 - [ ] Release notes render correctly
+<!-- ENDIF:dmg -->
 
-## Announcements (After App Store Approval)
+## Announcements
 
+<!-- IF:appstore -->
 **Wait for App Store approval before announcing publicly.**
+<!-- ENDIF:appstore -->
 
 ### Social Media
 - [ ] Twitter/X announcement drafted
@@ -84,9 +94,13 @@
 ## Sign-off
 
 - [ ] Changelog published
+<!-- IF:dmg -->
 - [ ] Appcast updated and deployed
 - [ ] GitHub release created
+<!-- ENDIF:dmg -->
+<!-- IF:appstore -->
 - [ ] Announcements posted (after approval)
+<!-- ENDIF:appstore -->
 - [ ] Ready for Phase 6: Post-Release
 
 **Completed by:** ____

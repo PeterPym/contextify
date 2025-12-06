@@ -23,6 +23,7 @@
     "build": {
       "status": "complete",
       "dmg": {
+        "_note": "DMG not targeted for this release (appstore-only). Built values reflect pre-targeting history.",
         "built": true,
         "path": "dist/Contextify-1.0.0.dmg",
         "sha256": null,

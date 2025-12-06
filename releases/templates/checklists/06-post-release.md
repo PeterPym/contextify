@@ -4,6 +4,7 @@
 **Phase:** 6 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
+<!-- IF:appstore -->
 ## App Store Approval
 
 ### Monitor Review
@@ -20,6 +21,7 @@
 - [ ] App live on App Store: [ ] Yes
 - [ ] Approval date: ____
 - [ ] Proceed with remaining post-release tasks
+<!-- ENDIF:appstore -->
 
 ## Public Surfaces Review
 
@@ -27,12 +29,14 @@
 
 Review each public surface and determine if this release requires updates.
 
+<!-- IF:appstore -->
 ### App Store Listing
 - [ ] Parse `appstore-metadata/fastlane/metadata/en-US/description.txt`
 - [ ] System requirements still accurate?
 - [ ] Feature list reflects current capabilities?
 - [ ] Screenshots show current UI? (if UI changed)
 - [ ] Required updates: ____
+<!-- ENDIF:appstore -->
 
 ### Website (contextify.sh)
 - [ ] Parse `website/index.html` - landing page current?
@@ -49,10 +53,12 @@ Review each public surface and determine if this release requires updates.
 - [ ] System requirements correct?
 - [ ] Required updates: ____
 
+<!-- IF:dmg -->
 ### Appcast (Sparkle)
 - [ ] New `<item>` added to `website/appcast.xml`?
 - [ ] Download URL correct?
 - [ ] Signature included?
+<!-- ENDIF:dmg -->
 
 ## Documentation Updates
 
@@ -78,14 +84,18 @@ Review each public surface and determine if this release requires updates.
 - [ ] Any critical issues? [ ] No / [ ] Yes (describe below)
 
 ### User Feedback
+<!-- IF:appstore -->
 - [ ] Monitor App Store reviews
+<!-- ENDIF:appstore -->
 - [ ] Monitor GitHub issues (when public)
 - [ ] Monitor support email
 - [ ] Any urgent issues? [ ] No / [ ] Yes (describe below)
 
+<!-- IF:dmg -->
 ### Auto-Updates (Sparkle)
 - [ ] Verify Sparkle updates work for existing users
 - [ ] Test update from previous version
+<!-- ENDIF:dmg -->
 
 ## Cleanup
 
@@ -113,9 +123,13 @@ Review each public surface and determine if this release requires updates.
 
 ## Sign-off
 
+<!-- IF:appstore -->
 - [ ] App Store approved and live
+<!-- ENDIF:appstore -->
+<!-- IF:dmg -->
 - [ ] DMG available via GitHub and website
 - [ ] Sparkle updates working
+<!-- ENDIF:dmg -->
 - [ ] Documentation updated
 - [ ] Monitoring in place
 - [ ] Release complete
@@ -129,8 +143,12 @@ Review each public surface and determine if this release requires updates.
 
 **Version:** {version}
 **Released:** ____
+<!-- IF:dmg -->
 **DMG:** https://github.com/banagale/contextify/releases/tag/v{version}
+<!-- ENDIF:dmg -->
+<!-- IF:appstore -->
 **App Store:** https://apps.apple.com/app/contextify/id6753190666
+<!-- ENDIF:appstore -->
 
 **Highlights:**
 - (list key changes)

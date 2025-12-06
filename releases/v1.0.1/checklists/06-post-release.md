@@ -4,35 +4,11 @@
 **Phase:** 6 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
-## App Store Approval
-
-### Monitor Review
-- [ ] Check App Store Connect daily for status updates
-- [ ] Review started: ____
-- [ ] Review completed: ____
-- [ ] Final status: [ ] Approved / [ ] Rejected
-
-### If Rejected
-- [ ] Return to Phase 4 (Submission) to handle rejection
-- [ ] Document rejection in `release.json`
-
-### If Approved
-- [ ] App live on App Store: [ ] Yes
-- [ ] Approval date: ____
-- [ ] Proceed with remaining post-release tasks
-
 ## Public Surfaces Review
 
 **Reference:** `build/docs/operations/PUBLIC-SURFACES.md`
 
 Review each public surface and determine if this release requires updates.
-
-### App Store Listing
-- [ ] Parse `appstore-metadata/fastlane/metadata/en-US/description.txt`
-- [ ] System requirements still accurate?
-- [ ] Feature list reflects current capabilities?
-- [ ] Screenshots show current UI? (if UI changed)
-- [ ] Required updates: ____
 
 ### Website (contextify.sh)
 - [ ] Parse `website/index.html` - landing page current?
@@ -78,7 +54,6 @@ Review each public surface and determine if this release requires updates.
 - [ ] Any critical issues? [ ] No / [ ] Yes (describe below)
 
 ### User Feedback
-- [ ] Monitor App Store reviews
 - [ ] Monitor GitHub issues (when public)
 - [ ] Monitor support email
 - [ ] Any urgent issues? [ ] No / [ ] Yes (describe below)
@@ -113,7 +88,6 @@ Review each public surface and determine if this release requires updates.
 
 ## Sign-off
 
-- [ ] App Store approved and live
 - [ ] DMG available via GitHub and website
 - [ ] Sparkle updates working
 - [ ] Documentation updated
@@ -130,7 +104,6 @@ Review each public surface and determine if this release requires updates.
 **Version:** 1.0.1
 **Released:** ____
 **DMG:** https://github.com/banagale/contextify/releases/tag/v1.0.1
-**App Store:** https://apps.apple.com/app/contextify/id6753190666
 
 **Highlights:**
 - (list key changes)
