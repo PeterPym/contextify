@@ -311,6 +311,20 @@ Or manually:
 3. Build clean: `bash scripts/xc.sh build` (zero warnings)
 4. Working directory clean: `git status`
 
+### Changelog Generation
+
+Release notes are generated via LLM analysis of git history:
+
+```bash
+./scripts/release/generate-release-notes.sh X.Y.Z
+```
+
+**Key points:**
+- Scoped to app code only (see `releases/config/app-paths.txt`)
+- Generates `releases/vX.Y.Z/assets/changelog.llm.md`
+- Human review required before finalizing
+- Produces CHANGELOG.md entry, Sparkle HTML, App Store text
+
 ### Release References
 
 The complete release playbook (version sync rules, rejection handling, backdating constraints, checklists) lives in:
