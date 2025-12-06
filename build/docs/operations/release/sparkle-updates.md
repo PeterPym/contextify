@@ -152,7 +152,14 @@ Edit `website/appcast.xml`. **Add new items at the TOP** (newest first).
 
 ### 4. Create Release Notes
 
-Create `website/release-notes/X.Y.Z.html` with changes.
+Release notes are generated during Phase 5 (Marketing) of the release workflow:
+
+1. **Generate LLM draft:** `./scripts/release/generate-release-notes.sh X.Y.Z`
+2. **Review and edit:** `releases/vX.Y.Z/assets/changelog.llm.md`
+3. **Save final:** `releases/vX.Y.Z/assets/changelog.final.md`
+4. **Convert to HTML:** `website/release-notes/X.Y.Z.html`
+
+The HTML file is referenced in the appcast via `<sparkle:releaseNotesLink>`.
 
 ### 5. Deploy
 

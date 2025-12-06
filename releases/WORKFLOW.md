@@ -204,6 +204,36 @@ After rejection, fix the issues and reset for a new build:
 ./scripts/release/test-app.sh --keep-tcc
 ```
 
+### Release Notes Generation
+
+Release notes are generated via LLM analysis of git history, scoped to app code only.
+
+```bash
+# Generate LLM draft from app changes
+./scripts/release/generate-release-notes.sh 1.0.1
+
+# Specify base ref (default: previous tag)
+./scripts/release/generate-release-notes.sh 1.0.1 --from v1.0.0
+
+# Include full diff for more context
+./scripts/release/generate-release-notes.sh 1.0.1 --include-diff
+
+# Preview without generating
+./scripts/release/generate-release-notes.sh 1.0.1 --dry-run
+```
+
+**Scope:** Only changes to paths in `releases/config/app-paths.txt` are included.
+Website, docs, and marketing changes are automatically excluded.
+
+**Output:** `releases/vX.Y.Z/assets/changelog.llm.md`
+
+**Workflow:**
+1. Run generator to create LLM draft
+2. Review and edit draft
+3. Save as `changelog.final.md`
+4. Update `CHANGELOG.md` with final content
+5. Generate HTML for Sparkle and App Store text
+
 ## Build Scripts
 
 Two build scripts serve different purposes:

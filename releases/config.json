@@ -49,6 +49,13 @@
     }
   },
 
+  "changelog": {
+    "app_paths_config": "releases/config/app-paths.txt",
+    "generator_script": "scripts/release/generate-release-notes.sh",
+    "output_dir": "releases/v{version}/assets",
+    "changelog_file": "CHANGELOG.md"
+  },
+
   "app_store_connect": {
     "app_id": "6753190666",
     "team_id": "J8P5B23FK7",

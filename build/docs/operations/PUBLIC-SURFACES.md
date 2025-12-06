@@ -164,11 +164,21 @@ appstore-metadata/fastlane/metadata/en-US/
 
 **Source files:** `website/release-notes/*.html`
 
+**Generation:** Release notes are generated via LLM from git history.
+See `scripts/release/generate-release-notes.sh`.
+
+**Artifacts:**
+- `releases/vX.Y.Z/assets/changelog.llm.md` - LLM draft
+- `releases/vX.Y.Z/assets/changelog.final.md` - Edited final
+- `website/release-notes/X.Y.Z.html` - Published HTML
+
 **Update triggers:**
 - Every release
 
 **Review checklist:**
-- [ ] New version page created?
+- [ ] LLM draft generated and reviewed?
+- [ ] Final version saved to `changelog.final.md`?
+- [ ] HTML version created?
 - [ ] Changes accurately described?
 - [ ] Links from landing page updated?
 

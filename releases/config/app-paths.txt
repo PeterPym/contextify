@@ -1,0 +1,17 @@
+# Paths included in app changelog generation
+# One path per line, comments start with #
+# Only changes to these paths will appear in release notes
+
+# Main app source
+Contextify/
+
+# Core library
+app/
+
+# Tests (may indicate new features)
+Tests/
+
+# Build/release scripts that affect the app
+scripts/xc.sh
+scripts/build-release.sh
+scripts/release.py
