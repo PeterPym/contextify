@@ -38,13 +38,14 @@ Refreshes can be deferred when:
 ```swift
 // Optimistic update - immediate UI feedback
 @MainActor
-func markAsViewed() {
+func activateProject() {
   unreadCounts[projectId] = 0  // Instant UI update
 
   // Background write - no explicit refresh needed
   Task.detached {
-    try orchestrator.markProjectViewed(projectId: projectId, timestamp: Date())
-    // Optimistic update already applied, no UI refresh required
+    // markProjectActivated() consolidates: markProjectSelected + markProjectViewed + getUnreadCount in one transaction
+    let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: ISO8601Z.string(from: Date()))
+    // result.unreadCount available if reconciliation needed
   }
 }
 ```

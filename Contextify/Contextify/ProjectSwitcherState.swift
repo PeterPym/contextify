@@ -665,24 +665,20 @@ public final class ProjectSwitcherState {
     // Previous redundant runFastPath() call removed to eliminate duplicate work.
 
     // CXT-11: Update metadata in background (non-blocking)
+    // Uses unified markProjectActivated() to prevent foot-gun of forgetting one operation
     Task.detached(priority: .userInitiated) { [weak self, orchestrator] in
       let logger = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
       do {
-        // Mark project as selected and viewed
-        try orchestrator.markProjectSelected(projectId: projectId)
         let timestamp = ISO8601Z.string(from: Date())
-        try orchestrator.markProjectViewed(projectId: projectId, timestamp: timestamp)
-
-        // Refresh unread count from database
-        let freshCount = try orchestrator.getUnreadCount(projectId: projectId)
-        logger.debug("✅ Project metadata updated in database: \(projectId, privacy: .public), unread: \(freshCount)")
+        let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp)
+        logger.debug("✅ Project activated: \(projectId, privacy: .public), unread: \(result.unreadCount)")
 
         // Update observable state with fresh unread count
         await MainActor.run { [weak self] in
-          self?.unreadCounts[projectId] = freshCount
+          self?.unreadCounts[projectId] = result.unreadCount
         }
       } catch {
-        logger.error("Failed to update project metadata: \(error.localizedDescription)")
+        logger.error("Failed to activate project: \(error.localizedDescription)")
       }
     }
   }

@@ -71,6 +71,9 @@ public protocol ProjectVisitsRepository {
   /// - Returns: Dictionary mapping project_id to unread count
   func getUnreadCounts(projectIds: [String]) throws -> [String: Int]
 
+  /// Get unread count using an existing database handle (for transactional callers)
+  func unreadCount(projectId: String, in db: Database) throws -> Int
+
   /// Ensure visit record exists for a project (creates if missing)
   /// - Parameter projectId: Project ID
   func ensureVisit(projectId: String) throws
@@ -130,22 +133,24 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
   }
 
   public func getUnreadCount(projectId: String) throws -> Int {
-    try db.read { db in
-      // Count entries where created_ts > last_viewed_ts (epoch timestamps)
-      // Uses project.last_viewed_ts directly (not project_visits table)
-      // Falls back to timestamp field if created_ts is NULL (transition entries)
-      let count = try Int.fetchOne(db, sql: """
-        SELECT COUNT(*)
-        FROM transcript_entries e
-        JOIN transcripts t ON t.id = e.transcript_id
-        JOIN projects p ON p.id = t.project_id
-        WHERE p.id = ?
-          AND COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
-          AND e.display_in_timeline = 1
-      """, arguments: [projectId])
+    try db.read { try unreadCount(projectId: projectId, in: $0) }
+  }
 
-      return count ?? 0
-    }
+  public func unreadCount(projectId: String, in db: Database) throws -> Int {
+    // Count entries where created_ts > last_viewed_ts (epoch timestamps)
+    // Uses project.last_viewed_ts directly (not project_visits table)
+    // Falls back to timestamp field if created_ts is NULL (transition entries)
+    let count = try Int.fetchOne(db, sql: """
+      SELECT COUNT(*)
+      FROM transcript_entries e
+      JOIN transcripts t ON t.id = e.transcript_id
+      JOIN projects p ON p.id = t.project_id
+      WHERE p.id = ?
+        AND COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
+        AND e.display_in_timeline = 1
+    """, arguments: [projectId])
+
+    return count ?? 0
   }
 
   public func getUnreadCounts() throws -> [String: Int] {

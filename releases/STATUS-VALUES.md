@@ -1,5 +1,24 @@
 # Release Status Values
 
+## Target Channels
+
+The `target_channels` field specifies which distribution channels a release targets. It is set at release initialization and is immutable.
+
+| Value | Meaning |
+|-------|---------|
+| `["dmg"]` | DMG-only release (direct download) |
+| `["appstore"]` | App Store-only release |
+| `["dmg", "appstore"]` | Both channels |
+
+**Rules:**
+- `target_channels` is required and must contain at least one value
+- Non-targeted channels should have status `skipped`
+- Guards prevent operations on non-targeted channels (e.g., can't submit to App Store if not targeted)
+
+**Set by:** `init.sh --dmg`, `init.sh --appstore`, or `init.sh --both`
+
+---
+
 ## DMG Channel
 
 | Status | Meaning | Set By |
@@ -17,8 +36,10 @@
 |--------|---------|--------|
 | `pending` | Not yet built | `init.sh` |
 | `built` | Archive/pkg ready | `build.sh` |
-| `uploaded` | Uploaded to App Store Connect | `mark-uploaded.sh` |
-| `skipped` | Will not ship this version | `mark-shipped.sh --appstore --skipped` |
+| `submitted` | Submitted to App Store for review | `mark-submitted.sh` |
+| `approved` | Approved by Apple | `mark-shipped.sh --appstore` |
+| `rejected` | Rejected by Apple (non-terminal) | `mark-rejected.sh` |
+| `skipped` | Will not ship this version | `init.sh` (for non-targeted) |
 
 ### Apple State (from App Store Connect API)
 
@@ -93,8 +114,9 @@ The top-level `release.status` field in manifest.json tracks the overall release
 | `complete` | Both channels done | `mark-shipped.sh` (automatic) |
 
 **Note:** `complete` is the *overall release* status, NOT a per-channel status. A release is automatically marked `complete` when:
-- DMG is `shipped` or `skipped`, AND
-- App Store `apple_state` is `READY_FOR_SALE` or status is `skipped`
+- Every targeted channel is in a terminal state (DMG `shipped`, App Store `approved`), AND
+- Non-targeted channels are `skipped`, AND
+- All marketing and post-release phases are complete
 
 ## Syncing with App Store Connect
 

@@ -301,7 +301,7 @@ public final class HooverEngine {
     var batch: [EntryInsert] = []
     var metadataBatch = MetadataBatch()  // v7: accumulate metadata
     var errors: [(lineNumber: Int, rawLine: String, error: String)] = []
-    var transcriptHasher = SHA256Utils.IncrementalHasher()
+    let transcriptHasher = SHA256Utils.IncrementalHasher()
     var lastEntryId: String? = nil  // Track last entry ID for checkpoint
     var parsedEntryCount = 0
     var parseErrorCount = 0
@@ -985,7 +985,7 @@ extension ParserError: LocalizedError {
 }
 
 /// Types of transcript corruption we can detect and potentially recover from
-public enum CorruptionType: String {
+public enum CorruptionType: String, Sendable {
   case orphanedToolResult = "orphaned_tool_result"
   case stopReasonMismatch = "stop_reason_mismatch"
   case missingParent = "missing_parent"

@@ -288,8 +288,7 @@ public actor ProjectDiscoveryService {
       let provider: DiscoveredProject.Provider
     }
 
-    do {
-      var candidateByProject: [String: Candidate] = [:]
+    var candidateByProject: [String: Candidate] = [:]
 
       func recordCandidate(_ candidate: Candidate) {
         let key = candidate.projectPath.path
@@ -483,12 +482,6 @@ public actor ProjectDiscoveryService {
       logger.info("[QUICK-DISCOVERY-DONE] Newest: \(newest.projectPath.lastPathComponent, privacy: .public) transcript=\(newest.transcriptFile.lastPathComponent, privacy: .public) mtime=\(newest.mtime, privacy: .public) (duration: \(Int(duration * 1000), privacy: .public)ms)")
 
       return (newest.projectPath, newest.transcriptFile, newest.mtime)
-
-    } catch {
-      let duration = Date().timeIntervalSince(startTime)
-      logger.error("[QUICK-DISCOVERY-ERROR] Failed: \(error.localizedDescription) (duration: \(Int(duration * 1000), privacy: .public)ms)")
-      return nil
-    }
   }
 
   /// Ingests all transcripts for all discovered projects
@@ -503,7 +496,7 @@ public actor ProjectDiscoveryService {
 
     // Clear previous errors
     ingestionErrors.removeAll()
-    try await ensureCodexTranscriptCache()
+    await ensureCodexTranscriptCache()
 
     let total = projects.count
 

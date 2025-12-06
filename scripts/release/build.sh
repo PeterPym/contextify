@@ -109,12 +109,47 @@ RELEASE_DIR="$ROOT_DIR/releases/v${VERSION}"
 ARCHIVE_DIR="$ROOT_DIR/build/archives/v${VERSION}"
 RELEASE_JSON="$RELEASE_DIR/release.json"
 
+# Source guards for targeting helpers
+source "$ROOT_DIR/scripts/release/lib/guards.sh"
+
 # Validate release directory
 if [ ! -d "$RELEASE_DIR" ]; then
   echo -e "${RED}Error: Release directory not found: $RELEASE_DIR${NC}"
-  echo "Run './scripts/release/init.sh $VERSION' first"
+  echo "Run './scripts/release/init.sh $VERSION --dmg|--appstore|--both' first"
   exit 1
 fi
+
+# Get target channels and determine what to build
+TARGET_CHANNELS=$(get_target_channels "$VERSION")
+DMG_TARGETED=false
+APPSTORE_TARGETED=false
+[[ " $TARGET_CHANNELS " == *" dmg "* ]] && DMG_TARGETED=true
+[[ " $TARGET_CHANNELS " == *" appstore "* ]] && APPSTORE_TARGETED=true
+
+# Track skip reasons for logging
+DMG_SKIP_REASON=""
+APPSTORE_SKIP_REASON=""
+
+# Auto-skip non-targeted channels (override any manual flags)
+if [ "$DMG_TARGETED" = false ]; then
+  SKIP_DMG=true
+  DMG_SKIP_REASON="not targeted"
+elif [ "$SKIP_DMG" = true ]; then
+  DMG_SKIP_REASON="--skip-dmg"
+fi
+
+if [ "$APPSTORE_TARGETED" = false ]; then
+  SKIP_APPSTORE=true
+  APPSTORE_SKIP_REASON="not targeted"
+elif [ "$SKIP_APPSTORE" = true ]; then
+  APPSTORE_SKIP_REASON="--skip-appstore"
+fi
+
+# Rebuild BUILD_ARGS with actual skip flags
+BUILD_ARGS=""
+[ "$SKIP_DMG" = true ] && BUILD_ARGS="$BUILD_ARGS --skip-dmg"
+[ "$SKIP_APPSTORE" = true ] && BUILD_ARGS="$BUILD_ARGS --skip-appstore"
+[ "$NO_NOTARIZE" = true ] && BUILD_ARGS="$BUILD_ARGS --no-notarize"
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
@@ -138,6 +173,24 @@ COMMIT_SHORT="${COMMIT:0:8}"
 echo "  Version:  $VERSION"
 echo "  Build:    $BUILD_NUMBER"
 echo "  Commit:   $COMMIT_SHORT"
+echo "  Targets:  $TARGET_CHANNELS"
+echo ""
+echo "  Channels:"
+if [ "$DMG_TARGETED" = true ] && [ "$SKIP_DMG" = false ]; then
+  echo -e "    DMG:       ${GREEN}targeted, building${NC}"
+elif [ "$DMG_TARGETED" = true ] && [ "$SKIP_DMG" = true ]; then
+  echo -e "    DMG:       ${YELLOW}targeted, skipped by $DMG_SKIP_REASON${NC}"
+else
+  echo -e "    DMG:       ${YELLOW}not targeted, skipping${NC}"
+fi
+if [ "$APPSTORE_TARGETED" = true ] && [ "$SKIP_APPSTORE" = false ]; then
+  echo -e "    App Store: ${GREEN}targeted, building${NC}"
+elif [ "$APPSTORE_TARGETED" = true ] && [ "$SKIP_APPSTORE" = true ]; then
+  echo -e "    App Store: ${YELLOW}targeted, skipped by $APPSTORE_SKIP_REASON${NC}"
+else
+  echo -e "    App Store: ${YELLOW}not targeted, skipping${NC}"
+fi
+echo ""
 echo "  Dry run:  $([ "$DRY_RUN" = true ] && echo 'Yes' || echo 'No')"
 echo ""
 
@@ -326,11 +379,18 @@ if [ "$DRY_RUN" = false ]; then
 fi
 echo ""
 echo "Next steps:"
-if [ "$SKIP_APPSTORE" = false ]; then
-  echo "  1. Upload to App Store: bash scripts/xc.sh upload"
+STEP=1
+if [ "$SKIP_APPSTORE" = false ] && [ "$APPSTORE_TARGETED" = true ]; then
+  echo "  $STEP. Upload to App Store: bash scripts/xc.sh upload"
+  STEP=$((STEP + 1))
 fi
-if [ "$SKIP_DMG" = false ]; then
-  echo "  2. Update appcast.xml and deploy to website"
+if [ "$SKIP_DMG" = false ] && [ "$DMG_TARGETED" = true ]; then
+  echo "  $STEP. Update appcast.xml and deploy to website"
+  STEP=$((STEP + 1))
 fi
-echo "  3. Continue with Phase 3: releases/v${VERSION}/checklists/03-review-materials.md"
+if [ "$APPSTORE_TARGETED" = true ]; then
+  echo "  $STEP. Continue with Phase 3: releases/v${VERSION}/checklists/03-review-materials.md"
+else
+  echo "  $STEP. Continue with Phase 5: releases/v${VERSION}/checklists/05-marketing.md"
+fi
 echo ""

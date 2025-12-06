@@ -19,9 +19,9 @@ struct ProjectBadgesContainer: View {
     do {
       if Task.isCancelled { return }
 
-      // Query providers via orchestrator
-      let orchestrator = try TranscriptOrchestrator(dbManager: .shared)
-      let set = try await orchestrator.getProviders(forProjectPath: projectPath)
+      // Use static helper to avoid creating full orchestrator for simple query
+      let pool = try DatabaseManager.shared.pool
+      let set = try await TranscriptOrchestrator.getProviders(forProjectPath: projectPath, pool: pool)
 
       if Task.isCancelled { return }
       await MainActor.run { self.providers = set }

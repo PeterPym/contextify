@@ -563,13 +563,13 @@ public final class AppStateOrchestrator: ObservableObject {
       }
 
       let total = candidates.count
-      await self.postBackgroundProgress(total: total, remaining: total)
+      self.postBackgroundProgress(total: total, remaining: total)
 
       // Ingest projects one at a time, checking for cancellation
       for (index, project) in candidates.enumerated() {
         if Task.isCancelled {
           log.info("[ORCH-BACKGROUND] Indexing cancelled")
-          await self.postBackgroundProgress(total: total, remaining: total - index)
+          self.postBackgroundProgress(total: total, remaining: total - index)
           break
         }
 
@@ -579,20 +579,20 @@ public final class AppStateOrchestrator: ObservableObject {
           break
         }
         do {
-          try await fastPath.ingestProjectJIT(project)
+          _ = try await fastPath.ingestProjectJIT(project)
           log.debug("[ORCH-BACKGROUND] Ingested project: \(project.id, privacy: .public)")
         } catch {
           log.warning("[ORCH-BACKGROUND] Failed to ingest \(project.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
 
-        await self.postBackgroundProgress(total: total, remaining: total - (index + 1))
+        self.postBackgroundProgress(total: total, remaining: total - (index + 1))
 
         // Yield between projects
         await Task.yield()
       }
 
       log.info("[ORCH-BACKGROUND] Background indexing complete")
-      await self.postBackgroundProgress(total: total, remaining: 0)
+      self.postBackgroundProgress(total: total, remaining: 0)
     }
   }
 

@@ -1,0 +1,102 @@
+{
+  "$schema": "../schemas/release.schema.json",
+  "version": "1.0.1",
+  "target_channels": ["dmg"],
+  "created": "2025-12-05",
+  "updated": "2025-12-05",
+
+  "git": {
+    "tag": "v1.0.1",
+    "commit": "a0f2789fa5437c0b41f36d01aefc1a185a68f291",
+    "branch": "main"
+  },
+
+  "phases": {
+    "pre_release": {
+      "status": "pending",
+      "completed_at": null,
+      "validation": {
+        "tests_passed": null,
+        "test_count": null,
+        "warnings": null,
+        "working_directory_clean": null
+      }
+    },
+
+    "build": {
+      "status": "pending",
+      "dmg": {
+        "built": false,
+        "path": null,
+        "sha256": null,
+        "size_bytes": null,
+        "signed": false,
+        "notarized": false,
+        "sparkle_signature": null
+      },
+      "appstore": {
+        "archived": false,
+        "archive_path": null,
+        "build_number": 2,
+        "exported": false,
+        "uploaded": false,
+        "upload_receipt": null
+      }
+    },
+
+    "review_materials": {
+      "status": "complete",
+      "demo_video": {
+        "recorded": false,
+        "path": null,
+        "deployed": false
+      },
+      "sample_data": {
+        "generated": false,
+        "path": null,
+        "deployed": false
+      }
+    },
+
+    "submission": {
+      "status": "complete",
+      "submitted_at": null,
+      "rejection": null,
+      "resubmission": null
+    },
+
+    "marketing": {
+      "status": "pending",
+      "changelog": {
+        "written": false,
+        "published": false
+      },
+      "announcements": {
+        "twitter": false,
+        "mastodon": false,
+        "hacker_news": false,
+        "product_hunt": false
+      }
+    },
+
+    "post_release": {
+      "status": "pending",
+      "documentation_updated": false,
+      "support_faq_updated": false,
+      "monitoring_enabled": false
+    }
+  },
+
+  "notes": [
+    {
+        "date": "2025-12-05",
+        "author": "system",
+        "note": "Release initialized"
+    },
+    {
+        "date": "2025-12-05",
+        "author": "system",
+        "note": "Reset for build 2 from commit a0f2789f"
+    }
+]
+}

@@ -594,7 +594,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// - Parameter projectPath: Absolute path to project root
   /// - Returns: Set of provider types found in project's transcripts
   public func getProviders(forProjectPath projectPath: String) async throws -> Set<DiscoveredProject.Provider> {
-    try await dbManager.pool.read { db in
+    try await Self.getProviders(forProjectPath: projectPath, pool: dbManager.pool)
+  }
+
+  /// Static helper for querying providers without instantiating a full orchestrator.
+  /// Use this for lightweight queries from Views where creating a full orchestrator is wasteful.
+  public static func getProviders(forProjectPath projectPath: String, pool: DatabasePool) async throws -> Set<DiscoveredProject.Provider> {
+    try await pool.read { db in
       let sql = """
         SELECT GROUP_CONCAT(DISTINCT t.provider) AS providers
         FROM projects p
@@ -960,7 +966,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     // Check preflight validation (with caching)
     let preflightResult = try checkPreflight(
       fileURL: fileURL,
-      projectRootPath: project.rootPath ?? "",
+      projectRootPath: project.rootPath,
       provider: provider
     )
 
@@ -1340,7 +1346,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     projectId: String,
     discovered: [DiscoveredTranscript]
   ) throws -> [ResolvedTranscript] {
-    guard let project = try projectRepo.get(id: projectId) else {
+    guard try projectRepo.get(id: projectId) != nil else {
       log.error("❌ FK validation failed: project \(projectId) does not exist")
       throw RepositoryError.notFound
     }
@@ -1833,6 +1839,74 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   /// Mark a project as selected (updates last_selected_at to now)
   public func markProjectSelected(projectId: String) throws {
     try projectVisitsRepo.markSelected(projectId: projectId)
+  }
+
+  /// Result of activating a project (consolidated from 3 separate operations)
+  public struct ProjectActivationResult {
+    public let visit: ProjectVisit
+    public let unreadCount: Int
+  }
+
+  public enum ProjectActivationError: Error {
+    case projectNotFound(String)
+  }
+
+#if DEBUG
+  // Test-only hook to force failures during activation for rollback verification
+  private nonisolated(unsafe) static var activationFailureHook: (() throws -> Void)?
+
+  public static func setActivationFailureHookForTesting(_ hook: (() throws -> Void)?) {
+    activationFailureHook = hook
+  }
+#endif
+
+  /// Unified method to mark a project as activated (selected + viewed) and get fresh unread count.
+  ///
+  /// This consolidates three separate orchestrator calls into one atomic operation:
+  /// 1. markProjectSelected() - updates last_selected_at
+  /// 2. markProjectViewed() - updates last_viewed_at
+  /// 3. getUnreadCount() - returns fresh count after updates
+  ///
+  /// Using this single method prevents foot-guns where callers forget one of the operations.
+  ///
+  /// - Parameters:
+  ///   - projectId: The project ID to activate
+  ///   - timestamp: ISO8601 timestamp for when the project was viewed
+  /// - Returns: Combined result with visit state and unread count
+  public func markProjectActivated(projectId: String, timestamp: String) throws -> ProjectActivationResult {
+    let selectedAt = ISO8601Z.string(from: SystemClock().now())
+
+    return try dbManager.pool.write { db in
+      // Ensure project exists to avoid silent no-op updates
+      guard try Project.fetchOne(db, key: projectId) != nil else {
+        throw ProjectActivationError.projectNotFound(projectId)
+      }
+
+      // Update projects.last_viewed_ts using same precision as markProjectViewed()
+      if let date = ISO8601Z.date(from: timestamp) {
+        let epochSeconds = TimeUnits.truncateToMillis(date.timeIntervalSince1970)
+        try db.execute(
+          sql: "UPDATE projects SET last_viewed_ts = MAX(last_viewed_ts, ?) WHERE id = ?",
+          arguments: [epochSeconds, projectId]
+        )
+      }
+
+      // Upsert visit with both selected and viewed timestamps
+      var visit = try ProjectVisit.fetchOne(db, key: projectId) ?? ProjectVisit(projectId: projectId)
+      visit.lastSelectedAt = selectedAt
+      visit.lastViewedAt = timestamp
+      try visit.save(db)
+
+#if DEBUG
+      if let hook = Self.activationFailureHook {
+        try hook()
+      }
+#endif
+
+      let unreadCount = try projectVisitsRepo.unreadCount(projectId: projectId, in: db)
+
+      return ProjectActivationResult(visit: visit, unreadCount: unreadCount)
+    }
   }
 
   /// Get unread count for a specific project
