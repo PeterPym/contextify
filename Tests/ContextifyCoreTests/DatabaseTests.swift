@@ -918,7 +918,7 @@ final class DatabaseTests: XCTestCase {
     let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated", bookmark: nil)
 
     // Call the new unified method
-    let timestamp = "2025-01-15T10:30:00Z"
+    let timestamp = "2025-01-15T10:30:00.000Z"
     let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp)
 
     // Verify it returns both the visit and unread count
@@ -941,19 +941,200 @@ final class DatabaseTests: XCTestCase {
     let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated2", bookmark: nil)
 
     // First activation
-    let timestamp1 = "2025-01-15T10:30:00Z"
+    let timestamp1 = "2025-01-15T10:30:00.000Z"
     let result1 = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp1)
 
     // Verify initial state
     XCTAssertEqual(result1.visit.lastViewedAt, timestamp1)
 
     // Second activation with later timestamp
-    let timestamp2 = "2025-01-15T11:00:00Z"
+    let timestamp2 = "2025-01-15T11:00:00.000Z"
     let result2 = try orchestrator.markProjectActivated(projectId: projectId, timestamp: timestamp2)
 
     // Verify state was updated
     XCTAssertEqual(result2.visit.lastViewedAt, timestamp2)
     XCTAssertNotNil(result2.visit.lastSelectedAt)
+  }
+
+  /// Tests that markProjectActivated() returns unread count based on the provided timestamp boundary.
+  func testMarkProjectActivated_ComputesUnreadCountRelativeToTimestamp() throws {
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated3", bookmark: nil)
+
+    // Create backing transcript and two entries on either side of the view timestamp
+    let transcriptFile = tempDir.appendingPathComponent("activation-timestamp.jsonl")
+    try "test".write(to: transcriptFile, atomically: true, encoding: .utf8)
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: transcriptFile,
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: 4
+    )
+
+    let viewTimestamp = "2025-01-15T10:30:00.000Z"
+    guard let viewDate = ISO8601Z.date(from: viewTimestamp) else {
+      XCTFail("Failed to parse view timestamp")
+      return
+    }
+
+    let olderSeconds = viewDate.addingTimeInterval(-60).timeIntervalSince1970
+    let newerSeconds = viewDate.addingTimeInterval(60).timeIntervalSince1970
+
+    let olderCreated = TimeUnits.truncateToMillis(olderSeconds)
+    let newerCreated = TimeUnits.truncateToMillis(newerSeconds)
+
+    let entries = [
+      TranscriptEntry(
+        id: UUID().uuidString,
+        transcriptId: transcriptId,
+        projectId: projectId,
+        sessionId: nil,
+        provider: "claude.code",
+        kind: "user",
+        timestamp: Int(olderSeconds),
+        content: "old",
+        contentSha256: "old-hash",
+        displayInTimeline: 1,
+        parentId: nil,
+        gitBranch: nil,
+        gitCommit: nil,
+        cwd: nil,
+        prev1Id: nil,
+        prev2Id: nil,
+        windowSha256: nil,
+        embedding: nil,
+        embeddingVersion: nil,
+        embeddingGeneratedAt: nil,
+        createdTs: olderCreated,
+        createdAt: Int(olderCreated),
+        updatedAt: Int(olderCreated),
+        isQueued: 0
+      ),
+      TranscriptEntry(
+        id: UUID().uuidString,
+        transcriptId: transcriptId,
+        projectId: projectId,
+        sessionId: nil,
+        provider: "claude.code",
+        kind: "assistant",
+        timestamp: Int(newerSeconds),
+        content: "new",
+        contentSha256: "new-hash",
+        displayInTimeline: 1,
+        parentId: nil,
+        gitBranch: nil,
+        gitCommit: nil,
+        cwd: nil,
+        prev1Id: nil,
+        prev2Id: nil,
+        windowSha256: nil,
+        embedding: nil,
+        embeddingVersion: nil,
+        embeddingGeneratedAt: nil,
+        createdTs: newerCreated,
+        createdAt: Int(newerCreated),
+        updatedAt: Int(newerCreated),
+        isQueued: 0
+      )
+    ]
+    try entryRepo.insertBatch(entries)
+
+    let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: viewTimestamp)
+
+    // Only the newer entry should remain unread after applying the boundary
+    XCTAssertEqual(result.unreadCount, 1)
+    XCTAssertEqual(result.visit.lastViewedAt, viewTimestamp)
+    XCTAssertNotNil(result.visit.lastSelectedAt)
+  }
+
+  /// Tests that markProjectActivated() rolls back all changes when a failure occurs mid-transaction.
+  func testMarkProjectActivated_RollsBackOnFailure() throws {
+    enum InjectedActivationError: Error { case forcedFailure }
+
+    let dbPath = tempDir.appendingPathComponent("test.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let visitsRepo = ProjectVisitsRepositoryImpl(db: pool)
+    let entryRepo = EntryRepositoryImpl(db: pool)
+
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: "/test/activated4", bookmark: nil)
+
+    // Seed transcript and one entry so unread count is non-zero before activation
+    let transcriptFile = tempDir.appendingPathComponent("activation-failure.jsonl")
+    try "test".write(to: transcriptFile, atomically: true, encoding: .utf8)
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: transcriptFile,
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: 4
+    )
+
+    let created = TimeUnits.truncateToMillis(Date().timeIntervalSince1970)
+    let entry = TranscriptEntry(
+      id: UUID().uuidString,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      sessionId: nil,
+      provider: "claude.code",
+      kind: "user",
+      timestamp: Int(created),
+      content: "will remain unread",
+      contentSha256: "failure-hash",
+      displayInTimeline: 1,
+      parentId: nil,
+      gitBranch: nil,
+      gitCommit: nil,
+      cwd: nil,
+      prev1Id: nil,
+      prev2Id: nil,
+      windowSha256: nil,
+      embedding: nil,
+      embeddingVersion: nil,
+      embeddingGeneratedAt: nil,
+      createdTs: created,
+      createdAt: Int(created),
+      updatedAt: Int(created),
+      isQueued: 0
+    )
+    try entryRepo.insert(entry)
+
+    TranscriptOrchestrator.setActivationFailureHookForTesting {
+      throw InjectedActivationError.forcedFailure
+    }
+    defer { TranscriptOrchestrator.setActivationFailureHookForTesting(nil) }
+
+    XCTAssertThrowsError(
+      try orchestrator.markProjectActivated(projectId: projectId, timestamp: ISO8601Z.string(from: Date()))
+    ) { error in
+      XCTAssertTrue(error is InjectedActivationError)
+    }
+
+    // Verify no visit record was created due to rollback
+    let visit = try visitsRepo.getVisit(projectId: projectId)
+    XCTAssertNil(visit?.lastViewedAt)
+    XCTAssertNil(visit?.lastSelectedAt)
+
+    // Unread count should remain unchanged (entry still unread)
+    let unreadCount = try visitsRepo.getUnreadCount(projectId: projectId)
+    XCTAssertEqual(unreadCount, 1)
   }
 
   // MARK: - Helpers

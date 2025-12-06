@@ -675,7 +675,7 @@ public actor ProjectActivityMonitor {
       // Hoover first, emit event only after completion
       Task {
         do {
-          let result = try await orchestrator.getOrCreateProject(
+          let result = try orchestrator.getOrCreateProject(
             name: URL(fileURLWithPath: projPath).lastPathComponent,
             rootPath: projPath
           )
@@ -690,7 +690,7 @@ public actor ProjectActivityMonitor {
           // Emit correct event based on whether project was newly created
           // .discovered triggers project list refresh, .transcriptUpdated only updates unread counts
           let eventKind: ProjectEvent.Kind = result.wasCreated ? .discovered : .transcriptUpdated
-          await self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
+          self.emitEvent(ProjectEvent(projectId: result.projectId, kind: eventKind))
 
           // Also post NotificationCenter event for ConversationMonitor compatibility
           await MainActor.run {

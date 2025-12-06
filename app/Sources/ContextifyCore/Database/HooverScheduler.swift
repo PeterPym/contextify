@@ -94,7 +94,7 @@ public actor HooverScheduler {
 
     // Continuation resumed - execute work
     defer {
-      Task { await self.taskCompleted(fileURL: fileURL, projectId: item.projectId) }
+      Task { self.taskCompleted(fileURL: fileURL, projectId: item.projectId) }
     }
 
     try orchestrator.discoverTranscriptInternal(

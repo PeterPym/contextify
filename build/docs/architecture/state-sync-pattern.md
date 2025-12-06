@@ -43,7 +43,7 @@ func activateProject() {
 
   // Background write - no explicit refresh needed
   Task.detached {
-    // markProjectActivated() consolidates: markProjectSelected + markProjectViewed + getUnreadCount
+    // markProjectActivated() consolidates: markProjectSelected + markProjectViewed + getUnreadCount in one transaction
     let result = try orchestrator.markProjectActivated(projectId: projectId, timestamp: ISO8601Z.string(from: Date()))
     // result.unreadCount available if reconciliation needed
   }
