@@ -270,6 +270,10 @@ if '$VERSION' not in data.get('releases', {}):
 
 release = data['releases']['$VERSION']
 
+# Update git info - track the commit this build is from
+release['git_commit'] = '$COMMIT'
+release['git_tag'] = 'v$VERSION'
+
 # Update DMG status
 if '$SKIP_DMG' != 'true':
     release['dmg']['status'] = 'built'
@@ -288,6 +292,22 @@ print('Updated manifest.json')
 EOF
 else
   echo -e "${YELLOW}[dry-run]${NC} Update manifest.json"
+fi
+
+# Update git tag to point to this commit
+echo -e "${BLUE}==>${NC} Updating git tag v${VERSION}..."
+if [ "$DRY_RUN" = false ]; then
+  # Delete existing tag if it exists (locally and remotely)
+  if git tag -l "v$VERSION" | grep -q "v$VERSION"; then
+    git tag -d "v$VERSION" 2>/dev/null || true
+    git push origin ":refs/tags/v$VERSION" 2>/dev/null || true
+  fi
+  # Create new tag at current commit
+  git tag "v$VERSION" "$COMMIT"
+  git push origin "v$VERSION"
+  echo -e "${GREEN}OK${NC} Tag v${VERSION} updated to $COMMIT_SHORT"
+else
+  echo -e "${YELLOW}[dry-run]${NC} git tag v$VERSION $COMMIT_SHORT"
 fi
 
 # Summary
