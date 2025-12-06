@@ -1903,15 +1903,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
 #endif
 
-      let unreadCount = try Int.fetchOne(db, sql: """
-        SELECT COUNT(*)
-        FROM transcript_entries e
-        JOIN transcripts t ON t.id = e.transcript_id
-        JOIN projects p ON p.id = t.project_id
-        WHERE p.id = ?
-          AND COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
-          AND e.display_in_timeline = 1
-      """, arguments: [projectId]) ?? 0
+      let unreadCount = try projectVisitsRepo.unreadCount(projectId: projectId, in: db)
 
       return ProjectActivationResult(visit: visit, unreadCount: unreadCount)
     }
