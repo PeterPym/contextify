@@ -33,16 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2025-12-06
 **Status:** Active
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 4 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 44 items - Nice to have, can defer to future releases
+- **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 85
+**Total Active Items:** 86
 
 ---
 
@@ -848,7 +848,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 5. Local LLM summary - generate optimized context summary for re-injection
 
 **Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
-**Related:** P1-CONVO-SEARCH spec section 5.4 (surrounding context query)
+**Related:** #P1-CONVO-SEARCH spec section 5.4 (surrounding context query), #P2-RESUME-FORK (resume/fork from search)
 
 ---
 
@@ -938,7 +938,39 @@ Both should use identical card components for consistency.
 
 ---
 
-# P2 (Medium Priority) - 43 Items
+# P2 (Medium Priority) - 45 Items
+
+---
+
+## #P2-RESUME-FORK: Resume and fork conversations from search results
+
+**Status:** Spec Complete
+**Priority:** P2 (consider promotion to P1 after v1.0 launch stabilizes)
+**Effort:** 2-3 weeks across 5 phases
+
+**Vision:** "Git log for agentic coding sessions" - Contextify evolves from passive viewer to workflow participant. When users can resume/fork conversations and Contextify logs these actions in the timeline, Contextify becomes part of the agentic coding workflow, not just an observer.
+
+**Feature:**
+Right-click transcripts or individual entries in search results to:
+- "Resume this conversation" - copies `claude --resume <id>` or `codex resume <id>` to clipboard
+- "Fork this conversation" - creates branch from end of conversation
+- "Fork from here" - creates trimmed transcript to selected point, resumes from there
+
+Toast notifications confirm action. Optionally, Contextify injects system messages into timeline logging these workflow actions (Contextify brandmark appears alongside Claude/Codex icons).
+
+**User Stories:**
+1. Resume transcript from search (MVP)
+2. Fork transcript from end
+3. Fork from specific entry (mid-conversation) - requires trimmed transcript creation
+4. Contextify system messages in timeline
+5. Main timeline integration
+
+**Existing Code:**
+- Resume command generation exists in export flow: `TranscriptInventoryView.swift:746-814`
+- System message infrastructure: `SystemEvent` model (`Models.swift:540`), `appendSystemEntry()` (`ConversationMonitor.swift:3139`)
+
+**Spec:** `build/notes/todo-support/P2-RESUME-FORK-spec.md`
+**Related:** #P1-CONTEXT-REINJECTION (context actions family), #P1-CONVO-SEARCH (search is entry point)
 
 ---
 
