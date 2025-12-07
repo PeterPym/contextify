@@ -154,7 +154,7 @@ body {
 }
 
 [data-bs-theme="dark"] .navbar-brand {
-  color: var(--text-inverse) !important;
+  color: var(--slate-50) !important;
 }
 
 .navbar .btn-primary {
@@ -259,54 +259,189 @@ body {
 }
 
 /* ==========================================================================
-   Features Section
+   Statement Section
    ========================================================================== */
-#features {
+.statement-section {
+  padding: 4rem 0;
   background-color: var(--bg-page);
 }
 
-[data-bs-theme="dark"] #features {
-  background-color: var(--bg-page);
+[data-bs-theme="dark"] .statement-section {
+  background-color: var(--slate-800);
 }
 
-#features h2 {
+.statement-text {
+  font-size: 1.75rem;
+  font-weight: 600;
   color: var(--text-primary);
+  margin-bottom: 0.5rem;
 }
 
-[data-bs-theme="dark"] #features h2 {
-  color: var(--text-primary);
+[data-bs-theme="dark"] .statement-text {
+  color: var(--slate-100);
 }
 
-#features li {
-  color: var(--text-primary);
+.statement-subtext {
   font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0;
 }
 
-[data-bs-theme="dark"] #features li {
+[data-bs-theme="dark"] .statement-subtext {
+  color: var(--slate-400);
+}
+
+.logo-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3rem;
+  margin-top: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.company-logo {
+  height: 28px;
+  opacity: 0.5;
+  filter: grayscale(100%);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.company-logo:hover {
+  opacity: 0.8;
+  filter: grayscale(0%);
+}
+
+[data-bs-theme="dark"] .company-logo {
+  filter: grayscale(100%) invert(1);
+}
+
+[data-bs-theme="dark"] .company-logo:hover {
+  filter: grayscale(0%) invert(1);
+}
+
+/* ==========================================================================
+   Feature Sections
+   ========================================================================== */
+.feature-section {
+  padding: 5rem 0;
+  background-color: var(--bg-surface);
+}
+
+.feature-section-alt {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .feature-section {
+  background-color: var(--slate-900);
+}
+
+[data-bs-theme="dark"] .feature-section-alt {
+  background-color: var(--slate-800);
+}
+
+.feature-title {
+  font-size: 2rem;
+  font-weight: 700;
   color: var(--text-primary);
+  margin-bottom: 1.25rem;
+  line-height: 1.2;
+}
+
+[data-bs-theme="dark"] .feature-title {
+  color: var(--slate-50);
+}
+
+.feature-description {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+[data-bs-theme="dark"] .feature-description {
+  color: var(--slate-400);
+}
+
+.feature-image {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.feature-image:hover {
+  transform: scale(1.02);
+}
+
+[data-bs-theme="dark"] .feature-image {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+/* Lightbox */
+.lightbox {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 9999;
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox.active {
+  display: flex;
+}
+
+.lightbox img {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 8px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 /* ==========================================================================
    Download Section
    ========================================================================== */
 #download {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  margin: 0 4%;
+  background-color: var(--slate-900);
 }
 
 [data-bs-theme="dark"] #download {
-  background-color: var(--bg-elevated);
-  border-color: var(--border-default);
+  background-color: var(--slate-950);
 }
 
-#download h2 {
-  color: var(--text-primary);
+.download-card {
+  padding: 3rem 2rem;
 }
 
-[data-bs-theme="dark"] #download h2 {
-  color: var(--text-primary);
+.download-card h2 {
+  color: var(--slate-50);
+}
+
+.download-card p {
+  color: var(--slate-300);
+}
+
+.download-card .btn-primary {
+  background-color: var(--contextify-primary);
+  border-color: var(--contextify-primary);
+  padding: 0.875rem 2rem;
+  font-weight: 600;
+}
+
+.download-card .btn-primary:hover {
+  background-color: var(--contextify-primary-hover);
+  border-color: var(--contextify-primary-hover);
+}
+
+.download-card .text-body-secondary {
+  color: var(--slate-400) !important;
 }
 
 /* ==========================================================================
