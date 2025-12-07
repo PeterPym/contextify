@@ -444,6 +444,57 @@ body {
   color: var(--slate-400) !important;
 }
 
+.download-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.app-store-badge {
+  display: inline-block;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.app-store-badge:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+.download-divider {
+  color: var(--slate-500);
+  font-size: 0.875rem;
+}
+
+.dmg-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 48px;
+  padding: 0 1.5rem;
+  background: linear-gradient(135deg, var(--contextify-primary) 0%, var(--contextify-secondary) 100%);
+  border-radius: 8px;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px -3px rgba(217, 119, 87, 0.4);
+}
+
+.dmg-download::before {
+  content: "↓";
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.dmg-download:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px -3px rgba(217, 119, 87, 0.5);
+  color: #fff;
+}
+
 /* ==========================================================================
    Footer
    ========================================================================== */
