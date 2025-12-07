@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 4 items - Must complete for v1.0 public launch
+- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
 - **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 87
+**Total Active Items:** 86
 
 ---
 
-# P0 (Launch Critical) - 4 Items
+# P0 (Launch Critical) - 3 Items
 
 ---
 
@@ -186,30 +186,7 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-## #P0-SEARCH-ROW-SELECTION: Quick Search rows need multiple clicks to select
-
-**Status:** Bug - regression observed 2025-12-06
-**Priority:** P0 (basic usability; blocks resume/fork entry points)
-**Effort:** 2-3 hours
-
-**Issue:**
-- Clicking a search result row in the main window often requires three clicks before it registers selection; resume/fork context menu still appears but selection focus is unreliable.
-
-**Reproduction:**
-1. Open main window, run a search.
-2. Click a search result row once/twice; note selection does not activate until ~third click.
-3. Attempt resume/fork from the row; selection/focus feels inconsistent.
-
-**Expected:**
-- Single click selects the row immediately; context menu operates on the selected row.
-
-**Notes/Files:**
-- Likely in `Contextify/Contextify/QuickSearchView.swift` or result row gesture handling.
-- Add UI test or integration check once fixed.
-
----
-
-# P1 (High Priority) - 21 Items
+# P1 (High Priority) - 22 Items
 
 Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL
 
