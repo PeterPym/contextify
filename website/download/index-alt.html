@@ -74,6 +74,18 @@
     [data-bs-theme="dark"] .badge-dark {
       display: inline;
     }
+
+    /* Align download buttons at bottom of cards */
+    .download-option-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .download-option-card .app-store-badge,
+    .download-option-card .dmg-download {
+      margin-top: auto;
+    }
   </style>
 
   <!-- Dark mode detection -->
