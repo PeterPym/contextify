@@ -10,6 +10,7 @@ struct QuickSearchView: View {
   @Environment(QuickSearchViewModel.self) private var viewModel
   @Environment(HUDViewModel.self) private var hudModel
   @AppStorage("search.hasSeenWindowTip") private var hasSeenWindowTip = false
+  @State private var selectedHitId: String?
 
   let projectId: String
   let projectName: String
@@ -94,17 +95,19 @@ struct QuickSearchView: View {
       if result.hits.isEmpty {
         noResultsState
       } else {
-        List {
+        List(selection: $selectedHitId) {
           ForEach(result.hits) { hit in
-            SearchHitRow(hit: hit, isSelected: false)
-              .contentShape(Rectangle())
-              .onTapGesture {
-                // Open Deep Search Window scrolled to this result
-                onDeepSearch(hit.id)
-              }
+            SearchHitRow(hit: hit, isSelected: hit.id == selectedHitId)
+              .tag(hit.id)
           }
         }
         .listStyle(.plain)
+        .onChange(of: selectedHitId) { _, newId in
+          if let id = newId {
+            onDeepSearch(id)
+            selectedHitId = nil  // Reset for next selection
+          }
+        }
 
         if result.cappedResults {
           cappedResultsFooter
