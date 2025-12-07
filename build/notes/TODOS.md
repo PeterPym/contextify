@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 4 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 21 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
-**Total Active Items:** 86
+**Total Active Items:** 87
 
 ---
 
@@ -186,7 +186,30 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-# P1 (High Priority) - 20 Items
+## #P0-SEARCH-ROW-SELECTION: Quick Search rows need multiple clicks to select
+
+**Status:** Bug - regression observed 2025-12-06
+**Priority:** P0 (basic usability; blocks resume/fork entry points)
+**Effort:** 2-3 hours
+
+**Issue:**
+- Clicking a search result row in the main window often requires three clicks before it registers selection; resume/fork context menu still appears but selection focus is unreliable.
+
+**Reproduction:**
+1. Open main window, run a search.
+2. Click a search result row once/twice; note selection does not activate until ~third click.
+3. Attempt resume/fork from the row; selection/focus feels inconsistent.
+
+**Expected:**
+- Single click selects the row immediately; context menu operates on the selected row.
+
+**Notes/Files:**
+- Likely in `Contextify/Contextify/QuickSearchView.swift` or result row gesture handling.
+- Add UI test or integration check once fixed.
+
+---
+
+# P1 (High Priority) - 21 Items
 
 Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL
 
@@ -224,6 +247,46 @@ v1.0.0 build:4 phase:review_materials
 - [ ] Works in Claude Code sessions for this project
 
 **Reference:** Claude Code status line documentation
+
+---
+
+## Derived Data Separation (1 item)
+
+**Status:** Ready for implementation
+**Priority:** P1 (release infrastructure, prevents build crashes)
+**Effort:** 45-60 minutes
+**Plan:** `build/notes/todo-support/P1-DERIVED-DATA-SEPARATION-plan.md`
+
+- [ ] #P1-DERIVED-DATA-SEPARATION: Separate derived data directories by distribution type
+
+**Problem:**
+Release builds crash at launch with "different Team IDs" error when App Store and DMG distributions are built sequentially. Root cause: both distributions share `.derived/` directory, causing Xcode incremental builds to cache frameworks signed with the wrong identity.
+
+**Evidence:**
+```
+Library not loaded: @rpath/Sparkle.framework/Versions/B/Sparkle
+Reason: code signature not valid for use in process:
+mapping process and mapped file (non-platform) have different Team IDs
+```
+
+**Solution:**
+Separate derived data paths by distribution:
+- `.derived-dmg` for DMG builds (with Sparkle)
+- `.derived-appstore` for App Store builds (without Sparkle)
+
+**Files to Change (15 total):**
+- Core scripts: `xc.sh`, `sign_and_notarize.py`
+- Sparkle scripts: `keygen.sh`, `sign.sh`
+- Utilities: `compare-builds.sh`, `monitor-automated-test.sh`
+- Config: `.gitignore`, `Makefile`
+- Docs: `AGENTS.md`, `.claude/commands/run.md`, + 5 others
+
+**Acceptance Criteria:**
+- [ ] `bash scripts/xc.sh --dist=appstore build` creates `.derived-appstore/`
+- [ ] `bash scripts/xc.sh --dist=dmg build` creates `.derived-dmg/`
+- [ ] Sequential release builds (App Store then DMG) don't crash
+- [ ] `make clean` removes both derived data directories
+- [ ] Sparkle scripts find binaries in `.derived-dmg/`
 
 ---
 
