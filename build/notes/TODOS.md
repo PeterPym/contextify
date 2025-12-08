@@ -210,9 +210,35 @@ Modal appears on startup with message: "Stored project root is invalid or unread
 
 ---
 
-# P1 (High Priority) - 22 Items
+# P1 (High Priority) - 23 Items
 
 Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL
+
+---
+
+## Website Cache Busting (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (affects user experience after deployments)
+**Effort:** 1-2 hours
+
+- [ ] #P1-WEBSITE-CACHE-BUSTING: Implement cache-busting for CSS/JS on website
+
+**Problem:**
+Website assets (stylesheets, scripts) may be aggressively cached by browsers. After deployments, users may not see updated styles until hard refresh.
+
+**Solution Options:**
+1. Add query string versioning to asset URLs (e.g., `style.css?v=1.0.1`)
+2. Use content-hash filenames (e.g., `style.a1b2c3.css`)
+3. Configure cache-control headers in Nginx
+4. Automated versioning in deploy script
+
+**Recommended:** Option 1 (query string) - simplest, can be automated in `deploy-website.sh` to append git commit hash or timestamp.
+
+**Files:**
+- `website/index.html` - stylesheet links
+- `scripts/deploy-website.sh` - deployment script
+- Server: `web@banagale.com` (Nginx config)
 
 ---
 
