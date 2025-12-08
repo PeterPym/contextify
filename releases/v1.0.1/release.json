@@ -31,7 +31,9 @@
         "size_bytes": null,
         "signed": true,
         "notarized": true,
-        "sparkle_signature": null
+        "sparkle_signature": null,
+        "shipped": true,
+        "shipped_at": "2025-12-08"
       },
       "appstore": {
         "archived": false,
@@ -116,6 +118,11 @@
       "date": "2025-12-08",
       "author": "system",
       "note": "Build 13 completed (commit 76c224f1)"
+    },
+    {
+      "date": "2025-12-08",
+      "author": "system",
+      "note": "dmg marked as shipped"
     }
   ]
 }
