@@ -12,6 +12,7 @@
 |---------|---------------|--------------|-----------------|
 | App Store Listing | [apps.apple.com](https://apps.apple.com/app/contextify/id6753190666) | `appstore-metadata/fastlane/metadata/en-US/` | Major releases, feature changes |
 | Website Landing | [contextify.sh](https://contextify.sh) | `website/index.html` | Feature additions, screenshots |
+| OG Image | Social share preview | `website/assets/img/og-banner.png` | Messaging changes, branding updates |
 | Website Help | [contextify.sh/help](https://contextify.sh/help/) | `website/help/index.html` | Feature changes, workflow updates |
 | Website Support | [contextify.sh/support](https://contextify.sh/support.html) | `website/support.html` | Contact info, issue process changes |
 | Website Privacy | [contextify.sh/privacy](https://contextify.sh/privacy.html) | `website/privacy.html` | Data handling changes |
@@ -58,7 +59,38 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 2. Website - Landing Page
+### 2. OG Image (Social Share Preview)
+
+**Used when:** Links shared on Twitter, Slack, Discord, HN, etc.
+
+**Source file:** `website/assets/img/og-banner.png`
+
+**Dimensions:** 1200x630 (standard OG image size)
+
+**Current content:**
+- Contextify logo
+- App name
+- Tagline
+
+**Update triggers:**
+- Major messaging changes (e.g., new value prop)
+- Branding updates
+- Launch campaigns (may want campaign-specific messaging)
+
+**Review checklist:**
+- [ ] Tagline matches current website hero copy?
+- [ ] Key value prop visible? (e.g., "30-day deletion" hook)
+- [ ] Brand colors current?
+- [ ] Text readable at small sizes (social previews are often thumbnailed)?
+
+**Design notes:**
+- Keep text minimal - it's often displayed small
+- Lead with the hook, not the product name
+- Test with Twitter Card Validator, LinkedIn Post Inspector
+
+---
+
+### 3. Website - Landing Page
 
 **URL:** https://contextify.sh
 
@@ -84,7 +116,7 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 3. Website - Help Page
+### 4. Website - Help Page
 
 **URL:** https://contextify.sh/help/
 
@@ -109,7 +141,7 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 4. Website - Support Page
+### 5. Website - Support Page
 
 **URL:** https://contextify.sh/support.html
 
@@ -132,7 +164,7 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 5. Website - Privacy Policy
+### 6. Website - Privacy Policy
 
 **URL:** https://contextify.sh/privacy.html
 
@@ -158,7 +190,7 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 6. Website - Release Notes
+### 7. Website - Release Notes
 
 **URL:** https://contextify.sh/release-notes/{version}.html
 
@@ -184,7 +216,7 @@ See `scripts/release/generate-release-notes.sh`.
 
 ---
 
-### 7. Appcast (Sparkle Auto-Updates)
+### 8. Appcast (Sparkle Auto-Updates)
 
 **URL:** https://contextify.sh/appcast.xml
 
@@ -207,7 +239,7 @@ See `scripts/release/generate-release-notes.sh`.
 
 ---
 
-### 8. Public GitHub Repository
+### 9. Public GitHub Repository
 
 **URL:** https://github.com/PeterPym/contextify
 
@@ -235,7 +267,7 @@ See `scripts/release/generate-release-notes.sh`.
 
 ---
 
-### 9. GitHub Releases (Public Repo)
+### 10. GitHub Releases (Public Repo)
 
 **URL:** https://github.com/PeterPym/contextify/releases
 
