@@ -42,7 +42,7 @@ struct SystemInfo {
   }
 
   static func createSupportMailtoURL() -> URL? {
-    let recipient = "rob@banagale.com"
+    let recipient = "support@contextify.sh"
     let subject = "Contextify App Support Request"
     let systemInfo = gatherSystemInfo()
 
