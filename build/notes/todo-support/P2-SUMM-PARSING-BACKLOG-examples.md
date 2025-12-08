@@ -450,10 +450,10 @@ The summary claims Claude "implemented" cache-busting, but the detail shows Clau
 
 ---
 
-## Example 13: Literal Echo of Short Praise
+## Example 13: Request Misinterpreted as Observation
 
 **Date Added:** 2025-12-08
-**Category:** attribution error (echo/passthrough)
+**Category:** attribution error
 **Transcript:** `12a75970-c8cf-4329-8fe0-41568627c506.jsonl`
 
 **Entry:**
@@ -468,21 +468,21 @@ The summary claims Claude "implemented" cache-busting, but the detail shows Clau
 ```
 
 **Problem:**
-The summary is just "You noted" + the literal message. "You noted great commit and push" is grammatically awkward and provides no summarization value over the original.
+The message was "great. commit and push" - two separate ideas: (1) acknowledgment, (2) a request to commit and push. The summary misinterpreted this as an observation ("You noted") rather than recognizing the request/command portion.
 
 **Expected Summary:**
-- "You complimented Claude's commit and push."
-- Or for very short messages: use the original directly without transformation.
+- "You approved and asked Claude to commit and push."
+- Or: "You requested a commit and push."
 
 **Root Cause (suspected):**
-- Short casual messages trigger passthrough/echo behavior
-- The "You noted" prefix is a fallback when no real summarization occurs
-- Similar pattern to Examples 2, 3, 6 where attribution + echo produces worse output than the original
+- Punctuation/structure not parsed: "great. commit and push" has two clauses but was read as one phrase
+- The imperative "commit and push" was not recognized as a command/request
+- Inverse of Example 10: there a suggestion was misread as request, here a request was misread as observation
 
 **Fix Approach:**
-1. Length threshold: messages under ~10 words that don't need context should pass through unchanged
-2. Detect "You [verb] [literal content]" pattern and strip the prefix
-3. For praise/acknowledgment messages, either pass through or use "You acknowledged" patterns
+1. Recognize imperative verb patterns ("commit", "push", "run", "fix") as requests/commands
+2. Parse multi-clause messages: period or comma often separates acknowledgment from request
+3. "You noted" should be reserved for actual observations, not commands
 
 ---
 
