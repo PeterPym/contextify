@@ -52,8 +52,14 @@ Rsync-based, one-command deployment to production server.
 
 1. Make changes to website files locally
 2. Run deployment script: `./scripts/deploy-website.sh`
-3. Script syncs files to server via rsync
-4. Verify changes at https://contextify.sh
+3. Script shows only files that will change (not full listing)
+4. Script syncs changed files to server via rsync
+5. Verify changes at https://contextify.sh
+
+**Dry run to preview:**
+```bash
+./scripts/deploy-website.sh --dry-run
+```
 
 ## Deployment Safety Features
 
