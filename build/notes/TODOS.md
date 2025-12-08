@@ -46,7 +46,31 @@ doc_references:
 
 ---
 
-# P0 (Launch Critical) - 3 Items
+# P0 (Launch Critical) - 4 Items
+
+---
+
+## App Icon Mismatch (1 item)
+
+**Status:** Needs fix before Show HN
+**Priority:** P0 (visual identity)
+**Effort:** 1-2 hours
+
+- [ ] #P0-APP-ICON: Update app icon to use angled logomark (matches OG banner)
+
+**Problem:**
+- Installed app shows HORIZONTAL infinity symbol
+- OG banner and brand use ANGLED infinity symbol
+- Mismatch in visual identity
+
+**Fix:**
+1. Open Icon Composer (Xcode > Open Developer Tool > Icon Composer)
+2. Open `Contextify/icon-composer-project.icon`
+3. Replace `Assets/Infinity.png` with angled version from `build/design/brand/logomark/exports/`
+4. Save and rebuild
+5. For App Store: Submit 1.0.2 update with fixed icon
+
+**Reference:** `build/design/brand/app-icon.md`, `build/design/brand/logomark/`
 
 ---
 
