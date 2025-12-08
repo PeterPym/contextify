@@ -45,6 +45,18 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# Track if we've modified files for cache-busting (need cleanup on exit)
+CACHE_BUST_APPLIED=false
+GIT_SHORT=""
+
+cleanup_cache_bust() {
+    if [[ "$CACHE_BUST_APPLIED" == "true" && -n "$GIT_SHORT" ]]; then
+        find "$LOCAL_DIR" -name "*.html" -type f -exec sed -i '' "s/?v=$GIT_SHORT/?v=__DEPLOY_HASH__/g" {} \; 2>/dev/null || true
+        rm -f "$LOCAL_DIR/.version" 2>/dev/null || true
+    fi
+}
+trap cleanup_cache_bust EXIT
+
 # Parse arguments
 DRY_RUN=false
 FORCE=false
@@ -250,6 +262,14 @@ cat > "$LOCAL_DIR/.version" << EOF
 EOF
 echo "  Commit: $GIT_SHORT ($GIT_BRANCH)"
 echo "  Time:   $DEPLOY_TIME"
+echo ""
+
+# Cache-busting: Replace __DEPLOY_HASH__ placeholder in HTML files with git short hash
+# We modify files temporarily, then restore them after upload
+echo -e "${YELLOW}Injecting cache-busting version ($GIT_SHORT)...${NC}"
+find "$LOCAL_DIR" -name "*.html" -type f -exec sed -i '' "s/__DEPLOY_HASH__/$GIT_SHORT/g" {} \;
+CACHE_BUST_APPLIED=true
+echo -e "${GREEN}✓ Cache-busting versions applied${NC}"
 echo ""
 
 # Archive current site before deploying
