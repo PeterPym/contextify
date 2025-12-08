@@ -53,7 +53,7 @@ NEXT: Setup Email
 1. Go to iCloud Settings → Custom Email Domain
 2. Add contextify.sh
 3. Follow Apple's DNS setup instructions
-4. Create alias: hello@contextify.sh
+4. Create alias: support@contextify.sh
 
 
 APP STORE URLS:
@@ -61,7 +61,7 @@ APP STORE URLS:
 Marketing URL:      https://contextify.sh
 Privacy Policy URL: https://contextify.sh/privacy.html
 Support URL:        https://contextify.sh/support.html
-Contact Email:      hello@contextify.sh
+Contact Email:      support@contextify.sh
 
 
 FULL DOCS:

@@ -163,8 +163,8 @@ doctl compute domain records create contextify.sh \
   --record-ttl 300
 ```
 
-5. Create email alias in iCloud: `hello@contextify.sh`
-6. Test by sending email to `hello@contextify.sh`
+5. Create email alias in iCloud: `support@contextify.sh`
+6. Test by sending email to `support@contextify.sh`
 
 ---
 
@@ -327,7 +327,7 @@ Website files are in version control (Git). Database and server config should be
 - [ ] Test all links work
 - [ ] Proofread all content
 - [ ] Test on mobile devices
-- [ ] Verify email `hello@contextify.sh` works
+- [ ] Verify email `support@contextify.sh` works
 
 **Future enhancements:**
 - [ ] Add favicon

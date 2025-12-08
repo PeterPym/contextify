@@ -496,6 +496,142 @@ body {
 }
 
 /* ==========================================================================
+   Download Page
+   ========================================================================== */
+.download-hero {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .download-hero {
+  background-color: var(--slate-900);
+}
+
+.download-option-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  padding: 2rem;
+  height: 100%;
+}
+
+[data-bs-theme="dark"] .download-option-card {
+  background-color: var(--slate-800);
+  border-color: var(--slate-700);
+}
+
+.feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.feature-list li {
+  padding: 0.5rem 0 0.5rem 1.75rem;
+  position: relative;
+  font-size: 0.95rem;
+}
+
+.feature-list li.pro::before {
+  content: "+";
+  position: absolute;
+  left: 0;
+  color: var(--contextify-primary);
+  font-weight: 700;
+}
+
+.feature-list li.con::before {
+  content: "~";
+  position: absolute;
+  left: 0;
+  color: var(--slate-500);
+  font-weight: 700;
+}
+
+.comparison-section {
+  background-color: var(--bg-surface);
+}
+
+[data-bs-theme="dark"] .comparison-section {
+  background-color: var(--slate-800);
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--bg-page);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+[data-bs-theme="dark"] .comparison-table {
+  background-color: var(--slate-900);
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 1rem 1.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.comparison-table th {
+  background-color: var(--bg-surface);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .comparison-table th {
+  background-color: var(--slate-800);
+}
+
+.comparison-table td {
+  color: var(--text-secondary);
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.recommendation-section {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .recommendation-section {
+  background-color: var(--slate-900);
+}
+
+.recommendation-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 1.5rem;
+  height: 100%;
+}
+
+[data-bs-theme="dark"] .recommendation-card {
+  background-color: var(--slate-800);
+  border-color: var(--slate-700);
+}
+
+.recommendation-card ul {
+  padding-left: 1.25rem;
+  margin-bottom: 0;
+}
+
+.recommendation-card li {
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.requirements-section {
+  background-color: var(--bg-surface);
+}
+
+[data-bs-theme="dark"] .requirements-section {
+  background-color: var(--slate-800);
+}
+
+/* ==========================================================================
    Footer
    ========================================================================== */
 footer {
