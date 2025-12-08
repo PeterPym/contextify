@@ -1,4 +1,4 @@
-# OG Image Specification
+# OG Image Specification (Deferred)
 
 **File:** `website/assets/img/og-banner.png`
 **Dimensions:** 1200x630 (standard OG image)
