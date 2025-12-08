@@ -58,6 +58,17 @@ Review each public surface and determine if this release requires updates.
 - [ ] New `<item>` added to `website/appcast.xml`?
 - [ ] Download URL correct?
 - [ ] Signature included?
+
+### DMG Integrity Verification
+Verify the publicly downloadable DMG matches the built artifact:
+```bash
+# Get expected hash from build
+cat dist/Contextify-{version}.dmg.sha256
+
+# Download and hash the public DMG
+curl -sL "https://github.com/PeterPym/contextify/releases/download/v{version}/Contextify-{version}.dmg" | shasum -a 256
+```
+- [ ] Hashes match? [ ] Yes / [ ] No (STOP - investigate before proceeding)
 <!-- ENDIF:dmg -->
 
 ## Documentation Updates

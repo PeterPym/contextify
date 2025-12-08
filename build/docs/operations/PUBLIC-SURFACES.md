@@ -235,11 +235,11 @@ See `scripts/release/generate-release-notes.sh`.
 
 ---
 
-### 9. GitHub Releases (Private Repo)
+### 9. GitHub Releases (Public Repo)
 
-**URL:** https://github.com/banagale/contextify/releases
+**URL:** https://github.com/PeterPym/contextify/releases
 
-**Created via:** `gh release create`
+**Created via:** `gh release create` or web UI
 
 **Content:**
 - Release notes/changelog
@@ -253,6 +253,16 @@ See `scripts/release/generate-release-notes.sh`.
 - [ ] Release created with correct tag?
 - [ ] DMG attached?
 - [ ] Release notes accurate?
+
+**Integrity verification:**
+```bash
+# Expected hash (from build)
+cat dist/Contextify-X.Y.Z.dmg.sha256
+
+# Actual hash (from public download)
+curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/Contextify-X.Y.Z.dmg" | shasum -a 256
+```
+Hashes MUST match. If they don't, the wrong file was uploaded.
 
 ---
 
