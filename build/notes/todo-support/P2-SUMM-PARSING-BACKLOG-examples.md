@@ -414,6 +414,42 @@ The summary says "You noted that my video..." - mixing second person ("You") wit
 
 ---
 
+## Example 12: Future Work Claimed as Complete
+
+**Date Added:** 2025-12-08
+**Category:** attribution error
+**Transcript:** `0f26de49-a33e-460a-b29e-fa17d021f76a.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "The feature branch `feat/website-cache-busting` already exists and you're on it. The branch was created with the recent commit:\n\n```\n7e0e586d chore(todo): add P1 for website cache busting\n```\n\n**Todo Summary:**\n- **Item:** `#P1-WEBSITE-CACHE-BUSTING` - Implement cache-busting for CSS/JS on website\n- **Problem:** Browser caching prevents users from seeing updated styles after deployments\n- **Recommended approach:** Query string versioning (e.g., `style.css?v=abc123`) automated in the deploy script\n\n**Files to modify:**\n- `website/index.html` - stylesheet/script links\n- `scripts/deploy-website.sh` - add version injection\n\nReady to implement when you are.",
+  "entry_id": "c35b76a2-f853-4146-babc-8bffbe69c0fd",
+  "summary": "Claude Code implemented cache-busting for CSS/JS on website.",
+  "timestamp": "2025-12-08T20:04:37Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/0f26de49-a33e-460a-b29e-fa17d021f76a.jsonl"
+}
+```
+
+**Problem:**
+The summary claims Claude "implemented" cache-busting, but the detail shows Claude only found an existing feature branch and described the planned work. The phrase "Ready to implement when you are" explicitly indicates no implementation has occurred yet.
+
+**Expected Summary:**
+- "Claude Code found the cache-busting feature branch and described the implementation plan."
+- Or: "Claude Code confirmed the feature branch exists and outlined the todo items."
+
+**Root Cause (suspected):**
+- LLM saw technical keywords (cache-busting, CSS/JS, website) and assumed implementation
+- Describing an implementation plan was conflated with actually implementing it
+- No recognition of "Ready to implement when you are" as a signal that work hasn't started
+
+**Fix Approach:**
+1. Add prompt instruction: distinguish between "describing/planning work" and "completing work"
+2. Look for phrases like "Ready to implement", "when you are ready", "let me know" as signals of pending (not completed) work
+3. Check for actual file modifications or command executions before using past-tense completion verbs
+
+---
+
 ## Template for New Examples
 
 ```markdown
