@@ -11,6 +11,7 @@
 # Pre-flight checks (unless --force):
 #   - Working tree must be clean (no uncommitted changes in website/)
 #   - Current branch must be pushed to origin
+#   - Warns if not on main branch (prompts to stop)
 #
 # Writes .version file to deployed site with git hash and timestamp
 #
@@ -69,6 +70,22 @@ if ! $FORCE; then
     fi
 
     echo -e "${GREEN}✓ Git state clean and pushed${NC}"
+
+    # Warn if not on main branch
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    if [[ "$CURRENT_BRANCH" != "main" ]]; then
+        echo ""
+        echo -e "${YELLOW}⚠️  WARNING: You are on branch '$CURRENT_BRANCH', not 'main'${NC}"
+        echo -e "${YELLOW}   Consider merging to main before deploying to production.${NC}"
+        echo ""
+        read -p "Stop deploying? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo -e "${RED}Deployment cancelled.${NC}"
+            exit 1
+        fi
+        echo ""
+    fi
 fi
 
 # Validate local directory exists
