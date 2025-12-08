@@ -111,18 +111,7 @@ if [ ! -d "$LOCAL_DIR" ]; then
     exit 1
 fi
 
-# List files to deploy (respecting exclusions)
-echo -e "${YELLOW}Files to deploy:${NC}"
-find "$LOCAL_DIR" -type f \
-    -not -name '.DS_Store' \
-    -not -name '*.mov' \
-    -not -name 'README.md' \
-    -not -name 'QUICKSTART.txt' \
-    -not -path '*/drafts/*' \
-    | sed "s|^$LOCAL_DIR/||" | sort
-echo ""
-
-# Count files
+# Count total files
 FILE_COUNT=$(find "$LOCAL_DIR" -type f \
     -not -name '.DS_Store' \
     -not -name '*.mov' \
@@ -130,7 +119,39 @@ FILE_COUNT=$(find "$LOCAL_DIR" -type f \
     -not -name 'QUICKSTART.txt' \
     -not -path '*/drafts/*' \
     | wc -l | tr -d ' ')
-echo "Total files: $FILE_COUNT"
+
+# Show what will actually change (dry-run rsync comparison)
+echo -e "${YELLOW}Checking for changes (${FILE_COUNT} total files)...${NC}"
+
+# Build exclude args for protected dirs
+PROTECTED_EXCLUDES=""
+for dir in "${PROTECTED_DIRS[@]}"; do
+    PROTECTED_EXCLUDES="$PROTECTED_EXCLUDES --exclude $dir"
+done
+
+# Dry-run rsync to see what would change
+RSYNC_OUTPUT=$(rsync -avzin --delete \
+    --exclude '.DS_Store' \
+    --exclude '.git' \
+    --exclude 'drafts' \
+    --exclude '*.mov' \
+    --exclude 'README.md' \
+    --exclude 'QUICKSTART.txt' \
+    $PROTECTED_EXCLUDES \
+    "$LOCAL_DIR/" \
+    "$SERVER:$REMOTE_DIR/" 2>/dev/null || true)
+
+# Parse rsync itemize output: <f means file to send, *deleting means delete
+# Format: <f.st.... means file with size/time change, <f+++++ means new file
+CHANGED_FILES=$(echo "$RSYNC_OUTPUT" | grep -E '^<f|^\*deleting' | sed 's/^<f[^[:space:]]* /  /' | sed 's/^\*deleting /  [DELETE] /' || true)
+
+if [[ -n "$CHANGED_FILES" ]]; then
+    CHANGE_COUNT=$(echo "$CHANGED_FILES" | wc -l | tr -d ' ')
+    echo -e "${CYAN}Changes detected ($CHANGE_COUNT items):${NC}"
+    echo "$CHANGED_FILES"
+else
+    echo -e "${GREEN}No file changes detected${NC}"
+fi
 echo ""
 
 # Build protected dirs exclude args for rsync
