@@ -190,29 +190,40 @@ appstore-metadata/fastlane/metadata/en-US/
 
 ---
 
-### 7. Website - Release Notes
+### 7. Release Notes (Multi-Output)
 
-**URL:** https://contextify.sh/release-notes/{version}.html
+**Outputs:**
+| Output | URL/Location | Purpose |
+|--------|--------------|---------|
+| Sparkle HTML | `https://contextify.sh/release-notes/X.Y.Z.html` | In-app update dialog |
+| CHANGELOG | `~/code/projects/contextify-public-repo/CHANGELOG.md` | Public repo history |
+| App Store | App Store Connect "What's New" | App Store listing |
 
-**Source files:** `website/release-notes/*.html`
+**Source (future):** `releases/vX.Y.Z/release-notes.json` (see #P2-RELEASE-NOTES-JSON)
 
-**Generation:** Release notes are generated via LLM from git history.
-See `scripts/release/generate-release-notes.sh`.
+**Current source:** `website/release-notes/*.html` (manual)
+
+**Generation workflow:**
+1. LLM drafts from git commits: `./scripts/release/generate-release-notes.sh X.Y.Z`
+2. Human edits for user-facing language
+3. Render to outputs (future: from JSON)
 
 **Artifacts:**
 - `releases/vX.Y.Z/assets/changelog.llm.md` - LLM draft
-- `releases/vX.Y.Z/assets/changelog.final.md` - Edited final
-- `website/release-notes/X.Y.Z.html` - Published HTML
+- `releases/vX.Y.Z/release-notes.json` - Single source (planned)
+- `website/release-notes/X.Y.Z.html` - Sparkle HTML
 
 **Update triggers:**
 - Every release
 
 **Review checklist:**
 - [ ] LLM draft generated and reviewed?
-- [ ] Final version saved to `changelog.final.md`?
-- [ ] HTML version created?
-- [ ] Changes accurately described?
-- [ ] Links from landing page updated?
+- [ ] User-facing language (not commit speak)?
+- [ ] HTML deployed to website?
+- [ ] CHANGELOG updated in public repo?
+- [ ] App Store "What's New" updated (if App Store release)?
+
+**Reference:** `build/docs/operations/release/release-notes-guide.md`, `release-notes-json-spec.md`
 
 ---
 

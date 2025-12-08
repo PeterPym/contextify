@@ -1002,7 +1002,30 @@ Both should use identical card components for consistency.
 
 ---
 
-# P2 (Medium Priority) - 45 Items
+# P2 (Medium Priority) - 46 Items
+
+---
+
+## #P2-RELEASE-NOTES-JSON: JSON-based release notes with multi-output generation
+
+**Status:** Spec Complete
+**Priority:** P2
+**Effort:** 4-6 hours
+
+**Problem:** Release notes currently maintained as HTML files manually. Need to update multiple places (Sparkle HTML, public repo CHANGELOG, App Store).
+
+**Solution:** Single-source JSON at `releases/vX.Y.Z/release-notes.json`:
+- Script generates: Sparkle HTML, CHANGELOG.md entry, App Store text
+- LLM draft from git commits, human edits JSON, script renders outputs
+
+**Deliverables:**
+- [ ] Add `--json` flag to `generate-release-notes.sh`
+- [ ] Create `render-release-notes.sh` (JSON → outputs)
+- [ ] Create JSON schema at `releases/schemas/release-notes.schema.json`
+- [ ] Update marketing checklist template
+
+**Spec:** `build/docs/operations/release/release-notes-json-spec.md`
+**Reference:** `build/docs/operations/release/release-notes-guide.md`
 
 ---
 

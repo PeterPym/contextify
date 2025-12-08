@@ -18,6 +18,35 @@ git log --oneline v1.0.0..v1.0.1 -- app/ Contextify/
 
 Check `releases/manifest.json` for channel status and git tags.
 
+## Future: JSON-based Release Notes
+
+**Status:** Planned (see #P2-RELEASE-NOTES-JSON in TODOS.md)
+
+Single-source JSON at `releases/vX.Y.Z/release-notes.json`:
+
+```json
+{
+  "version": "1.0.1",
+  "date": "2025-12-08",
+  "channels": ["dmg"],
+  "baseline": "v1.0.0",
+  "summary": "First direct download release with bug fixes.",
+  "sections": {
+    "features": [],
+    "improvements": [],
+    "fixes": [
+      "Fixed timeline badges getting stuck after processing",
+      "Contact Support now uses correct email address"
+    ]
+  }
+}
+```
+
+Generate outputs:
+- `website/release-notes/X.Y.Z.html` (Sparkle in-app dialog)
+- Public repo `CHANGELOG.md` entry
+- App Store "What's New" text
+
 ## File Locations
 
 | File | Purpose |
