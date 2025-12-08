@@ -15,9 +15,9 @@
 
 ## Hacker News (Show HN)
 
-- [ ] Review/finalize post draft: `build/launch/show-hn/draft.md`
-- [ ] Post title: "Show HN: Contextify - Searchable history for Claude Code (your sessions delete after 30 days)"
-- [ ] Best time: ~9-10am ET weekday (Tue-Thu best)
+- [x] Review/finalize post draft: `build/launch/show-hn/draft.md`
+- [x] Post title: "Show HN: Contextify – Your Claude Code history deletes after 30 days. This keeps it forever."
+- [ ] Best time: ~9-10am ET weekday (Mon-Thu acceptable, Tue-Thu optimal)
 - [ ] Be ready to respond to comments for first few hours
 - [ ] Link: contextify.sh
 
