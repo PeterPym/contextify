@@ -177,7 +177,7 @@ echo ""
 
 # Move to final location and set permissions
 echo -e "${YELLOW}Moving to /var/www and setting permissions...${NC}"
-ssh "$SERVER" "sudo rsync -a --delete $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
+ssh "$SERVER" "sudo rsync -a --delete --exclude 'stats' $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
                sudo chown -R www-data:www-data $REMOTE_DIR && \
                sudo find $REMOTE_DIR -type f -exec chmod 644 {} \; && \
                sudo find $REMOTE_DIR -type d -exec chmod 755 {} \; && \
