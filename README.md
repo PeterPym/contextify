@@ -14,8 +14,8 @@ Monitor your AI coding sessions with real-time timeline and LLM-powered summarie
 
 ## Download
 
+- [Direct Download (DMG)](https://github.com/PeterPym/contextify/releases/latest) - Recommended
 - [Mac App Store](https://apps.apple.com/app/contextify/id6753190666) (coming soon)
-- [Direct Download (DMG)](https://contextify.sh) (coming soon)
 
 ## System Requirements
 
