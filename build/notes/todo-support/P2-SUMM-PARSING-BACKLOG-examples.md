@@ -378,6 +378,42 @@ The user made a casual observation/suggestion ("we should have docs on this"), b
 
 ---
 
+## Example 11: Pronoun Perspective Confusion
+
+**Date Added:** 2025-12-07
+**Category:** attribution error (pronoun/perspective)
+**Transcript:** `50fe1b79-bde4-4675-9292-a71a4c6e6e0a.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "my video is 35 minutes :P",
+  "entry_id": "d4343f62-afa1-4e19-a075-06f7f9c1c984",
+  "summary": "You noted that my video is 35 minutes.",
+  "timestamp": "2025-12-08T07:53:57Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/50fe1b79-bde4-4675-9292-a71a4c6e6e0a.jsonl"
+}
+```
+
+**Problem:**
+The summary says "You noted that my video..." - mixing second person ("You") with first person ("my"). The "my" should have been converted to "your" when summarizing from the user's perspective. As written, it sounds like Claude is claiming ownership of the video.
+
+**Expected Summary:**
+- "You mentioned your video is 35 minutes."
+- Or: "You noted the demo video came out to 35 minutes."
+
+**Root Cause (suspected):**
+- LLM echoed the user's first-person pronoun without converting to second person
+- The summarization prompt may not explicitly instruct perspective/pronoun transformation
+- Short messages may trigger more literal echoing behavior
+
+**Fix Approach:**
+1. Add prompt instruction: "When summarizing user messages, convert first-person pronouns (my, I, me) to second-person (your, you)"
+2. Post-processing: detect "You [verb] that my/I/me" patterns and flag as malformed
+3. Consider this a subcategory of echo/passthrough - partial summarization but with pronoun leak
+
+---
+
 ## Template for New Examples
 
 ```markdown
