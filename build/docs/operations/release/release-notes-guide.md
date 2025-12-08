@@ -2,6 +2,22 @@
 
 How to write user-facing release notes for Contextify.
 
+## Release History & Baselines
+
+| Version | Channels | Baseline | Notes |
+|---------|----------|----------|-------|
+| 1.0.0 | App Store only | - | Initial public release |
+| 1.0.1 | DMG only | v1.0.0 | First DMG/Sparkle release, bug fixes |
+
+**Baseline:** The version to diff against for "what's new".
+
+For 1.0.1 DMG release:
+```bash
+git log --oneline v1.0.0..v1.0.1 -- app/ Contextify/
+```
+
+Check `releases/manifest.json` for channel status and git tags.
+
 ## File Locations
 
 | File | Purpose |
