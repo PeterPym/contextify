@@ -16,7 +16,7 @@ Setup: Screen recording ON, camera ON, Contextify running, Claude Code open
 >
 > When I switched to Claude Code, I noticed there's no searchable history, and by default your conversations get deleted after 30 days. Then I started splitting work between Claude Code and Codex when I'd hit rate limits, and piecing together what I'd done became a mess.
 >
-> So I built Contextify.
+> So I built Contextify - an ambient flow monitor for CLI AI coding sessions.
 
 ---
 
@@ -46,7 +46,7 @@ Setup: Screen recording ON, camera ON, Contextify running, Claude Code open
 ### 5. MULTI-PROJECT (15 sec)
 **Show:** Click between projects in sidebar, show unread badge
 
-> It tracks every project separately. You can see unread counts - useful when you've got multiple things going.
+> It tracks every project separately. You can see unread counts - useful when you've got multiple things going, spinning plates across different repos.
 
 ---
 
