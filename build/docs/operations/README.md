@@ -69,13 +69,15 @@ This directory contains operational documentation for:
 
 ### marketing/
 **Topics:** Distribution and marketing strategies
-- Show HN draft
 - Distribution strategy
 - User acquisition and growth
+- User feedback collection
 
 **Key docs:**
-- [Show HN Draft](marketing/show-hn-draft.md)
 - [Distribution Strategy](marketing/distribution-strategy.md)
+- [User Feedback](marketing/user-feedback.md)
+
+**See also:** [Show HN Draft](../../../build/launch/show-hn/draft.md) (in `build/launch/`)
 
 ### release/
 **Topics:** Release processes and automation
