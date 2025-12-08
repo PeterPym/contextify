@@ -41,6 +41,8 @@ EXCLUDES=(
     '.git'
     'drafts'
     '*.mov'
+    'README.md'
+    'QUICKSTART.txt'
 )
 
 # Build rsync exclude args
@@ -54,6 +56,8 @@ echo -e "${YELLOW}Files to deploy:${NC}"
 find "$LOCAL_DIR" -type f \
     -not -name '.DS_Store' \
     -not -name '*.mov' \
+    -not -name 'README.md' \
+    -not -name 'QUICKSTART.txt' \
     -not -path '*/drafts/*' \
     | sed "s|^$LOCAL_DIR/||" | sort
 echo ""
@@ -62,6 +66,8 @@ echo ""
 FILE_COUNT=$(find "$LOCAL_DIR" -type f \
     -not -name '.DS_Store' \
     -not -name '*.mov' \
+    -not -name 'README.md' \
+    -not -name 'QUICKSTART.txt' \
     -not -path '*/drafts/*' \
     | wc -l | tr -d ' ')
 echo "Total files: $FILE_COUNT"
@@ -83,6 +89,8 @@ rsync -avz --delete \
     --exclude '.git' \
     --exclude 'drafts' \
     --exclude '*.mov' \
+    --exclude 'README.md' \
+    --exclude 'QUICKSTART.txt' \
     "$LOCAL_DIR/" \
     "$SERVER:$TEMP_UPLOAD_DIR/"
 
