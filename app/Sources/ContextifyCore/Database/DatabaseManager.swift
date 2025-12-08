@@ -181,80 +181,41 @@ public final class DatabaseManager: @unchecked Sendable {
   }
 
   /// Returns default database path
-  /// DMG builds: ~/Documents/Contextify/ (user-accessible)
+  /// DMG builds: ~/Library/Application Support/Contextify/ (no TCC prompt needed)
   /// App Store builds: Should never reach here without onboarding (guarded in openDatabase)
   private func defaultDatabasePath() throws -> URL {
     let fm = FileManager.default
 
-    // New default location: ~/Documents/Contextify/
-    let documentsDir = fm.homeDirectoryForCurrentUser.appendingPathComponent("Documents/Contextify", isDirectory: true)
-
-    // Legacy location: ~/Library/Application Support/Contextify/
+    // Application Support location (no TCC prompt required)
     let appSupport = try fm.url(
       for: .applicationSupportDirectory,
       in: .userDomainMask,
       appropriateFor: nil,
       create: true
     )
-    let legacyDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
+    let appSupportDir = appSupport.appendingPathComponent("Contextify", isDirectory: true)
+    let appSupportDB = appSupportDir.appendingPathComponent("contextify.db")
 
-    let documentsDB = documentsDir.appendingPathComponent("contextify.db")
-    let legacyDB = legacyDir.appendingPathComponent("contextify.db")
-    let legacyOldDB = legacyDir.appendingPathComponent("transcripts.db")
-
-    // ========================================================================
-    // MIGRATION PRIORITY:
-    // 1. If Documents/Contextify/contextify.db exists -> use it (already migrated)
-    // 2. If legacy Application Support DB exists -> migrate to Documents
-    // 3. Otherwise -> create fresh DB in Documents
-    // ========================================================================
-
-    if fm.fileExists(atPath: documentsDB.path) {
-      log.info("[DB-PATH] Using existing Documents database")
-      return documentsDB
-    }
-
-    // Check for legacy database and migrate if found
-    let legacySource: URL?
-    if fm.fileExists(atPath: legacyDB.path) {
-      legacySource = legacyDB
-    } else if fm.fileExists(atPath: legacyOldDB.path) {
-      legacySource = legacyOldDB
-    } else {
-      legacySource = nil
-    }
-
-    if let source = legacySource {
-      // Create Documents/Contextify/ directory
-      try fm.createDirectory(at: documentsDir, withIntermediateDirectories: true)
-
-      // Copy database files (keep legacy as backup)
-      try fm.copyItem(at: source, to: documentsDB)
-      log.info("[DB-MIGRATE] Copied database from \(source.path) to \(documentsDB.path)")
-
-      // Copy WAL and SHM files if they exist
-      let sourceWal = URL(fileURLWithPath: source.path + "-wal")
-      let sourceShm = URL(fileURLWithPath: source.path + "-shm")
-      let destWal = URL(fileURLWithPath: documentsDB.path + "-wal")
-      let destShm = URL(fileURLWithPath: documentsDB.path + "-shm")
-
-      if fm.fileExists(atPath: sourceWal.path) {
-        try? fm.copyItem(at: sourceWal, to: destWal)
-        log.debug("[DB-MIGRATE] Copied WAL file")
-      }
-      if fm.fileExists(atPath: sourceShm.path) {
-        try? fm.copyItem(at: sourceShm, to: destShm)
-        log.debug("[DB-MIGRATE] Copied SHM file")
+    // DMG builds: Use Application Support (no permission prompt)
+    if !Sandbox.isSandboxed {
+      // Check for legacy transcripts.db and use it if present
+      let legacyOldDB = appSupportDir.appendingPathComponent("transcripts.db")
+      if fm.fileExists(atPath: legacyOldDB.path) && !fm.fileExists(atPath: appSupportDB.path) {
+        // Rename legacy file to new name
+        try fm.moveItem(at: legacyOldDB, to: appSupportDB)
+        log.info("[DB-PATH] Renamed legacy transcripts.db to contextify.db")
       }
 
-      log.notice("[DB-MIGRATE] Database migrated to Documents. Legacy files kept at: \(legacyDir.path)")
-      return documentsDB
+      try fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+      log.info("[DB-PATH] Using Application Support (DMG build)")
+      return appSupportDB
     }
 
-    // No existing database - create fresh one in Documents
-    try fm.createDirectory(at: documentsDir, withIntermediateDirectories: true)
-    log.info("[DB-PATH] Creating new database in Documents")
-    return documentsDB
+    // Sandboxed builds should not reach here - onboarding wizard handles location selection
+    // But if they do (edge case), fall back to Application Support within container
+    log.warning("[DB-PATH] Sandboxed build reached defaultDatabasePath - using container Application Support")
+    try fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+    return appSupportDB
   }
 
   /// Validates database integrity
