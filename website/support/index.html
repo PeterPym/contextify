@@ -42,6 +42,15 @@
           <article class="page-content bg-white p-4 p-md-5 rounded-3 shadow-sm">
             <h1 class="mb-4">Support</h1>
 
+            <h2>Report Issues &amp; Request Features</h2>
+            <p>We use GitHub to track bugs and feature requests:</p>
+            <ul>
+              <li><a href="https://github.com/PeterPym/contextify/issues/new?template=bug_report.md"><strong>Report a Bug</strong></a> - Something not working? Let us know.</li>
+              <li><a href="https://github.com/PeterPym/contextify/issues/new?template=feature_request.md"><strong>Request a Feature</strong></a> - Have an idea? We'd love to hear it.</li>
+              <li><a href="https://github.com/PeterPym/contextify/issues"><strong>Browse All Issues</strong></a> - See what's being worked on.</li>
+            </ul>
+            <p>You can also access these directly from the app via <strong>Help > Report a Bug</strong> or <strong>Help > Request a Feature</strong>.</p>
+
             <h2>Getting Started</h2>
             <p>Contextify automatically discovers Claude Code and Codex projects in:</p>
             <ul>
@@ -61,8 +70,25 @@
             <h3>Can I use a custom database location?</h3>
             <p>Yes! Go to <strong>Settings > Database</strong> tab to choose a custom location. This is useful if you want to store the database on Dropbox, iCloud Drive, or an external drive.</p>
 
-            <h3>Why aren't summaries appearing?</h3>
-            <p>LLM-powered summaries require <strong>macOS 26 (Tahoe)</strong> or later. On earlier versions of macOS, entries will still appear but without AI-generated summaries.</p>
+            <h3>Why do some entries show an hourglass?</h3>
+            <p>Contextify uses lazy summarization to save battery. Entries show an hourglass icon while waiting to be summarized. Summaries are generated as you scroll to them. If you scroll away before summarization completes, it pauses until you return.</p>
+
+            <h3>What do the blue arrows mean?</h3>
+            <p>A blue arrow indicates a "directive" - a request you made for the AI to do something. Contextify tracks these so you can see when tasks were requested and completed.</p>
+
+            <h3>What does the orange "QUEUED" badge mean?</h3>
+            <p>This appears on messages you sent while Claude was actively working on tools. It lets you see exactly when Claude took your pending message into consideration, even during long-running operations.</p>
+
+            <h3>What's the difference between App Store and DMG?</h3>
+            <p>Both versions are functionally identical, with a few differences:</p>
+            <ul>
+              <li><strong>DMG:</strong> Shows git status, faster performance, simpler first-run setup</li>
+              <li><strong>App Store:</strong> Sandboxed (good for corporate IT compliance), automatic updates via App Store</li>
+            </ul>
+            <p>We recommend the DMG for most developers. See <a href="../download/">Download</a> for details.</p>
+
+            <h3>Is it safe to delete the database?</h3>
+            <p>Yes. If your original transcript files still exist in <code>~/.claude/projects/</code> and <code>~/.codex/sessions/</code>, Contextify will rebuild the database from them on next launch. Only summaries would need to be regenerated.</p>
 
             <h3>How do I repair a corrupted transcript?</h3>
             <p>Contextify includes a built-in transcript repair tool. If you encounter API 400 errors when resuming Claude Code Web sessions, the repair tool can detect and fix common corruption issues.</p>
@@ -79,20 +105,9 @@
             <h2>System Requirements</h2>
             <ul>
               <li><strong>macOS 26</strong> (Tahoe) required</li>
+              <li><strong>Apple Silicon</strong> (M1 or later) required for Apple Intelligence</li>
               <li>Works with Claude Code and Codex CLI</li>
             </ul>
-
-            <h2>Known Issues</h2>
-            <p>None at this time. If you encounter a bug, please report it on GitHub.</p>
-
-            <h2>Report Issues &amp; Request Features</h2>
-            <p>We use GitHub to track bugs and feature requests:</p>
-            <ul>
-              <li><a href="https://github.com/PeterPym/contextify/issues/new?template=bug_report.md"><strong>Report a Bug</strong></a> - Something not working? Let us know.</li>
-              <li><a href="https://github.com/PeterPym/contextify/issues/new?template=feature_request.md"><strong>Request a Feature</strong></a> - Have an idea? We'd love to hear it.</li>
-              <li><a href="https://github.com/PeterPym/contextify/issues"><strong>Browse All Issues</strong></a> - See what's being worked on.</li>
-            </ul>
-            <p>You can also access these directly from the app via <strong>Help > Report a Bug</strong> or <strong>Help > Request a Feature</strong>.</p>
 
             <h2>Contact</h2>
             <p>For general inquiries or private support requests:</p>
