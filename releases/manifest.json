@@ -38,10 +38,10 @@
         "dmg"
       ],
       "git_tag": "v1.0.1",
-      "git_commit": "72f57fc725918a4a035392416b70495de09b0a43",
+      "git_commit": "76c224f145f7487e2770db28dc2da064c6bb0d03",
       "dmg": {
         "status": "built",
-        "built_at": "2025-12-06"
+        "built_at": "2025-12-08"
       },
       "appstore": {
         "status": "skipped"
