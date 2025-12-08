@@ -379,6 +379,16 @@ body {
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
 }
 
+.feature-image-transparent {
+  width: 100%;
+  max-width: 540px;
+  transition: transform 0.2s ease;
+}
+
+.feature-image-transparent:hover {
+  transform: scale(1.02);
+}
+
 /* Lightbox */
 .lightbox {
   display: none;
