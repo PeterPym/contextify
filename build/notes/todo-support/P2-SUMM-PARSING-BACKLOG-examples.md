@@ -450,6 +450,42 @@ The summary claims Claude "implemented" cache-busting, but the detail shows Clau
 
 ---
 
+## Example 13: Literal Echo of Short Praise
+
+**Date Added:** 2025-12-08
+**Category:** attribution error (echo/passthrough)
+**Transcript:** `12a75970-c8cf-4329-8fe0-41568627c506.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "great commit and push",
+  "entry_id": "4b4a43f1-8a00-4806-9369-ad7fbac125e4",
+  "summary": "You noted great commit and push.",
+  "timestamp": "2025-12-08T20:00:38Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-personal-job-hunt-2025/12a75970-c8cf-4329-8fe0-41568627c506.jsonl"
+}
+```
+
+**Problem:**
+The summary is just "You noted" + the literal message. "You noted great commit and push" is grammatically awkward and provides no summarization value over the original.
+
+**Expected Summary:**
+- "You complimented Claude's commit and push."
+- Or for very short messages: use the original directly without transformation.
+
+**Root Cause (suspected):**
+- Short casual messages trigger passthrough/echo behavior
+- The "You noted" prefix is a fallback when no real summarization occurs
+- Similar pattern to Examples 2, 3, 6 where attribution + echo produces worse output than the original
+
+**Fix Approach:**
+1. Length threshold: messages under ~10 words that don't need context should pass through unchanged
+2. Detect "You [verb] [literal content]" pattern and strip the prefix
+3. For praise/acknowledgment messages, either pass through or use "You acknowledged" patterns
+
+---
+
 ## Template for New Examples
 
 ```markdown
