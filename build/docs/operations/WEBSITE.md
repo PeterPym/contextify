@@ -13,6 +13,10 @@
 
 Rsync-based, one-command deployment to production server.
 
+**Options:**
+- `--dry-run` - Preview without uploading
+- `--force` - Skip git clean/pushed checks
+
 ## Server Configuration
 
 **Server:** web@banagale.com
@@ -50,6 +54,46 @@ Rsync-based, one-command deployment to production server.
 2. Run deployment script: `./scripts/deploy-website.sh`
 3. Script syncs files to server via rsync
 4. Verify changes at https://contextify.sh
+
+## Deployment Safety Features
+
+### Pre-flight Checks
+- Working tree must be clean (no uncommitted website/ changes)
+- Current branch must be pushed to origin
+- Warns if not on main branch
+
+### Protected Directories
+Server-side directories that persist across deploys:
+```bash
+PROTECTED_DIRS=(
+    'stats'    # GoAccess analytics
+)
+```
+To add more, edit `PROTECTED_DIRS` in `scripts/deploy-website.sh`.
+
+### Deletion Warnings
+Before deploying, the script checks for server content not in local `website/` directory. If found:
+- Shows loud warning with list of items to be deleted
+- Requires explicit confirmation (y/N)
+- Suggests adding to `PROTECTED_DIRS` or investigating
+
+### Automatic Backups
+Before each deploy, the previous site is archived:
+- **Location:** `/var/www/contextify-archives/`
+- **Format:** `YYYY-MM-DD_HHMM_<git-short>.tar.gz`
+- **Retention:** Last 5 archives (rolling)
+- **Excludes:** Protected directories (they persist anyway)
+
+**To rollback:**
+```bash
+ssh web@banagale.com
+sudo tar -xzf /var/www/contextify-archives/<archive>.tar.gz -C /var/www/contextify.sh/
+```
+
+**To list archives:**
+```bash
+ssh web@banagale.com "ls -lh /var/www/contextify-archives/"
+```
 
 ## Analytics
 
