@@ -462,6 +462,19 @@ body {
   opacity: 0.9;
 }
 
+/* App Store badge: show light-bg version by default, dark-bg version in dark mode */
+.badge-dark-bg {
+  display: none;
+}
+
+[data-bs-theme="dark"] .badge-light-bg {
+  display: none;
+}
+
+[data-bs-theme="dark"] .badge-dark-bg {
+  display: inline;
+}
+
 .download-divider {
   color: var(--slate-500);
   font-size: 0.875rem;
