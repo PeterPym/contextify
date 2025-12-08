@@ -46,7 +46,9 @@ Rsync-based, one-command deployment to production server.
 ## Additional Documentation
 
 - Website docs: `build/docs/website/`
-- Launch status: `build/notes/todo-support/P0-APP-STORE-checklist.md`
+- Public surfaces: `build/docs/operations/PUBLIC-SURFACES.md`
+- Analytics setup: `build/docs/operations/website-analytics.md`
+- Server configs: `build/server-configs/analytics/`
 
 ## Deployment Workflow
 
