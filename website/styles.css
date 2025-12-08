@@ -154,7 +154,7 @@ body {
 }
 
 [data-bs-theme="dark"] .navbar-brand {
-  color: var(--text-inverse) !important;
+  color: var(--slate-50) !important;
 }
 
 .navbar .btn-primary {
@@ -259,54 +259,389 @@ body {
 }
 
 /* ==========================================================================
-   Features Section
+   Statement Section
    ========================================================================== */
-#features {
+.statement-section {
+  padding: 4rem 0;
   background-color: var(--bg-page);
 }
 
-[data-bs-theme="dark"] #features {
-  background-color: var(--bg-page);
+[data-bs-theme="dark"] .statement-section {
+  background-color: var(--slate-800);
 }
 
-#features h2 {
+.statement-text {
+  font-size: 1.75rem;
+  font-weight: 600;
   color: var(--text-primary);
+  margin-bottom: 0.5rem;
 }
 
-[data-bs-theme="dark"] #features h2 {
-  color: var(--text-primary);
+[data-bs-theme="dark"] .statement-text {
+  color: var(--slate-100);
 }
 
-#features li {
-  color: var(--text-primary);
+.statement-subtext {
   font-size: 1.125rem;
+  color: var(--text-secondary);
+  margin-bottom: 0;
 }
 
-[data-bs-theme="dark"] #features li {
+[data-bs-theme="dark"] .statement-subtext {
+  color: var(--slate-400);
+}
+
+.logo-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3rem;
+  margin-top: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.company-logo {
+  height: 28px;
+  opacity: 0.5;
+  filter: grayscale(100%);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+.company-logo:hover {
+  opacity: 0.8;
+  filter: grayscale(0%);
+}
+
+[data-bs-theme="dark"] .company-logo {
+  filter: grayscale(100%) invert(1);
+}
+
+[data-bs-theme="dark"] .company-logo:hover {
+  filter: grayscale(0%) invert(1);
+}
+
+/* ==========================================================================
+   Feature Sections
+   ========================================================================== */
+.feature-section {
+  padding: 5rem 0;
+  background-color: var(--bg-surface);
+}
+
+.feature-section-alt {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .feature-section {
+  background-color: var(--slate-900);
+}
+
+[data-bs-theme="dark"] .feature-section-alt {
+  background-color: var(--slate-800);
+}
+
+.feature-title {
+  font-size: 2rem;
+  font-weight: 700;
   color: var(--text-primary);
+  margin-bottom: 1.25rem;
+  line-height: 1.2;
+}
+
+[data-bs-theme="dark"] .feature-title {
+  color: var(--slate-50);
+}
+
+.feature-description {
+  font-size: 1.125rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+[data-bs-theme="dark"] .feature-description {
+  color: var(--slate-400);
+}
+
+.feature-image {
+  width: 100%;
+  max-width: 480px;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.feature-image:hover {
+  transform: scale(1.02);
+}
+
+[data-bs-theme="dark"] .feature-image {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+/* Lightbox */
+.lightbox {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 9999;
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox.active {
+  display: flex;
+}
+
+.lightbox img {
+  max-width: 90%;
+  max-height: 90%;
+  border-radius: 8px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 /* ==========================================================================
    Download Section
    ========================================================================== */
 #download {
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  margin: 0 4%;
+  background-color: var(--slate-900);
 }
 
 [data-bs-theme="dark"] #download {
-  background-color: var(--bg-elevated);
-  border-color: var(--border-default);
+  background-color: var(--slate-950);
 }
 
-#download h2 {
+.download-card {
+  padding: 3rem 2rem;
+}
+
+.download-card h2 {
+  color: var(--slate-50);
+}
+
+.download-card p {
+  color: var(--slate-300);
+}
+
+.download-card .btn-primary {
+  background-color: var(--contextify-primary);
+  border-color: var(--contextify-primary);
+  padding: 0.875rem 2rem;
+  font-weight: 600;
+}
+
+.download-card .btn-primary:hover {
+  background-color: var(--contextify-primary-hover);
+  border-color: var(--contextify-primary-hover);
+}
+
+.download-card .text-body-secondary {
+  color: var(--slate-400) !important;
+}
+
+.download-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.app-store-badge {
+  display: inline-block;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.app-store-badge:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+/* App Store badge: show light-bg version by default, dark-bg version in dark mode */
+.badge-dark-bg {
+  display: none;
+}
+
+[data-bs-theme="dark"] .badge-light-bg {
+  display: none;
+}
+
+[data-bs-theme="dark"] .badge-dark-bg {
+  display: inline;
+}
+
+.download-divider {
+  color: var(--slate-500);
+  font-size: 0.875rem;
+}
+
+.dmg-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 48px;
+  padding: 0 1.5rem;
+  background: linear-gradient(135deg, var(--contextify-primary) 0%, var(--contextify-secondary) 100%);
+  border-radius: 8px;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px -3px rgba(217, 119, 87, 0.4);
+}
+
+.dmg-download::before {
+  content: "↓";
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.dmg-download:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px -3px rgba(217, 119, 87, 0.5);
+  color: #fff;
+}
+
+/* ==========================================================================
+   Download Page
+   ========================================================================== */
+.download-hero {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .download-hero {
+  background-color: var(--slate-900);
+}
+
+.download-option-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  padding: 2rem;
+  height: 100%;
+}
+
+[data-bs-theme="dark"] .download-option-card {
+  background-color: var(--slate-800);
+  border-color: var(--slate-700);
+}
+
+.feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.feature-list li {
+  padding: 0.5rem 0 0.5rem 1.75rem;
+  position: relative;
+  font-size: 0.95rem;
+}
+
+.feature-list li.pro::before {
+  content: "+";
+  position: absolute;
+  left: 0;
+  color: var(--contextify-primary);
+  font-weight: 700;
+}
+
+.feature-list li.con::before {
+  content: "~";
+  position: absolute;
+  left: 0;
+  color: var(--slate-500);
+  font-weight: 700;
+}
+
+.comparison-section {
+  background-color: var(--bg-surface);
+}
+
+[data-bs-theme="dark"] .comparison-section {
+  background-color: var(--slate-800);
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: var(--bg-page);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+[data-bs-theme="dark"] .comparison-table {
+  background-color: var(--slate-900);
+}
+
+.comparison-table th,
+.comparison-table td {
+  padding: 1rem 1.5rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.comparison-table th {
+  background-color: var(--bg-surface);
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-[data-bs-theme="dark"] #download h2 {
-  color: var(--text-primary);
+[data-bs-theme="dark"] .comparison-table th {
+  background-color: var(--slate-800);
+}
+
+.comparison-table td {
+  color: var(--text-secondary);
+}
+
+.comparison-table tr:last-child td {
+  border-bottom: none;
+}
+
+.recommendation-section {
+  background-color: var(--bg-page);
+}
+
+[data-bs-theme="dark"] .recommendation-section {
+  background-color: var(--slate-900);
+}
+
+.recommendation-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  padding: 1.5rem;
+  height: 100%;
+}
+
+[data-bs-theme="dark"] .recommendation-card {
+  background-color: var(--slate-800);
+  border-color: var(--slate-700);
+}
+
+.recommendation-card ul {
+  padding-left: 1.25rem;
+  margin-bottom: 0;
+}
+
+.recommendation-card li {
+  margin-bottom: 0.5rem;
+  color: var(--text-secondary);
+}
+
+.requirements-section {
+  background-color: var(--bg-surface);
+}
+
+[data-bs-theme="dark"] .requirements-section {
+  background-color: var(--slate-800);
 }
 
 /* ==========================================================================

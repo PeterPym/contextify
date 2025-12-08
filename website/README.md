@@ -3,32 +3,45 @@
 **URL:** https://contextify.sh
 **Purpose:** Product website for App Store submission + user trust
 
+> **Note:** This README is excluded from deployment and will not appear on the live site.
+
 ---
 
-## Quick Start
+## Reference Documentation
 
-### 1. Deploy Website (After DNS/SSL Setup)
+Before making changes, consult these docs:
+
+| Topic | Location |
+|-------|----------|
+| **Deployment & Server** | `build/docs/operations/WEBSITE.md` |
+| **Email Addresses** | `build/docs/operations/customer-support.md` |
+| **Public URLs** | `build/docs/operations/PUBLIC-SURFACES.md` |
+| **Design System** | `build/design/README.md` |
+| **Color Tokens** | `build/design/brand/colors.md` (CSS must stay in sync) |
+| **App Store Badges** | `build/design/brand/app-store-badges/` |
+| **Design Specimens** | `build/design/website/specimens/` |
+
+---
+
+## Deployment
 
 ```bash
-# From project root
-./scripts/deploy-website.sh
-
-# Dry run (see what would be deployed)
-./scripts/deploy-website.sh --dry-run
+./scripts/deploy-website.sh           # Deploy to production
+./scripts/deploy-website.sh --dry-run # Preview what would be deployed
 ```
 
-### 2. Test Locally
+**Script:** `scripts/deploy-website.sh` - Contains file exclusion list (README.md, QUICKSTART.txt, drafts/, etc.)
+
+## Local Testing
 
 ```bash
-cd website
-python3 -m http.server 8000
-
+cd website && python3 -m http.server 8000
 # Visit http://localhost:8000
 ```
 
 ---
 
-## Initial Infrastructure Setup
+## Infrastructure Setup (One-Time)
 
 **Run these commands ONCE to set up DNS, SSL, and email:**
 
@@ -163,8 +176,8 @@ doctl compute domain records create contextify.sh \
   --record-ttl 300
 ```
 
-5. Create email alias in iCloud: `hello@contextify.sh`
-6. Test by sending email to `hello@contextify.sh`
+5. Create email alias in iCloud: `support@contextify.sh`
+6. Test by sending email to `support@contextify.sh`
 
 ---
 
@@ -327,7 +340,7 @@ Website files are in version control (Git). Database and server config should be
 - [ ] Test all links work
 - [ ] Proofread all content
 - [ ] Test on mobile devices
-- [ ] Verify email `hello@contextify.sh` works
+- [ ] Verify email `support@contextify.sh` works
 
 **Future enhancements:**
 - [ ] Add favicon

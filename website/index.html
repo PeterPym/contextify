@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Contextify - AI Session Monitoring for macOS</title>
-  <meta name="description" content="Monitor your Claude Code and Codex CLI sessions on macOS">
+  <title>Contextify - Searchable History for Claude Code and Codex</title>
+  <meta name="description" content="Your Claude Code conversations auto-delete after 30 days. Contextify keeps them forever in a searchable database.">
   <link rel="canonical" href="https://contextify.sh/">
 
   <!-- Favicon -->
@@ -14,16 +14,16 @@
   <!-- Open Graph -->
   <meta property="og:url" content="https://contextify.sh/">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Contextify - AI Session Monitoring for macOS">
-  <meta property="og:description" content="Monitor your Claude Code and Codex CLI sessions">
+  <meta property="og:title" content="Contextify - Searchable History for Claude Code and Codex">
+  <meta property="og:description" content="Your Claude Code conversations auto-delete after 30 days. Contextify keeps them forever.">
   <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Contextify - AI Session Monitoring for macOS">
-  <meta name="twitter:description" content="Monitor your Claude Code and Codex CLI sessions">
+  <meta name="twitter:title" content="Contextify - Searchable History for Claude Code and Codex">
+  <meta name="twitter:description" content="Your Claude Code conversations auto-delete after 30 days. Contextify keeps them forever.">
   <meta name="twitter:image" content="https://contextify.sh/assets/img/og-banner.png">
 
   <!-- Bootstrap 5.3 CSS -->
@@ -61,9 +61,9 @@
     <div class="container py-5">
       <div class="row align-items-center g-5 py-4">
         <div class="col-lg-5">
-          <h1 class="fw-bold mb-4">Monitor your AI coding sessions</h1>
+          <h1 class="fw-bold mb-4">Your Claude Code history deletes after 30 days.</h1>
           <p class="lead mb-4">
-            Real-time timeline view of Claude Code and Codex CLI conversations on macOS.
+            Contextify keeps it forever. A real-time timeline of your Claude Code and Codex sessions, searchable across every project.
           </p>
           <a href="#download" class="btn btn-primary btn-lg">Download for Mac</a>
         </div>
@@ -82,40 +82,76 @@
   <!-- Brand Gradient Divider -->
   <div class="brand-divider"></div>
 
-  <!-- Features Section -->
-  <section id="features" class="py-5">
-    <div class="container py-4">
-      <div class="bg-white p-4 p-md-5 rounded-3 shadow-sm card-hover">
-        <h2 class="h3 fw-bold mb-4">Features</h2>
-        <div class="row g-4">
-          <div class="col-md-6">
-            <ul class="list-unstyled mb-0">
-              <li class="mb-3 d-flex align-items-start">
-                <span class="text-success me-3 fs-5">&#10003;</span>
-                <span>Real-time timeline of your AI coding sessions</span>
-              </li>
-              <li class="mb-3 d-flex align-items-start">
-                <span class="text-success me-3 fs-5">&#10003;</span>
-                <span>Local database backup of all conversations</span>
-              </li>
-              <li class="mb-3 d-flex align-items-start">
-                <span class="text-success me-3 fs-5">&#10003;</span>
-                <span>LLM-generated summaries using macOS on-device intelligence</span>
-              </li>
-            </ul>
-          </div>
-          <div class="col-md-6">
-            <ul class="list-unstyled mb-0">
-              <li class="mb-3 d-flex align-items-start">
-                <span class="text-success me-3 fs-5">&#10003;</span>
-                <span>Project-centric view across multiple sessions</span>
-              </li>
-              <li class="mb-3 d-flex align-items-start">
-                <span class="text-success me-3 fs-5">&#10003;</span>
-                <span>Transcript repair tool for corrupted Claude Code Web sessions</span>
-              </li>
-            </ul>
-          </div>
+  <!-- Statement Section -->
+  <section class="statement-section">
+    <div class="container text-center">
+      <p class="statement-text">Switching between Claude Code and Codex? Burning through rate limits?</p>
+      <p class="statement-subtext">Contextify watches both tools and keeps everything in one searchable database.</p>
+      <!-- Logo row - uncomment and add logos as acquired
+      <div class="logo-row">
+        <img src="assets/img/logos/company1.svg" alt="Company 1" class="company-logo">
+        <img src="assets/img/logos/company2.svg" alt="Company 2" class="company-logo">
+        <img src="assets/img/logos/company3.svg" alt="Company 3" class="company-logo">
+      </div>
+      -->
+    </div>
+  </section>
+
+  <!-- Feature 1: Timeline -->
+  <section class="feature-section">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <h2 class="feature-title">An ambient flow monitor for AI coding</h2>
+          <p class="feature-description">Watch your Claude Code and Codex sessions unfold in real-time. Each message is summarized so you can skim what happened while you were away, or follow along as your AI works.</p>
+        </div>
+        <div class="col-lg-6">
+          <img src="assets/img/feature-timeline-cropped.png" alt="Real-time conversation timeline" class="feature-image">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 2: Search -->
+  <section class="feature-section feature-section-alt">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6 order-lg-2">
+          <h2 class="feature-title">Claude Code has no searchable history. Contextify does.</h2>
+          <p class="feature-description">Full-text search across every conversation you've ever had. Find that one command, that specific fix, or that brilliant solution from weeks ago in seconds.</p>
+        </div>
+        <div class="col-lg-6 order-lg-1">
+          <img src="assets/img/feature-search-cropped.png" alt="Search across all conversations" class="feature-image">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 3: Local Processing -->
+  <section class="feature-section">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6">
+          <h2 class="feature-title">Powered by Apple Intelligence</h2>
+          <p class="feature-description">Summaries are generated on-device using Apple's foundation model built into macOS. No API keys, no cloud processing, no data leaving your machine.</p>
+        </div>
+        <div class="col-lg-6">
+          <img src="assets/img/feature-sync-cropped.png" alt="Local processing with Apple Intelligence" class="feature-image">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 4: Privacy & Backup -->
+  <section class="feature-section feature-section-alt">
+    <div class="container">
+      <div class="row align-items-center g-5">
+        <div class="col-lg-6 order-lg-2">
+          <h2 class="feature-title">Your transcripts never leave your machine</h2>
+          <p class="feature-description">Run Little Snitch, block all network requests. The app works exactly the same. Store your database in Dropbox or iCloud Drive if you want backup across machines. Your conversations, your control.</p>
+        </div>
+        <div class="col-lg-6 order-lg-1">
+          <img src="assets/img/feature-sync-cropped.png" alt="Privacy and backup options" class="feature-image">
         </div>
       </div>
     </div>
@@ -124,10 +160,20 @@
   <!-- Download Section -->
   <section id="download" class="py-5">
     <div class="container">
-      <div class="bg-white p-4 p-md-5 rounded-3 shadow-sm card-hover text-center">
+      <div class="download-card text-center">
         <h2 class="h3 fw-bold mb-4">Download</h2>
-        <p class="mb-4">Coming soon to the Mac App Store.</p>
-        <p class="text-body-secondary small mb-0">Requires macOS 26 (Tahoe)</p>
+        <p class="mb-4">Available now for macOS</p>
+        <div class="download-options">
+          <a href="https://apps.apple.com/app/contextify/id6753190666" class="app-store-badge">
+            <img src="assets/img/app-store-badge-dark-bg.svg" alt="Download on the App Store" height="48">
+          </a>
+          <span class="download-divider">or</span>
+          <a href="https://github.com/PeterPym/contextify/releases/download/v1.0.1/Contextify-1.0.1.dmg" class="dmg-download">
+            Download DMG
+          </a>
+        </div>
+        <p class="text-body-secondary small mt-4 mb-0">Requires macOS 26 (Tahoe) with Apple Intelligence</p>
+        <p class="mt-3 mb-0"><a href="download/" class="text-secondary">Compare versions</a></p>
       </div>
     </div>
   </section>
@@ -136,20 +182,49 @@
   <footer class="py-4 mt-5">
     <div class="container text-center">
       <div class="mb-3">
+        <a href="download/" class="mx-2">Download</a>
+        <span class="text-secondary">|</span>
         <a href="privacy/" class="mx-2">Privacy</a>
         <span class="text-secondary">|</span>
         <a href="terms/" class="mx-2">Terms</a>
         <span class="text-secondary">|</span>
         <a href="support/" class="mx-2">Support</a>
         <span class="text-secondary">|</span>
-        <a href="mailto:hello@contextify.sh" class="mx-2">Contact</a>
+        <a href="mailto:support@contextify.sh" class="mx-2">Contact</a>
       </div>
       <div class="footer-brand fw-bold fs-4 mb-2">Contextify</div>
+      <p class="text-secondary small mb-2">From the creator of <a href="https://github.com/banagale/filekitty" class="text-secondary">FileKitty</a></p>
       <p class="text-secondary small mb-0">&copy; 2025 Contextify</p>
     </div>
   </footer>
 
+  <!-- Lightbox -->
+  <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+    <img id="lightbox-img" src="" alt="">
+  </div>
+
   <!-- Bootstrap 5.3 JS (for navbar collapse on mobile) -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+  <script>
+    // Lightbox functionality
+    document.querySelectorAll('.feature-image').forEach(img => {
+      img.style.cursor = 'zoom-in';
+      img.onclick = function() {
+        document.getElementById('lightbox-img').src = this.src;
+        document.getElementById('lightbox').classList.add('active');
+        document.body.style.overflow = 'hidden';
+      };
+    });
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeLightbox();
+    });
+  </script>
 </body>
 </html>

@@ -221,6 +221,17 @@ Use the hybrid model (optimistic for user-visible changes, database-driven for b
 
 ## Operations
 
+**Repositories:**
+
+| Repo | URL | Purpose |
+|------|-----|---------|
+| **Private** | `github.com/banagale/contextify` | Development, CI, internal |
+| **Public** | `github.com/PeterPym/contextify` | Releases, issues, public-facing |
+
+- **DMG releases** go on the PUBLIC repo only
+- **Issue links** on website/app go to PUBLIC repo
+- Local clone of public repo: `~/code/projects/contextify-public-repo/`
+
 **Database:**
 
 - Default location: `~/Library/Application Support/Contextify/contextify.db`

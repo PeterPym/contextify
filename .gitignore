@@ -86,3 +86,6 @@ website/review-4a125b1d/drafts/
 build/Contextify.xcarchive/
 build/appstore/
 build/archives/
+
+# Website deploy artifacts
+website/.version
