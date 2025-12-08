@@ -1,0 +1,16 @@
+# GoAccess Real-Time Service
+# Location: /etc/systemd/system/goaccess.service
+
+[Unit]
+Description=GoAccess Real-Time Web Log Analyzer
+After=network.target nginx.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/bin/bash -c "tail -n +1 -F /var/log/nginx/contextify.access.log | grep --line-buffered -v '/stats/' | goaccess - -o /var/www/contextify.sh/stats/index.html --real-time-html --config-file=/etc/goaccess/goaccess.conf --ws-url=wss://contextify.sh/stats/ws --port=7890 --addr=127.0.0.1"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

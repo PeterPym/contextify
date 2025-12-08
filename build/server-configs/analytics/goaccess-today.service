@@ -1,0 +1,9 @@
+# GoAccess Today Report Service
+# Location: /etc/systemd/system/goaccess-today.service
+
+[Unit]
+Description=GoAccess Today Report Generator
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/goaccess-today.sh

@@ -1,0 +1,12 @@
+# GoAccess Today Report Timer (every minute)
+# Location: /etc/systemd/system/goaccess-today.timer
+
+[Unit]
+Description=Run GoAccess Today Report every minute
+
+[Timer]
+OnCalendar=*:*:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

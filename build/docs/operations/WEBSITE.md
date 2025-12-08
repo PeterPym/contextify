@@ -3,6 +3,7 @@
 ## Website: contextify.sh
 
 **Platform:** Static HTML, Nginx, Let's Encrypt SSL
+**Analytics:** GoAccess (server-side, no JS) - see [Website Analytics](website-analytics.md)
 
 ## Quick Deployment
 
@@ -49,6 +50,20 @@ Rsync-based, one-command deployment to production server.
 2. Run deployment script: `./scripts/deploy-website.sh`
 3. Script syncs files to server via rsync
 4. Verify changes at https://contextify.sh
+
+## Analytics
+
+**Dashboard:** https://contextify.sh/stats/menu.html (password protected)
+
+Server-side analytics using GoAccess log analysis. No client-side JavaScript.
+
+| View | Update Frequency |
+|------|------------------|
+| Live (last hour) | Every 30 seconds |
+| Today | Every minute |
+| All Time | Real-time WebSocket |
+
+**Full documentation:** [Website Analytics](website-analytics.md)
 
 ## Maintenance
 

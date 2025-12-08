@@ -1,0 +1,12 @@
+# GoAccess Live Report Timer (every 30 seconds)
+# Location: /etc/systemd/system/goaccess-live.timer
+
+[Unit]
+Description=Run GoAccess Live Report every 30 seconds
+
+[Timer]
+OnCalendar=*:*:00,30
+Persistent=true
+
+[Install]
+WantedBy=timers.target

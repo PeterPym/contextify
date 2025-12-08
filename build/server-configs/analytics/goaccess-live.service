@@ -1,0 +1,9 @@
+# GoAccess Live Report Service
+# Location: /etc/systemd/system/goaccess-live.service
+
+[Unit]
+Description=GoAccess Live Report (Last Hour)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/goaccess-live.sh

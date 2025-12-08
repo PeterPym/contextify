@@ -30,6 +30,14 @@ This directory contains operational documentation for:
 - SSL certificate renewal
 - Deployment workflow
 
+### [Website Analytics](website-analytics.md)
+**Topics:** Server-side analytics with GoAccess
+- GoAccess configuration and setup
+- Live, Today, and All Time dashboards
+- Filtering (bots, owner IPs, error codes)
+- Systemd services and timers
+- Config files: `build/server-configs/analytics/`
+
 ### [Database Locations](DATABASE-LOCATIONS.md)
 **Topics:** Database location management and custom paths
 - Default vs custom database locations
