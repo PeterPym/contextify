@@ -2,7 +2,17 @@
 #
 # deploy-website.sh - Deploy contextify.sh website to server
 #
-# Usage: ./scripts/deploy-website.sh [--dry-run]
+# Usage: ./scripts/deploy-website.sh [--dry-run] [--force]
+#
+# Options:
+#   --dry-run  Preview files without uploading
+#   --force    Skip git clean/pushed checks
+#
+# Pre-flight checks (unless --force):
+#   - Working tree must be clean (no uncommitted changes in website/)
+#   - Current branch must be pushed to origin
+#
+# Writes .version file to deployed site with git hash and timestamp
 #
 
 set -e
@@ -27,6 +37,39 @@ fi
 
 echo -e "${YELLOW}Deploying contextify.sh website...${NC}"
 echo ""
+
+# Pre-flight checks (skip with --force)
+FORCE=false
+if [[ "$1" == "--force" ]] || [[ "$2" == "--force" ]]; then
+    FORCE=true
+fi
+
+if ! $FORCE; then
+    # Check for clean working tree
+    if ! git diff --quiet HEAD -- "$LOCAL_DIR"; then
+        echo -e "${RED}Error: Uncommitted changes in $LOCAL_DIR${NC}"
+        echo "Commit your changes or use --force to deploy anyway"
+        exit 1
+    fi
+
+    # Check if pushed to origin
+    LOCAL_HASH=$(git rev-parse HEAD)
+    REMOTE_HASH=$(git rev-parse @{u} 2>/dev/null || echo "no-upstream")
+
+    if [[ "$REMOTE_HASH" == "no-upstream" ]]; then
+        echo -e "${RED}Error: No upstream branch configured${NC}"
+        echo "Push your branch or use --force to deploy anyway"
+        exit 1
+    fi
+
+    if [[ "$LOCAL_HASH" != "$REMOTE_HASH" ]]; then
+        echo -e "${RED}Error: Local commits not pushed to origin${NC}"
+        echo "Push your changes or use --force to deploy anyway"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Git state clean and pushed${NC}"
+fi
 
 # Validate local directory exists
 if [ ! -d "$LOCAL_DIR" ]; then
@@ -77,6 +120,25 @@ if $DRY_RUN; then
     echo -e "${YELLOW}DRY RUN - no files will be uploaded${NC}"
     exit 0
 fi
+
+# Generate version file with deploy info
+GIT_HASH=$(git rev-parse HEAD)
+GIT_SHORT=$(git rev-parse --short HEAD)
+GIT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+echo -e "${YELLOW}Writing deploy info...${NC}"
+cat > "$LOCAL_DIR/.version" << EOF
+{
+  "commit": "$GIT_HASH",
+  "short": "$GIT_SHORT",
+  "branch": "$GIT_BRANCH",
+  "deployed": "$DEPLOY_TIME"
+}
+EOF
+echo "  Commit: $GIT_SHORT ($GIT_BRANCH)"
+echo "  Time:   $DEPLOY_TIME"
+echo ""
 
 # Create temp upload directory on server
 echo -e "${YELLOW}Creating temp upload directory on server...${NC}"
