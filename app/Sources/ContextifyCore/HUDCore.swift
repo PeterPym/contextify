@@ -639,22 +639,38 @@ public final class HUDViewModel {
         discoveredRoot = canonical
       }
     } else if let path = persistedPath, !path.isEmpty {
-      let (canonical, scoped) = await Task.detached {
-        let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        let scoped = HUDPreferences.resolveBookmark() ?? canonical
-        return (canonical, scoped)
-      }.value
-      if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
-        lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path, privacy: .public)")
+      // App Store builds: Skip persisted root restoration without a bookmark.
+      //
+      // The persisted root (projectRootURL) is used for git branch monitoring, which requires
+      // filesystem access to the project's .git directory. In sandboxed builds:
+      // - We only have access to transcript directories (~/.claude, ~/.codex), not project directories
+      // - Git monitoring is disabled anyway (can't access .git without explicit user grant)
+      // - Project selection is handled by the coordinator using database state, not this path
+      //
+      // Without a security-scoped bookmark, attempting to restore would fail and potentially
+      // trigger a "can't access project root" modal. So we skip entirely and let the coordinator
+      // handle project context via its own flow.
+      let resolvedBookmark = await Task.detached { HUDPreferences.resolveBookmark() }.value
+      if Sandbox.isSandboxed && resolvedBookmark == nil {
+        lifecycleLog.info("[HUD-STARTUP] Sandboxed: skipping persisted root (no bookmark, git monitoring disabled anyway)")
       } else {
-        projectRootURL = canonical
-        lastPersistedPath = canonical.path
-        lastPersistedAt = Date()
-        persistRootIfNeeded(canonical, force: true)
-        updateSecurityScope(for: scoped, persisted: true)
-        updateGitInfo()
-        updateHeadWatcher()
-        discoveredRoot = canonical
+        let (canonical, scoped) = await Task.detached {
+          let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+          let scoped = HUDPreferences.resolveBookmark() ?? canonical
+          return (canonical, scoped)
+        }.value
+        if SandboxPathFilter.isSandboxContainerPath(canonical.path) {
+          lifecycleLog.warning("[HUD-SANDBOX-FILTER] Ignoring sandbox persisted root at \(canonical.path, privacy: .public)")
+        } else {
+          projectRootURL = canonical
+          lastPersistedPath = canonical.path
+          lastPersistedAt = Date()
+          persistRootIfNeeded(canonical, force: true)
+          updateSecurityScope(for: scoped, persisted: true)
+          updateGitInfo()
+          updateHeadWatcher()
+          discoveredRoot = canonical
+        }
       }
     }
 
@@ -676,6 +692,7 @@ public final class HUDViewModel {
   @MainActor
   private func handleCoordinatorUpdate(_ context: ActiveProjectContext) async {
     lifecycleLog.debug("📍 HUDViewModel: Received coordinator update: \(context.displayName) (path: \(context.path, privacy: .public))")
+    lifecycleLog.info("[COORD-UPDATE] Handling coordinator update: project=\(context.displayName, privacy: .public) path=\(context.path, privacy: .public) hasBookmark=\(context.bookmark != nil)")
 
     // Update project root URL and branch from coordinator context
     let url = URL(fileURLWithPath: context.path)
@@ -696,14 +713,18 @@ public final class HUDViewModel {
           relativeTo: nil,
           bookmarkDataIsStale: &isStale
         )
+        lifecycleLog.info("[COORD-UPDATE] Resolved bookmark: scopedURL=\(scopedURL.path, privacy: .public) isStale=\(isStale)")
         updateSecurityScope(for: scopedURL, persisted: true)
 
         if isStale {
           watcherLog.warning("Security-scoped bookmark is stale for \(context.displayName)")
         }
       } catch {
+        lifecycleLog.error("[COORD-UPDATE] Failed to resolve bookmark: \(error.localizedDescription, privacy: .public)")
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
+    } else {
+      lifecycleLog.warning("[COORD-UPDATE] No bookmark in context for \(context.displayName, privacy: .public)")
     }
 
     // Update file watchers for new project
@@ -1209,25 +1230,35 @@ public final class HUDViewModel {
 
   private func updateSecurityScope(for url: URL, persisted: Bool) {
     #if os(macOS)
+    lifecycleLog.debug("[SECURITY-SCOPE] updateSecurityScope called: url=\(url.path, privacy: .public) persisted=\(persisted)")
+
     securityScopedURL?.stopAccessingSecurityScopedResource()
     securityScopedURL = nil
     if !Sandbox.isSandboxed {
       if FileManager.default.isReadableFile(atPath: url.path) {
+        lifecycleLog.debug("[SECURITY-SCOPE] Non-sandboxed: path readable, returning")
         return
       } else if persisted {
+        lifecycleLog.warning("[SECURITY-SCOPE] Non-sandboxed: persisted path not readable, clearing: \(url.path, privacy: .public)")
         HUDPreferences.clearPersistedRoot()
-        alertMessage = "Stored project root can’t be accessed."
+        alertMessage = "Stored project root can't be accessed."
       }
       return
     }
-    if url.startAccessingSecurityScopedResource() {
+    // Sandboxed path
+    let accessGranted = url.startAccessingSecurityScopedResource()
+    lifecycleLog.debug("[SECURITY-SCOPE] Sandboxed: startAccessingSecurityScopedResource returned \(accessGranted)")
+    if accessGranted {
       securityScopedURL = url
     } else if persisted {
       var isDir: ObjCBool = false
-      let readableDir = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+      let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+      let readableDir = exists && isDir.boolValue
+      lifecycleLog.warning("[SECURITY-SCOPE] Sandboxed: security scope failed for persisted root. exists=\(exists) isDir=\(isDir.boolValue) path=\(url.path, privacy: .public)")
       if !readableDir {
+        lifecycleLog.error("[SECURITY-SCOPE] Sandboxed: clearing persisted root and showing alert")
         HUDPreferences.clearPersistedRoot()
-        alertMessage = "Stored project root can’t be accessed with current permissions."
+        alertMessage = "Stored project root can't be accessed with current permissions."
       }
     }
     #endif

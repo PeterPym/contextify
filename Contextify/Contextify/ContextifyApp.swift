@@ -302,8 +302,24 @@ struct ContextifyApp: App {
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
         let startupLog = Logger(subsystem: "dev.contextify", category: "Projects")
         startupLog.info("[WELCOME-TRIGGERED] Welcome modal notification received")
+
+        // App Store builds use the onboarding wizard for first-run UX.
+        // The welcome modal is only for DMG builds which don't have the wizard.
+        #if APPSTORE_BUILD
+        startupLog.info("[WELCOME-SKIP] App Store build - onboarding wizard handles first-run, skipping welcome modal")
+        return
+        #else
+        // Guard: Don't show welcome modal if projects already exist (race condition protection)
+        let tabProjectCount = ProjectSwitcherState.shared.tabProjects.count
+        let vmProjectCount = projectsViewModel?.projects.count ?? 0
+        if tabProjectCount > 0 || vmProjectCount > 0 {
+          startupLog.info("[WELCOME-SKIP] Skipping welcome modal - projects already exist (tabs=\(tabProjectCount), vm=\(vmProjectCount))")
+          return
+        }
+
         startupLog.info("[WELCOME-STATE] Setting showWelcomeModal = true")
         showWelcomeModal = true
+        #endif
       }
       // NOTE: Database reset in App Store builds requires restart.
       // No hot-swap notification handling needed - next launch shows wizard.
