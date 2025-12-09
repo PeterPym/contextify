@@ -31,6 +31,11 @@ TEMP_UPLOAD_DIR="/home/web/contextify-upload"
 ARCHIVE_DIR="/var/www/contextify-archives"
 KEEP_ARCHIVES=5
 
+# SSH connection multiplexing - reuse single connection to avoid rate limiting
+SSH_CONTROL_PATH="/tmp/deploy-ssh-$$"
+SSH_OPTS="-o ControlMaster=auto -o ControlPath=$SSH_CONTROL_PATH -o ControlPersist=60"
+export RSYNC_RSH="ssh $SSH_OPTS"
+
 # Server-side directories to preserve (not in local website/)
 # These are generated/maintained on the server and should never be deleted
 PROTECTED_DIRS=(
@@ -49,13 +54,16 @@ NC='\033[0m'
 CACHE_BUST_APPLIED=false
 GIT_SHORT=""
 
-cleanup_cache_bust() {
+cleanup() {
+    # Restore cache-busting placeholders
     if [[ "$CACHE_BUST_APPLIED" == "true" && -n "$GIT_SHORT" ]]; then
         find "$LOCAL_DIR" -name "*.html" -type f -exec sed -i '' "s/?v=$GIT_SHORT/?v=__DEPLOY_HASH__/g" {} \; 2>/dev/null || true
         rm -f "$LOCAL_DIR/.version" 2>/dev/null || true
     fi
+    # Close SSH control connection
+    ssh -O exit -o ControlPath="$SSH_CONTROL_PATH" "$SERVER" 2>/dev/null || true
 }
-trap cleanup_cache_bust EXIT
+trap cleanup EXIT
 
 # Parse arguments
 DRY_RUN=false
@@ -174,7 +182,7 @@ done
 
 # Check for unexpected server content that will be removed
 echo -e "${YELLOW}Checking server for content that will be affected...${NC}"
-SERVER_ITEMS=$(ssh "$SERVER" "ls -1 $REMOTE_DIR 2>/dev/null" || echo "")
+SERVER_ITEMS=$(ssh $SSH_OPTS "$SERVER" "ls -1 $REMOTE_DIR 2>/dev/null" || echo "")
 
 if [[ -n "$SERVER_ITEMS" ]]; then
     WILL_DELETE=()
@@ -283,7 +291,7 @@ echo -e "${YELLOW}Archiving current site to: ${ARCHIVE_DIR}/${ARCHIVE_NAME}${NC}
 echo -e "${CYAN}  This backup can be used to rollback if needed.${NC}"
 echo ""
 
-ssh "$SERVER" "
+ssh $SSH_OPTS "$SERVER" "
     sudo mkdir -p $ARCHIVE_DIR
     if [ -d '$REMOTE_DIR' ] && [ \"\$(ls -A $REMOTE_DIR 2>/dev/null)\" ]; then
         echo '  Creating archive (excluding protected dirs)...'
@@ -315,7 +323,7 @@ echo -e "${BOLD}${CYAN}  Uploading new content${NC}"
 echo -e "${BOLD}${CYAN}────────────────────────────────────────────────────────────${NC}"
 echo ""
 echo -e "${YELLOW}Creating temp upload directory on server...${NC}"
-ssh "$SERVER" "mkdir -p $TEMP_UPLOAD_DIR"
+ssh $SSH_OPTS "$SERVER" "mkdir -p $TEMP_UPLOAD_DIR"
 
 # Upload files via rsync (quiet mode with stats summary)
 echo -e "${YELLOW}Uploading files...${NC}"
@@ -334,7 +342,7 @@ echo ""
 
 # Move to final location and set permissions
 echo -e "${YELLOW}Moving to /var/www and setting permissions...${NC}"
-ssh "$SERVER" "sudo rsync -a --delete $(for d in "${PROTECTED_DIRS[@]}"; do echo "--exclude '$d'"; done) $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
+ssh $SSH_OPTS "$SERVER" "sudo rsync -a --delete $(for d in "${PROTECTED_DIRS[@]}"; do echo "--exclude '$d'"; done) $TEMP_UPLOAD_DIR/ $REMOTE_DIR/ && \
                sudo chown -R www-data:www-data $REMOTE_DIR && \
                sudo find $REMOTE_DIR -type f -exec chmod 644 {} \; && \
                sudo find $REMOTE_DIR -type d -exec chmod 755 {} \; && \

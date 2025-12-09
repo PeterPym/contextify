@@ -126,3 +126,14 @@ Server-side analytics using GoAccess log analysis. No client-side JavaScript.
 **Server Access:**
 - SSH: `ssh web@banagale.com`
 - Requires SSH key authentication
+
+**Update rsync (if deploy script shows compatibility errors):**
+```bash
+ssh web@banagale.com "sudo apt update && sudo apt install -y rsync"
+```
+The deploy script uses rsync features that require a recent version. If you see errors like `unrecognized option`, update rsync on the server.
+
+**Reboot server (via DigitalOcean console if SSH is down):**
+- Log into DigitalOcean dashboard
+- Select the droplet (143.198.70.216)
+- Use Power > Power cycle or Access > Console
