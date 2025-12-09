@@ -37,66 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 2 items - App Store permission bug, public launch
+- **P0 (Launch Critical):** 1 item - Public launch
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 86
+**Total Active Items:** 85
 
 ---
 
-# P0 (Launch Critical) - 2 Items
-
----
-
-## #P0-SECOND-PERMISSION-IGNORED: Second permission grant ignored by discovery
-
-**Status:** Bug - blocks users who grant both Claude Code and Codex permissions
-**Priority:** P0 (App Store UX broken for dual-CLI users)
-**Effort:** 4-6 hours
-**Found:** 2025-12-08 during staged permission grant QA testing
-
-- [ ] #P0-SECOND-PERMISSION-IGNORED: Fix second permission grant not being used by discovery
-
-**Problem:**
-When granting permissions for both Claude Code and Codex in staged fashion:
-- The FIRST permission granted works (projects discovered)
-- The SECOND permission granted is IGNORED (0 projects from that provider)
-
-**QA Test Results:**
-1. **Claude first, then Codex:** Claude: 23 projects, Codex: 0 (broken)
-2. **Codex first, then Claude:** Codex: 15 projects, Claude: 0 (broken)
-
-The bug affects WHICHEVER provider is granted second, not a specific provider.
-
-**Evidence from logs:**
-```
-# Test 1: Claude first (works), Codex second (broken)
-22:11:15 [CODEX-VALIDATE] ✅ Validation succeeded
-22:11:36 [DISC-LIGHT] Raw discoveries: 23 (Claude: 23, Codex: 0)
-
-# Test 2: Codex first (works), Claude second (broken)
-22:21:47 [CLAUDE] Found Claude Code transcripts - validation succeeded
-22:22:10 [DISC-LIGHT] Raw discoveries: 15 (Claude: 0, Codex: 15)
-```
-
-**Root Cause (suspected):**
-LightweightDiscovery or TranscriptAccessProvider is only loading/using ONE bookmark, not both. Possible caching issue or single-bookmark assumption in the code.
-
-**Files to investigate:**
-- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
-- `app/Sources/ContextifyCore/Sandbox/TranscriptAccessProvider.swift`
-- `app/Sources/ContextifyCore/Sandbox/BookmarkStore.swift`
-
-**Acceptance Criteria:**
-- [ ] Granting Claude Code then Codex: both providers discovered
-- [ ] Granting Codex then Claude Code: both providers discovered
-- [ ] Discovery refresh after second permission picks up new provider
-
-**Log files:**
-- `/private/tmp/transcript-queue-monitor-20251208-221026.log` (Claude first)
-- `/private/tmp/transcript-queue-monitor-20251208-222026.log` (Codex first)
+# P0 (Launch Critical) - 1 Item
 
 ---
 
