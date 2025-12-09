@@ -46,7 +46,7 @@ doc_references:
 
 ---
 
-# P0 (Launch Critical) - 4 Items
+# P0 (Launch Critical) - 5 Items
 
 ---
 
@@ -71,6 +71,28 @@ doc_references:
 5. For App Store: Submit 1.0.2 update with fixed icon
 
 **Reference:** `build/design/brand/app-icon.md`, `build/design/brand/logomark/`
+
+---
+
+## Hero Background Resize Bug (1 item)
+
+**Status:** Bug - visible on landing page
+**Priority:** P0 (affects first impression before Show HN)
+**Effort:** 30 min - 1 hour
+
+- [ ] #P0-HERO-SWOOPY: Fix or remove swoopy background on landing page
+
+**Problem:**
+The swoopy/wave background in the hero section doesn't resize correctly at different viewport sizes.
+
+**Options:**
+1. Fix the CSS so it scales properly (responsive background-size/position)
+2. Remove it entirely and use a solid color or gradient
+3. Replace with a simpler SVG that scales cleanly
+
+**Files:**
+- `website/index.html` - hero section
+- `website/assets/css/` - styles
 
 ---
 
