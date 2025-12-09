@@ -332,6 +332,42 @@ Extract large/binary content to local file storage, store references in DB.
 - TODOS.md#P2-IMAGE-RENDERING - Would benefit from blob storage for efficient image loading
 - `app/Sources/ContextifyCore/Database/HooverEngine.swift:531-536` - 35MB buffer limit references this TODO
 
+### P4-TRANSCRIPT-DISPLAY-DELAY: Investigate Delayed/Failed Message Display
+
+**Status:** Not started
+**Priority:** P4 (needs investigation, intermittent)
+**Effort:** Medium (investigation + potential fixes)
+**Found:** 2025-12-08
+
+- [ ] Investigate and fix delayed or failed transcript message display
+
+**Problem:**
+User reported new Claude conversations not being picked up. Investigation revealed multiple potential issues in the ingestion pipeline.
+
+**Issues Identified:**
+
+1. **Validator rejects `file-history-snapshot` records (CONFIRMED BUG)**
+   - New Claude Code transcripts start with `file-history-snapshot` lacking top-level `uuid`/`timestamp`
+   - Validator fails, preflight cache marks transcript as "failed", hoover skips
+   - Location: `TranscriptValidator.swift:219-222`
+
+2. **Viewport not updating after entry creation**
+   - Logs showed `Added 1 new entries` but `[VIEWPORT-SKIP] Viewport unchanged`
+   - Entries created in DB but UI not reflecting them
+
+3. **Streaming messages not displayed (BY DESIGN)**
+   - Assistant messages with `stop_reason: null` are buffered until complete
+   - May cause perceived lag during active responses
+
+**Reference:**
+- `/tmp/transcript-display-delay-investigation-2025-12-08.md` - Full investigation notes
+- Log files: `/private/tmp/transcript-queue-monitor-20251208-111748*.log`
+
+**Files to investigate:**
+- `app/Sources/ContextifyCore/Database/TranscriptValidator.swift` - validator logic
+- `app/Sources/ContextifyCore/Timeline/ConversationMonitor.swift` - viewport updates
+- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift` - message parsing
+
 ---
 
 ## P5 (Research / Exploratory)
