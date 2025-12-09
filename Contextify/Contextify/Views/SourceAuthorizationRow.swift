@@ -110,8 +110,12 @@ struct SourceAuthorizationRow: View {
         if let auth = auths.first {
           onAuthorizationChanged(auth)
           log.info("[PERMISSIONS] ✅ Granted access for \(source.rawValue, privacy: .public)")
-          log.warning("[PERMISSIONS] ⚠️ NOTE: Access granted but reconfigureAccessProvider() NOT called from Settings flow")
-          log.warning("[PERMISSIONS] ⚠️ Discovery will NOT pick up this permission until app restart or manual reconfigure")
+
+          // Trigger access provider reconfiguration and discovery refresh.
+          // This notification is handled by ContextifyApp which calls reconfigureAccessProvider()
+          // and then triggers discovery to pick up projects from the newly-authorized source.
+          log.info("[PERMISSIONS] 📣 Posting permissionAuthorizationDidChange notification")
+          NotificationCenter.default.post(name: .permissionAuthorizationDidChange, object: source)
         }
       } catch FolderAccessError.userCancelled {
         log.info("[PERMISSIONS] User cancelled access for \(source.rawValue, privacy: .public)")

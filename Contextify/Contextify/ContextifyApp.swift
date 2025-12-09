@@ -321,6 +321,26 @@ struct ContextifyApp: App {
         showWelcomeModal = true
         #endif
       }
+      .onReceive(NotificationCenter.default.publisher(for: .permissionAuthorizationDidChange)) { notification in
+        // Handle permission grant from Settings > Permissions flow.
+        // This reconfigures the access provider with both permissions and triggers discovery.
+        let source = notification.object as? SourceID
+        let permLog = Logger(subsystem: "dev.contextify", category: "Permissions")
+        permLog.info("[PERMISSIONS] 📬 Received permissionAuthorizationDidChange for \(source?.rawValue ?? "unknown", privacy: .public)")
+
+        Task { @MainActor in
+          permLog.info("[PERMISSIONS] 🔄 Reconfiguring access provider after Settings permission grant...")
+          await Self.reconfigureAccessProvider(
+            folderAccessController: folderAccessController,
+            projectsVM: projectsViewModel
+          )
+
+          permLog.info("[PERMISSIONS] 🔍 Triggering discovery refresh to pick up new permissions...")
+          await AppStateOrchestrator.shared.startup()
+
+          permLog.info("[PERMISSIONS] ✅ Permission reconfiguration complete")
+        }
+      }
       // NOTE: Database reset in App Store builds requires restart.
       // No hot-swap notification handling needed - next launch shows wizard.
     }
