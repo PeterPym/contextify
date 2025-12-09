@@ -307,10 +307,10 @@ public final class StartupCoordinator {
 
     /// Complete setup for a project that was already set via `handleExternalProjectSwitch`.
     ///
-    /// This runs the remaining phases that `handleExternalProjectSwitch` skips:
-    /// - Create security-scoped bookmark
+    /// Both `handleExternalProjectSwitch` and `switchProject` now create bookmarks,
+    /// so this method primarily handles:
     /// - Persist path for next launch
-    /// - Re-publish with complete context (including bookmark)
+    /// - Re-publish context (ensures observers are notified)
     ///
     /// Called from `start()` when it detects `current` is already set.
     private func completeSetupForExternalProject(_ existingContext: ActiveProjectContext) async {

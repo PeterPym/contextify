@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import ContextifyCore
 import OSLog
 #if canImport(FoundationModels)
@@ -84,13 +85,62 @@ struct HelpCommands: Commands {
   }
 }
 
-// Shared container for background tasks that need lifecycle management
+// Shared container for background tasks that need lifecycle management.
+// This singleton exists for the app's lifetime, ensuring notification observers
+// are always active regardless of which windows are open.
 @MainActor
 final class AppLifecycleState {
   static let shared = AppLifecycleState()
   var projectMonitoringTask: Task<Void, Never>?
+  private var permissionObserver: AnyCancellable?
+  private let permLog = Logger(subsystem: "dev.contextify", category: "Permissions")
 
   private init() {}
+
+  /// Set up permission change observer. Called once from ContextifyApp.init().
+  /// This ensures the observer exists for the app's lifetime, not tied to any window.
+  func setupPermissionObserver(
+    folderAccessController: FolderAccessController,
+    projectsVM: ProjectsViewModel?
+  ) {
+    guard permissionObserver == nil else {
+      permLog.debug("[PERMISSIONS] Observer already set up, skipping")
+      return
+    }
+
+    permissionObserver = NotificationCenter.default
+      .publisher(for: .permissionAuthorizationDidChange)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] notification in
+        guard let self = self else { return }
+        let source = notification.object as? SourceID
+        self.permLog.info("[PERMISSIONS] 📬 Received permissionAuthorizationDidChange for \(source?.rawValue ?? "unknown", privacy: .public)")
+
+        // Skip if onboarding hasn't completed yet - the onboarding flow handles its own startup.
+        // This observer is for Settings > Permissions grants after initial setup.
+        #if APPSTORE_BUILD
+        guard HUDPreferences.hasCompletedAppStoreOnboarding() else {
+          self.permLog.info("[PERMISSIONS] ⏭️ Skipping reconfiguration - onboarding not complete (onboarding handles its own startup)")
+          return
+        }
+        #endif
+
+        Task { @MainActor in
+          self.permLog.info("[PERMISSIONS] 🔄 Reconfiguring access provider after Settings permission grant...")
+          await ContextifyApp.reconfigureAccessProvider(
+            folderAccessController: folderAccessController,
+            projectsVM: projectsVM
+          )
+
+          self.permLog.info("[PERMISSIONS] 🔍 Triggering discovery refresh to pick up new permissions...")
+          await AppStateOrchestrator.shared.startup()
+
+          self.permLog.info("[PERMISSIONS] ✅ Permission reconfiguration complete")
+        }
+      }
+
+    permLog.info("[PERMISSIONS] 🔔 Permission observer set up in AppLifecycleState")
+  }
 }
 
 @main
@@ -221,6 +271,7 @@ struct ContextifyApp: App {
       startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
     }
     #endif
+
   }
 
   var body: some Scene {
@@ -321,28 +372,8 @@ struct ContextifyApp: App {
         showWelcomeModal = true
         #endif
       }
-      .onReceive(NotificationCenter.default.publisher(for: .permissionAuthorizationDidChange)) { notification in
-        // Handle permission grant from Settings > Permissions flow.
-        // This reconfigures the access provider with both permissions and triggers discovery.
-        let source = notification.object as? SourceID
-        let permLog = Logger(subsystem: "dev.contextify", category: "Permissions")
-        permLog.info("[PERMISSIONS] 📬 Received permissionAuthorizationDidChange for \(source?.rawValue ?? "unknown", privacy: .public)")
-
-        Task { @MainActor in
-          permLog.info("[PERMISSIONS] 🔄 Reconfiguring access provider after Settings permission grant...")
-          await Self.reconfigureAccessProvider(
-            folderAccessController: folderAccessController,
-            projectsVM: projectsViewModel
-          )
-
-          permLog.info("[PERMISSIONS] 🔍 Triggering discovery refresh to pick up new permissions...")
-          await AppStateOrchestrator.shared.startup()
-
-          permLog.info("[PERMISSIONS] ✅ Permission reconfiguration complete")
-        }
-      }
+      // NOTE: Permission notification observer is in AppLifecycleState (not tied to window).
       // NOTE: Database reset in App Store builds requires restart.
-      // No hot-swap notification handling needed - next launch shows wizard.
     }
     // Width minimum: 340 (ContentView.timelineMin) + 16 (padding) + ~9 (chrome) = ~365pt
     // Height minimum: 360 (ContentView.minHeight) + ~25 (titlebar)
@@ -550,19 +581,19 @@ struct ContextifyApp: App {
     )
 
     // Reconfigure orchestrators with new provider
-    let sharedOrchestrator = try? TranscriptOrchestrator(
-      dbManager: .shared,
-      accessProvider: newProvider
-    )
+    do {
+      let sharedOrchestrator = try TranscriptOrchestrator(
+        dbManager: .shared,
+        accessProvider: newProvider
+      )
 
-    await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
-    if let orchestrator = sharedOrchestrator {
-      ConversationMonitor.shared.configureSharedOrchestrator(orchestrator)
-      ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
+      await AppStateOrchestrator.shared.configureAccessProvider(newProvider)
+      ConversationMonitor.shared.configureSharedOrchestrator(sharedOrchestrator)
+      ProjectSwitcherState.shared.configureSharedOrchestrator(sharedOrchestrator)
       projectsVM?.applyAccessProvider(newProvider, folderAccessController: folderAccessController)
       log.info("[RECONFIG-ACCESS] ✅ Shared orchestrators reconfigured with new access provider")
-    } else {
-      log.error("[RECONFIG-ACCESS-ERROR] Failed to build shared orchestrator with new access provider")
+    } catch {
+      log.error("[RECONFIG-ACCESS-ERROR] Failed to build shared orchestrator: \(error.localizedDescription, privacy: .public)")
     }
     #endif
   }
@@ -730,6 +761,13 @@ struct ContextifyApp: App {
         timeline.configureSharedOrchestrator(orchestrator)
         ProjectSwitcherState.shared.configureSharedOrchestrator(orchestrator)
         ProjectSwitcherState.shared.start()
+
+        // Set up permission observer now that we have a valid projectsViewModel.
+        // The guard in setupPermissionObserver ensures this only runs once.
+        AppLifecycleState.shared.setupPermissionObserver(
+          folderAccessController: folderAccessController,
+          projectsVM: vm
+        )
       }
 
       guard let vm = projectsViewModel else {
