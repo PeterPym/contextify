@@ -105,15 +105,18 @@ struct SourceAuthorizationRow: View {
 
     Task { @MainActor in
       do {
+        log.info("[PERMISSIONS] ▶ Requesting access for \(source.rawValue, privacy: .public)...")
         let auths = try await controller.requestAccess(for: [source])
         if let auth = auths.first {
           onAuthorizationChanged(auth)
-          log.info("[PERMISSIONS] Granted access for \(source.rawValue)")
+          log.info("[PERMISSIONS] ✅ Granted access for \(source.rawValue, privacy: .public)")
+          log.warning("[PERMISSIONS] ⚠️ NOTE: Access granted but reconfigureAccessProvider() NOT called from Settings flow")
+          log.warning("[PERMISSIONS] ⚠️ Discovery will NOT pick up this permission until app restart or manual reconfigure")
         }
       } catch FolderAccessError.userCancelled {
-        log.info("[PERMISSIONS] User cancelled access for \(source.rawValue)")
+        log.info("[PERMISSIONS] User cancelled access for \(source.rawValue, privacy: .public)")
       } catch {
-        log.error("[PERMISSIONS] Failed to grant access for \(source.rawValue): \(error.localizedDescription)")
+        log.error("[PERMISSIONS] ❌ Failed to grant access for \(source.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
         errorMessage = error.localizedDescription
       }
       isRequesting = false

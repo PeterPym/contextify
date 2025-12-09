@@ -488,23 +488,40 @@ struct ContextifyApp: App {
     #endif
 
     let log = Logger(subsystem: "dev.contextify", category: "Projects")
-    log.info("[RECONFIG-ACCESS] Rebuilding access provider with newly granted permissions")
+    log.info("[RECONFIG-ACCESS] ▶ ENTRY - Rebuilding access provider with newly granted permissions")
 
     // Read fresh authorizations from FolderAccessController
     let claudeAuth = await folderAccessController.authorization(for: .claude)
     let codexAuth = await folderAccessController.authorization(for: .codex)
 
+    log.info("[RECONFIG-ACCESS] Claude auth status: \(claudeAuth?.status.rawValue ?? "nil", privacy: .public)")
+    log.info("[RECONFIG-ACCESS] Codex auth status: \(codexAuth?.status.rawValue ?? "nil", privacy: .public)")
+
     var claudeURL: URL? = nil
     if let auth = claudeAuth, auth.status == .authorized {
-      claudeURL = try? await folderAccessController.resolve(auth).url
+      do {
+        claudeURL = try await folderAccessController.resolve(auth).url
+        log.info("[RECONFIG-ACCESS] Claude URL resolved: \(claudeURL?.path ?? "nil", privacy: .public)")
+      } catch {
+        log.error("[RECONFIG-ACCESS] ❌ Claude bookmark resolution FAILED: \(error.localizedDescription, privacy: .public)")
+      }
+    } else {
+      log.info("[RECONFIG-ACCESS] Claude not authorized (auth=\(claudeAuth != nil), status=\(claudeAuth?.status.rawValue ?? "nil"))")
     }
 
     var codexURL: URL? = nil
     if let auth = codexAuth, auth.status == .authorized {
-      codexURL = try? await folderAccessController.resolve(auth).url
+      do {
+        codexURL = try await folderAccessController.resolve(auth).url
+        log.info("[RECONFIG-ACCESS] Codex URL resolved: \(codexURL?.path ?? "nil", privacy: .public)")
+      } catch {
+        log.error("[RECONFIG-ACCESS] ❌ Codex bookmark resolution FAILED: \(error.localizedDescription, privacy: .public)")
+      }
+    } else {
+      log.info("[RECONFIG-ACCESS] Codex not authorized (auth=\(codexAuth != nil), status=\(codexAuth?.status.rawValue ?? "nil"))")
     }
 
-    log.info("[RECONFIG-ACCESS] Claude: \(claudeURL != nil ? "authorized" : "nil"), Codex: \(codexURL != nil ? "authorized" : "nil")")
+    log.info("[RECONFIG-ACCESS] Summary - Claude: \(claudeURL != nil ? "✓" : "✗"), Codex: \(codexURL != nil ? "✓" : "✗")")
 
     // Create new provider with fresh URLs (start security scope in init)
     let newProvider = SandboxTranscriptAccessProvider(
