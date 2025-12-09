@@ -2,48 +2,61 @@
 
 ## Pre-Launch (Do First)
 
-- [ ] **Demo video** (optional but recommended for HN)
-  - Script: `build/launch/show-hn/video-script-v2.md`
-  - Keep under 2 min
-  - Show: timeline, search, Apple Intelligence summary
+- [x] **Demo video** - 3:39 video uploaded to YouTube
+  - Video: https://www.youtube.com/watch?v=FvrvRGp4C9M
+  - Channel: https://www.youtube.com/@contextify_sh
 
 - [ ] **OG image update** (P2 - can launch without)
   - Spec: `build/design/website/og-image-spec.md`
   - New copy: "Your Claude Code history deletes after 30 days / Contextify keeps it forever"
 
-- [ ] **App icon review** (P0 you mentioned - verify it's the angled one everywhere)
+- [ ] **App icon review** (P0 - verify it's the angled one everywhere)
 
-## Hacker News (Show HN)
+## Hacker News (Show HN) - PRIMARY
 
 - [x] Review/finalize post draft: `build/launch/show-hn/draft.md`
-- [x] Post title: "Show HN: Contextify – Your Claude Code history deletes after 30 days. This keeps it forever."
-- [ ] Best time: ~9-10am ET weekday (Mon-Thu acceptable, Tue-Thu optimal)
-- [ ] Be ready to respond to comments for first few hours
+- [x] Post title: "Show HN: Contextify - Your Claude Code history deletes after 30 days. This keeps it forever."
+- [x] YouTube link added to draft
+- [ ] Post at ~11am PT Tuesday (2pm ET)
+- [ ] Be ready to respond to comments for first 2-3 hours
 - [ ] Link: contextify.sh
 
-## Reddit
+## Reddit - BACKUP/SUPPLEMENT
 
-### r/MacApps
-- [ ] Title: "Contextify - macOS app that backs up and searches your Claude Code / Codex sessions"
-- [ ] Include screenshot
-- [ ] Mention: free, local-only, Apple Intelligence
+**Strategy:** See `build/launch/reddit/README.md` for full research.
 
-### r/ClaudeAI
-- [ ] Frame as solving the 30-day deletion problem
-- [ ] "Built this because I kept losing context"
+**Timing:**
+- If HN gets traction: wait 1-2 days before Reddit
+- If HN flops: post to Reddit same day or next day
 
-### r/LocalLLaMA (maybe)
-- [ ] Angle: Uses Apple Intelligence (on-device, no API costs)
-- [ ] Privacy focus
+### r/ClaudeAI (386k members) - PRIMARY REDDIT TARGET
+- [x] Draft ready: `build/launch/reddit/post-claudeai.md`
+- [ ] Use "Built with Claude" or "Self-Promotion" flair
+- [ ] Include screenshots inline
+- [ ] Post format: what you built, how, screenshots, why
 
-### r/SideProject
+### r/MacApps (193k members) - SECONDARY
+- [x] Draft ready: `build/launch/reddit/post-macapps.md`
+- [ ] Emphasize: free, native SwiftUI, privacy-focused
+- [ ] Be ready for critical feedback (respond well = momentum)
+
+### r/OpenAI - FOR CODEX USERS
+- [x] Draft ready: `build/launch/reddit/post-openai.md`
+- [ ] Lead with Codex angle
+- [ ] Mention Claude Code as bonus (unified history)
+
+### r/LocalLLaMA (577k members) - SKIP
+- Apple Intelligence isn't really "local LLaMA" - poor fit
+- Only consider if all other channels fail
+
+### r/SideProject - OPTIONAL
 - [ ] Origin story angle
 - [ ] FileKitty background
 
-## Product Hunt (Later - optional)
+## Product Hunt (Later - separate launch)
 
 - [ ] Create upcoming page
-- [ ] Schedule launch
+- [ ] Schedule launch (different day from HN)
 - [ ] Prep assets (icon, screenshots, tagline)
 - [ ] Hunter outreach (optional)
 
@@ -51,8 +64,8 @@
 
 ### Twitter/X
 - [ ] Announce thread
-- [ ] Demo GIF/video
-- [ ] Tag relevant accounts? (@AnthropicAI)
+- [ ] Include video or GIF
+- [ ] Tag @AnthropicAI?
 
 ### Mastodon
 - [ ] Post to relevant instances
@@ -65,23 +78,25 @@
 ### Dev.to (optional)
 - [ ] Write-up: "I built a searchable backup for my AI coding sessions"
 
-## Assets Needed
+## Assets Status
 
 | Asset | Status | Location |
 |-------|--------|----------|
-| Demo video | TODO | (record) |
+| Demo video | ✅ | https://www.youtube.com/watch?v=FvrvRGp4C9M |
 | Screenshots | ✅ | website |
 | App icon | ✅ | Contextify.app |
 | OG image | ⚠️ Needs update | `website/assets/img/og-banner.png` |
 | Origin story | ✅ | `build/launch/origin-story.md` |
 | Show HN draft | ✅ | `build/launch/show-hn/draft.md` |
+| Reddit drafts | ✅ | `build/launch/reddit/` |
 
 ## Links to Include
 
 - Website: https://contextify.sh
 - Download (DMG): https://github.com/PeterPym/contextify/releases/latest
-- App Store: https://apps.apple.com/us/app/contextify/id6753190666?mt=12
+- App Store: https://apps.apple.com/us/app/contextify/id6753190666
 - GitHub (issues): https://github.com/PeterPym/contextify/issues
+- Demo video: https://www.youtube.com/watch?v=FvrvRGp4C9M
 
 ## Key Messages
 
@@ -95,6 +110,7 @@
 
 - [ ] Monitor HN comments (first 2-3 hours critical)
 - [ ] Monitor Reddit threads
-- [ ] Check support email
+- [ ] Check support email (support@contextify.sh)
 - [ ] Watch GitHub issues
 - [ ] Thank commenters, answer questions
+- [ ] If HN flops, execute Reddit backup plan
