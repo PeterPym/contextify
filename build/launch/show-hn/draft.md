@@ -71,6 +71,7 @@ Contextify started as a script to parse these files. Then I added a UI. Then sum
 
 ## Links
 
+- **Demo video:** https://www.youtube.com/watch?v=FvrvRGp4C9M
 - **Download:** https://contextify.sh
 - **App Store:** https://apps.apple.com/us/app/contextify/id6753190666
 - **GitHub (issues):** https://github.com/PeterPym/contextify
