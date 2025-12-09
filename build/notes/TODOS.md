@@ -46,7 +46,50 @@ doc_references:
 
 ---
 
-# P0 (Launch Critical) - 1 Item
+# P0 (Launch Critical) - 2 Items
+
+---
+
+## Permission Fix for Dual-CLI Users (1 item)
+
+**Status:** Code fix complete, awaiting QA validation
+**Priority:** P0 (blocking v1.0.1 release)
+**Branch:** `fix/permission-discovery-logging`
+
+- [ ] #P0-PERMISSION-FIX-QA: Validate permission fix with regression tests
+
+**Background:**
+Dual-CLI users (both Claude Code and Codex) experience issues when granting a second
+transcript provider permission via Settings. Two bugs were fixed:
+1. Second permission ignored - discovery didn't see newly-authorized provider
+2. Watcher recovery using stale orchestrator - health checks used old access provider
+
+**Fixes Applied:**
+- NotificationCenter pattern for permission change notification (87bf979a)
+- Permission observer in AppLifecycleState singleton (not tied to window)
+- Onboarding guard to prevent racing with wizard flow
+- Health monitoring now uses current orchestrator (not captured at task start)
+
+**QA Requirements (both builds required):**
+
+**App Store build:**
+1. Clean install (delete app, run `make clean-db`)
+2. Launch app - onboarding wizard appears
+3. Grant Claude Code permission only, complete onboarding
+4. Verify Claude projects discovered
+5. Open Settings > Permissions, grant Codex
+6. Verify: Both Claude AND Codex projects now appear
+7. Check logs: No `WATCHER-RECOVERY-ERROR` with sandbox container paths
+8. Wait 60+ seconds, verify no recurring recovery errors
+
+**DMG build:**
+1. Build: `bash scripts/xc.sh build`
+2. Launch app
+3. Verify all projects discovered immediately
+4. No permission-related errors in logs
+5. Health checks run without errors
+
+**Reference:** `Contextify/Contextify/ContextifyApp.swift:100-143`, `Contextify/Contextify/ConversationMonitor.swift:3269-3367`
 
 ---
 

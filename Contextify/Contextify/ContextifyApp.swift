@@ -97,8 +97,19 @@ final class AppLifecycleState {
 
   private init() {}
 
-  /// Set up permission change observer. Called once from ContextifyApp.init().
+  /// Set up permission change observer for post-onboarding permission grants.
+  ///
+  /// Called once after `ProjectsViewModel` is initialized via `initializeProjectsSystem()`.
   /// This ensures the observer exists for the app's lifetime, not tied to any window.
+  ///
+  /// **Important:** The observer explicitly skips handling during onboarding wizard flow
+  /// (when `hasCompletedAppStoreOnboarding()` is false). This is correct because:
+  /// 1. During onboarding, `SourceAuthorizationRow` posts the same notification
+  /// 2. But the wizard's `onComplete` Task owns the full startup sequence
+  /// 3. That Task calls `buildAndConfigureAccessProvider()` → `startup()` → `initializeProjectsSystem()`
+  /// 4. So the observer would cause duplicate/racing reconfiguration if it also ran
+  ///
+  /// After onboarding completes, this observer handles Settings > Permissions grants.
   func setupPermissionObserver(
     folderAccessController: FolderAccessController,
     projectsVM: ProjectsViewModel?

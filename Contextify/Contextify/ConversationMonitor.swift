@@ -596,8 +596,10 @@ final class ConversationMonitor {
                         }
 
                         // Task 2: Health monitoring with auto-recovery
+                        // NOTE: Do NOT capture orchestrator here - use self.orchestrator in the loop
+                        // so health checks use the current orchestrator (may be reconfigured mid-session).
                         group.addTask { [weak self] in
-                            await self?.runHealthMonitoring(orchestrator: orchestrator)
+                            await self?.runHealthMonitoring()
                         }
                     }
                 }
@@ -3266,7 +3268,11 @@ final class ConversationMonitor {
 
     /// Health monitoring loop - runs every 30s
     /// Detects stalls and attempts auto-recovery
-    private func runHealthMonitoring(orchestrator: TranscriptOrchestrator) async {
+    ///
+    /// NOTE: Uses `self.orchestrator` instead of a captured parameter so that health checks
+    /// use the CURRENT orchestrator instance. This is critical because the orchestrator may be
+    /// reconfigured mid-session (e.g., when user grants additional permissions via Settings).
+    private func runHealthMonitoring() async {
         log.info("🏥 Health monitoring started")
 
         while !Task.isCancelled {
@@ -3280,7 +3286,7 @@ final class ConversationMonitor {
                 }
 
                 if shouldRunImmediateCheck {
-                    await performHealthCheck(orchestrator: orchestrator, trigger: "restart-guard")
+                    await performHealthCheck(trigger: "restart-guard")
                     continue
                 }
 
@@ -3288,7 +3294,7 @@ final class ConversationMonitor {
                 try await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
 
-                await performHealthCheck(orchestrator: orchestrator, trigger: "interval")
+                await performHealthCheck(trigger: "interval")
 
             } catch is CancellationError {
                 break
@@ -3302,7 +3308,7 @@ final class ConversationMonitor {
         log.info("🏥 Health monitoring stopped")
     }
 
-    private func performHealthCheck(orchestrator: TranscriptOrchestrator, trigger: String) async {
+    private func performHealthCheck(trigger: String) async {
         await MainActor.run { [weak self] in
             self?.lastHealthCheck = Date()
         }
@@ -3311,6 +3317,13 @@ final class ConversationMonitor {
         let projectId = await MainActor.run { self.currentProjectId }
         guard let projectId else {
             log.debug("🏥 Health check skipped (no current project)")
+            return
+        }
+
+        // Get CURRENT orchestrator (may have been reconfigured since monitoring started)
+        let currentOrchestrator = await MainActor.run { self.orchestrator }
+        guard let currentOrchestrator else {
+            log.warning("🏥 Health check skipped (no orchestrator)")
             return
         }
 
@@ -3343,12 +3356,12 @@ final class ConversationMonitor {
                 log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public) (triggered by: \(snapshot.watcherState.transcriptId ?? "nil", privacy: .public))")
                 await attemptWatcherRecovery(
                     projectId: projectId,
-                    orchestrator: orchestrator,
+                    orchestrator: currentOrchestrator,
                     targetTranscriptId: nil  // nil = recover ALL transcripts
                 )
                 log.warning("[RECOVERY-TRIGGER] Returned from attemptWatcherRecovery")
             } else if issue.category == .hooverStall {
-                await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
+                await attemptHooverRecovery(projectId: projectId, orchestrator: currentOrchestrator)
             }
         }
     }
