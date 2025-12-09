@@ -20,6 +20,7 @@
 | Appcast (Sparkle) | [contextify.sh/appcast.xml](https://contextify.sh/appcast.xml) | `website/appcast.xml` | Every DMG release |
 | Public Repo | [github.com/PeterPym/contextify](https://github.com/PeterPym/contextify) | `~/code/projects/contextify-public-repo/` | Major releases, docs changes |
 | GitHub Releases | [github.com/banagale/contextify/releases](https://github.com/banagale/contextify/releases) | Created via `gh release` | Every DMG release |
+| Twitter/X | [x.com/Contextify_sh](https://x.com/Contextify_sh) | - | Launches, updates, engagement |
 
 ---
 
@@ -256,6 +257,8 @@ appstore-metadata/fastlane/metadata/en-US/
 
 **Local clone:** `~/code/projects/contextify-public-repo/`
 
+**Note on org name:** "PeterPym" is a placeholder org. May migrate to a branded org (e.g., `contextify-sh`) in the future if needed. "contextify" is taken on GitHub.
+
 **Key files:**
 ```
 ├── README.md                    # Main documentation
@@ -306,6 +309,23 @@ cat dist/Contextify-X.Y.Z.dmg.sha256
 curl -sL "https://github.com/PeterPym/contextify/releases/download/vX.Y.Z/Contextify-X.Y.Z.dmg" | shasum -a 256
 ```
 Hashes MUST match. If they don't, the wrong file was uploaded.
+
+---
+
+### 11. Twitter/X
+
+**URL:** https://x.com/Contextify_sh
+
+**Purpose:**
+- Launch announcements
+- Update notifications
+- Community engagement
+- Support visibility
+
+**Update triggers:**
+- Releases
+- Major features
+- HN/Reddit launches
 
 ---
 

@@ -370,6 +370,54 @@ User reported new Claude conversations not being picked up. Investigation reveal
 
 ---
 
+### P4-FIRST-RUN-INDEXING: Improve First-Run Indexing Reliability
+
+**Status:** Not started
+**Priority:** P4 (App Store reliability, UX polish)
+**Effort:** Medium (multiple small changes)
+**Found:** 2025-12-09
+
+- [ ] Prevent background indexing cancellation on first run
+- [ ] Add completion feedback to indexing progress indicator
+- [ ] Suppress progress display for small batches
+
+**Problem:**
+Background indexing gets cancelled repeatedly during normal app usage, especially on first run when user is exploring. Log analysis showed 12 of 16 indexing starts were immediately cancelled within 1 minute of activity. This is particularly problematic for App Store builds where users start with an empty database.
+
+**Root Causes:**
+1. Every project switch triggers `startBackgroundIndexing()`, which cancels the previous task
+2. 5-second delay before work begins means project switches cancel indexing before it starts
+3. No distinction between first-run (empty DB) and incremental (mostly indexed)
+4. Progress indicator vanishes without completion feedback (never shows "22/22")
+
+**Proposed Solutions:**
+
+1. **First-run protection**
+   - Add `hasCompletedInitialIndexing` flag (UserDefaults)
+   - Don't cancel background indexing on project switch during first run
+   - Higher priority for initial indexing task
+
+2. **Completion feedback**
+   - Show "Indexed X projects ✓" briefly (1.5s) instead of immediate disappear
+   - Currently `remaining <= 0` immediately sets message to `nil`
+
+3. **Suppress progress for small batches**
+   - Don't show "Indexing 3/3 projects..." for fast cycles
+   - Threshold: only show for 10+ projects
+
+4. **Debounce indexing start**
+   - Wait for activity to settle (2s debounce) before starting
+   - Reduces churn from rapid project switches
+
+**Files:**
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift:544-597`
+- `Contextify/Contextify/StatusBarViewModel.swift:179-191`
+
+**Reference:**
+- `build/notes/todo-support/indexing-progress-ux-research.md` - Full investigation with log analysis
+
+---
+
 ## P5 (Research / Exploratory)
 
 ### P5-INVESTIGATE-TRANSCRIPT-PROVIDERS: Other AI Tool Transcript Support

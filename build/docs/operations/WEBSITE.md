@@ -117,6 +117,67 @@ Server-side analytics using GoAccess log analysis. No client-side JavaScript.
 
 **Full documentation:** [Website Analytics](website-analytics.md)
 
+## Image Optimization
+
+**Use WebP for all site images.** PNG/JPEG source files should be converted to WebP before deployment.
+
+**Why:** WebP typically achieves 80-95% size reduction vs PNG with no visible quality loss. This matters for traffic spikes (Show HN, Reddit).
+
+**Convert images:**
+```bash
+# Single image
+cwebp -q 85 image.png -o image.webp
+
+# All PNGs in a directory
+for f in website/assets/img/*.png; do cwebp -q 85 "$f" -o "${f%.png}.webp"; done
+```
+
+**Quality settings:**
+- `-q 85` - Good balance for screenshots/UI images
+- `-q 90` - Higher quality for hero images if needed
+- `-q 75` - Acceptable for thumbnails
+
+**Requirements:** Install cwebp via `brew install webp`
+
+**Checklist for new images:**
+1. Export source as PNG (for archival in `build/design/`)
+2. Convert to WebP for deployment
+3. Reference `.webp` in HTML
+4. Keep PNG source but don't deploy it
+
+**Real-world savings (Dec 2024):**
+| Image | PNG | WebP | Savings |
+|-------|-----|------|---------|
+| feature-search-cropped | 2.1 MB | 174 KB | 92% |
+| feature-sync-cropped | 2.4 MB | 47 KB | 98% |
+| feature-timeline-cropped | 1.6 MB | 104 KB | 94% |
+
+## Download Tracking
+
+Download buttons use nginx redirects for tracking:
+
+| Path | Destination |
+|------|-------------|
+| `/go/dmg` | GitHub latest release (`Contextify.dmg`) |
+| `/go/appstore` | App Store listing |
+
+These generate server requests visible in GoAccess before redirecting to the actual download.
+
+**Nginx config location:** `/etc/nginx/sites-available/contextify`
+
+**Important:** When deploying nginx config changes, run `sudo certbot --nginx -d contextify.sh -d www.contextify.sh --reinstall` afterward to preserve SSL configuration.
+
+## DMG Naming Convention
+
+GitHub releases use stable filename `Contextify.dmg` (not versioned) to support the `/releases/latest/download/` URL pattern.
+
+The website's `/go/dmg` redirect points to:
+```
+https://github.com/PeterPym/contextify/releases/latest/download/Contextify.dmg
+```
+
+This URL automatically resolves to the most recent release without manual updates.
+
 ## Maintenance
 
 **SSL Certificate Renewal:**

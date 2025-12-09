@@ -42,7 +42,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 XCODE_PROJECT = ROOT / "Contextify/Contextify.xcodeproj/project.pbxproj"
 DIST = ROOT / "dist"
-DMG_TEMPLATE = "Contextify-{ver}.dmg"
+# Use stable name for GitHub's /releases/latest/download/ URL
+DMG_NAME = "Contextify.dmg"
 REPO = "banagale/contextify"
 REQUIRED_TOOLS = ["git", "gh", "bash", "shasum"]
 
@@ -293,21 +294,12 @@ def main() -> None:
     sign_and_notarize(skip_notarize=args.no_notarize)
 
     # Step 5: Create checksum
-    # sign_and_notarize.py creates Contextify.dmg, we rename to versioned name
-    fresh_dmg = DIST / "Contextify.dmg"
-    versioned_dmg = DIST / DMG_TEMPLATE.format(ver=next_ver)
+    # sign_and_notarize.py creates Contextify.dmg - keep this stable name
+    # for GitHub's /releases/latest/download/Contextify.dmg URL
+    dmg_path = DIST / DMG_NAME
 
-    if fresh_dmg.exists():
-        # Always prefer freshly built DMG over any existing versioned one
-        if versioned_dmg.exists():
-            versioned_dmg.unlink()  # Delete stale versioned DMG
-        fresh_dmg.rename(versioned_dmg)
-        dmg_path = versioned_dmg
-    elif versioned_dmg.exists():
-        # Fall back to existing versioned DMG (resume scenario)
-        dmg_path = versioned_dmg
-    else:
-        sys.exit(f"✖ DMG not found at {DIST}")
+    if not dmg_path.exists():
+        sys.exit(f"✖ DMG not found at {dmg_path}")
 
     sha_path = write_sha_file(dmg_path)
 
@@ -317,7 +309,7 @@ def main() -> None:
     #
     # ## Installation
     #
-    # 1. Download `Contextify-{next_ver}.dmg`
+    # 1. Download `Contextify.dmg`
     # 2. Open the DMG and drag Contextify.app to Applications
     # 3. Launch Contextify from Applications
     #

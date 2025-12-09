@@ -1,8 +1,11 @@
 # Show HN: Contextify – Your Claude Code history deletes after 30 days. This keeps it forever.
 
+**Demo:** https://www.youtube.com/watch?v=FvrvRGp4C9M
+**Download:** https://contextify.sh | **App Store:** https://apps.apple.com/us/app/contextify/id6753190666
+
 I built Contextify because I kept losing track of my Claude Code sessions.
 
-Before Claude Code, I used ChatGPT's web interface with FileKitty (which hit the HN front page) for context curation. One thing I relied on was the sidebar to search old conversations.
+Before Claude Code, I used ChatGPT's web interface with FileKitty [1] for context curation. One thing I relied on was the sidebar to search old conversations.
 
 When I moved to Claude Code, I discovered there's no searchable history, and conversations auto-delete after 30 days. Then I started splitting work between Claude Code and Codex when I'd hit rate limits, making the fragmentation worse.
 
@@ -19,12 +22,12 @@ Your conversations, your control. Think of it as an ambient flow monitor for you
 
 ## What's shipping today
 
-✅ Real-time session monitoring (Claude Code + Codex CLI)
-✅ Full-text search across all conversations
-✅ LLM-powered message summaries (Apple Intelligence)
-✅ Multi-project discovery and indexing
-✅ Timeline visualization with expand/collapse
-✅ 100% local - your data never leaves your Mac
+- Real-time session monitoring (Claude Code + Codex CLI)
+- Full-text search across all conversations
+- LLM-powered message summaries (Apple Intelligence)
+- Multi-project discovery and indexing
+- Timeline visualization with expand/collapse
+- 100% local - your data never leaves your Mac
 
 ## What's NOT in v1
 
@@ -51,6 +54,7 @@ I'm a solo developer. If this gets traction, I might add a paid tier for advance
 - Apple FoundationModels for on-device LLM
 - FSEvents for real-time file monitoring
 - Parses JSONL transcripts from `~/.claude/projects/` and `~/.codex/sessions/`
+- Found and fixed transcript corruption bugs that caused "resume session" 400 errors (Anthropic patched this a few weeks later)
 - Lazy summarization (only processes messages you scroll to - doesn't burn battery)
 - Tool call history retained for audit trails (how did the AI get to that solution?)
 - Database can live on Dropbox/network folder for backup
@@ -69,12 +73,7 @@ Contextify started as a script to parse these files. Then I added a UI. Then sum
 - **Future**: MCP server to let Claude Code query its own history ("What did we try last week?")
 - **Future**: Cross-CLI transcript conversion (resume Claude Code sessions in Codex)
 
-## Links
-
-- **Demo video:** https://www.youtube.com/watch?v=FvrvRGp4C9M
-- **Download:** https://contextify.sh
-- **App Store:** https://apps.apple.com/us/app/contextify/id6753190666
-- **GitHub (issues):** https://github.com/PeterPym/contextify
+**GitHub (issues):** https://github.com/PeterPym/contextify
 
 ## Questions for HN
 
@@ -82,11 +81,13 @@ Contextify started as a script to parse these files. Then I added a UI. Then sum
 
 2. Would you want Claude Code to be able to search its own past sessions? (The "memory" problem)
 
-3. What other AI coding tools should I support? (Cursor, Aider, Windsurf?)
+3. What other AI coding tools should I support? (Cursor, Aider, Windsurf, Gemini CLI once it has local transcripts?)
 
 ---
 
-Solo indie project, built in Swift over ~3 months. Happy to answer questions about the architecture, transcript parsing, or anything else.
+Solo indie project, built in Swift over ~3 months (first macOS app, coming from Python/iOS). Happy to answer questions about the architecture, transcript parsing, or anything else.
+
+[1] https://news.ycombinator.com/item?id=40226976
 
 ---
 
