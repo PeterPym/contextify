@@ -418,6 +418,40 @@ Background indexing gets cancelled repeatedly during normal app usage, especiall
 
 ---
 
+### P4-PROJECT-DIRECTORY-ACCESS: Request User Access to Project Directories
+
+**Status:** Not started
+**Priority:** P4 (feature enhancement for App Store builds)
+**Effort:** Medium (UI + bookmark management)
+
+- [ ] Add UI to request user permission for project directories
+- [ ] Store security-scoped bookmarks for granted project directories
+- [ ] Enable git branch display and other project features when access granted
+
+**Background:**
+App Store (sandboxed) builds can only access transcript directories (`~/.claude/projects/`, `~/.codex/sessions/`) granted via Settings. Project directories (e.g., `~/code/projects/foo/`) are discovered from transcript `cwd` hints but the app has no filesystem access to them.
+
+**Current behavior:**
+- Bookmark creation silently fails for discovered projects (sandbox blocks it)
+- Git branch shows "—" instead of actual branch
+- Git head watching disabled
+- Finder reveals may fail silently
+- Core transcript display works fine (uses transcript directory access)
+
+**Proposed solution:**
+1. Add "Grant Project Access" button in project detail view or settings
+2. Use NSOpenPanel to let user select project directory
+3. Create and persist security-scoped bookmark
+4. Enable git features for projects with granted access
+5. Show visual indicator for projects with/without full access
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift:707-728` - bookmark handling
+- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift:490-519` - external project switch
+- `Contextify/Contextify/SourceAuthorizationRow.swift` - permission UI pattern to follow
+
+---
+
 ## P5 (Research / Exploratory)
 
 ### P5-INVESTIGATE-TRANSCRIPT-PROVIDERS: Other AI Tool Transcript Support

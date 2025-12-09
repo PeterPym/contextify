@@ -37,16 +37,16 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - App Store permission/discovery bugs
+- **P0 (Launch Critical):** 2 items - App Store permission bug, public launch
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 17 items - Future enhancements
+- **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
 **Total Active Items:** 86
 
 ---
 
-# P0 (Launch Critical) - 3 Items
+# P0 (Launch Critical) - 2 Items
 
 ---
 
@@ -97,46 +97,6 @@ LightweightDiscovery or TranscriptAccessProvider is only loading/using ONE bookm
 **Log files:**
 - `/private/tmp/transcript-queue-monitor-20251208-221026.log` (Claude first)
 - `/private/tmp/transcript-queue-monitor-20251208-222026.log` (Codex first)
-
----
-
-## #P0-COORDINATOR-NO-BOOKMARK: Coordinator sends project contexts without bookmarks
-
-**Status:** Bug - breaks security-scoped access for project switching
-**Priority:** P0 (causes "can't access" modal and broken git monitoring)
-**Effort:** 2-4 hours
-**Found:** 2025-12-08 during App Store onboarding QA
-
-- [ ] #P0-COORDINATOR-NO-BOOKMARK: Ensure StartupCoordinator includes bookmarks in project contexts
-
-**Problem:**
-StartupCoordinator sends project context updates with `hasBookmark=false`. Without bookmarks, HUDViewModel cannot restore security-scoped access, causing:
-1. Git monitoring to fail silently
-2. "Stored project root can't be accessed" modal (in some code paths)
-3. Finder reveal to fail
-
-**Evidence from logs:**
-```
-22:31:07.694 [COORD-UPDATE] Handling coordinator update: project=contextify path=/Users/rob/code/projects/contextify hasBookmark=false
-22:31:07.694 [COORD-UPDATE] No bookmark in context for contextify
-22:31:07.697 [COORD-UPDATE] Handling coordinator update: project=cli-ai-setup hasBookmark=false
-22:31:07.697 [COORD-UPDATE] No bookmark in context for cli-ai-setup
-```
-
-**Root Cause:**
-`ActiveProjectContext` is being created without resolving/attaching the security-scoped bookmark for the project path.
-
-**Files to investigate:**
-- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift` - context creation
-- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` - project selection
-- `app/Sources/ContextifyCore/HUDCore.swift:handleCoordinatorUpdate` - bookmark handling
-
-**Acceptance Criteria:**
-- [ ] Project contexts include valid bookmarks when available
-- [ ] HUDViewModel can restore security scope from context bookmark
-- [ ] No "can't access" modal appears during normal project switching
-
-**Log file:** `/private/tmp/transcript-queue-monitor-20251208-222910.log`
 
 ---
 
@@ -2130,7 +2090,37 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 
 ---
 
-# P3 (Low Priority / Deferred) - 17 Items
+# P3 (Low Priority / Deferred) - 18 Items
+
+## Project Directory Bookmarks (1 item) ⬇️
+
+**Status:** Expected behavior documented, future enhancement planned
+**Priority:** Demoted from P0 (cosmetic issue, not functional blocker)
+**Effort:** N/A (tracking only, see ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS for enhancement)
+
+- [ ] #P3-PROJECT-BOOKMARKS: Project contexts have nil bookmarks in sandboxed builds (expected)
+
+**Background:**
+In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` because:
+- App only has access to transcript directories (`~/.claude/projects/`, `~/.codex/sessions/`)
+- Project directories (e.g., `~/code/projects/foo/`) are discovered from transcript `cwd` hints
+- Sandbox blocks bookmark creation for paths without user-granted access
+
+**Impact (cosmetic only):**
+- Git branch display shows "—" instead of actual branch
+- Finder reveals may fail silently
+- Core transcript display works fine
+
+**Resolution:**
+- Log level downgraded from warning to debug (expected behavior)
+- Comment added explaining sandbox constraint
+- Future enhancement: ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift:702-733` - bookmark handling with explanatory comment
+- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift:490-519` - external project switch
+
+---
 
 ## CLI Logomark Display (1 item) ⬇️
 
