@@ -493,22 +493,29 @@ public final class StartupCoordinator {
         // Resolve git branch for the project
         let branch = await resolveGitBranch(path: path)
 
-        // Create context manually to satisfy legacy observers
-        // Note: Bookmark is nil - assuming DMG build or handled elsewhere
+        // Create security-scoped bookmark for the project path.
+        // This is required for App Store (sandboxed) builds to restore filesystem access
+        // when HUDViewModel receives this context. Without a bookmark, git monitoring
+        // and other project-directory operations will fail silently in sandboxed builds.
+        // Pattern matches switchProject() at lines 446-449.
+        let bookmark = await Task.detached {
+            let url = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+            return try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+        }.value
+
+        // Create context with bookmark
         let context = ActiveProjectContext(
             id: id,
             path: path,
             displayName: URL(fileURLWithPath: path).lastPathComponent,
             branch: branch,
-            bookmark: nil
+            bookmark: bookmark
         )
 
-        // Directly set current context and post notification
-        // (bypassing full publishContext flow for Phase 3 simplicity)
-        self.current = context
-        NotificationCenter.default.post(name: .activeProjectContextDidChange, object: context)
+        // Publish via standard flow for deduplication and proper sequencing
+        await publishContext(context)
 
-        log.info("[COORD-EXTERNAL] Context published for: \(context.displayName, privacy: .public)")
+        log.info("[COORD-EXTERNAL] Context published for: \(context.displayName, privacy: .public) (hasBookmark: \(bookmark != nil))")
     }
 
     // MARK: - Private Helpers
