@@ -317,9 +317,10 @@ echo ""
 echo -e "${YELLOW}Creating temp upload directory on server...${NC}"
 ssh "$SERVER" "mkdir -p $TEMP_UPLOAD_DIR"
 
-# Upload files via rsync
+# Upload files via rsync (quiet mode with stats summary)
 echo -e "${YELLOW}Uploading files...${NC}"
-rsync -avz --delete \
+rsync -az --delete \
+    --stats \
     --exclude '.DS_Store' \
     --exclude '.git' \
     --exclude 'drafts' \
@@ -327,7 +328,7 @@ rsync -avz --delete \
     --exclude 'README.md' \
     --exclude 'QUICKSTART.txt' \
     "$LOCAL_DIR/" \
-    "$SERVER:$TEMP_UPLOAD_DIR/"
+    "$SERVER:$TEMP_UPLOAD_DIR/" | grep -E "^(Number|Total|sent|total size)"
 
 echo ""
 
