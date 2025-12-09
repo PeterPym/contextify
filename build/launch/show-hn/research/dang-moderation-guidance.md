@@ -113,6 +113,52 @@ dang actively monitors for vote manipulation:
 
 ---
 
+## dang's Direct Tips for Show HN Posters
+
+Source: https://news.ycombinator.com/item?id=22336638 (Feb 2020)
+
+dang offered to email tips to anyone who asked. Here's what he sent:
+
+### Post Structure
+
+1. **Include backstory text** - "Include text giving the backstory of how you came to work on this, and explaining what's different about it. That tends to seed discussion in a good direction."
+
+2. **Text placement** - "Your text should show up at the top of the Show HN submission, but if for some reason it doesn't, add it as a first comment to the thread. Either way is fine."
+
+3. **Clear statement of what it is** - "Include a clear statement of what your project is or does. If you don't, the discussion will consist of 'I can't tell what this is'."
+
+4. **Link to previous HN threads** - "Include links to any previous HN threads that are relevant. Readers like those."
+
+### Tone & Language
+
+5. **No marketing language** - "Drop any language that sounds like marketing or sales. On HN, that is an instant turnoff. Use factual, direct language. Personal stories and technical details are great."
+
+### Reducing Friction
+
+6. **Make it easy to try** - "Please make it easy for users to try your thing out, preferably without having to sign up, get a confirmation email, and other such barriers. You'll get more feedback that way, plus HN users get ornery if you make them jump through hoops."
+
+7. **Hardware alternatives** - "If it's hardware or something that's not so easy to try out over the internet, find a different way to show how it actually works - a video, for example, or a detailed post with photos."
+
+### Username & Profile
+
+8. **Human username** - "Don't have your username be that of your company or project. It creates a feeling of using HN for promotion and of not really participating as a person. You don't have to use your real name, just something to indicate that you're here as a human, not a brand."
+
+9. **Email in profile** - "If you're comfortable doing so, put your email address in your profile so we can contact you if we notice anything, and also so we can send you a repost invite."
+
+### Social / Community
+
+10. **No booster comments** - "Make sure your friends and users do not add booster comments in the thread. HN users are adept at picking up on those, they consider it spamming, and they will flame you for it. If a friend or a fan has something interesting to say, that's fine, but comments should not be promotional."
+
+### Reposting
+
+11. **Significant changes only** - "You can post a new release as a Show HN only if the new version is significantly different. It shouldn't just be an incremental upgrade."
+
+12. **Link to previous** - "If you do repost, add a comment linking to the previous Show HN and explaining what is different from last time."
+
+13. **Frequency** - "This should probably only happen once or twice a year - more starts to be excessive."
+
+---
+
 ## Summary: What dang Enforces Most
 
 1. **No email signups** - must have working product

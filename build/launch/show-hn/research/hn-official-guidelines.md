@@ -71,3 +71,18 @@ Minor version updates typically lack sufficient substance. Major overhauls are m
 ### Community Guidelines for Comments
 
 Treat contributors with respect. Ask genuine questions rather than interrogatively challenging them. Offer constructive suggestions instead of criticism. Support learning by helping others improve their skills.
+
+---
+
+## Formatting Options
+
+HN has limited markdown support:
+
+- **Paragraphs:** Blank lines separate paragraphs
+- **Italics:** Text surrounded by asterisks is italicized
+- **Literal asterisk:** Use `\*` or `**` to get a literal asterisk
+- **Code/verbatim:** Text after a blank line that is indented by two or more spaces is reproduced verbatim (intended for code)
+- **Links:** URLs become links automatically, except in the text field of a submission
+- **Fixing links:** If your URL gets linked incorrectly, put it in `<angle brackets>` and it should work
+
+**Note:** No bold, no headers, no bullet points, no inline code backticks. Keep it simple.
