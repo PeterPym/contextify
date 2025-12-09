@@ -33,12 +33,12 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-06
+**Last Updated:** 2025-12-08
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - Must complete for v1.0 public launch
-- **P1 (High Priority):** 22 items - Important for quality/UX, ship soon after launch
+- **P0 (Launch Critical):** 3 items - App Store permission/discovery bugs
+- **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 17 items - Future enhancements
 
@@ -46,31 +46,97 @@ doc_references:
 
 ---
 
-# P0 (Launch Critical) - 5 Items
+# P0 (Launch Critical) - 3 Items
 
 ---
 
-## App Icon Mismatch (1 item)
+## #P0-SECOND-PERMISSION-IGNORED: Second permission grant ignored by discovery
 
-**Status:** Needs fix before Show HN
-**Priority:** P0 (visual identity)
-**Effort:** 1-2 hours
+**Status:** Bug - blocks users who grant both Claude Code and Codex permissions
+**Priority:** P0 (App Store UX broken for dual-CLI users)
+**Effort:** 4-6 hours
+**Found:** 2025-12-08 during staged permission grant QA testing
 
-- [ ] #P0-APP-ICON: Update app icon to use angled logomark (matches OG banner)
+- [ ] #P0-SECOND-PERMISSION-IGNORED: Fix second permission grant not being used by discovery
 
 **Problem:**
-- Installed app shows HORIZONTAL infinity symbol
-- OG banner and brand use ANGLED infinity symbol
-- Mismatch in visual identity
+When granting permissions for both Claude Code and Codex in staged fashion:
+- The FIRST permission granted works (projects discovered)
+- The SECOND permission granted is IGNORED (0 projects from that provider)
 
-**Fix:**
-1. Open Icon Composer (Xcode > Open Developer Tool > Icon Composer)
-2. Open `Contextify/icon-composer-project.icon`
-3. Replace `Assets/Infinity.png` with angled version from `build/design/brand/logomark/exports/`
-4. Save and rebuild
-5. For App Store: Submit 1.0.2 update with fixed icon
+**QA Test Results:**
+1. **Claude first, then Codex:** Claude: 23 projects, Codex: 0 (broken)
+2. **Codex first, then Claude:** Codex: 15 projects, Claude: 0 (broken)
 
-**Reference:** `build/design/brand/app-icon.md`, `build/design/brand/logomark/`
+The bug affects WHICHEVER provider is granted second, not a specific provider.
+
+**Evidence from logs:**
+```
+# Test 1: Claude first (works), Codex second (broken)
+22:11:15 [CODEX-VALIDATE] ✅ Validation succeeded
+22:11:36 [DISC-LIGHT] Raw discoveries: 23 (Claude: 23, Codex: 0)
+
+# Test 2: Codex first (works), Claude second (broken)
+22:21:47 [CLAUDE] Found Claude Code transcripts - validation succeeded
+22:22:10 [DISC-LIGHT] Raw discoveries: 15 (Claude: 0, Codex: 15)
+```
+
+**Root Cause (suspected):**
+LightweightDiscovery or TranscriptAccessProvider is only loading/using ONE bookmark, not both. Possible caching issue or single-bookmark assumption in the code.
+
+**Files to investigate:**
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
+- `app/Sources/ContextifyCore/Sandbox/TranscriptAccessProvider.swift`
+- `app/Sources/ContextifyCore/Sandbox/BookmarkStore.swift`
+
+**Acceptance Criteria:**
+- [ ] Granting Claude Code then Codex: both providers discovered
+- [ ] Granting Codex then Claude Code: both providers discovered
+- [ ] Discovery refresh after second permission picks up new provider
+
+**Log files:**
+- `/private/tmp/transcript-queue-monitor-20251208-221026.log` (Claude first)
+- `/private/tmp/transcript-queue-monitor-20251208-222026.log` (Codex first)
+
+---
+
+## #P0-COORDINATOR-NO-BOOKMARK: Coordinator sends project contexts without bookmarks
+
+**Status:** Bug - breaks security-scoped access for project switching
+**Priority:** P0 (causes "can't access" modal and broken git monitoring)
+**Effort:** 2-4 hours
+**Found:** 2025-12-08 during App Store onboarding QA
+
+- [ ] #P0-COORDINATOR-NO-BOOKMARK: Ensure StartupCoordinator includes bookmarks in project contexts
+
+**Problem:**
+StartupCoordinator sends project context updates with `hasBookmark=false`. Without bookmarks, HUDViewModel cannot restore security-scoped access, causing:
+1. Git monitoring to fail silently
+2. "Stored project root can't be accessed" modal (in some code paths)
+3. Finder reveal to fail
+
+**Evidence from logs:**
+```
+22:31:07.694 [COORD-UPDATE] Handling coordinator update: project=contextify path=/Users/rob/code/projects/contextify hasBookmark=false
+22:31:07.694 [COORD-UPDATE] No bookmark in context for contextify
+22:31:07.697 [COORD-UPDATE] Handling coordinator update: project=cli-ai-setup hasBookmark=false
+22:31:07.697 [COORD-UPDATE] No bookmark in context for cli-ai-setup
+```
+
+**Root Cause:**
+`ActiveProjectContext` is being created without resolving/attaching the security-scoped bookmark for the project path.
+
+**Files to investigate:**
+- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift` - context creation
+- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` - project selection
+- `app/Sources/ContextifyCore/HUDCore.swift:handleCoordinatorUpdate` - bookmark handling
+
+**Acceptance Criteria:**
+- [ ] Project contexts include valid bookmarks when available
+- [ ] HUDViewModel can restore security scope from context bookmark
+- [ ] No "can't access" modal appears during normal project switching
+
+**Log file:** `/private/tmp/transcript-queue-monitor-20251208-222910.log`
 
 ---
 
@@ -135,84 +201,43 @@ doc_references:
 
 ---
 
-## #P0-PROJECT-ROOT-MODAL: Spurious "Stored project root is invalid" modal
-
-**Status:** Bug - recurring, blocks clean first-run experience
-**Priority:** P0 (affects App Store review, demo recording)
-**Effort:** 2-4 hours
-
-**Issue:**
-Modal appears on startup with message: "Stored project root is invalid or unreadable (saved path): /path/to/dir". Blocks user interaction until dismissed.
-
-**Root Cause (partial):**
-- App uses TWO UserDefaults domains: `sh.contextify.Contextify` (bundle ID) and `dev.contextify` (shared suite)
-- Clean scripts only cleared bundle ID defaults, leaving stale `dev.contextify.projectRoot` key
-- Fixed in scripts but modal logic may need hardening
-
-**Remaining Work:**
-1. [ ] Audit why two UserDefaults domains exist - consolidate to bundle ID if possible
-2. [ ] Change modal to non-blocking log message (fall back gracefully)
-3. [ ] Ensure `HUDPreferences.clearPersistedRoot()` is called when path invalid
-4. [ ] Add test for clean first-run experience
-
-**Files:**
-- `app/Sources/ContextifyCore/HUDCore.swift:264` - error message source
-- `app/Sources/ContextifyCore/HUDCore.swift:22-27` - dual UserDefaults domains
-- `scripts/xc.sh:331-332` - reset logic (now fixed)
-- `scripts/release/demo-recording.sh:153-160` - reset logic (now fixed)
-
-**History:** Previously tracked, thought resolved, recurred during demo recording session.
+# P1 (High Priority) - 23 Items
 
 ---
 
-## #P0-SETTINGS-OVERHAUL: Fix Settings window and permissions UX
+## #P1-SLOW-DISCOVERY: Discovery scan interval too long (14-29 seconds)
 
-**Status:** DONE - All acceptance criteria complete
-**Priority:** P0 (blocks App Store users from granting permissions)
-**Effort:** Complete
+**Status:** Bug - UX feels sluggish
+**Priority:** P1 (affects perceived responsiveness)
+**Effort:** 1-2 hours
+**Found:** 2025-12-08
 
-**Problems Identified:**
+- [ ] #P1-SLOW-DISCOVERY: Reduce discovery scan interval to ~5 seconds
 
-1. **Settings window is broken:** ✅ FIXED
-   - ~~Only shows Database tab, no way to access Transcript Sources (permissions)~~
-   - ~~`TranscriptSourcesSettingsView` is in a separate window, not a tab~~
-   - ~~Huge empty space at top (fixed 400px height too tall for content)~~
-   - ~~Users cannot find where to grant permissions~~
+**Problem:**
+LightweightDiscovery scans are happening every 14-29 seconds instead of the expected ~5 seconds. This makes the app feel sluggish when new projects appear or permissions are granted.
 
-2. **Permission grant may not trigger discovery:**
-   - Need to verify granting permissions kicks off discovery workflow
-   - Projects should appear in tab bar after granting access
+**Evidence from logs:**
+```
+22:21:00 → 22:21:27 = 27 seconds
+22:21:27 → 22:21:41 = 14 seconds
+22:21:41 → 22:22:10 = 29 seconds
+22:22:10 → 22:22:26 = 16 seconds
+```
 
-**Solution:**
+**Expected:** Discovery should trigger within ~5 seconds of:
+- App becoming active
+- Permission being granted
+- User inactivity after project switch
 
-1. **Combine Settings into tabbed view:** ✅ DONE
-   - App Store builds: TabView with Database + Permissions tabs
-   - DMG builds: Database tab only (no permissions needed)
-   - Fixed width to 450px (matches Messages app style)
-
-2. **Verify permission → discovery flow:**
-   - Test: Grant permission → projects appear → timeline populates
-   - Fix if broken
-
-**Files:**
-- `Contextify/Contextify/ContextifyApp.swift` - Settings window definition
-- `Contextify/Contextify/SettingsView.swift` - Tabbed settings view
+**Files to investigate:**
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
+- `app/Sources/ContextifyCore/AppOrchestrator.swift` - discovery trigger points
 
 **Acceptance Criteria:**
-- [x] Settings window has Database and Permissions tabs (App Store only)
-- [x] Database tab fits content without huge empty space
-- [x] Granting permissions triggers discovery and populates UI
-
-**Commits:**
-- `76a5fb1c` feat(settings): show Permissions tab only for App Store builds
-- `93a5f82b` feat(settings): combine Database and Permissions into tabbed Settings view
-- `06513056` Merge feat/appstore-onboarding-wizard (onboarding UX fixes)
-
----
-
-# P1 (High Priority) - 22 Items
-
-Note: #P1-PERMISSIONS-MODAL and #P1-APPSTORE-NO-PERMISSIONS-UX were merged into #P0-SETTINGS-OVERHAUL
+- [ ] Discovery scans happen within 5 seconds of triggering events
+- [ ] No excessive CPU usage from too-frequent scans
+- [ ] Permission grants trigger immediate discovery refresh
 
 ---
 
