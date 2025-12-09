@@ -3320,7 +3320,8 @@ final class ConversationMonitor {
         }
 
         // Log heartbeat (debug level - visible during development)
-        log.debug("🏥 Health check (trigger=\(trigger)): \(snapshot.issues.count) issues")
+        // NOTE: Keep privacy .public for diagnostics - these values are not sensitive
+        log.debug("🏥 Health check (trigger=\(trigger, privacy: .public)): \(snapshot.issues.count) issues")
 
         // CXT-13: Skip health check during project switch to avoid spurious recovery attempts
         let switching = await MainActor.run { self.isSwitchingProjects }

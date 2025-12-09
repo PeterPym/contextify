@@ -298,7 +298,8 @@ final class StatusBarViewModel {
 
         // Use existing health checker with 30s TTL
         let health = await LLMHealthCheck.shared.checkHealth()
-        log.info("Apple Intelligence health check result: \(String(describing: health))")
+        // NOTE: Keep privacy .public for diagnostics - health status is not sensitive
+        log.info("Apple Intelligence health check result: \(String(describing: health), privacy: .public)")
 
         switch health {
         case .healthy:
