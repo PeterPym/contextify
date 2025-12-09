@@ -173,10 +173,11 @@ body {
    ========================================================================== */
 .hero-section {
   background-color: var(--slate-900);
-  background-image: url('../assets/img/swoopity-dark.svg');
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: right center;
+  /* Subtle brand gradient - scales infinitely, replaces problematic SVG swoopy */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 70% 60%, rgba(74, 196, 224, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 30% 80%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 30% at 90% 20%, rgba(249, 178, 51, 0.05) 0%, transparent 40%);
 }
 
 .hero-section h1 {
@@ -679,9 +680,7 @@ footer a:hover {
    Responsive Adjustments
    ========================================================================== */
 @media (max-width: 991.98px) {
-  .hero-section {
-    background-image: none;
-  }
+  /* Gradient scales well on mobile, no need to hide */
 
   .screenshot-wrapper {
     padding: 0 1rem;

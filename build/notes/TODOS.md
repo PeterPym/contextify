@@ -74,28 +74,6 @@ doc_references:
 
 ---
 
-## Hero Background Resize Bug (1 item)
-
-**Status:** Bug - visible on landing page
-**Priority:** P0 (affects first impression before Show HN)
-**Effort:** 30 min - 1 hour
-
-- [ ] #P0-HERO-SWOOPY: Fix or remove swoopy background on landing page
-
-**Problem:**
-The swoopy/wave background in the hero section doesn't resize correctly at different viewport sizes.
-
-**Options:**
-1. Fix the CSS so it scales properly (responsive background-size/position)
-2. Remove it entirely and use a solid color or gradient
-3. Replace with a simpler SVG that scales cleanly
-
-**Files:**
-- `website/index.html` - hero section
-- `website/assets/css/` - styles
-
----
-
 ## v1.0 Public Launch (1 item)
 
 **Status:** App Store resubmitted (WAITING_FOR_REVIEW), website/DMG release pending
@@ -1399,6 +1377,20 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 - [ ] Timeline, project switching, indexing work without summaries
 - [ ] Clear messaging about what requires macOS 26
 - [ ] Summaries appear automatically after macOS upgrade
+
+---
+
+## App Store Screenshot Automation (1 item)
+
+**Status:** Not Started
+**Priority:** P3
+
+- [ ] #P3-SCREENSHOT-AUTOMATION: Automate App Store screenshots with light/dark mode toggle
+
+**Scope:**
+- Script should flip system appearance (dark ↔ light) and capture screenshots in both modes
+- Useful for App Store assets and website screenshots
+- Consider using `osascript` or AppleScript to toggle System Preferences appearance
 
 ---
 
