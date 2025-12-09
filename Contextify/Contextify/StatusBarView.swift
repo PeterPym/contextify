@@ -42,6 +42,7 @@ struct StatusBarView: View {
                     Image(systemName: "tray.and.arrow.down")
                         .foregroundStyle(.secondary)
                         .font(.caption)
+                        .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)
 
                     Text(ingestMessage)
                         .font(.caption)
