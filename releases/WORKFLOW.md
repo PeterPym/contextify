@@ -312,8 +312,10 @@ bash scripts/xc.sh upload
 **DMG Release:**
 ```bash
 python3 scripts/release.py --version X.Y.Z --yes
-./scripts/sparkle/sign.sh dist/Contextify-X.Y.Z.dmg
+./scripts/sparkle/sign.sh dist/Contextify.dmg
 ```
+
+**Note:** DMG uses stable filename `Contextify.dmg` (not versioned) to support GitHub's `/releases/latest/download/` URL.
 
 **App Store Release:**
 ```bash

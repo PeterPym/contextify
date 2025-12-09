@@ -459,7 +459,7 @@ When submitting a new version to the App Store:
 bash scripts/xc.sh upload
 
 # Create GitHub release
-gh release create vX.Y.Z build/archives/vX.Y.Z/dmg/Contextify-X.Y.Z.dmg --title "Contextify X.Y.Z"
+gh release create vX.Y.Z dist/Contextify.dmg --title "Contextify X.Y.Z"
 ```
 
 **Alternative (manual builds):**

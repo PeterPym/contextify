@@ -152,6 +152,32 @@ for f in website/assets/img/*.png; do cwebp -q 85 "$f" -o "${f%.png}.webp"; done
 | feature-sync-cropped | 2.4 MB | 47 KB | 98% |
 | feature-timeline-cropped | 1.6 MB | 104 KB | 94% |
 
+## Download Tracking
+
+Download buttons use nginx redirects for tracking:
+
+| Path | Destination |
+|------|-------------|
+| `/go/dmg` | GitHub latest release (`Contextify.dmg`) |
+| `/go/appstore` | App Store listing |
+
+These generate server requests visible in GoAccess before redirecting to the actual download.
+
+**Nginx config location:** `/etc/nginx/sites-available/contextify`
+
+**Important:** When deploying nginx config changes, run `sudo certbot --nginx -d contextify.sh -d www.contextify.sh --reinstall` afterward to preserve SSL configuration.
+
+## DMG Naming Convention
+
+GitHub releases use stable filename `Contextify.dmg` (not versioned) to support the `/releases/latest/download/` URL pattern.
+
+The website's `/go/dmg` redirect points to:
+```
+https://github.com/PeterPym/contextify/releases/latest/download/Contextify.dmg
+```
+
+This URL automatically resolves to the most recent release without manual updates.
+
 ## Maintenance
 
 **SSL Certificate Renewal:**
