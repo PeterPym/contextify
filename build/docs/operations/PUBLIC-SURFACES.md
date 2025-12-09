@@ -256,6 +256,8 @@ appstore-metadata/fastlane/metadata/en-US/
 
 **Local clone:** `~/code/projects/contextify-public-repo/`
 
+**Note on org name:** "PeterPym" is a placeholder org. May migrate to a branded org (e.g., `contextify-sh`) in the future if needed. "contextify" is taken on GitHub.
+
 **Key files:**
 ```
 ├── README.md                    # Main documentation
