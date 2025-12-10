@@ -1,6 +1,6 @@
 {
   "title": "Contextify",
-  "background": "build/assets/dmg_background.png",
+  "background": "build/assets/dmg/background.png",
   "icon-size": 120,
   "window": {
     "size": {
