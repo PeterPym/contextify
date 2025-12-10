@@ -1,3 +1,5 @@
+@~/code/projects/cli-ai-setup/context/today.md
+
 # Repository Guidelines
 
 **File note:** `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Always edit `AGENTS.md` directly.
