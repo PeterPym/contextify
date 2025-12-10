@@ -1,11 +1,3 @@
-Initial release of Contextify!
-
-• Real-time conversation monitoring for Claude Code and Codex CLI
-• AI-powered session summaries
-• Project-centric organization with automatic git detection
-• Drag & drop file and URL ingestion
-• Timestamped Markdown artifacts
-• Session checkpoints
-• Timeline visualization
-• Custom database location support (Dropbox, iCloud Drive)
-• Native macOS performance with Swift 6
+• Visual indicator when indexing is in progress
+• Faster detection when adding new transcript sources
+• More responsive project switching

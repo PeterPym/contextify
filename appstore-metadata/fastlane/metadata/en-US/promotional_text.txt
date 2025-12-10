@@ -1,1 +1,1 @@
-Track your Claude Code sessions with real-time AI summaries. Never lose context across conversations.
+A private, searchable timeline of your Claude Code and Codex sessions.
