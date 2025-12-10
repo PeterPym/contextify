@@ -1,16 +1,17 @@
 {
   "$schema": "../schemas/release.schema.json",
   "version": "1.0.2",
-  "target_channels": ["dmg", "appstore"],
+  "target_channels": [
+    "dmg",
+    "appstore"
+  ],
   "created": "2025-12-09",
   "updated": "2025-12-09",
-
   "git": {
     "tag": "v1.0.2",
     "commit": "1afdc99a0c6c29cb94563a9ae5fdb7b26d583888",
     "branch": "main"
   },
-
   "phases": {
     "pre_release": {
       "status": "complete",
@@ -22,7 +23,6 @@
         "working_directory_clean": true
       }
     },
-
     "build": {
       "status": "complete",
       "dmg": {
@@ -39,11 +39,10 @@
         "archive_path": "build/Contextify.xcarchive",
         "build_number": 14,
         "exported": true,
-        "uploaded": false,
+        "uploaded": true,
         "upload_receipt": null
       }
     },
-
     "review_materials": {
       "status": "pending",
       "demo_video": {
@@ -57,14 +56,12 @@
         "deployed": false
       }
     },
-
     "submission": {
-      "status": "pending",
-      "submitted_at": null,
+      "status": "submitted",
+      "submitted_at": "2025-12-10T02:01:02Z",
       "rejection": null,
       "resubmission": null
     },
-
     "marketing": {
       "status": "pending",
       "changelog": {
@@ -78,7 +75,6 @@
         "product_hunt": false
       }
     },
-
     "post_release": {
       "status": "pending",
       "documentation_updated": false,
@@ -86,12 +82,16 @@
       "monitoring_enabled": false
     }
   },
-
   "notes": [
     {
       "date": "2025-12-09",
       "author": "system",
       "note": "Release initialized"
+    },
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Submitted build 14 to App Store Connect"
     }
   ]
 }
