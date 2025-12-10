@@ -1,0 +1,4 @@
+# App Store Connect API Key
+# Key file stored in .secrets/AuthKey_AG868N57U6.p8
+app_identifier "sh.contextify.Contextify"
+team_id "VQ7RPM8H77"

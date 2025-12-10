@@ -325,6 +325,58 @@ bash scripts/xc.sh upload
 ```
 </details>
 
+## App Store Metadata (fastlane)
+
+Fastlane automates uploading App Store metadata (description, release notes, promotional text) to App Store Connect.
+
+### Single Source of Truth
+
+All metadata lives in one file: `appstore-metadata/metadata.json`
+
+This includes:
+- App name, subtitle, description, keywords
+- Promotional text, release notes
+- Support/marketing/privacy URLs
+- Copyright, categories
+- Review information (contact, notes with sample data URLs)
+
+### Setup
+
+```
+appstore-metadata/
+├── metadata.json          # Canonical source for all metadata
+└── fastlane/
+    ├── Deliverfile        # Reads from ../metadata.json
+    └── Appfile            # App identification
+```
+
+API credentials in `.secrets/`:
+- `fastlane_api_key.json` - App Store Connect API key (JSON with inline key content)
+- `AuthKey_*.p8` - The actual private key file
+
+### Uploading Metadata
+
+```bash
+cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots
+```
+
+**Requirements:**
+- An editable App Store version must exist (not in review, not approved)
+- API key must be properly configured
+
+**Notes:**
+- Binary upload still uses `bash scripts/xc.sh upload` (altool)
+- Screenshots are managed manually in App Store Connect
+- Fastlane won't work while a version is in review
+
+### Workflow Integration
+
+During release:
+1. Update `appstore-metadata/metadata.json` with new release_notes, etc.
+2. Build and upload binary: `bash scripts/xc.sh upload`
+3. Upload metadata: `cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots`
+4. Submit for review in App Store Connect
+
 ## Versions, Builds, and Tags
 
 Three distinct concepts:
