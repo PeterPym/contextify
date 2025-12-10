@@ -1068,6 +1068,8 @@ Add email signup form to website for release/update notifications.
 
 - [ ] #LEGACY-MACOS: Add support for macOS 14/15 with graceful degradation
 
+**User Validation:** u/quinncom (r/MacApps, 2025-12-10) - "I would be fine without summarization. My main use case would be to search for previous coding sessions by keyword, tag, or directory path." See `build/docs/operations/marketing/user-feedback.md`.
+
 **Problem:**
 Current app requires macOS 26 (Tahoe) because Apple Intelligence powers the LLM summaries. This excludes users on older macOS who could still benefit from:
 - Timeline monitoring

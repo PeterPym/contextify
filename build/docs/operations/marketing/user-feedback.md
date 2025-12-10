@@ -57,4 +57,20 @@ Collected feedback from users, testers, and reviewers.
 - Custom LLM API - New, could be part of #LEGACY-MACOS
 - Tags - New feature request, not currently planned
 
-**Reply:** See `/tmp/reddit-reply-quinncom.md`
+**Reply (posted 2025-12-10):**
+
+> Hey, this is really helpful feedback - thanks for being specific about your use case.
+>
+> Good news on both fronts:
+>
+> Directory path filtering - This is exactly how it works now. Each project tab corresponds to a directory path (derived from where you ran Claude Code/Codex). As a freelancer with multiple clients, you'd see each client project as a separate tab.
+>
+> Search by keyword - Yes, this is already built! Full-text search across your conversation history, within a single project at a time. I have plans to support cross-project search but haven't built it yet.
+>
+> For macOS 15 support without summarization: this is definitely something I want to do. A "lite mode" (timeline + search, no summaries) would let people start building their searchable history now, then get summaries automatically when they upgrade. I'll bump this up in priority based on your feedback.
+>
+> The custom LLM API idea is interesting. Have you installed a local llm in the past? I'm wondering if this is something to build all the tooling around like "click here to download the model" i.e. Draw Something or try to fit into a popular existing local LLM install method.
+>
+> Tags are a new idea I hadn't considered. Could you tell me more about how you'd use them? Would these be manually applied, or auto-generated from something (client name in path, etc.)?
+
+**Status:** Awaiting response on LLM and tags questions
