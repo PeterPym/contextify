@@ -152,6 +152,48 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Performance Profiling & Optimization
+
+**Status:** Guide written, implementation ready
+**Priority:** P1 (addresses LOG-ISSUES performance problems)
+**Effort:** 4-6 hours (instrumentation + fixes)
+**Guide:** `build/notes/todo-support/PERFORMANCE-PROFILING-guide.md`
+
+- [ ] #PERFORMANCE-PROFILING: Add instrumentation and fix performance issues from log analysis
+
+**Scope:**
+
+1. **Add os_signpost instrumentation** (1-2 hours)
+   - Timeline refresh triggers (`loadFeedFromSQL`, notification handlers)
+   - Watcher recovery attempts
+   - Discovery scan cycles
+
+2. **Implement fixes** (2-3 hours)
+   - Debounce timeline refresh (100ms window)
+   - Exponential backoff for watcher recovery
+   - Security scope check before recovery attempts
+
+3. **Create profiling script** (30 min)
+   - `scripts/profile.sh` for automated xctrace profiling
+   - Output to `build/profiles/` directory
+
+4. **Validate with profiling** (1 hour)
+   - Before/after comparison of refresh frequency
+   - Verify watcher loop is eliminated
+   - Confirm CPU returns to idle
+
+**Key Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` - refresh debounce, watcher recovery
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift` - scan instrumentation
+
+**Acceptance Criteria:**
+- Timeline refresh collapses N notifications into 1 refresh
+- Watcher recovery gives up after 5 failed attempts
+- xctrace profile shows CPU returning to near-zero when idle
+- No infinite loops in Points of Interest trace
+
+---
+
 ## Sparkle Release Automation (1 item)
 
 **Status:** Design complete, awaiting user answers before implementation
