@@ -1,0 +1,97 @@
+{
+  "$schema": "../schemas/release.schema.json",
+  "version": "1.0.2",
+  "target_channels": ["dmg", "appstore"],
+  "created": "2025-12-09",
+  "updated": "2025-12-09",
+
+  "git": {
+    "tag": "v1.0.2",
+    "commit": "1afdc99a0c6c29cb94563a9ae5fdb7b26d583888",
+    "branch": "main"
+  },
+
+  "phases": {
+    "pre_release": {
+      "status": "pending",
+      "completed_at": null,
+      "validation": {
+        "tests_passed": null,
+        "test_count": null,
+        "warnings": null,
+        "working_directory_clean": null
+      }
+    },
+
+    "build": {
+      "status": "pending",
+      "dmg": {
+        "built": false,
+        "path": null,
+        "sha256": null,
+        "size_bytes": null,
+        "signed": false,
+        "notarized": false,
+        "sparkle_signature": null
+      },
+      "appstore": {
+        "archived": false,
+        "archive_path": null,
+        "build_number": 1,
+        "exported": false,
+        "uploaded": false,
+        "upload_receipt": null
+      }
+    },
+
+    "review_materials": {
+      "status": "pending",
+      "demo_video": {
+        "recorded": false,
+        "path": null,
+        "deployed": false
+      },
+      "sample_data": {
+        "generated": false,
+        "path": null,
+        "deployed": false
+      }
+    },
+
+    "submission": {
+      "status": "pending",
+      "submitted_at": null,
+      "rejection": null,
+      "resubmission": null
+    },
+
+    "marketing": {
+      "status": "pending",
+      "changelog": {
+        "written": false,
+        "published": false
+      },
+      "announcements": {
+        "twitter": false,
+        "mastodon": false,
+        "hacker_news": false,
+        "product_hunt": false
+      }
+    },
+
+    "post_release": {
+      "status": "pending",
+      "documentation_updated": false,
+      "support_faq_updated": false,
+      "monitoring_enabled": false
+    }
+  },
+
+  "notes": [
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Release initialized"
+    }
+  ]
+}
