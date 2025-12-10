@@ -884,10 +884,10 @@ When displaying search results, check if the current project's indexing is compl
 
 **Files:**
 - `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (indexing state tracking)
-- Search results view (TBD - depends on #CONVO-SEARCH implementation)
+- `Contextify/Contextify/QuickSearchView.swift` (project-scoped search)
+- `Contextify/Contextify/DeepSearchView.swift` (cross-project search)
 
 **Related:**
-- #CONVO-SEARCH (search implementation - this todo applies once search exists)
 - `.backgroundIngestProgress` notification (already broadcasts remaining count)
 
 ---

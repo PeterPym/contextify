@@ -135,6 +135,54 @@ Contextify can follow sessions in two ways:
 
 ---
 
+### Search
+
+Contextify provides full-text search across all your conversation history, helping you find that specific command, fix, or solution from weeks ago.
+
+#### Quick Search (Project-Scoped)
+
+<!-- TODO: Document keyboard shortcut to open Quick Search -->
+<!-- TODO: Document search field behavior -->
+<!-- TODO: Document result display and navigation -->
+
+Search within the current project for fast, focused results.
+
+- **Activation:** <!-- TODO: Add shortcut -->
+- **Scope:** Current project only
+- **Results:** Shows matching entries with context preview
+
+#### Deep Search (Cross-Project)
+
+<!-- TODO: Document keyboard shortcut (⌘Enter from Quick Search?) -->
+<!-- TODO: Document Deep Search window features -->
+<!-- TODO: Document project filtering in Deep Search -->
+
+Search across all projects for comprehensive results.
+
+- **Activation:** <!-- TODO: Add shortcut -->
+- **Scope:** All projects (with optional filtering)
+- **Features:** Project filters, pagination, expanded context
+
+#### Search Tips
+
+<!-- TODO: Document search syntax if any (quotes, operators, etc.) -->
+<!-- TODO: Document what content is searchable (user messages, assistant responses, etc.) -->
+
+- Search matches user messages and assistant responses
+- Results show surrounding context for each match
+- Click a result to jump to that entry in the timeline
+
+#### Copy & Export
+
+<!-- TODO: Document "Copy for AI" and other copy actions -->
+<!-- TODO: Document how to use search results with other tools -->
+
+- **Copy excerpt:** Copy the matched text with context
+- **Copy for AI:** Format result for pasting into new Claude session
+- **Open in timeline:** Jump to the full conversation context
+
+---
+
 ### AI Integration
 
 #### Apple Intelligence
@@ -453,6 +501,18 @@ Contextify will warn you if it detects recent access from another machine.
 | Space/Enter | Activate button or open info popover |
 | Esc | Close popover or dismiss alert |
 
+### Search
+
+<!-- TODO: Verify these shortcuts match implementation -->
+
+| Shortcut | Action |
+|----------|--------|
+| ⌘F | Open Quick Search |
+| ⌘⇧F | Open Deep Search |
+| Enter | Search (from search field) |
+| ⌘Enter | Open in Deep Search (from Quick Search) |
+| Esc | Close search / Clear results |
+
 ### General
 
 | Shortcut | Action |
@@ -507,6 +567,10 @@ Check your system requirements:
 **Switching Projects:**
 - ⌘⇧P → Projects window → Set as Current
 - Or use ⌘⇧[ / ⌘⇧] to cycle
+
+**Searching:**
+- ⌘F → Quick Search (current project)
+- ⌘⇧F → Deep Search (all projects)
 
 **Understanding Follow Modes:**
 - **Auto:** Follows newest session (default)
