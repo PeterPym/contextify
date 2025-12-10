@@ -26,42 +26,6 @@
 
   <!-- Page-specific styles -->
   <style>
-    .version-badge {
-      display: inline-block;
-      background: var(--contextify-primary-light);
-      color: var(--contextify-primary);
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 0.25rem 0.75rem;
-      border-radius: 100px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    [data-bs-theme="dark"] .version-badge {
-      background: var(--slate-700);
-      color: var(--contextify-primary);
-    }
-
-    .table-section-header td {
-      background: var(--bg-muted) !important;
-      font-size: 0.85rem;
-      padding: 0.75rem 1.5rem !important;
-    }
-
-    [data-bs-theme="dark"] .table-section-header td {
-      background: var(--slate-700) !important;
-    }
-
-    .feature-yes {
-      color: var(--contextify-success);
-      font-weight: 500;
-    }
-
-    .feature-no {
-      color: var(--text-tertiary);
-    }
-
     /* App Store badge: show light-bg version by default, dark-bg version in dark mode */
     .badge-dark-bg {
       display: none;
@@ -116,15 +80,14 @@
     <div class="container text-center py-4">
       <h1 class="display-5 fw-bold mb-3">Download Contextify</h1>
       <p class="lead mb-2">Choose the version that works best for you</p>
-      <p class="text-secondary mb-5">Both versions require <strong>macOS 26 (Tahoe)</strong> or later</p>
+      <p class="mb-5" style="color: var(--contextify-primary); font-weight: 500;">Both versions work entirely offline. Your data never leaves your machine. 🔒</p>
 
       <div class="row justify-content-center g-4">
         <!-- App Store Card -->
         <div class="col-md-5">
           <div class="download-option-card">
-            <div class="version-badge mb-3">macOS Tahoe</div>
             <h2 class="h4 mb-2">Mac App Store</h2>
-            <p class="text-secondary mb-4">Automatic updates, Family Sharing</p>
+            <p class="text-secondary mb-4">Automatic updates, reviewed by Apple</p>
             <a href="/go/appstore" class="app-store-badge mb-3">
               <img src="../assets/img/app-store-badge-light-bg.svg" alt="Download on the App Store" height="48" class="badge-light-bg">
               <img src="../assets/img/app-store-badge-dark-bg.svg" alt="Download on the App Store" height="48" class="badge-dark-bg">
@@ -135,9 +98,8 @@
         <!-- DMG Card -->
         <div class="col-md-5">
           <div class="download-option-card">
-            <div class="version-badge mb-3">macOS Tahoe</div>
             <h2 class="h4 mb-2">Direct Download</h2>
-            <p class="text-secondary mb-4">No sandbox, simpler setup</p>
+            <p class="text-secondary mb-4">Faster performance, simpler setup</p>
             <a href="/go/dmg" class="dmg-download mb-3">
               Download DMG
             </a>
@@ -173,6 +135,7 @@
           </div>
         </div>
       </div>
+
     </div>
   </section>
 
@@ -180,9 +143,8 @@
   <section class="requirements-section py-5">
     <div class="container text-center">
       <h2 class="h4 fw-bold mb-4">System Requirements</h2>
-      <p class="mb-2"><strong>macOS 26 (Tahoe)</strong> or later</p>
-      <p class="text-secondary small mb-2">Requires Apple Silicon (M1 or later) for Apple Intelligence</p>
-      <p class="text-secondary small mb-0">Both versions work entirely offline. Your data never leaves your machine.</p>
+      <p class="mb-2"><strong>macOS 26 (Tahoe)</strong></p>
+      <p class="text-secondary small mb-0">Requires Apple Silicon (M1 or later) for Apple Intelligence</p>
     </div>
   </section>
 
