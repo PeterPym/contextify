@@ -17,6 +17,46 @@ priority_levels:
 
 ## P4 (Future Considerations)
 
+### HOMEBREW-CASK: Homebrew Cask formula for DMG distribution
+
+**Status:** Not started
+**Priority:** P4
+**Effort:** 1-2 hours
+
+- [ ] Create Homebrew Cask formula for Contextify DMG
+
+**Scope:** Create a Homebrew Cask formula so users can install via `brew install --cask contextify`. Requires:
+- Formula file with download URL, SHA256, app name
+- Submit to homebrew-cask or host in custom tap
+
+---
+
+### RELEASE-STATUS-BAR: Claude Code status line for release version
+
+**Status:** Not started
+**Priority:** P4
+**Effort:** 2-4 hours
+
+- [ ] Add Claude Code status line showing current release version
+
+**Idea:** Configure Claude Code's status line to display current release version being worked on. Would show something like `v1.0.0 build:4 phase:review_materials`. Nice-to-have developer convenience.
+
+---
+
+### DERIVED-DATA-SEPARATION: Separate derived data by distribution type
+
+**Status:** Ready for implementation
+**Priority:** P4
+**Effort:** 1 hour
+
+- [ ] Separate derived data directories by distribution type
+
+**Problem:** Release builds crash with "different Team IDs" error when App Store and DMG distributions are built sequentially (shared `.derived/` directory causes framework signing conflicts).
+
+**Solution:** Use `.derived-dmg` for DMG builds and `.derived-appstore` for App Store builds.
+
+---
+
 ### P4-AUTONOMOUS-DEVELOPMENT: Self-Managing Development Pipeline
 
 **Status:** Vision/concept
