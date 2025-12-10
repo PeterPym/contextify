@@ -486,6 +486,42 @@ The message was "great. commit and push" - two separate ideas: (1) acknowledgmen
 
 ---
 
+## Example 14: Fragment Echo with Duplicate Attribution
+
+**Date Added:** 2025-12-10
+**Category:** attribution error (fragment echo)
+**Transcript:** `f71cbb6a-1cd3-4df3-b1c8-aa62cb065c43.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Good draft - authentic tone, valuable content structure. A few things to tighten up:\n\n**Title missing** - The draft recommended: \"Your Claude Code history auto-deletes after 30 days. I built something to fix that.\" - did you pick one?\n\n**Queue section header is misleading** - \"CC's Queue System changed in 2.0.50\" implies a regression, but the body just explains how it works. Based on your earlier investigation, the regression claim was inaccurate. I'd retitle to just:\n\n> **Claude Code's Queue System**\n\nor \n\n> **Understanding the Queue System**\n\n**Typos:**\n- \"stop_reasonmismatches\" → \"stop_reason mismatches\"\n- \"included it its thinking\" → \"included it in its thinking\"\n\n**Consider adding engagement questions** - The draft had these at the end to drive comments:\n\n> 1. Do you keep your Claude Code conversation history? Do you ever go back to it?\n> 2. Would you want Claude Code to be able to search its own past sessions?\n> 3. What other features would be useful?\n\n**Missing \"free\" callout** - Nowhere does it explicitly say the app is free. The draft had a \"**Pricing: Free.**\" section. Worth adding since that's a strong hook.\n\n**Optional - credibility** - You could mention FileKitty if you want (\"from the maker of FileKitty\" hit HN front page), but fine to skip if you'd rather let this stand on its own.\n\nOtherwise looks ready. Want me to produce a clean final version with these fixes?",
+  "entry_id": "d5c4abf7-be15-4ae3-aad4-80a4ab049c45",
+  "summary": "Claude Code Claude Code's Queue System",
+  "timestamp": "2025-12-10T18:11:22Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/f71cbb6a-1cd3-4df3-b1c8-aa62cb065c43.jsonl"
+}
+```
+
+**Problem:**
+The summary is "Claude Code Claude Code's Queue System" - gibberish with "Claude Code" duplicated. The LLM extracted the markdown header suggestion `> **Claude Code's Queue System**` from the content, then prepended the standard "Claude Code" attribution, resulting in a nonsensical duplicate. The actual content is detailed feedback on an HN draft post.
+
+**Expected Summary:**
+- "Claude Code reviewed the HN draft, suggesting title changes, typo fixes, and engagement questions."
+- Or: "Claude Code provided detailed feedback on the post draft including header, typos, and pricing callout."
+
+**Root Cause (suspected):**
+- Markdown blockquote headers (`> **Claude Code's Queue System**`) were extracted as if they were the message topic
+- The attribution prefix "Claude Code" was added to text that already started with "Claude Code's"
+- Long, structured feedback with multiple markdown elements confused the summarization into fragment extraction mode
+
+**Fix Approach:**
+1. Detect when extracted text already contains "Claude Code" and skip redundant attribution
+2. Recognize blockquote patterns (`> **...`) as quoted suggestions, not the actual message topic
+3. For detailed review/feedback messages, summarize the action ("reviewed", "provided feedback") rather than extracting fragments
+
+---
+
 ## Template for New Examples
 
 ```markdown

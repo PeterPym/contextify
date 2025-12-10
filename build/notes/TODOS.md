@@ -11,7 +11,7 @@ priority_levels:
   P3: Low priority/deferred - future enhancements
 doc_references:
   standard: "All TODO supporting docs should have YAML front matter and live in build/notes/todo-support/, named by TODO ID"
-  naming: "P{N}-{ID}-{type}.md (e.g., P1-AUTOSCROLL-spec.md, P2-SWITCH-investigation.md)"
+  naming: "{ID}-{type}.md (e.g., AUTOSCROLL-spec.md, SWITCH-investigation.md)"
   workflow:
     iterate: "Work on docs in /tmp/ creating multiple versions until finalized"
     finalize: "Copy final version to build/notes/todo-support/ with proper naming"
@@ -37,16 +37,14 @@ doc_references:
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - Public launch + log issues
-- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
-- **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 18 items - Future enhancements
-
-**Total Active Items:** 87
+- **P0 (Launch Critical):** Release blockers
+- **P1 (High Priority):** Important for quality/UX, ship soon after launch
+- **P2 (Medium Priority):** Nice to have, can defer to future releases
+- **P3 (Low Priority / Deferred):** Future enhancements
 
 ---
 
-# P0 (Launch Critical) - 3 Items
+# P0 (Launch Critical)
 
 ---
 
@@ -56,7 +54,7 @@ doc_references:
 **Priority:** P0 (blocking v1.0.1 release)
 **Branch:** `fix/permission-discovery-logging`
 
-- [ ] #P0-PERMISSION-FIX-QA: Validate permission fix with regression tests
+- [ ] #PERMISSION-FIX-QA: Validate permission fix with regression tests
 
 **Background:**
 Dual-CLI users (both Claude Code and Codex) experience issues when granting a second
@@ -93,74 +91,31 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## v1.0 Public Launch (1 item)
+## v1.0 Public Launch
 
-**Status:** App Store resubmitted (WAITING_FOR_REVIEW), website/DMG release pending
-**Priority:** P0 (blocking public launch)
-**Effort:** 4-6 hours remaining
+**Status:** Website deployed, App Store approved, soft launch in progress
+**Priority:** P0
 
-- [ ] #P0-LAUNCH: Complete v1.0 public launch sequence
+- [ ] #LAUNCH: Complete v1.0 public launch sequence
 
-**Current State:**
-- Help menu: DONE (simplified, links to contextify.sh/help/ and GitHub issues)
-- Public repo: DONE (github.com/PeterPym/contextify with issue templates)
-- App Store: WAITING_FOR_REVIEW (Build 10, resubmitted Dec 2)
-- DMG: Built but not publicly released on website
-- Review materials: Sample data + demo video deployed to contextify.sh
-- Website: Design system done, needs screenshots + deploy (see #P1-WEBSITE-REDESIGN)
-
-**Immediate Next Steps:**
-1. [x] Fix website styling - design system migration complete (see #P1-WEBSITE-REDESIGN)
-2. [ ] Add app screenshots to website
-3. [ ] Publish DMG release on website with download link
-4. [ ] Deploy website: `./scripts/deploy-website.sh`
-5. [ ] Wait for App Store approval, then add App Store badge
+**Remaining:**
+- [ ] Prepare Twitter announcement thread
+- [ ] Soft launch: Tweet + Reddit
+- [ ] Show HN post (1-2 days after soft launch)
+- [ ] Monitor and respond to feedback
+- [ ] Product Hunt (when ready)
 
 **Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
 
-### Remaining Sub-tasks
-
-**Website (contextify.sh)**
-- [x] Help landing page created
-- [x] Support page updated with GitHub issues links
-- [x] Design system migration (INSPINIA -> design tokens)
-- [x] Brand divider, card hover, navbar styling
-- [x] Hero section with headline and swoopity background
-- [ ] App screenshots (light + dark mode)
-- [ ] OG image for social sharing
-- [ ] Deploy current changes
-- [ ] Download section (DMG link, SHA256, requirements)
-- [ ] App Store badge (when approved)
-
-**Content Creation**
-- [x] Demo video script written
-- [ ] Record demo video (60-90 seconds)
-- [ ] Finalize Show HN post
-- [ ] Prepare Twitter announcement thread
-
-**Distribution**
-- [ ] App Store resubmission (rejected, needs demo video)
-- [x] DMG available on GitHub
-- [x] Public repo created (PeterPym/contextify)
-
-**Launch Sequence**
-- [ ] Soft launch: Tweet + Reddit on App Store approval
-- [ ] Show HN post (1-2 days after soft launch)
-- [ ] Monitor and respond to feedback
-
-**Post-Launch**
-- [ ] Homebrew Cask formula
-- [ ] Product Hunt (when ready)
-
 ---
 
-## Log Analysis Issues (5 items)
+## Log Analysis Issues
 
 **Status:** Root causes identified, fixes pending
 **Priority:** P0 (blocking quality release)
 **Branch:** TBD
 
-- [ ] #P0-LOG-ISSUES: Fix issues identified in Dec 2025 log analysis
+- [ ] #LOG-ISSUES: Fix issues identified in Dec 2025 log analysis
 
 **Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
 
@@ -193,145 +148,50 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-# P1 (High Priority) - 24 Items
+# P1 (High Priority)
 
 ---
 
-## #P1-EMPTY-STATE-MSG: "No Activity Yet" message is misleading during ingestion
+## Performance Profiling & Optimization
 
-**Status:** UX improvement
-**Priority:** P1 (confusing to users)
-**Effort:** 30 minutes
-**Found:** 2025-12-09
+**Status:** Guide written, implementation ready
+**Priority:** P1 (addresses LOG-ISSUES performance problems)
+**Depends on:** #LOG-ISSUES, #AUTOMATED-QA (need QA suite to validate fixes)
+**Effort:** 4-6 hours (instrumentation + fixes)
+**Guide:** `build/notes/todo-support/PERFORMANCE-PROFILING-guide.md`
 
-- [ ] #P1-EMPTY-STATE-MSG: Update empty state message to indicate ingestion in progress
+- [ ] #PERFORMANCE-PROFILING: Add instrumentation and fix performance issues from log analysis
 
-**Problem:**
-When a project is selected but transcripts haven't been ingested yet, the timeline shows "No Activity Yet" / "This conversation has not started yet." This implies the user hasn't done anything, when really we just haven't finished ingesting their transcripts.
+**Scope:**
 
-**Current behavior:**
-- Shows during initial discovery/ingestion
-- Misleading since projects rarely have zero conversations
-- User sees this frequently during fastpath ingestion delays
+1. **Add os_signpost instrumentation** (1-2 hours)
+   - Timeline refresh triggers (`loadFeedFromSQL`, notification handlers)
+   - Watcher recovery attempts
+   - Discovery scan cycles
 
-**Proposed change:**
-Change to something like:
-- "Loading conversations..." (with spinner if ingestion active)
-- "Indexing project..."
-- Or conditionally show "No Activity Yet" only after ingestion confirms zero transcripts
+2. **Implement fixes** (2-3 hours)
+   - Debounce timeline refresh (100ms window)
+   - Exponential backoff for watcher recovery
+   - Security scope check before recovery attempts
 
-**Location:** `ConversationTimelineView.swift:344, 391`
+3. **Create profiling script** (30 min)
+   - `scripts/profile.sh` for automated xctrace profiling
+   - Output to `build/profiles/` directory
 
----
+4. **Validate with profiling** (1 hour)
+   - Before/after comparison of refresh frequency
+   - Verify watcher loop is eliminated
+   - Confirm CPU returns to idle
 
-## #P1-SLOW-DISCOVERY: Discovery scan interval too long (14-29 seconds)
-
-**Status:** Bug - UX feels sluggish
-**Priority:** P1 (affects perceived responsiveness)
-**Effort:** 1-2 hours
-**Found:** 2025-12-08
-
-- [ ] #P1-SLOW-DISCOVERY: Reduce discovery scan interval to ~5 seconds
-
-**Problem:**
-LightweightDiscovery scans are happening every 14-29 seconds instead of the expected ~5 seconds. This makes the app feel sluggish when new projects appear or permissions are granted.
-
-**Evidence from logs:**
-```
-22:21:00 → 22:21:27 = 27 seconds
-22:21:27 → 22:21:41 = 14 seconds
-22:21:41 → 22:22:10 = 29 seconds
-22:22:10 → 22:22:26 = 16 seconds
-```
-
-**Expected:** Discovery should trigger within ~5 seconds of:
-- App becoming active
-- Permission being granted
-- User inactivity after project switch
-
-**Files to investigate:**
-- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
-- `app/Sources/ContextifyCore/AppOrchestrator.swift` - discovery trigger points
+**Key Files:**
+- `Contextify/Contextify/ConversationMonitor.swift` - refresh debounce, watcher recovery
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift` - scan instrumentation
 
 **Acceptance Criteria:**
-- [ ] Discovery scans happen within 5 seconds of triggering events
-- [ ] No excessive CPU usage from too-frequent scans
-- [ ] Permission grants trigger immediate discovery refresh
-
----
-
-## Release Status Bar (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (developer experience, release workflow visibility)
-**Effort:** 2-4 hours
-
-- [ ] #P1-RELEASE-STATUS-BAR: Add Claude Code status line showing current release version
-
-**Problem:**
-When working on releases, it's not immediately obvious which release version is active. You have to run `./scripts/release/status.sh` or check `releases/manifest.json` manually.
-
-**Solution:**
-Configure Claude Code's status line to display the current release version being worked on.
-
-**Implementation:**
-1. Check if Claude Code supports custom status line configuration
-2. Create a script that reads `releases/manifest.json` and outputs current version + phase
-3. Configure status line to run this script
-4. Display format: `v1.0.0 (review_materials)` or similar
-
-**Example output:**
-```
-v1.0.0 build:4 phase:review_materials
-```
-
-**Acceptance Criteria:**
-- [ ] Status line shows current release version
-- [ ] Status line shows current phase (pre_release, build, review_materials, etc.)
-- [ ] Updates automatically when release.json changes
-- [ ] Works in Claude Code sessions for this project
-
-**Reference:** Claude Code status line documentation
-
----
-
-## Derived Data Separation (1 item)
-
-**Status:** Ready for implementation
-**Priority:** P1 (release infrastructure, prevents build crashes)
-**Effort:** 45-60 minutes
-**Plan:** `build/notes/todo-support/P1-DERIVED-DATA-SEPARATION-plan.md`
-
-- [ ] #P1-DERIVED-DATA-SEPARATION: Separate derived data directories by distribution type
-
-**Problem:**
-Release builds crash at launch with "different Team IDs" error when App Store and DMG distributions are built sequentially. Root cause: both distributions share `.derived/` directory, causing Xcode incremental builds to cache frameworks signed with the wrong identity.
-
-**Evidence:**
-```
-Library not loaded: @rpath/Sparkle.framework/Versions/B/Sparkle
-Reason: code signature not valid for use in process:
-mapping process and mapped file (non-platform) have different Team IDs
-```
-
-**Solution:**
-Separate derived data paths by distribution:
-- `.derived-dmg` for DMG builds (with Sparkle)
-- `.derived-appstore` for App Store builds (without Sparkle)
-
-**Files to Change (15 total):**
-- Core scripts: `xc.sh`, `sign_and_notarize.py`
-- Sparkle scripts: `keygen.sh`, `sign.sh`
-- Utilities: `compare-builds.sh`, `monitor-automated-test.sh`
-- Config: `.gitignore`, `Makefile`
-- Docs: `AGENTS.md`, `.claude/commands/run.md`, + 5 others
-
-**Acceptance Criteria:**
-- [ ] `bash scripts/xc.sh --dist=appstore build` creates `.derived-appstore/`
-- [ ] `bash scripts/xc.sh --dist=dmg build` creates `.derived-dmg/`
-- [ ] Sequential release builds (App Store then DMG) don't crash
-- [ ] `make clean` removes both derived data directories
-- [ ] Sparkle scripts find binaries in `.derived-dmg/`
+- Timeline refresh collapses N notifications into 1 refresh
+- Watcher recovery gives up after 5 failed attempts
+- xctrace profile shows CPU returning to near-zero when idle
+- No infinite loops in Points of Interest trace
 
 ---
 
@@ -342,7 +202,7 @@ Separate derived data paths by distribution:
 **Effort:** 4-6 hours
 **Design:** `/tmp/sparkle-release-workflow-design.md`
 
-- [ ] #P1-SPARKLE-RELEASE: Extend release.py with guided Sparkle signing, appcast updates, and website deployment
+- [ ] #SPARKLE-RELEASE: Extend release.py with guided Sparkle signing, appcast updates, and website deployment
 
 **Summary:**
 Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and website deployment with interactive verification prompts at key checkpoints.
@@ -364,7 +224,7 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 **Effort:** 4-8 hours
 **Research:** `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
 
-- [ ] #P1-HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
+- [ ] #HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
 
 **Goal:** Populate contextify.sh/help/ with useful content that educates users, reduces support burden, and drives engagement/growth.
 
@@ -408,11 +268,11 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 ## Automated QA Suite (1 item)
 
 **Status:** Not Started - methodology defined, needs implementation
-**Priority:** P2 (valuable for release confidence, but manual QA sufficient for MVP)
+**Priority:** P1 (enables confident iteration - do before performance work)
 **Effort:** 8-12 hours (MVP bash-based suite)
 **Methodology:** `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
 
-- [ ] #P2-AUTOMATED-QA: Implement automated QA suite for pre-release validation
+- [ ] #AUTOMATED-QA: Implement automated QA suite for pre-release validation
 
 **Goal:** Bash-based automated QA suite that validates 6 critical user flows through log analysis, database queries, and filesystem verification.
 
@@ -458,7 +318,7 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 **Priority:** P1 (enables branch display in App Store without filesystem access)
 **Effort:** 6-8 hours
 
-- [ ] #P1-GIT-BRANCH: Implement transcript-based git branch tracking and display for App Store builds
+- [ ] #GIT-BRANCH: Implement transcript-based git branch tracking and display for App Store builds
 
 **Goal:** Display git branch in App Store builds using transcript data instead of filesystem access. Old approach (commit `b0abdb4`) disabled git entirely; new approach re-enables display.
 
@@ -477,7 +337,7 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 **Priority:** P1 (Prevent future filter drift bugs)
 **Effort:** 8-12 hours (requires refactoring all query callsites)
 
-- [ ] #P1-QUERY-CENTRALIZE: Eliminate duplicate SQL implementations, create single source of truth for timeline queries
+- [ ] #QUERY-CENTRALIZE: Eliminate duplicate SQL implementations, create single source of truth for timeline queries
 
 **Problem:** Multiple functions loading timeline entries with inconsistent filters.
 
@@ -540,7 +400,7 @@ let entries = TimelineEntryQuery()
 **Priority:** P1 (Critical for launch QA)
 **Effort:** 6-8 hours
 
-- [ ] #P1-DISCOVERY-QA: Clean up and QA project auto-discovery with DevOps tooling
+- [ ] #DISCOVERY-QA: Clean up and QA project auto-discovery with DevOps tooling
 
 **Scope:**
 
@@ -593,7 +453,7 @@ let entries = TimelineEntryQuery()
 **Priority:** P2 (Medium priority - nice to have quality/UX improvement)
 **Effort:** 2-3 hours
 
-- [ ] #P2-EXPANSION-STATE: Preserve timeline entry expansion state across view redraws
+- [ ] #EXPANSION-STATE: Preserve timeline entry expansion state across view redraws
 
 **Problem:**
 When a timeline entry is expanded (disclosure triangle opened to show full content) and a new message arrives, the conversation timeline redraws and collapses the previously expanded entry. This forces users to re-expand entries if they're reading them while new messages arrive.
@@ -634,7 +494,7 @@ When a timeline entry is expanded (disclosure triangle opened to show full conte
 **Priority:** P1 (UX - unread count behavior unclear and doesn't follow standard patterns)
 **Effort:** 4-6 hours
 
-- [ ] #P1-UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior
+- [ ] #UNREAD-COUNT: Investigate and fix unread count calculation and clearing behavior
 
 **Problem:**
 The calculation of unread counts in project tabs is not transparent, and the clearing behavior doesn't follow common UX patterns. Users can't easily understand when/why counts appear or how to clear them.
@@ -680,157 +540,8 @@ The calculation of unread counts in project tabs is not transparent, and the cle
 - ✅ Implementation plan with file/line references
 
 **Related Issues:**
-- May interact with #P1-AUTOSCROLL (auto-scroll and unread tracking)
-- May inform empty project detection (#P2-EMPTY-PROJECTS)
-
----
-
-## OS Version Compatibility & User Communication (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (Pre-launch - graceful handling of unsupported OS versions)
-**Effort:** 2-3 hours
-
-- [ ] #P1-OS-COMPATIBILITY: Investigate App Store OS restrictions and implement compatibility modal
-
-**Problem:**
-App is designed for macOS 26+ (Tahoe) but minimum deployment target may be set lower. Need to understand App Store behavior and communicate gracefully to users on unsupported OS versions.
-
-**Investigation (30 min):**
-1. **Research App Store behavior:**
-   - Does App Store prevent downloads on unsupported OS versions automatically?
-   - Or can users download but app won't launch?
-   - Check Apple developer documentation on minimum OS version enforcement
-   - Test: Can macOS 14 user see/download an app with macOS 26 minimum?
-
-**Implementation (1.5-2 hours):**
-
-2. **Add OS Version Check on Launch:**
-   ```swift
-   // In App init or SceneDelegate
-   if #unavailable(macOS 26) {
-       showOSCompatibilityModal()
-       return
-   }
-   ```
-
-3. **Create Compatibility Modal:**
-   - **Title:** "macOS Version Not Supported"
-   - **Message:** "Contextify is designed for macOS 26 (Tahoe) or later. Your current version: macOS [X.Y]"
-   - **Body:** "This version of macOS doesn't include features Contextify requires. We'd love to support your version - let us know!"
-   - **Buttons:**
-     - Primary: "Request Compatibility" → Opens mailto link
-     - Secondary: "Close App" → Quits gracefully
-
-4. **Mailto Link:**
-   ```
-   mailto:support@contextify.sh?subject=macOS%20Compatibility%20Request&body=I'm%20on%20macOS%20[VERSION]%20and%20would%20like%20Contextify%20support.
-   ```
-   - Pre-fill subject: "macOS Compatibility Request"
-   - Pre-fill body with detected OS version
-
-**Files:**
-- `Contextify/Contextify/ContextifyApp.swift` (OS version check on launch)
-- `Contextify/Contextify/Views/OSCompatibilityModal.swift` (new modal view)
-- `Info.plist` (verify MinimumOSVersion setting)
-
-**Acceptance Criteria:**
-- ✅ Documented: Does App Store block downloads on unsupported OS?
-- ✅ If app launches on unsupported OS, modal appears immediately
-- ✅ Modal clearly communicates OS requirement (macOS 26+)
-- ✅ "Request Compatibility" button opens mail client with pre-filled template
-- ✅ "Close App" quits gracefully (no crashes)
-- ✅ Modal includes detected user OS version
-- ✅ User gets clear path to provide feedback/request support
-
-**Benefits:**
-- Professional user experience instead of crashes or confusing errors
-- Collect compatibility requests to inform future support decisions
-- Clear communication about OS requirements
-- Graceful degradation path
-
-**Alternative Approach:**
-If App Store DOES block downloads, this modal becomes unnecessary but check is still useful for TestFlight/sideload scenarios.
-
----
-
-## Git Activity & Work Story (7 items) 🔗⬆️
-
-**Status:** Not Started
-**Priority:** #81 and #83 promoted from P2
-**Effort:** 13-18 hours total
-
-- [ ] #71: Show ahead/behind main in git status
-- [ ] #72: Show staged/unstaged counts next to branch
-- [ ] #79: Parse transcripts for git commands (commits, merges, pushes)
-- [ ] #80: Extract branch names, commit SHAs, messages
-- [ ] #81: Add git activity summary to transcript rows
-- [ ] #82: Show badges: "3 commits to feature/x, merged to main ✓"
-- [ ] #83: Timeline visualization showing work progression
-
-**Vision:** Transform transcripts into work narrative. Show "what you did where" at a glance.
-
-**Implementation Phases:**
-1. **Phase 1:** Git activity extraction & storage (#79-80) - 4-6 hours
-2. **Phase 2:** Transcripts window integration (#81-82, #71-72) - 3-4 hours
-3. **Phase 3:** Timeline story view (#83) - 6-8 hours
-
-**Data Model:**
-```sql
-CREATE TABLE git_activity (
-  id INTEGER PRIMARY KEY,
-  transcript_id TEXT NOT NULL,
-  activity_type TEXT NOT NULL, -- 'commit', 'merge', 'checkout', 'push'
-  branch_name TEXT,
-  commit_sha TEXT,
-  commit_message TEXT,
-  target_branch TEXT, -- for merges
-  timestamp INTEGER NOT NULL,
-  FOREIGN KEY (transcript_id) REFERENCES transcripts(id)
-);
-```
-
-**UI Mockup (Transcript Row):**
-```
-📊 Transcript Title
-⏱️  2 hours ago  •  🔀 feature/new-ui  •  ✅ 3 commits  •  ⬆️ merged to main
-```
-
-**Files:**
-- `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
-- `app/Sources/ContextifyCore/Database/Models.swift`
-- `Contextify/Contextify/TranscriptInventoryView.swift`
-
-**Benefits:**
-- Understand work impact at a glance
-- Find sessions by feature/branch
-- Resume work with full context
-- Identify incomplete work (commits not merged)
-
----
-
-## Transcript Repair Enhancements (4 items) 🔗
-
-**Status:** Not Started
-**Priority:** Collected from P3, related to #58-59 (P0 MVP)
-**Effort:** 6-8 hours
-
-- [ ] #85: Add auto-repair mode during ingestion
-- [ ] #86: Track corruption rates by provider/version
-- [ ] #87: Show toast when corrupted transcript detected
-- [ ] #88: Track repair history and metadata
-
-**Note:** These are enhancements to the P0 repair MVP (#58-59). Can be implemented as Phase 2 after MVP ships.
-
-**Implementation:**
-- #85: HooverEngine auto-repair with user preference toggle
-- #86: Add corruption_events table, surface in diagnostics API
-- #87: Toast notification + one-click repair UI
-- #88: Track which transcripts repaired, prevent double-repair
-
-**Files:** Same as #58-59, plus diagnostics API integration
-
-**Reference:** `build/docs/operations/transcript-corruption-detection.md` (Future Improvements section)
+- May interact with #AUTOSCROLL (auto-scroll and unread tracking)
+- May inform empty project detection (#EMPTY-PROJECTS)
 
 ---
 
@@ -851,7 +562,7 @@ CREATE TABLE git_activity (
 **Priority:** P1 (blocking CI for all contributors)
 **Effort:** 4-6 hours
 
-- [ ] #P1-CI-THROTTLE: Fix GitHub Actions budget exhaustion and implement build throttling
+- [ ] #CI-THROTTLE: Fix GitHub Actions budget exhaustion and implement build throttling
 
 **Problem:**
 GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflows/macos-build.yml) is broken due to budget exhaustion from excessive build triggers.
@@ -888,7 +599,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 **Priority:** P1 (High - Quality/UX)
 **Effort:** 5-7 hours
 
-- [ ] #P1-USER-PROMPT-REWORK: Implement comprehensive user message summarization improvements with permission response handling
+- [ ] #USER-PROMPT-REWORK: Implement comprehensive user message summarization improvements with permission response handling
 
 **Goal:** Mirror assistant-side summarization improvements (disposition taxonomy, verb-tense rules, structured prompts) for user messages. Includes permission response handling and bug fixes.
 
@@ -902,7 +613,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 **Spec:** `build/notes/todo-support/P1-USER-PROMPT-REWORK-spec.md`
 **Planning:** `build/docs/planning/user-timeline-summarization-improvement.md`
-**Related:** #P2-SUMMARIZATION-FIX (attribution issues - separate)
+**Related:** #SUMMARIZATION-FIX (attribution issues - separate)
 
 ## Database Discovery (1 item)
 
@@ -910,7 +621,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 **Priority:** P1 (high impact on automated tooling/QA workflows)
 **Effort:** ~1h to sync prefs + fallback detection
 
-- [ ] #P1-DATABASE-DISCOVERY: Ensure `dev.contextify.database_location` mirrors `HUDPreferences.customDatabaseLocationKey` and add fallback detection (read `HUDPreferences.getCustomDatabaseLocation()` and default path when the key is missing) so automation/debugging tools always discover the current database directory without manual defaults tweaks.
+- [ ] #DATABASE-DISCOVERY: Ensure `dev.contextify.database_location` mirrors `HUDPreferences.customDatabaseLocationKey` and add fallback detection (read `HUDPreferences.getCustomDatabaseLocation()` and default path when the key is missing) so automation/debugging tools always discover the current database directory without manual defaults tweaks.
 
 **Background:** The settings/migration code currently only writes `HUDPreferences.customDatabaseLocationKey` (`app/Sources/ContextifyCore/HUDCore.swift:19-107`), so scripts reading `dev.contextify.database_location` hit “domain/default pair … does not exist” even though `/Users/rob/Library/CloudStorage/Dropbox/contextify-db/contextify.db` is the live database.
 
@@ -925,26 +636,13 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-# Conversation Search (1 item)
-
-**Status:** Spec ready for implementation
-**Priority:** P1 (core UX quality)
-**Effort:** 8-12 hours (Phase 1)
-
-- [ ] #P1-CONVO-SEARCH: Implement Quick Search (HUD project scope) and Deep Search (Search Center) following the unified spec so users can quickly search messages/context per project and still dig into cross-project history without extra spinner noise.
-
-**Spec:** `build/notes/todo-support/P1-CONVO-SEARCH-spec.md`
-**Implementation:** `build/notes/todo-support/P1-CONVO-SEARCH-implementation.md`
-
----
-
 ## Context Re-injection (1 item)
 
 **Status:** Research/Design needed
 **Priority:** P1 (enables AI workflow continuity)
 **Effort:** 4-8 hours (Phase 1 MVP)
 
-- [ ] #P1-CONTEXT-REINJECTION: Enable re-injection of found context into new AI conversations
+- [ ] #CONTEXT-REINJECTION: Enable re-injection of found context into new AI conversations
 
 **Problem:** User finds relevant message via search, wants to inject it (with surrounding context) into new Claude Code session. Current "Copy as JSON" lacks db entry ID, AI cannot look up surrounding context.
 
@@ -956,59 +654,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 5. Local LLM summary - generate optimized context summary for re-injection
 
 **Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
-**Related:** #P1-CONVO-SEARCH spec section 5.4 (surrounding context query), #P2-RESUME-FORK (resume/fork from search)
-
----
-
-## Website Redesign (1 item)
-
-**Status:** In Progress - design system and styling done, assets needed
-**Priority:** P1 (public launch quality)
-**Effort:** 4-6 hours remaining
-**Branch:** `feature/design-system-and-website`
-
-- [ ] #P1-WEBSITE-REDESIGN: Complete website with screenshots and deploy
-
-**Completed (Dec 2025):**
-- [x] Design system established (`build/design/brand/colors.md`)
-- [x] Color migration from INSPINIA to design system tokens
-- [x] Brand gradient divider below hero
-- [x] Card hover effects (lift + shadow)
-- [x] Solid navbar background for sticky behavior
-- [x] Logomark copied to website assets
-- [x] Bootstrap 5 landing page structure
-- [x] Content pages (privacy, terms, support) with shared styling
-- [x] Hero section with swoopity background SVG
-
-**Remaining Work:**
-1. **Screenshots (HIGH PRIORITY)**
-   - Take app screenshot in light mode
-   - Take app screenshot in dark mode
-   - Export at 2x for retina
-   - Place in `website/assets/img/`
-
-2. **OG Image / Social Card**
-   - Create 1200x630 banner for social sharing
-   - `website/assets/img/og-banner.png`
-
-3. **Favicon & Touch Icon**
-   - Verify `website/favicon.ico` exists and is current
-   - Verify `website/apple-touch-icon.png`
-
-4. **Content Verification**
-   - Test privacy.html, terms.html, support.html with new color tokens
-
-5. **Responsive Testing**
-   - Desktop (wide), tablet, mobile
-
-6. **Deploy**
-   - `./scripts/deploy-website.sh` (after screenshots added)
-
-**Design Tools:**
-- Comparator: `build/design/website/specimens/website-comparator.html`
-- Color tokens: `build/design/brand/colors.md`
-
-**Reference:** `build/docs/operations/marketing/launch-plan-v1.md`
+**Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
 ---
 
@@ -1018,7 +664,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 **Priority:** P1 (UX improvement, follows Loopback pattern)
 **Effort:** 4-6 hours
 
-- [ ] #P1-PERMISSIONS-CARD-UI: Redesign permissions UI with Loopback-style cards
+- [ ] #PERMISSIONS-CARD-UI: Redesign permissions UI with Loopback-style cards
 
 **Goal:** Replace current permissions list UI with card-based layout inspired by Loopback's permissions window.
 
@@ -1046,66 +692,74 @@ Both should use identical card components for consistency.
 
 ---
 
-# P2 (Medium Priority) - 46 Items
+# P2 (Medium Priority)
 
 ---
 
-## #P2-RELEASE-NOTES-JSON: JSON-based release notes with multi-output generation
+## #EMPTY-STATE-MSG: "No Activity Yet" message is misleading during ingestion
 
-**Status:** Spec Complete
+**Status:** UX improvement
 **Priority:** P2
-**Effort:** 4-6 hours
+**Effort:** 30 minutes
+**Found:** 2025-12-09
 
-**Problem:** Release notes currently maintained as HTML files manually. Need to update multiple places (Sparkle HTML, public repo CHANGELOG, App Store).
+- [ ] #EMPTY-STATE-MSG: Update empty state message to indicate ingestion in progress
 
-**Solution:** Single-source JSON at `releases/vX.Y.Z/release-notes.json`:
-- Script generates: Sparkle HTML, CHANGELOG.md entry, App Store text
-- LLM draft from git commits, human edits JSON, script renders outputs
+**Problem:**
+When a project is selected but transcripts haven't been ingested yet, the timeline shows "No Activity Yet" / "This conversation has not started yet." This implies the user hasn't done anything, when really we just haven't finished ingesting their transcripts.
 
-**Deliverables:**
-- [ ] Add `--json` flag to `generate-release-notes.sh`
-- [ ] Create `render-release-notes.sh` (JSON → outputs)
-- [ ] Create JSON schema at `releases/schemas/release-notes.schema.json`
-- [ ] Update marketing checklist template
+**Current behavior:**
+- Shows during initial discovery/ingestion
+- Misleading since projects rarely have zero conversations
+- User sees this frequently during fastpath ingestion delays
 
-**Spec:** `build/docs/operations/release/release-notes-json-spec.md`
-**Reference:** `build/docs/operations/release/release-notes-guide.md`
+**Proposed change:**
+Change to something like:
+- "Loading conversations..." (with spinner if ingestion active)
+- "Indexing project..."
+- Or conditionally show "No Activity Yet" only after ingestion confirms zero transcripts
 
----
-
-## #P2-RESUME-FORK: Resume and fork conversations from search results
-
-**Status:** Spec Complete
-**Priority:** P2 (consider promotion to P1 after v1.0 launch stabilizes)
-**Effort:** 2-3 weeks across 5 phases
-
-**Vision:** "Git log for agentic coding sessions" - Contextify evolves from passive viewer to workflow participant. When users can resume/fork conversations and Contextify logs these actions in the timeline, Contextify becomes part of the agentic coding workflow, not just an observer.
-
-**Feature:**
-Right-click transcripts or individual entries in search results to:
-- "Resume this conversation" - copies `claude --resume <id>` or `codex resume <id>` to clipboard
-- "Fork this conversation" - creates branch from end of conversation
-- "Fork from here" - creates trimmed transcript to selected point, resumes from there
-
-Toast notifications confirm action. Optionally, Contextify injects system messages into timeline logging these workflow actions (Contextify brandmark appears alongside Claude/Codex icons).
-
-**User Stories:**
-1. Resume transcript from search (MVP)
-2. Fork transcript from end
-3. Fork from specific entry (mid-conversation) - requires trimmed transcript creation
-4. Contextify system messages in timeline
-5. Main timeline integration
-
-**Existing Code:**
-- Resume command generation exists in export flow: `TranscriptInventoryView.swift:746-814`
-- System message infrastructure: `SystemEvent` model (`Models.swift:540`), `appendSystemEntry()` (`ConversationMonitor.swift:3139`)
-
-**Spec:** `build/notes/todo-support/P2-RESUME-FORK-spec.md`
-**Related:** #P1-CONTEXT-REINJECTION (context actions family), #P1-CONVO-SEARCH (search is entry point)
+**Location:** `ConversationTimelineView.swift:344, 391`
 
 ---
 
-## #P2-EMPTY-STATE-PERMISSIONS-UX: Show "permissions needed" instead of spinner
+## #SLOW-DISCOVERY: Discovery scan interval too long (14-29 seconds)
+
+**Status:** Bug - UX feels sluggish
+**Priority:** P2
+**Effort:** 1-2 hours
+**Found:** 2025-12-08
+
+- [ ] #SLOW-DISCOVERY: Reduce discovery scan interval to ~5 seconds
+
+**Problem:**
+LightweightDiscovery scans are happening every 14-29 seconds instead of the expected ~5 seconds. This makes the app feel sluggish when new projects appear or permissions are granted.
+
+**Evidence from logs:**
+```
+22:21:00 → 22:21:27 = 27 seconds
+22:21:27 → 22:21:41 = 14 seconds
+22:21:41 → 22:22:10 = 29 seconds
+22:22:10 → 22:22:26 = 16 seconds
+```
+
+**Expected:** Discovery should trigger within ~5 seconds of:
+- App becoming active
+- Permission being granted
+- User inactivity after project switch
+
+**Files to investigate:**
+- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
+- `app/Sources/ContextifyCore/AppOrchestrator.swift` - discovery trigger points
+
+**Acceptance Criteria:**
+- [ ] Discovery scans happen within 5 seconds of triggering events
+- [ ] No excessive CPU usage from too-frequent scans
+- [ ] Permission grants trigger immediate discovery refresh
+
+---
+
+## #EMPTY-STATE-PERMISSIONS-UX: Show "permissions needed" instead of spinner
 
 **Status:** Not Started
 **Priority:** P2 (UX clarity for App Store builds)
@@ -1132,11 +786,11 @@ When an App Store user launches Contextify without having granted folder permiss
 - [ ] Clear path from empty state to granting permissions
 - [ ] Spinner only appears during actual loading operations
 
-**Split from:** #P0-SETTINGS-OVERHAUL
+**Split from:** #SETTINGS-OVERHAUL
 
 ---
 
-## #P2-IMAGE-RENDERING: Render images inline in timeline and search results
+## #IMAGE-RENDERING: Render images inline in timeline and search results
 
 **Status:** Not Started
 **Priority:** P2 (visual differentiator)
@@ -1174,7 +828,7 @@ Claude Code transcripts contain embedded images (base64-encoded). Currently we s
 
 ---
 
-## #P2-PROJECT-COUNT-MISMATCH: Welcome modal project count includes non-displayed projects
+## #PROJECT-COUNT-MISMATCH: Welcome modal project count includes non-displayed projects
 
 **Status:** Not Started
 **Priority:** P2 (UX confusion)
@@ -1203,7 +857,7 @@ The welcome modal should use the same project count logic as the tab bar - only 
 
 ---
 
-## #P2-SEARCH-INDEXING-WARNING: Warn when searching incompletely indexed project
+## #SEARCH-INDEXING-WARNING: Warn when searching incompletely indexed project
 
 **Status:** Not Started
 **Priority:** P2 (UX - inform user about partial results)
@@ -1231,15 +885,15 @@ When displaying search results, check if the current project's indexing is compl
 
 **Files:**
 - `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` (indexing state tracking)
-- Search results view (TBD - depends on #P1-CONVO-SEARCH implementation)
+- `Contextify/Contextify/QuickSearchView.swift` (project-scoped search)
+- `Contextify/Contextify/DeepSearchView.swift` (cross-project search)
 
 **Related:**
-- #P1-CONVO-SEARCH (search implementation - this todo applies once search exists)
 - `.backgroundIngestProgress` notification (already broadcasts remaining count)
 
 ---
 
-## #P2-ACTIVATION-ORCH-UNIFICATION: Single orchestrator + activation façade
+## #ACTIVATION-ORCH-UNIFICATION: Single orchestrator + activation façade
 
 **Status:** Not Started
 **Priority:** P2 (architecture hardening)
@@ -1264,7 +918,7 @@ Unify around one shared orchestrator and a small activation façade so quick-dis
 
 ---
 
-## #P2-ACTIVATION-OBS: Activation observability and sandbox retries
+## #ACTIVATION-OBS: Activation observability and sandbox retries
 
 **Status:** Not Started
 **Priority:** P2 (diagnostics / stability)
@@ -1288,7 +942,7 @@ Add per-project activation telemetry and a sandbox-only retry for quick discover
 
 ---
 
-## #P2-CONSOLIDATE-USERDEFAULTS: Consolidate UserDefaults to single domain
+## #CONSOLIDATE-USERDEFAULTS: Consolidate UserDefaults to single domain
 
 **Status:** Not Started
 **Priority:** P2 (code cleanup, reduces complexity)
@@ -1299,7 +953,7 @@ App uses two UserDefaults domains:
 - `sh.contextify.Contextify` (bundle ID) - standard
 - `dev.contextify` (shared suite) - for HUDPreferences
 
-This causes confusion when resetting app state (both must be cleared) and was root cause of #P0-PROJECT-ROOT-MODAL recurring.
+This causes confusion when resetting app state (both must be cleared) and was root cause of #PROJECT-ROOT-MODAL recurring.
 
 **Solution:**
 Migrate all preferences to bundle ID domain and remove `dev.contextify` suite.
@@ -1322,7 +976,7 @@ Migrate all preferences to bundle ID domain and remove `dev.contextify` suite.
 **Priority:** P2 (release workflow improvement)
 **Effort:** 2-4 hours
 
-- [ ] #P2-DYNAMIC-FORWARDER: Implement dynamic download links that always point to latest release
+- [ ] #DYNAMIC-FORWARDER: Implement dynamic download links that always point to latest release
 
 **Problem:**
 Download links throughout documentation, README files, and external references point to specific versions. Each release requires updating multiple locations, and stale links in external articles/posts can't be fixed.
@@ -1371,13 +1025,51 @@ Implement server-side redirects or static file forwarders:
 
 ---
 
+## Website Email Collection (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (growth/marketing)
+**Effort:** 2-4 hours
+
+- [ ] #EMAIL-COLLECTION: Add email signup for release notifications on website
+
+**Problem:**
+Users interested in Contextify but unable to use it yet (e.g., macOS 15 holdouts) have no way to be notified when features they want ship. We're losing potential users who would convert later.
+
+**Context:**
+u/quinncom on r/MacApps expressed interest but can't use macOS 26. Wants to know when "lite mode" (macOS 15 support) ships. Currently no way to notify such users.
+
+**Solution:**
+Add email signup form to website for release/update notifications.
+
+**Options:**
+1. **Buttondown** (recommended) - Simple, cheap, good for small lists
+2. **Mailchimp** - More features, free tier available
+3. **Self-hosted** - More work, full control
+
+**Implementation:**
+- Add signup form to website (footer or dedicated section)
+- "Get notified about new releases and features"
+- Privacy-focused messaging (no spam, release announcements only)
+- Consider targeting: "Waiting for macOS 15 support? Sign up to be notified."
+
+**Acceptance criteria:**
+- [ ] Email signup form on contextify.sh
+- [ ] Confirmation email on signup
+- [ ] Unsubscribe link in all emails
+- [ ] Privacy policy updated if needed
+
+---
+
 ## Pre-macOS 26 Compatibility (1 item)
 
 **Status:** Not Started
 **Priority:** P2 (growth enabler - lets users start collecting history before upgrading)
 **Effort:** 6-10 hours
 
-- [ ] #P2-LEGACY-MACOS: Add support for macOS 14/15 with graceful degradation
+- [ ] #LEGACY-MACOS: Add support for macOS 14/15 with graceful degradation
+
+**User Validation:** u/quinncom (r/MacApps, 2025-12-10) - "I would be fine without summarization. My main use case would be to search for previous coding sessions by keyword, tag, or directory path." See `build/docs/operations/marketing/user-feedback.md`.
 
 **Problem:**
 Current app requires macOS 26 (Tahoe) because Apple Intelligence powers the LLM summaries. This excludes users on older macOS who could still benefit from:
@@ -1429,7 +1121,7 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 **Status:** Not Started
 **Priority:** P3
 
-- [ ] #P3-SCREENSHOT-AUTOMATION: Automate App Store screenshots with light/dark mode toggle
+- [ ] #SCREENSHOT-AUTOMATION: Automate App Store screenshots with light/dark mode toggle
 
 **Scope:**
 - Script should flip system appearance (dark ↔ light) and capture screenshots in both modes
@@ -1445,7 +1137,7 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 **Effort:** 6-8 hours (audit + consolidation + cleanup)
 **Context:** Nov 17 documentation audit identified 15+ standalone docs in scripts/ that should move to build/docs/
 
-- [ ] #P2-SCRIPTS-CONSOLIDATION: Complete scripts directory consolidation and cleanup
+- [ ] #SCRIPTS-CONSOLIDATION: Complete scripts directory consolidation and cleanup
 
 **Scope:**
 
@@ -1621,14 +1313,14 @@ Let users on older macOS "bank" their conversation history now. When they upgrad
 **Priority:** P2 (UX improvements - nice to have)
 **Effort:** 2 hours total
 
-- [ ] #P2-PROJECTS-REFRESH-REVIEW: Investigate if manual "Refresh Projects" button is needed (1.5 hours)
-- [ ] #P2-PROJECTS-EMPTY-STATE: Add first-run guidance to empty state (30 min)
+- [ ] #PROJECTS-REFRESH-REVIEW: Investigate if manual "Refresh Projects" button is needed (1.5 hours)
+- [ ] #PROJECTS-EMPTY-STATE: Add first-run guidance to empty state (30 min)
 
 **Context:** Projects window improvements for better UX consistency.
 
 ---
 
-### #P2-PROJECTS-REFRESH-REVIEW: Review Auto-Refresh Behavior
+### #PROJECTS-REFRESH-REVIEW: Review Auto-Refresh Behavior
 
 **Question:**
 ProjectsViewModel observes `AppStateOrchestrator` via `NotificationCenter.default.notifications(named: .appStateDidChange)`. Does this mean projects auto-refresh when discovery runs, making the manual "Refresh Projects" button redundant?
@@ -1657,7 +1349,7 @@ ProjectsViewModel observes `AppStateOrchestrator` via `NotificationCenter.defaul
 
 ---
 
-### #P2-PROJECTS-EMPTY-STATE: Add First-Run Guidance
+### #PROJECTS-EMPTY-STATE: Add First-Run Guidance
 
 **Problem:**
 Empty state shows discovery paths but doesn't guide user on next steps. First-time users may not understand what triggers project discovery.
@@ -1707,7 +1399,7 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 **Effort:** 3-4 hours remaining
 **Branch:** `claude/p1-code-quality-017eyf46izwZZFvGYbX6jsSN` (rebased off main, pushed)
 
-- [ ] #P2-CODE-QUALITY: Fix remaining 10 compiler warnings to achieve zero-warning policy
+- [ ] #CODE-QUALITY: Fix remaining 10 compiler warnings to achieve zero-warning policy
 
 **Branch Status:**
 - ✅ Rebased off main (commit 22415ce0)
@@ -1833,7 +1525,7 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 **Priority:** P2 (workflow improvement - frequently managing TODOs)
 **Effort:** 6-8 hours
 
-- [ ] #P2-TODOS-AGENT: Build intelligent TODO management agent (create, update, prioritize, clean up)
+- [ ] #TODOS-AGENT: Build intelligent TODO management agent (create, update, prioritize, clean up)
 
 **Goal:** Full-featured agent that understands TODO/ROADMAP workflows and manages them intelligently.
 
@@ -1887,11 +1579,11 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 **Effort:** 4-6 hours
 **Research:** `build/notes/todo-support/P2-TODOS-REFACTOR-research.md`
 
-- [ ] #P2-TODOS-REFACTOR: Refactor TODO system to reduce file size and improve AI efficiency
+- [ ] #TODOS-REFACTOR: Refactor TODO system to reduce file size and improve AI efficiency
 
 **Problem:**
 - TODOS.md is 2k+ lines, AI must read full file to update one status
-- Priority embedded in task IDs (e.g., `#P1-WEBSITE`) makes reprioritization awkward
+- Priority embedded in task IDs (e.g., `#WEBSITE`) makes reprioritization awkward
 - No clear rules on when entry needs backing file
 - Ad-hoc detail file structure
 
@@ -1927,7 +1619,7 @@ todos/
 **Priority:** P2 (Technical debt - token burn branches need review)
 **Effort:** 8-12 hours
 
-- [ ] #P2-TOKEN-BURN: Review and catalog token burn branches from Nov 18-19, 2025
+- [ ] #TOKEN-BURN: Review and catalog token burn branches from Nov 18-19, 2025
 
 **Background:**
 Multiple branches created during late-night token burn session with speculative code, documentation, marketing plans, and experimental features. Need comprehensive review and cataloging before any integration.
@@ -1994,7 +1686,7 @@ Multiple branches created during late-night token burn session with speculative 
 **Priority:** P2 (UX improvement)
 **Effort:** 4-6 hours
 
-- [ ] #P2-BACKGROUND-SUMM: Re-implement background LLM summarization for "would-be-visible" entries
+- [ ] #BACKGROUND-SUMM: Re-implement background LLM summarization for "would-be-visible" entries
 
 **Goal:** When app is backgrounded, continue summarizing entries the user is likely to scroll to. Pre-populates summaries for smoother UX when returning to foreground.
 
@@ -2011,7 +1703,7 @@ Multiple branches created during late-night token burn session with speculative 
 **Effort:** 4-6 hours
 **Spec:** `build/notes/todo-support/P2-SUMMARIZATION-FIX-spec.md`
 
-- [ ] #P2-SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
+- [ ] #SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
 
 **Problem:**
 Timeline summaries sometimes reverse attribution, showing user action requests as assistant explanations. Example: User says "add a P1 todo" → Summary says "You explained how to add a todo."
@@ -2050,7 +1742,7 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 **Priority:** P2 (Quality - batch fix unparseable summaries)
 **Effort:** 2-4 hours per batch
 
-- [ ] #P2-SUMM-PARSING-BACKLOG: Fix messages that fail summarization parsing
+- [ ] #SUMM-PARSING-BACKLOG: Fix messages that fail summarization parsing
 
 **Problem:**
 Some transcript entries produce summaries that fail post-processing or contain unexpected formats. Rather than fixing these one-off as they appear, collect examples and fix in batches.
@@ -2073,7 +1765,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 **Priority:** P2 (UX enhancement)
 **Effort:** 4-6 hours
 
-- [ ] #P2-WORKTREE: Add visual grouping for git worktrees and verify transcript isolation
+- [ ] #WORKTREE: Add visual grouping for git worktrees and verify transcript isolation
 
 **Goal:** Add subtle background color to project tabs to indicate related worktrees from the same git repository. Core worktree support already works (separate projects, transcript isolation by CWD).
 
@@ -2089,7 +1781,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 **Priority:** P2 (UX improvement)
 **Effort:** 3-4 hours
 
-- [ ] #P2-TAB-REORDER-UX: Fix drag-drop precision and add keyboard shortcuts for tab reordering
+- [ ] #TAB-REORDER-UX: Fix drag-drop precision and add keyboard shortcuts for tab reordering
 
 **Issues:**
 1. **Vertical drag sensitivity** - Small vertical drift cancels drag unexpectedly (fix: expand hit zone)
@@ -2105,7 +1797,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 **Priority:** P2 (architectural improvement + App Store status integration)
 **Effort:** 12-16 hours (incremental migration)
 
-- [ ] #P2-PYTHON-CLI-REFACTOR: Refactor release workflow to Python CLI with App Store Connect API integration
+- [ ] #PYTHON-CLI-REFACTOR: Refactor release workflow to Python CLI with App Store Connect API integration
 
 **Problem:**
 The release workflow scripts (`scripts/release/*.sh`) have grown into a small application with embedded Python everywhere. Bash associative arrays are fragile, JSON manipulation via `jq` is awkward, and the state machine logic is hard to maintain. Most critically, the system cannot verify actual App Store submission status - it relies on manual user reporting.
@@ -2149,7 +1841,7 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 
 ---
 
-# P3 (Low Priority / Deferred) - 18 Items
+# P3 (Low Priority / Deferred)
 
 ## Project Directory Bookmarks (1 item) ⬇️
 
@@ -2157,7 +1849,7 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 **Priority:** Demoted from P0 (cosmetic issue, not functional blocker)
 **Effort:** N/A (tracking only, see ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS for enhancement)
 
-- [ ] #P3-PROJECT-BOOKMARKS: Project contexts have nil bookmarks in sandboxed builds (expected)
+- [ ] #PROJECT-BOOKMARKS: Project contexts have nil bookmarks in sandboxed builds (expected)
 
 **Background:**
 In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` because:
@@ -2187,7 +1879,7 @@ In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` be
 **Priority:** Demoted from P1 (project switch already works via database)
 **Effort:** 1-2 hours (add hoover notification subscription)
 
-- [ ] #P3-LOGOMARK: Add real-time logomark updates during transcript ingestion
+- [ ] #LOGOMARK: Add real-time logomark updates during transcript ingestion
 
 **Already Working (commit `0ab0d79`):**
 - ✅ Database-backed provider detection
@@ -2214,7 +1906,7 @@ In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` be
 **Priority:** P3 (post-launch stability work after infrastructure issues resolved)
 **Effort:** 6-8 hours
 
-- [ ] #P2-TESTS: Validate reinstated test infrastructure and re-enable skipped integration tests
+- [ ] #TESTS: Validate reinstated test infrastructure and re-enable skipped integration tests
 
 **Summary:** FoundationLLM/SDK/actor blockers have been addressed, so this work is now about verification: ensure `swift test` passes cleanly, re-enable `testInitialHooverWorkflow`, `testOrchestratorWorkflow`, and `testCrashRecovery`, and confirm the CI workflow references the reactivated suites.
 
@@ -2236,7 +1928,7 @@ In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` be
 **Effort:** Unknown (requires AppKit or future SwiftUI improvements)
 **Documentation:** `build/docs/audits/liquid-glass-status.md`
 
-- [ ] #P3-LIQUID-GLASS: Complete Liquid Glass toolbar translucency for macOS 26
+- [ ] #LIQUID-GLASS: Complete Liquid Glass toolbar translucency for macOS 26
 
 **What Shipped (~40%):**
 - ✅ Glass button effects (`.glassEffect()` on macOS 26)
@@ -2272,7 +1964,7 @@ SwiftUI's `.navigationTitle()` conflicts with `.principal` toolbar placement. Ta
 **Priority:** P3 (Post-launch feature)
 **Effort:** 1-2 hours
 
-- [ ] #P3-RESTORE-HTTP-API: Re-enable diagnostics HTTP server for external tooling
+- [ ] #RESTORE-HTTP-API: Re-enable diagnostics HTTP server for external tooling
 
 **Context:**
 The diagnostics HTTP server was removed before initial release. This feature allows external scripts to query timeline state via localhost HTTP API.
@@ -2303,7 +1995,7 @@ The diagnostics HTTP server was removed before initial release. This feature all
 **Priority:** P3 (UX enhancement - nice to have)
 **Effort:** 2-4 hours
 
-- [ ] #P3-OFFSCREEN-ACTIVITY: Indicate when new messages appear in off-screen projects
+- [ ] #OFFSCREEN-ACTIVITY: Indicate when new messages appear in off-screen projects
 
 **Problem:**
 When the project tab bar has many projects, some are scrolled out of view. If a non-visible project receives new transcript activity, the user has no indication that something is happening. They may miss important updates from background sessions.
@@ -2350,7 +2042,7 @@ When a project not currently visible in the tab bar receives new messages:
 **Priority:** P3 (guard against UI regressions)
 **Effort:** 2-3 hours (test harness + assertions)
 
-- [ ] #P3-TIMELINE-SUMMARY-HEIGHT: Add regression coverage for the row-height-capping behavior so any future change to `summaryFrameMinHeight` or the logged deltas is caught automatically.
+- [ ] #TIMELINE-SUMMARY-HEIGHT: Add regression coverage for the row-height-capping behavior so any future change to `summaryFrameMinHeight` or the logged deltas is caught automatically.
 
 **Plan:** `build/notes/todo-support/P3-TIMELINE-SUMMARY-HEIGHT.md`
 
@@ -2363,7 +2055,7 @@ When a project not currently visible in the tab bar receives new messages:
 **Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
 **Spec:** `build/notes/todo-support/P2-LAZY-WATCHERS-design.md`
 
-- [ ] #P3-LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
+- [ ] #LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
 
 **Problem:**
 Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
@@ -2389,7 +2081,7 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 **Priority:** P3 (post-launch stability)
 **Effort:** 4-6 hours
 
-- [ ] #P3-EMPTY-TIMELINE-TESTS: Define and add UI/regression coverage for the empty-project timeline-to-empty-state transition so the spinner removal can be validated automatically (see `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`)
+- [ ] #EMPTY-TIMELINE-TESTS: Define and add UI/regression coverage for the empty-project timeline-to-empty-state transition so the spinner removal can be validated automatically (see `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`)
 
 **Problem:**
 - No automated verification currently guards the UI transition around `.loaded` vs `.loading`, so the spinner can reappear unnoticed.
@@ -2409,7 +2101,7 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 **Priority:** Demoted from P2 (code quality, no user-visible impact)
 **Effort:** 4-6 hours
 
-- [ ] #P3-SWITCH: Consolidate 4 overlapping project switch code paths into single unified pipeline
+- [ ] #SWITCH: Consolidate 4 overlapping project switch code paths into single unified pipeline
 
 **Problem:** ConversationMonitor has 4 different code paths handling project switching, creating overlaps, potential race conditions, and wasted work during rapid switching.
 
@@ -2500,7 +2192,7 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 **Effort:** 8-12 hours total
 **Reference:** `build/notes/todo-support/sidechain-transcript-enhancements.md`
 
-- [ ] #P3-SIDECHAIN-ENHANCEMENTS: Implement schema-level and UX improvements for sidechain transcript handling
+- [ ] #SIDECHAIN-ENHANCEMENTS: Implement schema-level and UX improvements for sidechain transcript handling
 
 **Context:**
 The v1 fix for the sidechain transcript bug uses a filename heuristic (`agent-*.jsonl`) to deprioritize sidechain transcripts during FastPath ingestion. These enhancements would improve robustness but are not required for the immediate fix.

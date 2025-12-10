@@ -69,6 +69,13 @@ This directory contains high-level architectural documentation that explains:
 - Keyboard shortcuts and navigation
 - Event-driven discovery and updates
 
+### [Search](search.md)
+**Topics:** Full-text search architecture (FTS5)
+- Quick Search (project-scoped, ⌘F) and Deep Search (cross-project, ⌘⇧F)
+- SQLite FTS5 indexing and query flow
+- Phased roadmap: FTS → embeddings → segments
+- **Status:** Phase 1 shipped, stub doc needs completion
+
 ### [SQL Backend](sql-backend.md)
 **Topics:** SQLite database architecture and schema design
 - Tables, migrations (v1-v26), repositories

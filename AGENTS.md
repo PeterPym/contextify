@@ -1,3 +1,5 @@
+@~/code/projects/cli-ai-setup/context/today.md
+
 # Repository Guidelines
 
 **File note:** `CLAUDE.md` is a symlink to this file (`AGENTS.md`). Always edit `AGENTS.md` directly.
@@ -155,6 +157,7 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/design/README.md` - **START HERE** for design work
 - `build/design/brand/colors.md` - Canonical color tokens (website CSS must stay in sync)
 - `build/design/website/specimens/website-comparator.html` - Interactive design tool
+- `build/ASSETS.md` - **Asset catalog** (screenshots, icons, video - searchable by keywords)
 
 ## UI Testing Gaps
 
