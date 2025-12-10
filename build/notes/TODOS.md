@@ -156,6 +156,7 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 **Status:** Guide written, implementation ready
 **Priority:** P1 (addresses LOG-ISSUES performance problems)
+**Depends on:** #LOG-ISSUES, #AUTOMATED-QA (need QA suite to validate fixes)
 **Effort:** 4-6 hours (instrumentation + fixes)
 **Guide:** `build/notes/todo-support/PERFORMANCE-PROFILING-guide.md`
 
@@ -267,7 +268,7 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 ## Automated QA Suite (1 item)
 
 **Status:** Not Started - methodology defined, needs implementation
-**Priority:** P2 (valuable for release confidence, but manual QA sufficient for MVP)
+**Priority:** P1 (enables confident iteration - do before performance work)
 **Effort:** 8-12 hours (MVP bash-based suite)
 **Methodology:** `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
 
