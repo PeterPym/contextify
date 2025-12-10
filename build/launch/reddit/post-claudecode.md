@@ -1,36 +1,30 @@
 # r/ClaudeCode Post
 
-**Status:** Draft
-**Flair:** Showcase (or Discussion)
+**Status:** Posted 2025-12-10 ~11:15am PT
+**URL:** https://www.reddit.com/r/ClaudeCode/comments/1pjbriy/what_i_found_parsing_1700_claude_code_transcripts/
+**Flair:** Showcase
 
 ---
 
-## Title
+## Title (as posted)
 
-`I parsed 1,700 Claude Code transcripts and learned some things (+ free macOS app)`
-
-### Alternates
-- `Built a transcript viewer for Claude Code - here's what I learned about the queue system`
-- `Free macOS app: searchable Claude Code history (and things I learned parsing 1,700 transcripts)`
+`What I found parsing 1,700 Claude Code transcripts (queue system, corruption bugs, and a free app)`
 
 ---
 
-## Post Body
+## Images Used
+
+1. Onboarding screenshot (Dropbox location picker) - "Store your database in Dropbox or iCloud for backup"
+2. `website/assets/img/feature-search-cropped.webp` - "Search across all your sessions"
+3. `build/assets/screenshots/contextify-screenshot-queued-message-claude-code-light.png` - "Queue indicator in the timeline"
+
+---
+
+## Post Body (as posted)
 
 Hey r/ClaudeCode.
 
-I built a macOS app called Contextify that monitors Claude Code sessions and keeps everything in a searchable local database. But the more interesting part might be what I learned while parsing 1,700+ transcripts.
-
-### The App (quick version)
-
-- Real-time monitoring of Claude Code conversations
-- Full-text search across all your past sessions
-- LLM summaries via Apple Intelligence (on-device)
-- Free: [contextify.sh](https://contextify.sh) / [App Store](https://apps.apple.com/us/app/contextify/id6753190666)
-
-[Screenshot: Main window with conversation timeline]
-
-### Stuff I Learned
+I built a macOS app called [Contextify](https://contextify.sh) that monitors Claude Code sessions and keeps everything in a searchable local database. But the more interesting part might be what I learned while parsing 1,700+ transcripts.
 
 **The Queue System**
 
@@ -50,29 +44,14 @@ FoundationModels (Apple's on-device LLM) is sequential-only - one request at a t
 
 Also discovered it refuses to summarize messages with expletives. Late night coding sessions can get salty. Rather than retry forever, I "tombstone" those failures - the entry shows original text with an (i) icon explaining why.
 
----
+The app is free: [download the dmg or via the App Store](https://contextify.sh/download/). Here's the [demo video](https://www.youtube.com/watch?v=FvrvRGp4C9M) if you want to see it in action.
 
-Happy to answer questions about the transcript format, the queue system, or anything else. Also curious if anyone with more than 1,700 transcripts wants to stress test the app.
-
-**Links:**
-- [Website](https://contextify.sh)
-- [Demo video](https://www.youtube.com/watch?v=FvrvRGp4C9M) (3 min)
-- [GitHub (issues)](https://github.com/PeterPym/contextify/issues)
+Happy to answer questions about the transcript format or the queue system. Also curious if anyone with more than 2k transcripts would stress test it.
 
 ---
 
-## Images
+## Notes
 
-1. `website/assets/img/contextify-screenshot-dark.png` - Main timeline
-2. `build/assets/screenshots/contextify-screenshot-queued-message-claude-code-dark.png` - Queue indicator (very relevant for this sub)
-
----
-
-## Writing Style Notes
-
-For r/claudecode:
-- Lead with technical discovery, app is secondary
-- Queue system details will resonate with power users
-- These users know their transcripts delete - don't belabor it
-- "Stuff I Learned" format works well
-- Ask for stress testers (engagement hook)
+- Technical discovery angle, app secondary
+- Bold text for sections, no formal headings
+- Links at end
