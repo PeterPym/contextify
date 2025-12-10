@@ -33,16 +33,16 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-08
+**Last Updated:** 2025-12-09
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 3 items - App Store permission/discovery bugs
-- **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
+- **P0 (Launch Critical):** 3 items - Public launch + log issues
+- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
-- **P3 (Low Priority / Deferred):** 17 items - Future enhancements
+- **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 86
+**Total Active Items:** 87
 
 ---
 
@@ -50,93 +50,46 @@ doc_references:
 
 ---
 
-## #P0-SECOND-PERMISSION-IGNORED: Second permission grant ignored by discovery
+## Permission Fix for Dual-CLI Users (1 item)
 
-**Status:** Bug - blocks users who grant both Claude Code and Codex permissions
-**Priority:** P0 (App Store UX broken for dual-CLI users)
-**Effort:** 4-6 hours
-**Found:** 2025-12-08 during staged permission grant QA testing
+**Status:** Code fix complete, awaiting QA validation
+**Priority:** P0 (blocking v1.0.1 release)
+**Branch:** `fix/permission-discovery-logging`
 
-- [ ] #P0-SECOND-PERMISSION-IGNORED: Fix second permission grant not being used by discovery
+- [ ] #P0-PERMISSION-FIX-QA: Validate permission fix with regression tests
 
-**Problem:**
-When granting permissions for both Claude Code and Codex in staged fashion:
-- The FIRST permission granted works (projects discovered)
-- The SECOND permission granted is IGNORED (0 projects from that provider)
+**Background:**
+Dual-CLI users (both Claude Code and Codex) experience issues when granting a second
+transcript provider permission via Settings. Two bugs were fixed:
+1. Second permission ignored - discovery didn't see newly-authorized provider
+2. Watcher recovery using stale orchestrator - health checks used old access provider
 
-**QA Test Results:**
-1. **Claude first, then Codex:** Claude: 23 projects, Codex: 0 (broken)
-2. **Codex first, then Claude:** Codex: 15 projects, Claude: 0 (broken)
+**Fixes Applied:**
+- NotificationCenter pattern for permission change notification (87bf979a)
+- Permission observer in AppLifecycleState singleton (not tied to window)
+- Onboarding guard to prevent racing with wizard flow
+- Health monitoring now uses current orchestrator (not captured at task start)
 
-The bug affects WHICHEVER provider is granted second, not a specific provider.
+**QA Requirements (both builds required):**
 
-**Evidence from logs:**
-```
-# Test 1: Claude first (works), Codex second (broken)
-22:11:15 [CODEX-VALIDATE] ✅ Validation succeeded
-22:11:36 [DISC-LIGHT] Raw discoveries: 23 (Claude: 23, Codex: 0)
+**App Store build:**
+1. Clean install (delete app, run `make clean-db`)
+2. Launch app - onboarding wizard appears
+3. Grant Claude Code permission only, complete onboarding
+4. Verify Claude projects discovered
+5. Open Settings > Permissions, grant Codex
+6. Verify: Both Claude AND Codex projects now appear
+7. Check logs: No `WATCHER-RECOVERY-ERROR` with sandbox container paths
+8. Wait 60+ seconds, verify no recurring recovery errors
 
-# Test 2: Codex first (works), Claude second (broken)
-22:21:47 [CLAUDE] Found Claude Code transcripts - validation succeeded
-22:22:10 [DISC-LIGHT] Raw discoveries: 15 (Claude: 0, Codex: 15)
-```
+**DMG build:**
+1. Build: `bash scripts/xc.sh build`
+2. Launch app
+3. Verify all projects discovered immediately
+4. No permission-related errors in logs
+5. Health checks run without errors
 
-**Root Cause (suspected):**
-LightweightDiscovery or TranscriptAccessProvider is only loading/using ONE bookmark, not both. Possible caching issue or single-bookmark assumption in the code.
-
-**Files to investigate:**
-- `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
-- `app/Sources/ContextifyCore/Sandbox/TranscriptAccessProvider.swift`
-- `app/Sources/ContextifyCore/Sandbox/BookmarkStore.swift`
-
-**Acceptance Criteria:**
-- [ ] Granting Claude Code then Codex: both providers discovered
-- [ ] Granting Codex then Claude Code: both providers discovered
-- [ ] Discovery refresh after second permission picks up new provider
-
-**Log files:**
-- `/private/tmp/transcript-queue-monitor-20251208-221026.log` (Claude first)
-- `/private/tmp/transcript-queue-monitor-20251208-222026.log` (Codex first)
-
----
-
-## #P0-COORDINATOR-NO-BOOKMARK: Coordinator sends project contexts without bookmarks
-
-**Status:** Bug - breaks security-scoped access for project switching
-**Priority:** P0 (causes "can't access" modal and broken git monitoring)
-**Effort:** 2-4 hours
-**Found:** 2025-12-08 during App Store onboarding QA
-
-- [ ] #P0-COORDINATOR-NO-BOOKMARK: Ensure StartupCoordinator includes bookmarks in project contexts
-
-**Problem:**
-StartupCoordinator sends project context updates with `hasBookmark=false`. Without bookmarks, HUDViewModel cannot restore security-scoped access, causing:
-1. Git monitoring to fail silently
-2. "Stored project root can't be accessed" modal (in some code paths)
-3. Finder reveal to fail
-
-**Evidence from logs:**
-```
-22:31:07.694 [COORD-UPDATE] Handling coordinator update: project=contextify path=/Users/rob/code/projects/contextify hasBookmark=false
-22:31:07.694 [COORD-UPDATE] No bookmark in context for contextify
-22:31:07.697 [COORD-UPDATE] Handling coordinator update: project=cli-ai-setup hasBookmark=false
-22:31:07.697 [COORD-UPDATE] No bookmark in context for cli-ai-setup
-```
-
-**Root Cause:**
-`ActiveProjectContext` is being created without resolving/attaching the security-scoped bookmark for the project path.
-
-**Files to investigate:**
-- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift` - context creation
-- `app/Sources/ContextifyCore/Orchestration/AppStateOrchestrator.swift` - project selection
-- `app/Sources/ContextifyCore/HUDCore.swift:handleCoordinatorUpdate` - bookmark handling
-
-**Acceptance Criteria:**
-- [ ] Project contexts include valid bookmarks when available
-- [ ] HUDViewModel can restore security scope from context bookmark
-- [ ] No "can't access" modal appears during normal project switching
-
-**Log file:** `/private/tmp/transcript-queue-monitor-20251208-222910.log`
+**Reference:** `Contextify/Contextify/ContextifyApp.swift:100-143`, `Contextify/Contextify/ConversationMonitor.swift:3269-3367`
 
 ---
 
@@ -201,7 +154,73 @@ StartupCoordinator sends project context updates with `hasBookmark=false`. Witho
 
 ---
 
-# P1 (High Priority) - 23 Items
+## Log Analysis Issues (5 items)
+
+**Status:** Root causes identified, fixes pending
+**Priority:** P0 (blocking quality release)
+**Branch:** TBD
+
+- [ ] #P0-LOG-ISSUES: Fix issues identified in Dec 2025 log analysis
+
+**Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
+
+**Issues Identified (by priority):**
+
+1. **Transcript validation rejects summary-prefixed files** (108 failures)
+   - Validator requires `uuid`, `timestamp`, `type` but summary lines only have `type`, `summary`, `leafUuid`
+   - Fix: Skip `type=summary` lines in structural validation or accept them as valid
+   - File: `app/Sources/ContextifyCore/Database/TranscriptValidator.swift:162-251`
+
+2. **Codex watcher recovery infinite loop** (96+ errors)
+   - Recovery triggers for Codex transcripts without valid security scope
+   - Retries every ~30s indefinitely, wasting CPU/battery
+   - Fix: Check security scope before recovery, add exponential backoff
+   - Files: `Contextify/Contextify/ConversationMonitor.swift`, `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+
+3. **Timeline high refresh rate** (20+ events, up to 10/5s)
+   - Multiple notification handlers trigger `loadFeedFromSQL()` simultaneously
+   - Fix: Debounce/coalesce refresh requests within 100ms window
+   - File: `Contextify/Contextify/ConversationMonitor.swift:1388-1410`
+
+4. **getCWD failures for Codex transcripts** (3000+ failures)
+   - Discovery doesn't handle Codex's nested `payload.cwd` format
+   - Fix: Update getCWD to try `json["payload"]["cwd"]` for Codex
+   - File: `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
+
+5. **Apple Intelligence cancellation errors** (45 events) - **LOW PRIORITY**
+   - Already handled correctly, just noisy logging
+   - Consider: Reduce log level to `.debug` for cancellation errors
+
+---
+
+# P1 (High Priority) - 24 Items
+
+---
+
+## #P1-EMPTY-STATE-MSG: "No Activity Yet" message is misleading during ingestion
+
+**Status:** UX improvement
+**Priority:** P1 (confusing to users)
+**Effort:** 30 minutes
+**Found:** 2025-12-09
+
+- [ ] #P1-EMPTY-STATE-MSG: Update empty state message to indicate ingestion in progress
+
+**Problem:**
+When a project is selected but transcripts haven't been ingested yet, the timeline shows "No Activity Yet" / "This conversation has not started yet." This implies the user hasn't done anything, when really we just haven't finished ingesting their transcripts.
+
+**Current behavior:**
+- Shows during initial discovery/ingestion
+- Misleading since projects rarely have zero conversations
+- User sees this frequently during fastpath ingestion delays
+
+**Proposed change:**
+Change to something like:
+- "Loading conversations..." (with spinner if ingestion active)
+- "Indexing project..."
+- Or conditionally show "No Activity Yet" only after ingestion confirms zero transcripts
+
+**Location:** `ConversationTimelineView.swift:344, 391`
 
 ---
 
@@ -2130,7 +2149,37 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 
 ---
 
-# P3 (Low Priority / Deferred) - 17 Items
+# P3 (Low Priority / Deferred) - 18 Items
+
+## Project Directory Bookmarks (1 item) ⬇️
+
+**Status:** Expected behavior documented, future enhancement planned
+**Priority:** Demoted from P0 (cosmetic issue, not functional blocker)
+**Effort:** N/A (tracking only, see ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS for enhancement)
+
+- [ ] #P3-PROJECT-BOOKMARKS: Project contexts have nil bookmarks in sandboxed builds (expected)
+
+**Background:**
+In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` because:
+- App only has access to transcript directories (`~/.claude/projects/`, `~/.codex/sessions/`)
+- Project directories (e.g., `~/code/projects/foo/`) are discovered from transcript `cwd` hints
+- Sandbox blocks bookmark creation for paths without user-granted access
+
+**Impact (cosmetic only):**
+- Git branch display shows "—" instead of actual branch
+- Finder reveals may fail silently
+- Core transcript display works fine
+
+**Resolution:**
+- Log level downgraded from warning to debug (expected behavior)
+- Comment added explaining sandbox constraint
+- Future enhancement: ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS
+
+**Files:**
+- `app/Sources/ContextifyCore/HUDCore.swift:702-733` - bookmark handling with explanatory comment
+- `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift:490-519` - external project switch
+
+---
 
 ## CLI Logomark Display (1 item) ⬇️
 

@@ -105,15 +105,22 @@ struct SourceAuthorizationRow: View {
 
     Task { @MainActor in
       do {
+        log.info("[PERMISSIONS] ▶ Requesting access for \(source.rawValue, privacy: .public)...")
         let auths = try await controller.requestAccess(for: [source])
         if let auth = auths.first {
           onAuthorizationChanged(auth)
-          log.info("[PERMISSIONS] Granted access for \(source.rawValue)")
+          log.info("[PERMISSIONS] ✅ Granted access for \(source.rawValue, privacy: .public)")
+
+          // Trigger access provider reconfiguration and discovery refresh.
+          // This notification is handled by ContextifyApp which calls reconfigureAccessProvider()
+          // and then triggers discovery to pick up projects from the newly-authorized source.
+          log.info("[PERMISSIONS] 📣 Posting permissionAuthorizationDidChange notification")
+          NotificationCenter.default.post(name: .permissionAuthorizationDidChange, object: source)
         }
       } catch FolderAccessError.userCancelled {
-        log.info("[PERMISSIONS] User cancelled access for \(source.rawValue)")
+        log.info("[PERMISSIONS] User cancelled access for \(source.rawValue, privacy: .public)")
       } catch {
-        log.error("[PERMISSIONS] Failed to grant access for \(source.rawValue): \(error.localizedDescription)")
+        log.error("[PERMISSIONS] ❌ Failed to grant access for \(source.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)")
         errorMessage = error.localizedDescription
       }
       isRequesting = false

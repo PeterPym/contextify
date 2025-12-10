@@ -9,4 +9,8 @@ extension Notification.Name {
     static let contextifyShowToast = Notification.Name("contextifyShowToast")
     static let contextifyTimelineManualRefresh = Notification.Name("contextifyTimelineManualRefresh")
     static let conversationMonitoringDidStart = Notification.Name("conversationMonitoringDidStart")
+
+    /// Posted when a transcript source permission is granted via Settings > Permissions.
+    /// Triggers reconfiguration of the access provider and discovery refresh.
+    static let permissionAuthorizationDidChange = Notification.Name("permissionAuthorizationDidChange")
 }

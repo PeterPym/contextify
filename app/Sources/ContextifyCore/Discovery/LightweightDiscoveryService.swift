@@ -15,7 +15,9 @@ public actor LightweightDiscoveryService {
 
   /// Configure the access provider (allows late binding for App Store builds)
   public func configure(accessProvider: TranscriptAccessProvider) {
+    log.info("[DISC-LIGHT] ▶ Configuring access provider (late binding)")
     self.accessProvider = accessProvider
+    log.info("[DISC-LIGHT] ✅ Access provider configured")
   }
 
   /// Scans filesystem for project metadata. NO DB SIDE EFFECTS.
@@ -23,6 +25,15 @@ public actor LightweightDiscoveryService {
   public func discoverProjectsLightweight() async -> [LightweightProject] {
     log.info("[DISC-LIGHT] Starting lightweight scan...")
     let start = Date()
+
+    // Log provider state for debugging permission issues
+    if let provider = accessProvider {
+      let hasClaude = (try? provider.withAccess(for: TranscriptProviderID.claude) { _ in true }) ?? false
+      let hasCodex = (try? provider.withAccess(for: TranscriptProviderID.codex) { _ in true }) ?? false
+      log.info("[DISC-LIGHT] Provider state: claude=\(hasClaude ? "✓" : "✗"), codex=\(hasCodex ? "✓" : "✗")")
+    } else {
+      log.info("[DISC-LIGHT] Provider state: nil (DMG build, direct filesystem access)")
+    }
 
     async let claudeProjectsTask = scanClaudeProjects()
     async let codexProjectsTask = scanCodexSessions()

@@ -699,11 +699,14 @@ public final class HUDViewModel {
     projectRootURL = url
     branch = context.branch ?? "—"
 
-    // Restore security-scoped access to project root. Without this, sandboxed builds
-    // cannot monitor .git/HEAD (branch display breaks) or access other project files.
-    // The bookmark grants persistent filesystem access across app launches and project switches.
-    // Even though git monitoring is disabled in App Store builds, the restored scope is still
-    // required for Finder reveals, transcript ingestion, and any other scoped I/O.
+    // Restore security-scoped access to project root if available.
+    // In App Store (sandboxed) builds, bookmarks are typically nil for discovered projects because:
+    // - We only have access to transcript directories (~/.claude/projects/, ~/.codex/sessions/)
+    // - Project directories (e.g., ~/code/projects/foo/) are discovered from transcript cwd hints
+    // - Sandbox blocks bookmark creation for paths we don't have access to
+    // Without a bookmark, git branch display shows "—" and Finder reveals may fail.
+    // This is expected behavior until user grants project directory access.
+    // See: ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS for future enhancement.
     if let bookmark = context.bookmark {
       do {
         var isStale = false
@@ -724,7 +727,9 @@ public final class HUDViewModel {
         watcherLog.error("Failed to resolve security-scoped bookmark: \(error.localizedDescription)")
       }
     } else {
-      lifecycleLog.warning("[COORD-UPDATE] No bookmark in context for \(context.displayName, privacy: .public)")
+      // Expected for discovered projects in sandboxed builds - not an error.
+      // See comment above and ROADMAP.md#P4-PROJECT-DIRECTORY-ACCESS.
+      lifecycleLog.debug("[COORD-UPDATE] No bookmark in context for \(context.displayName, privacy: .public) (expected for discovered projects in sandboxed builds)")
     }
 
     // Update file watchers for new project
