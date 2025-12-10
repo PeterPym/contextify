@@ -57,6 +57,56 @@ priority_levels:
 
 ---
 
+### OS-COMPATIBILITY: macOS version compatibility modal
+
+**Status:** Not started
+**Priority:** P4
+**Effort:** 2-3 hours
+
+- [ ] Investigate App Store OS restrictions and implement compatibility modal
+
+**Problem:** App requires macOS 26+ (Tahoe). Need graceful handling if user on older OS tries to run it.
+
+---
+
+### GIT-ACTIVITY: Git activity tracking and work story visualization
+
+**Status:** Not started
+**Priority:** P4
+**Effort:** 13-18 hours
+
+- [ ] Parse transcripts for git commands and show work narrative
+
+**Vision:** Transform transcripts into work story. Show ahead/behind main, staged/unstaged counts, commit badges, timeline visualization of work progression.
+
+---
+
+### RESUME-FORK: Resume and fork conversations from search
+
+**Status:** Spec complete
+**Priority:** P4
+**Effort:** 2-3 weeks
+
+- [ ] Resume/fork conversations from search results
+
+**Vision:** Right-click transcripts to "Resume this conversation" or "Fork from here". Contextify becomes workflow participant, not just observer.
+
+**Spec:** `build/notes/todo-support/P2-RESUME-FORK-spec.md`
+
+---
+
+### RELEASE-NOTES-JSON: JSON-based release notes generation
+
+**Status:** Spec complete
+**Priority:** P4
+**Effort:** 4-6 hours
+
+- [ ] Single-source JSON release notes with multi-output generation
+
+**Problem:** Release notes maintained manually in multiple places. JSON source would generate Sparkle HTML, CHANGELOG.md, App Store text.
+
+---
+
 ### P4-AUTONOMOUS-DEVELOPMENT: Self-Managing Development Pipeline
 
 **Status:** Vision/concept
