@@ -1,0 +1,170 @@
+schema_version: "1.0"
+current_app_version: "1.0.2"
+last_updated: "2025-12-10"
+
+assets:
+  # Website images (symlinked at build/assets/website/)
+  - id: hero-dark
+    path: website/assets/img/contextify-screenshot-dark.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [website, social, docs]
+    keywords: [hero, main, dark, timeline]
+    has_webp: true
+
+  - id: hero-light
+    path: website/assets/img/contextify-screenshot-light.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [website, social]
+    keywords: [hero, main, light]
+    has_webp: true
+
+  - id: feature-search
+    path: website/assets/img/feature-search-cropped.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [website, social, docs]
+    keywords: [search, query, find]
+    has_webp: true
+
+  - id: feature-sync
+    path: website/assets/img/feature-sync-cropped.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [website]
+    keywords: [sync, realtime, monitoring]
+    has_webp: true
+
+  - id: feature-timeline
+    path: website/assets/img/feature-timeline-cropped.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [website]
+    keywords: [timeline, history]
+    has_webp: true
+
+  - id: og-banner
+    path: website/assets/img/og-banner.png
+    type: social
+    app_version: "1.0.0"
+    purpose: [og, social]
+    keywords: [og, opengraph, preview]
+    has_webp: false
+    notes: "Keep PNG - some platforms prefer it for OG"
+
+  - id: apple-intelligence-badge
+    path: website/assets/img/apple-intelligence-macos-tahoe.png
+    type: badge
+    app_version: "n/a"
+    purpose: [website]
+    keywords: [apple, intelligence, tahoe, requirement]
+    has_webp: true
+
+  - id: app-icon-web
+    path: website/assets/img/contextify-icon.png
+    type: icon
+    app_version: "1.0.0"
+    purpose: [website]
+    keywords: [icon, logo]
+
+  # App Store screenshots (symlinked at build/assets/appstore/)
+  - id: appstore-01-main-hud
+    path: appstore-metadata/screenshots/final/01-main-hud-20251125-005030-with-text.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [appstore]
+    keywords: [appstore, main, hud, timeline]
+    dimensions: "2880x1800"
+
+  - id: appstore-02-dual-provider
+    path: appstore-metadata/screenshots/final/02-dual-provider-20251125-003504-with-text.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [appstore]
+    keywords: [appstore, dual, providers, codex]
+    dimensions: "2880x1800"
+
+  - id: appstore-03-inventory
+    path: appstore-metadata/screenshots/final/03-transcript-inventory-20251120-004532-with-text.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [appstore]
+    keywords: [appstore, inventory, transcripts]
+    dimensions: "2880x1800"
+
+  - id: appstore-05-settings
+    path: appstore-metadata/screenshots/final/05-settings-20251120-015643-with-text.png
+    type: screenshot
+    app_version: "1.0.0"
+    purpose: [appstore]
+    keywords: [appstore, settings]
+    dimensions: "2880x1800"
+
+  # Promotional screenshots (real files in build/assets/promotional/)
+  - id: queued-message-dark
+    path: build/assets/promotional/v1.0.2/contextify-screenshot-queued-message-claude-code-dark.png
+    type: screenshot
+    app_version: "1.0.2"
+    purpose: [social, docs]
+    keywords: [queue, message, dark, claude code]
+
+  - id: queued-message-light
+    path: build/assets/promotional/v1.0.2/contextify-screenshot-queued-message-claude-code-light.png
+    type: screenshot
+    app_version: "1.0.2"
+    purpose: [social, docs]
+    keywords: [queue, message, light, claude code]
+
+  - id: queued-message-summarized
+    path: build/assets/promotional/v1.0.2/contextify-screenshot-queued-message-claude-code-summarized-dark.png
+    type: screenshot
+    app_version: "1.0.2"
+    purpose: [social, docs]
+    keywords: [queue, summary, apple intelligence]
+
+  # Video assets (real files in build/assets/video/)
+  - id: demo-video-hn
+    path: build/assets/video/contextify-demo-video-hn-03.mp4
+    type: video
+    app_version: "1.0.1"
+    purpose: [social, youtube]
+    keywords: [demo, walkthrough]
+    duration: "3:39"
+    youtube_url: "https://www.youtube.com/watch?v=FvrvRGp4C9M"
+
+  - id: demo-video-notes
+    path: build/assets/video/contextify-demo-hn-03.md
+    type: doc
+    app_version: "1.0.1"
+    purpose: [docs]
+    keywords: [demo, script, notes]
+
+  - id: dropbox-demo
+    path: build/assets/video/dropbox-db-location-select.mp4
+    type: video
+    app_version: "1.0.1"
+    purpose: [docs]
+    keywords: [dropbox, onboarding, database]
+
+  - id: demo-background
+    path: build/assets/video/demo-video-background.jpg
+    type: build-asset
+    app_version: "1.0.0"
+    purpose: [build]
+    keywords: [demo, background, recording]
+
+  # DMG build assets (real files in build/assets/dmg/)
+  - id: dmg-background
+    path: build/assets/dmg/background.png
+    type: build-asset
+    app_version: "1.0.0"
+    purpose: [build]
+    keywords: [dmg, background, installer]
+
+  - id: dmg-settings
+    path: build/assets/dmg/settings.json
+    type: config
+    app_version: "1.0.0"
+    purpose: [build]
+    keywords: [dmg, settings, layout]
