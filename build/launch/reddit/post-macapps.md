@@ -1,83 +1,58 @@
-# r/MacApps Post Draft
+# r/MacApps Post
 
-**Flair:** Self-Promotion (check subreddit for exact flair options)
-
----
-
-## Title Options
-
-1. `Contextify - Free macOS app that backs up and searches your Claude Code / Codex sessions`
-2. `I built a native macOS HUD to monitor AI coding sessions (Claude Code + Codex)`
-3. `Free app: Searchable history for Claude Code and Codex CLI (your transcripts delete after 30 days)`
-
-**Recommended:** Option 1 (clear, mentions free, describes function)
+**Status:** Posted 2025-12-10 ~10:45am PT
+**URL:** https://www.reddit.com/r/macapps/comments/1pjb7dh/a_native_macos_app_for_searchable_claude_code_and/
+**Flair:** Self-Promotion
 
 ---
 
-## Post Body
+## Title (as posted)
 
-Hi r/MacApps!
-
-I built **Contextify**, a free native macOS app that monitors your AI coding sessions (Claude Code and Codex CLI) and keeps everything in a searchable local database.
-
-### The problem
-
-If you use Claude Code or OpenAI's Codex CLI, your conversation transcripts auto-delete after 30 days. There's no searchable history, and if you switch between tools, your context is fragmented across multiple locations.
-
-### What Contextify does
-
-- **Real-time monitoring** - watches your Claude Code and Codex sessions as they happen
-- **Searchable history** - full-text search across all conversations, forever
-- **AI summaries** - each message gets a one-line summary via Apple Intelligence (100% on-device, no API)
-- **Project organization** - automatically discovers and groups sessions by project
-
-### Screenshots
-
-[Include 2-3 screenshots: timeline view, search results, project switcher]
-
-### Demo video
-
-[3-minute walkthrough](https://www.youtube.com/watch?v=FvrvRGp4C9M)
-
-### Why native macOS?
-
-I wanted something that feels like a system utility, not another Electron app:
-- SwiftUI for instant launch and minimal memory
-- Native window management (HUD-style floating window)
-- Apple Intelligence integration for on-device LLM summaries
-- No server component, no telemetry
-
-### Requirements
-
-- macOS 26 (Tahoe) for Apple Intelligence summaries
-- Works without summaries on older macOS (if there's demand for a lite mode)
-
-### Pricing
-
-**Free.** Both App Store and direct DMG download.
-
-I'm a solo developer. If this gets traction, I might add a paid tier for advanced features, but the core monitoring and search is free.
-
-### Links
-
-- **Download:** https://contextify.sh
-- **App Store:** https://apps.apple.com/us/app/contextify/id6753190666
-- **GitHub (issues):** https://github.com/PeterPym/contextify
-
-Happy to answer any questions about the app or the technical implementation!
+`A native macOS app for searchable Claude Code (and Codex!) history - fully offline`
 
 ---
 
-## Notes for posting
+## Images Used
 
-- r/MacApps appreciates:
-  - Native apps (not Electron)
-  - Free or reasonably priced
-  - Privacy-focused
-  - Technical details about implementation
-- Be prepared for questions about:
-  - Why not open source?
-  - Why Tahoe only?
-  - Comparisons to similar tools
-- Engage with ALL comments, even critical ones
-- Based on research: critical feedback early can lead to positive momentum if you respond well
+1. `website/assets/img/contextify-screenshot-dark.png` - Main hero shot, native UI
+2. `website/assets/img/feature-search-cropped.png` - Search functionality
+3. `build/assets/screenshots/contextify-screenshot-queued-message-claude-code-light.png` - Queue feature
+
+---
+
+## Post Body (as posted)
+
+Contextify monitors your Claude Code and Codex CLI sessions and keeps everything in a searchable local database. No servers, no accounts, no telemetry. Everything runs on-device and stays on your Mac.
+
+**What it does**
+
+* Analyzes full conversation history from `~/.claude/` and `~/.codex/`
+* Centralizes these conversations so you can keep them backed up.
+* Provides real-time monitoring as you work
+* Finds stuff from past convos with full-text search across all codex and Claude Code sessions on a project
+* Creates summaries of your messages with the AI using Apple Intelligence
+* Organizes sessions by project automatically
+
+**Pricing**
+
+Free. The whole thing. I'm a solo developer - if this gets traction I might add a paid tier for advanced features later, but the core app will stay free.
+
+**Links:**
+
+* [Contextify Website](https://contextify.sh)
+* [Download from the App Store or get the DMG](https://contextify.sh/download/)
+* [Demo video](https://www.youtube.com/watch?v=FvrvRGp4C9M) (3 min)
+
+Happy to answer questions about the implementation - especially the Apple Intelligence integration quirks or the App Store sandbox pain. Happy to take feature requests / bug reports here or on [GitHub](https://github.com/PeterPym/contextify/issues).
+
+---
+
+## Writing Style Notes
+
+Based on successful r/MacApps posts:
+- Lead with privacy/on-device angle
+- Bulleted features, scannable
+- Technical details but not overwhelming
+- Clear pricing up front
+- Invite questions
+- Short paragraphs
