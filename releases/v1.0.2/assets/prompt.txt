@@ -1,0 +1,60 @@
+Generate release notes for Contextify version 1.0.2.
+
+## Context
+
+Contextify is a macOS menu bar app that monitors Claude Code and Codex CLI conversations, providing real-time LLM-powered summaries in a timeline view.
+
+**Important:** These commits and diffs are already filtered to app-only paths. Website, documentation, and marketing changes exist but are out of scope for this changelog and must not be mentioned.
+
+## Commits since v1.0.1
+
+38e0ad08 chore(release): bump version to 1.0.2 (build 14)
+3eded37e refactor(permissions): address code review feedback
+eff43d08 fix(permissions): use current orchestrator in health monitoring
+87bf979a fix(permissions): address code review feedback for permission observer
+50387809 fix(logging): downgrade expected bookmark warning to debug level
+a984d2ea fix(logging): make diagnostic log values public for debugging
+828c76d1 fix(coordinator): add bookmark creation to handleExternalProjectSwitch
+fca02d2a fix(permissions): trigger provider reconfiguration after Settings permission grant
+94dc7ef7 feat(logging): add diagnostic logging for permission discovery flow
+b7ddafef feat(ui): add pulsing animation to indexing status icon
+7b19c5b2 docs: update DMG naming to stable filename for /releases/latest/
+788871f1 fix(appstore): disable welcome modal and fix startup sandbox handling
+
+## Files changed
+
+ Contextify/Contextify.xcodeproj/project.pbxproj    |  32 ++---
+ Contextify/Contextify/ContextifyApp.swift          | 141 ++++++++++++++++++---
+ Contextify/Contextify/ConversationMonitor.swift    |  30 +++--
+ Contextify/Contextify/Notifications.swift          |   4 +
+ .../SandboxTranscriptAccessProvider.swift          |  26 +++-
+ Contextify/Contextify/StatusBarView.swift          |   1 +
+ Contextify/Contextify/StatusBarViewModel.swift     |   3 +-
+ .../Contextify/Views/SourceAuthorizationRow.swift  |  13 +-
+ .../Coordination/StartupCoordinator.swift          |  29 +++--
+ .../Discovery/LightweightDiscoveryService.swift    |  11 ++
+ app/Sources/ContextifyCore/HUDCore.swift           |  84 ++++++++----
+ .../Orchestration/AppStateOrchestrator.swift       |   8 ++
+ scripts/release.py                                 |  26 ++--
+ 13 files changed, 310 insertions(+), 98 deletions(-)
+
+## Instructions
+
+1. Generate app-focused release notes following Keep a Changelog conventions
+2. Categories: Added, Changed, Fixed, Removed (only include categories with content)
+3. Focus on user-visible behavior and benefits
+4. Be concise - one line per change, grouped logically
+5. Skip internal refactoring unless it affects users
+6. Do NOT mention website, docs, or marketing changes
+
+## Output format
+
+Return ONLY the Markdown content for this version's entry:
+
+### Added
+- Feature description
+
+### Fixed
+- Bug fix description
+
+Do not include the version header - I will add that.

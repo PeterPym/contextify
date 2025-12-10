@@ -1,0 +1,102 @@
+{
+  "$schema": "../schemas/release.schema.json",
+  "version": "1.0.2",
+  "target_channels": [
+    "dmg",
+    "appstore"
+  ],
+  "created": "2025-12-09",
+  "updated": "2025-12-09",
+  "git": {
+    "tag": "v1.0.2",
+    "commit": "1afdc99a0c6c29cb94563a9ae5fdb7b26d583888",
+    "branch": "main"
+  },
+  "phases": {
+    "pre_release": {
+      "status": "complete",
+      "completed_at": "2025-12-09",
+      "validation": {
+        "tests_passed": true,
+        "test_count": 170,
+        "warnings": 1,
+        "working_directory_clean": true
+      }
+    },
+    "build": {
+      "status": "complete",
+      "dmg": {
+        "built": true,
+        "path": "build/archives/v1.0.2/dmg/Contextify.dmg",
+        "sha256": "1267dc5b41893ec301d775f49e8e4d8c11bbcd2a171c009cac5f7f3d0d0c681e",
+        "size_bytes": 13029182,
+        "signed": true,
+        "notarized": true,
+        "sparkle_signature": null
+      },
+      "appstore": {
+        "archived": true,
+        "archive_path": "build/Contextify.xcarchive",
+        "build_number": 14,
+        "exported": true,
+        "uploaded": true,
+        "upload_receipt": null
+      }
+    },
+    "review_materials": {
+      "status": "pending",
+      "demo_video": {
+        "recorded": false,
+        "path": null,
+        "deployed": false
+      },
+      "sample_data": {
+        "generated": false,
+        "path": null,
+        "deployed": false
+      }
+    },
+    "submission": {
+      "status": "submitted",
+      "submitted_at": "2025-12-10T05:59:59Z",
+      "rejection": null,
+      "resubmission": null
+    },
+    "marketing": {
+      "status": "pending",
+      "changelog": {
+        "written": false,
+        "published": false
+      },
+      "announcements": {
+        "twitter": false,
+        "mastodon": false,
+        "hacker_news": false,
+        "product_hunt": false
+      }
+    },
+    "post_release": {
+      "status": "pending",
+      "documentation_updated": false,
+      "support_faq_updated": false,
+      "monitoring_enabled": false
+    }
+  },
+  "notes": [
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Release initialized"
+    },
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Submitted build 14 to App Store Connect"
+    },
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Submitted build 14 to App Store Connect"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+# Deliverfile for Contextify
+# Single source of truth: ../metadata.json
+
+require 'json'
+
+# Load canonical metadata from JSON
+metadata_file = File.expand_path("../metadata.json", __dir__)
+config = JSON.parse(File.read(metadata_file))
+app_info = config["app_info"]
+metadata = config["metadata"]["en-US"]
+app_store = config["app_store_information"]
+review = config["review_information"]
+
+# API Key authentication
+api_key_path(ENV["FASTLANE_API_KEY_PATH"] || File.expand_path("../../.secrets/fastlane_api_key.json", __dir__))
+
+# App identification
+app_identifier(app_info["bundle_id"])
+team_id("VQ7RPM8H77")
+
+# Platform - macOS app
+platform("osx")
+
+# Metadata from JSON (not text files)
+skip_metadata(false)
+name({ "en-US" => metadata["name"] })
+subtitle({ "en-US" => metadata["subtitle"] })
+description({ "en-US" => metadata["description"] })
+keywords({ "en-US" => metadata["keywords"] })
+promotional_text({ "en-US" => metadata["promotional_text"] })
+release_notes({ "en-US" => metadata["release_notes"] })
+support_url({ "en-US" => metadata["support_url"] })
+marketing_url({ "en-US" => metadata["marketing_url"] })
+privacy_url({ "en-US" => metadata["privacy_url"] })
+
+# App Store information
+copyright(app_store["copyright"])
+primary_category(app_store["primary_category"])
+secondary_category(app_store["secondary_category"])
+
+# Review information
+app_review_information({
+  first_name: review["first_name"],
+  last_name: review["last_name"],
+  phone_number: review["phone_number"],
+  email_address: review["email_address"],
+  notes: review["notes"]
+})
+
+# Don't upload screenshots (we manage those manually in App Store Connect)
+skip_screenshots(true)
+
+# Don't upload binary (we use xcodebuild/altool for that)
+skip_binary_upload(true)
+
+# Don't submit for review automatically
+submit_for_review(false)
+
+# Automatically release after approval? No - we control timing
+automatic_release(false)
+
+# Skip app version check (we manage versions ourselves)
+skip_app_version_update(true)
+
+# Precheck - verify metadata before upload
+precheck_include_in_app_purchases(false)
+
+# Force - don't ask for confirmation
+force(true)

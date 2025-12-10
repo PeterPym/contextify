@@ -1,5 +1,19 @@
 # Contextify Launch Checklist
 
+## Launch Calendar
+
+| Date | Platform | Status | Notes |
+|------|----------|--------|-------|
+| Dec 9 (Tue) | Hacker News | ✅ Done | 3 pts, 566 visitors - modest |
+| Dec 10 (Wed) | Reddit Blitz | 🎯 Next | r/ClaudeAI + r/MacApps + r/OpenAI |
+| Dec 10 (Wed) | Twitter/X | 🎯 Next | Announce thread |
+| TBD | Lobsters | ⏸️ Skip | Not active there, would look spammy |
+| TBD | Product Hunt | Later | Separate launch day |
+
+**Strategy:** HN underperformed, so pivot to Reddit blitz tomorrow. Post to multiple subreddits in the morning, space them ~1-2 hours apart to avoid looking spammy. Support with Twitter thread.
+
+---
+
 ## Pre-Launch (Do First)
 
 - [x] **Demo video** - 3:39 video uploaded to YouTube
@@ -12,13 +26,22 @@
 
 - [ ] **App icon review** (P0 - verify it's the angled one everywhere)
 
-## Hacker News (Show HN) - PRIMARY
+## Hacker News (Show HN) - DONE
 
 - [x] Review/finalize post draft: `build/launch/show-hn/draft.md`
 - [x] Post title: "Show HN: Contextify - Your Claude Code history deletes after 30 days. This keeps it forever."
 - [x] YouTube link added to draft
-- [ ] Post at ~11am PT Tuesday (2pm ET)
-- [ ] Be ready to respond to comments for first 2-3 hours
+- [x] Posted 2025-12-09: https://news.ycombinator.com/item?id=46209081
+- [x] Monitored comments for first few hours
+- **Result:** 3 points, 566 visitors (mostly Windows drive-bys), modest traction
+
+## Lobsters - NEXT (Dec 10)
+
+- [x] Draft ready: `build/launch/lobsters/draft.md`
+- [ ] Post title: "Contextify - Searchable history for Claude Code and Codex CLI"
+- [ ] Tags: `show`, `macos`, `ai`
+- [ ] Post at ~10am PT (good for West Coast + Europe overlap)
+- [ ] Be ready to respond - Lobsters audience appreciates technical depth
 - [ ] Link: contextify.sh
 
 ## Reddit - BACKUP/SUPPLEMENT

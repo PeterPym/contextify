@@ -325,6 +325,58 @@ bash scripts/xc.sh upload
 ```
 </details>
 
+## App Store Metadata (fastlane)
+
+Fastlane automates uploading App Store metadata (description, release notes, promotional text) to App Store Connect.
+
+### Single Source of Truth
+
+All metadata lives in one file: `appstore-metadata/metadata.json`
+
+This includes:
+- App name, subtitle, description, keywords
+- Promotional text, release notes
+- Support/marketing/privacy URLs
+- Copyright, categories
+- Review information (contact, notes with sample data URLs)
+
+### Setup
+
+```
+appstore-metadata/
+├── metadata.json          # Canonical source for all metadata
+└── fastlane/
+    ├── Deliverfile        # Reads from ../metadata.json
+    └── Appfile            # App identification
+```
+
+API credentials in `.secrets/`:
+- `fastlane_api_key.json` - App Store Connect API key (JSON with inline key content)
+- `AuthKey_*.p8` - The actual private key file
+
+### Uploading Metadata
+
+```bash
+cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots
+```
+
+**Requirements:**
+- An editable App Store version must exist (not in review, not approved)
+- API key must be properly configured
+
+**Notes:**
+- Binary upload still uses `bash scripts/xc.sh upload` (altool)
+- Screenshots are managed manually in App Store Connect
+- Fastlane won't work while a version is in review
+
+### Workflow Integration
+
+During release:
+1. Update `appstore-metadata/metadata.json` with new release_notes, etc.
+2. Build and upload binary: `bash scripts/xc.sh upload`
+3. Upload metadata: `cd appstore-metadata/fastlane && fastlane deliver --skip_binary_upload --skip_screenshots`
+4. Submit for review in App Store Connect
+
 ## Versions, Builds, and Tags
 
 Three distinct concepts:
@@ -342,6 +394,53 @@ Three distinct concepts:
 - Multiple builds can share the same version (rejected → fixed → resubmit)
 - Tag captures the code, not the build number
 
+### App Store Version Display Quirk
+
+App Store Connect mangles versions with 0 as the middle component:
+
+| You enter | App Store shows | OK? |
+|-----------|-----------------|-----|
+| 2.0.0     | 2.0             | ✓ (truncated but fine) |
+| 1.1.0     | 1.1             | ✓ (truncated but fine) |
+| 1.1.1     | 1.1.1           | ✓ |
+| 1.0.1     | 1.01            | ✗ (broken) |
+| 1.0.2     | 1.02            | ✗ (broken) |
+
+**Rule: Never use `x.0.y` where y > 0.**
+
+Use standard semver, but expect Apple to truncate trailing `.0`:
+- Major: `2.0.0` → displays as `2.0`
+- Minor: `1.1.0` → displays as `1.1`
+- Patch: `1.1.1` → displays as `1.1.1`
+
+After a major release (`2.0.0`), go directly to `2.1.0` for the first minor/patch. Never `2.0.1`.
+
+### Build Number Strategy
+
+Apple requires build numbers to be unique **within a version**, not globally. Best practice:
+
+**For a NEW version (never submitted to App Store):**
+- Reset `CURRENT_PROJECT_VERSION` to `1` in Xcode project
+- Start fresh - cleaner for App Store Connect history
+
+**For a RESUBMISSION (same version, after rejection):**
+- Increment from last submitted build number
+- e.g., if build 2 was rejected, submit build 3
+
+**How to check before bumping version:**
+```bash
+# Check if this version was ever submitted
+grep -A5 '"X.Y.Z"' releases/manifest.json | grep -q '"submitted"' && echo "Was submitted" || echo "Never submitted"
+```
+
+**When to reset vs increment:**
+| Scenario | Action |
+|----------|--------|
+| New version, never uploaded | Reset to build 1 |
+| Rejected, metadata fix only | Increment build |
+| Rejected, code fix needed | Increment build |
+| DMG-only release, no App Store | Build number doesn't matter |
+
 ### Example Timeline
 
 ```
@@ -355,9 +454,9 @@ def456   4       1.0.0     App Store    Fixed, rebuilt, resubmit
 def456   -       1.0.0     DMG          Ships immediately (same commit)
                                         ← App Store approved
 
-ghi789   5       1.0.1     DMG          Bug fix, ships to DMG users
+ghi789   1       1.0.1     DMG          Bug fix, ships to DMG users
                                         ← Tag v1.0.1 created at ghi789
-ghi789   6       1.0.1     App Store    Submit bug fix to App Store
+ghi789   1       1.0.1     App Store    Submit bug fix (reset to build 1!)
 ```
 
 **When channels diverge:**

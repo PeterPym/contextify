@@ -1,6 +1,6 @@
 # Pre-Release Checklist
 
-**Release:** {version}
+**Release:** 1.0.2
 **Phase:** 1 of 6
 **Status:** [ ] Not Started / [ ] In Progress / [ ] Complete
 
@@ -25,22 +25,13 @@
 ## Version Planning
 
 ### Version Number
-- [ ] Confirm version: {version}
+- [ ] Confirm version: 1.0.2
 - [ ] Follows semantic versioning (MAJOR.MINOR.PATCH)
 - [ ] Current version in Xcode: `grep MARKETING_VERSION Contextify/Contextify.xcodeproj/project.pbxproj | head -1`
 
-### Build Number (App Store)
-- [ ] Check if this version was ever submitted to App Store:
-  ```bash
-  grep -A5 '"{version}"' releases/manifest.json | grep -q '"submitted"' && echo "Was submitted" || echo "Never submitted"
-  ```
-- [ ] If **never submitted**: Reset `CURRENT_PROJECT_VERSION` to `1`
-- [ ] If **resubmitting after rejection**: Increment from last submitted build
-- [ ] Current build in Xcode: `grep CURRENT_PROJECT_VERSION Contextify/Contextify.xcodeproj/project.pbxproj | head -1`
-
 ### Release Notes
 - [ ] Draft release notes content
-- [ ] Save to: `releases/v{version}/assets/release-notes-draft.md`
+- [ ] Save to: `releases/v1.0.2/assets/release-notes-draft.md`
 
 ## Blockers Check
 
@@ -54,7 +45,7 @@
 
 Run validation script:
 ```bash
-./scripts/release/validate-pre-release.sh {version}
+./scripts/release/validate-pre-release.sh 1.0.2
 ```
 
 Paste output:

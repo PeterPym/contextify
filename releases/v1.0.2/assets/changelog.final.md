@@ -1,0 +1,3 @@
+- Faster detection when adding new transcript sources
+- More responsive project switching
+- Bug fixes and improvements
