@@ -110,10 +110,16 @@ final class AppLifecycleState {
   /// 4. So the observer would cause duplicate/racing reconfiguration if it also ran
   ///
   /// After onboarding completes, this observer handles Settings > Permissions grants.
+  /// - Important: `projectsVM` is captured by the observer closure. This assumes
+  ///   `ProjectsViewModel` is created once per app lifetime and never replaced.
+  ///   If that invariant changes, switch to fetching the current VM via a closure.
   func setupPermissionObserver(
     folderAccessController: FolderAccessController,
     projectsVM: ProjectsViewModel?
   ) {
+    #if APPSTORE_BUILD
+    assert(projectsVM != nil, "setupPermissionObserver must be called after ProjectsViewModel is created")
+
     guard permissionObserver == nil else {
       permLog.debug("[PERMISSIONS] Observer already set up, skipping")
       return
@@ -129,12 +135,10 @@ final class AppLifecycleState {
 
         // Skip if onboarding hasn't completed yet - the onboarding flow handles its own startup.
         // This observer is for Settings > Permissions grants after initial setup.
-        #if APPSTORE_BUILD
         guard HUDPreferences.hasCompletedAppStoreOnboarding() else {
           self.permLog.info("[PERMISSIONS] ⏭️ Skipping reconfiguration - onboarding not complete (onboarding handles its own startup)")
           return
         }
-        #endif
 
         Task { @MainActor in
           self.permLog.info("[PERMISSIONS] 🔄 Reconfiguring access provider after Settings permission grant...")
@@ -151,6 +155,9 @@ final class AppLifecycleState {
       }
 
     permLog.info("[PERMISSIONS] 🔔 Permission observer set up in AppLifecycleState")
+    #else
+    permLog.debug("[PERMISSIONS] DMG build - permission observer not needed (direct filesystem access)")
+    #endif
   }
 }
 

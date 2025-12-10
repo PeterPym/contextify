@@ -145,6 +145,14 @@ public final class AppStateOrchestrator: ObservableObject {
   /// 1. `configureAccessProvider(_:)` - Must be called first to enable sandbox access
   /// 2. `startup()` - Runs initial discovery, then starts background discovery
   ///
+  /// **Idempotency:**
+  /// This method is safe to call multiple times (e.g., after permission reconfiguration).
+  /// The permission observer in `AppLifecycleState` relies on this to refresh discovery
+  /// when users grant additional provider access via Settings > Permissions.
+  /// - Discovery re-runs are intentional (picks up newly-authorized providers)
+  /// - Background discovery has internal idempotency guard (won't duplicate watchers)
+  /// - Auto-selection of most recent project may change active project mid-session
+  ///
   /// **Background discovery lifecycle:**
   /// Background discovery (Claude watcher + Codex polling) starts once per process and runs
   /// until termination. This is intentional for the singleton `AppStateOrchestrator.shared`.
