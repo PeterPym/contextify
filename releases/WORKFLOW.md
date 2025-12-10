@@ -394,6 +394,27 @@ Three distinct concepts:
 - Multiple builds can share the same version (rejected → fixed → resubmit)
 - Tag captures the code, not the build number
 
+### App Store Version Display Quirk
+
+App Store Connect mangles versions with 0 as the middle component:
+
+| You enter | App Store shows | OK? |
+|-----------|-----------------|-----|
+| 2.0.0     | 2.0             | ✓ (truncated but fine) |
+| 1.1.0     | 1.1             | ✓ (truncated but fine) |
+| 1.1.1     | 1.1.1           | ✓ |
+| 1.0.1     | 1.01            | ✗ (broken) |
+| 1.0.2     | 1.02            | ✗ (broken) |
+
+**Rule: Never use `x.0.y` where y > 0.**
+
+Use standard semver, but expect Apple to truncate trailing `.0`:
+- Major: `2.0.0` → displays as `2.0`
+- Minor: `1.1.0` → displays as `1.1`
+- Patch: `1.1.1` → displays as `1.1.1`
+
+After a major release (`2.0.0`), go directly to `2.1.0` for the first minor/patch. Never `2.0.1`.
+
 ### Build Number Strategy
 
 Apple requires build numbers to be unique **within a version**, not globally. Best practice:
