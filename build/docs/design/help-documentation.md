@@ -151,17 +151,17 @@ Search within the current project for fast, focused results.
 - **Scope:** Current project only
 - **Results:** Shows matching entries with context preview
 
-#### Deep Search (Cross-Project)
+#### Deep Search (Dedicated Window)
 
 <!-- TODO: Document keyboard shortcut (⌘Enter from Quick Search?) -->
 <!-- TODO: Document Deep Search window features -->
-<!-- TODO: Document project filtering in Deep Search -->
+<!-- TODO: Cross-project search planned but not yet implemented -->
 
-Search across all projects for comprehensive results.
+Search in a dedicated window with expanded results view.
 
 - **Activation:** <!-- TODO: Add shortcut -->
-- **Scope:** All projects (with optional filtering)
-- **Features:** Project filters, pagination, expanded context
+- **Scope:** Current project (cross-project search coming soon)
+- **Features:** Pagination, expanded context preview
 
 #### Search Tips
 
@@ -508,9 +508,8 @@ Contextify will warn you if it detects recent access from another machine.
 | Shortcut | Action |
 |----------|--------|
 | ⌘F | Open Quick Search |
-| ⌘⇧F | Open Deep Search |
+| ⌘⇧F | Open Deep Search (dedicated window) |
 | Enter | Search (from search field) |
-| ⌘Enter | Open in Deep Search (from Quick Search) |
 | Esc | Close search / Clear results |
 
 ### General
@@ -570,7 +569,7 @@ Check your system requirements:
 
 **Searching:**
 - ⌘F → Quick Search (current project)
-- ⌘⇧F → Deep Search (all projects)
+- ⌘⇧F → Deep Search (dedicated window)
 
 **Understanding Follow Modes:**
 - **Auto:** Follows newest session (default)

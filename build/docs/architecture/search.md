@@ -13,9 +13,9 @@ Technical reference for Contextify's search system.
 Contextify provides full-text search across conversation history via two surfaces:
 
 - **Quick Search** - Project-scoped, inline in HUD (Enter in search field)
-- **Deep Search** - Cross-project, dedicated window (⌘Enter from search field)
+- **Deep Search** - Dedicated window (⌘Enter from search field), currently project-scoped
 
-Both use SQLite FTS5 for lexical search. Future phases add embeddings and semantic search.
+Both use SQLite FTS5 for lexical search. Cross-project search and future phases (embeddings, semantic search) are planned but not yet shipped.
 
 **Design Principle:** Contextify's data is append-only transcripts, not mutable code. Embeddings don't go stale, and the "vector index" is just another SQLite table. This makes hybrid search simpler than in tools like Claude Code.
 
@@ -120,13 +120,17 @@ public struct SearchHit: Sendable, Identifiable {
 ### Deep Search (Search Center)
 
 - **Activation:** ⌘Enter from HUD search field
-- **Scope:** All projects (default), with project filter dropdown
-- **Results:** Paginated (50 per page), up to 5000 total
-- **Layout:** Split view with project attribution per result
+- **Scope:** Current project (cross-project search planned but not yet implemented)
+- **Results:** Paginated (50 per page)
+- **Layout:** Dedicated window with split view
 
 **Actions:**
-- **Open in HUD** - Switch HUD to result's project, scroll to entry
+- **Open in HUD** - Jump to entry in timeline
 - **Copy Excerpt / Copy for AI** - Same as Quick Search
+
+**Planned (not yet shipped):**
+- Cross-project search with project filter dropdown
+- Project attribution per result
 
 ---
 
