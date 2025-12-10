@@ -67,8 +67,12 @@
 
 ### Community Posts
 - [ ] Hacker News post drafted
-- [ ] Hacker News posted: [ ] Yes / [ ] Skipped
+- [x] Hacker News posted: [x] Yes / [ ] Skipped (https://news.ycombinator.com/item?id=46209081)
+- [ ] Lobsters post drafted
+- [ ] Lobsters posted: [ ] Yes / [ ] Skipped
 - [ ] Reddit (r/MacApps) post drafted
+- [ ] Reddit posted: [ ] Yes / [ ] Skipped
+- [ ] Reddit (r/ClaudeAI) post drafted
 - [ ] Reddit posted: [ ] Yes / [ ] Skipped
 
 ### Other Channels
