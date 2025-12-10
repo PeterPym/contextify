@@ -33,20 +33,20 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-08
+**Last Updated:** 2025-12-09
 **Status:** Active
 
 **Priority Levels:**
-- **P0 (Launch Critical):** 1 item - Public launch
+- **P0 (Launch Critical):** 3 items - Public launch + log issues
 - **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 85
+**Total Active Items:** 86
 
 ---
 
-# P0 (Launch Critical) - 2 Items
+# P0 (Launch Critical) - 3 Items
 
 ---
 
@@ -151,6 +151,45 @@ transcript provider permission via Settings. Two bugs were fixed:
 **Post-Launch**
 - [ ] Homebrew Cask formula
 - [ ] Product Hunt (when ready)
+
+---
+
+## Log Analysis Issues (5 items)
+
+**Status:** Root causes identified, fixes pending
+**Priority:** P0 (blocking quality release)
+**Branch:** TBD
+
+- [ ] #P0-LOG-ISSUES: Fix issues identified in Dec 2025 log analysis
+
+**Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
+
+**Issues Identified (by priority):**
+
+1. **Transcript validation rejects summary-prefixed files** (108 failures)
+   - Validator requires `uuid`, `timestamp`, `type` but summary lines only have `type`, `summary`, `leafUuid`
+   - Fix: Skip `type=summary` lines in structural validation or accept them as valid
+   - File: `app/Sources/ContextifyCore/Database/TranscriptValidator.swift:162-251`
+
+2. **Codex watcher recovery infinite loop** (96+ errors)
+   - Recovery triggers for Codex transcripts without valid security scope
+   - Retries every ~30s indefinitely, wasting CPU/battery
+   - Fix: Check security scope before recovery, add exponential backoff
+   - Files: `Contextify/Contextify/ConversationMonitor.swift`, `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+
+3. **Timeline high refresh rate** (20+ events, up to 10/5s)
+   - Multiple notification handlers trigger `loadFeedFromSQL()` simultaneously
+   - Fix: Debounce/coalesce refresh requests within 100ms window
+   - File: `Contextify/Contextify/ConversationMonitor.swift:1388-1410`
+
+4. **getCWD failures for Codex transcripts** (3000+ failures)
+   - Discovery doesn't handle Codex's nested `payload.cwd` format
+   - Fix: Update getCWD to try `json["payload"]["cwd"]` for Codex
+   - File: `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
+
+5. **Apple Intelligence cancellation errors** (45 events) - **LOW PRIORITY**
+   - Already handled correctly, just noisy logging
+   - Consider: Reduce log level to `.debug` for cancellation errors
 
 ---
 
