@@ -1024,6 +1024,42 @@ Implement server-side redirects or static file forwarders:
 
 ---
 
+## Website Email Collection (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (growth/marketing)
+**Effort:** 2-4 hours
+
+- [ ] #EMAIL-COLLECTION: Add email signup for release notifications on website
+
+**Problem:**
+Users interested in Contextify but unable to use it yet (e.g., macOS 15 holdouts) have no way to be notified when features they want ship. We're losing potential users who would convert later.
+
+**Context:**
+u/quinncom on r/MacApps expressed interest but can't use macOS 26. Wants to know when "lite mode" (macOS 15 support) ships. Currently no way to notify such users.
+
+**Solution:**
+Add email signup form to website for release/update notifications.
+
+**Options:**
+1. **Buttondown** (recommended) - Simple, cheap, good for small lists
+2. **Mailchimp** - More features, free tier available
+3. **Self-hosted** - More work, full control
+
+**Implementation:**
+- Add signup form to website (footer or dedicated section)
+- "Get notified about new releases and features"
+- Privacy-focused messaging (no spam, release announcements only)
+- Consider targeting: "Waiting for macOS 15 support? Sign up to be notified."
+
+**Acceptance criteria:**
+- [ ] Email signup form on contextify.sh
+- [ ] Confirmation email on signup
+- [ ] Unsubscribe link in all emails
+- [ ] Privacy policy updated if needed
+
+---
+
 ## Pre-macOS 26 Compatibility (1 item)
 
 **Status:** Not Started
