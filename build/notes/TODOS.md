@@ -91,67 +91,25 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## v1.0 Public Launch (1 item)
+## v1.0 Public Launch
 
-**Status:** App Store resubmitted (WAITING_FOR_REVIEW), website/DMG release pending
-**Priority:** P0 (blocking public launch)
-**Effort:** 4-6 hours remaining
+**Status:** Website deployed, App Store approved, soft launch in progress
+**Priority:** P0
 
 - [ ] #LAUNCH: Complete v1.0 public launch sequence
 
-**Current State:**
-- Help menu: DONE (simplified, links to contextify.sh/help/ and GitHub issues)
-- Public repo: DONE (github.com/PeterPym/contextify with issue templates)
-- App Store: WAITING_FOR_REVIEW (Build 10, resubmitted Dec 2)
-- DMG: Built but not publicly released on website
-- Review materials: Sample data + demo video deployed to contextify.sh
-- Website: Design system done, needs screenshots + deploy (see #WEBSITE-REDESIGN)
-
-**Immediate Next Steps:**
-1. [x] Fix website styling - design system migration complete (see #WEBSITE-REDESIGN)
-2. [x] Add app screenshots to website
-3. [x] Publish DMG release on website with download link
-4. [x] Deploy website: `./scripts/deploy-website.sh`
-5. [x] Wait for App Store approval, then add App Store badge
+**Remaining:**
+- [ ] Prepare Twitter announcement thread
+- [ ] Soft launch: Tweet + Reddit
+- [ ] Show HN post (1-2 days after soft launch)
+- [ ] Monitor and respond to feedback
+- [ ] Product Hunt (when ready)
 
 **Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
 
-### Remaining Sub-tasks
-
-**Website (contextify.sh)**
-- [x] Help landing page created
-- [x] Support page updated with GitHub issues links
-- [x] Design system migration (INSPINIA -> design tokens)
-- [x] Brand divider, card hover, navbar styling
-- [x] Hero section with headline and swoopity background
-- [x] App screenshots (light + dark mode)
-- [x] OG image for social sharing
-- [x] Deploy current changes
-- [x] Download section (DMG link, SHA256, requirements)
-- [x] App Store badge (when approved)
-
-**Content Creation**
-- [x] Demo video script written
-- [x] Record demo video (60-90 seconds)
-- [x] Finalize Show HN post
-- [ ] Prepare Twitter announcement thread
-
-**Distribution**
-- [ ] App Store resubmission (rejected, needs demo video)
-- [x] DMG available on GitHub
-- [x] Public repo created (PeterPym/contextify)
-
-**Launch Sequence**
-- [ ] Soft launch: Tweet + Reddit on App Store approval
-- [ ] Show HN post (1-2 days after soft launch)
-- [ ] Monitor and respond to feedback
-
-**Post-Launch**
-- [ ] Product Hunt (when ready)
-
 ---
 
-## Log Analysis Issues (5 items)
+## Log Analysis Issues
 
 **Status:** Root causes identified, fixes pending
 **Priority:** P0 (blocking quality release)
