@@ -1,83 +1,96 @@
-# r/ClaudeAI Post Draft
+# r/ClaudeAI Post
 
 **Flair:** Built with Claude (or Self-Promotion)
 
 ---
 
-## Title Options
+## Title
 
-1. `I built a searchable history for Claude Code (your transcripts delete after 30 days)`
-2. `Built a macOS app to keep my Claude Code conversations forever - Contextify`
-3. `Your Claude Code history auto-deletes after 30 days. I built something to fix that.`
+`I built a searchable history for Claude Code so you can find out how many times you've been "absolutely right"`
 
-**Recommended:** Option 3 (problem-focused, hooks attention)
+### Alternates (if needed)
+- `Your Claude Code history auto-deletes after 30 days. I built something to fix that.`
+- `PSA: Your Claude Code transcripts delete after 30 days. Here's a free app to keep them.`
 
 ---
 
 ## Post Body
 
-Your Claude Code history auto-deletes after 30 days. I built something to fix that.
+Hey everyone.
 
-I've been using Claude Code heavily since June, and I kept running into the same problem: conversations I needed to reference were gone. Decisions, rationale, failed approaches, context that took hours to build - all deleted.
+I'm a software engineer and longtime redditor, sharing a new project today called Contextify.
 
-So I built **Contextify** - a native macOS app that monitors your Claude Code sessions in real-time and keeps everything in a searchable local database.
+I'm structuring this post to hopefully be valuable to you regardless of if you want to try my app: what it does, links to check it out, and things I learned.
 
 ### What it does
 
-- **Real-time monitoring** of Claude Code (and Codex CLI) conversations
-- **Full-text search** across all your sessions
-- **LLM summaries** generated locally via Apple Intelligence (no API keys, no cloud)
-- **Project-centric organization** with automatic discovery
+- Real-time monitoring of Claude Code and Codex conversations
+- Full-text search across all your past sessions
+- Privacy-first bias performs all LLM summaries locally via Apple Intelligence
+- Project-centric organization with automatic discovery
 
-### Demo
+### Download Links and Things
 
-[3-minute video demo](https://www.youtube.com/watch?v=FvrvRGp4C9M)
+- [Contextify Website](https://contextify.sh)
+- Download the app from [macOS App Store](https://apps.apple.com/us/app/contextify/id6753190666) or [.dmg](https://github.com/PeterPym/contextify/releases/latest)
+- [File a bug report or request a feature](https://github.com/PeterPym/contextify/issues)
+- Check out screenshots and a demo video
 
-### Screenshots
+[Screenshot: Search window showing some of the times I've been "absolutely right."]
 
-[Include 1-2 screenshots showing timeline and search]
+[Screenshot: Main window, showing the conversation timeline with the corresponding terminal window next to it.]
 
-### Technical details
+Video demo is on [youtube here](https://www.youtube.com/watch?v=FvrvRGp4C9M). Note this one is formatted for desktop viewing, may be hard to see on mobile.
 
-- SwiftUI (macOS 26 SDK)
-- GRDB/SQLite for local storage
-- Apple FoundationModels for on-device LLM
-- FSEvents for real-time file monitoring
-- Parses JSONL transcripts from `~/.claude/projects/`
+### Stuff I've Learned
 
-No server component. No telemetry. Your conversations stay on your machine.
+**Claude Code Web Free Tokens Promo Transcript Corruption Issue**
 
-### Pricing
+During the big Claude Code Web promo a few weeks ago, I found corruption patterns that were causing 400 errors when trying to resume sessions from the web interface.
 
-**Free.** Available on the [App Store](https://apps.apple.com/us/app/contextify/id6753190666) and as a [direct DMG download](https://contextify.sh).
+I found that the "teleport" feature (resume CLI session from web) was creating orphaned tool_result blocks that the API couldn't handle.
 
-### Why I built this
+I wrote a repair script that fixed about 99% of cases - it removes orphaned messages or fixes stop_reason mismatches. I thought, "Hey I'll include this with the app. People can spend their credits easier!"
 
-Before Claude Code, I used ChatGPT's web interface with [FileKitty](https://filekitty.app) (which hit the HN front page) for context curation. One thing I relied on was the sidebar to search old conversations.
+But I wasn't ready to release before the credits expired and Anthropic fixed it in 2.0.47 with "Improved error messages and validation for claude --teleport". Oh well!
 
-When I moved to Claude Code, I discovered there's no searchable history, and conversations auto-delete after 30 days. Then I started splitting work between Claude Code and Codex when I'd hit rate limits, making the fragmentation worse.
+**CC's Queue System**
 
-Contextify started as a script to parse these files. Then I added a UI. Then summaries. Then search. Now it's become my second monitor while coding.
+Claude Code has an awesome queuing system that I studied while building the parser.
 
-### Questions for you
+Codex doesn't have this. On Codex, if you send a message while it's working, it basically waits until its fully completed the prior request.
 
-1. Do you keep your Claude Code conversation history? Do you ever go back to it?
-2. Would you want Claude Code to be able to search its own past sessions? (The "memory" problem)
-3. What other features would be useful?
+On CC, if you send a message while it's already working on something, it will queue it and incorporate it into its ongoing work. It might interrupt itself or it might wait, it makes a call on its own and its very slick.
+
+I wanted Contextify to be able to reflect these Queued messages appropriately and I was able to build this into the parser and UI by following the transcript metadata records (enqueue, dequeue, remove, popAll).
+
+The app clears this status once Claude has included it in its thinking (regardless of whether it says that it has, cause sometimes it doesn't!)
+
+**Apple Intelligence Quirks**
+
+Foundation Models (Apple's on-device LLM framework) is sequential-only. One request in flight at a time, period. So, I made summarization viewport-aware - it processes what you're actually looking at first, not some random order.
+
+Also discovered it refuses to summarize messages containing expletives. I stayed up late a lot of nights working on this and sometimes things could get salty with CC.
+
+Rather than retry summarizing these kinds of messages, I "tombstone" those failures in the cache. The entry just shows original text with an (i) icon you can click to see why it wasn't summarized.
+
+I also learned a lot about grounding LLM outputs to avoid hallucinated intent along the way. There are many, many cases to handle to make a short summary accurately reflect the intent of messages. I have covered a lot but have a batch of funky summaries still to build logic for.
 
 ---
 
-**Links:**
-- Website: https://contextify.sh
-- App Store: https://apps.apple.com/us/app/contextify/id6753190666
-- GitHub (issues): https://github.com/PeterPym/contextify
-- Demo video: https://www.youtube.com/watch?v=FvrvRGp4C9M
+Okay that's all for now. I'd be happy to answer questions or hear other people's experiences dealing with the above.
+
+I'm also curious if someone with more transcripts than me can try the app. I have about 1700 transcripts between CC and Codex at the moment. I'd like to know how well the app loads in first 3 mins and then ongoing use.
 
 ---
 
-## Notes for posting
+## Writing Style Notes
 
-- Use "Built with Claude" flair if available, otherwise "Self-Promotion"
-- Include screenshots inline (upload to Reddit)
-- Be ready to respond to comments for first few hours
-- If asked about open source: "Core app is not open source yet. Considering it based on traction."
+This post uses an authentic, conversational tone:
+- No marketing hype or superlatives
+- Technical details that are genuinely interesting
+- Self-deprecating humor (the "Oh well!" moment)
+- Honest about limitations (funky summaries still to fix)
+- Asks for help rather than just promoting
+
+Use this style for all future posts.
