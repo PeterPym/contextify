@@ -342,6 +342,32 @@ Three distinct concepts:
 - Multiple builds can share the same version (rejected → fixed → resubmit)
 - Tag captures the code, not the build number
 
+### Build Number Strategy
+
+Apple requires build numbers to be unique **within a version**, not globally. Best practice:
+
+**For a NEW version (never submitted to App Store):**
+- Reset `CURRENT_PROJECT_VERSION` to `1` in Xcode project
+- Start fresh - cleaner for App Store Connect history
+
+**For a RESUBMISSION (same version, after rejection):**
+- Increment from last submitted build number
+- e.g., if build 2 was rejected, submit build 3
+
+**How to check before bumping version:**
+```bash
+# Check if this version was ever submitted
+grep -A5 '"X.Y.Z"' releases/manifest.json | grep -q '"submitted"' && echo "Was submitted" || echo "Never submitted"
+```
+
+**When to reset vs increment:**
+| Scenario | Action |
+|----------|--------|
+| New version, never uploaded | Reset to build 1 |
+| Rejected, metadata fix only | Increment build |
+| Rejected, code fix needed | Increment build |
+| DMG-only release, no App Store | Build number doesn't matter |
+
 ### Example Timeline
 
 ```
@@ -355,9 +381,9 @@ def456   4       1.0.0     App Store    Fixed, rebuilt, resubmit
 def456   -       1.0.0     DMG          Ships immediately (same commit)
                                         ← App Store approved
 
-ghi789   5       1.0.1     DMG          Bug fix, ships to DMG users
+ghi789   1       1.0.1     DMG          Bug fix, ships to DMG users
                                         ← Tag v1.0.1 created at ghi789
-ghi789   6       1.0.1     App Store    Submit bug fix to App Store
+ghi789   1       1.0.1     App Store    Submit bug fix (reset to build 1!)
 ```
 
 **When channels diverge:**
