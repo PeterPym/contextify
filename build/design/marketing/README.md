@@ -16,20 +16,10 @@ This directory is scaffolded but not yet populated. Fill out when marketing effo
 
 ## Asset Locations (When Created)
 
-```
-build/assets/marketing/
-├── social/
-│   ├── twitter-profile.png    # 400x400
-│   ├── twitter-banner.png     # 1500x500
-│   ├── github-social.png      # 1280x640
-│   └── linkedin-banner.png    # 1584x396
-├── press/
-│   ├── logo-dark.png
-│   ├── logo-light.png
-│   └── screenshots/
-└── og/
-    └── og-default.png         # 1200x630
-```
+- Promotional/social assets live in `build/assets/promotional/v{VERSION}/`
+- Demo videos live in `build/assets/video/` (final exports)
+- Source/raw video files belong in `~/Dropbox/Contextify/marketing/`
+- This directory (`build/design/marketing/`) is for marketing strategy/docs, not asset files
 
 ## To Fill Out This Section
 

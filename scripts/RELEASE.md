@@ -271,12 +271,12 @@ Common issues:
 
 ### Layout Configuration
 
-**File:** `build/assets/dmg_settings.json`
+**File:** `build/assets/dmg/settings.json`
 
 ```json
 {
   "title": "Contextify",
-  "background": "build/assets/dmg_background.png",
+  "background": "build/assets/dmg/background.png",
   "icon-size": 120,
   "window": {
     "size": {"width": 700, "height": 400}
@@ -290,7 +290,7 @@ Common issues:
 
 ### Background Image
 
-**Location:** `build/assets/dmg_background.png`
+**Location:** `build/assets/dmg/background.png`
 **Dimensions:** 700×400 pixels
 **Generator:** `scripts/generate_dmg_background.swift`
 
@@ -379,8 +379,8 @@ Contextify's release infrastructure is adapted from FileKitty but differs:
 | `scripts/release.py` | End-to-end release automation |
 | `scripts/sign_and_notarize.py` | DMG signing and notarization |
 | `scripts/xc.sh` | Xcode build wrapper |
-| `build/assets/dmg_settings.json` | DMG layout config |
-| `build/assets/dmg_background.png` | DMG background image |
+| `build/assets/dmg/settings.json` | DMG layout config |
+| `build/assets/dmg/background.png` | DMG background image |
 | `Contextify/Contextify.entitlements` | Code signing entitlements |
 | `Makefile` | Convenience targets |
 

@@ -14,9 +14,9 @@
 
 ## Images Used
 
-1. `website/assets/img/contextify-screenshot-dark.png` - Main hero shot, native UI
-2. `website/assets/img/feature-search-cropped.png` - Search functionality
-3. `build/assets/screenshots/contextify-screenshot-queued-message-claude-code-light.png` - Queue feature
+1. `build/assets/website/contextify-screenshot-dark.png` - Main hero shot, native UI
+2. `build/assets/website/feature-search-cropped.png` - Search functionality
+3. `build/assets/promotional/v1.0.2/contextify-screenshot-queued-message-claude-code-light.png` - Queue feature
 
 ---
 

@@ -80,7 +80,7 @@ This directory contains design documentation for:
 - Design explorations or mockups → `build/design/research/`
 - Brand identity documentation → `build/design/brand/`
 - Website design → `build/design/website/`
-- Marketing/social assets → `build/design/marketing/`
+- Marketing/social assets → `build/assets/promotional/` (assets) and `build/design/marketing/` (strategy/docs)
 - User feedback or feature requests → GitHub issues or TODOS.md
 
 ---

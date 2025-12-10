@@ -2,8 +2,8 @@
 
 Scripts and utilities for launch campaigns.
 
-**Screenshots moved to:** `build/assets/screenshots/` (long-term asset library)
-**Master catalog:** See `build/ASSETS.md` for all assets.
+**Screenshots moved to:** `build/assets/promotional/` (versioned)
+**Master catalog:** See `build/assets/README.md` + `build/assets/MANIFEST.yaml`.
 
 ## Scripts
 

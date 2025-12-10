@@ -39,7 +39,7 @@
    - FileKitty project has complete release infrastructure:
      - `tools/release.py` - End-to-end release automation
      - `tools/packaging/sign_and_notarize.py` - Signing, DMG creation, notarization
-     - `tools/packaging/dmg_settings.json` - DMG layout configuration
+     - `build/assets/dmg/settings.json` - DMG layout configuration
      - GitHub release upload via `gh` CLI
 
 ### ⚠️ What's Partially Ready
@@ -170,8 +170,8 @@
 **Status:** ✅ COMPLETED
 
 **Files Created:**
-- ✅ `build/assets/dmg_background.png` - Gradient background (700x400px)
-- ✅ `build/assets/dmg_settings.json` - Layout configuration
+- ✅ `build/assets/dmg/background.png` - Gradient background (700x400px)
+- ✅ `build/assets/dmg/settings.json` - Layout configuration
 - ✅ `scripts/generate_dmg_background.swift` - Background generator script
 
 **DMG Configuration:**
@@ -412,7 +412,7 @@ Two options:
 **Scripts to Create:**
 1. `scripts/sign_and_notarize.py` (~200-300 lines, adapt from FileKitty)
 2. `scripts/release.py` (~150-200 lines, adapt from FileKitty)
-3. `build/assets/dmg_settings.json` (~25 lines)
+3. `build/assets/dmg/settings.json` (~25 lines)
 
 **Assets to Create:**
 1. DMG background image (can use simple design initially)
@@ -543,7 +543,7 @@ Two options:
    - GitHub release creation via `gh` CLI
    - SHA256 checksum generation
 
-3. **`tools/packaging/dmg_settings.json`** (lines 1-26)
+3. **`build/assets/dmg/settings.json`** (lines 1-26)
    - Simple JSON layout config
    - Easy to customize for Contextify
 

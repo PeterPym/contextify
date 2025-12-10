@@ -126,7 +126,6 @@ build/logs/
 build/ResultBundles/
 build/demo-videos/
 build/db-backups/
-build/screenshots-and-video/
 build/Contextify.xcarchive/
 build/appstore/
 ```
