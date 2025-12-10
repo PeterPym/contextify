@@ -13,32 +13,32 @@
 
   "phases": {
     "pre_release": {
-      "status": "pending",
-      "completed_at": null,
+      "status": "complete",
+      "completed_at": "2025-12-09",
       "validation": {
-        "tests_passed": null,
-        "test_count": null,
-        "warnings": null,
-        "working_directory_clean": null
+        "tests_passed": true,
+        "test_count": 170,
+        "warnings": 1,
+        "working_directory_clean": true
       }
     },
 
     "build": {
-      "status": "pending",
+      "status": "complete",
       "dmg": {
-        "built": false,
-        "path": null,
-        "sha256": null,
-        "size_bytes": null,
-        "signed": false,
-        "notarized": false,
+        "built": true,
+        "path": "build/archives/v1.0.2/dmg/Contextify.dmg",
+        "sha256": "1267dc5b41893ec301d775f49e8e4d8c11bbcd2a171c009cac5f7f3d0d0c681e",
+        "size_bytes": 13029182,
+        "signed": true,
+        "notarized": true,
         "sparkle_signature": null
       },
       "appstore": {
-        "archived": false,
-        "archive_path": null,
-        "build_number": 1,
-        "exported": false,
+        "archived": true,
+        "archive_path": "build/Contextify.xcarchive",
+        "build_number": 14,
+        "exported": true,
         "uploaded": false,
         "upload_receipt": null
       }
