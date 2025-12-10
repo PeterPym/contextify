@@ -38,11 +38,11 @@ doc_references:
 
 **Priority Levels:**
 - **P0 (Launch Critical):** 3 items - Public launch + log issues
-- **P1 (High Priority):** 23 items - Important for quality/UX, ship soon after launch
+- **P1 (High Priority):** 24 items - Important for quality/UX, ship soon after launch
 - **P2 (Medium Priority):** 45 items - Nice to have, can defer to future releases
 - **P3 (Low Priority / Deferred):** 18 items - Future enhancements
 
-**Total Active Items:** 86
+**Total Active Items:** 87
 
 ---
 
@@ -193,7 +193,34 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-# P1 (High Priority) - 23 Items
+# P1 (High Priority) - 24 Items
+
+---
+
+## #P1-EMPTY-STATE-MSG: "No Activity Yet" message is misleading during ingestion
+
+**Status:** UX improvement
+**Priority:** P1 (confusing to users)
+**Effort:** 30 minutes
+**Found:** 2025-12-09
+
+- [ ] #P1-EMPTY-STATE-MSG: Update empty state message to indicate ingestion in progress
+
+**Problem:**
+When a project is selected but transcripts haven't been ingested yet, the timeline shows "No Activity Yet" / "This conversation has not started yet." This implies the user hasn't done anything, when really we just haven't finished ingesting their transcripts.
+
+**Current behavior:**
+- Shows during initial discovery/ingestion
+- Misleading since projects rarely have zero conversations
+- User sees this frequently during fastpath ingestion delays
+
+**Proposed change:**
+Change to something like:
+- "Loading conversations..." (with spinner if ingestion active)
+- "Indexing project..."
+- Or conditionally show "No Activity Yet" only after ingestion confirms zero transcripts
+
+**Location:** `ConversationTimelineView.swift:344, 391`
 
 ---
 
