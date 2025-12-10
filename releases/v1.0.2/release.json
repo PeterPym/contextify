@@ -58,7 +58,7 @@
     },
     "submission": {
       "status": "submitted",
-      "submitted_at": "2025-12-10T02:01:02Z",
+      "submitted_at": "2025-12-10T05:59:59Z",
       "rejection": null,
       "resubmission": null
     },
@@ -87,6 +87,11 @@
       "date": "2025-12-09",
       "author": "system",
       "note": "Release initialized"
+    },
+    {
+      "date": "2025-12-09",
+      "author": "system",
+      "note": "Submitted build 14 to App Store Connect"
     },
     {
       "date": "2025-12-09",
