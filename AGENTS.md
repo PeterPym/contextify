@@ -93,6 +93,7 @@ Common commands:
 - Linux/CI builds via GitHub Actions (`scripts/trigger-ci-build.sh`)
 - Database operations (`scripts/db_manager.sh`)
 - Release workflows (`make release`)
+- Automated QA suite (`scripts/qa/README.md`)
 - First-run QA testing (`build/docs/testing/first-run-qa-guide.md`)
 
 ## Architecture Overview
@@ -409,6 +410,24 @@ Do NOT merge if either fails.
 - **Red-green required:** Tests must fail on behavior (not compile) before implementation
 
 **Full guidelines:** `build/docs/testing/TESTING-STRATEGY.md`
+
+### QA Suite (Fixture-Based Integration Tests)
+
+Automated QA suite for validating app functionality before releases:
+
+```bash
+# Run all tests (requires DMG build)
+./scripts/qa/run-all-tests.sh
+
+# Run with fixtures (no CLI tools needed)
+QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
+```
+
+**Documentation:**
+- `scripts/qa/README.md` - Complete QA suite guide (test list, assertions, cleanup)
+- `build/docs/testing/first-run-qa-guide.md` - Manual CLI-based QA toolkit
+
+**Important:** Fixture mode installs test transcripts alongside real data. See "Cleanup After Local Runs" in `scripts/qa/README.md` if the app appears stuck on a test project.
 
 ## Git Hooks (Pre-commit Build Guard)
 
