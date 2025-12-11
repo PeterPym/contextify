@@ -633,8 +633,9 @@ seed_fixture_transcript() {
 
   mkdir -p "$dest_dir"
 
-  # Escape & in path to prevent sed expansion issues
-  local escaped_project="${TEST_PROJECT//&/\\&}"
+  # Escape sed replacement metacharacters in the path
+  local escaped_project
+  escaped_project=$(printf '%s' "$TEST_PROJECT" | sed -e 's/[\\&|]/\\&/g')
 
   # Copy and update cwd to point to test project
   sed "s|\"cwd\": \"[^\"]*\"|\"cwd\": \"$escaped_project\"|g" "$src_file" > "$dest_file"
@@ -689,6 +690,9 @@ restore_db_from_backup() {
     rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm"
     mv "${DB_PATH}.qa-backup" "$DB_PATH"
     log_info "Restored DB from backup"
+  else
+    rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm"
+    log_info "No DB backup found; removed test DB"
   fi
 }
 

@@ -24,7 +24,7 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-03"
 TEST_NAME="New Codex Transcript Discovery"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
 
 # ─────────────────────────────────────────────────────────────────────────────

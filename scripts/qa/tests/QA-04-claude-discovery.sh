@@ -24,7 +24,7 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-04"
 TEST_NAME="New Claude Code Transcript Discovery"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,8 +92,8 @@ run_test_steps() {
     # Using --dangerously-skip-permissions to avoid interactive prompts
     log_info "Running: claude --dangerously-skip-permissions -p \"print '$test_marker'\""
 
-    # Run claude with timeout in background
-    timeout 60 claude --dangerously-skip-permissions -p "print '$test_marker' in Python" > /dev/null 2>&1 &
+    # Run claude with timeout in background (supports timeout/gtimeout via common.sh)
+    run_with_timeout 60 claude --dangerously-skip-permissions -p "print '$test_marker' in Python" > /dev/null 2>&1 &
     local CLAUDE_PID=$!
 
     # Wait for transcript file creation

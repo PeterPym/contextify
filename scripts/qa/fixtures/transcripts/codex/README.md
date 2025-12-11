@@ -16,6 +16,12 @@ These fixtures are used for deterministic QA testing of Codex CLI transcript dis
 
 3. **Search terms**: Include `QA_FIXTURE_SEARCH_TERM_CODEX` for search tests.
 
+## Cleanup
+
+Fixture seeding is append-only; runs leave `qa-fixture-*.jsonl` files under
+`~/.codex/sessions/YYYY/MM/DD/`. Remove those files manually if you want to
+prune old runs. Cleanup stays manual to avoid deleting real Codex transcripts.
+
 ## Creating New Fixtures
 
 1. Copy an existing session from `~/.codex/sessions/`

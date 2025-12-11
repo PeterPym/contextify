@@ -22,7 +22,7 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-05"
 TEST_NAME="Real-time Transcript Updates"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ setup_test() {
     log_info "No recent transcript found, creating one..."
 
     cd "$TEST_PROJECT"
-    timeout 30 codex "say 'setup' in Python" --full-auto > /dev/null 2>&1 || true
+    run_with_timeout 30 codex "say 'setup' in Python" --full-auto > /dev/null 2>&1 || true
     cd - > /dev/null
 
     sleep 3
@@ -98,7 +98,7 @@ run_test_steps() {
   # Run another Codex command to append to transcript
   log_info "Running: codex \"print '$test_marker'\" --full-auto"
 
-  timeout 45 codex "print '$test_marker' and exit" --full-auto > /dev/null 2>&1 &
+  run_with_timeout 45 codex "print '$test_marker' and exit" --full-auto > /dev/null 2>&1 &
   local CODEX_PID=$!
 
   # Wait for file to be modified

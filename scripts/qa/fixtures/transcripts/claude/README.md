@@ -18,6 +18,13 @@ These fixtures are used for deterministic QA testing of Claude Code transcript d
 
 3. **Search terms**: Include `QA_FIXTURE_SEARCH_TERM_CLAUDE` for search tests.
 
+## Cleanup
+
+Fixture seeding is append-only; runs leave transcripts under
+`~/.claude/projects/<test-project-hash>/`. Remove those files manually if you
+want a clean transcript tree. Cleanup is not automated to avoid touching real
+Claude data.
+
 ## Creating New Fixtures
 
 1. Copy an existing session from `~/.claude/projects/`
