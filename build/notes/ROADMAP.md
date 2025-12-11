@@ -43,20 +43,6 @@ priority_levels:
 
 ---
 
-### DERIVED-DATA-SEPARATION: Separate derived data by distribution type
-
-**Status:** Ready for implementation
-**Priority:** P4
-**Effort:** 1 hour
-
-- [ ] Separate derived data directories by distribution type
-
-**Problem:** Release builds crash with "different Team IDs" error when App Store and DMG distributions are built sequentially (shared `.derived/` directory causes framework signing conflicts).
-
-**Solution:** Use `.derived-dmg` for DMG builds and `.derived-appstore` for App Store builds.
-
----
-
 ### OS-COMPATIBILITY: macOS version compatibility modal
 
 **Status:** Not started
