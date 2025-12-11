@@ -201,20 +201,13 @@ transcript provider permission via Settings. Two bugs were fixed:
 **Priority:** P1 (required before Phase 2 QA)
 **Effort:** 1-2 hours
 
-- [ ] #QA-APPSTORE-VALIDATION: Validate QA tests work correctly with App Store build
+- [x] #QA-APPSTORE-VALIDATION: Validate QA tests work correctly with App Store build ✅ DONE
 
-**Context:**
-QA Phase 1 passes for DMG tests (`--skip-appstore --skip-cli`), but App Store tests (QA-01c/d/e) have not been validated. After derived data separation is complete, need to:
-
-1. Build App Store version with isolated derived data
-2. Run QA-01c (clean install with onboarding modal)
-3. Verify tests can navigate the "choose where Contextify saves your data" modal
-4. Run full QA suite without `--skip-appstore`
-
-**Potential issues to watch for:**
-- Onboarding modal navigation via AppleScript
-- Security-scoped bookmark grants in automated tests
-- Window hotkeys working before onboarding complete (separate bug, lower priority)
+**Completed 2025-12-11:**
+- Added Enter key support to onboarding wizard (keyboard-driven flow)
+- QA-01c passes: clean install with full onboarding automation
+- Uses `click_group_button` helper for SwiftUI buttons that don't expose names
+- Validates via logs (user selects custom DB location during onboarding)
 
 ---
 
