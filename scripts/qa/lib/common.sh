@@ -141,7 +141,10 @@ wait_for_any_pattern() {
 # Get count of log pattern matches
 log_count() {
   local pattern="$1"
-  grep -c "$pattern" "$LOGFILE" 2>/dev/null || echo "0"
+  local count
+  count=$(grep -c "$pattern" "$LOGFILE" 2>/dev/null || echo "0")
+  # Trim whitespace and ensure single number
+  echo "$count" | head -1 | tr -d '[:space:]'
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -271,14 +274,23 @@ press_escape() {
   sleep 0.3
 }
 
-# Send keyboard shortcut
+# Send keyboard shortcut to Contextify specifically
 # Usage: send_shortcut "t" "command down"
 #        send_shortcut "]" "command down, shift down"
 send_shortcut() {
   local key="$1"
   local modifiers="$2"
   log_debug "Sending shortcut: $key with {$modifiers}"
-  osascript -e "tell application \"System Events\" to keystroke \"$key\" using {$modifiers}" 2>/dev/null
+  # Activate Contextify first, then send keystroke to its process specifically
+  osascript -e '
+    tell application "Contextify" to activate
+    delay 0.2
+    tell application "System Events"
+      tell process "Contextify"
+        keystroke "'"$key"'" using {'"$modifiers"'}
+      end tell
+    end tell
+  ' 2>/dev/null
   sleep 0.3
 }
 

@@ -485,16 +485,15 @@ soft_assert_log_contains() {
 
   if [ -z "${LOGFILE:-}" ]; then
     log_warn "SOFT ASSERTION: $desc - LOGFILE not set"
-    return 1
+    return 0  # Soft assertions always return 0 (don't trigger set -e)
   fi
 
   if grep -q "$pattern" "$LOGFILE" 2>/dev/null; then
     log_success "✓ $desc"
-    return 0
   else
     log_warn "SOFT ASSERTION: $desc - pattern not found"
-    return 1
   fi
+  return 0  # Soft assertions always return 0
 }
 
 soft_assert_db_count_min() {
@@ -507,9 +506,8 @@ soft_assert_db_count_min() {
 
   if [ "$actual" -ge "$min" ]; then
     log_success "✓ $desc (count: $actual)"
-    return 0
   else
     log_warn "SOFT ASSERTION: $desc - got $actual, expected >= $min"
-    return 1
   fi
+  return 0  # Soft assertions always return 0
 }
