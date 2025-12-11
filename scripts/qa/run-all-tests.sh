@@ -258,8 +258,8 @@ fi)
 
 ## Environment
 
-- **macOS:** $(sw_vers -productVersion)
-- **Xcode:** $(xcodebuild -version | head -1)
+- **macOS:** $(sw_vers -productVersion 2>/dev/null || echo "N/A")
+- **Xcode:** $(xcodebuild -version 2>/dev/null | head -1 || echo "N/A")
 - **Repo:** $REPO_ROOT
 
 EOF

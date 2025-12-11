@@ -71,8 +71,8 @@ run_test_steps() {
   # Start Codex conversation with simple prompt
   log_info "Running: codex \"print '$test_marker' and exit\" --full-auto"
 
-  # Run codex with timeout in background
-  timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
+  # Run codex with timeout in background (uses run_with_timeout for portability)
+  run_with_timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
   local CODEX_PID=$!
 
   # Wait for transcript file creation

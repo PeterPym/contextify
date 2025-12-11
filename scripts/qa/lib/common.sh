@@ -22,6 +22,10 @@ TEST_ID="${TEST_ID:-QA-XX}"
 TEST_NAME="${TEST_NAME:-Unknown Test}"
 TEST_FAILED=0
 
+# Timeout command (detected at first use)
+TIMEOUT_CMD=""
+TIMEOUT_CMD_CHECKED=0
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
 # ─────────────────────────────────────────────────────────────────────────────
@@ -236,10 +240,12 @@ get_window_count() {
 }
 
 # Click a button by name in Contextify's frontmost window
+# Note: Returns 0 even if button not found (safe under set -e)
+# Use click_button_retry for critical buttons that must succeed
 click_button() {
   local button_name="$1"
   log_debug "Clicking button: $button_name"
-  osascript -e "tell application \"System Events\" to tell process \"Contextify\" to click button \"$button_name\" of window 1" 2>/dev/null
+  osascript -e "tell application \"System Events\" to tell process \"Contextify\" to click button \"$button_name\" of window 1" 2>/dev/null || true
   sleep 0.3
 }
 
@@ -383,6 +389,47 @@ complete_onboarding() {
 
   log_warn "Could not complete onboarding automatically"
   return 1
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Timeout Command Detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Detect timeout/gtimeout availability (macOS doesn't ship timeout by default)
+# Sets TIMEOUT_CMD to "timeout", "gtimeout", or "" (empty if neither available)
+detect_timeout_cmd() {
+  if [ "$TIMEOUT_CMD_CHECKED" = "1" ]; then
+    return 0
+  fi
+  TIMEOUT_CMD_CHECKED=1
+
+  if command -v timeout >/dev/null 2>&1; then
+    TIMEOUT_CMD="timeout"
+    log_debug "Using timeout command: timeout"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    TIMEOUT_CMD="gtimeout"
+    log_debug "Using timeout command: gtimeout"
+  else
+    TIMEOUT_CMD=""
+    log_debug "No timeout command available (timeout/gtimeout not found)"
+  fi
+}
+
+# Run a command with optional timeout
+# Usage: run_with_timeout SECONDS COMMAND [ARGS...]
+# If timeout command not available, runs without timeout (with warning on first use)
+run_with_timeout() {
+  local timeout_secs="$1"
+  shift
+
+  detect_timeout_cmd
+
+  if [ -n "$TIMEOUT_CMD" ]; then
+    "$TIMEOUT_CMD" "$timeout_secs" "$@"
+  else
+    log_warn "Running without timeout (install coreutils for gtimeout): $1"
+    "$@"
+  fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
