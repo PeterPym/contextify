@@ -73,10 +73,9 @@ run_test_steps() {
   activate_app
   sleep 0.5
 
-  # Try Cmd+T (common shortcut for transcript/tab window)
-  # Note: Actual shortcut may vary - check app menus
-  log_info "Sending Cmd+T"
-  send_shortcut "t" "command down"
+  # Transcripts window shortcut is Cmd+Ctrl+I
+  log_info "Sending Cmd+Ctrl+I (Show Transcripts)"
+  send_shortcut "i" "command down, control down"
 
   # Wait for window to open
   sleep 2
@@ -85,15 +84,6 @@ run_test_steps() {
   local after_windows
   after_windows=$(get_window_count)
   log_info "Window count after shortcut: $after_windows"
-
-  # If Cmd+T didn't work, try Cmd+Shift+T
-  if [ "$after_windows" -le 1 ]; then
-    log_info "Trying Cmd+Shift+T..."
-    send_shortcut "t" "command down, shift down"
-    sleep 2
-    after_windows=$(get_window_count)
-    log_info "Window count after Cmd+Shift+T: $after_windows"
-  fi
 
   # Wait for content to load
   log_info "Waiting for content to load..."
