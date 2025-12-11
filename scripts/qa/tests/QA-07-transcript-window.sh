@@ -141,6 +141,9 @@ cleanup_and_close() {
     attempts=$((attempts + 1))
   done
 
+  # Ensure main window is visible by activating app
+  activate_app
+
   exit_with_result
 }
 
