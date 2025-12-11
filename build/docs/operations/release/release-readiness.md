@@ -37,8 +37,8 @@
 
 4. **Reference Implementation**
    - FileKitty project has complete release infrastructure:
-     - `tools/release.py` - End-to-end release automation
-     - `tools/packaging/sign_and_notarize.py` - Signing, DMG creation, notarization
+     - `scripts/release.py` (FileKitty reference) - End-to-end release automation
+     - `scripts/sign_and_notarize.py` - Signing, DMG creation, notarization
      - `build/assets/dmg/settings.json` - DMG layout configuration
      - GitHub release upload via `gh` CLI
 
@@ -530,13 +530,13 @@ Two options:
 
 ### Key Files to Adapt
 
-1. **`tools/packaging/sign_and_notarize.py`** (lines 1-229)
+1. **`scripts/sign_and_notarize.py`** (lines 1-229)
    - Core signing and DMG creation logic
    - Well-structured, easy to adapt
    - Handles hardened runtime, timestamp, entitlements
    - Uses `create-dmg` tool (already installed)
 
-2. **`tools/release.py`** (lines 1-217)
+2. **`scripts/release.py`** (lines 1-217)
    - End-to-end release automation
    - Version bumping (adapt for Xcode instead of pyproject.toml)
    - Git tagging and pushing
@@ -547,10 +547,8 @@ Two options:
    - Simple JSON layout config
    - Easy to customize for Contextify
 
-4. **`tools/packaging/entitlements.plist`** (lines 1-6)
-   - Empty in FileKitty!
-   - Contextify already has proper entitlements file
-   - No changes needed
+4. **`Contextify/Contextify.entitlements`**
+   - Contextify's entitlements file used by `scripts/sign_and_notarize.py`
 
 ### Notable Differences
 
