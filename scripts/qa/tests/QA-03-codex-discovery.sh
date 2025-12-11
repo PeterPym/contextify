@@ -86,11 +86,12 @@ run_test_steps() {
     local test_marker
     test_marker="QA-$(date +%s)"
 
-    # Start Codex conversation with simple prompt
-    log_info "Running: codex \"print '$test_marker' and exit\" --full-auto"
+    # Start Codex conversation with simple prompt (use 'exec' for non-interactive mode)
+    # See: appstore-metadata/review-materials/generate-transcripts.sh for pattern
+    log_info "Running: codex exec -C $TEST_PROJECT \"print '$test_marker' in Python\""
 
-    # Run codex with timeout in background (uses run_with_timeout for portability)
-    run_with_timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
+    # Run codex exec (non-interactive mode) with timeout in background
+    run_with_timeout 45 codex exec -C "$TEST_PROJECT" --dangerously-bypass-approvals-and-sandbox "print '$test_marker' in Python and then exit immediately" > /dev/null 2>&1 &
     local CODEX_PID=$!
 
     # Wait for transcript file creation

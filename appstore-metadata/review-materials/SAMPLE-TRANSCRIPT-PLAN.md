@@ -358,6 +358,42 @@ USER: This search feature is exactly what I needed. Thanks!
 
 ---
 
+## Non-Interactive CLI Usage
+
+When generating transcripts programmatically (for sample data, QA tests, or automation), use the non-interactive modes:
+
+### Claude Code
+
+```bash
+# First message - capture session ID
+claude -p --output-format json --dangerously-skip-permissions "your message"
+
+# Follow-up messages - resume session
+claude --resume "$session_id" -p --dangerously-skip-permissions "follow-up message"
+```
+
+### Codex CLI
+
+```bash
+# First message - run in specific directory
+codex exec -C "/path/to/project" --dangerously-bypass-approvals-and-sandbox "your message"
+
+# Follow-up messages - resume session
+codex exec resume "$session_id" --dangerously-bypass-approvals-and-sandbox "follow-up message"
+```
+
+**Key flags:**
+- `-p` / `exec`: Non-interactive/print mode (no TTY required)
+- `-C`: Set working directory (for project association)
+- `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox`: Skip confirmation prompts
+
+**Reference implementations:**
+- `appstore-metadata/review-materials/generate-transcripts.sh` - Full sample data generation
+- `scripts/qa/tests/QA-03-codex-discovery.sh` - QA test using Codex exec
+- `scripts/qa/tests/QA-04-claude-discovery.sh` - QA test using Claude print mode
+
+---
+
 ## Technical Specifications
 
 ### JSONL Record Format
