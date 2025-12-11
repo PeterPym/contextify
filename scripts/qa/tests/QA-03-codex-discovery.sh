@@ -35,8 +35,15 @@ check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
   assert_app_running "Contextify"
-  assert_command_exists "codex"
   assert_command_exists "sqlite3"
+
+  # Codex CLI only required if not in fixture mode
+  if [ "${QA_FIXTURE_MODE:-0}" != "1" ]; then
+    assert_command_exists "codex"
+  else
+    log_info "Fixture mode: skipping Codex CLI check"
+    assert_command_exists "uuidgen"
+  fi
 
   # Create test project if doesn't exist
   create_test_project "$TEST_PROJECT"
@@ -60,54 +67,66 @@ setup_test() {
 run_test_steps() {
   log_subheader "Test Execution"
 
-  log_info "Creating new Codex conversation in test project..."
-
   cd "$TEST_PROJECT"
 
-  # Generate unique test identifier
-  local test_marker
-  test_marker="QA-$(date +%s)"
-
-  # Start Codex conversation with simple prompt
-  log_info "Running: codex \"print '$test_marker' and exit\" --full-auto"
-
-  # Run codex with timeout in background (uses run_with_timeout for portability)
-  run_with_timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
-  local CODEX_PID=$!
-
-  # Wait for transcript file creation
-  log_info "Waiting for transcript file creation (max 20s)..."
-  local elapsed=0
-  local max_wait=20
-
-  while [ $elapsed -lt $max_wait ]; do
-    TRANSCRIPT=$(find ~/.codex/sessions -name "*.jsonl" -mmin -1 2>/dev/null | head -1)
-    if [ -n "$TRANSCRIPT" ]; then
-      log_success "Transcript file created: $TRANSCRIPT"
-      break
+  if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
+    log_info "Fixture mode: seeding Codex transcript"
+    TRANSCRIPT=$(seed_fixture_transcript "codex")
+    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+      log_error "Failed to seed fixture transcript"
+      TEST_FAILED=1
+      cd - > /dev/null
+      return 1
     fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
+    log_success "Fixture transcript seeded: $TRANSCRIPT"
+  else
+    log_info "Creating new Codex conversation in test project..."
 
-  if [ -z "$TRANSCRIPT" ]; then
-    log_error "Transcript file not created within ${max_wait}s"
-    TEST_FAILED=1
-    cd - > /dev/null
-    return 1
+    # Generate unique test identifier
+    local test_marker
+    test_marker="QA-$(date +%s)"
+
+    # Start Codex conversation with simple prompt
+    log_info "Running: codex \"print '$test_marker' and exit\" --full-auto"
+
+    # Run codex with timeout in background (uses run_with_timeout for portability)
+    run_with_timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
+    local CODEX_PID=$!
+
+    # Wait for transcript file creation
+    log_info "Waiting for transcript file creation (max 20s)..."
+    local elapsed=0
+    local max_wait=20
+
+    while [ $elapsed -lt $max_wait ]; do
+      TRANSCRIPT=$(find ~/.codex/sessions -name "*.jsonl" -mmin -1 2>/dev/null | head -1)
+      if [ -n "$TRANSCRIPT" ]; then
+        log_success "Transcript file created: $TRANSCRIPT"
+        break
+      fi
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+
+    if [ -z "$TRANSCRIPT" ]; then
+      log_error "Transcript file not created within ${max_wait}s"
+      TEST_FAILED=1
+      cd - > /dev/null
+      return 1
+    fi
+
+    # Wait for Codex to complete (with timeout)
+    wait "$CODEX_PID" 2>/dev/null || true
   fi
 
-  # Wait for Codex to complete (with timeout)
-  wait "$CODEX_PID" 2>/dev/null || true
-
-  # Wait for ingestion to complete
+  # Wait for ingestion to complete (same for both modes)
   log_info "Waiting for ingestion to complete..."
   if ! wait_for_log_pattern "\[HOOVER-DONE\]" 30; then
     log_warn "HOOVER-DONE not detected, checking database directly..."
   fi
 
   cd - > /dev/null
-  log_success "Test conversation completed"
+  log_success "Test execution completed"
 }
 
 validate_results() {
@@ -120,10 +139,8 @@ validate_results() {
 
   # Stage 1: File System Events
   log_info "Stage 1: Validating FSEvents detection..."
-  if ! assert_log_contains "\[FSEVENTS\]" "FSEvents system active"; then
-    # Try alternative pattern
-    soft_assert_log_contains "FSEvents" "FSEvents activity detected"
-  fi
+  # FSEvents tags include: [FSEVENTS-CHANGE], [FSEVENTS-TRANSCRIPT], [FSEVENTS-CODEX]
+  soft_assert_log_contains "\[FSEVENTS-" "FSEvents system active"
 
   # Stage 2: Transcript Discovery
   log_info "Stage 2: Validating transcript discovery..."

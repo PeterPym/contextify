@@ -58,6 +58,40 @@ assert_directory_exists() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# App Build Assertions
+# ─────────────────────────────────────────────────────────────────────────────
+
+assert_dmg_app_exists() {
+  local desc="${1:-DMG app exists}"
+
+  if [ -d "$DMG_APP_PATH" ]; then
+    log_success "✓ $desc"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  DMG app not found: $DMG_APP_PATH"
+    log_error "  Build with: bash scripts/xc.sh build"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
+assert_appstore_app_exists() {
+  local desc="${1:-App Store app exists}"
+
+  if [ -d "$APPSTORE_APP_PATH" ]; then
+    log_success "✓ $desc"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  App Store app not found: $APPSTORE_APP_PATH"
+    log_error "  Build with: bash scripts/xc.sh --dist=appstore Debug build"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Process Assertions
 # ─────────────────────────────────────────────────────────────────────────────
 

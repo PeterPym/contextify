@@ -13,6 +13,11 @@ SKIP_APPSTORE="${SKIP_APPSTORE:-0}"
 SKIP_CLI="${SKIP_CLI:-0}"
 ONLY_TEST="${ONLY_TEST:-}"
 
+# Fixture mode (set via environment)
+QA_FIXTURE_MODE="${QA_FIXTURE_MODE:-0}"
+export QA_FIXTURE_MODE
+export TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
+
 # Test suite definition
 # Format: "test_script:requires_cli"
 # requires_cli: 0 = no CLI needed, 1 = needs Codex, 2 = needs Claude Code
@@ -30,6 +35,9 @@ declare -a ALL_TESTS=(
   "QA-06-watcher-recovery.sh:0"
   "QA-07-transcript-window.sh:0"
   "QA-08-projects-window.sh:0"
+  "QA-09-db-migration.sh:0"
+  "QA-10-quick-search.sh:0"
+  "QA-11-deep-search.sh:0"
 )
 
 # Track results
@@ -103,8 +111,8 @@ should_skip_test() {
     return 0  # Skip
   fi
 
-  # Skip CLI tests if requested
-  if [ "$SKIP_CLI" = "1" ] && [ "$cli_req" != "0" ]; then
+  # Skip CLI tests only if NOT in fixture mode
+  if [ "$SKIP_CLI" = "1" ] && [ "${QA_FIXTURE_MODE:-0}" != "1" ] && [ "$cli_req" != "0" ]; then
     return 0  # Skip
   fi
 
@@ -123,6 +131,13 @@ check_prerequisites() {
 
   if ! command -v osascript &> /dev/null; then
     missing+=("osascript")
+  fi
+
+  # uuidgen required for fixture mode
+  if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
+    if ! command -v uuidgen &> /dev/null; then
+      missing+=("uuidgen")
+    fi
   fi
 
   if [ ${#missing[@]} -gt 0 ]; then
@@ -421,6 +436,8 @@ main() {
   echo "  Log directory: $LOGDIR"
   echo "  Skip App Store: $SKIP_APPSTORE"
   echo "  Skip CLI tests: $SKIP_CLI"
+  echo "  Fixture mode: $QA_FIXTURE_MODE"
+  [ "$QA_FIXTURE_MODE" = "1" ] && echo "  Test project: $TEST_PROJECT"
   [ -n "$ONLY_TEST" ] && echo "  Only test: $ONLY_TEST"
   echo ""
 
@@ -437,14 +454,14 @@ main() {
       continue
     fi
 
-    # Check CLI availability for tests that need it
-    if [ "$cli_req" = "1" ] && ! command -v codex &> /dev/null; then
+    # Check CLI availability for tests that need it (skip check in fixture mode)
+    if [ "$cli_req" = "1" ] && [ "${QA_FIXTURE_MODE:-0}" != "1" ] && ! command -v codex &> /dev/null; then
       SKIPPED_TESTS+=("$test_name (Codex CLI not available)")
       echo "[SKIP] $test_name (Codex CLI not available)"
       continue
     fi
 
-    if [ "$cli_req" = "2" ] && ! command -v claude &> /dev/null; then
+    if [ "$cli_req" = "2" ] && [ "${QA_FIXTURE_MODE:-0}" != "1" ] && ! command -v claude &> /dev/null; then
       SKIPPED_TESTS+=("$test_name (Claude Code not available)")
       echo "[SKIP] $test_name (Claude Code not available)"
       continue
