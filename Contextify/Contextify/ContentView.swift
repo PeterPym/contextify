@@ -47,6 +47,9 @@ struct ContentView: View {
     @State private var searchVM = QuickSearchViewModel()
     @State private var isSearchPresented = false  // Cmd+F support
 
+    // Branch info popover (App Store builds - explains transcript-based source)
+    @State private var showBranchInfo = false
+
     var body: some View {
         ZStack {
             // Main content
@@ -240,14 +243,28 @@ struct ContentView: View {
 
                 }
 
-                // Git branch display (DMG builds only)
-                // Sandboxed builds disable git monitoring to avoid permission complexity
-                if !Sandbox.isSandboxed {
-                    Label(model.branchDisplay, systemImage: "arrow.branch")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Git branch: \(model.branchDisplay)")
+                // Git branch display
+                // DMG builds: from direct git monitoring (.git/HEAD)
+                // App Store builds: from transcript metadata (gitBranch field)
+                if model.branchDisplay != "—" {
+                    HStack(spacing: 4) {
+                        Label(model.branchDisplay, systemImage: "arrow.branch")
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Git branch: \(model.branchDisplay)")
+
+                        // Show info button for App Store builds to explain transcript-based source
+                        if Sandbox.isSandboxed {
+                            InfoButton(isPresented: $showBranchInfo)
+                                .popover(isPresented: $showBranchInfo) {
+                                    InfoPopoverContent(
+                                        title: "Git Branch",
+                                        message: "This branch name comes from Claude Code transcript metadata, reflecting the branch at the time of your last AI session.\n\nIt may differ from the actual repository state if you've switched branches since then."
+                                    )
+                                }
+                        }
+                    }
                 }
             } else {
                 Button("Open project...") {

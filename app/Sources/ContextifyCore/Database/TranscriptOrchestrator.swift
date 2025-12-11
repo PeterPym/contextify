@@ -657,6 +657,52 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  // MARK: - Git Branch Extraction (Transcript-Based)
+
+  /// Get the current git branch from the most recent transcript entry for a project.
+  /// This enables branch display in App Store builds without filesystem access.
+  ///
+  /// - Parameter projectId: SQL project ID
+  /// - Returns: Branch name if found, nil otherwise
+  public func getCurrentBranch(forProject projectId: String) throws -> String? {
+    try dbManager.pool.read { db in
+      // Get the most recent entry with a non-null git_branch
+      // Both Claude Code and Codex parsers store branch data in this column
+      let sql = """
+        SELECT git_branch
+        FROM transcript_entries
+        WHERE project_id = ?
+          AND git_branch IS NOT NULL
+          AND git_branch != ''
+        ORDER BY timestamp DESC, created_ts DESC
+        LIMIT 1
+        """
+      return try String.fetchOne(db, sql: sql, arguments: [projectId])
+    }
+  }
+
+  /// Get git branch with metadata about its source (for DMG validation logging)
+  /// - Parameter projectId: SQL project ID
+  /// - Returns: Tuple of (branch, provider, entryTimestamp) or nil
+  public func getCurrentBranchWithMetadata(forProject projectId: String) throws -> (branch: String, provider: String?, timestamp: Int)? {
+    try dbManager.pool.read { db in
+      let sql = """
+        SELECT git_branch, provider, timestamp
+        FROM transcript_entries
+        WHERE project_id = ?
+          AND git_branch IS NOT NULL
+          AND git_branch != ''
+        ORDER BY timestamp DESC, created_ts DESC
+        LIMIT 1
+        """
+      let row = try Row.fetchOne(db, sql: sql, arguments: [projectId])
+      guard let branch = row?["git_branch"] as? String else { return nil }
+      let provider = row?["provider"] as? String
+      let timestamp = row?["timestamp"] as? Int ?? 0
+      return (branch, provider, timestamp)
+    }
+  }
+
   public func setProjectHidden(projectId: String, hidden: Bool) throws {
     try projectRepo.setHidden(id: projectId, hidden: hidden)
   }
