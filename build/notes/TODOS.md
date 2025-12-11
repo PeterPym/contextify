@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-09
+**Last Updated:** 2025-12-11
 **Status:** Active
 
 **Priority Levels:**
@@ -213,26 +213,21 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ## QA Suite Phase 2 Implementation (1 item)
 
-**Status:** Plan complete, awaiting Phase 1 validation
+**Status:** Complete
 **Priority:** P1 (enables CI integration)
-**Depends on:** #QA-APPSTORE-VALIDATION
 **Effort:** 4-6 hours
 **Plan:** `build/notes/todo-support/P1-QA-PHASE-2-plan.md`
 
-- [ ] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration
+- [x] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration ✅ DONE
 
-**Scope (5 commits):**
-1. Fixture infrastructure (helpers, config, TEST_PROJECT)
-2. Fixture-based transcript tests (Codex/Claude with search terms)
-3. Search tests (QA-10 Quick Search, QA-11 Deep Search)
-4. DB migration test (QA-09)
-5. CI workflow integration (GitHub Actions)
+**Completed 2025-12-11:**
+- Fixture infrastructure (QA_FIXTURE_MODE, seed helpers, TEST_PROJECT config)
+- Fixture-based transcript tests (QA-03, QA-04 work in fixture mode)
+- Search tests (QA-10 Quick Search, QA-11 Deep Search)
+- DB migration test (QA-09 with v16 and v25 schema fixtures)
+- CI workflow integration (GitHub Actions runs QA suite in fixture mode)
 
-**Key Features:**
-- `QA_FIXTURE_MODE=1` enables deterministic testing without live CLIs
-- Fixtures include `QA_FIXTURE_SEARCH_TERM_*` for search validation
-- DB fixtures test migration from older schema versions
-- CI runs QA suite on every PR
+**Note:** CI has pre-existing `swift test` failure (macOS 15 runner lacks macOS 26 SDK). QA tests pass locally.
 
 ---
 
