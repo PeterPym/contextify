@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,9 @@ from pathlib import Path
 # Paths
 # --------------------------------------------------------------------------- #
 ROOT = Path(__file__).resolve().parents[1]  # project root
-DERIVED = ROOT / ".derived/Build/Products/Release"
+# DMG builds use .derived-dmg; allow override via environment for flexibility
+DERIVED_ROOT = Path(os.environ.get("CONTEXTIFY_DERIVED_ROOT", ".derived-dmg"))
+DERIVED = ROOT / DERIVED_ROOT / "Build/Products/Release"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 STAGING = BUILD / "Contextify-Staging"
@@ -239,8 +242,8 @@ def main() -> None:
 
     if not APP_BUNDLE.exists():
         sys.exit(f"✖ Bundle not found: {APP_BUNDLE}\n"
-                 f"   Run: bash scripts/xc.sh build\n"
-                 f"   Or build in Xcode with Release configuration")
+                 f"   Run: bash scripts/xc.sh --dist=dmg Release build\n"
+                 f"   Or build in Xcode with the 'Contextify' scheme (not 'Contextify AppStore')")
 
     DIST.mkdir(exist_ok=True)
 

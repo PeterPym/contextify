@@ -308,8 +308,9 @@ Quick-discovery runs at app launch to identify the project with newest transcrip
 
 ## Build Output
 
-**Debug build:** `.derived/Build/Products/Debug/Contextify.app`
-**Release build:** `.derived/Build/Products/Release/Contextify.app`
+**DMG Debug build:** `.derived-dmg/Build/Products/Debug/Contextify.app`
+**DMG Release build:** `.derived-dmg/Build/Products/Release/Contextify.app`
+**App Store build:** `.derived-appstore/Build/Products/Debug/Contextify AppStore.app`
 
 **Logs/Results:** script writes logs to `build/logs/` and result bundles to `build/ResultBundles/`. Use these for error triage; builds fail fast on non-zero.
 

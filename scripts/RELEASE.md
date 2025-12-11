@@ -112,7 +112,7 @@ make build-release
 bash scripts/xc.sh Release build
 ```
 
-**Output:** `.derived/Build/Products/Release/Contextify.app`
+**Output:** `.derived-dmg/Build/Products/Release/Contextify.app`
 
 **⚠️ IMPORTANT:** The default `make build` uses **Debug** configuration. Always use `make build-release` for distribution builds!
 
@@ -163,8 +163,8 @@ gh release create v1.0.0 \
 
 | Configuration | Use Case | Optimizations | Outputs Path |
 |--------------|----------|---------------|--------------|
-| **Debug** | Development, testing | Disabled, includes debug symbols | `.derived/Build/Products/Debug/` |
-| **Release** | Distribution, production | Enabled, stripped symbols | `.derived/Build/Products/Release/` |
+| **Debug** | Development, testing | Disabled, includes debug symbols | `.derived-dmg/Build/Products/Debug/` |
+| **Release** | Distribution, production | Enabled, stripped symbols | `.derived-dmg/Build/Products/Release/` |
 
 ### How to Specify Configuration
 
@@ -177,11 +177,11 @@ bash scripts/xc.sh Release build    # Release
 make build                          # Debug (default)
 make build-release                  # Release
 
-# Direct xcodebuild
+# Direct xcodebuild (DMG build)
 xcodebuild -project Contextify/Contextify.xcodeproj \
   -scheme Contextify \
   -configuration Release \
-  -derivedDataPath .derived \
+  -derivedDataPath .derived-dmg \
   build
 ```
 
@@ -329,7 +329,7 @@ After release:
 2. Double-click to install in Keychain Access
 3. Verify: `security find-identity -p codesigning -v`
 
-### "✖ Bundle not found: .derived/Build/Products/Release/Contextify.app"
+### "✖ Bundle not found: .derived-dmg/Build/Products/Release/Contextify.app"
 
 **Problem:** Built in Debug mode instead of Release
 

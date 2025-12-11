@@ -145,7 +145,7 @@ make db-backup
 make clean-db
 
 # Launch app (will create fresh database)
-open .derived/Build/Products/Debug/Contextify.app
+open .derived-dmg/Build/Products/Debug/Contextify.app
 
 # Wait for ingestion...
 # If needed, restore backup

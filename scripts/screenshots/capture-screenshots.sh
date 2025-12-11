@@ -68,7 +68,7 @@ capture_screenshot_1() {
   echo "Step 1.2: Restarting Contextify..."
   osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
   sleep 1
-  open "$SCRIPT_DIR/../../.derived/Build/Products/Debug/Contextify.app"
+  open "$SCRIPT_DIR/../../.derived-dmg/Build/Products/Debug/Contextify.app"
   sleep 2
 
   # Return focus to terminal for user input
@@ -138,7 +138,7 @@ capture_screenshot_2() {
   echo "Step 2.2: Restarting Contextify..."
   osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
   sleep 1
-  open "$SCRIPT_DIR/../../.derived/Build/Products/Debug/Contextify.app"
+  open "$SCRIPT_DIR/../../.derived-dmg/Build/Products/Debug/Contextify.app"
   sleep 2
 
   # Return focus to terminal for user input

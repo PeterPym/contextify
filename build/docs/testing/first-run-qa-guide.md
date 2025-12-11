@@ -400,8 +400,8 @@ ls -la ~/.codex/sessions
 
 **Solution:**
 ```bash
-# Verify entitlements are embedded
-codesign -d --entitlements - .derived/Build/Products/Debug/Contextify.app
+# Verify entitlements are embedded (use appropriate derived directory)
+codesign -d --entitlements - .derived-appstore/Build/Products/Debug/Contextify\ AppStore.app
 
 # Should show:
 # <key>com.apple.security.app-sandbox</key>

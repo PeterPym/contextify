@@ -32,7 +32,8 @@ DerivedData/
 .swiftpm/
 .build/
 Packages/
-.derived/
+.derived-dmg/
+.derived-appstore/
 # CocoaPods (if ever used)
 Pods/
 

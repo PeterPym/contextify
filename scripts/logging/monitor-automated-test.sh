@@ -80,7 +80,7 @@ if [ "${RESTART_APP:-false}" = "true" ]; then
     echo "🔄 Restarting application..."
     pkill -9 Contextify 2>/dev/null || true
     sleep 2
-    open -a "${APP_PATH:-/Users/rob/code/projects/contextify/.derived/Build/Products/Debug/Contextify.app}"
+    open -a "${APP_PATH:-/Users/rob/code/projects/contextify/.derived-dmg/Build/Products/Debug/Contextify.app}"
     sleep 3
 fi
 

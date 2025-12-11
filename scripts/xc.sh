@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/lib/cleanup.sh"
 
 proj="Contextify/Contextify.xcodeproj"
 scheme="Contextify"
-dd=".derived"
+# dd is set after argument parsing based on $dist
 
 default_config="Debug"
 default_action="build"
@@ -120,6 +120,9 @@ for arg in "$@"; do
   parse_arg "$arg"
 done
 
+# Set derived data path based on distribution (MUST be after argument parsing)
+dd=".derived-${dist}"  # Results in .derived-dmg or .derived-appstore
+
 # Print build configuration summary
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
@@ -137,7 +140,7 @@ if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" || "$act
   if [[ "$fast_clean" -eq 1 ]]; then
     echo "      • Clean app artifacts only (preserves GRDB/dependencies)"
   else
-    echo "      • Clean build cache (.derived/)"
+    echo "      • Clean build cache ($dd/)"
   fi
   echo "      • Wipe database (all projects/transcripts/entries)"
   if [[ "$preserve_bookmarks" -eq 1 ]]; then

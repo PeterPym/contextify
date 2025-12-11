@@ -12,18 +12,18 @@ cleanup() {
 trap cleanup EXIT
 
 printf '🧹 Cleaning build artifacts...\n'
-rm -rf .derived
+rm -rf .derived-dmg
 
 printf '🔨 Building via script...\n'
-bash scripts/xc.sh build
+bash scripts/xc.sh --dist=dmg build
 
-find .derived/Build/Products/Debug/Contextify.app/Contents/Resources \
+find .derived-dmg/Build/Products/Debug/Contextify.app/Contents/Resources \
   -type f | sort > "$SCRIPT_BUILD_RES"
-find .derived/Build/Products/Debug/Contextify.app/Contents/Resources \
+find .derived-dmg/Build/Products/Debug/Contextify.app/Contents/Resources \
   -type f ! -name "*.plist" -exec shasum -a 256 {} \; | sort > "$SCRIPT_BUILD_HASHES"
 
 printf '\n🧹 Cleaning for Xcode build...\n'
-rm -rf .derived
+rm -rf .derived-dmg
 
 cat <<'MSG'
 ⚠️  MANUAL STEP REQUIRED
@@ -35,9 +35,9 @@ When finished, return to this terminal and press Enter to continue...
 MSG
 read -r _
 
-find .derived/Build/Products/Debug/Contextify.app/Contents/Resources \
+find .derived-dmg/Build/Products/Debug/Contextify.app/Contents/Resources \
   -type f | sort > "$XCODE_BUILD_RES"
-find .derived/Build/Products/Debug/Contextify.app/Contents/Resources \
+find .derived-dmg/Build/Products/Debug/Contextify.app/Contents/Resources \
   -type f ! -name "*.plist" -exec shasum -a 256 {} \; | sort > "$XCODE_BUILD_HASHES"
 
 printf '\n📊 Comparing resource lists...\n'

@@ -537,7 +537,7 @@ LOG_PID=$!
 
 sleep 1
 echo "2. Launching app..."
-open .derived/Build/Products/Debug/Contextify.app
+open .derived-dmg/Build/Products/Debug/Contextify.app
 
 echo "3. Capturing for ${DURATION}s..."
 sleep ${DURATION}
