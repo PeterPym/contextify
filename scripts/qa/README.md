@@ -144,21 +144,23 @@ Tests run with `set -euo pipefail`. This affects how assertions behave:
 
 **Hard assertions** (`assert_*`) return non-zero on failure. Under `set -e`, a bare hard assertion will **abort the test immediately** on failure. This is the intended behavior for critical checks where continuing would be meaningless.
 
-**Soft assertions** (`soft_assert_*`) always return 0. They record failures via `TEST_FAILED=1` but don't abort the test. Use soft assertions when you want to collect multiple validation results before the test ends.
+**Soft assertions** (`soft_assert_*`) always return 0 and **do not modify `TEST_FAILED`**. They are informational only - use them for "nice to know" checks (like "LLM processing detected") where failure is worth logging but shouldn't fail the test.
 
 **Patterns:**
 ```bash
 # Hard assertion - test aborts immediately if app not running
 assert_app_running "Contextify"
 
-# Soft assertion - records failure but continues
-soft_assert_log_contains "STARTUP" "App startup logged"
+# Soft assertion - informational, doesn't affect pass/fail
+soft_assert_log_contains "LLM" "LLM processing detected"
 
 # Hard assertion in conditional - test continues on failure
 if ! assert_log_contains "EXPECTED"; then
   log_warn "Pattern not found, trying fallback..."
 fi
 ```
+
+**Note:** If you want to accumulate hard assertion failures without aborting, wrap them in `if` statements. A bare `assert_*` will exit the test on failure under `set -e`.
 
 ### File Assertions
 - `assert_file_exists FILE [DESC]`

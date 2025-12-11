@@ -145,6 +145,13 @@ check_prerequisites() {
 
   # Check for CLI tools (only warn if not skipping)
   if [ "$SKIP_CLI" != "1" ]; then
+    # timeout/gtimeout required for CLI tests (prevents hangs)
+    if ! command -v timeout &> /dev/null && ! command -v gtimeout &> /dev/null; then
+      echo "[ERROR] timeout or gtimeout required for CLI tests."
+      echo "[INFO] Install with: brew install coreutils"
+      echo "[INFO] Or use --skip-cli to skip CLI tests"
+      exit 1
+    fi
     if ! command -v codex &> /dev/null; then
       echo "[WARN] Codex CLI not found. QA-03/05 will be skipped."
     fi

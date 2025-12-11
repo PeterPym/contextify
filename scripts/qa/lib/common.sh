@@ -415,9 +415,9 @@ detect_timeout_cmd() {
   fi
 }
 
-# Run a command with optional timeout
+# Run a command with timeout
 # Usage: run_with_timeout SECONDS COMMAND [ARGS...]
-# If timeout command not available, runs without timeout (with warning on first use)
+# Requires timeout or gtimeout (checked by orchestrator prereqs)
 run_with_timeout() {
   local timeout_secs="$1"
   shift
@@ -427,8 +427,9 @@ run_with_timeout() {
   if [ -n "$TIMEOUT_CMD" ]; then
     "$TIMEOUT_CMD" "$timeout_secs" "$@"
   else
-    log_warn "Running without timeout (install coreutils for gtimeout): $1"
-    "$@"
+    log_error "timeout/gtimeout required but not found (install coreutils)"
+    log_error "Command was: $*"
+    return 1
   fi
 }
 
