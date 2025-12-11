@@ -21,6 +21,14 @@ DB_PATH="${DB_PATH:-$HOME/Library/Application Support/Contextify/contextify.db}"
 DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app}"
 APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify.app}"
 
+# Fixture mode configuration
+QA_FIXTURE_MODE="${QA_FIXTURE_MODE:-0}"
+QA_FIXTURE_DIR="${QA_FIXTURE_DIR:-$REPO_ROOT/scripts/qa/fixtures}"
+
+# Test project path (used by fixture transcript seeding)
+# Default matches CI and local test expectations
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
+
 # Log capture state
 LOGFILE=""
 LOG_PID=""
@@ -572,6 +580,116 @@ reset_dmg_state() {
   clean_userdefaults_for_bid "$BUNDLE_ID_DMG"
 
   log_success "DMG state reset complete"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fixture Transcript Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Seed a fixture transcript into the appropriate provider location
+# Usage: seed_fixture_transcript "codex"|"claude" [fixture_name]
+# Returns: path to seeded transcript file
+# Requires: TEST_PROJECT to be set
+seed_fixture_transcript() {
+  local provider="$1"
+  local fixture_name="${2:-simple-session.jsonl}"
+  local src_file="$QA_FIXTURE_DIR/transcripts/$provider/$fixture_name"
+  local dest_dir=""
+  local dest_file=""
+
+  # Validate TEST_PROJECT is set
+  if [ -z "${TEST_PROJECT:-}" ]; then
+    log_error "TEST_PROJECT is not set; required for fixture transcripts"
+    return 1
+  fi
+
+  if [ ! -f "$src_file" ]; then
+    log_error "Fixture transcript not found: $src_file"
+    return 1
+  fi
+
+  case "$provider" in
+    codex)
+      # Codex uses date-based hierarchy: ~/.codex/sessions/YYYY/MM/DD/
+      local date_path
+      date_path=$(date +%Y/%m/%d)
+      dest_dir="$HOME/.codex/sessions/$date_path"
+      dest_file="$dest_dir/qa-fixture-$(date +%Y-%m-%dT%H-%M-%S)-$(uuidgen | tr '[:upper:]' '[:lower:]').jsonl"
+      ;;
+    claude)
+      # Claude uses project-hash directories: ~/.claude/projects/<hash>/
+      # Note: This is a simplified hash (tr '/' '-'), not Claude's actual algorithm.
+      # Tests validate CWD-based discovery, not directory hash logic.
+      local project_hash
+      project_hash=$(echo "$TEST_PROJECT" | tr '/' '-')
+      dest_dir="$HOME/.claude/projects/$project_hash"
+      dest_file="$dest_dir/$(uuidgen | tr '[:upper:]' '[:lower:]').jsonl"
+      ;;
+    *)
+      log_error "Unknown provider: $provider (expected 'codex' or 'claude')"
+      return 1
+      ;;
+  esac
+
+  mkdir -p "$dest_dir"
+
+  # Escape & in path to prevent sed expansion issues
+  local escaped_project="${TEST_PROJECT//&/\\&}"
+
+  # Copy and update cwd to point to test project
+  sed "s|\"cwd\": \"[^\"]*\"|\"cwd\": \"$escaped_project\"|g" "$src_file" > "$dest_file"
+
+  # Touch to ensure fresh mtime for discovery
+  touch "$dest_file"
+
+  log_info "Seeded fixture transcript: $dest_file"
+  echo "$dest_file"
+}
+
+# Focus the HUD search field
+# Usage: focus_search_field
+focus_search_field() {
+  send_shortcut "f" "command down"
+  sleep 0.3
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Database Fixture Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Install a fixture database for migration testing
+# Usage: install_db_fixture "v16-contextify.db"
+install_db_fixture() {
+  local fixture_name="$1"
+  local src="$QA_FIXTURE_DIR/db/$fixture_name"
+
+  if [ ! -f "$src" ]; then
+    log_error "DB fixture not found: $src"
+    return 1
+  fi
+
+  # Backup current DB if exists
+  if [ -f "$DB_PATH" ]; then
+    mv "$DB_PATH" "${DB_PATH}.qa-backup"
+    log_info "Backed up existing DB to ${DB_PATH}.qa-backup"
+  fi
+
+  mkdir -p "$(dirname "$DB_PATH")"
+  cp "$src" "$DB_PATH"
+
+  # Remove WAL/SHM files if present
+  rm -f "${DB_PATH}-wal" "${DB_PATH}-shm"
+
+  log_info "Installed DB fixture: $fixture_name"
+}
+
+# Restore DB from QA backup
+restore_db_from_backup() {
+  if [ -f "${DB_PATH}.qa-backup" ]; then
+    rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm"
+    mv "${DB_PATH}.qa-backup" "$DB_PATH"
+    log_info "Restored DB from backup"
+  fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
