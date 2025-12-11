@@ -226,6 +226,9 @@ final class ConversationMonitor {
     @ObservationIgnored private var monitorRestartGuardTask: Task<Void, Never>?
     @ObservationIgnored private var monitorRestartFailureCount = 0
     @ObservationIgnored private var pendingIdleRestartAlert = false
+    // Watcher recovery backoff (prevent infinite loops when security scope is unavailable)
+    @ObservationIgnored private var watcherRecoveryFailureCount = 0
+    @ObservationIgnored private var lastWatcherRecoveryFailure: Date?
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -470,6 +473,9 @@ final class ConversationMonitor {
         backgroundTasks?.cancel()
         backgroundTasks = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
+        // Reset recovery backoff on project switch (user may have fixed permissions)
+        watcherRecoveryFailureCount = 0
+        lastWatcherRecoveryFailure = nil
 
         guard !isMonitoring else {
             log.info("⚠️ [MONITOR-SKIP] Already monitoring different project, need to stop first")
@@ -3351,6 +3357,23 @@ final class ConversationMonitor {
 
             // Auto-recovery for specific issues
             if issue.category == .watcherMissing {
+                // Check backoff: exponential backoff prevents infinite loops when security scope is unavailable
+                // Formula: 30s * 2^failures, capped at 10 minutes after 5 failures
+                let backoffSeconds: Int
+                let failureCount = await MainActor.run { self.watcherRecoveryFailureCount }
+                if failureCount >= 5 {
+                    // After 5 failures, give up (security scope likely unavailable)
+                    log.warning("[RECOVERY-BACKOFF] Recovery disabled after \(failureCount) consecutive failures - security scope likely unavailable")
+                    continue
+                } else if failureCount > 0 {
+                    backoffSeconds = min(30 * (1 << failureCount), 600)  // 60s, 120s, 240s, 480s
+                    let lastFailure = await MainActor.run { self.lastWatcherRecoveryFailure }
+                    if let lastFailure, Date().timeIntervalSince(lastFailure) < Double(backoffSeconds) {
+                        log.debug("[RECOVERY-BACKOFF] Skipping recovery (backoff: \(backoffSeconds)s, failures: \(failureCount))")
+                        continue
+                    }
+                }
+
                 // Recover ALL transcripts, not just the one that triggered - since if one is missing,
                 // likely all watchers were lost (e.g., DispatchSource cleanup, memory pressure)
                 log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public) (triggered by: \(snapshot.watcherState.transcriptId ?? "nil", privacy: .public))")
@@ -3377,8 +3400,21 @@ final class ConversationMonitor {
                 targetTranscriptId: targetTranscriptId
             )
             log.info("[WATCHER-RECOVERY-DONE] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
+
+            // Success - reset backoff counters
+            await MainActor.run {
+                self.watcherRecoveryFailureCount = 0
+                self.lastWatcherRecoveryFailure = nil
+            }
         } catch {
             log.error("[WATCHER-RECOVERY-ERROR] Recovery failed for project=\(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+
+            // Failure - increment backoff counter
+            await MainActor.run {
+                self.watcherRecoveryFailureCount += 1
+                self.lastWatcherRecoveryFailure = Date()
+                self.log.warning("[RECOVERY-BACKOFF] Failure count: \(self.watcherRecoveryFailureCount)")
+            }
         }
     }
 
