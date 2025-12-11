@@ -241,11 +241,24 @@ public final class DatabaseManager: @unchecked Sendable {
     }
 
     // Get record counts (schema version comes from DatabaseSchema.version)
-    let (projectCount, transcriptCount, entryCount) = try pool.read { db -> (Int, Int, Int) in
+    let (projectCount, transcriptCount, entryCount, providerCounts) = try pool.read {
+      db -> (Int, Int, Int, [String: Int]) in
       let projects = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
       let transcripts = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
       let entries = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries") ?? 0
-      return (projects, transcripts, entries)
+
+      // Get per-provider transcript counts
+      var providers: [String: Int] = [:]
+      let rows = try Row.fetchAll(
+        db,
+        sql: "SELECT provider, COUNT(*) as count FROM transcripts GROUP BY provider"
+      )
+      for row in rows {
+        if let provider: String = row["provider"], let count: Int = row["count"] {
+          providers[provider] = count
+        }
+      }
+      return (projects, transcripts, entries, providers)
     }
     let schemaVersion = DatabaseSchema.version
 
@@ -256,6 +269,12 @@ public final class DatabaseManager: @unchecked Sendable {
     } else {
       log.info("[DB-INIT] EXISTING DATABASE LOADED (schema v\(schemaVersion))")
       log.info("[DB-INIT] Records: \(projectCount) projects, \(transcriptCount) transcripts, \(entryCount) entries")
+      if !providerCounts.isEmpty {
+        let providerStr = providerCounts.sorted(by: { $0.key < $1.key })
+          .map { "\($0.key): \($0.value)" }
+          .joined(separator: ", ")
+        log.info("[DB-INIT] Transcripts by provider: \(providerStr, privacy: .public)")
+      }
     }
     log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
   }

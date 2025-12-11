@@ -41,6 +41,11 @@ public actor LightweightDiscoveryService {
     let claudeProjects = await claudeProjectsTask
     let codexProjects = await codexProjectsTask
     let rawProjects = claudeProjects + codexProjects
+
+    // Count transcript files per provider for startup diagnostics
+    let claudeTranscriptCount = claudeProjects.reduce(0) { $0 + $1.transcriptCount }
+    let codexTranscriptCount = codexProjects.reduce(0) { $0 + $1.transcriptCount }
+    log.info("[DISC-LIGHT] Filesystem transcripts: Claude=\(claudeTranscriptCount, privacy: .public), Codex=\(codexTranscriptCount, privacy: .public)")
     log.debug("[DISC-LIGHT] Raw discoveries: \(rawProjects.count, privacy: .public) (Claude: \(claudeProjects.count, privacy: .public), Codex: \(codexProjects.count, privacy: .public))")
 
     // Merge projects with same canonical path (e.g., Claude + Codex for same directory)
