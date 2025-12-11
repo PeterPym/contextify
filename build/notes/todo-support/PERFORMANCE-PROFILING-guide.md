@@ -33,7 +33,7 @@ xctrace list templates
 # Profile app launch for 60 seconds
 xctrace record \
   --template 'Time Profiler' \
-  --launch .derived/Build/Products/Debug/Contextify.app \
+  --launch .derived-dmg/Build/Products/Debug/Contextify.app \
   --time-limit 60s \
   --output build/profiles/profile.trace
 
@@ -81,7 +81,7 @@ Create `scripts/profile.sh`:
 
 TEMPLATE="${1:-Time Profiler}"
 DURATION="${2:-60}"
-APP_PATH=".derived/Build/Products/Debug/Contextify.app"
+APP_PATH=".derived-dmg/Build/Products/Debug/Contextify.app"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 OUTPUT="build/profiles/${TIMESTAMP}-$(echo $TEMPLATE | tr ' ' '-').trace"
 

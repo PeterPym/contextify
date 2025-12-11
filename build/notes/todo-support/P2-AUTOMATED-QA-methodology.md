@@ -305,7 +305,7 @@ wait_for_log_pattern() {
 
 # App control
 launch_app() {
-  local app_path="${1:-.derived/Build/Products/Debug/Contextify.app}"
+  local app_path="${1:-.derived-dmg/Build/Products/Debug/Contextify.app}"
   log_info "Launching app: $app_path"
   open "$app_path"
 
@@ -590,7 +590,7 @@ rm -f "$HOME/Library/Application Support/Contextify/contextify.db"*
 start_log_capture
 
 # 3. Launch DMG build
-open .derived/Build/Products/Debug/Contextify.app
+open .derived-dmg/Build/Products/Debug/Contextify.app
 
 # 4. Wait for startup (includes schema migration)
 wait_for_log_pattern "\[ORCH-STARTUP\] Startup complete" 30
@@ -621,7 +621,7 @@ db_count=$(db_count "SELECT COUNT(*) FROM projects;")
 ```bash
 kill_app_if_running
 start_log_capture
-open .derived/Build/Products/Debug/Contextify.app
+open .derived-dmg/Build/Products/Debug/Contextify.app
 wait_for_log_pattern "\[ORCH-STARTUP\] Startup complete" 30
 ```
 
@@ -655,7 +655,7 @@ rm -f "$HOME/Library/Application Support/Contextify/contextify.db"*
 start_log_capture
 
 # 3. Launch App Store build
-open ".derived/Build/Products/Debug/Contextify AppStore.app"
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 
 # 4. Handle Claude permission prompt (fully automated)
 grant_folder_permission "\[ONBOARD-PERMISSION-CLAUDE\]" 15
@@ -692,7 +692,7 @@ assert_app_running "Contextify"
 ```bash
 kill_app_if_running
 start_log_capture
-open ".derived/Build/Products/Debug/Contextify AppStore.app"
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 wait_for_log_pattern "\[ORCH-STARTUP\] Startup complete" 30
 ```
 
@@ -727,7 +727,7 @@ rm -f "$HOME/Library/Application Support/Contextify/contextify.db"*
 start_log_capture
 
 # 3. Launch App Store build
-open ".derived/Build/Products/Debug/Contextify AppStore.app"
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 
 # 4. Skip permission prompts
 skip_folder_permission "\[ONBOARD-PERMISSION-CLAUDE\]" 15
@@ -1215,8 +1215,8 @@ sqlite3 -cmd ".timeout 2000" "$db_path" "$query"
    - System Settings → Privacy & Security → Accessibility → Terminal ✓
    - This is a **one-time setup** - enables all UI automation (button clicks, keyboard shortcuts)
 4. **Contextify builds:**
-   - DMG build: `.derived/Build/Products/Debug/Contextify.app`
-   - App Store build: `.derived/Build/Products/Debug/Contextify AppStore.app` (for QA-01c/d/e)
+   - DMG build: `.derived-dmg/Build/Products/Debug/Contextify.app`
+   - App Store build: `.derived-appstore/Build/Products/Debug/Contextify AppStore.app` (for QA-01c/d/e)
 5. **Git** - For test project setup
 6. **sqlite3** - Built into macOS
 
