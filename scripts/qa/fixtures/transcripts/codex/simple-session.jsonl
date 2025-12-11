@@ -1,3 +1,3 @@
 {"timestamp":"2025-01-01T12:00:00.000Z","type":"session_meta","payload":{"id":"qa-fixture-session","cwd":"/tmp/contextify-qa-test","source":"cli","originator":"codex_cli_rs"}}
-{"timestamp":"2025-01-01T12:00:01.000Z","type":"response_item","item":{"role":"user","content":[{"type":"input_text","text":"QA_FIXTURE_SEARCH_TERM_CODEX this is a searchable test message for QA validation"}]}}
-{"timestamp":"2025-01-01T12:00:02.000Z","type":"response_item","item":{"role":"assistant","content":[{"type":"text","text":"I see your test message. This fixture validates Codex transcript discovery."}]}}
+{"timestamp":"2025-01-01T12:00:01.000Z","type":"event_msg","payload":{"type":"user_message","text":"QA_FIXTURE_SEARCH_TERM_CODEX this is a searchable test message for QA validation"}}
+{"timestamp":"2025-01-01T12:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"text","text":"I see your test message. This fixture validates Codex transcript discovery."}]}}

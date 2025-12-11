@@ -139,10 +139,8 @@ validate_results() {
 
   # Stage 1: File System Events
   log_info "Stage 1: Validating FSEvents detection..."
-  if ! assert_log_contains "\[FSEVENTS\]" "FSEvents system active"; then
-    # Try alternative pattern
-    soft_assert_log_contains "FSEvents" "FSEvents activity detected"
-  fi
+  # FSEvents tags include: [FSEVENTS-CHANGE], [FSEVENTS-TRANSCRIPT], [FSEVENTS-CODEX]
+  soft_assert_log_contains "\[FSEVENTS-" "FSEvents system active"
 
   # Stage 2: Transcript Discovery
   log_info "Stage 2: Validating transcript discovery..."

@@ -642,7 +642,7 @@ seed_fixture_transcript() {
   # Touch to ensure fresh mtime for discovery
   touch "$dest_file"
 
-  log_info "Seeded fixture transcript: $dest_file"
+  log_info "Seeded fixture transcript: $dest_file" >&2
   echo "$dest_file"
 }
 
