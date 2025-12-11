@@ -1,33 +1,35 @@
 # Claude Code Fixture Transcripts
 
-These fixtures are used for deterministic QA testing of Claude Code transcript discovery.
+Fixtures for deterministic QA testing of Claude Code transcript discovery.
 
-## Files
+## Generating Fixtures
 
-- `simple-session.jsonl` - Basic session with user/assistant exchange and search term
+**Never manually create JSONL files.** Always generate via CLI:
 
-## Important Notes
+```bash
+./scripts/qa/fixtures/generate-fixtures.sh
+```
 
-1. **Project directory hash**: The fixture is placed in a directory derived from
-   `TEST_PROJECT` using simple `tr '/' '-'` transformation. This is NOT the same
-   hash algorithm Claude Code actually uses. Tests validate CWD-based discovery
-   logic, not directory hash resolution.
+This creates real transcripts using the Claude CLI with proper multi-turn conversations.
 
-2. **CWD rewriting**: The `cwd` field is rewritten by `seed_fixture_transcript`
-   to match `TEST_PROJECT` (default: `/tmp/contextify-qa-test`).
+## Expected Files (after generation)
 
-3. **Search terms**: Include `QA_FIXTURE_SEARCH_TERM_CLAUDE` for search tests.
+- `project1.jsonl` - Project 1 (both providers), includes QA_FIXTURE_SEARCH_TERM_CLAUDE
+- `project2.jsonl` - Project 2 (Claude only)
+
+## How Seeding Works
+
+The `seed_fixture_transcript` function in `common.sh`:
+1. Copies the fixture to `~/.claude/projects/<hash>/`
+2. Rewrites the `cwd` field to match the target project path
+3. Hash is derived via `tr '/' '-'` (simplified, not Claude's actual algorithm)
 
 ## Cleanup
 
-Fixture seeding is append-only; runs leave transcripts under
-`~/.claude/projects/<test-project-hash>/`. Remove those files manually if you
-want a clean transcript tree. Cleanup is not automated to avoid touching real
-Claude data.
+Seeded transcripts persist in `~/.claude/projects/<hash>/`. Use `--isolate` mode
+which backs up and restores production data, or manually remove test directories.
 
-## Creating New Fixtures
+## References
 
-1. Copy an existing session from `~/.claude/projects/`
-2. Sanitize any sensitive content
-3. Add `QA_FIXTURE_SEARCH_TERM_CLAUDE` to a user message for search testing
-4. Keep fixtures minimal (2-3 exchanges)
+- `build/docs/specifications/transcript-formats.md` - Format specification
+- `appstore-metadata/review-materials/generate-transcripts.sh` - Reference implementation

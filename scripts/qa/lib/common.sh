@@ -622,19 +622,20 @@ reset_dmg_state() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Seed a fixture transcript into the appropriate provider location
-# Usage: seed_fixture_transcript "codex"|"claude" [fixture_name]
+# Usage: seed_fixture_transcript "codex"|"claude" [fixture_name] [project_path]
 # Returns: path to seeded transcript file
-# Requires: TEST_PROJECT to be set
+# Requires: TEST_PROJECT to be set (or project_path provided)
 seed_fixture_transcript() {
   local provider="$1"
   local fixture_name="${2:-simple-session.jsonl}"
+  local project_path="${3:-$TEST_PROJECT}"
   local src_file="$QA_FIXTURE_DIR/transcripts/$provider/$fixture_name"
   local dest_dir=""
   local dest_file=""
 
-  # Validate TEST_PROJECT is set
-  if [ -z "${TEST_PROJECT:-}" ]; then
-    log_error "TEST_PROJECT is not set; required for fixture transcripts"
+  # Validate project path is set
+  if [ -z "${project_path:-}" ]; then
+    log_error "TEST_PROJECT is not set and no project_path provided"
     return 1
   fi
 
@@ -656,7 +657,7 @@ seed_fixture_transcript() {
       # Note: This is a simplified hash (tr '/' '-'), not Claude's actual algorithm.
       # Tests validate CWD-based discovery, not directory hash logic.
       local project_hash
-      project_hash=$(echo "$TEST_PROJECT" | tr '/' '-')
+      project_hash=$(echo "$project_path" | tr '/' '-')
       dest_dir="$HOME/.claude/projects/$project_hash"
       dest_file="$dest_dir/$(uuidgen | tr '[:upper:]' '[:lower:]').jsonl"
       ;;
@@ -670,10 +671,11 @@ seed_fixture_transcript() {
 
   # Escape sed replacement metacharacters in the path
   local escaped_project
-  escaped_project=$(printf '%s' "$TEST_PROJECT" | sed -e 's/[\\&|]/\\&/g')
+  escaped_project=$(printf '%s' "$project_path" | sed -e 's/[\\&|]/\\&/g')
 
   # Copy and update cwd to point to test project
-  sed "s|\"cwd\": \"[^\"]*\"|\"cwd\": \"$escaped_project\"|g" "$src_file" > "$dest_file"
+  # Handle both "cwd":"..." and "cwd": "..." formats
+  sed "s|\"cwd\": *\"[^\"]*\"|\"cwd\":\"$escaped_project\"|g" "$src_file" > "$dest_file"
 
   # Touch to ensure fresh mtime for discovery
   touch "$dest_file"
@@ -793,7 +795,39 @@ backup_and_isolate_transcripts() {
   mkdir -p "$CLAUDE_PROJECTS_DIR"
   mkdir -p "$CODEX_SESSIONS_DIR"
 
-  log_success "Transcripts isolated for QA"
+  # Seed baseline fixtures for tests that need multiple projects
+  # Project 1: Both providers (TEST_PROJECT)
+  # Project 2: Claude only
+  # Project 3: Codex only
+  log_info "Seeding baseline test fixtures..."
+
+  local TEST_PROJECT_2="/tmp/contextify-qa-test-2"
+  local TEST_PROJECT_3="/tmp/contextify-qa-test-3"
+
+  # Create test project directories (git repos for project detection)
+  for proj in "$TEST_PROJECT" "$TEST_PROJECT_2" "$TEST_PROJECT_3"; do
+    if [ ! -d "$proj" ]; then
+      mkdir -p "$proj"
+      git -C "$proj" init -q 2>/dev/null || true
+    fi
+  done
+
+  # Check for multi-project fixtures (generated via generate-fixtures.sh)
+  local seeded_count=0
+  if [ -f "$QA_FIXTURE_DIR/transcripts/claude/project1.jsonl" ]; then
+    # Use generated fixtures with real multi-turn conversations
+    seed_fixture_transcript "claude" "project1.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "project1.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "claude" "project2.jsonl" "$TEST_PROJECT_2" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "project3.jsonl" "$TEST_PROJECT_3" > /dev/null && ((seeded_count++)) || true
+  else
+    # Fallback to simple fixtures (single project only)
+    log_warn "Multi-project fixtures not found. Run: scripts/qa/fixtures/generate-fixtures.sh"
+    seed_fixture_transcript "claude" "simple-session.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "simple-session.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+  fi
+
+  log_success "Transcripts isolated for QA ($seeded_count fixtures seeded)"
 }
 
 # Restore production transcripts from backup

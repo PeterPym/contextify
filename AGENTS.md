@@ -23,6 +23,9 @@ These cause real problems when violated:
 
    App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
 8. **No unassisted merges/deletes** - Do not merge to main or delete branches without user approval, even in autonomous mode.
+9. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
+   - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
+   - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
 
 ---
 
