@@ -78,30 +78,63 @@ run_test_steps() {
     return 1
   fi
 
-  # Wait for onboarding wizard
-  sleep 3
+  # Wait for onboarding wizard (step 1 - database location)
+  log_info "Waiting for onboarding wizard..."
+  if ! wait_for_log_pattern "\[ONBOARD-WIZARD\]" 15; then
+    log_error "Onboarding wizard did not appear"
+    TEST_FAILED=1
+    return 1
+  fi
+  sleep 1
 
-  # Handle permission prompts via UI automation
-  log_info "Handling permission prompts..."
+  # Step 1: Database location selection
+  # Press Enter to open folder picker (folder card has keyboard shortcut)
+  log_info "Step 1: Opening folder picker (Enter)..."
+  activate_app
+  press_return
+  sleep 1
 
-  # Try to grant Claude Code permission
-  if grant_folder_permission "\[ONBOARD\]" 15; then
-    log_success "First permission granted"
-  else
-    log_warn "Could not grant first permission (may not have appeared)"
+  # NSOpenPanel is open - press Enter to accept default location
+  log_info "Selecting default folder in NSOpenPanel (Enter)..."
+  press_return
+  sleep 2
+
+  # Wait for folder to be configured
+  if ! wait_for_log_pattern "\[ONBOARD-DB\] Configured database location" 10; then
+    log_warn "Database location config log not detected"
   fi
 
-  # Try to grant Codex permission (may not appear)
-  sleep 2
-  if grant_folder_permission "\[ONBOARD\]" 10; then
-    log_success "Second permission granted"
-  else
-    log_info "Second permission prompt not detected (may not be needed)"
-  fi
+  # Press Enter to advance to step 2 (Next button now has keyboard shortcut)
+  log_info "Advancing to step 2 (Enter)..."
+  activate_app
+  press_return
+  sleep 1
 
-  # Complete onboarding
+  # Step 2: Permissions
+  # Need to click "Grant Access" buttons (these require explicit clicks)
+  # SwiftUI buttons are nested in groups and don't expose names to System Events
+  log_info "Step 2: Granting transcript folder permissions..."
+
+  # Click Grant Access for Claude Code (button 1 in group 1)
+  log_info "Granting Claude Code access..."
+  click_group_button 1 1
+  sleep 1
+  press_return  # Confirm NSOpenPanel
   sleep 2
-  complete_onboarding 3
+
+  # Click Grant Access for Codex CLI (button 2 in group 1)
+  log_info "Granting Codex CLI access..."
+  activate_app
+  click_group_button 1 2
+  sleep 1
+  press_return  # Confirm NSOpenPanel
+  sleep 2
+
+  # After granting permissions, press Enter to complete (Continue button)
+  log_info "Completing onboarding (Enter)..."
+  activate_app
+  sleep 0.5
+  press_return
 
   # Wait for startup completion
   log_info "Waiting for startup completion..."
@@ -115,7 +148,7 @@ run_test_steps() {
     fi
   fi
 
-  log_success "App launched and permissions handled"
+  log_success "App launched and onboarding completed"
 }
 
 validate_results() {
@@ -124,14 +157,14 @@ validate_results() {
   # App should be running
   assert_app_running "Contextify"
 
-  # Database should exist
-  assert_db_exists "Database created"
+  # Database was created and has projects (custom location, so check logs instead of path)
+  assert_log_contains "\[INIT-DB-STATE\] Database has" "Database initialized with projects"
 
-  # Check for permission-related logs
-  soft_assert_log_contains "\[ONBOARD\]" "Onboarding flow logged"
+  # Onboarding completed
+  assert_log_contains "\[ONBOARD-DB\] Configured database location" "Database location configured"
 
-  # Check for bookmark saved (if permission was granted)
-  soft_assert_log_contains "bookmark\|BOOKMARK" "Bookmark activity logged"
+  # Permissions were granted
+  soft_assert_log_contains "\[PERMISSIONS\].*Granted access" "Transcript permissions granted"
 
   # Check for startup completion
   soft_assert_log_contains "\[ORCH-STARTUP\]" "Orchestrator startup logged"

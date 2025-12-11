@@ -74,6 +74,7 @@ struct SourceAuthorizationRow: View {
         }
         .buttonStyle(.bordered)
         .disabled(isRequesting)
+        .accessibilityIdentifier("relink-\(source.rawValue)")
       } else if authorization?.status == .authorized {
         Button {} label: {
           Image(systemName: "checkmark.circle.fill")
@@ -81,12 +82,15 @@ struct SourceAuthorizationRow: View {
         }
         .buttonStyle(.plain)
         .disabled(true)
+        .accessibilityIdentifier("authorized-\(source.rawValue)")
       } else {
         Button("Grant Access...") {
           requestAccess()
         }
         .buttonStyle(.bordered)
         .disabled(isRequesting)
+        .accessibilityIdentifier("grant-access-\(source.rawValue)")
+        .accessibilityLabel("Grant Access \(source.displayName)")
       }
     }
   }

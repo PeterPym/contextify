@@ -257,6 +257,16 @@ click_button() {
   sleep 0.3
 }
 
+# Click a button by index within a group (for SwiftUI buttons that don't expose names)
+# Usage: click_group_button 1 1  # Click button 1 in group 1
+click_group_button() {
+  local group_num="$1"
+  local button_num="$2"
+  log_debug "Clicking button $button_num in group $group_num"
+  osascript -e "tell application \"System Events\" to tell process \"Contextify\" to tell window 1 to tell group $group_num to click button $button_num" 2>/dev/null || true
+  sleep 0.3
+}
+
 # Click a button by name, trying multiple times
 click_button_retry() {
   local button_name="$1"
