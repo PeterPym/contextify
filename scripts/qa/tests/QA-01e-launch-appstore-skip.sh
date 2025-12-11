@@ -49,12 +49,13 @@ setup_test() {
   # Kill app if running
   kill_app_if_running
 
-  # Remove existing database for clean test
-  log_info "Removing existing database and bookmarks..."
-  rm -f "$DB_PATH"*
+  # Full reset of App Store app state (DB, prefs, bookmarks, caches)
+  # This ensures we get a true clean install experience with onboarding
+  reset_appstore_state
 
-  # Clear UserDefaults (includes bookmarks)
-  clear_user_defaults
+  # Override DB_PATH for App Store sandbox location (for assertions)
+  DB_PATH="$(get_appstore_db_path)"
+  log_info "DB_PATH set to: $DB_PATH"
 
   # Start log capture
   LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"

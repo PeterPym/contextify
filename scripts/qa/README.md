@@ -34,7 +34,7 @@ This test suite validates 6 critical user flows through:
   - Build with: `bash scripts/xc.sh --dist=dmg build`
 
 ### For App Store Tests (QA-01c/d/e)
-- **App Store build**: `.derived-appstore/Build/Products/Debug/Contextify AppStore.app`
+- **App Store build**: `.derived-appstore/Build/Products/Debug/Contextify.app`
   - Build with: `bash scripts/xc.sh --dist=appstore Debug build`
 - **Terminal Accessibility Permission** (one-time setup):
   - System Settings → Privacy & Security → Accessibility → Terminal ✓
@@ -114,7 +114,7 @@ QA_DEBUG=1 ./scripts/qa/tests/QA-03-codex-discovery.sh
 | `QA_CLEANUP` | 0 | Clean up test artifacts after run |
 | `DB_PATH` | ~/Library/Application Support/Contextify/contextify.db | Database location |
 | `DMG_APP_PATH` | .derived-dmg/Build/Products/Debug/Contextify.app | DMG build path |
-| `APPSTORE_APP_PATH` | .derived-appstore/Build/Products/Debug/Contextify AppStore.app | App Store build path |
+| `APPSTORE_APP_PATH` | .derived-appstore/Build/Products/Debug/Contextify.app | App Store build path |
 
 ## Writing New Tests
 

@@ -4,6 +4,14 @@
 
 set -euo pipefail
 
+# Source shared cleanup library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../lib/cleanup.sh"
+
+# Bundle IDs for the two app variants
+BUNDLE_ID_DMG="dev.contextify"
+BUNDLE_ID_APPSTORE="sh.contextify.Contextify"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
@@ -11,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
 DB_PATH="${DB_PATH:-$HOME/Library/Application Support/Contextify/contextify.db}"
 DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app}"
-APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify AppStore.app}"
+APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify.app}"
 
 # Log capture state
 LOGFILE=""
@@ -475,15 +483,85 @@ create_test_project() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# UserDefaults Helpers
+# State Reset Helpers (uses shared cleanup library)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Clear Contextify UserDefaults (both domains)
+# Uses shared cleanup library for consistency with xc.sh
 clear_user_defaults() {
   log_info "Clearing UserDefaults..."
-  defaults delete sh.contextify.Contextify 2>/dev/null || true
-  defaults delete dev.contextify 2>/dev/null || true
+  clean_userdefaults_for_bid "$BUNDLE_ID_APPSTORE"
   log_success "UserDefaults cleared"
+}
+
+# Get App Store sandbox container Application Support path
+# Always returns the sandbox path (for clean installs we want to target this even if it doesn't exist)
+get_appstore_app_support() {
+  echo "$HOME/Library/Containers/$BUNDLE_ID_APPSTORE/Data/Library/Application Support/Contextify"
+}
+
+# Get App Store database path
+get_appstore_db_path() {
+  echo "$(get_appstore_app_support)/contextify.db"
+}
+
+# Reset App Store app state completely (DB, prefs, bookmarks, caches)
+# This is equivalent to: bash scripts/xc.sh --dist=appstore reset-state
+reset_appstore_state() {
+  local preserve_bookmarks="${1:-false}"
+  log_info "Resetting App Store app state..."
+
+  # Always use sandbox container path for App Store builds
+  local as_path
+  as_path="$(get_appstore_app_support)"
+
+  if [ -d "$as_path" ]; then
+    if [ "$preserve_bookmarks" = "true" ]; then
+      # Preserve bookmarks.plist, remove everything else
+      local bookmarks_file="$as_path/bookmarks.plist"
+      local temp_bookmarks="/tmp/qa-bookmarks-backup-$$.plist"
+
+      if [ -f "$bookmarks_file" ]; then
+        log_info "Backing up bookmarks..."
+        cp "$bookmarks_file" "$temp_bookmarks"
+      fi
+
+      log_info "Removing Application Support (preserving bookmarks)..."
+      rm -rf "$as_path"
+
+      if [ -f "$temp_bookmarks" ]; then
+        mkdir -p "$as_path"
+        mv "$temp_bookmarks" "$bookmarks_file"
+      fi
+    else
+      log_info "Removing Application Support..."
+      rm -rf "$as_path"
+    fi
+  fi
+
+  # Clean caches and UserDefaults using shared library
+  clean_caches_for_bid "$BUNDLE_ID_APPSTORE"
+  clean_userdefaults_for_bid "$BUNDLE_ID_APPSTORE"
+
+  log_success "App Store state reset complete"
+}
+
+# Reset DMG app state (simpler, no sandbox)
+reset_dmg_state() {
+  log_info "Resetting DMG app state..."
+
+  # Remove standard Application Support
+  local as_path="$HOME/Library/Application Support/Contextify"
+  if [ -d "$as_path" ]; then
+    log_info "Removing Application Support..."
+    rm -rf "$as_path"
+  fi
+
+  # Clean caches and UserDefaults
+  clean_caches_for_bid "$BUNDLE_ID_DMG"
+  clean_userdefaults_for_bid "$BUNDLE_ID_DMG"
+
+  log_success "DMG state reset complete"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

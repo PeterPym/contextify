@@ -36,6 +36,10 @@ check_prerequisites() {
     exit 1
   fi
 
+  # Set DB_PATH to App Store sandbox location for all assertions
+  DB_PATH="$(get_appstore_db_path)"
+  log_info "DB_PATH set to: $DB_PATH"
+
   # Check for existing database (suggests previous run)
   if [ ! -f "$DB_PATH" ]; then
     log_warn "No existing database - bookmarks may not exist"
@@ -51,7 +55,7 @@ setup_test() {
   # Kill app if running
   kill_app_if_running
 
-  # DO NOT clear UserDefaults - we want to keep bookmarks
+  # DO NOT clear UserDefaults or reset state - we want to keep bookmarks
 
   # Start log capture
   LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
