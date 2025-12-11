@@ -111,40 +111,20 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ## Log Analysis Issues
 
-**Status:** Root causes identified, fixes pending
+**Status:** Complete
 **Priority:** P0 (blocking quality release)
-**Branch:** TBD
 
-- [ ] #LOG-ISSUES: Fix issues identified in Dec 2025 log analysis
+- [x] #LOG-ISSUES: Fix issues identified in Dec 2025 log analysis ✅ DONE
+
+**Completed 2025-12-11:**
+
+1. **Transcript validation** - Skip summary lines in structural validation (was rejecting 108 transcripts)
+2. **Watcher recovery loop** - Added exponential backoff with 5-retry limit (was looping 96+ times)
+3. **Timeline refresh rate** - Added refresh coalescing (reduced 10+/5s to max 2 refreshes)
+4. **Codex getCWD** - Use JSONSerialization + scan 5 lines (fixed 3000+ failures)
+5. **AI cancellation noise** - Log at debug level instead of error (reduced 45+ warnings)
 
 **Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
-
-**Issues Identified (by priority):**
-
-1. **Transcript validation rejects summary-prefixed files** (108 failures)
-   - Validator requires `uuid`, `timestamp`, `type` but summary lines only have `type`, `summary`, `leafUuid`
-   - Fix: Skip `type=summary` lines in structural validation or accept them as valid
-   - File: `app/Sources/ContextifyCore/Database/TranscriptValidator.swift:162-251`
-
-2. **Codex watcher recovery infinite loop** (96+ errors)
-   - Recovery triggers for Codex transcripts without valid security scope
-   - Retries every ~30s indefinitely, wasting CPU/battery
-   - Fix: Check security scope before recovery, add exponential backoff
-   - Files: `Contextify/Contextify/ConversationMonitor.swift`, `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
-
-3. **Timeline high refresh rate** (20+ events, up to 10/5s)
-   - Multiple notification handlers trigger `loadFeedFromSQL()` simultaneously
-   - Fix: Debounce/coalesce refresh requests within 100ms window
-   - File: `Contextify/Contextify/ConversationMonitor.swift:1388-1410`
-
-4. **getCWD failures for Codex transcripts** (3000+ failures)
-   - Discovery doesn't handle Codex's nested `payload.cwd` format
-   - Fix: Update getCWD to try `json["payload"]["cwd"]` for Codex
-   - File: `app/Sources/ContextifyCore/Discovery/LightweightDiscovery.swift`
-
-5. **Apple Intelligence cancellation errors** (45 events) - **LOW PRIORITY**
-   - Already handled correctly, just noisy logging
-   - Consider: Reduce log level to `.debug` for cancellation errors
 
 ---
 
@@ -156,7 +136,7 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 **Status:** Guide written, implementation ready
 **Priority:** P1 (addresses LOG-ISSUES performance problems)
-**Depends on:** #LOG-ISSUES, #AUTOMATED-QA (need QA suite to validate fixes)
+**Depends on:** #AUTOMATED-QA (need QA suite to validate fixes)
 **Effort:** 4-6 hours (instrumentation + fixes)
 **Guide:** `build/notes/todo-support/PERFORMANCE-PROFILING-guide.md`
 
