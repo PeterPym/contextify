@@ -53,12 +53,15 @@ This test suite validates 6 critical user flows through:
 | QA-01d | App Store - Existing Bookmarks | App Store build |
 | QA-01e | App Store - Skip Permissions | App Store build, Accessibility |
 | QA-02 | Project Switching | Running app, 2+ projects |
-| QA-03 | Codex Discovery | Running app, Codex CLI |
-| QA-04 | Claude Discovery | Running app, Claude Code |
+| QA-03 | Codex Discovery | Running app, Codex CLI (or fixture mode) |
+| QA-04 | Claude Discovery | Running app, Claude Code (or fixture mode) |
 | QA-05 | Real-time Updates | Running app, Codex CLI |
 | QA-06 | Watcher Recovery | Running app |
 | QA-07 | Transcript Window | Running app |
 | QA-08 | Projects Window | Running app |
+| QA-09 | DB Migration & Integrity | DMG build, DB fixtures |
+| QA-10 | Quick Search | DMG build, searchable content |
+| QA-11 | Deep Search Window | DMG build |
 
 ## Test Output
 
@@ -81,6 +84,11 @@ scripts/qa/
 ├── lib/
 │   ├── common.sh           # Shared utilities
 │   └── assertions.sh       # Test assertions
+├── fixtures/
+│   ├── transcripts/
+│   │   ├── codex/          # Codex transcript fixtures
+│   │   └── claude/         # Claude transcript fixtures
+│   └── db/                 # Database fixtures for migration tests
 └── tests/
     ├── QA-01a-launch-dmg-clean.sh
     ├── QA-01b-launch-dmg-existing.sh
@@ -93,7 +101,10 @@ scripts/qa/
     ├── QA-05-realtime-updates.sh
     ├── QA-06-watcher-recovery.sh
     ├── QA-07-transcript-window.sh
-    └── QA-08-projects-window.sh
+    ├── QA-08-projects-window.sh
+    ├── QA-09-db-migration.sh
+    ├── QA-10-quick-search.sh
+    └── QA-11-deep-search.sh
 ```
 
 ## Running Individual Tests
@@ -115,6 +126,60 @@ QA_DEBUG=1 ./scripts/qa/tests/QA-03-codex-discovery.sh
 | `DB_PATH` | ~/Library/Application Support/Contextify/contextify.db | Database location |
 | `DMG_APP_PATH` | .derived-dmg/Build/Products/Debug/Contextify.app | DMG build path |
 | `APPSTORE_APP_PATH` | .derived-appstore/Build/Products/Debug/Contextify.app | App Store build path |
+| `QA_FIXTURE_MODE` | 0 | Set to 1 to use fixtures instead of live CLIs |
+| `QA_FIXTURE_DIR` | $REPO_ROOT/scripts/qa/fixtures | Fixture directory |
+| `TEST_PROJECT` | /tmp/contextify-qa-test | Test project path (cwd written into fixtures) |
+
+## Fixture Mode
+
+Set `QA_FIXTURE_MODE=1` to run Codex/Claude tests using local transcript fixtures
+instead of invoking live CLIs. This enables deterministic, fast testing without
+network dependencies or CLI tool authentication.
+
+### Usage
+
+```bash
+# Run with fixtures (no CLI binaries needed)
+QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
+
+# Run in CI (fixtures + skip App Store tests)
+QA_FIXTURE_MODE=1 TEST_PROJECT=/tmp/contextify-qa-test ./scripts/qa/run-all-tests.sh --skip-appstore
+```
+
+### Fixtures
+
+```
+scripts/qa/fixtures/
+├── transcripts/
+│   ├── codex/
+│   │   ├── simple-session.jsonl    # Codex fixture with search term
+│   │   └── README.md
+│   └── claude/
+│       ├── simple-session.jsonl    # Claude fixture with search term
+│       └── README.md
+└── db/
+    ├── v16-contextify.db           # Oldest supported schema
+    ├── v25-contextify.db           # Pre-FTS5 schema
+    └── README.md
+```
+
+### Notes
+
+- Fixture mode works with `--skip-cli`; CLI binaries are not required
+- The `TEST_PROJECT` path is written into fixture transcripts via sed
+- Claude fixtures use a simplified project hash (not Claude's actual algorithm)
+- Fixtures include search terms (`QA_FIXTURE_SEARCH_TERM_*`) for search tests
+
+### CI Integration
+
+The GitHub Actions workflow runs the QA suite in fixture mode on every PR:
+
+```yaml
+- name: Run QA Suite (fixture mode)
+  run: QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
+  env:
+    TEST_PROJECT: /tmp/contextify-qa-test
+```
 
 ## Writing New Tests
 

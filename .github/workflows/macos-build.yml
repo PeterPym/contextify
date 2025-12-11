@@ -24,8 +24,10 @@ jobs:
       - name: Select Xcode
         run: |
           sudo xcode-select -p
-          # Use default Xcode on runner; adjust if you require a specific beta version
           xcodebuild -version
+
+      - name: Install coreutils (for gtimeout)
+        run: brew install coreutils
 
       - name: Run Tests
         run: swift test
@@ -38,17 +40,41 @@ jobs:
             -scheme Contextify \
             -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData \
+            -derivedDataPath .derived-dmg \
             -skipPackagePluginValidation \
             -skipMacroValidation \
             build | xcpretty || exit ${PIPESTATUS[0]}
         env:
           NSUnbufferedIO: "YES"
 
+      - name: Create test project
+        run: |
+          mkdir -p /tmp/contextify-qa-test
+          cd /tmp/contextify-qa-test
+          git init
+          git config user.email "qa@contextify.test"
+          git config user.name "QA Test"
+          echo "# QA Test Project" > README.md
+          git add README.md
+          git commit -m "Initial commit"
+
+      - name: Run QA Suite (fixture mode)
+        run: |
+          QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
+        env:
+          TEST_PROJECT: /tmp/contextify-qa-test
+
+      - name: Upload QA logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-logs
+          path: /tmp/qa-run-*
+
       - name: Archive build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: xcode-build-logs
-          path: build/DerivedData
+          path: .derived-dmg
 
