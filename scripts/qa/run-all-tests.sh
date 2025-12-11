@@ -35,6 +35,8 @@ declare -a ALL_TESTS=(
   "QA-06-watcher-recovery.sh:0"
   "QA-07-transcript-window.sh:0"
   "QA-08-projects-window.sh:0"
+  "QA-10-quick-search.sh:0"
+  "QA-11-deep-search.sh:0"
 )
 
 # Track results
