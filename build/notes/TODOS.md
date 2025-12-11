@@ -109,6 +109,37 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## QA Review and Recent Feature Cleanup (4 items)
+
+**Status:** In Progress (Task 1 complete, awaiting review)
+**Priority:** P0 (code review debt from autonomous work)
+**Context:** QA Phase 2 left fixtures installed without cleanup docs. GIT-BRANCH and EXPANSION-STATE were merged without review during autonomous work.
+
+**Workflow:** Sequential branches, each merged after user review approval.
+
+### Task 1: QA Documentation Audit
+**Branch:** `fix/qa-docs-audit`
+- [x] #QA-REVIEW-1: Find QA Phase 1/2 merge commits, inventory docs created
+  - Found: `bf02cfc9` (Phase 1), `d4cae01e` (Phase 2)
+  - Docs created: `scripts/qa/README.md`, fixture READMEs
+- [x] Identify gaps: Missing "cleanup after local QA" section
+- [x] Add missing docs to scripts/qa/README.md (cleanup section added)
+- [x] Update cross-references in AGENTS.md (QA suite now referenced in Quick Commands and Testing sections)
+
+### Task 2: Code Review - QA Phase 2
+**Branch:** `fix/qa-phase2-review`
+- [ ] #QA-REVIEW-2: Generate /review-prep package, review implementation, address issues
+
+### Task 3: Code Review - GIT-BRANCH
+**Branch:** `fix/git-branch-review`
+- [ ] #QA-REVIEW-3: Review transcript-based git branch (TranscriptOrchestrator, HUDCore, ContentView)
+
+### Task 4: Code Review - EXPANSION-STATE
+**Branch:** `fix/expansion-state-review`
+- [ ] #QA-REVIEW-4: Review timeline expansion persistence (ConversationTimelineView, TimelineEntryRow)
+
+---
+
 ## Log Analysis Issues
 
 **Status:** Complete

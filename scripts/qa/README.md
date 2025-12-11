@@ -181,6 +181,37 @@ The GitHub Actions workflow runs the QA suite in fixture mode on every PR:
     TEST_PROJECT: /tmp/contextify-qa-test
 ```
 
+### Cleanup After Local Runs
+
+When running fixture mode locally, the test suite installs fixtures **alongside** your
+real transcripts, not in place of them. The app may auto-select the fixture project
+and remember that selection in UserDefaults.
+
+**What fixture mode creates:**
+- Transcript fixtures at `~/.claude/projects/-tmp-contextify-qa-test/`
+- UserDefaults entry `dev.contextify.projectRoot` pointing to `/tmp/contextify-qa-test`
+- UserDefaults entry `dev.contextify.projectRootBookmark` (security-scoped bookmark)
+
+**Symptoms of "stuck" fixture state:**
+- App shows empty timeline despite having real transcripts
+- Project appears as `/tmp/contextify-qa-test` in the UI
+- Real projects not visible in project list
+
+**To restore normal operation:**
+```bash
+# Clear stuck project selection
+defaults delete dev.contextify dev.contextify.projectRoot
+defaults delete dev.contextify dev.contextify.projectRootBookmark
+
+# Remove QA fixture transcripts
+rm -rf ~/.claude/projects/-tmp-contextify-qa-test
+
+# Relaunch app - it will auto-discover your real projects
+```
+
+**Note:** CI runs don't have this issue since they execute in isolated environments.
+Local runs require manual cleanup if you want to return to your real transcript data.
+
 ## Writing New Tests
 
 1. Create new file in `tests/` following naming convention: `QA-XX-description.sh`
