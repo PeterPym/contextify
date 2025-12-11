@@ -265,53 +265,6 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 
 ---
 
-## Automated QA Suite (1 item)
-
-**Status:** Not Started - methodology defined, needs implementation
-**Priority:** P1 (enables confident iteration - do before performance work)
-**Effort:** 8-12 hours (MVP bash-based suite)
-**Methodology:** `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
-
-- [ ] #AUTOMATED-QA: Implement automated QA suite for pre-release validation
-
-**Goal:** Bash-based automated QA suite that validates 6 critical user flows through log analysis, database queries, and filesystem verification.
-
-**Scope (MVP - Local Execution):**
-- Sequential execution on local macOS dev machine (no CI/CD yet)
-- Real integrations with actual Codex/Claude CLIs (not fixtures)
-- Sub-10 minute execution time with clear pass/fail results
-- AppleScript for UI automation, direct SQLite queries acceptable
-
-**Test Coverage:**
-1. App startup and initialization (5 variants: DMG/AppStore × clean/existing + permission skip)
-2. Project switching between multiple repositories
-3. File system event → ingestion → timeline display
-4. LLM processing and summary generation
-5. Timeline scroll and rendering
-6. Permission grant flows (App Store builds)
-
-**Deliverables:**
-- `scripts/qa/` directory with test harness
-- 6 test scripts (QA-01 through QA-06)
-- Test helper utilities (log parsing, DB queries, UI automation)
-- Test report generation
-- README with usage instructions
-
-**Future Work (v2 - Professional QA):**
-- CI/CD integration with GitHub Actions
-- Fixture-based tests for reliability/cost reduction
-- Database migration testing
-- Performance benchmarks with timing assertions
-- Headless controls without AppleScript
-
-**Files:**
-- `scripts/qa/` (new directory)
-- Test fixtures/helper scripts
-
-**Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
-
----
-
 ## Transcript-Based Git Branch Display (1 item)
 
 **Status:** Not Started
