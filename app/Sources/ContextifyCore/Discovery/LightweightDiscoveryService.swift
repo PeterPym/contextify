@@ -200,26 +200,31 @@ public actor LightweightDiscoveryService {
     // Store file URLs per project (not just count)
     var projects: [String: (files: [URL], maxDate: Date, path: URL)] = [:]
 
-    // Helper to peek first line for CWD
+    // Helper to peek first few lines for CWD
     // Uses shared helper that supports both Claude Code and Codex formats
+    // Scans up to 5 lines to find CWD (session_meta may not be first line)
     func getCWD(url: URL) -> String? {
       guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
       defer { try? handle.close() }
 
-      // Read 2KB to avoid truncating longer JSON headers (e.g., Codex payload format)
-      guard let data = try? handle.read(upToCount: 2048),
+      // Read 4KB to capture multiple lines (Codex payload lines can be long)
+      guard let data = try? handle.read(upToCount: 4096),
             let str = String(data: data, encoding: .utf8) else {
         return nil
       }
 
-      // Use first non-empty line
-      guard let firstLine = str
-              .components(separatedBy: .newlines)
-              .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-        return nil
+      // Scan first 5 non-empty lines for CWD
+      let lines = str.components(separatedBy: .newlines)
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .prefix(5)
+
+      for line in lines {
+        if let cwd = ProjectIdentity.extractCwdFromJSONLine(line) {
+          return cwd
+        }
       }
 
-      return ProjectIdentity.extractCwdFromJSONLine(firstLine)
+      return nil
     }
 
     // Use FileManager.enumerator to walk tree efficiently
