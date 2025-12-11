@@ -470,7 +470,7 @@ if [[ "$add_dock" == "y" || "$add_dock" == "Y" ]]; then
 fi
 
 # Open background image for desktop
-BACKGROUND_IMG="$PROJECT_ROOT/build/assets/demo-video-background.jpg"
+BACKGROUND_IMG="$PROJECT_ROOT/build/assets/video/demo-video-background.jpg"
 if [[ -f "$BACKGROUND_IMG" ]]; then
   echo ""
   echo "Open background image in Preview? (Y/n)"

@@ -15,8 +15,8 @@
 ## Images Used
 
 1. Onboarding screenshot (Dropbox location picker) - "Store your database in Dropbox or iCloud for backup"
-2. `website/assets/img/feature-search-cropped.webp` - "Search across all your sessions"
-3. `build/assets/screenshots/contextify-screenshot-queued-message-claude-code-light.png` - "Queue indicator in the timeline"
+2. `build/assets/website/feature-search-cropped.webp` - "Search across all your sessions"
+3. `build/assets/promotional/v1.0.2/contextify-screenshot-queued-message-claude-code-light.png` - "Queue indicator in the timeline"
 
 ---
 

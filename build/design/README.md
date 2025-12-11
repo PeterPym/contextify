@@ -40,7 +40,7 @@ build/design/
 | Location | Purpose |
 |----------|---------|
 | `build/docs/design/` | App UI patterns (SwiftUI, components) |
-| `build/assets/` | Legacy assets (DMG background) |
+| `build/assets/` | Unified asset hub (symlinks + promotional, video, DMG assets) |
 | `website/` | Deployed website files |
 | `Contextify/icon-composer-project.icon/` | Active Icon Composer project (Xcode) |
 

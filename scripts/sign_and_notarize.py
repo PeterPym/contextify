@@ -33,7 +33,7 @@ APP_BUNDLE = DERIVED / "Contextify.app"
 LAUNCHER = APP_BUNDLE / "Contents/MacOS/Contextify"
 DMG_PATH = DIST / "Contextify.dmg"
 
-DMG_SETTINGS = ROOT / "build/assets/dmg_settings.json"
+DMG_SETTINGS = ROOT / "build/assets/dmg/settings.json"
 ENTITLEMENTS = ROOT / "Contextify/Contextify.entitlements"
 NOTARY_PROFILE = "NotaryProfile"
 

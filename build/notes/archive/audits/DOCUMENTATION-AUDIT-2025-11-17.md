@@ -30,7 +30,7 @@
 - `build/notes/`: 16 files (mixed planning/historical)
 - `scripts/`: 15 standalone docs (duplication with build/docs/)
 - Package-level: 6 files (app/, Contextify/, Fixtures/)
-- Other: 15+ files (.claude/commands/, design-assets/, website/, docs/)
+- Other: 15+ files (.claude/commands/, website/, docs/)
 
 ### Quality Assessment
 
@@ -344,10 +344,9 @@ Fixtures/transcripts/README.md                 # KEEP: Test fixtures
   - **Option B**: Move content into `build/docs/` and delete `docs/`
   - `docs/roadmap/initial-contextify-swift-macos-setup.md`: Archive or delete
 
-#### design-assets/README.md
-- **Status:** Not reviewed
-- **Issues:** Unknown
-- **Recommended changes:** Audit separately if in scope
+#### design-assets/ (removed)
+- **Status:** Directory removed in asset migration
+- **Recommended changes:** None
 
 #### website/README.md
 - **Status:** Not reviewed in detail

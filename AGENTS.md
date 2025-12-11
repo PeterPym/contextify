@@ -157,7 +157,20 @@ Contextify uses SQL backend (GRDB) with real-time transcript monitoring and LLM-
 - `build/design/README.md` - **START HERE** for design work
 - `build/design/brand/colors.md` - Canonical color tokens (website CSS must stay in sync)
 - `build/design/website/specimens/website-comparator.html` - Interactive design tool
-- `build/ASSETS.md` - **Asset catalog** (screenshots, icons, video - searchable by keywords)
+**Assets:**
+- `build/assets/` - **START HERE** for any visual asset
+- `build/assets/MANIFEST.yaml` - Structured metadata (query by keywords, version, purpose)
+- `build/assets/README.md` - Human-readable index
+
+Browsable via symlinks:
+- `build/assets/website/` → Website images
+- `build/assets/appstore/` → App Store screenshots
+
+Real files:
+- `build/assets/promotional/v{VERSION}/` → Social/docs screenshots
+- `build/assets/video/` → Demo videos
+- `build/assets/dmg/` → DMG build assets
+- `build/design/brand/` → Colors, logo, provider icons
 
 ## UI Testing Gaps
 

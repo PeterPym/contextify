@@ -37,7 +37,7 @@ guard let tiffData = image.tiffRepresentation,
 }
 
 // Write to file
-let outputPath = "build/assets/dmg_background.png"
+let outputPath = "build/assets/dmg/background.png"
 let url = URL(fileURLWithPath: outputPath)
 
 do {
