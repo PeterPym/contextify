@@ -1422,7 +1422,7 @@ func testQueueMetadataEndToEnd() throws {
 
 # 2. Launch app with v26
 bash scripts/xc.sh build
-open .derived/Build/Products/Debug/Contextify.app
+open .derived-dmg/Build/Products/Debug/Contextify.app
 
 # 3. Monitor metadata ingestion
 ./scripts/logging/monitor-metadata-ingestion.sh > /tmp/metadata-ingestion-log.txt
@@ -1483,7 +1483,7 @@ grep "\[META-INSERT-ERROR\]" /tmp/metadata-ingestion-log.txt
 ./scripts/db_manager.sh clean
 
 # Time full ingestion
-time bash scripts/xc.sh build && open .derived/Build/Products/Debug/Contextify.app
+time bash scripts/xc.sh build && open .derived-dmg/Build/Products/Debug/Contextify.app
 
 # Monitor ingestion rate
 ./scripts/logging/monitor-transcript-queues.sh | tee /tmp/baseline-ingestion.log
@@ -1504,7 +1504,7 @@ du -h ~/Library/Application\ Support/Contextify/contextify.db
 ```bash
 # Same process
 ./scripts/db_manager.sh clean
-time bash scripts/xc.sh build && open .derived/Build/Products/Debug/Contextify.app
+time bash scripts/xc.sh build && open .derived-dmg/Build/Products/Debug/Contextify.app
 ./scripts/logging/monitor-transcript-queues.sh | tee /tmp/v26-ingestion.log
 
 # Compare rate

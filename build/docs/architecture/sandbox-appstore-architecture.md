@@ -242,7 +242,7 @@ bash scripts/xc.sh --dist=appstore Debug build
 bash scripts/xc.sh --dist=appstore reset-all
 
 # Launch app
-open .derived/Build/Products/Debug/Contextify.app
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 
 # Grant folder permissions in welcome modal
 # Verify:

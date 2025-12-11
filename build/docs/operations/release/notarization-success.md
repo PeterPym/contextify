@@ -63,7 +63,7 @@ The validate action worked!
 
 ### 1. Code Signature Verification
 ```bash
-$ codesign --verify -vv /Users/rob/code/projects/contextify/.derived/Build/Products/Release/Contextify.app
+$ codesign --verify -vv /Users/rob/code/projects/contextify/.derived-dmg/Build/Products/Release/Contextify.app
 ✅ valid on disk
 ✅ satisfies its Designated Requirement
 ```

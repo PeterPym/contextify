@@ -674,7 +674,7 @@ func testGeneratorSignatureInvalidatesCache() async throws {
 2. **Reload timeline:**
    ```bash
    # Restart app
-   open .derived/Build/Products/Debug/Contextify.app
+   open .derived-dmg/Build/Products/Debug/Contextify.app
    ```
 
 3. **Monitor regeneration:**

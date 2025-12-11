@@ -734,7 +734,7 @@ func testDiscoverAllProjects() async throws {
 bash scripts/xc.sh --dist=appstore Debug build
 
 # Grant folder access via welcome modal
-open .derived/Build/Products/Debug/Contextify.app
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 ```
 
 **Test:**

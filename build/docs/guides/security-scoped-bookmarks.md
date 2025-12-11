@@ -578,7 +578,7 @@ func testDiscoverTranscripts() throws {
 bash scripts/xc.sh --dist=appstore Debug build
 
 # Launch and grant permissions
-open .derived/Build/Products/Debug/Contextify.app
+open ".derived-appstore/Build/Products/Debug/Contextify AppStore.app"
 # Use welcome modal to grant folder access
 
 # Run tests with real bookmarks

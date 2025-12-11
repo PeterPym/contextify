@@ -69,11 +69,11 @@ This dual-team approach is **intentional and correct**:
 ```bash
 # Debug build (default)
 make build
-→ .derived/Build/Products/Debug/Contextify.app
+→ .derived-dmg/Build/Products/Debug/Contextify.app
 
 # Release build (for distribution)
 make build-release
-→ .derived/Build/Products/Release/Contextify.app
+→ .derived-dmg/Build/Products/Release/Contextify.app
 ```
 
 ### Critical Difference
@@ -96,15 +96,15 @@ make clean
 make build-release
 
 # 3. Verify output exists
-ls -lh .derived/Build/Products/Release/Contextify.app/Contents/MacOS/Contextify
+ls -lh .derived-dmg/Build/Products/Release/Contextify.app/Contents/MacOS/Contextify
 
 # 4. Check compilation mode (should be optimized)
-file .derived/Build/Products/Release/Contextify.app/Contents/MacOS/Contextify
+file .derived-dmg/Build/Products/Release/Contextify.app/Contents/MacOS/Contextify
 # Should show: Mach-O 64-bit executable arm64
 
 # 5. Verify bundle ID
 /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" \
-  .derived/Build/Products/Release/Contextify.app/Contents/Info.plist
+  .derived-dmg/Build/Products/Release/Contextify.app/Contents/Info.plist
 # Should output: PeterPym.Contextify
 ```
 

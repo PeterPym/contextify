@@ -113,8 +113,8 @@ QA_DEBUG=1 ./scripts/qa/tests/QA-03-codex-discovery.sh
 | `QA_DEBUG` | 0 | Enable debug logging |
 | `QA_CLEANUP` | 0 | Clean up test artifacts after run |
 | `DB_PATH` | ~/Library/Application Support/Contextify/contextify.db | Database location |
-| `DMG_APP_PATH` | .derived/Build/Products/Debug/Contextify.app | DMG build path |
-| `APPSTORE_APP_PATH` | .derived/Build/Products/Debug/Contextify AppStore.app | App Store build path |
+| `DMG_APP_PATH` | .derived-dmg/Build/Products/Debug/Contextify.app | DMG build path |
+| `APPSTORE_APP_PATH` | .derived-appstore/Build/Products/Debug/Contextify AppStore.app | App Store build path |
 
 ## Writing New Tests
 
