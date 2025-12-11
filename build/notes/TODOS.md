@@ -223,6 +223,55 @@ App Store and DMG builds share `.derived/`, causing code signature mismatches ("
 
 ---
 
+## QA Suite App Store Validation (1 item)
+
+**Status:** Blocked on #DERIVED-DATA-SEPARATION
+**Priority:** P1 (required before Phase 2 QA)
+**Depends on:** #DERIVED-DATA-SEPARATION
+**Effort:** 1-2 hours
+
+- [ ] #QA-APPSTORE-VALIDATION: Validate QA tests work correctly with App Store build
+
+**Context:**
+QA Phase 1 passes for DMG tests (`--skip-appstore --skip-cli`), but App Store tests (QA-01c/d/e) have not been validated. After derived data separation is complete, need to:
+
+1. Build App Store version with isolated derived data
+2. Run QA-01c (clean install with onboarding modal)
+3. Verify tests can navigate the "choose where Contextify saves your data" modal
+4. Run full QA suite without `--skip-appstore`
+
+**Potential issues to watch for:**
+- Onboarding modal navigation via AppleScript
+- Security-scoped bookmark grants in automated tests
+- Window hotkeys working before onboarding complete (separate bug, lower priority)
+
+---
+
+## QA Suite Phase 2 Implementation (1 item)
+
+**Status:** Plan complete, awaiting Phase 1 validation
+**Priority:** P1 (enables CI integration)
+**Depends on:** #QA-APPSTORE-VALIDATION
+**Effort:** 4-6 hours
+**Plan:** `build/notes/todo-support/P1-QA-PHASE-2-plan.md`
+
+- [ ] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration
+
+**Scope (5 commits):**
+1. Fixture infrastructure (helpers, config, TEST_PROJECT)
+2. Fixture-based transcript tests (Codex/Claude with search terms)
+3. Search tests (QA-10 Quick Search, QA-11 Deep Search)
+4. DB migration test (QA-09)
+5. CI workflow integration (GitHub Actions)
+
+**Key Features:**
+- `QA_FIXTURE_MODE=1` enables deterministic testing without live CLIs
+- Fixtures include `QA_FIXTURE_SEARCH_TERM_*` for search validation
+- DB fixtures test migration from older schema versions
+- CI runs QA suite on every PR
+
+---
+
 ## Sparkle Release Automation (1 item)
 
 **Status:** Design complete, awaiting user answers before implementation
