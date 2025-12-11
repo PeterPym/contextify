@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v26 current)
+**Status:** Post-Implementation (v28 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 26 (latest: removed sandbox container path projects)
+**Schema Version:** 28 (latest: FTS5 full-text search index)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v26 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v26).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v28 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v28).
 
 ---
 
@@ -20,6 +20,11 @@ Contextify uses a SQLite database to store transcript data with streaming ingest
 - Streaming parser with O(batch_size) memory usage
 - Error isolation (bad lines don't block ingestion)
 - **Separation of concerns:** Canonical data (transcript_entries) vs. derived data (timeline_cache)
+
+**Startup Logging:** DatabaseManager emits `[DB-INIT]` logs on startup showing:
+- New vs existing database (loud banner)
+- File path and size
+- Schema version and record counts (projects/transcripts/entries)
 
 ---
 

@@ -15,6 +15,7 @@ scripts can detect them. Do not demote or remove these unless you provide an equ
 
 | Tag prefix | Emitted by | Purpose |
 |------------|------------|---------|
+| `[DB-INIT]` | `DatabaseManager` | Startup: shows new vs existing DB, path, size, schema version, record counts |
 | `[FSEVENTS-WATCH-*]`, `[FSEVENTS-CHANGE]`, `[FSEVENTS-HEARTBEAT]` | `TranscriptWatcher` | Confirms file-system watchers are alive and reacting to changes |
 | `[DB-UPDATE]` | `HooverEngine` | Indicates rows were persisted; used by pipeline analyzer |
 | `[PREFLIGHT-CACHE-*]` | `TranscriptOrchestrator` | Shows cache hits/misses for corrupt transcript triage |
