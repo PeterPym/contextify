@@ -213,6 +213,27 @@ run_test() {
 generate_summary() {
   local total=$((${#PASSED_TESTS[@]} + ${#FAILED_TESTS[@]}))
 
+  # Categorize failures: prerequisite vs test logic
+  local prereq_failures=()
+  local test_failures=()
+
+  for f in "${FAILED_TESTS[@]}"; do
+    local test_name="${f%% *}"
+    local log_file="$LOGDIR/$test_name.log"
+    if [ -f "$log_file" ]; then
+      # Check for prerequisite failure patterns
+      if grep -q "build not found\|not found:.*\.app\|Build with:" "$log_file" 2>/dev/null; then
+        prereq_failures+=("$f (missing build)")
+      elif grep -q "CLI not available\|not found:.*CLI\|command not found" "$log_file" 2>/dev/null; then
+        prereq_failures+=("$f (missing CLI)")
+      else
+        test_failures+=("$f")
+      fi
+    else
+      test_failures+=("$f")
+    fi
+  done
+
   cat > "$LOGDIR/SUMMARY.md" << EOF
 # Contextify QA Run Summary
 
@@ -220,7 +241,7 @@ generate_summary() {
 **Log Directory:** \`$LOGDIR\`
 **Total Tests:** $total
 **Passed:** ${#PASSED_TESTS[@]}
-**Failed:** ${#FAILED_TESTS[@]}
+**Failed:** ${#FAILED_TESTS[@]}$(if [ ${#prereq_failures[@]} -gt 0 ]; then echo " (${#prereq_failures[@]} due to missing prerequisites)"; fi)
 **Skipped:** ${#SKIPPED_TESTS[@]}
 
 ## Results
@@ -234,7 +255,21 @@ fi)
 
 ### Failed ❌
 $(if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
-  for t in "${FAILED_TESTS[@]}"; do echo "- $t"; done
+  if [ ${#prereq_failures[@]} -gt 0 ]; then
+    echo ""
+    echo "**Prerequisite Failures** (missing build or CLI - not test logic failures):"
+    for t in "${prereq_failures[@]}"; do echo "- $t"; done
+  fi
+  if [ ${#test_failures[@]} -gt 0 ]; then
+    echo ""
+    echo "**Test Failures:**"
+    for t in "${test_failures[@]}"; do echo "- $t"; done
+  fi
+  if [ ${#prereq_failures[@]} -gt 0 ] && [ ${#test_failures[@]} -eq 0 ]; then
+    echo ""
+    echo "> **Note:** All failures are due to missing prerequisites, not test logic."
+    echo "> Build the missing app or use \`--skip-appstore\` / \`--skip-cli\` flags."
+  fi
 else
   echo "- None"
 fi)
@@ -275,17 +310,49 @@ EOF
 print_summary() {
   local total=$((${#PASSED_TESTS[@]} + ${#FAILED_TESTS[@]}))
 
+  # Categorize failures for terminal output
+  local prereq_failures=()
+  local test_failures=()
+
+  for f in "${FAILED_TESTS[@]}"; do
+    local test_name="${f%% *}"
+    local log_file="$LOGDIR/$test_name.log"
+    if [ -f "$log_file" ]; then
+      if grep -q "build not found\|not found:.*\.app\|Build with:" "$log_file" 2>/dev/null; then
+        prereq_failures+=("$f (missing build)")
+      elif grep -q "CLI not available\|not found:.*CLI\|command not found" "$log_file" 2>/dev/null; then
+        prereq_failures+=("$f (missing CLI)")
+      else
+        test_failures+=("$f")
+      fi
+    else
+      test_failures+=("$f")
+    fi
+  done
+
   print_header "QA SUMMARY"
   echo ""
   echo "  Total:   $total tests"
   echo "  Passed:  ${#PASSED_TESTS[@]}"
-  echo "  Failed:  ${#FAILED_TESTS[@]}"
+  if [ ${#prereq_failures[@]} -gt 0 ]; then
+    echo "  Failed:  ${#FAILED_TESTS[@]} (${#prereq_failures[@]} prerequisite, ${#test_failures[@]} test)"
+  else
+    echo "  Failed:  ${#FAILED_TESTS[@]}"
+  fi
   echo "  Skipped: ${#SKIPPED_TESTS[@]}"
   echo ""
 
-  if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
-    echo "  Failed tests:"
-    for t in "${FAILED_TESTS[@]}"; do
+  if [ ${#prereq_failures[@]} -gt 0 ]; then
+    echo "  Prerequisite failures (missing build/CLI):"
+    for t in "${prereq_failures[@]}"; do
+      echo "    ⚠️  $t"
+    done
+    echo ""
+  fi
+
+  if [ ${#test_failures[@]} -gt 0 ]; then
+    echo "  Test failures:"
+    for t in "${test_failures[@]}"; do
       echo "    ❌ $t"
     done
     echo ""
@@ -296,6 +363,12 @@ print_summary() {
     for t in "${SKIPPED_TESTS[@]}"; do
       echo "    ⏭️  $t"
     done
+    echo ""
+  fi
+
+  if [ ${#prereq_failures[@]} -gt 0 ] && [ ${#test_failures[@]} -eq 0 ]; then
+    echo "  Note: All failures are prerequisite issues, not test logic."
+    echo "  Build missing apps or use --skip-appstore / --skip-cli"
     echo ""
   fi
 
