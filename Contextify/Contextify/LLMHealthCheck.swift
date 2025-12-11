@@ -134,9 +134,14 @@ actor LLMHealthCheck {
     // Log the change
     switch (previousStatus, newStatus) {
     case (_, .healthy):
-      // Only log "became available" if was previously unavailable
-      if case .some(.unavailable) = previousStatus {
-        log.warning("⚠️ Apple Intelligence RECOVERED - Now available")
+      // Only log "became available" if was previously unavailable (but not from cancellation)
+      if case .some(.unavailable(let reason)) = previousStatus {
+        if case .healthCheckCancelled = reason {
+          // Don't log "recovered" from cancellation - it wasn't really unavailable
+          log.debug("🔄 Apple Intelligence health check resumed after cancellation")
+        } else {
+          log.warning("⚠️ Apple Intelligence RECOVERED - Now available")
+        }
       }
     case (_, .unavailable(let reason)):
       // Log what specifically is unavailable with detailed reason
@@ -165,8 +170,11 @@ actor LLMHealthCheck {
         indicator = "Apple Intelligence overloaded (health check timed out)"
         reasonDetail = "overloaded"
       case .healthCheckCancelled:
-        indicator = "Health check cancelled (external cancellation, not a real failure)"
-        reasonDetail = "healthCheckCancelled"
+        // Cancellations are expected during project switches and app lifecycle events
+        // Log at debug level to reduce noise (45+ events per session is normal)
+        log.debug("🔄 Apple Intelligence health check cancelled (likely project switch)")
+        previousStatus = newStatus
+        return  // Skip error logging for cancellation
       case .macOSVersionTooOld:
         indicator = "macOS version too old (requires 26+)"
         reasonDetail = "macOSVersionTooOld"

@@ -76,10 +76,11 @@ public final class TranscriptValidator {
     warnings.append(contentsOf: cwdResult.warnings)
 
     // Validation #2: Structural integrity (fast-fail for corrupt files)
+    // Check up to 20 lines to skip past any summary lines at the start
     let structureResult = validateStructure(
       fileURL: fileURL,
       provider: provider,
-      linesToCheck: 4
+      linesToCheck: 20
     )
     errors.append(contentsOf: structureResult.errors)
     warnings.append(contentsOf: structureResult.warnings)
@@ -214,6 +215,12 @@ public final class TranscriptValidator {
         continue
       }
 
+      // Skip summary lines - they're valid metadata but don't have standard entry fields
+      // Summary lines have: type=summary, summary, leafUuid (no uuid or timestamp)
+      if let type = json["type"] as? String, type == "summary" {
+        continue
+      }
+
       let hasRequiredFields: Bool
       switch provider {
       case "claude.code":
@@ -243,7 +250,7 @@ public final class TranscriptValidator {
         : "(timestamp, type)"
       return .invalid(.invalidFormat(
         file: fileURL.lastPathComponent,
-        reason: "First \(linesChecked) lines lack required fields \(requiredFields)"
+        reason: "First \(linesChecked) lines (excluding summaries) lack required fields \(requiredFields)"
       ))
     }
 

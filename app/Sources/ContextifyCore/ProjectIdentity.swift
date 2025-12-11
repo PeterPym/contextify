@@ -29,21 +29,20 @@ public enum ProjectIdentity {
   /// - Parameter line: A single line of JSONL content
   /// - Returns: The CWD path if found, nil otherwise
   public static func extractCwdFromJSONLine(_ line: String) -> String? {
-    struct RecordWithCwd: Codable { let cwd: String? }
-    struct CodexPayload: Codable { let cwd: String? }
-    struct CodexRecord: Codable { let payload: CodexPayload? }
+    guard let data = line.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
 
-    guard let data = line.data(using: .utf8) else { return nil }
-
-    // First: Claude / direct format (top-level cwd)
-    if let direct = try? JSONDecoder().decode(RecordWithCwd.self, from: data),
-       let cwd = direct.cwd {
+    // First: Claude Code / direct format (top-level cwd)
+    if let cwd = json["cwd"] as? String {
       return cwd
     }
 
     // Second: Codex payload format (payload.cwd)
-    if let payload = try? JSONDecoder().decode(CodexRecord.self, from: data),
-       let cwd = payload.payload?.cwd {
+    // Codex session_meta records have: {"type":"session_meta","payload":{"cwd":"..."}}
+    if let payload = json["payload"] as? [String: Any],
+       let cwd = payload["cwd"] as? String {
       return cwd
     }
 

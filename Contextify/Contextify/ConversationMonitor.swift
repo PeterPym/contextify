@@ -226,6 +226,9 @@ final class ConversationMonitor {
     @ObservationIgnored private var monitorRestartGuardTask: Task<Void, Never>?
     @ObservationIgnored private var monitorRestartFailureCount = 0
     @ObservationIgnored private var pendingIdleRestartAlert = false
+    // Watcher recovery backoff (prevent infinite loops when security scope is unavailable)
+    @ObservationIgnored private var watcherRecoveryFailureCount = 0
+    @ObservationIgnored private var lastWatcherRecoveryFailure: Date?
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -250,6 +253,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
     @ObservationIgnored private var progressDebounceTask: Task<Void, Never>?  // Debounce task for progress notifications
+    @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?  // Debounce task for timeline refresh (coalesce rapid loadFeedFromSQL calls)
+    @ObservationIgnored private var pendingRefreshAfterLoad = false  // Coalesce rapid refresh calls during load
     @ObservationIgnored private var lastProgressRefreshTime: Date?  // Track last progress refresh to enforce minimum interval
     @ObservationIgnored private var refreshHistory: [(trigger: String, timestamp: Date)] = []  // Track refresh frequency for diagnostics
     @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
@@ -470,6 +475,9 @@ final class ConversationMonitor {
         backgroundTasks?.cancel()
         backgroundTasks = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
+        // Reset recovery backoff on project switch (user may have fixed permissions)
+        watcherRecoveryFailureCount = 0
+        lastWatcherRecoveryFailure = nil
 
         guard !isMonitoring else {
             log.info("⚠️ [MONITOR-SKIP] Already monitoring different project, need to stop first")
@@ -665,6 +673,7 @@ final class ConversationMonitor {
         cacheDebounceTask?.cancel()  // CXT-13: Cancel cache update debounce
         cacheDebounceTask = nil
         pendingCacheKeys.removeAll()
+        pendingRefreshAfterLoad = false  // Clear pending refresh on stop
         // CXT-13: Do NOT cancel coordinatorTask here! It must persist across project switches
         // to continue receiving updates. It's only canceled in deinit.
 
@@ -1389,11 +1398,15 @@ final class ConversationMonitor {
     private func loadFeedFromSQL() async -> Task<Void, Never>? {
         guard let projectId = currentProjectId, let orchestrator = orchestrator else { return nil }
 
-        // Re-entrancy guard: prevent duplicate loads
+        // Re-entrancy guard: prevent duplicate loads, but queue a follow-up refresh
         guard phase != .loading else {
-            log.debug("[TIMELINE-LOAD] Ignoring primer request; already loading")
+            pendingRefreshAfterLoad = true
+            log.debug("[TIMELINE-LOAD] Coalescing refresh request (already loading, will refresh after)")
             return nil
         }
+
+        // Clear any pending refresh flag since we're starting a fresh load
+        pendingRefreshAfterLoad = false
 
         // Track refresh frequency for diagnostics
         #if DEBUG
@@ -1609,6 +1622,13 @@ final class ConversationMonitor {
 
         isProcessing = false
         isReadyForUpdates = priorReady
+
+        // Check for coalesced refresh requests during load
+        if self.pendingRefreshAfterLoad {
+            self.pendingRefreshAfterLoad = false
+            log.debug("[TIMELINE-LOAD] Processing pending refresh request")
+            await self.loadFeedFromSQL()?.value
+        }
     }
 
     @MainActor
@@ -3351,6 +3371,23 @@ final class ConversationMonitor {
 
             // Auto-recovery for specific issues
             if issue.category == .watcherMissing {
+                // Check backoff: exponential backoff prevents infinite loops when security scope is unavailable
+                // Formula: 30s * 2^failures, capped at 10 minutes after 5 failures
+                let backoffSeconds: Int
+                let failureCount = await MainActor.run { self.watcherRecoveryFailureCount }
+                if failureCount >= 5 {
+                    // After 5 failures, give up (security scope likely unavailable)
+                    log.warning("[RECOVERY-BACKOFF] Recovery disabled after \(failureCount) consecutive failures - security scope likely unavailable")
+                    continue
+                } else if failureCount > 0 {
+                    backoffSeconds = min(30 * (1 << failureCount), 600)  // 60s, 120s, 240s, 480s
+                    let lastFailure = await MainActor.run { self.lastWatcherRecoveryFailure }
+                    if let lastFailure, Date().timeIntervalSince(lastFailure) < Double(backoffSeconds) {
+                        log.debug("[RECOVERY-BACKOFF] Skipping recovery (backoff: \(backoffSeconds)s, failures: \(failureCount))")
+                        continue
+                    }
+                }
+
                 // Recover ALL transcripts, not just the one that triggered - since if one is missing,
                 // likely all watchers were lost (e.g., DispatchSource cleanup, memory pressure)
                 log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public) (triggered by: \(snapshot.watcherState.transcriptId ?? "nil", privacy: .public))")
@@ -3377,8 +3414,21 @@ final class ConversationMonitor {
                 targetTranscriptId: targetTranscriptId
             )
             log.info("[WATCHER-RECOVERY-DONE] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
+
+            // Success - reset backoff counters
+            await MainActor.run {
+                self.watcherRecoveryFailureCount = 0
+                self.lastWatcherRecoveryFailure = nil
+            }
         } catch {
             log.error("[WATCHER-RECOVERY-ERROR] Recovery failed for project=\(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+
+            // Failure - increment backoff counter
+            await MainActor.run {
+                self.watcherRecoveryFailureCount += 1
+                self.lastWatcherRecoveryFailure = Date()
+                self.log.warning("[RECOVERY-BACKOFF] Failure count: \(self.watcherRecoveryFailureCount)")
+            }
         }
     }
 
