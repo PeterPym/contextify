@@ -546,6 +546,26 @@ public final class AppStateOrchestrator: ObservableObject {
     }
   }
 
+  // MARK: - Branch Lookup
+
+  /// Get the current git branch for a project from transcript metadata.
+  /// This allows sandboxed builds to display branch info without direct git access.
+  /// - Parameter projectId: The project ID to look up
+  /// - Returns: Branch name if found, nil otherwise
+  public func getCurrentBranch(forProject projectId: String) -> String? {
+    guard let orchestrator else {
+      log.debug("[ORCH-BRANCH] No orchestrator available for branch lookup")
+      return nil
+    }
+
+    do {
+      return try orchestrator.getCurrentBranch(forProject: projectId)
+    } catch {
+      log.error("[ORCH-BRANCH] Failed to get branch for project \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
   // MARK: - Background Indexing
 
   /// Low-priority background task to pre-ingest inactive projects

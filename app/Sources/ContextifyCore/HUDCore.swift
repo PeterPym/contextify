@@ -697,7 +697,33 @@ public final class HUDViewModel {
     // Update project root URL and branch from coordinator context
     let url = URL(fileURLWithPath: context.path)
     projectRootURL = url
-    branch = context.branch ?? "—"
+
+    // Branch resolution: Git monitoring (DMG) > Transcript metadata (App Store) > fallback
+    let transcriptBranch = AppStateOrchestrator.shared.getCurrentBranch(forProject: context.id)
+
+    if let gitBranch = context.branch {
+      branch = gitBranch
+      lifecycleLog.debug("[COORD-UPDATE] Branch from git: \(gitBranch, privacy: .public)")
+
+      // DMG validation: Compare git-monitored vs transcript-based branch for QA
+      if !Sandbox.isSandboxed {
+        if let transcriptBranch {
+          if gitBranch == transcriptBranch {
+            lifecycleLog.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(gitBranch, privacy: .public)")
+          } else {
+            lifecycleLog.info("[BRANCH-VALIDATE] ⚠ Branch mismatch - git: \(gitBranch, privacy: .public), transcript: \(transcriptBranch, privacy: .public)")
+          }
+        } else {
+          lifecycleLog.debug("[BRANCH-VALIDATE] No transcript branch for comparison (git: \(gitBranch, privacy: .public))")
+        }
+      }
+    } else if let transcriptBranch {
+      branch = transcriptBranch
+      lifecycleLog.info("[COORD-UPDATE] Branch from transcript metadata: \(transcriptBranch, privacy: .public)")
+    } else {
+      branch = "—"
+      lifecycleLog.debug("[COORD-UPDATE] No branch available (git nor transcript)")
+    }
 
     // Restore security-scoped access to project root if available.
     // In App Store (sandboxed) builds, bookmarks are typically nil for discovered projects because:
