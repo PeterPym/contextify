@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-# Source shared cleanup library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../../lib/cleanup.sh"
+# Source shared cleanup library (use internal var to avoid conflict with caller's SCRIPT_DIR)
+_COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_COMMON_LIB_DIR/../../lib/cleanup.sh"
 
 # Bundle IDs for the two app variants
 BUNDLE_ID_DMG="dev.contextify"
@@ -735,6 +735,8 @@ restore_db_from_backup() {
 # Cleanup
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Default cleanup function for tests
+# Individual tests should call setup_test_cleanup_trap() or define their own
 cleanup_test() {
   log_info "Cleaning up test..."
   stop_log_capture
@@ -749,8 +751,78 @@ cleanup_test() {
   fi
 }
 
-# Trap for cleanup on exit
-trap cleanup_test EXIT
+# Set up the default cleanup trap (tests should call this in main())
+# NOTE: Not set at module level to avoid affecting orchestrator scripts
+setup_test_cleanup_trap() {
+  trap cleanup_test EXIT
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Transcript Backup/Restore (isolate tests from production data)
+# ─────────────────────────────────────────────────────────────────────────────
+
+CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
+CODEX_SESSIONS_DIR="$HOME/.codex/sessions"
+CLAUDE_BACKUP_DIR="$HOME/.claude/projects-QA-BACKUP"
+CODEX_BACKUP_DIR="$HOME/.codex/sessions-QA-BACKUP"
+
+# Backup real transcripts and install minimal test data
+# Usage: backup_and_isolate_transcripts
+backup_and_isolate_transcripts() {
+  log_info "Backing up production transcripts for isolated QA..."
+
+  # Backup Claude projects (if not already backed up)
+  if [ -d "$CLAUDE_PROJECTS_DIR" ] && [ ! -d "$CLAUDE_BACKUP_DIR" ]; then
+    mv "$CLAUDE_PROJECTS_DIR" "$CLAUDE_BACKUP_DIR"
+    log_info "Backed up Claude projects to $CLAUDE_BACKUP_DIR"
+  elif [ -d "$CLAUDE_BACKUP_DIR" ]; then
+    log_info "Claude backup already exists, removing current projects"
+    rm -rf "$CLAUDE_PROJECTS_DIR"
+  fi
+
+  # Backup Codex sessions (if not already backed up)
+  if [ -d "$CODEX_SESSIONS_DIR" ] && [ ! -d "$CODEX_BACKUP_DIR" ]; then
+    mv "$CODEX_SESSIONS_DIR" "$CODEX_BACKUP_DIR"
+    log_info "Backed up Codex sessions to $CODEX_BACKUP_DIR"
+  elif [ -d "$CODEX_BACKUP_DIR" ]; then
+    log_info "Codex backup already exists, removing current sessions"
+    rm -rf "$CODEX_SESSIONS_DIR"
+  fi
+
+  # Create empty directories for test data
+  mkdir -p "$CLAUDE_PROJECTS_DIR"
+  mkdir -p "$CODEX_SESSIONS_DIR"
+
+  log_success "Transcripts isolated for QA"
+}
+
+# Restore production transcripts from backup
+# Usage: restore_transcripts_from_backup
+restore_transcripts_from_backup() {
+  log_info "Restoring production transcripts..."
+
+  # Restore Claude projects
+  if [ -d "$CLAUDE_BACKUP_DIR" ]; then
+    rm -rf "$CLAUDE_PROJECTS_DIR"
+    mv "$CLAUDE_BACKUP_DIR" "$CLAUDE_PROJECTS_DIR"
+    log_info "Restored Claude projects"
+  fi
+
+  # Restore Codex sessions
+  if [ -d "$CODEX_BACKUP_DIR" ]; then
+    rm -rf "$CODEX_SESSIONS_DIR"
+    mv "$CODEX_BACKUP_DIR" "$CODEX_SESSIONS_DIR"
+    log_info "Restored Codex sessions"
+  fi
+
+  log_success "Production transcripts restored"
+}
+
+# Check if transcripts are currently isolated (backup exists)
+# Usage: if transcripts_are_isolated; then ...
+transcripts_are_isolated() {
+  [ -d "$CLAUDE_BACKUP_DIR" ] || [ -d "$CODEX_BACKUP_DIR" ]
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Framework

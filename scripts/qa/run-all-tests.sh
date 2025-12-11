@@ -7,11 +7,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Source common helpers for transcript backup/restore
+source "$SCRIPT_DIR/lib/common.sh"
+
 # Configuration
 LOGDIR="/tmp/qa-run-$(date +%Y%m%d-%H%M%S)"
 SKIP_APPSTORE="${SKIP_APPSTORE:-0}"
 SKIP_CLI="${SKIP_CLI:-0}"
 ONLY_TEST="${ONLY_TEST:-}"
+ISOLATE_TRANSCRIPTS="${ISOLATE_TRANSCRIPTS:-0}"
 
 # Fixture mode (set via environment)
 QA_FIXTURE_MODE="${QA_FIXTURE_MODE:-0}"
@@ -23,21 +27,28 @@ export TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 # requires_cli: 0 = no CLI needed, 1 = needs Codex, 2 = needs Claude Code
 
 declare -a ALL_TESTS=(
-  "QA-01a-launch-dmg-clean.sh:0"
+  # Phase 1: Tests that need existing data (run first, before destructive tests)
   "QA-01b-launch-dmg-existing.sh:0"
-  "QA-01c-launch-appstore-clean.sh:0"
-  "QA-01d-launch-appstore-existing.sh:0"
-  "QA-01e-launch-appstore-skip.sh:0"
   "QA-02-project-switching.sh:0"
+  "QA-10-quick-search.sh:0"
+  "QA-11-deep-search.sh:0"
+
+  # Phase 2: Destructive tests (delete DB, reset state)
+  "QA-01a-launch-dmg-clean.sh:0"
+  "QA-01c-launch-appstore-clean.sh:0"
+
+  # Phase 3: Discovery tests (repopulate data after clean install)
   "QA-03-codex-discovery.sh:1"
   "QA-04-claude-discovery.sh:2"
+
+  # Phase 4: Tests that work with fresh or existing data
+  "QA-01d-launch-appstore-existing.sh:0"
+  "QA-01e-launch-appstore-skip.sh:0"
   "QA-05-realtime-updates.sh:1"
   "QA-06-watcher-recovery.sh:0"
   "QA-07-transcript-window.sh:0"
   "QA-08-projects-window.sh:0"
   "QA-09-db-migration.sh:0"
-  "QA-10-quick-search.sh:0"
-  "QA-11-deep-search.sh:0"
 )
 
 # Track results
@@ -65,6 +76,8 @@ Run Contextify QA test suite.
 OPTIONS:
   --skip-appstore    Skip App Store build tests (QA-01c/d/e)
   --skip-cli         Skip tests requiring CLI tools (QA-03/04/05)
+  --isolate          Backup production transcripts, use empty dirs for tests
+  --restore          Restore production transcripts (if QA was interrupted)
   --only TEST        Run only specified test (e.g., QA-03)
   --list             List all available tests
   --help             Show this help
@@ -76,6 +89,8 @@ ENVIRONMENT:
 EXAMPLES:
   $0                          # Run all tests
   $0 --skip-appstore          # Skip App Store tests
+  $0 --isolate                # Run with isolated transcripts (recommended)
+  $0 --restore                # Restore if interrupted mid-test
   $0 --only QA-03             # Run only QA-03
   $0 --skip-cli --skip-appstore  # Run only basic tests
 
@@ -232,6 +247,7 @@ generate_summary() {
   local prereq_failures=()
   local test_failures=()
 
+  if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
   for f in "${FAILED_TESTS[@]}"; do
     local test_name="${f%% *}"
     local log_file="$LOGDIR/$test_name.log"
@@ -248,6 +264,7 @@ generate_summary() {
       test_failures+=("$f")
     fi
   done
+  fi
 
   cat > "$LOGDIR/SUMMARY.md" << EOF
 # Contextify QA Run Summary
@@ -329,6 +346,7 @@ print_summary() {
   local prereq_failures=()
   local test_failures=()
 
+  if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
   for f in "${FAILED_TESTS[@]}"; do
     local test_name="${f%% *}"
     local log_file="$LOGDIR/$test_name.log"
@@ -344,6 +362,7 @@ print_summary() {
       test_failures+=("$f")
     fi
   done
+  fi
 
   print_header "QA SUMMARY"
   echo ""
@@ -408,6 +427,15 @@ main() {
         SKIP_CLI=1
         shift
         ;;
+      --isolate)
+        ISOLATE_TRANSCRIPTS=1
+        shift
+        ;;
+      --restore)
+        # Manual restore if QA was interrupted
+        restore_transcripts_from_backup
+        exit 0
+        ;;
       --only)
         ONLY_TEST="$2"
         shift 2
@@ -436,12 +464,25 @@ main() {
   echo "  Log directory: $LOGDIR"
   echo "  Skip App Store: $SKIP_APPSTORE"
   echo "  Skip CLI tests: $SKIP_CLI"
+  echo "  Isolate transcripts: $ISOLATE_TRANSCRIPTS"
   echo "  Fixture mode: $QA_FIXTURE_MODE"
   [ "$QA_FIXTURE_MODE" = "1" ] && echo "  Test project: $TEST_PROJECT"
   [ -n "$ONLY_TEST" ] && echo "  Only test: $ONLY_TEST"
   echo ""
 
   check_prerequisites
+
+  # Isolate transcripts if requested (backup production data)
+  if [ "$ISOLATE_TRANSCRIPTS" = "1" ]; then
+    backup_and_isolate_transcripts
+    # Ensure app is killed and transcripts restored on exit (success or failure)
+    orchestrator_cleanup() {
+      echo "[INFO] Orchestrator cleanup..."
+      kill_app_if_running
+      restore_transcripts_from_backup
+    }
+    trap orchestrator_cleanup EXIT
+  fi
 
   # Run tests
   for test_def in "${ALL_TESTS[@]}"; do
