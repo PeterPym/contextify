@@ -176,10 +176,45 @@ app_is_running() {
 }
 
 kill_app_if_running() {
-  if app_is_running; then
-    log_info "Killing running Contextify instance..."
-    pkill -9 "Contextify" 2>/dev/null || true
+  local found_any=0
+
+  # Check for any Contextify process
+  if pgrep -x "Contextify" > /dev/null 2>&1; then
+    found_any=1
+  fi
+
+  # Also check by bundle ID paths (catches launched-but-not-yet-running)
+  if pgrep -f "Contextify.app/Contents/MacOS/Contextify" > /dev/null 2>&1; then
+    found_any=1
+  fi
+
+  if [ "$found_any" -eq 1 ]; then
+    log_info "Killing all Contextify instances..."
+
+    # Method 1: Kill by process name
+    pkill -9 -x "Contextify" 2>/dev/null || true
+
+    # Method 2: Kill by app path patterns (catches both DMG and App Store builds)
+    pkill -9 -f "derived-dmg.*Contextify" 2>/dev/null || true
+    pkill -9 -f "derived-appstore.*Contextify" 2>/dev/null || true
+
+    # Method 3: Quit gracefully via AppleScript (handles any Contextify)
+    osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
+
+    # Method 4: killall as final fallback
+    killall -9 "Contextify" 2>/dev/null || true
+
     sleep 2
+
+    # Verify kill succeeded
+    if pgrep -x "Contextify" > /dev/null 2>&1; then
+      log_warn "Contextify still running after kill attempts!"
+      # One more aggressive attempt
+      pkill -9 -f "Contextify" 2>/dev/null || true
+      sleep 1
+    fi
+
+    log_info "Kill complete"
   fi
 }
 

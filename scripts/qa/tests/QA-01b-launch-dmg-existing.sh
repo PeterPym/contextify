@@ -91,6 +91,19 @@ validate_results() {
   # App should be running
   assert_app_running "Contextify"
 
+  # CRITICAL: Verify this opened an EXISTING database (not creating new)
+  assert_log_contains "\[DB-INIT\] OPENING EXISTING DATABASE" "Existing database opened"
+  assert_log_contains "\[DB-INIT\] EXISTING DATABASE LOADED" "Existing database loaded signal"
+
+  # Should NOT see "CREATING NEW DATABASE" (that indicates test setup failed)
+  if grep -q "\[DB-INIT\] CREATING NEW DATABASE FROM SCRATCH" "$LOGFILE" 2>/dev/null; then
+    log_error "Found 'CREATING NEW DATABASE' - test should have used existing DB"
+    TEST_FAILED=1
+  fi
+
+  # Check for record counts in logs (existing DB should have some)
+  soft_assert_log_contains "\[DB-INIT\] Records:" "Database record counts logged"
+
   # Check for startup completion
   assert_log_contains "\[ORCH-STARTUP\] Startup complete" "AppStateOrchestrator started"
 

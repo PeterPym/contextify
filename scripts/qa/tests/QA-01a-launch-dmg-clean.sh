@@ -87,8 +87,15 @@ validate_results() {
   # Database should exist
   assert_db_exists "Database created"
 
-  # Check for migration logs
-  soft_assert_log_contains "\[DB" "Database initialization logged"
+  # CRITICAL: Verify this was a fresh database creation (not opening existing)
+  assert_log_contains "\[DB-INIT\] CREATING NEW DATABASE FROM SCRATCH" "Fresh database creation detected"
+  assert_log_contains "\[DB-INIT\] NEW DATABASE READY" "New database ready signal"
+
+  # Should NOT see "OPENING EXISTING DATABASE" or record counts (those indicate existing DB)
+  if grep -q "\[DB-INIT\] OPENING EXISTING DATABASE" "$LOGFILE" 2>/dev/null; then
+    log_error "Found 'OPENING EXISTING DATABASE' - test setup failed to remove old DB"
+    TEST_FAILED=1
+  fi
 
   # Check for startup completion
   assert_log_contains "\[ORCH-STARTUP\] Startup complete" "Startup completed"
