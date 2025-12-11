@@ -195,6 +195,34 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Separate Derived Data by Distribution (1 item)
+
+**Status:** Plan complete, ready for implementation
+**Priority:** P1 (prevents release build crashes from cross-contamination)
+**Effort:** 45-60 minutes
+**Plan:** `build/notes/todo-support/P1-DERIVED-DATA-SEPARATION-plan.md`
+
+- [ ] #DERIVED-DATA-SEPARATION: Use separate derived data directories for DMG and App Store builds
+
+**Problem:**
+App Store and DMG builds share `.derived/`, causing code signature mismatches ("different Team IDs") when building both sequentially. Xcode's incremental build may not re-sign cached frameworks.
+
+**Solution:**
+- `.derived-dmg/` for DMG/direct distribution builds
+- `.derived-appstore/` for App Store builds
+
+**Files to Update:**
+- `scripts/xc.sh` - Set `dd=".derived-${dist}"` after argument parsing
+- `scripts/sign_and_notarize.py` - Use `.derived-dmg` explicitly
+- `scripts/sparkle/*.sh` - Update Sparkle binary search paths
+- `scripts/qa/lib/common.sh` - Update QA test app paths
+- `.gitignore`, `Makefile` - Update patterns
+- Documentation (AGENTS.md, DEVELOPMENT.md, etc.)
+
+**Verification:** See plan for step-by-step verification after implementation.
+
+---
+
 ## Sparkle Release Automation (1 item)
 
 **Status:** Design complete, awaiting user answers before implementation
