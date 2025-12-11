@@ -22,6 +22,7 @@ These cause real problems when violated:
    - `.derived-appstore/Build/Products/Debug/` = App Store build (sandboxed, requires onboarding)
 
    App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
+8. **No unassisted merges/deletes** - Do not merge to main or delete branches without user approval, even in autonomous mode.
 
 ---
 
