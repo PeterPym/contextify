@@ -111,11 +111,11 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ## QA Review and Recent Feature Cleanup (4 items)
 
-**Status:** In Progress (Task 1 complete, awaiting review)
+**Status:** Complete
 **Priority:** P0 (code review debt from autonomous work)
 **Context:** QA Phase 2 left fixtures installed without cleanup docs. GIT-BRANCH and EXPANSION-STATE were merged without review during autonomous work.
 
-**Workflow:** Sequential branches, each merged after user review approval.
+**Completed 2025-12-11:** All 4 tasks reviewed - no code issues found, documentation gaps filled.
 
 ### Task 1: QA Documentation Audit
 **Branch:** `fix/qa-docs-audit`
@@ -140,7 +140,9 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ### Task 4: Code Review - EXPANSION-STATE
 **Branch:** `fix/expansion-state-review`
-- [ ] #QA-REVIEW-4: Review timeline expansion persistence (ConversationTimelineView, TimelineEntryRow)
+- [x] #QA-REVIEW-4: Review timeline expansion persistence (ConversationTimelineView, TimelineEntryRow)
+  - Reviewed 1 commit: Set<UUID> tracking, binding pattern, project switch reset
+  - Clean implementation with efficient state management
 
 ---
 
