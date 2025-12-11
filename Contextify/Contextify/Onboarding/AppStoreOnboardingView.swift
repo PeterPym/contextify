@@ -25,6 +25,9 @@ struct AppStoreOnboardingView: View {
   @State private var selectedFolderName: String?
   @State private var permissionsConfigured = false
 
+  /// Trigger to open folder picker from parent (for keyboard shortcut)
+  @State private var openFolderPickerTrigger = false
+
   private let totalSteps = 2
 
   var body: some View {
@@ -44,7 +47,8 @@ struct AppStoreOnboardingView: View {
           DatabaseLocationStepView(
             isConfigured: $databaseLocationConfigured,
             selectedPath: $selectedPath,
-            selectedFolderName: $selectedFolderName
+            selectedFolderName: $selectedFolderName,
+            openPickerTrigger: $openFolderPickerTrigger
           )
         } else {
           PermissionsStepView(
@@ -110,6 +114,7 @@ struct AppStoreOnboardingView: View {
               }
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("onboarding-previous")
           }
 
           Spacer()
@@ -124,10 +129,13 @@ struct AppStoreOnboardingView: View {
               }
               .buttonStyle(.borderedProminent)
               .tint(Color.contextifyBlue)
+              .keyboardShortcut(.defaultAction)  // Enter advances to step 2
+              .accessibilityIdentifier("onboarding-next")
             } else {
               Button("Next") {}
                 .buttonStyle(.bordered)
                 .disabled(true)
+                .accessibilityIdentifier("onboarding-next")
             }
           } else {
             if permissionsConfigured {
@@ -136,10 +144,13 @@ struct AppStoreOnboardingView: View {
               }
               .buttonStyle(.borderedProminent)
               .tint(Color.contextifyBlue)
+              .keyboardShortcut(.defaultAction)  // Enter completes onboarding
+              .accessibilityIdentifier("onboarding-continue")
             } else {
               Button("Continue") {}
                 .buttonStyle(.bordered)
                 .disabled(true)
+                .accessibilityIdentifier("onboarding-continue")
             }
           }
         }

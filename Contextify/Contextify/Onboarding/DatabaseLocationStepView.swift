@@ -29,6 +29,9 @@ struct DatabaseLocationStepView: View {
   @Binding var selectedPath: String?
   @Binding var selectedFolderName: String?
 
+  /// Trigger from parent to open folder picker (e.g., when Enter is pressed)
+  @Binding var openPickerTrigger: Bool
+
   @State private var isSelecting = false
   @State private var errorMessage: String?
 
@@ -91,6 +94,12 @@ struct DatabaseLocationStepView: View {
         .padding(.bottom, 8)
     }
     .padding(.top, 12)
+    .onChange(of: openPickerTrigger) { _, triggered in
+      if triggered {
+        openPickerTrigger = false  // Reset trigger
+        openFolderPicker()
+      }
+    }
   }
 
   // MARK: - Folder Card
@@ -162,16 +171,24 @@ struct DatabaseLocationStepView: View {
       .padding(16)
       .background(
         RoundedRectangle(cornerRadius: 10)
-          .fill(isConfigured ? Color.contextifyBlue.opacity(0.05) : Color(nsColor: .controlBackgroundColor))
+          // When not configured: highlighted as call-to-action (Enter will trigger)
+          // When configured: subtle selected state (Next button is now CTA)
+          .fill(isConfigured ? Color(nsColor: .controlBackgroundColor) : Color.contextifyBlue.opacity(0.08))
       )
       .overlay(
         RoundedRectangle(cornerRadius: 10)
-          .stroke(Color.contextifyBlue, lineWidth: isConfigured ? 2 : 1)
+          // Border: prominent when not configured (CTA), subtle when configured
+          .stroke(
+            isConfigured ? Color.secondary.opacity(0.3) : Color.contextifyBlue,
+            lineWidth: isConfigured ? 1 : 2
+          )
       )
       .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
     .buttonStyle(.plain)
     .disabled(isSelecting)
+    .accessibilityIdentifier("onboarding-folder-card")
+    .modifier(DefaultActionShortcut(isActive: !isConfigured))
   }
 
   // MARK: - Actions
@@ -253,11 +270,25 @@ struct DatabaseLocationStepView: View {
   }
 }
 
+/// Conditionally applies the default action keyboard shortcut (Return/Enter)
+private struct DefaultActionShortcut: ViewModifier {
+  let isActive: Bool
+
+  func body(content: Content) -> some View {
+    if isActive {
+      content.keyboardShortcut(.defaultAction)
+    } else {
+      content
+    }
+  }
+}
+
 #Preview {
   DatabaseLocationStepView(
     isConfigured: .constant(false),
     selectedPath: .constant(nil),
-    selectedFolderName: .constant(nil)
+    selectedFolderName: .constant(nil),
+    openPickerTrigger: .constant(false)
   )
   .frame(width: 520, height: 400)
 }
@@ -266,7 +297,8 @@ struct DatabaseLocationStepView: View {
   DatabaseLocationStepView(
     isConfigured: .constant(true),
     selectedPath: .constant("/Users/demo/Documents/Contextify"),
-    selectedFolderName: .constant("Contextify")
+    selectedFolderName: .constant("Contextify"),
+    openPickerTrigger: .constant(false)
   )
   .frame(width: 520, height: 400)
 }
