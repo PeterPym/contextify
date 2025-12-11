@@ -26,7 +26,8 @@ struct TimelineEntryRow: View, Equatable {
     let entry: TimelineEntry
     let onScrollToEntry: (UUID) -> Void
 
-    @State private var isExpanded = false
+    /// External binding for expansion state - allows parent to persist across redraws
+    @Binding var isExpanded: Bool
     @State private var showCopiedToast = false
     @State private var showSafetyInfo = false
     @State private var showErrorInfo = false
@@ -35,9 +36,10 @@ struct TimelineEntryRow: View, Equatable {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ConversationMonitor.self) private var monitor
 
-    // SwiftUI will use TimelineEntry.hash for equality (onScrollToEntry closure ignored)
+    // SwiftUI will use TimelineEntry.hash for equality
+    // Bindings and closures are excluded from equality check
     static func ==(lhs: Self, rhs: Self) -> Bool {
-        lhs.entry == rhs.entry
+        lhs.entry == rhs.entry && lhs.isExpanded == rhs.isExpanded
     }
 
     var body: some View {
