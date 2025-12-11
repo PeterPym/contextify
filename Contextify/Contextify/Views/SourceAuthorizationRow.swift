@@ -18,6 +18,10 @@ struct SourceAuthorizationRow: View {
   let source: SourceID
   @ObservedObject var controller: FolderAccessController
   let authorization: SourceAuthorization?
+  /// When true, shows focus ring to indicate this button will respond to Enter
+  var isDefaultAction: Bool = false
+  /// When true, triggers the Grant Access action (set by parent via Enter key)
+  var triggerAction: Bool = false
   let onAuthorizationChanged: (SourceAuthorization) -> Void
 
   @State private var isRequesting = false
@@ -84,15 +88,28 @@ struct SourceAuthorizationRow: View {
         .disabled(true)
         .accessibilityIdentifier("authorized-\(source.rawValue)")
       } else {
-        Button("Grant Access...") {
-          requestAccess()
-        }
-        .buttonStyle(.bordered)
-        .disabled(isRequesting)
-        .accessibilityIdentifier("grant-access-\(source.rawValue)")
-        .accessibilityLabel("Grant Access \(source.displayName)")
+        grantAccessButton
       }
     }
+  }
+
+  /// Grant Access button with conditional styling based on focus state.
+  /// Always uses .bordered style (secondary) - only Continue should be .borderedProminent.
+  /// Focus is indicated with a subtle blue ring overlay.
+  /// Note: No keyboard shortcut - Enter is handled manually by parent to avoid system blue override.
+  @ViewBuilder
+  private var grantAccessButton: some View {
+    Button("Grant Access...") { requestAccess() }
+      .buttonStyle(.bordered)
+      .disabled(isRequesting)
+      .modifier(FocusRingIndicator(isActive: isDefaultAction && !isRequesting))
+      .accessibilityIdentifier("grant-access-\(source.rawValue)")
+      .accessibilityLabel("Grant Access \(source.displayName)")
+      .onChange(of: triggerAction) { _, shouldTrigger in
+        if shouldTrigger && !isRequesting {
+          requestAccess()
+        }
+      }
   }
 
   private func statusDisplay(for status: AuthorizationStatus) -> (String, Color) {
@@ -129,5 +146,32 @@ struct SourceAuthorizationRow: View {
       }
       isRequesting = false
     }
+  }
+}
+
+// MARK: - Focus Ring Indicator
+
+/// Shows a focus indicator matching the folder card pattern from DatabaseLocationStepView:
+/// - Blue border (2pt) + subtle blue background when focused
+/// - No additional styling when unfocused (uses standard .bordered appearance)
+///
+/// This provides visual feedback that Enter will trigger this button,
+/// without competing with the primary .borderedProminent Continue button.
+private struct FocusRingIndicator: ViewModifier {
+  let isActive: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .background(
+        RoundedRectangle(cornerRadius: 6)
+          .fill(isActive ? Color.contextifyBlue.opacity(0.08) : Color.clear)
+          .padding(-4)  // Extend behind button
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 6)
+          .stroke(isActive ? Color.contextifyBlue : Color.clear, lineWidth: 2)
+          .padding(-4)  // Extend ring outside button bounds
+      )
+      .animation(.easeInOut(duration: 0.15), value: isActive)
   }
 }

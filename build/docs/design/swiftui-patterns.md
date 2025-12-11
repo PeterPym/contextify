@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2025-12-11
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -19,6 +19,8 @@
 9. [Performance Optimization](#performance-optimization)
 10. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 11. [Migration from StateObject to Observable](#migration-from-stateobject-to-observable)
+12. [Platform Quirks and Workarounds](#platform-quirks-and-workarounds)
+13. [Custom Keyboard Navigation (Tab/Shift+Tab/Enter)](#custom-keyboard-navigation-tabshift-tabenter)
 
 ---
 
@@ -1527,6 +1529,243 @@ if isReady {
 - `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift:119-143` - Next/Continue buttons
 
 **Note:** This may be a macOS 26-specific bug. The workaround is safe for all versions since it doesn't rely on the built-in disabled appearance working correctly.
+
+---
+
+## Custom Keyboard Navigation (Tab/Shift+Tab/Enter)
+
+### Problem: SwiftUI Keyboard Shortcut Limitations
+
+SwiftUI's built-in keyboard handling has several issues on macOS:
+
+1. **`.keyboardShortcut(.defaultAction)` forces system blue** - When a button has this modifier, macOS renders it with system accent color (blue), overriding any custom `.tint()` color. This makes it impossible to maintain brand colors.
+
+2. **`.onKeyPress(.tab)` unreliable** - Tab key events are often consumed by system focus navigation before SwiftUI's handler receives them.
+
+3. **No Tab cycling control** - SwiftUI provides no way to define custom Tab order or cycle between specific elements.
+
+### Solution: NSEvent Local Monitor
+
+Use `NSEvent.addLocalMonitorForEvents` to intercept keyboard events at the app level before SwiftUI processes them. This gives full control over Tab, Shift+Tab, and Enter handling.
+
+**Implementation Pattern:**
+
+```swift
+// NSViewRepresentable wrapper for keyboard monitoring
+private struct KeyboardHandler: NSViewRepresentable {
+  let isEnabled: Bool
+  let onTab: () -> Void
+  let onShiftTab: () -> Void
+  let onEnter: () -> Void
+
+  func makeNSView(context: Context) -> NSView {
+    let view = KeyboardView()
+    view.onTab = onTab
+    view.onShiftTab = onShiftTab
+    view.onEnter = onEnter
+    view.isEnabled = isEnabled
+    view.setupMonitorIfNeeded()  // Set up immediately
+    return view
+  }
+
+  func updateNSView(_ nsView: NSView, context: Context) {
+    guard let view = nsView as? KeyboardView else { return }
+    view.onTab = onTab
+    view.onShiftTab = onShiftTab
+    view.onEnter = onEnter
+    view.isEnabled = isEnabled
+  }
+
+  @MainActor
+  class KeyboardView: NSView {
+    var onTab: (() -> Void)?
+    var onShiftTab: (() -> Void)?
+    var onEnter: (() -> Void)?
+    var isEnabled = false
+    private var monitor: Any?
+
+    func setupMonitorIfNeeded() {
+      guard monitor == nil else { return }
+      monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        guard let self = self, self.isEnabled else { return event }
+
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Tab key (keyCode 48)
+        if event.keyCode == 48 {
+          if flags == .shift {
+            self.onShiftTab?()
+            return nil  // Consume event
+          } else if flags.isEmpty {
+            self.onTab?()
+            return nil
+          }
+        }
+
+        // Enter/Return key (keyCode 36)
+        if event.keyCode == 36 && flags.isEmpty {
+          self.onEnter?()
+          return nil
+        }
+
+        return event  // Let other events pass through
+      }
+    }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if window != nil { setupMonitorIfNeeded() }
+    }
+
+    override func removeFromSuperview() {
+      if let monitor = monitor {
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+      }
+      super.removeFromSuperview()
+    }
+  }
+}
+```
+
+**Usage in View:**
+
+```swift
+struct WizardView: View {
+  @State private var focusedElement: FocusableElement = .firstButton
+
+  var body: some View {
+    VStack {
+      // ... buttons with focus rings
+    }
+    .background(KeyboardHandler(
+      isEnabled: true,
+      onTab: { focusNext() },
+      onShiftTab: { focusPrevious() },
+      onEnter: { handleEnter() }
+    ))
+  }
+
+  private func focusNext() {
+    let targets = availableFocusTargets
+    if let idx = targets.firstIndex(of: focusedElement) {
+      focusedElement = targets[(idx + 1) % targets.count]
+    }
+  }
+}
+```
+
+**Implementation Reference:**
+- `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift:274-355` - Full KeyboardHandler implementation
+
+---
+
+### Focus Ring Styling for Enter-Ready Buttons
+
+When using manual Enter handling (no `.keyboardShortcut(.defaultAction)`), buttons need a visual indicator showing which one will respond to Enter.
+
+**Pattern: Focus Ring Overlay**
+
+```swift
+private struct FocusRingStyle: ViewModifier {
+  let isActive: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .overlay(
+        RoundedRectangle(cornerRadius: 6)
+          .stroke(isActive ? Color.contextifyBlue : Color.clear, lineWidth: 2)
+          .padding(-4)  // Extend outside button bounds
+      )
+      .animation(.easeInOut(duration: 0.15), value: isActive)
+  }
+}
+```
+
+**Usage:**
+
+```swift
+Button("Grant Access...") { requestAccess() }
+  .buttonStyle(.bordered)  // Secondary style (not .borderedProminent)
+  .modifier(FocusRingStyle(isActive: isFocused))
+```
+
+**Visual Hierarchy:**
+- **`.borderedProminent`** - Primary action (filled background, reserved for "Continue"/"Submit")
+- **`.bordered` + focus ring** - Secondary action with keyboard focus
+- **`.bordered`** - Secondary action without focus
+
+This avoids the "two prominent buttons" problem where multiple buttons compete visually.
+
+**Implementation References:**
+- `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift:369-385` - FocusRingStyle modifier
+- `Contextify/Contextify/Views/SourceAuthorizationRow.swift:152-177` - FocusRingIndicator with background tint
+
+---
+
+### Quirk: Enter Key Dismisses NSOpenPanel Immediately
+
+**Problem:** When Enter triggers an NSOpenPanel via state binding, the Enter key event is still "in flight" when the panel appears. This causes the panel to immediately dismiss (as if the user pressed Enter on the panel's default button).
+
+**Symptoms:**
+- Logs show "User cancelled folder selection" immediately after trigger
+- Panel appears to flash or not appear at all
+- Works fine when clicking the button with mouse
+
+**Workaround:** Use `DispatchQueue.main.async` to delay the trigger until the Enter event is fully consumed:
+
+```swift
+private func handleEnter() {
+  if !isConfigured {
+    // ❌ BAD: Panel dismisses immediately
+    openFolderPickerTrigger = true
+
+    // ✅ GOOD: Async delay lets Enter event complete first
+    DispatchQueue.main.async {
+      self.openFolderPickerTrigger = true
+    }
+  }
+}
+```
+
+**Why this works:** The async dispatch puts the trigger on the next run loop iteration, after the NSEvent handler has fully processed and returned. The Enter key event is then complete before the modal panel appears.
+
+**Implementation Reference:**
+- `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift:104-115` - handleEnterStep1 with async delay
+
+---
+
+### Quirk: .keyboardShortcut(.defaultAction) Overrides Button Styling
+
+**Problem:** When a button has `.keyboardShortcut(.defaultAction)`, macOS forces system default button rendering (solid blue fill) regardless of:
+- `.buttonStyle(.bordered)`
+- Custom `.tint()` color
+- Any other styling modifiers
+
+**What doesn't work:**
+```swift
+// ❌ Button renders as system blue, not contextifyBlue
+Button("Next") { }
+  .buttonStyle(.bordered)  // Ignored!
+  .tint(Color.contextifyBlue)  // Ignored!
+  .keyboardShortcut(.defaultAction)
+```
+
+**Solution:** Handle Enter key manually via NSEvent monitor instead of using `.keyboardShortcut(.defaultAction)`. This gives full control over button styling.
+
+```swift
+// ✅ Button renders correctly, Enter handled manually
+Button("Next") { }
+  .buttonStyle(.bordered)
+  .modifier(FocusRingStyle(isActive: isEnterTarget))
+// Enter key handled by KeyboardHandler in parent view
+```
+
+**Trade-off:** More code, but complete control over visual appearance.
+
+**Implementation Reference:**
+- `Contextify/Contextify/Onboarding/AppStoreOnboardingView.swift` - Full manual keyboard handling
+- `Contextify/Contextify/Views/SourceAuthorizationRow.swift:96-113` - Grant Access button without keyboard shortcut
 
 ---
 

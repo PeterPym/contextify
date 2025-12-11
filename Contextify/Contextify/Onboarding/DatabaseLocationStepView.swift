@@ -188,7 +188,7 @@ struct DatabaseLocationStepView: View {
     .buttonStyle(.plain)
     .disabled(isSelecting)
     .accessibilityIdentifier("onboarding-folder-card")
-    .modifier(DefaultActionShortcut(isActive: !isConfigured))
+    // Note: Enter key is handled by parent's KeyboardHandler, no shortcut needed here
   }
 
   // MARK: - Actions
@@ -267,19 +267,6 @@ struct DatabaseLocationStepView: View {
     // Store both the path and bookmark in preferences
     HUDPreferences.setCustomDatabaseLocation(url, bookmarkData: bookmarkData)
     log.info("[ONBOARD-DB] Created security-scoped bookmark for: \(url.path)")
-  }
-}
-
-/// Conditionally applies the default action keyboard shortcut (Return/Enter)
-private struct DefaultActionShortcut: ViewModifier {
-  let isActive: Bool
-
-  func body(content: Content) -> some View {
-    if isActive {
-      content.keyboardShortcut(.defaultAction)
-    } else {
-      content
-    }
   }
 }
 
