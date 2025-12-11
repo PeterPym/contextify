@@ -195,6 +195,83 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Separate Derived Data by Distribution (1 item)
+
+**Status:** Plan complete, ready for implementation
+**Priority:** P1 (prevents release build crashes from cross-contamination)
+**Effort:** 45-60 minutes
+**Plan:** `build/notes/todo-support/P1-DERIVED-DATA-SEPARATION-plan.md`
+
+- [ ] #DERIVED-DATA-SEPARATION: Use separate derived data directories for DMG and App Store builds
+
+**Problem:**
+App Store and DMG builds share `.derived/`, causing code signature mismatches ("different Team IDs") when building both sequentially. Xcode's incremental build may not re-sign cached frameworks.
+
+**Solution:**
+- `.derived-dmg/` for DMG/direct distribution builds
+- `.derived-appstore/` for App Store builds
+
+**Files to Update:**
+- `scripts/xc.sh` - Set `dd=".derived-${dist}"` after argument parsing
+- `scripts/sign_and_notarize.py` - Use `.derived-dmg` explicitly
+- `scripts/sparkle/*.sh` - Update Sparkle binary search paths
+- `scripts/qa/lib/common.sh` - Update QA test app paths
+- `.gitignore`, `Makefile` - Update patterns
+- Documentation (AGENTS.md, DEVELOPMENT.md, etc.)
+
+**Verification:** See plan for step-by-step verification after implementation.
+
+---
+
+## QA Suite App Store Validation (1 item)
+
+**Status:** Blocked on #DERIVED-DATA-SEPARATION
+**Priority:** P1 (required before Phase 2 QA)
+**Depends on:** #DERIVED-DATA-SEPARATION
+**Effort:** 1-2 hours
+
+- [ ] #QA-APPSTORE-VALIDATION: Validate QA tests work correctly with App Store build
+
+**Context:**
+QA Phase 1 passes for DMG tests (`--skip-appstore --skip-cli`), but App Store tests (QA-01c/d/e) have not been validated. After derived data separation is complete, need to:
+
+1. Build App Store version with isolated derived data
+2. Run QA-01c (clean install with onboarding modal)
+3. Verify tests can navigate the "choose where Contextify saves your data" modal
+4. Run full QA suite without `--skip-appstore`
+
+**Potential issues to watch for:**
+- Onboarding modal navigation via AppleScript
+- Security-scoped bookmark grants in automated tests
+- Window hotkeys working before onboarding complete (separate bug, lower priority)
+
+---
+
+## QA Suite Phase 2 Implementation (1 item)
+
+**Status:** Plan complete, awaiting Phase 1 validation
+**Priority:** P1 (enables CI integration)
+**Depends on:** #QA-APPSTORE-VALIDATION
+**Effort:** 4-6 hours
+**Plan:** `build/notes/todo-support/P1-QA-PHASE-2-plan.md`
+
+- [ ] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration
+
+**Scope (5 commits):**
+1. Fixture infrastructure (helpers, config, TEST_PROJECT)
+2. Fixture-based transcript tests (Codex/Claude with search terms)
+3. Search tests (QA-10 Quick Search, QA-11 Deep Search)
+4. DB migration test (QA-09)
+5. CI workflow integration (GitHub Actions)
+
+**Key Features:**
+- `QA_FIXTURE_MODE=1` enables deterministic testing without live CLIs
+- Fixtures include `QA_FIXTURE_SEARCH_TERM_*` for search validation
+- DB fixtures test migration from older schema versions
+- CI runs QA suite on every PR
+
+---
+
 ## Sparkle Release Automation (1 item)
 
 **Status:** Design complete, awaiting user answers before implementation
@@ -262,53 +339,6 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 - Anchor IDs for deep linking
 
 **Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
-
----
-
-## Automated QA Suite (1 item)
-
-**Status:** Not Started - methodology defined, needs implementation
-**Priority:** P1 (enables confident iteration - do before performance work)
-**Effort:** 8-12 hours (MVP bash-based suite)
-**Methodology:** `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
-
-- [ ] #AUTOMATED-QA: Implement automated QA suite for pre-release validation
-
-**Goal:** Bash-based automated QA suite that validates 6 critical user flows through log analysis, database queries, and filesystem verification.
-
-**Scope (MVP - Local Execution):**
-- Sequential execution on local macOS dev machine (no CI/CD yet)
-- Real integrations with actual Codex/Claude CLIs (not fixtures)
-- Sub-10 minute execution time with clear pass/fail results
-- AppleScript for UI automation, direct SQLite queries acceptable
-
-**Test Coverage:**
-1. App startup and initialization (5 variants: DMG/AppStore × clean/existing + permission skip)
-2. Project switching between multiple repositories
-3. File system event → ingestion → timeline display
-4. LLM processing and summary generation
-5. Timeline scroll and rendering
-6. Permission grant flows (App Store builds)
-
-**Deliverables:**
-- `scripts/qa/` directory with test harness
-- 6 test scripts (QA-01 through QA-06)
-- Test helper utilities (log parsing, DB queries, UI automation)
-- Test report generation
-- README with usage instructions
-
-**Future Work (v2 - Professional QA):**
-- CI/CD integration with GitHub Actions
-- Fixture-based tests for reliability/cost reduction
-- Database migration testing
-- Performance benchmarks with timing assertions
-- Headless controls without AppleScript
-
-**Files:**
-- `scripts/qa/` (new directory)
-- Test fixtures/helper scripts
-
-**Reference:** Complete methodology with test scenarios, acceptance criteria, and implementation approach in `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
 
 ---
 

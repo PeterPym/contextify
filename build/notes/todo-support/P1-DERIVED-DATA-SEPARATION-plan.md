@@ -197,6 +197,41 @@ open -a "${APP_PATH:-/Users/rob/code/projects/contextify/.derived/Build/Products
 open -a "${APP_PATH:-/Users/rob/code/projects/contextify/.derived-dmg/Build/Products/Debug/Contextify.app}"
 ```
 
+#### 2.3 QA Test Suite
+
+The automated QA suite has hardcoded paths that need updating.
+
+**`scripts/qa/lib/common.sh`** - Update default app paths (lines 13-14):
+```bash
+# Change from:
+DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived/Build/Products/Debug/Contextify.app}"
+APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived/Build/Products/Debug/Contextify AppStore.app}"
+
+# To:
+DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app}"
+APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify AppStore.app}"
+```
+
+**`scripts/qa/lib/common.sh`** - Update error messages in `launch_dmg_app` and `launch_appstore_app`:
+```bash
+# Change from:
+log_error "Build with: bash scripts/xc.sh build"
+# To:
+log_error "Build with: bash scripts/xc.sh --dist=dmg build"
+
+# Change from:
+log_error "Build with: bash scripts/xc.sh --dist=appstore Debug build"
+# To (no change needed, already correct)
+```
+
+**`scripts/qa/README.md`** - Update build commands in documentation:
+```markdown
+# Change from:
+- Build with: `bash scripts/xc.sh build`
+# To:
+- Build with: `bash scripts/xc.sh --dist=dmg build`
+```
+
 ---
 
 ### Phase 3: Configuration Files
@@ -324,7 +359,7 @@ open .derived-dmg/Build/Products/Release/Contextify.app
 
 ## Files Changed Summary
 
-### Code Changes (7 files)
+### Code Changes (9 files)
 
 | File | Type | Changes |
 |------|------|---------|
@@ -334,6 +369,8 @@ open .derived-dmg/Build/Products/Release/Contextify.app
 | `scripts/sparkle/sign.sh` | Script | Update search paths, improve error |
 | `scripts/compare-builds.sh` | Script | Update all hardcoded paths |
 | `scripts/logging/monitor-automated-test.sh` | Script | Update default app path |
+| `scripts/qa/lib/common.sh` | QA | Update DMG_APP_PATH, APPSTORE_APP_PATH defaults |
+| `scripts/qa/README.md` | QA | Update build commands in documentation |
 | `Makefile` | Config | Clean both local and CI derived data |
 
 ### Configuration Changes (1 file)
@@ -353,7 +390,7 @@ open .derived-dmg/Build/Products/Release/Contextify.app
 | `scripts/DATABASE-MANAGEMENT.md` | Medium |
 | `scripts/logging/README.md` | Medium |
 
-**Total: 15 files**
+**Total: 17 files**
 
 ---
 
