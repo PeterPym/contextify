@@ -253,6 +253,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var updateDrainItersRemaining = 8  // Current iterations remaining
     @ObservationIgnored private var debounceTask: Task<Void, Never>?  // Debounce task for transcript updates
     @ObservationIgnored private var progressDebounceTask: Task<Void, Never>?  // Debounce task for progress notifications
+    @ObservationIgnored private var refreshDebounceTask: Task<Void, Never>?  // Debounce task for timeline refresh (coalesce rapid loadFeedFromSQL calls)
+    @ObservationIgnored private var pendingRefreshAfterLoad = false  // Coalesce rapid refresh calls during load
     @ObservationIgnored private var lastProgressRefreshTime: Date?  // Track last progress refresh to enforce minimum interval
     @ObservationIgnored private var refreshHistory: [(trigger: String, timestamp: Date)] = []  // Track refresh frequency for diagnostics
     @ObservationIgnored private var cacheDebounceTask: Task<Void, Never>?  // CXT-13: Debounce cache updates
@@ -671,6 +673,7 @@ final class ConversationMonitor {
         cacheDebounceTask?.cancel()  // CXT-13: Cancel cache update debounce
         cacheDebounceTask = nil
         pendingCacheKeys.removeAll()
+        pendingRefreshAfterLoad = false  // Clear pending refresh on stop
         // CXT-13: Do NOT cancel coordinatorTask here! It must persist across project switches
         // to continue receiving updates. It's only canceled in deinit.
 
@@ -1395,11 +1398,15 @@ final class ConversationMonitor {
     private func loadFeedFromSQL() async -> Task<Void, Never>? {
         guard let projectId = currentProjectId, let orchestrator = orchestrator else { return nil }
 
-        // Re-entrancy guard: prevent duplicate loads
+        // Re-entrancy guard: prevent duplicate loads, but queue a follow-up refresh
         guard phase != .loading else {
-            log.debug("[TIMELINE-LOAD] Ignoring primer request; already loading")
+            pendingRefreshAfterLoad = true
+            log.debug("[TIMELINE-LOAD] Coalescing refresh request (already loading, will refresh after)")
             return nil
         }
+
+        // Clear any pending refresh flag since we're starting a fresh load
+        pendingRefreshAfterLoad = false
 
         // Track refresh frequency for diagnostics
         #if DEBUG
@@ -1615,6 +1622,13 @@ final class ConversationMonitor {
 
         isProcessing = false
         isReadyForUpdates = priorReady
+
+        // Check for coalesced refresh requests during load
+        if self.pendingRefreshAfterLoad {
+            self.pendingRefreshAfterLoad = false
+            log.debug("[TIMELINE-LOAD] Processing pending refresh request")
+            await self.loadFeedFromSQL()?.value
+        }
     }
 
     @MainActor
