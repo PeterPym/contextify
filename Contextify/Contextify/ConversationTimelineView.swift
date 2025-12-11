@@ -30,6 +30,10 @@ struct ConversationTimelineView: View {
     // Info popover state
     @State private var showEmptyStateInfo = false
 
+    // Expansion state - persists which entries are expanded across view redraws
+    // Uses entry UUID as key for stable identification
+    @State private var expandedEntryIds: Set<UUID> = []
+
     private let minWidth: CGFloat = 52
 
     private let log = Logger(subsystem: "dev.contextify", category: "UIRender")
@@ -174,7 +178,8 @@ struct ConversationTimelineView: View {
                         entry: entry,
                         onScrollToEntry: { entryId in
                             // Row linking - not currently used for scroll control
-                        }
+                        },
+                        isExpanded: expansionBinding(for: entry.id)
                     )
                     .equatable()  // Critical: activates Equatable conformance to prevent redundant recomputes
                     .id(entry.id)
@@ -259,6 +264,7 @@ struct ConversationTimelineView: View {
                 log.debug("[SCROLL] Project switch detected, resetting scroll state")
                 userHasScrolledUp = false
                 scrollPositionId = nil
+                expandedEntryIds.removeAll()  // Clear expansion state on project switch
             } else {
                 autoScrollToBottomIfNeeded("entriesRevision")
             }
@@ -430,6 +436,23 @@ struct ConversationTimelineView: View {
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.yellow.opacity(0.15))
+        )
+    }
+
+    // MARK: - Expansion State Management
+
+    /// Creates a binding for tracking whether a specific entry is expanded.
+    /// This allows expansion state to persist across view redraws when new entries arrive.
+    private func expansionBinding(for entryId: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedEntryIds.contains(entryId) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedEntryIds.insert(entryId)
+                } else {
+                    expandedEntryIds.remove(entryId)
+                }
+            }
         )
     }
 
