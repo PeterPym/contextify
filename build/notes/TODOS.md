@@ -109,6 +109,32 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## QA Review and Recent Feature Cleanup (4 items)
+
+**Status:** Not Started
+**Priority:** P0 (code review debt from autonomous work)
+**Plan:** `/tmp/qa-review-and-cleanup-plan.md`
+
+- [ ] #QA-REVIEW-1: QA documentation audit - identify gaps, integrate with docs hierarchy
+- [ ] #QA-REVIEW-2: Code review QA Phase 2 implementation
+- [ ] #QA-REVIEW-3: Code review GIT-BRANCH feature (merged without review)
+- [ ] #QA-REVIEW-4: Code review EXPANSION-STATE feature (merged without review)
+
+**Workflow:** Sequential branches, each merged after review approval:
+1. `fix/qa-docs-audit` → merge
+2. `fix/qa-phase2-review` → merge
+3. `fix/git-branch-review` → merge
+4. `fix/expansion-state-review` → merge
+
+**Immediate cleanup** (run before starting):
+```bash
+defaults delete dev.contextify dev.contextify.projectRoot
+defaults delete dev.contextify dev.contextify.projectRootBookmark
+rm -rf ~/.claude/projects/-tmp-contextify-qa-test
+```
+
+---
+
 ## Log Analysis Issues
 
 **Status:** Complete
