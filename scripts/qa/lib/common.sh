@@ -172,7 +172,8 @@ launch_dmg_app() {
     return 1
   fi
 
-  open "$DMG_APP_PATH"
+  # Launch with Sparkle auto-updates disabled to prevent modal interference
+  open "$DMG_APP_PATH" --args -SUEnableAutomaticChecks NO
 
   # Wait for startup completion
   if wait_for_log_pattern "\[ORCH-STARTUP\] Startup complete" 45; then
