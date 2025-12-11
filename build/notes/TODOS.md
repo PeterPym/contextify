@@ -379,47 +379,6 @@ let entries = TimelineEntryQuery()
 
 ---
 
-## Timeline UX - Expansion State Persistence (1 item)
-
-**Status:** Not Started
-**Priority:** P2 (Medium priority - nice to have quality/UX improvement)
-**Effort:** 2-3 hours
-
-- [ ] #EXPANSION-STATE: Preserve timeline entry expansion state across view redraws
-
-**Problem:**
-When a timeline entry is expanded (disclosure triangle opened to show full content) and a new message arrives, the conversation timeline redraws and collapses the previously expanded entry. This forces users to re-expand entries if they're reading them while new messages arrive.
-
-**Impact:**
-- Frustrating UX when actively monitoring conversations
-- Interrupts reading flow if user has expanded an entry to read full content
-- Not a blocker but degrades experience during active use
-
-**Solution:**
-
-1. **State Management** (1-2 hours)
-   - Add `@State private var expandedEntries: Set<UUID> = []` to track expansion by entry ID
-   - Pass expansion state to `TimelineEntryRow` via binding
-   - Update state when user toggles disclosure triangle
-
-2. **Persist Across Redraws** (0.5-1 hour)
-   - Ensure entry IDs remain stable across `monitor.entriesRevision` changes
-   - Test that expansion state survives new message arrivals
-   - Verify state clears appropriately on project switch
-
-3. **Testing** (0.5 hour)
-   - Expand entry, wait for new message, verify stays expanded
-   - Switch projects, verify state resets
-   - Test with multiple expanded entries
-
-**Files:**
-- View: `Contextify/Contextify/ConversationTimelineView.swift`
-- Row: `Contextify/Contextify/TimelineEntryRow.swift`
-
-**Note:** Entry IDs should already be stable (UUIDs from database), so this is primarily about wiring up state preservation in the view layer.
-
----
-
 ## Unread Count Investigation (1 item)
 
 **Status:** Not Started
