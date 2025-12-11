@@ -26,6 +26,7 @@ TEST_ID="QA-03"
 TEST_NAME="New Codex Transcript Discovery"
 TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
+TEST_MARKER=""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Implementation
@@ -34,7 +35,6 @@ TRANSCRIPT=""
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "sqlite3"
 
   # Codex CLI only required if not in fixture mode
@@ -54,14 +54,21 @@ check_prerequisites() {
 setup_test() {
   log_subheader "Setup"
 
-  # Ensure app is active
-  activate_app
+  # Kill any existing instance for clean state
+  kill_app_if_running
 
-  # Start log capture
+  # Start log capture before launching app
   start_log_capture "$LOGDIR"
 
-  # Wait a moment for log capture to initialize
-  sleep 2
+  # Launch the app
+  log_info "Launching DMG build..."
+  if ! launch_dmg_app; then
+    log_error "Failed to launch app"
+    TEST_FAILED=1
+    return 1
+  fi
+
+  log_success "Setup complete"
 }
 
 run_test_steps() {
@@ -83,15 +90,14 @@ run_test_steps() {
     log_info "Creating new Codex conversation in test project..."
 
     # Generate unique test identifier
-    local test_marker
-    test_marker="QA-$(date +%s)"
+    TEST_MARKER="QA-$(date +%s)"
 
     # Start Codex conversation with simple prompt (use 'exec' for non-interactive mode)
     # See: appstore-metadata/review-materials/generate-transcripts.sh for pattern
-    log_info "Running: codex exec -C $TEST_PROJECT \"print '$test_marker' in Python\""
+    log_info "Running: codex exec -C $TEST_PROJECT \"print '$TEST_MARKER' in Python\""
 
     # Run codex exec (non-interactive mode) with timeout in background
-    run_with_timeout 45 codex exec -C "$TEST_PROJECT" --dangerously-bypass-approvals-and-sandbox "print '$test_marker' in Python and then exit immediately" > /dev/null 2>&1 &
+    run_with_timeout 45 codex exec -C "$TEST_PROJECT" --dangerously-bypass-approvals-and-sandbox "print '$TEST_MARKER' in Python and then exit immediately" > /dev/null 2>&1 &
     local CODEX_PID=$!
 
     # Wait for transcript file creation
@@ -207,9 +213,21 @@ validate_results() {
   log_info "Stage 4: Validating watcher creation..."
   soft_assert_log_contains "\[WATCHER" "Watcher activity detected"
 
-  # Stage 5: Timeline Update
-  log_info "Stage 5: Validating timeline update..."
-  soft_assert_log_contains "\[TIMELINE" "Timeline activity detected"
+  # Stage 5: Content verification - check test marker made it through
+  log_info "Stage 5: Validating test content ingested..."
+  if [ -n "$TEST_MARKER" ] && [ -n "$transcript_id" ]; then
+    local content_match
+    content_match=$(db_count "SELECT COUNT(*) FROM transcript_entries WHERE transcript_id = '$transcript_id' AND content LIKE '%$TEST_MARKER%';")
+    if [ "$content_match" -ge 1 ]; then
+      log_success "✓ Test marker '$TEST_MARKER' found in ingested content"
+    else
+      log_error "ASSERTION FAILED: Test marker not found in database"
+      log_error "  Expected content containing: $TEST_MARKER"
+      TEST_FAILED=1
+    fi
+  else
+    soft_assert_log_contains "\[TIMELINE" "Timeline activity detected"
+  fi
 
   # Optional: LLM summary queueing (informational)
   if grep -q "\[LLM" "$LOGFILE" 2>/dev/null; then
@@ -246,10 +264,18 @@ report_results() {
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+cleanup() {
+  kill_app_if_running
+  stop_log_capture
+}
+
 main() {
   # Set up log directory
   LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
   mkdir -p "$LOGDIR"
+
+  # Ensure cleanup runs on exit
+  trap cleanup EXIT
 
   log_header "$TEST_ID: $TEST_NAME"
 
