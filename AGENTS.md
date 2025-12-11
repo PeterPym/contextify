@@ -18,8 +18,8 @@ These cause real problems when violated:
    ```bash
    ps aux | grep Contextify | grep -v grep | head -1
    ```
-   - `.derived/Build/Products/Debug/` = DMG build (no sandbox, no onboarding wizard)
-   - `Contextify AppStore.app` = App Store build (sandboxed, requires onboarding)
+   - `.derived-dmg/Build/Products/Debug/` = DMG build (no sandbox, no onboarding wizard)
+   - `.derived-appstore/Build/Products/Debug/` = App Store build (sandboxed, requires onboarding)
 
    App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
 

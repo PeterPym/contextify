@@ -10,8 +10,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
 DB_PATH="${DB_PATH:-$HOME/Library/Application Support/Contextify/contextify.db}"
-DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived/Build/Products/Debug/Contextify.app}"
-APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived/Build/Products/Debug/Contextify AppStore.app}"
+DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app}"
+APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify AppStore.app}"
 
 # Log capture state
 LOGFILE=""
@@ -172,7 +172,7 @@ launch_dmg_app() {
 
   if [ ! -d "$DMG_APP_PATH" ]; then
     log_error "DMG app not found: $DMG_APP_PATH"
-    log_error "Build with: bash scripts/xc.sh build"
+    log_error "Build with: bash scripts/xc.sh --dist=dmg build"
     return 1
   fi
 

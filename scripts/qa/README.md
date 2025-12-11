@@ -30,11 +30,11 @@ This test suite validates 6 critical user flows through:
 ### Required
 - **macOS** with Xcode Command Line Tools
 - **sqlite3** (built into macOS)
-- **DMG build**: `.derived/Build/Products/Debug/Contextify.app`
-  - Build with: `bash scripts/xc.sh build`
+- **DMG build**: `.derived-dmg/Build/Products/Debug/Contextify.app`
+  - Build with: `bash scripts/xc.sh --dist=dmg build`
 
 ### For App Store Tests (QA-01c/d/e)
-- **App Store build**: `.derived/Build/Products/Debug/Contextify AppStore.app`
+- **App Store build**: `.derived-appstore/Build/Products/Debug/Contextify AppStore.app`
   - Build with: `bash scripts/xc.sh --dist=appstore Debug build`
 - **Terminal Accessibility Permission** (one-time setup):
   - System Settings → Privacy & Security → Accessibility → Terminal ✓
@@ -204,7 +204,7 @@ System Settings → Privacy & Security → Accessibility → Terminal ✓
 Build the required app variant:
 ```bash
 # DMG build
-bash scripts/xc.sh build
+bash scripts/xc.sh --dist=dmg build
 
 # App Store build
 bash scripts/xc.sh --dist=appstore Debug build

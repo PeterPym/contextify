@@ -36,14 +36,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Find Sparkle binaries (same logic as keygen script)
 find_sparkle_bin() {
   # Try Xcode SPM artifacts first (preferred - actual binaries)
-  if [[ -f "$PROJECT_ROOT/.derived/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" ]]; then
-    echo "$PROJECT_ROOT/.derived/SourcePackages/artifacts/sparkle/Sparkle/bin"
+  # DMG builds use .derived-dmg
+  if [[ -f "$PROJECT_ROOT/.derived-dmg/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" ]]; then
+    echo "$PROJECT_ROOT/.derived-dmg/SourcePackages/artifacts/sparkle/Sparkle/bin"
     return
   fi
 
   # Try DerivedData (after Xcode build)
   local derived_sparkle
-  derived_sparkle=$(find "$PROJECT_ROOT/.derived" -path "*/artifacts/*/bin/sign_update" -type f 2>/dev/null | head -1)
+  derived_sparkle=$(find "$PROJECT_ROOT/.derived-dmg" -path "*/artifacts/*/bin/sign_update" -type f 2>/dev/null | head -1)
   if [[ -n "$derived_sparkle" ]]; then
     echo "$(dirname "$derived_sparkle")"
     return
@@ -73,7 +74,7 @@ SPARKLE_BIN=$(find_sparkle_bin)
 
 if [[ -z "$SPARKLE_BIN" ]]; then
   echo "Error: Sparkle binaries not found."
-  echo "Build the project first: bash scripts/xc.sh build"
+  echo "Build the DMG scheme first: bash scripts/xc.sh --dist=dmg build"
   exit 1
 fi
 

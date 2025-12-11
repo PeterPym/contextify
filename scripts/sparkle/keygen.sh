@@ -19,14 +19,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Check if Sparkle binaries are available
 find_sparkle_bin() {
   # Try Xcode SPM artifacts first (preferred - actual binaries)
-  if [[ -f "$PROJECT_ROOT/.derived/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys" ]]; then
-    echo "$PROJECT_ROOT/.derived/SourcePackages/artifacts/sparkle/Sparkle/bin"
+  # DMG builds use .derived-dmg
+  if [[ -f "$PROJECT_ROOT/.derived-dmg/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys" ]]; then
+    echo "$PROJECT_ROOT/.derived-dmg/SourcePackages/artifacts/sparkle/Sparkle/bin"
     return
   fi
 
   # Try DerivedData (after Xcode build)
   local derived_sparkle
-  derived_sparkle=$(find "$PROJECT_ROOT/.derived" -path "*/artifacts/*/bin/generate_keys" -type f 2>/dev/null | head -1)
+  derived_sparkle=$(find "$PROJECT_ROOT/.derived-dmg" -path "*/artifacts/*/bin/generate_keys" -type f 2>/dev/null | head -1)
   if [[ -n "$derived_sparkle" ]]; then
     echo "$(dirname "$derived_sparkle")"
     return
@@ -58,7 +59,7 @@ if [[ -z "$SPARKLE_BIN" ]]; then
   echo "Error: Sparkle binaries not found."
   echo ""
   echo "Options to install:"
-  echo "  1. Build the project first: bash scripts/xc.sh build"
+  echo "  1. Build the DMG scheme first: bash scripts/xc.sh --dist=dmg build"
   echo "  2. Install via Homebrew: brew install --cask sparkle"
   echo "  3. Download from: https://github.com/sparkle-project/Sparkle/releases"
   echo ""

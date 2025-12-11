@@ -131,13 +131,13 @@ check_prerequisites() {
   fi
 
   # Check for DMG build
-  if [ ! -d "$REPO_ROOT/.derived/Build/Products/Debug/Contextify.app" ]; then
+  if [ ! -d "$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app" ]; then
     echo "[WARN] DMG build not found. Run: bash scripts/xc.sh build"
   fi
 
   # Check for App Store build (only warn if not skipping)
   if [ "$SKIP_APPSTORE" != "1" ]; then
-    if [ ! -d "$REPO_ROOT/.derived/Build/Products/Debug/Contextify AppStore.app" ]; then
+    if [ ! -d "$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify AppStore.app" ]; then
       echo "[WARN] App Store build not found. Run: bash scripts/xc.sh --dist=appstore Debug build"
       echo "[INFO] Use --skip-appstore to skip App Store tests"
     fi
