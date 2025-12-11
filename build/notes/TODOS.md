@@ -263,25 +263,6 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 
 ---
 
-## Transcript-Based Git Branch Display (1 item)
-
-**Status:** Not Started
-**Priority:** P1 (enables branch display in App Store without filesystem access)
-**Effort:** 6-8 hours
-
-- [ ] #GIT-BRANCH: Implement transcript-based git branch tracking and display for App Store builds
-
-**Goal:** Display git branch in App Store builds using transcript data instead of filesystem access. Old approach (commit `b0abdb4`) disabled git entirely; new approach re-enables display.
-
-**Key Finding:** Both transcript formats already contain branch data:
-- Claude Code: `gitBranch` on every message (immediate updates)
-- Codex: `session_meta.payload.git.branch` (updates on session start)
-- Parser and schema already support extraction
-
-**Investigation & Spec:** `build/notes/todo-support/P1-GIT-BRANCH-investigation.md`
-
----
-
 ## Timeline Query Centralization
 
 **Status:** Deferred to P1 (after P0 filter fixes ship)
