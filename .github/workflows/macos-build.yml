@@ -3,8 +3,28 @@ name: macOS Build
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'Contextify/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/macos-build.yml'
+      - 'scripts/qa/**'
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'Contextify/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/macos-build.yml'
+      - 'scripts/qa/**'
+    paths-ignore:
+      - '**/*.md'
 
 jobs:
   build:
