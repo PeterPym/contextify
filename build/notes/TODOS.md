@@ -519,7 +519,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ## Context Re-injection (1 item)
 
-**Status:** Research/Design needed
+**Status:** Research complete, ready for implementation
 **Priority:** P1 (enables AI workflow continuity)
 **Effort:** 4-8 hours (Phase 1 MVP)
 
@@ -534,7 +534,13 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 4. Enhanced Copy as JSON - include surrounding_context array
 5. Local LLM summary - generate optimized context summary for re-injection
 
-**Brief:** `/tmp/search-context-injection-brief.md` (move to `build/notes/todo-support/` when finalized)
+**Research Docs:**
+- `build/notes/todo-support/P1-CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
+- `build/notes/todo-support/P1-CONTEXT-REINJECTION-claude-code-research-report.md` - Claude Code capabilities
+- `build/notes/todo-support/P1-CONTEXT-REINJECTION-codex-research-report.md` - Codex capabilities
+- `build/notes/todo-support/P1-CONTEXT-REINJECTION-browser-research-prompt.md` - Browser research prompt
+- `build/notes/todo-support/P1-CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
+
 **Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
 ---
