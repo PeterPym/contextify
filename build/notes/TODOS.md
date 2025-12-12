@@ -615,6 +615,17 @@ Both should use identical card components for consistency.
 
 ---
 
+## Query CLI Feedback Inbox (1 item)
+
+**Status:** Spec complete
+**Priority:** P2
+**Effort:** 1-2 hours
+**Spec:** `build/notes/todo-support/QUERY-CLI-FEEDBACK-spec.md`
+
+- [ ] #QUERY-CLI-FEEDBACK: Add `contextify-query feedback` inbox for low-friction CLI improvement capture
+
+---
+
 ## Timeline Flicker Fix (1 item)
 
 **Status:** Root cause identified, fix ready
