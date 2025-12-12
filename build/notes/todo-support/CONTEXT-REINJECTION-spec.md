@@ -356,3 +356,4 @@ Dismiss semantics:
 
 - Search architecture: `build/docs/architecture/search.md`
 - Entry-anchored retrieval addendum: `build/docs/architecture/search-cli-entry-anchored-retrieval.md`
+- Implementation plan: `build/notes/todo-support/CONTEXT-REINJECTION-plan.md`
