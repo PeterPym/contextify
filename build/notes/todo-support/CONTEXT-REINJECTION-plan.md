@@ -63,7 +63,18 @@ This is the intended commit shape; it can deviate if implementation realities de
 - Join/derive `title?` from summaries when available (nullable).
 - Add tests with seeded DB fixtures.
 
-### 5) Anchor + neighborhood retrieval (`entry`, `context`)
+### 5) Search (`search`)
+
+- Add `search <query>` using FTS:
+  - `--limit <n>` (default 50; max 500)
+  - scoping: `--project-id`, `--project`, `--transcript-id`
+  - time filters: `--since/--until/--days`
+  - return: id, projectId, projectName, transcriptId, transcriptTitle, provider, kind, timestamp, score, contentSnippet, contentTruncated
+  - if FTS missing: `featureUnavailable` (no LIKE fallback)
+  - `--no-content` warns and is ignored (snippets are intrinsic to search)
+- Add tests for scoping + limit cap + missing-FTS error path.
+
+### 6) Anchor + neighborhood retrieval (`entry`, `context`)
 
 - Add `entry <entry-id>`:
   - returns `content` or `null` with `--no-content`
@@ -81,15 +92,16 @@ This is the intended commit shape; it can deviate if implementation realities de
   - include `contentTruncated` + `contentFullSize` when truncated
 - Add tests for not-found errors, filters, truncation safety, deterministic ordering.
 
-### 6) Activity filtering (`activity`)
+### 7) Activity filtering (`activity`)
 
-- Extend `activity`:
+- Add/extend `activity`:
   - accept `--project-id` / `--project`
   - add time filters (`--since/--until/--days`)
+  - `--limit <n>`
   - implement `--no-content`
 - Add tests for time filtering and `--no-content`.
 
-### 7) Status command (`status`)
+### 8) Status/version (`status`, `version`)
 
 - Add `status`:
   - resolves and opens DB
@@ -98,7 +110,11 @@ This is the intended commit shape; it can deviate if implementation realities de
   - includes resolved db path
 - Add tests for “db not found” / “can open” behavior.
 
-### 8) Feedback inbox (`feedback`)
+- Keep `version` as either:
+  - a small standalone command, or
+  - a subset of `status` (if we want fewer commands).
+
+### 9) Feedback inbox (`feedback`)
 
 - Implement `feedback "<summary>"` capture to App Support inbox.
 - Support enrichment flags, `--edit`, and JSON stdin.
@@ -109,10 +125,12 @@ This is the intended commit shape; it can deviate if implementation realities de
   - storage cap + archive
 - Add tests using an injectable storage root (temp directory).
 
-### 9) Hardening / validation pass
+### 10) Hardening / validation pass
 
 - Ensure featureUnavailable errors are consistent (FTS missing).
 - Ensure all commands conform to `schemaVersion` in envelopes.
+- Add an end-to-end test of the primary workflow:
+  - `search` → pick an entry id → `context` → verify output shape/order.
 - Verify:
   - `swift test`
   - `bash scripts/xc.sh build` (zero warnings)
@@ -122,4 +140,3 @@ This is the intended commit shape; it can deviate if implementation realities de
 - `schemaVersion` in envelopes is the CLI response schema version (not the DB schema).
 - Time filtering should operate on entry timestamps; transcripts derive first/last entry timestamps.
 - When a derived field is expensive to compute, omit it or keep it nullable.
-
