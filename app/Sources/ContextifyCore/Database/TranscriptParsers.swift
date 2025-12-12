@@ -394,9 +394,6 @@ private func validateMessageIntegrity(
       let hasToolUse = contentBlocks.contains { block in
         block["type"] as? String == "tool_use"
       }
-      let hasOnlyThinking = contentBlocks.allSatisfy { block in
-        block["type"] as? String == "thinking"
-      }
 
       recordToolUses(in: contentBlocks, transcriptId: transcriptId)
 

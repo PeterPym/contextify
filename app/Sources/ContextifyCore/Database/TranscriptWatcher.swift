@@ -205,7 +205,7 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
 
     source.setEventHandler { [weak self] in
-      guard let self, let source = source as? DispatchSourceFileSystemObject else { return }
+      guard let self else { return }
       let eventData = source.data
       self.handleFileChange(transcriptId: transcriptId, fileURL: fileURL, eventData: eventData)
     }
