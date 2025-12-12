@@ -701,9 +701,11 @@ public final class HUDViewModel {
     // Branch resolution: Git monitoring (DMG) > Transcript metadata (App Store) > fallback
     let transcriptMetadata = AppStateOrchestrator.shared.getCurrentBranchWithMetadata(forProject: context.id)
     let transcriptBranch = transcriptMetadata?.branch
+    var branchSource = "none"
 
     if let gitBranch = context.branch {
       branch = gitBranch
+      branchSource = "git"
       lifecycleLog.debug("[COORD-UPDATE] Branch from git: \(gitBranch, privacy: .public)")
 
       // DMG validation: Compare git-monitored vs transcript-based branch for QA
@@ -722,11 +724,14 @@ public final class HUDViewModel {
     } else if let transcriptBranch {
       let provider = transcriptMetadata?.provider ?? "unknown"
       branch = transcriptBranch
+      branchSource = "transcript"
       lifecycleLog.info("[COORD-UPDATE] Branch from transcript metadata: \(transcriptBranch, privacy: .public) (provider=\(provider, privacy: .public))")
     } else {
       branch = "—"
       lifecycleLog.debug("[COORD-UPDATE] No branch available (git nor transcript)")
     }
+
+    lifecycleLog.info("[BRANCH-RESOLVED] branch=\(self.branch, privacy: .public) source=\(branchSource, privacy: .public)")
 
     // Restore security-scoped access to project root if available.
     // In App Store (sandboxed) builds, bookmarks are typically nil for discovered projects because:

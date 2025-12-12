@@ -51,6 +51,9 @@ declare -a ALL_TESTS=(
   # Phase 5: Search tests (require FTS5 index populated by discovery tests)
   "QA-10-quick-search.sh:0"
   "QA-11-deep-search.sh:0"
+
+  # Phase 6: Feature tests
+  "QA-12-git-branch-display.sh:0"
 )
 
 # Track results
