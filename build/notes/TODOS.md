@@ -44,6 +44,14 @@ doc_references:
 
 ---
 
+## Active Work
+
+**Tracking:** `build/notes/active-work.md` (gitignored, local only)
+
+See tracking file for current branches in flight and review status.
+
+---
+
 # P0 (Launch Critical)
 
 ---

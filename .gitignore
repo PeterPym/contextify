@@ -57,6 +57,9 @@ fastlane/test_output/
 *.swo
 *.tmp
 
+# Session tracking (local, not committed)
+build/notes/active-work.md
+
 # Project artifacts (ensure non-source outputs aren't committed)
 outputs/
 Contextify/outputs/
