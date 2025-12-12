@@ -12,7 +12,7 @@ test:
 	bash scripts/xc.sh test
 
 clean:
-	rm -rf .derived-dmg .derived-appstore build/DerivedData build/DerivedData-beta
+	rm -rf .derived .derived-dmg .derived-appstore build/DerivedData build/DerivedData-beta
 
 hooks-setup:
 	@chmod +x .githooks/pre-commit || true
