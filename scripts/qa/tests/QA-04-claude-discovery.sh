@@ -26,10 +26,35 @@ TEST_ID="QA-04"
 TEST_NAME="New Claude Code Transcript Discovery"
 TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
+SELF_ISOLATED=0  # Track if we set up our own isolation
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Implementation
 # ─────────────────────────────────────────────────────────────────────────────
+
+setup_isolation() {
+  # If already isolated (by orchestrator), skip
+  if transcripts_are_isolated; then
+    log_info "Transcripts already isolated (orchestrator mode)"
+    return 0
+  fi
+
+  # Set up our own isolation
+  log_info "Setting up transcript isolation for standalone test..."
+  backup_and_isolate_transcripts
+  SELF_ISOLATED=1
+  export QA_FIXTURE_MODE=1  # Use fixture transcripts instead of CLI
+  log_success "Transcript isolation active (fixture mode enabled)"
+}
+
+cleanup_isolation() {
+  # Only restore if we set up isolation ourselves
+  if [ "$SELF_ISOLATED" -eq 1 ]; then
+    log_info "Restoring production transcripts..."
+    restore_transcripts_from_backup
+    log_success "Production transcripts restored"
+  fi
+}
 
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
@@ -60,9 +85,7 @@ setup_test() {
   # Ensure app is active
   activate_app
 
-  # Start log capture
-  LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
-  mkdir -p "$LOGDIR"
+  # Start log capture (LOGDIR set in main)
   start_log_capture "$LOGDIR"
 
   # Wait for log capture to initialize
@@ -248,8 +271,24 @@ report_results() {
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+cleanup() {
+  kill_app_if_running
+  stop_log_capture
+  cleanup_isolation
+}
+
 main() {
+  # Set up log directory
+  LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
+  mkdir -p "$LOGDIR"
+
+  # Ensure cleanup runs on exit
+  trap cleanup EXIT
+
   log_header "$TEST_ID: $TEST_NAME"
+
+  # Set up transcript isolation (backs up production data, seeds fixtures)
+  setup_isolation
 
   check_prerequisites
   setup_test
