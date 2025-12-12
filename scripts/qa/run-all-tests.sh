@@ -29,24 +29,24 @@ export TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 declare -a ALL_TESTS=(
   # Phase 1: Tests that need existing data (run first, before destructive tests)
   "QA-01b-launch-dmg-existing.sh:0"
-  "QA-02-project-switching.sh:0"
 
   # Phase 2: Destructive tests (delete DB, reset state)
   "QA-01a-launch-dmg-clean.sh:0"
   "QA-01c-launch-appstore-clean.sh:0"
+  "QA-09-db-migration.sh:0"       # Uses fixture DBs, restores original - run before discovery
 
   # Phase 3: Discovery tests (repopulate data after clean install)
   "QA-03-codex-discovery.sh:1"
   "QA-04-claude-discovery.sh:2"
 
-  # Phase 4: Tests that work with fresh or existing data
+  # Phase 4: Tests that need discovery data (projects, transcripts, FTS)
   "QA-01d-launch-appstore-existing.sh:0"
   "QA-01e-launch-appstore-skip.sh:0"
+  "QA-02-project-switching.sh:0"  # Needs 2+ projects from discovery
   "QA-05-realtime-updates.sh:1"
   "QA-06-watcher-recovery.sh:0"
   "QA-07-transcript-window.sh:0"
   "QA-08-projects-window.sh:0"
-  "QA-09-db-migration.sh:0"
 
   # Phase 5: Search tests (require FTS5 index populated by discovery tests)
   "QA-10-quick-search.sh:0"
@@ -477,6 +477,9 @@ main() {
   # Isolate transcripts if requested (backup production data)
   if [ "$ISOLATE_TRANSCRIPTS" = "1" ]; then
     backup_and_isolate_transcripts
+    # Enable fixture mode when isolated - CLI tools write to paths that won't be discovered
+    QA_FIXTURE_MODE=1
+    export QA_FIXTURE_MODE
     # Ensure app is killed and transcripts restored on exit (success or failure)
     orchestrator_cleanup() {
       echo "[INFO] Orchestrator cleanup..."
