@@ -56,6 +56,9 @@ check_prerequisites() {
 
   assert_command_exists "sqlite3"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   if [ ! -d "$APPSTORE_APP_PATH" ]; then
     log_error "App Store build not found: $APPSTORE_APP_PATH"
     log_error "Build with: bash scripts/xc.sh --dist=appstore Debug build"
@@ -66,10 +69,13 @@ check_prerequisites() {
   DB_PATH="$(get_appstore_db_path)"
   log_info "DB_PATH set to: $DB_PATH"
 
-  # Check for existing database (suggests previous run)
+  # Contract: start.exists: either (bookmarks more important than DB)
   if [ ! -f "$DB_PATH" ]; then
     log_warn "No existing database - bookmarks may not exist"
     log_info "Run QA-01c first to grant permissions and create bookmarks"
+  else
+    # Record baseline for end-state verification
+    record_baseline_counts
   fi
 
   log_success "Prerequisites met"

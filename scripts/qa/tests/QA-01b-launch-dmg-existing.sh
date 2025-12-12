@@ -57,24 +57,28 @@ check_prerequisites() {
 
   assert_command_exists "sqlite3"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   if [ ! -d "$DMG_APP_PATH" ]; then
     log_error "DMG build not found: $DMG_APP_PATH"
     log_error "Build with: bash scripts/xc.sh build"
     exit 1
   fi
 
-  # Verify database exists
+  # Contract: start.exists: true, min_projects: 1
   if [ ! -f "$DB_PATH" ]; then
-    log_warn "No existing database - run QA-01a first or start app manually"
-    log_info "Creating minimal database for test..."
-    # Run QA-01a to create database, or just launch app briefly
-    open "$DMG_APP_PATH"
-    sleep 10
-    pkill -9 "Contextify" 2>/dev/null || true
-    sleep 2
+    log_error "No existing database - run QA-01a first"
+    log_error "Contract requires existing database with min_projects: 1"
+    TEST_FAILED=1
+    exit 1
   fi
 
   assert_db_exists "Existing database present"
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -140,14 +144,25 @@ validate_results() {
   # Check for FSEvents monitoring
   soft_assert_log_contains "FSEvents\|FSEVENTS" "FSEvents monitoring active"
 
-  # Verify projects loaded
-  local project_count
+  # Contract: end state projects: same or +N, transcripts: same or +N
+  local project_count transcript_count
   project_count=$(db_count "SELECT COUNT(*) FROM projects;")
+  transcript_count=$(db_count "SELECT COUNT(*) FROM transcripts;")
 
-  if [ "$project_count" -ge 1 ]; then
-    log_success "✓ Projects loaded (count: $project_count)"
+  if [ "$project_count" -ge "${BASELINE_PROJECTS:-0}" ]; then
+    log_success "✓ Projects intact or increased (was: ${BASELINE_PROJECTS:-?}, now: $project_count)"
   else
-    log_warn "No projects in database (may be expected for fresh install)"
+    log_error "ASSERTION FAILED: Project count decreased"
+    log_error "  Was: ${BASELINE_PROJECTS:-?}, Now: $project_count"
+    TEST_FAILED=1
+  fi
+
+  if [ "$transcript_count" -ge "${BASELINE_TRANSCRIPTS:-0}" ]; then
+    log_success "✓ Transcripts intact or increased (was: ${BASELINE_TRANSCRIPTS:-?}, now: $transcript_count)"
+  else
+    log_error "ASSERTION FAILED: Transcript count decreased"
+    log_error "  Was: ${BASELINE_TRANSCRIPTS:-?}, Now: $transcript_count"
+    TEST_FAILED=1
   fi
 
   # No errors in logs (soft check)

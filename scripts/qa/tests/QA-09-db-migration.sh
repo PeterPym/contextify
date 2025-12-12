@@ -28,7 +28,7 @@
 #
 # dependencies:
 #   orchestrator_flags: []     # No isolation needed - uses fixture DBs
-#   run_after: []              # Phase 4 - can run anytime
+#   run_after: []              # Phase 2 - run before discovery to avoid wiping FTS data
 #   notes: "Self-contained. Backs up/restores production DB. Tests each fixture."
 #
 # Validates:

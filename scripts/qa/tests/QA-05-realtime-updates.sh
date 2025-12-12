@@ -63,12 +63,22 @@ check_prerequisites() {
   assert_command_exists "codex"
   assert_command_exists "sqlite3"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   # Create test project if doesn't exist
   create_test_project "$TEST_PROJECT"
 
   # Ensure app is running (launch if needed)
   ensure_dmg_app_running
   assert_app_running "Contextify"
+
+  # Contract: start.min_projects: 1, min_transcripts: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -198,6 +208,9 @@ validate_results() {
   else
     log_warn "Found $error_count error(s) during update"
   fi
+
+  # Contract: end state projects: same, transcripts: same (more entries)
+  assert_counts_unchanged "Database counts unchanged (new entries added to existing transcript)"
 }
 
 report_results() {

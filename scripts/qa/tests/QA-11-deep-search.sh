@@ -54,6 +54,16 @@ check_prerequisites() {
   assert_command_exists "sqlite3"
   assert_command_exists "osascript"
   assert_dmg_app_exists
+
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
+  # Contract: start.min_projects: 1, min_transcripts: 0 (Deep Search works without data)
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
+
   log_success "Prerequisites met"
 }
 
@@ -124,6 +134,9 @@ validate_results() {
 
   # App still running (core requirement)
   assert_app_running "Contextify"
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after deep search"
 
   log_success "Validation passed"
 }

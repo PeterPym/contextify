@@ -59,6 +59,9 @@ check_prerequisites() {
   assert_command_exists "sqlite3"
   assert_command_exists "osascript"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   if [ ! -d "$APPSTORE_APP_PATH" ]; then
     log_error "App Store build not found: $APPSTORE_APP_PATH"
     log_error "Build with: bash scripts/xc.sh --dist=appstore Debug build"

@@ -7,14 +7,14 @@
 # @test_contract
 # isolation:
 #   transcripts: backup        # Self-isolates: backs up production, uses fixtures
-#   database: preserve         # Uses existing DB (created by earlier tests)
+#   database: reset            # Deletes DB for clean orchestrator initialization
 #
 # database:
 #   location: dmg
 #   start:
-#     exists: true             # Needs existing DB
-#     min_projects: 0          # Will create project if needed
-#     min_transcripts: 0       # Will create transcript
+#     exists: false            # Database deleted in setup
+#     min_projects: 0          # Fresh DB
+#     min_transcripts: 0       # Fresh DB
 #   mutations:
 #     - "Creates new Claude transcript via CLI (or seeds fixture)"
 #     - "FSEvents detects new .jsonl file"
@@ -109,14 +109,40 @@ check_prerequisites() {
 setup_test() {
   log_subheader "Setup"
 
-  # Ensure app is active
-  activate_app
+  # Kill any existing instance for clean state
+  kill_app_if_running
 
-  # Start log capture (LOGDIR set in main)
+  # Delete database to ensure clean orchestrator initialization
+  # (Avoids schema mismatch issues from prior test runs)
+  rm -f "$DB_PATH"* 2>/dev/null || true
+
+  # In fixture mode, seed the transcript BEFORE launching app
+  # so it's discovered during initial startup (FSEvents won't catch post-launch seeding)
+  if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
+    log_info "Fixture mode: seeding Claude transcript before app launch"
+    cd "$TEST_PROJECT"
+    TRANSCRIPT=$(seed_fixture_transcript "claude" "project1.jsonl")
+    cd - > /dev/null
+    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+      log_error "Failed to seed fixture transcript"
+      TEST_FAILED=1
+      return 1
+    fi
+    log_success "Fixture transcript seeded: $TRANSCRIPT"
+  fi
+
+  # Start log capture before launching app
   start_log_capture "$LOGDIR"
 
-  # Wait for log capture to initialize
-  sleep 2
+  # Launch the app fresh
+  log_info "Launching DMG build..."
+  if ! launch_dmg_app; then
+    log_error "Failed to launch app"
+    TEST_FAILED=1
+    return 1
+  fi
+
+  log_success "Setup complete"
 }
 
 run_test_steps() {
@@ -125,15 +151,8 @@ run_test_steps() {
   cd "$TEST_PROJECT"
 
   if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
-    log_info "Fixture mode: seeding Claude transcript"
-    TRANSCRIPT=$(seed_fixture_transcript "claude")
-    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-      log_error "Failed to seed fixture transcript"
-      TEST_FAILED=1
-      cd - > /dev/null
-      return 1
-    fi
-    log_success "Fixture transcript seeded: $TRANSCRIPT"
+    # Transcript already seeded in setup_test, just wait for discovery
+    log_info "Waiting for app to discover pre-seeded fixture..."
   else
     log_info "Creating new Claude Code conversation in test project..."
 

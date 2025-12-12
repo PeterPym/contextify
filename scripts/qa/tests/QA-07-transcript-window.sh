@@ -58,19 +58,19 @@ check_prerequisites() {
 
   assert_command_exists "osascript"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   # Ensure app is running (launch if needed)
   ensure_dmg_app_running
   assert_app_running "Contextify"
 
-  # Check for transcripts
-  local transcript_count
-  transcript_count=$(db_count "SELECT COUNT(*) FROM transcripts;")
+  # Contract: start.min_projects: 1, min_transcripts: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
 
-  if [ "$transcript_count" -lt 1 ]; then
-    log_warn "No transcripts in database - window may show empty state"
-  else
-    log_info "Transcripts available: $transcript_count"
-  fi
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -153,6 +153,9 @@ validate_results() {
   else
     log_warn "Found $error_count error(s) in logs"
   fi
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after window operation"
 }
 
 cleanup_and_close() {

@@ -26,7 +26,7 @@
 #
 # dependencies:
 #   orchestrator_flags: [--isolate]
-#   run_after: []              # Phase 1 - tests existing data
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs projects from discovery
 #   notes: "Read-heavy test. Needs 2+ projects. Updates timestamps only."
 #
 # Validates:
@@ -58,6 +58,9 @@ check_prerequisites() {
   assert_command_exists "sqlite3"
   assert_command_exists "osascript"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   # Check if app is running, start if not
   if ! app_is_running; then
     log_info "App not running, launching..."
@@ -67,16 +70,19 @@ check_prerequisites() {
 
   assert_app_running "Contextify"
 
-  # Check for multiple projects
+  # Contract: start.min_projects: 2
   local project_count
   project_count=$(db_count "SELECT COUNT(*) FROM projects;")
 
   if [ "$project_count" -lt 2 ]; then
-    log_warn "Only $project_count project(s) in database"
-    log_info "Project switching test works best with 2+ projects"
-    log_info "Creating test project for switching..."
-    # The switch will still work, just might wrap around to same project
+    log_error "Contract requires min_projects: 2, found: $project_count"
+    log_error "Run QA-03 and QA-04 first to create fixture projects"
+    TEST_FAILED=1
+    exit 1
   fi
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met (projects: $project_count)"
 }
@@ -162,16 +168,8 @@ validate_results() {
     log_warn "Found $error_count error(s) in logs during switch"
   fi
 
-  # Verify projects table wasn't corrupted
-  local project_count
-  project_count=$(db_count "SELECT COUNT(*) FROM projects;")
-
-  if [ "$project_count" -ge 1 ]; then
-    log_success "✓ Projects table intact (count: $project_count)"
-  else
-    log_error "Projects table may be corrupted"
-    TEST_FAILED=1
-  fi
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after switching"
 }
 
 cleanup_and_report() {

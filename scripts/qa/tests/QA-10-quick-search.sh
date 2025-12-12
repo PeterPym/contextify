@@ -58,15 +58,25 @@ check_prerequisites() {
   assert_command_exists "osascript"
   assert_dmg_app_exists
 
-  # Verify database has searchable content
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
+  # Contract: start.min_projects: 1, min_transcripts: 1, min_fts_entries: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
+
   local entry_count
   entry_count=$(db_count "SELECT COUNT(*) FROM transcript_entries_fts;" 2>/dev/null || echo "0")
   if [ "$entry_count" -eq 0 ]; then
-    log_warn "FTS5 index is empty; search may return no results"
-    log_info "Run QA-03 or QA-04 first to populate database"
-  else
-    log_info "FTS5 index has $entry_count entries"
+    log_error "Contract requires min_fts_entries: 1, found: 0"
+    log_error "Run QA-03 or QA-04 first to populate FTS5 index"
+    TEST_FAILED=1
+    exit 1
   fi
+  log_info "FTS5 index has $entry_count entries"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -115,6 +125,9 @@ validate_results() {
 
   # App still running (core requirement)
   assert_app_running "Contextify"
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after search"
 
   log_success "Validation passed"
 }
