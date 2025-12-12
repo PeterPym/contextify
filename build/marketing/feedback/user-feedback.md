@@ -74,3 +74,22 @@ Collected feedback from users, testers, and reviewers.
 > Tags are a new idea I hadn't considered. Could you tell me more about how you'd use them? Would these be manually applied, or auto-generated from something (client name in path, etc.)?
 
 **Status:** Awaiting response on LLM and tags questions
+
+---
+
+## Tom (ifun.de comment) - 2025-12-11
+
+**Context:** Comment on German article about Contextify
+**URL:** https://www.ifun.de/fuer-codex-und-claude-code-mac-werkzeuge-zur-lokalen-verwaltung-271052/#comment-997832
+
+**Feedback:**
+> Contextify braucht leider macos 26
+
+*(Translation: "Contextify unfortunately requires macOS 26")*
+
+**Key Takeaways:**
+- Same concern as u/quinncom - macOS 26 requirement is a barrier
+- German-speaking user base exists
+- Validates #LEGACY-MACOS priority
+
+**Status:** Pending response - point to Reddit discussion about planned macOS 15 "lite mode" support
