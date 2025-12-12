@@ -1012,11 +1012,13 @@ Add email signup form to website for release/update notifications.
 
 ## Pre-macOS 26 Compatibility (1 item)
 
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** P2 (growth enabler - lets users start collecting history before upgrading)
 **Effort:** 6-10 hours
+**Spec:** `build/notes/todo-support/LEGACY-MACOS-spec.md`
+**Implementation Plan:** `build/notes/todo-support/LEGACY-MACOS-implementation-plan.md`
 
-- [ ] #LEGACY-MACOS: Add support for macOS 14/15 with graceful degradation
+- [ ] #LEGACY-MACOS: Add support for macOS 15 with graceful degradation (Lite Mode)
 
 **User Validation:** u/quinncom (r/MacApps, 2025-12-10) - "I would be fine without summarization. My main use case would be to search for previous coding sessions by keyword, tag, or directory path." See `build/docs/operations/marketing/user-feedback.md`.
 
