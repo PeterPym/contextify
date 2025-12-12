@@ -116,6 +116,10 @@ Purpose: DB/schema visibility and feature availability.
 
 Purpose: find candidate anchor entries via FTS.
 
+Options:
+
+- `--limit <n>` (default 50; max 500)
+
 Required output per hit (at minimum):
 
 - `id` (entry id)
@@ -256,7 +260,7 @@ Keep existing camelCase output; do not mix styles.
 ### Success envelope
 
 ```json
-{ "type": "<command>", "data": { ... }, "meta": { ... } }
+{ "type": "<command>", "schemaVersion": 1, "data": { ... }, "meta": { ... } }
 ```
 
 ### Error envelope
@@ -272,6 +276,19 @@ Suggested codes:
 - `dbProjectNotFound`
 - `featureUnavailable`
 - `invalidArgs`
+
+### Exit Codes
+
+- `0` success
+- `1` `entryNotFound`
+- `2` `dbNotFound` / `dbProjectNotFound`
+- `3` `featureUnavailable`
+- `64` `invalidArgs`
+
+### Default Output Mode
+
+- Default output is human-readable.
+- `--json` forces JSON output for all commands.
 
 ---
 
@@ -315,6 +332,10 @@ Optional enrichment:
 - `feedback export <id> --format md|todo|json`
 - `feedback dismiss <id>`
 - `feedback archive` / `feedback clear --all`
+
+Dismiss semantics:
+
+- `dismiss` removes the item from the inbox and archives it under `feedback/archive/dismissed/`.
 
 ### Storage
 
