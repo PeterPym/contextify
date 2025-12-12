@@ -8,6 +8,24 @@
 
 This document provides detailed logging guidelines for Contextify development. Follow Apple's Unified Logging semantics with a two-phase approach that balances development velocity with production log cleanliness.
 
+### E2E-Testable Logging
+
+Design logs to enable automated E2E test assertions. Use bracketed `[TAG]` patterns that tests can grep for:
+
+```swift
+log.info("[DEEPSEARCH-INIT] Deep Search window opened for project: \(projectName)")
+log.info("[SEARCH-DONE] Query completed: hits=\(hits.count)")
+log.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(branch)")
+```
+
+**Guidelines:**
+- Use consistent `[TAG]` prefix for key events (window open, operation complete, validation pass/fail)
+- Include relevant data in the message (counts, IDs, status)
+- E2E tests use `assert_log_contains "[TAG]"` to verify behavior
+- Tags at `.info` are always captured; `.debug` requires `--level debug` in log stream
+
+See `scripts/qa/README.md` for E2E assertion patterns and `scripts/qa/lib/assertions.sh` for available assertions.
+
 ### Pipeline telemetry tags
 
 Several tags are now considered "infrastructure logs" and **must remain at `.info`** so diagnostics

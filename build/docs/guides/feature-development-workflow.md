@@ -83,6 +83,7 @@ A structured document that defines the solution before implementation.
 - [ ] New QA test needed? Which user flow?
 - [ ] Existing QA tests need updates?
 - [ ] Test contract requirements (isolation, database state)
+- [ ] Log tags needed for assertions? (e.g., `[FEATURE-INIT]`, `[FEATURE-DONE]`)
 
 ### Manual Testing
 - [ ] What needs manual verification?
