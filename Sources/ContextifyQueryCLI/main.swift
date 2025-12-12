@@ -40,6 +40,7 @@ struct ContextifyQueryCLI {
     case transcripts
     case entry
     case context
+    case status
     case summaries
     case stats
     case version
@@ -207,9 +208,19 @@ struct ContextifyQueryCLI {
         }
 
       case .activity:
-        let results = try service.recentActivity(projectId: options.projectId, limit: options.limit)
+        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let results = try service.activity(
+          projectId: resolvedProjectId,
+          transcriptId: options.transcriptId,
+          limit: options.limit,
+          includeHidden: options.includeHidden,
+          timeRange: timeRange,
+          includeContent: !options.noContent,
+          fullContent: options.fullContent,
+          maxContentBytes: 2048
+        )
         try printResponse(type: "activity", data: results, json: options.jsonOutput) {
-          printTranscriptEntries(results)
+          printActivity(results)
         }
 
       case .projects:
@@ -278,6 +289,21 @@ struct ContextifyQueryCLI {
           case let .notFound(entryId):
             throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
           }
+        }
+
+      case .status:
+        let counts = try service.counts()
+        let payload = StatusPayload(
+          databasePath: dbURL.path,
+          appSchemaVersion: versionInfo.appSchemaVersion,
+          ftsEnabled: versionInfo.ftsEnabled,
+          summariesEnabled: versionInfo.summariesEnabled,
+          projectCount: counts.projectCount,
+          transcriptCount: counts.transcriptCount,
+          entryCount: counts.entryCount
+        )
+        try printResponse(type: "status", data: payload, json: options.jsonOutput) {
+          printStatus(payload)
         }
 
       case .summaries:
@@ -504,6 +530,7 @@ struct ContextifyQueryCLI {
         transcripts          List transcripts for a project
         entry <id>           Fetch an entry by id
         context <id>         Fetch context around an entry
+        status               Show database status
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
@@ -647,6 +674,43 @@ private func printSearchHits(_ hits: [ContextifyQueryService.SearchHit]) {
     let transcriptLabel = hit.transcriptTitle?.isEmpty == false ? hit.transcriptTitle! : hit.transcriptId
     print("[\(hit.timestamp)] \(projectLabel) / \(transcriptLabel)  \(hit.kind)  score=\(hit.score)")
     print("  \(hit.contentSnippet)")
+  }
+}
+
+private struct StatusPayload: Codable {
+  let databasePath: String
+  let appSchemaVersion: Int
+  let ftsEnabled: Bool
+  let summariesEnabled: Bool
+  let projectCount: Int
+  let transcriptCount: Int
+  let entryCount: Int
+}
+
+private func printStatus(_ status: StatusPayload) {
+  print("db_path: \(status.databasePath)")
+  print("app_schema_version: \(status.appSchemaVersion)")
+  print("fts_enabled: \(status.ftsEnabled)")
+  print("summaries_enabled: \(status.summariesEnabled)")
+  print("projects: \(status.projectCount)")
+  print("transcripts: \(status.transcriptCount)")
+  print("entries: \(status.entryCount)")
+}
+
+private func printActivity(_ items: [ContextifyQueryService.ActivityItem]) {
+  if items.isEmpty {
+    print("(no activity)")
+    return
+  }
+  for item in items {
+    let project = item.projectName?.isEmpty == false ? item.projectName! : item.entry.projectId
+    let transcript = item.transcriptTitle?.isEmpty == false ? item.transcriptTitle! : item.entry.transcriptId
+    let content = item.entry.content ?? "(content omitted)"
+    let preview = content
+      .replacingOccurrences(of: "\n", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .prefix(200)
+    print("[\(item.entry.timestamp)] \(project) / \(transcript)  \(item.entry.kind): \(preview)")
   }
 }
 

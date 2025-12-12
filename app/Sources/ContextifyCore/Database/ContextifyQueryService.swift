@@ -90,6 +90,18 @@ public struct ContextifyQueryService: Sendable {
     case notFound(entryId: String)
   }
 
+  public struct ActivityItem: Codable, Sendable {
+    public let entry: EntryPayload
+    public let projectName: String?
+    public let transcriptTitle: String?
+  }
+
+  public struct DatabaseCounts: Codable, Sendable {
+    public let projectCount: Int
+    public let transcriptCount: Int
+    public let entryCount: Int
+  }
+
   public struct ProjectStats: Codable, Sendable {
     public let projectId: String
     public let projectName: String?
@@ -760,6 +772,138 @@ public struct ContextifyQueryService: Sendable {
           transcriptEntryCount: transcriptEntryCount
         )
       )
+    }
+  }
+
+  public func activity(
+    projectId: String? = nil,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> [ActivityItem] {
+    try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let projectId: String
+        let projectName: String?
+        let transcriptId: String
+        let transcriptTitle: String?
+        let provider: String
+        let kind: String
+        let timestamp: Int
+        let createdAt: Int
+        let displayInTimeline: Int
+        let content: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case projectId = "project_id"
+          case projectName = "project_name"
+          case transcriptId = "transcript_id"
+          case transcriptTitle = "transcript_title"
+          case provider
+          case kind
+          case timestamp
+          case createdAt = "created_at"
+          case displayInTimeline = "display_in_timeline"
+          case content
+        }
+      }
+
+      var sql = """
+        SELECT
+          e.id AS id,
+          e.project_id AS project_id,
+          p.name AS project_name,
+          e.transcript_id AS transcript_id,
+          tm.title AS transcript_title,
+          e.provider AS provider,
+          e.kind AS kind,
+          e.timestamp AS timestamp,
+          e.created_at AS created_at,
+          e.display_in_timeline AS display_in_timeline,
+          e.content AS content
+        FROM transcript_entries e
+        LEFT JOIN projects p ON p.id = e.project_id
+        LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
+        WHERE 1 = 1
+      """
+      var args: [DatabaseValueConvertible] = []
+
+      if !includeHidden {
+        sql += " AND e.display_in_timeline = 1"
+      }
+      if let projectId {
+        sql += " AND e.project_id = ?"
+        args.append(projectId)
+      }
+      if let transcriptId {
+        sql += " AND e.transcript_id = ?"
+        args.append(transcriptId)
+      }
+      if let since = timeRange.sinceTimestamp {
+        sql += " AND e.timestamp >= ?"
+        args.append(since)
+      }
+      if let until = timeRange.untilTimestamp {
+        sql += " AND e.timestamp <= ?"
+        args.append(until)
+      }
+
+      sql += " ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC LIMIT ?"
+      args.append(limit)
+
+      let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+      return rows.map { row in
+        let content: String?
+        let contentTruncated: Bool?
+        let contentFullSize: Int?
+        if !includeContent {
+          content = nil
+          contentTruncated = nil
+          contentFullSize = nil
+        } else if fullContent {
+          content = row.content
+          contentTruncated = nil
+          contentFullSize = nil
+        } else {
+          let result = QueryContentTruncator.truncateUTF8PreservingScalars(row.content, maxBytes: maxContentBytes)
+          content = result.truncated
+          contentTruncated = result.didTruncate ? true : nil
+          contentFullSize = result.didTruncate ? result.fullSizeBytes : nil
+        }
+
+        return ActivityItem(
+          entry: EntryPayload(
+            id: row.id,
+            projectId: row.projectId,
+            transcriptId: row.transcriptId,
+            provider: row.provider,
+            kind: row.kind,
+            timestamp: row.timestamp,
+            createdAt: row.createdAt,
+            displayInTimeline: row.displayInTimeline,
+            content: content,
+            contentTruncated: contentTruncated,
+            contentFullSize: contentFullSize
+          ),
+          projectName: row.projectName,
+          transcriptTitle: row.transcriptTitle
+        )
+      }
+    }
+  }
+
+  public func counts() throws -> DatabaseCounts {
+    try pool.read { db in
+      let projectCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
+      let transcriptCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
+      let entryCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries") ?? 0
+      return DatabaseCounts(projectCount: projectCount, transcriptCount: transcriptCount, entryCount: entryCount)
     }
   }
 
