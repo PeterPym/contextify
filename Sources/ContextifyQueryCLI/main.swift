@@ -1,9 +1,34 @@
 import ContextifyCore
 import Foundation
 
-private struct Envelope<T: Encodable>: Encodable {
+private let responseSchemaVersion = 1
+
+private struct SuccessEnvelope<T: Encodable>: Encodable {
   let type: String
+  let schemaVersion: Int
   let data: T
+  let meta: [String: String]?
+}
+
+private struct ErrorEnvelope: Encodable {
+  let type: String = "error"
+  let code: String
+  let message: String
+}
+
+private enum ExitCode: Int32 {
+  case success = 0
+  case entryNotFound = 1
+  case dbNotFound = 2
+  case featureUnavailable = 3
+  case invalidArgs = 64
+  case unknown = 70
+}
+
+private struct CLIError: Error {
+  let code: String
+  let message: String
+  let exitCode: ExitCode
 }
 
 @main
@@ -49,20 +74,22 @@ struct ContextifyQueryCLI {
         switch arg {
         case "--db-path":
           index += 1
-          guard index < args.count else { usage("Missing path after --db-path") }
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing path after --db-path", exitCode: .invalidArgs) }
           options.dbPath = args[index]
         case "--db-dir":
           index += 1
-          guard index < args.count else { usage("Missing dir after --db-dir") }
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing dir after --db-dir", exitCode: .invalidArgs) }
           options.dbDir = args[index]
         case "--project-id":
           index += 1
-          guard index < args.count else { usage("Missing id after --project-id") }
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing id after --project-id", exitCode: .invalidArgs) }
           options.projectId = args[index]
         case "--limit":
           index += 1
-          guard index < args.count, let n = Int(args[index]) else { usage("Missing/invalid number after --limit") }
-          guard n > 0 else { usage("--limit must be > 0") }
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --limit", exitCode: .invalidArgs)
+          }
+          guard n > 0 else { throw CLIError(code: "invalidArgs", message: "--limit must be > 0", exitCode: .invalidArgs) }
           options.limit = n
         case "--json":
           options.jsonOutput = true
@@ -70,7 +97,7 @@ struct ContextifyQueryCLI {
           usage(nil)
         default:
           if arg.hasPrefix("--") {
-            usage("Unknown option: \(arg)")
+            throw CLIError(code: "invalidArgs", message: "Unknown option: \(arg)", exitCode: .invalidArgs)
           }
           remaining.append(arg)
         }
@@ -89,7 +116,9 @@ struct ContextifyQueryCLI {
 
       switch command {
       case .search:
-        guard !commandArgs.isEmpty else { usage("Missing search query") }
+        guard !commandArgs.isEmpty else {
+          throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+        }
         let query = commandArgs.joined(separator: " ")
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let results = try service.ftsSearch(query: query, projectId: options.projectId, limit: options.limit)
@@ -121,9 +150,13 @@ struct ContextifyQueryCLI {
           printVersionInfo(versionInfo)
         }
       }
+    } catch let cliError as CLIError {
+      emitError(cliError, json: CommandLine.arguments.contains("--json"))
+      exit(cliError.exitCode.rawValue)
     } catch {
-      fputs("Error: \(error.localizedDescription)\n", stderr)
-      exit(1)
+      let cliError = CLIError(code: "unknown", message: error.localizedDescription, exitCode: .unknown)
+      emitError(cliError, json: CommandLine.arguments.contains("--json"))
+      exit(cliError.exitCode.rawValue)
     }
   }
 
@@ -131,22 +164,14 @@ struct ContextifyQueryCLI {
     if let dbPath = options.dbPath {
       let url = URL(fileURLWithPath: dbPath)
       guard isRegularFile(url) else {
-        throw NSError(
-          domain: "contextify-query",
-          code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "Database file not found at \(dbPath)."]
-        )
+        throw CLIError(code: "dbNotFound", message: "Database file not found at \(dbPath).", exitCode: .dbNotFound)
       }
       return url
     }
     if let dbDir = options.dbDir {
       let url = URL(fileURLWithPath: dbDir).appendingPathComponent("contextify.db")
       guard isRegularFile(url) else {
-        throw NSError(
-          domain: "contextify-query",
-          code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "Database file not found at \(url.path)."]
-        )
+        throw CLIError(code: "dbNotFound", message: "Database file not found at \(url.path).", exitCode: .dbNotFound)
       }
       return url
     }
@@ -266,10 +291,10 @@ struct ContextifyQueryCLI {
       default:
         reason = "Database does not support this command."
       }
-      throw NSError(
-        domain: "contextify-query",
-        code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "\(reason) Open Contextify to run migrations, or pass a different --db-path."]
+      throw CLIError(
+        code: "featureUnavailable",
+        message: "\(reason) Open Contextify to run migrations, or pass a different --db-path.",
+        exitCode: .featureUnavailable
       )
     }
 
@@ -288,7 +313,7 @@ struct ContextifyQueryCLI {
     if json {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = Envelope(type: type, data: data)
+      let payload = SuccessEnvelope(type: type, schemaVersion: responseSchemaVersion, data: data, meta: nil)
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -382,5 +407,22 @@ private func printTranscriptEntries(_ entries: [TranscriptEntry]) {
 private extension String {
   func nonEmptyOr(_ fallback: String) -> String {
     isEmpty ? fallback : self
+  }
+}
+
+private func emitError(_ cliError: CLIError, json: Bool) {
+  if json {
+    do {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+      let payload = ErrorEnvelope(code: cliError.code, message: cliError.message)
+      let out = try encoder.encode(payload)
+      FileHandle.standardOutput.write(out)
+      FileHandle.standardOutput.write(Data("\n".utf8))
+    } catch {
+      fputs("Error: \(cliError.message)\n", stderr)
+    }
+  } else {
+    fputs("Error: \(cliError.message)\n", stderr)
   }
 }
