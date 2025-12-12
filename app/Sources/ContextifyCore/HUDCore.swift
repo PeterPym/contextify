@@ -25,6 +25,9 @@ public enum HUDPreferences {
   // App Store onboarding
   public static let appStoreOnboardingCompletedKey = "dev.contextify.appStoreOnboardingCompleted"
 
+  // Lite mode info modal
+  public static let liteModeInfoDismissedKey = "dev.contextify.liteModeInfoDismissed"
+
   nonisolated(unsafe) private static let sharedDefaults: UserDefaults = {
     if let suite = UserDefaults(suiteName: "dev.contextify"), probeDefaultsWriteability(suite) {
       return suite
@@ -191,6 +194,18 @@ public enum HUDPreferences {
     sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
     sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
     sharedDefaults.removeObject(forKey: legacyDatabaseLocationKey)
+  }
+
+  // MARK: - Lite Mode Info
+
+  /// Returns true if the user has dismissed the lite mode info modal.
+  public static func hasLiteModeInfoBeenDismissed() -> Bool {
+    return sharedDefaults.bool(forKey: liteModeInfoDismissedKey)
+  }
+
+  /// Mark the lite mode info modal as dismissed.
+  public static func setLiteModeInfoDismissed(_ dismissed: Bool) {
+    sharedDefaults.set(dismissed, forKey: liteModeInfoDismissedKey)
   }
 
   private static func storeDatabaseURL(_ url: URL) {
