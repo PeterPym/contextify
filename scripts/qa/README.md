@@ -311,6 +311,56 @@ Install and authenticate the required CLI tools:
 - Codex CLI: https://openai.com/codex
 - Claude Code: https://claude.ai/code
 
+## Nightly Scheduled Runs
+
+The QA suite can be scheduled to run automatically at 4am daily using macOS launchd.
+
+### Setup
+
+1. The nightly wrapper script is at `scripts/qa/run-nightly.sh`
+2. The launchd plist is at `~/Library/LaunchAgents/dev.contextify.qa-nightly.plist`
+
+To enable:
+
+```bash
+# Load the launchd agent
+launchctl load ~/Library/LaunchAgents/dev.contextify.qa-nightly.plist
+
+# Schedule wake at 3:55am (needs sudo)
+sudo pmset repeat wake MTWRFSU 03:55:00
+```
+
+To verify:
+
+```bash
+launchctl list | grep contextify
+pmset -g sched
+```
+
+To disable:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/dev.contextify.qa-nightly.plist
+sudo pmset repeat cancel
+```
+
+### Failure Notification
+
+On failure, the nightly run:
+- Creates `~/Desktop/QA-FAILED-YYYYMMDD.txt` with failure details and log excerpt
+- Shows a silent macOS notification
+
+On success:
+- Removes any existing failure marker files
+- Logs to `/tmp/qa-nightly/qa-YYYYMMDD.log`
+
+Old failure markers (>7 days) are automatically cleaned up.
+
+### Requirements
+
+- Laptop must be open (not clamshell) OR connected to external display + power
+- If the machine is closed/off at 4am, the run is skipped
+
 ## Methodology
 
 For detailed methodology and design decisions, see:
