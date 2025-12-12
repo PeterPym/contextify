@@ -343,7 +343,8 @@ struct ContextifyQueryCLI {
         let counts = try service.counts()
         let payload = StatusPayload(
           databasePath: dbURL.path,
-          appSchemaVersion: versionInfo.appSchemaVersion,
+          sqliteUserVersion: versionInfo.sqliteUserVersion,
+          expectedSchemaVersion: versionInfo.expectedSchemaVersion,
           ftsEnabled: versionInfo.ftsEnabled,
           summariesEnabled: versionInfo.summariesEnabled,
           projectCount: counts.projectCount,
@@ -571,7 +572,7 @@ struct ContextifyQueryCLI {
         --kinds <csv>        Filter by kinds (e.g. user,assistant,system)
         --no-content         Emit content as null (metadata only)
         --full-content       Disable truncation (default truncates >2KB)
-        --limit <n>          Limit results (default 50)
+        --limit <n>          Limit results (default 50; projects defaults to all)
         --json               Emit JSON output
 
       Commands:
@@ -586,6 +587,25 @@ struct ContextifyQueryCLI {
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
+
+      Feedback commands:
+        feedback "<summary>"
+        feedback list|show <id>
+        feedback export <id> --format md|todo|json
+        feedback dismiss <id>
+        feedback archive [--older-than-days <n>]
+        feedback clear --all
+
+      Feedback options:
+        --intent <text>         Why you were trying it
+        --gap <text>            What capability is missing
+        --workaround <text>     How you did it instead
+        --proposal <text>       What you think we should add
+        --format <md|todo|json> Export format
+        --older-than-days <n>   Archive items older than N days
+        --all                   Apply to all items (clear)
+        --force                 Override warnings/guardrails
+        --edit                  Capture feedback via $EDITOR
       """,
       stderr
     )
@@ -600,8 +620,8 @@ private func isRegularFile(_ url: URL) -> Bool {
 }
 
 private func printVersionInfo(_ info: ContextifyQueryService.VersionInfo) {
-  print("sqlite_user_version: \(info.sqliteUserVersion)")
-  print("app_schema_version: \(info.appSchemaVersion)")
+  print("db_schema_version: \(info.sqliteUserVersion)")
+  print("expected_schema_version: \(info.expectedSchemaVersion)")
   print("fts_enabled: \(info.ftsEnabled)")
   print("summaries_enabled: \(info.summariesEnabled)")
 }
@@ -999,19 +1019,48 @@ private func printSearchHits(_ hits: [ContextifyQueryService.SearchHit]) {
   }
 }
 
-private struct StatusPayload: Codable {
+private struct StatusPayload: Encodable {
   let databasePath: String
-  let appSchemaVersion: Int
+  let sqliteUserVersion: Int
+  let expectedSchemaVersion: Int
   let ftsEnabled: Bool
   let summariesEnabled: Bool
   let projectCount: Int
   let transcriptCount: Int
   let entryCount: Int
+
+  var appSchemaVersion: Int { expectedSchemaVersion }
+
+  enum CodingKeys: String, CodingKey {
+    case databasePath
+    case sqliteUserVersion
+    case expectedSchemaVersion
+    case appSchemaVersion
+    case ftsEnabled
+    case summariesEnabled
+    case projectCount
+    case transcriptCount
+    case entryCount
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(databasePath, forKey: .databasePath)
+    try container.encode(sqliteUserVersion, forKey: .sqliteUserVersion)
+    try container.encode(expectedSchemaVersion, forKey: .expectedSchemaVersion)
+    try container.encode(expectedSchemaVersion, forKey: .appSchemaVersion)
+    try container.encode(ftsEnabled, forKey: .ftsEnabled)
+    try container.encode(summariesEnabled, forKey: .summariesEnabled)
+    try container.encode(projectCount, forKey: .projectCount)
+    try container.encode(transcriptCount, forKey: .transcriptCount)
+    try container.encode(entryCount, forKey: .entryCount)
+  }
 }
 
 private func printStatus(_ status: StatusPayload) {
   print("db_path: \(status.databasePath)")
-  print("app_schema_version: \(status.appSchemaVersion)")
+  print("db_schema_version: \(status.sqliteUserVersion)")
+  print("expected_schema_version: \(status.expectedSchemaVersion)")
   print("fts_enabled: \(status.ftsEnabled)")
   print("summaries_enabled: \(status.summariesEnabled)")
   print("projects: \(status.projectCount)")

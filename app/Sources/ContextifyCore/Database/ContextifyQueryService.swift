@@ -113,9 +113,54 @@ public struct ContextifyQueryService: Sendable {
 
   public struct VersionInfo: Codable, Sendable {
     public let sqliteUserVersion: Int
-    public let appSchemaVersion: Int
+    public let expectedSchemaVersion: Int
     public let ftsEnabled: Bool
     public let summariesEnabled: Bool
+
+    public var appSchemaVersion: Int { expectedSchemaVersion }
+
+    public init(
+      sqliteUserVersion: Int,
+      expectedSchemaVersion: Int,
+      ftsEnabled: Bool,
+      summariesEnabled: Bool
+    ) {
+      self.sqliteUserVersion = sqliteUserVersion
+      self.expectedSchemaVersion = expectedSchemaVersion
+      self.ftsEnabled = ftsEnabled
+      self.summariesEnabled = summariesEnabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+      case sqliteUserVersion
+      case expectedSchemaVersion
+      case appSchemaVersion
+      case ftsEnabled
+      case summariesEnabled
+    }
+
+    public init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      sqliteUserVersion = try container.decode(Int.self, forKey: .sqliteUserVersion)
+      if let expected = try container.decodeIfPresent(Int.self, forKey: .expectedSchemaVersion) {
+        expectedSchemaVersion = expected
+      } else if let legacy = try container.decodeIfPresent(Int.self, forKey: .appSchemaVersion) {
+        expectedSchemaVersion = legacy
+      } else {
+        expectedSchemaVersion = 0
+      }
+      ftsEnabled = try container.decode(Bool.self, forKey: .ftsEnabled)
+      summariesEnabled = try container.decode(Bool.self, forKey: .summariesEnabled)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(sqliteUserVersion, forKey: .sqliteUserVersion)
+      try container.encode(expectedSchemaVersion, forKey: .expectedSchemaVersion)
+      try container.encode(expectedSchemaVersion, forKey: .appSchemaVersion)
+      try container.encode(ftsEnabled, forKey: .ftsEnabled)
+      try container.encode(summariesEnabled, forKey: .summariesEnabled)
+    }
   }
 
   public init(databaseURL: URL) throws {
@@ -1060,7 +1105,7 @@ public struct ContextifyQueryService: Sendable {
       let summariesEnabled = (try? db.tableExists("transcript_metadata")) ?? false
       return VersionInfo(
         sqliteUserVersion: sqliteUserVersion,
-        appSchemaVersion: DatabaseSchema.version,
+        expectedSchemaVersion: DatabaseSchema.version,
         ftsEnabled: ftsEnabled,
         summariesEnabled: summariesEnabled
       )
