@@ -14,8 +14,14 @@
 
 set -euo pipefail
 
-# Database location
-DB_PATH="$HOME/Library/Application Support/Contextify/transcripts.db"
+source "$(dirname "$0")/lib/db_location.sh"
+
+# Database discovery (override with DB_PATH env var if needed)
+if [ -z "${DB_PATH:-}" ]; then
+  if DB_DIR=$(get_contextify_db_dir); then
+    DB_PATH="$DB_DIR/contextify.db"
+  fi
+fi
 
 # Argument handling
 if [ $# -eq 0 ]; then
@@ -29,8 +35,13 @@ INPUT="$1"
 if [[ "$INPUT" =~ ^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$ ]]; then
   # It's a transcript ID - look up the file path
   if [ ! -f "$DB_PATH" ]; then
-    echo "{\"error\": \"Database not found\", \"path\": \"$DB_PATH\"}"
-    exit 1
+    LEGACY_PATH="$(dirname "$DB_PATH")/transcripts.db"
+    if [ -f "$LEGACY_PATH" ]; then
+      DB_PATH="$LEGACY_PATH"
+    else
+      echo "{\"error\": \"Database not found\", \"path\": \"$DB_PATH\"}"
+      exit 1
+    fi
   fi
 
   FILE_PATH=$(sqlite3 "$DB_PATH" "SELECT file_path FROM transcripts WHERE id = '$INPUT';" 2>/dev/null || echo "")

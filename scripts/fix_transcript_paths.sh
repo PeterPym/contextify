@@ -11,11 +11,27 @@
 
 set -euo pipefail
 
-DB_PATH="$HOME/Library/Application Support/Contextify/transcripts.db"
+source "$(dirname "$0")/lib/db_location.sh"
+
+# Database discovery (override with DB_PATH env var if needed)
+if [ -z "${DB_PATH:-}" ]; then
+  if DB_DIR=$(get_contextify_db_dir); then
+    DB_PATH="$DB_DIR/contextify.db"
+  else
+    echo "❌ Contextify database not found. Open Contextify once or set DB_PATH."
+    exit 1
+  fi
+fi
 
 if [ ! -f "$DB_PATH" ]; then
+  LEGACY_PATH="$(dirname "$DB_PATH")/transcripts.db"
+  if [ -f "$LEGACY_PATH" ]; then
+    echo "⚠️ Using legacy database at: $LEGACY_PATH"
+    DB_PATH="$LEGACY_PATH"
+  else
     echo "❌ Database not found at: $DB_PATH"
     exit 1
+  fi
 fi
 
 echo "📊 Checking for path normalization issues..."
@@ -58,7 +74,8 @@ fi
 BACKUP_DIR="$HOME/code/projects/contextify/build/db-backups"
 mkdir -p "$BACKUP_DIR"
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-BACKUP_PATH="$BACKUP_DIR/transcripts.db-pre-path-fix-$TIMESTAMP"
+DB_BASENAME=$(basename "$DB_PATH")
+BACKUP_PATH="$BACKUP_DIR/${DB_BASENAME}-pre-path-fix-$TIMESTAMP"
 
 echo "📦 Creating backup: $BACKUP_PATH"
 cp "$DB_PATH" "$BACKUP_PATH"

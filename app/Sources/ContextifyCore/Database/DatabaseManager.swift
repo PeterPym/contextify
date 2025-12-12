@@ -223,6 +223,9 @@ public final class DatabaseManager: @unchecked Sendable {
       }
 
       try fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+      if HUDPreferences.getCustomDatabaseLocation() == nil {
+        HUDPreferences.setLegacyDatabaseLocationIfMissing(appSupportDir)
+      }
       log.info("[DB-PATH] Using Application Support (DMG build)")
       return appSupportDB
     }
@@ -231,6 +234,9 @@ public final class DatabaseManager: @unchecked Sendable {
     // But if they do (edge case), fall back to Application Support within container
     log.warning("[DB-PATH] Sandboxed build reached defaultDatabasePath - using container Application Support")
     try fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
+    if HUDPreferences.getCustomDatabaseLocation() == nil {
+      HUDPreferences.setLegacyDatabaseLocationIfMissing(appSupportDir)
+    }
     return appSupportDB
   }
 

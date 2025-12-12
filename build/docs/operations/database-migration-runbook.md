@@ -238,7 +238,8 @@ if [ "$RESULT" != "ok" ]; then
 fi
 
 # 8. Update preference (macOS UserDefaults)
-defaults write dev.contextify "dev.contextify.database_location" -string "$DEST_DIR"
+# Canonical key used by the app; legacy key is mirrored automatically on recent builds.
+defaults write dev.contextify "dev.contextify.customDatabaseLocation" -string "$DEST_DIR"
 
 # 9. Clean up old WAL/SHM
 rm -f "$SOURCE-wal" "$SOURCE-shm"
@@ -271,7 +272,8 @@ echo "   New location: $DEST"
 osascript -e 'quit app "Contextify"'
 
 # 2. Clear custom database location preference
-defaults delete dev.contextify "dev.contextify.database_location"
+defaults delete dev.contextify "dev.contextify.customDatabaseLocation"
+defaults delete dev.contextify "dev.contextify.database_location" 2>/dev/null || true
 
 # 3. Verify old database still exists
 ls -lh ~/Library/Application\ Support/Contextify/contextify.db
@@ -303,7 +305,8 @@ cp ~/Library/CloudStorage/Dropbox/Apps/Contextify/contextify.db \
    ~/Library/Application\ Support/Contextify/contextify.db
 
 # 3. Clear custom location preference
-defaults delete dev.contextify "dev.contextify.database_location"
+defaults delete dev.contextify "dev.contextify.customDatabaseLocation"
+defaults delete dev.contextify "dev.contextify.database_location" 2>/dev/null || true
 
 # 4. Validate restored database
 sqlite3 ~/Library/Application\ Support/Contextify/contextify.db "PRAGMA quick_check"
@@ -362,10 +365,14 @@ defaults delete dev.contextify "dev.contextify.database_location"
 
 ```bash
 # Machine 1: Use Dropbox folder "Mac-Studio"
+defaults write dev.contextify "dev.contextify.customDatabaseLocation" \
+  -string "$HOME/Library/CloudStorage/Dropbox/Apps/Contextify-MacStudio"
 defaults write dev.contextify "dev.contextify.database_location" \
   -string "$HOME/Library/CloudStorage/Dropbox/Apps/Contextify-MacStudio"
 
 # Machine 2: Use Dropbox folder "MacBook-Pro"
+defaults write dev.contextify "dev.contextify.customDatabaseLocation" \
+  -string "$HOME/Library/CloudStorage/Dropbox/Apps/Contextify-MacBookPro"
 defaults write dev.contextify "dev.contextify.database_location" \
   -string "$HOME/Library/CloudStorage/Dropbox/Apps/Contextify-MacBookPro"
 ```
@@ -412,8 +419,13 @@ Migration ALWAYS keeps source as backup. No action needed.
 BACKUP_DIR="$HOME/Documents/Contextify-Backups"
 mkdir -p "$BACKUP_DIR"
 
-DB_PATH=$(defaults read dev.contextify "dev.contextify.database_location" 2>/dev/null)/contextify.db
-if [ -z "$DB_PATH" ]; then
+CUSTOM_DIR=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null || true)
+LEGACY_DIR=$(defaults read dev.contextify dev.contextify.database_location 2>/dev/null || true)
+if [ -n "$CUSTOM_DIR" ]; then
+  DB_PATH="$CUSTOM_DIR/contextify.db"
+elif [ -n "$LEGACY_DIR" ]; then
+  DB_PATH="$LEGACY_DIR/contextify.db"
+else
   DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
 fi
 
@@ -488,8 +500,13 @@ if [ "$RESULT" != "ok" ]; then
 fi
 
 # 4. Get current database location
-DB_PATH=$(defaults read dev.contextify "dev.contextify.database_location" 2>/dev/null)/contextify.db
-if [ -z "$DB_PATH" ]; then
+CUSTOM_DIR=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null || true)
+LEGACY_DIR=$(defaults read dev.contextify dev.contextify.database_location 2>/dev/null || true)
+if [ -n "$CUSTOM_DIR" ]; then
+  DB_PATH="$CUSTOM_DIR/contextify.db"
+elif [ -n "$LEGACY_DIR" ]; then
+  DB_PATH="$LEGACY_DIR/contextify.db"
+else
   DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
 fi
 
@@ -529,9 +546,11 @@ open -a Contextify
 find ~/Library -name "contextify.db" 2>/dev/null
 
 # 2. Check custom location preference
+defaults read dev.contextify "dev.contextify.customDatabaseLocation"
 defaults read dev.contextify "dev.contextify.database_location"
 
 # 3. If preference is stale, clear it
+defaults delete dev.contextify "dev.contextify.customDatabaseLocation"
 defaults delete dev.contextify "dev.contextify.database_location"
 
 # 4. Verify default location exists

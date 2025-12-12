@@ -332,8 +332,13 @@ log stream --predicate 'subsystem == "com.apple.Foundation"' --level debug \
 
 ```bash
 # Get database path
-DB_PATH=$(defaults read dev.contextify "dev.contextify.database_location" 2>/dev/null)/contextify.db
-if [ -z "$DB_PATH" ]; then
+CUSTOM_DIR=$(defaults read dev.contextify dev.contextify.customDatabaseLocation 2>/dev/null || true)
+LEGACY_DIR=$(defaults read dev.contextify dev.contextify.database_location 2>/dev/null || true)
+if [ -n "$CUSTOM_DIR" ]; then
+  DB_PATH="$CUSTOM_DIR/contextify.db"
+elif [ -n "$LEGACY_DIR" ]; then
+  DB_PATH="$LEGACY_DIR/contextify.db"
+else
   DB_PATH="$HOME/Library/Application Support/Contextify/contextify.db"
 fi
 
