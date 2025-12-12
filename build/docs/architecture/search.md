@@ -5,6 +5,7 @@ Technical reference for Contextify's search system.
 **Status:** Phase 1 (FTS5) shipped
 **Last Updated:** 2025-12-10
 **Migration:** v28
+**See Also:** `build/docs/architecture/search-cli-entry-anchored-retrieval.md`
 
 ---
 
