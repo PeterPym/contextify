@@ -30,7 +30,8 @@ fi
 echo "[pre-commit] ✅ Tests passed. Running headless build (Xcode-beta if available)…"
 
 # Prefer Xcode-beta automatically (handled by the script). Capture exit status.
-if ! bash scripts/xc.sh build; then
+# CTX_NO_RUN=1 skips launching the app after build (avoids Sparkle update modal)
+if ! CTX_NO_RUN=1 bash scripts/xc.sh build; then
   echo "[pre-commit] Build failed. Commit aborted. See logs under build/logs/ and .xcresult in build/ResultBundles/." >&2
   exit 1
 fi
