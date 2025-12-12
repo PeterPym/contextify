@@ -2,19 +2,46 @@
 # QA-04: New Claude Code Transcript Discovery
 #
 # Purpose: Validates end-to-end pipeline from file creation to timeline display
-#          for Claude Code transcripts.
+#          for Claude Code transcripts. Tests the full ingestion path.
+#
+# @test_contract
+# isolation:
+#   transcripts: backup        # Self-isolates: backs up production, uses fixtures
+#   database: preserve         # Uses existing DB (created by earlier tests)
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true             # Needs existing DB
+#     min_projects: 0          # Will create project if needed
+#     min_transcripts: 0       # Will create transcript
+#   mutations:
+#     - "Creates new Claude transcript via CLI (or seeds fixture)"
+#     - "FSEvents detects new .jsonl file"
+#     - "Hoover ingests transcript and entries"
+#     - "Project created/updated for test project path"
+#     - "Watcher created for new transcript"
+#   end:
+#     exists: true
+#     projects: +1 or same     # May add test project
+#     transcripts: +1          # Adds new Claude transcript
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03]         # Phase 3 - runs after Codex discovery
+#   notes: "Self-isolating: backs up transcripts if run standalone. CLI mode needs claude."
 #
 # Pipeline stages verified:
-# 1. File System Events (FSEvents detects new .jsonl file)
-# 2. Transcript Discovery (File identified and project extracted)
-# 3. Database Ingestion (Transcript + entries written to SQLite)
-# 4. Watcher Creation (TranscriptWatcher started for real-time updates)
-# 5. Timeline Update (ConversationMonitor displays entries)
+# 1. FSEvents detects new .jsonl file
+# 2. Transcript discovery extracts project from path
+# 3. Database ingestion (transcript + entries)
+# 4. Watcher creation for real-time updates
+# 5. Timeline update
 #
 # Prerequisites:
-# - App running with FSEvents monitoring active
-# - Test project exists: /tmp/contextify-qa-test (git repo initialized)
-# - Claude Code installed and authenticated
+# - App running with FSEvents monitoring
+# - Test project: /tmp/contextify-qa-test
+# - Claude Code CLI (if not in fixture mode)
 
 set -euo pipefail
 

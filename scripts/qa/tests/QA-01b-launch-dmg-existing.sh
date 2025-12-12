@@ -1,9 +1,35 @@
 #!/bin/bash
 # QA-01b: DMG Build - Existing Database
 #
-# Purpose: Validates normal startup with existing database
+# Purpose: Validates normal startup when database already exists.
+#          Tests the typical user experience after first run.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for consistent transcript state
+#   database: preserve         # Uses existing database, doesn't reset
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true             # Requires existing database
+#     min_projects: 1          # At least one project must exist
+#     min_transcripts: 0       # Transcripts optional
+#   mutations:
+#     - "Opens existing database (no schema changes)"
+#     - "May discover new projects if transcripts changed"
+#   end:
+#     exists: true
+#     projects: same or +N     # May add newly discovered projects
+#     transcripts: same or +N  # May add newly discovered transcripts
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Phase 1 - runs first to test existing data
+#   notes: "Should run before destructive tests. Creates minimal DB if none exists."
 #
 # Validates:
+# - [DB-INIT] OPENING EXISTING DATABASE logged
 # - AppStateOrchestrator startup
 # - Discovery notification posted
 # - FSEvents monitoring active
@@ -11,7 +37,7 @@
 #
 # Prerequisites:
 # - DMG build available
-# - Existing database with at least one project
+# - Existing database (will create minimal one if missing)
 
 set -euo pipefail
 

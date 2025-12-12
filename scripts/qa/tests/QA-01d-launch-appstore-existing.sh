@@ -1,16 +1,42 @@
 #!/bin/bash
 # QA-01d: App Store Build - Existing Bookmarks
 #
-# Purpose: Validates App Store startup with existing security-scoped bookmarks
+# Purpose: Validates App Store startup when bookmarks already exist.
+#          Tests that onboarding is skipped on subsequent launches.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for consistent state
+#   database: sandbox          # Uses App Store sandbox (preserves bookmarks)
+#
+# database:
+#   location: appstore
+#   start:
+#     exists: either           # May or may not have DB (bookmarks more important)
+#     min_projects: 0
+#     min_transcripts: 0
+#   mutations:
+#     - "Opens using existing security-scoped bookmarks"
+#     - "Skips onboarding wizard"
+#     - "May create DB if missing, may discover projects"
+#   end:
+#     exists: true
+#     projects: same or +N
+#     transcripts: same or +N
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-01c]        # Needs bookmarks from 01c
+#   notes: "Depends on 01c for bookmarks. Phase 4 - after 01c creates bookmarks."
 #
 # Validates:
-# - No permission prompt shown
-# - Existing bookmarks resolved
-# - Startup completes successfully
+# - No permission prompt shown (bookmarks used)
+# - Existing bookmarks resolved successfully
+# - Startup completes without onboarding
 #
 # Prerequisites:
 # - App Store build available
-# - Existing bookmarks from previous grant (run QA-01c first)
+# - Existing bookmarks (run QA-01c first)
 
 set -euo pipefail
 

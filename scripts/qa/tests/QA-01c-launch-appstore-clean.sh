@@ -1,19 +1,44 @@
 #!/bin/bash
 # QA-01c: App Store Build - First Run (Grant Permissions)
 #
-# Purpose: Validates first-run experience with App Store build,
-#          granting transcript folder permissions via UI automation.
+# Purpose: Validates first-run onboarding experience with App Store build.
+#          Tests permission grants via UI automation.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for fixture transcripts
+#   database: sandbox          # Uses App Store sandbox (inherently isolated)
+#
+# database:
+#   location: appstore         # ~/Library/Containers/sh.contextify.Contextify/...
+#   start:
+#     exists: false            # Sandbox is reset before test
+#     min_projects: 0
+#     min_transcripts: 0
+#   mutations:
+#     - "User completes onboarding wizard"
+#     - "Security-scoped bookmarks saved for transcript folders"
+#     - "Database created after onboarding completes"
+#     - "Initial discovery runs"
+#   end:
+#     exists: true
+#     projects: 2-4            # From fixture transcripts
+#     transcripts: 2-4         # From fixture transcripts
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Phase 2 - destructive (resets sandbox)
+#   notes: "Resets App Store sandbox. Run after 01d which needs existing bookmarks."
 #
 # Validates:
-# - Permission prompt appears
-# - Permission can be granted via AppleScript
+# - Onboarding wizard appears
+# - Permission grants work via AppleScript
 # - Security-scoped bookmark saved
-# - Startup completes successfully
+# - Startup completes after onboarding
 #
 # Prerequisites:
 # - App Store build available
-# - Terminal has Accessibility permission
-# - No existing database/bookmarks (will be removed)
+# - Terminal has Accessibility permission for UI automation
 
 set -euo pipefail
 

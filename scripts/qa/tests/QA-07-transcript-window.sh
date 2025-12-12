@@ -1,16 +1,44 @@
 #!/bin/bash
 # QA-07: Transcript Window
 #
-# Purpose: Validates transcript window opening and content loading
+# Purpose: Validates transcript window opens and loads content.
+#          Tests Cmd+Ctrl+I keyboard shortcut.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-only UI test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Need transcript to display
+#   mutations:
+#     - "Opens transcript window (UI only)"
+#     - "Reads transcript data for display"
+#     - "No database changes"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs transcripts to display
+#   notes: "Read-only UI test. Tests window creation, not data modification."
 #
 # Validates:
-# - Window opens via keyboard shortcut
-# - Transcript content loads
+# - Window opens via Cmd+Ctrl+I
+# - Window count increases
+# - Transcript content loads (log activity)
 # - Window can be closed
 #
 # Prerequisites:
-# - App running with active project
+# - App running
 # - At least one transcript in database
+# - Terminal has Accessibility permission
 
 set -euo pipefail
 

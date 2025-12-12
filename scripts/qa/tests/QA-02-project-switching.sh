@@ -1,14 +1,38 @@
 #!/bin/bash
 # QA-02: Project Switching
 #
-# Purpose: Validates project switching via keyboard shortcuts
+# Purpose: Validates project switching via keyboard shortcuts (Cmd+Shift+] and [).
+#          Tests that switching between projects works correctly.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for consistent project set
+#   database: preserve         # Uses existing database, doesn't reset
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 2          # Need at least 2 projects to switch between
+#     min_transcripts: 0
+#   mutations:
+#     - "Updates last_viewed_ts on switched-to project"
+#     - "May trigger timeline refresh"
+#     - "No structural changes to projects/transcripts tables"
+#   end:
+#     exists: true
+#     projects: same           # No projects added/removed
+#     transcripts: same        # No transcripts added/removed
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Phase 1 - tests existing data
+#   notes: "Read-heavy test. Needs 2+ projects. Updates timestamps only."
 #
 # Validates:
-# - UI freezes during switch
 # - Orchestrator receives switch request
-# - Switch completes successfully
-# - Timeline refreshes
-# - Watchers created
+# - [ORCH-SELECT] logged
+# - Timeline refreshes after switch
 # - No errors during switch
 #
 # Prerequisites:

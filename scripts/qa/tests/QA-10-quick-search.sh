@@ -1,12 +1,46 @@
 #!/bin/bash
 # QA-10: Quick Search
 #
-# Validates Quick Search activation via Cmd+F, results display, and exit.
-# Requires fixture transcripts with QA_FIXTURE_SEARCH_TERM_* content.
+# Purpose: Validates Quick Search activation via Cmd+F and search execution.
+#          Tests that FTS5 search returns results from indexed content.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for fixture transcripts
+#   database: preserve         # Uses existing DB with FTS5 index
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1
+#     min_fts_entries: 1       # Need FTS5 index populated
+#   mutations:
+#     - "Focuses search field (Cmd+F)"
+#     - "Types search term"
+#     - "Executes search (Enter)"
+#     - "Read-only: queries FTS5 index"
+#     - "No database modifications"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 5 - needs FTS5 data from discovery tests
+#   notes: "Read-only search test. FTS5 index must be populated by discovery tests."
+#
+# Validates:
+# - Cmd+F focuses search field
+# - Search executes on Enter
+# - App remains responsive
+# - No errors during search
 #
 # Prerequisites:
 # - DMG app build available
-# - Database has searchable content (run QA-03 or QA-04 first)
+# - Database has FTS5 searchable content
 # - Terminal has Accessibility permission
 
 set -euo pipefail

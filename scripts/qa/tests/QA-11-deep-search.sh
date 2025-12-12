@@ -1,7 +1,40 @@
 #!/bin/bash
 # QA-11: Deep Search Window
 #
-# Validates Deep Search window opens via Cmd+Enter from search field.
+# Purpose: Validates Deep Search window opens via Cmd+Enter from search field.
+#          Tests the AI-powered search window launch.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-only UI test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 0       # Deep Search window works without data
+#   mutations:
+#     - "Focuses search field (Cmd+F)"
+#     - "Types search term"
+#     - "Opens Deep Search window (Cmd+Enter)"
+#     - "Read-only: no database modifications"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 5 - runs after search tests
+#   notes: "Read-only UI test. Tests window creation for Deep Search."
+#
+# Validates:
+# - Cmd+F focuses search field
+# - Cmd+Enter opens Deep Search window
+# - Window count increases
+# - Window closes with Cmd+W
 #
 # Prerequisites:
 # - DMG app build available

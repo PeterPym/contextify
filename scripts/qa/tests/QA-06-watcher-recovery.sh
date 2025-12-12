@@ -1,17 +1,43 @@
 #!/bin/bash
 # QA-06: Watcher Health and Recovery
 #
-# Purpose: Validates watcher health monitoring and recovery mechanisms
+# Purpose: Validates watcher health monitoring and recovery mechanisms.
+#          Tests that the app self-heals when watchers fail.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-heavy test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Needs transcripts with watchers
+#   mutations:
+#     - "Monitors health check cycle (read-only)"
+#     - "May update transcript status if recovery needed"
+#     - "No structural changes expected"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs active transcripts
+#   notes: "Read-heavy test. Monitors watcher health, doesn't force failures."
 #
 # Validates:
 # - Health check runs periodically
-# - Missing watchers are detected
-# - Recovery mechanism works
+# - [HEALTH] or similar logging detected
 # - No infinite recovery loops
+# - No fatal errors
 #
 # Prerequisites:
 # - App running with active project
-# - Transcripts in database
+# - Active transcripts in database
 
 set -euo pipefail
 

@@ -2,19 +2,46 @@
 # QA-03: New Codex Transcript Discovery
 #
 # Purpose: Validates end-to-end pipeline from file creation to timeline display
-#          for Codex CLI transcripts.
+#          for Codex CLI transcripts. Tests the full ingestion path.
+#
+# @test_contract
+# isolation:
+#   transcripts: backup        # Self-isolates: backs up production, uses fixtures
+#   database: preserve         # Uses existing DB (created by earlier tests)
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true             # Needs existing DB
+#     min_projects: 0          # Will create project if needed
+#     min_transcripts: 0       # Will create transcript
+#   mutations:
+#     - "Creates new Codex transcript via CLI (or seeds fixture)"
+#     - "FSEvents detects new .jsonl file"
+#     - "Hoover ingests transcript and entries"
+#     - "Project created/updated for test project path"
+#     - "Watcher created for new transcript"
+#   end:
+#     exists: true
+#     projects: +1 or same     # May add test project
+#     transcripts: +1          # Adds new Codex transcript
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-01a]        # Phase 3 - needs DB to exist
+#   notes: "Self-isolating: backs up transcripts if run standalone. CLI mode needs codex."
 #
 # Pipeline stages verified:
-# 1. File System Events (FSEvents detects new .jsonl file)
-# 2. Transcript Discovery (File identified and project extracted from CWD field)
-# 3. Database Ingestion (Transcript + entries written to SQLite)
-# 4. Watcher Creation (TranscriptWatcher started for real-time updates)
-# 5. Timeline Update (ConversationMonitor displays entries)
+# 1. FSEvents detects new .jsonl file
+# 2. Transcript discovery extracts project from CWD field
+# 3. Database ingestion (transcript + entries)
+# 4. Watcher creation for real-time updates
+# 5. Timeline update
 #
 # Prerequisites:
-# - App running with FSEvents monitoring active
-# - Test project exists: /tmp/contextify-qa-test (git repo initialized)
-# - Codex CLI installed and authenticated
+# - App running with FSEvents monitoring
+# - Test project: /tmp/contextify-qa-test
+# - Codex CLI (if not in fixture mode)
 
 set -euo pipefail
 

@@ -1,16 +1,43 @@
 #!/bin/bash
-# QA-01a: DMG Build - First Run (No Database)
+# QA-01a: DMG Build - First Run (Clean Install)
 #
-# Purpose: Validates first-run experience with DMG build
+# Purpose: Validates first-run experience with DMG build when no database exists.
+#          Tests fresh schema creation and initial discovery.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate flag for clean transcript state
+#   database: reset            # Deletes existing database before test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: false            # Database is deleted in setup
+#     min_projects: 0
+#     min_transcripts: 0
+#   mutations:
+#     - "Creates fresh database with current schema"
+#     - "Runs initial discovery, adds projects from transcript dirs"
+#     - "Ingests transcripts found during discovery"
+#   end:
+#     exists: true
+#     projects: 2-4            # Depends on fixture transcripts present
+#     transcripts: 2-4         # Depends on fixture transcripts present
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Can run first (Phase 2 - destructive)
+#   notes: "Destructive test - deletes DB. Run after tests needing existing data."
 #
 # Validates:
-# - Database schema creation/migration
+# - Database schema creation from scratch
+# - [DB-INIT] CREATING FRESH DATABASE logged
 # - Startup completion
-# - App running state
+# - Initial discovery runs
 #
 # Prerequisites:
 # - DMG build available
-# - No existing database (will be removed)
+# - Transcript isolation active (via --isolate or fixture mode)
 
 set -euo pipefail
 

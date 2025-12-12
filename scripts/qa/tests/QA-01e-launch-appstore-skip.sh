@@ -1,22 +1,48 @@
 #!/bin/bash
 # QA-01e: App Store Build - Incomplete Onboarding
 #
-# Purpose: Validates App Store gracefully handles incomplete onboarding
+# Purpose: Validates App Store gracefully handles incomplete onboarding.
+#          Tests that DB init is correctly deferred until onboarding completes.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: sandbox          # Uses App Store sandbox (reset before test)
+#
+# database:
+#   location: appstore
+#   start:
+#     exists: false            # Sandbox is reset before test
+#     min_projects: 0
+#     min_transcripts: 0
+#   mutations:
+#     - "App launches, shows onboarding wizard"
+#     - "User does NOT complete onboarding"
+#     - "Database is NOT created (correctly deferred)"
+#   end:
+#     exists: false            # DB should NOT exist without onboarding
+#     projects: 0
+#     transcripts: 0
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-01c, QA-01d]  # Phase 4 - after other App Store tests
+#   notes: "Resets sandbox. Tests correct deferral behavior."
+#
+# Note: The onboarding wizard requires at least one permission grant
+# before Continue becomes active. This test verifies the app stays in
+# a safe "waiting for onboarding" state.
 #
 # Validates:
 # - App doesn't crash when onboarding isn't completed
-# - DB init is correctly deferred (not created without permissions)
-# - App stays in safe state until onboarding is complete
-# - No fatal errors occur
-#
-# Note: The onboarding wizard requires at least one permission grant
-# before the Continue button becomes active. This test verifies the app
-# handles the "stuck in onboarding" state gracefully.
+# - [STARTUP-GATE] logged (startup correctly deferred)
+# - [ONBOARD-WIZARD] logged (wizard displayed)
+# - DB NOT created (correct behavior)
+# - No fatal errors
 #
 # Prerequisites:
 # - App Store build available
 # - Terminal has Accessibility permission
-# - No existing database/bookmarks (will be removed)
 
 set -euo pipefail
 

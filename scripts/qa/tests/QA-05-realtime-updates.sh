@@ -1,7 +1,35 @@
 #!/bin/bash
 # QA-05: Real-time Transcript Updates
 #
-# Purpose: Validates real-time updates when transcript files change
+# Purpose: Validates real-time updates when transcript files change.
+#          Tests the watcher -> incremental hoover -> timeline pipeline.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for fixture transcripts
+#   database: preserve         # Uses existing DB with transcripts
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Needs existing transcript to update
+#   mutations:
+#     - "Appends new entries to existing transcript file"
+#     - "Watcher detects file change"
+#     - "Incremental hoover processes new content"
+#     - "Adds new entries to transcript_entries table"
+#     - "LLM queue receives entries for summarization"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same        # Same transcript, more entries
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs transcripts from discovery tests
+#   notes: "Uses Codex CLI to generate new content. Tests incremental ingestion."
 #
 # Validates:
 # - Watcher detects file changes
@@ -12,7 +40,7 @@
 # Prerequisites:
 # - App running with active project
 # - Existing transcript with watcher
-# - Codex CLI installed (to generate new content)
+# - Codex CLI (to generate new content)
 
 set -euo pipefail
 

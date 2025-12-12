@@ -1,15 +1,43 @@
 #!/bin/bash
 # QA-08: Projects Window
 #
-# Purpose: Validates projects window opening and project list loading
+# Purpose: Validates projects window opens and loads project list.
+#          Tests Cmd+Shift+P keyboard shortcut.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-only UI test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1          # Need projects to display
+#     min_transcripts: 0
+#   mutations:
+#     - "Opens projects window (UI only)"
+#     - "Reads project data for display"
+#     - "No database changes"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Phase 4 - can run anytime after DB exists
+#   notes: "Read-only UI test. Tests window creation, not data modification."
 #
 # Validates:
-# - Window opens via keyboard shortcut
+# - Window opens via Cmd+Shift+P
+# - Window count increases
 # - Project list loads
 # - Window can be closed
 #
 # Prerequisites:
 # - App running
+# - Terminal has Accessibility permission
 
 set -euo pipefail
 
