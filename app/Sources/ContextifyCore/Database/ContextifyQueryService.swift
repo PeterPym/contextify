@@ -25,6 +25,12 @@ public struct ContextifyQueryService: Sendable {
     var config = Configuration()
     config.readonly = true
     config.busyMode = .timeout(5.0)
+    config.prepareDatabase { db in
+      // Defense-in-depth: ensure this connection never writes, even if misused.
+      try? db.execute(sql: "PRAGMA query_only = ON")
+      // Defense-in-depth: avoid loading/using schema from untrusted sources.
+      try? db.execute(sql: "PRAGMA trusted_schema = OFF")
+    }
     self.pool = try DatabasePool(path: databaseURL.path, configuration: config)
   }
 
