@@ -48,8 +48,11 @@ struct TimelineEntryRow: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            // Hide summary and detail in lite mode (no LLM available)
-            if !isLiteMode {
+            if isLiteMode {
+                // Lite mode: show deterministic fallback description
+                liteModeContent
+            } else {
+                // Full mode: show LLM-generated summary
                 formatWithBackticks(entry.summary)
                     .font(.callout)
                     .foregroundStyle(.primary)
@@ -89,8 +92,8 @@ struct TimelineEntryRow: View, Equatable {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            // Disable expansion in lite mode (no summary/detail to show)
-            guard !isLiteMode else { return }
+            // In lite mode, only allow expansion if there's raw content to show
+            if isLiteMode && entry.sourceContent == nil { return }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isExpanded.toggle()
             }
@@ -391,6 +394,74 @@ struct TimelineEntryRow: View, Equatable {
             The original message is preserved in the detail view.
             """
         }
+    }
+
+    // MARK: - Lite Mode Content
+
+    /// Fallback content for lite mode (no LLM summaries available)
+    /// Shows deterministic description based on entry kind and first line of content
+    @ViewBuilder
+    private var liteModeContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Deterministic label based on entry kind
+            Text(liteModeLabel)
+                .font(.callout)
+                .foregroundStyle(.primary)
+
+            // Show first line of source content as preview (if available)
+            if let preview = liteModePreview {
+                Text(preview)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(isExpanded ? nil : 2)
+            }
+
+            // Show full raw content when expanded
+            if isExpanded, let content = entry.sourceContent, !content.isEmpty {
+                Divider()
+                Text(content)
+                    .font(.caption)
+                    .textSelection(.enabled)
+                    .lineSpacing(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    /// Deterministic label for lite mode based on entry kind and action
+    private var liteModeLabel: String {
+        switch entry.kind {
+        case .user:
+            return entry.isQueued ? "Queued message" : "User message"
+        case .assistant:
+            if case .revealInInventory = entry.action {
+                return "Tool use"
+            }
+            return "Claude response"
+        case .system:
+            return "System message"
+        }
+    }
+
+    /// Preview text from source content for lite mode
+    private var liteModePreview: String? {
+        guard let content = entry.sourceContent, !content.isEmpty else { return nil }
+
+        // Get first non-empty line, trimmed and truncated
+        let firstLine = content
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespaces)
+
+        guard let line = firstLine, !line.isEmpty else { return nil }
+
+        // Truncate if too long
+        if line.count > 120 {
+            return String(line.prefix(117)) + "..."
+        }
+        return line
     }
 }
 

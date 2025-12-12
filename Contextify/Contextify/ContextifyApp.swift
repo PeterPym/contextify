@@ -376,15 +376,19 @@ struct ContextifyApp: App {
         // Show lite mode info on subsequent launches (not first launch, which uses WelcomeModal)
         // Conditions:
         // 1. Lite mode is active (macOS < 26 or simulation)
-        // 2. Projects already exist (not showing welcome modal)
-        // 3. User hasn't dismissed the info modal
+        // 2. User hasn't dismissed the info modal
+        // 3. Projects exist (so welcome modal won't show)
         if isLiteModeActive(),
            !HUDPreferences.hasLiteModeInfoBeenDismissed() {
-          // Brief delay to let the main UI settle before presenting modal
+          // Brief delay to let project discovery and UI settle
           try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s
+
           await MainActor.run {
-            // Only show if welcome modal isn't showing (it has its own lite mode callout)
-            if !showWelcomeModal {
+            // Re-check conditions after sleep to avoid race with welcome modal:
+            // - Projects must exist (otherwise welcome modal should show)
+            // - Welcome modal must not be showing (it has its own lite mode callout)
+            let hasProjects = !ProjectSwitcherState.shared.tabProjects.isEmpty
+            if hasProjects && !showWelcomeModal {
               showLiteModeInfo = true
             }
           }

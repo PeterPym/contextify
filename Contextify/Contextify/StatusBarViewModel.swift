@@ -84,26 +84,31 @@ final class StatusBarViewModel {
         log.info("StatusBar: \(self.queueProviders.count) queue provider(s) available, starting observation")
         monitoringActive = true
 
-        // Start observation task for each provider (Phase 5: track by index)
-        for (index, provider) in self.queueProviders.enumerated() {
-            let task = Task { @MainActor [weak self] in
-                guard let self else { return }
+        // Skip queue observation in lite mode - no LLM processing will happen
+        if !isLiteModeActive() {
+            // Start observation task for each provider (Phase 5: track by index)
+            for (index, provider) in self.queueProviders.enumerated() {
+                let task = Task { @MainActor [weak self] in
+                    guard let self else { return }
 
-                for await stats in provider.observeQueue() {
-                    guard !Task.isCancelled else { break }
-                    self.aggregateStats(from: stats, providerIndex: index)
+                    for await stats in provider.observeQueue() {
+                        guard !Task.isCancelled else { break }
+                        self.aggregateStats(from: stats, providerIndex: index)
+                    }
+
+                    // Stream finished (provider ended or cancelled) - remove from tracking
+                    self.providerStats.removeValue(forKey: index)
+                    self.recomputeAggregateState()
                 }
-
-                // Stream finished (provider ended or cancelled) - remove from tracking
-                self.providerStats.removeValue(forKey: index)
-                self.recomputeAggregateState()
+                queueObservationTasks.append(task)
             }
-            queueObservationTasks.append(task)
+        } else {
+            log.info("StatusBar: Lite mode - skipping queue observation")
         }
 
         // Check Apple Intelligence periodically (every 30s to respect cache)
         // In lite mode, just set status once and skip periodic checks
-        if LLMAvailability.current.isLiteMode {
+        if isLiteModeActive() {
             aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
             log.info("StatusBar: Lite mode - skipping AI health check task")
         } else {
@@ -274,7 +279,7 @@ final class StatusBarViewModel {
     /// This avoids flicker when creating new StatusBarViewModel during project switches
     private func loadCachedAIStatus() async {
         // Check lite mode first (covers both old OS and simulation)
-        if LLMAvailability.current.isLiteMode {
+        if isLiteModeActive() {
             aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
             return
         }
@@ -303,7 +308,7 @@ final class StatusBarViewModel {
     /// Check AI availability using existing LLMHealthCheck
     private func checkAppleIntelligenceHealth() async {
         // Check lite mode first (covers both old OS and simulation)
-        if LLMAvailability.current.isLiteMode {
+        if isLiteModeActive() {
             aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
             log.debug("Apple Intelligence check: lite mode active")
             return
