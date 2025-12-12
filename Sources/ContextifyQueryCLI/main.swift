@@ -38,6 +38,8 @@ struct ContextifyQueryCLI {
     case activity
     case projects
     case transcripts
+    case entry
+    case context
     case summaries
     case stats
     case version
@@ -53,6 +55,12 @@ struct ContextifyQueryCLI {
     var until: String?
     var days: Int?
     var includeHidden: Bool = false
+    var before: Int?
+    var after: Int?
+    var kinds: String?
+    var noContent: Bool = false
+    var fullContent: Bool = false
+    var maxWindow: Int?
     var limit: Int = 50
     var jsonOutput: Bool = false
   }
@@ -118,6 +126,32 @@ struct ContextifyQueryCLI {
           options.days = n
         case "--include-hidden":
           options.includeHidden = true
+        case "--before":
+          index += 1
+          guard index < args.count, let n = Int(args[index]), n >= 0 else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --before", exitCode: .invalidArgs)
+          }
+          options.before = n
+        case "--after":
+          index += 1
+          guard index < args.count, let n = Int(args[index]), n >= 0 else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --after", exitCode: .invalidArgs)
+          }
+          options.after = n
+        case "--kinds":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --kinds", exitCode: .invalidArgs) }
+          options.kinds = args[index]
+        case "--no-content":
+          options.noContent = true
+        case "--full-content":
+          options.fullContent = true
+        case "--max-window":
+          index += 1
+          guard index < args.count, let n = Int(args[index]), n > 0 else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --max-window", exitCode: .invalidArgs)
+          }
+          options.maxWindow = n
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else {
@@ -191,6 +225,59 @@ struct ContextifyQueryCLI {
         let results = try service.listTranscripts(projectId: resolvedProjectId, limit: options.limit, timeRange: timeRange)
         try printResponse(type: "transcripts", data: results, json: options.jsonOutput) {
           printTranscripts(results)
+        }
+
+      case .entry:
+        guard let entryId = commandArgs.first else {
+          throw CLIError(code: "invalidArgs", message: "Missing entry id", exitCode: .invalidArgs)
+        }
+        do {
+          let result = try service.entry(
+            entryId: entryId,
+            includeContent: !options.noContent,
+            fullContent: options.fullContent,
+            maxContentBytes: 2048
+          )
+          try printResponse(type: "entry", data: result, json: options.jsonOutput) {
+            printEntryResult(result)
+          }
+        } catch let error as ContextifyQueryService.EntryLookupError {
+          switch error {
+          case let .notFound(entryId):
+            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
+          }
+        }
+
+      case .context:
+        guard let entryId = commandArgs.first else {
+          throw CLIError(code: "invalidArgs", message: "Missing entry id", exitCode: .invalidArgs)
+        }
+        let beforeCount = options.before ?? 10
+        let afterCount = options.after ?? 20
+        let maxWindow = options.maxWindow ?? 200
+        guard beforeCount + afterCount <= maxWindow else {
+          throw CLIError(code: "invalidArgs", message: "--before + --after must be <= --max-window (\(maxWindow))", exitCode: .invalidArgs)
+        }
+        let kinds = parseCSV(options.kinds)
+        do {
+          let result = try service.context(
+            entryId: entryId,
+            beforeCount: beforeCount,
+            afterCount: afterCount,
+            includeHidden: options.includeHidden,
+            kinds: kinds,
+            includeContent: !options.noContent,
+            fullContent: options.fullContent,
+            maxContentBytes: 2048
+          )
+          try printResponse(type: "context", data: result, json: options.jsonOutput) {
+            printContextResult(result)
+          }
+        } catch let error as ContextifyQueryService.EntryLookupError {
+          switch error {
+          case let .notFound(entryId):
+            throw CLIError(code: "entryNotFound", message: "No entry with id '\(entryId)'", exitCode: .entryNotFound)
+          }
         }
 
       case .summaries:
@@ -401,6 +488,12 @@ struct ContextifyQueryCLI {
         --until <ts|iso>     Filter by time (inclusive)
         --days <n>           Shorthand for --since (now - n days)
         --include-hidden     Include non-timeline entries
+        --before <n>         Context: entries before anchor (default 10)
+        --after <n>          Context: entries after anchor (default 20)
+        --max-window <n>     Context: cap before+after (default 200)
+        --kinds <csv>        Filter by kinds (e.g. user,assistant,system)
+        --no-content         Emit content as null (metadata only)
+        --full-content       Disable truncation (default truncates >2KB)
         --limit <n>          Limit results (default 50)
         --json               Emit JSON output
 
@@ -409,6 +502,8 @@ struct ContextifyQueryCLI {
         activity             Recent timeline activity
         projects             List projects
         transcripts          List transcripts for a project
+        entry <id>           Fetch an entry by id
+        context <id>         Fetch context around an entry
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
@@ -492,6 +587,39 @@ private func printProjects(_ projects: [ContextifyQueryService.ProjectListItem])
     print("\(name)  last_ts=\(lastActivity)  transcripts=\(transcripts)  entries=\(entries)")
     print("  \(project.rootPath)")
   }
+}
+
+private func printEntryResult(_ result: ContextifyQueryService.EntryResult) {
+  let project = result.projectName?.isEmpty == false ? result.projectName! : result.entry.projectId
+  let transcript = result.transcriptTitle?.isEmpty == false ? result.transcriptTitle! : result.entry.transcriptId
+  print("\(result.entry.id)  [\(result.entry.timestamp)]  \(project) / \(transcript)  \(result.entry.kind)")
+  if let content = result.entry.content {
+    print(content)
+  } else {
+    print("(content omitted)")
+  }
+}
+
+private func printContextResult(_ result: ContextifyQueryService.ContextResult) {
+  let all = result.before + [result.anchor] + result.after
+  for entry in all {
+    let content = entry.content ?? "(content omitted)"
+    let preview = content
+      .replacingOccurrences(of: "\n", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .prefix(300)
+    print("[\(entry.timestamp)] \(entry.kind): \(preview)")
+  }
+  print("meta: before_more=\(result.meta.hasMoreBefore) after_more=\(result.meta.hasMoreAfter) count=\(result.meta.transcriptEntryCount ?? 0)")
+}
+
+private func parseCSV(_ value: String?) -> [String]? {
+  guard let value else { return nil }
+  let parts = value
+    .split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    .filter { !$0.isEmpty }
+  return parts.isEmpty ? nil : parts
 }
 
 private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptListItem]) {

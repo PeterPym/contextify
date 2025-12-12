@@ -51,6 +51,45 @@ public struct ContextifyQueryService: Sendable {
     public let contentTruncated: Bool
   }
 
+  public struct EntryPayload: Codable, Sendable {
+    public let id: String
+    public let projectId: String
+    public let transcriptId: String
+    public let provider: String
+    public let kind: String
+    public let timestamp: Int
+    public let createdAt: Int
+    public let displayInTimeline: Int
+    public let content: String?
+    public let contentTruncated: Bool?
+    public let contentFullSize: Int?
+  }
+
+  public struct EntryResult: Codable, Sendable {
+    public let entry: EntryPayload
+    public let projectName: String?
+    public let transcriptTitle: String?
+  }
+
+  public struct ContextMeta: Codable, Sendable {
+    public let firstEntryId: String
+    public let lastEntryId: String
+    public let hasMoreBefore: Bool
+    public let hasMoreAfter: Bool
+    public let transcriptEntryCount: Int?
+  }
+
+  public struct ContextResult: Codable, Sendable {
+    public let anchor: EntryPayload
+    public let before: [EntryPayload]
+    public let after: [EntryPayload]
+    public let meta: ContextMeta
+  }
+
+  public enum EntryLookupError: Error, Sendable {
+    case notFound(entryId: String)
+  }
+
   public struct ProjectStats: Codable, Sendable {
     public let projectId: String
     public let projectName: String?
@@ -452,6 +491,275 @@ public struct ContextifyQueryService: Sendable {
           contentTruncated: $0.contentTruncated
         )
       }
+    }
+  }
+
+  public func entry(
+    entryId: String,
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> EntryResult {
+    try pool.read { db in
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let projectId: String
+        let projectName: String?
+        let transcriptId: String
+        let transcriptTitle: String?
+        let provider: String
+        let kind: String
+        let timestamp: Int
+        let createdAt: Int
+        let displayInTimeline: Int
+        let content: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case projectId = "project_id"
+          case projectName = "project_name"
+          case transcriptId = "transcript_id"
+          case transcriptTitle = "transcript_title"
+          case provider
+          case kind
+          case timestamp
+          case createdAt = "created_at"
+          case displayInTimeline = "display_in_timeline"
+          case content
+        }
+      }
+
+      let sql = """
+        SELECT
+          e.id AS id,
+          e.project_id AS project_id,
+          p.name AS project_name,
+          e.transcript_id AS transcript_id,
+          tm.title AS transcript_title,
+          e.provider AS provider,
+          e.kind AS kind,
+          e.timestamp AS timestamp,
+          e.created_at AS created_at,
+          e.display_in_timeline AS display_in_timeline,
+          e.content AS content
+        FROM transcript_entries e
+        LEFT JOIN projects p ON p.id = e.project_id
+        LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
+        WHERE e.id = ?
+      """
+
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [entryId]) else {
+        throw EntryLookupError.notFound(entryId: entryId)
+      }
+
+      let content: String?
+      let contentTruncated: Bool?
+      let contentFullSize: Int?
+      if !includeContent {
+        content = nil
+        contentTruncated = nil
+        contentFullSize = nil
+      } else if fullContent {
+        content = row.content
+        contentTruncated = nil
+        contentFullSize = nil
+      } else {
+        let result = QueryContentTruncator.truncateUTF8PreservingScalars(row.content, maxBytes: maxContentBytes)
+        content = result.truncated
+        contentTruncated = result.didTruncate ? true : nil
+        contentFullSize = result.didTruncate ? result.fullSizeBytes : nil
+      }
+
+      return EntryResult(
+        entry: EntryPayload(
+          id: row.id,
+          projectId: row.projectId,
+          transcriptId: row.transcriptId,
+          provider: row.provider,
+          kind: row.kind,
+          timestamp: row.timestamp,
+          createdAt: row.createdAt,
+          displayInTimeline: row.displayInTimeline,
+          content: content,
+          contentTruncated: contentTruncated,
+          contentFullSize: contentFullSize
+        ),
+        projectName: row.projectName,
+        transcriptTitle: row.transcriptTitle
+      )
+    }
+  }
+
+  public func context(
+    entryId: String,
+    beforeCount: Int = 10,
+    afterCount: Int = 20,
+    includeHidden: Bool = false,
+    kinds: [String]? = nil,
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> ContextResult {
+    try pool.read { db in
+      struct AnchorRow: FetchableRecord, Decodable {
+        let id: String
+        let projectId: String
+        let transcriptId: String
+        let provider: String
+        let kind: String
+        let timestamp: Int
+        let createdAt: Int
+        let displayInTimeline: Int
+        let content: String
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case projectId = "project_id"
+          case transcriptId = "transcript_id"
+          case provider
+          case kind
+          case timestamp
+          case createdAt = "created_at"
+          case displayInTimeline = "display_in_timeline"
+          case content
+        }
+      }
+
+      let anchorSQL = """
+        SELECT id, project_id, transcript_id, provider, kind, timestamp, created_at, display_in_timeline, content
+        FROM transcript_entries
+        WHERE id = ?
+      """
+      guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [entryId]) else {
+        throw EntryLookupError.notFound(entryId: entryId)
+      }
+
+      func buildFilters(prefix: String, args: inout [DatabaseValueConvertible]) -> String {
+        var filters: [String] = []
+        if !includeHidden {
+          filters.append("\(prefix).display_in_timeline = 1")
+        }
+        if let kinds, !kinds.isEmpty {
+          let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
+          filters.append("\(prefix).kind IN (\(placeholders))")
+          args.append(contentsOf: kinds)
+        }
+        if filters.isEmpty { return "" }
+        return " AND " + filters.joined(separator: " AND ")
+      }
+
+      func mapEntry(_ row: AnchorRow) -> EntryPayload {
+        let content: String?
+        let contentTruncated: Bool?
+        let contentFullSize: Int?
+        if !includeContent {
+          content = nil
+          contentTruncated = nil
+          contentFullSize = nil
+        } else if fullContent {
+          content = row.content
+          contentTruncated = nil
+          contentFullSize = nil
+        } else {
+          let result = QueryContentTruncator.truncateUTF8PreservingScalars(row.content, maxBytes: maxContentBytes)
+          content = result.truncated
+          contentTruncated = result.didTruncate ? true : nil
+          contentFullSize = result.didTruncate ? result.fullSizeBytes : nil
+        }
+
+        return EntryPayload(
+          id: row.id,
+          projectId: row.projectId,
+          transcriptId: row.transcriptId,
+          provider: row.provider,
+          kind: row.kind,
+          timestamp: row.timestamp,
+          createdAt: row.createdAt,
+          displayInTimeline: row.displayInTimeline,
+          content: content,
+          contentTruncated: contentTruncated,
+          contentFullSize: contentFullSize
+        )
+      }
+
+      let beforeLimit = max(0, beforeCount)
+      let afterLimit = max(0, afterCount)
+
+      var beforeArgs: [DatabaseValueConvertible] = [
+        anchor.transcriptId,
+        anchor.timestamp,
+        anchor.timestamp,
+        anchor.createdAt,
+        anchor.timestamp,
+        anchor.createdAt,
+        anchor.id,
+      ]
+      let beforeFilters = buildFilters(prefix: "e", args: &beforeArgs)
+      let beforeSQL = """
+        SELECT id, project_id, transcript_id, provider, kind, timestamp, created_at, display_in_timeline, content
+        FROM transcript_entries e
+        WHERE e.transcript_id = ?
+          AND (
+            e.timestamp < ?
+            OR (e.timestamp = ? AND e.created_at < ?)
+            OR (e.timestamp = ? AND e.created_at = ? AND e.id < ?)
+          )\(beforeFilters)
+        ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
+        LIMIT ?
+      """
+      beforeArgs.append(beforeLimit + 1)
+      let beforeRows = try AnchorRow.fetchAll(db, sql: beforeSQL, arguments: StatementArguments(beforeArgs))
+      let hasMoreBefore = beforeRows.count > beforeLimit
+      let beforeWindow = beforeRows.prefix(beforeLimit).reversed().map(mapEntry)
+
+      var afterArgs: [DatabaseValueConvertible] = [
+        anchor.transcriptId,
+        anchor.timestamp,
+        anchor.timestamp,
+        anchor.createdAt,
+        anchor.timestamp,
+        anchor.createdAt,
+        anchor.id,
+      ]
+      let afterFilters = buildFilters(prefix: "e", args: &afterArgs)
+      let afterSQL = """
+        SELECT id, project_id, transcript_id, provider, kind, timestamp, created_at, display_in_timeline, content
+        FROM transcript_entries e
+        WHERE e.transcript_id = ?
+          AND (
+            e.timestamp > ?
+            OR (e.timestamp = ? AND e.created_at > ?)
+            OR (e.timestamp = ? AND e.created_at = ? AND e.id > ?)
+          )\(afterFilters)
+        ORDER BY e.timestamp ASC, e.created_at ASC, e.id ASC
+        LIMIT ?
+      """
+      afterArgs.append(afterLimit + 1)
+      let afterRows = try AnchorRow.fetchAll(db, sql: afterSQL, arguments: StatementArguments(afterArgs))
+      let hasMoreAfter = afterRows.count > afterLimit
+      let afterWindow = afterRows.prefix(afterLimit).map(mapEntry)
+
+      var countArgs: [DatabaseValueConvertible] = [anchor.transcriptId]
+      let countFilters = buildFilters(prefix: "e", args: &countArgs)
+      let countSQL = "SELECT COUNT(*) FROM transcript_entries e WHERE e.transcript_id = ?\(countFilters)"
+      let transcriptEntryCount = try Int.fetchOne(db, sql: countSQL, arguments: StatementArguments(countArgs))
+
+      let anchorEntry = mapEntry(anchor)
+      let firstEntryId = beforeWindow.first?.id ?? anchorEntry.id
+      let lastEntryId = afterWindow.last?.id ?? anchorEntry.id
+
+      return ContextResult(
+        anchor: anchorEntry,
+        before: beforeWindow,
+        after: afterWindow,
+        meta: ContextMeta(
+          firstEntryId: firstEntryId,
+          lastEntryId: lastEntryId,
+          hasMoreBefore: hasMoreBefore,
+          hasMoreAfter: hasMoreAfter,
+          transcriptEntryCount: transcriptEntryCount
+        )
+      )
     }
   }
 
