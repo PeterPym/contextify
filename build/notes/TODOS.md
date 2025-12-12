@@ -50,11 +50,11 @@ doc_references:
 
 ## Permission Fix for Dual-CLI Users (1 item)
 
-**Status:** Code fix complete, awaiting QA validation
+**Status:** Complete (verified 2025-12-11, E2E test backlogged)
 **Priority:** P0 (blocking v1.0.1 release)
 **Branch:** `fix/permission-discovery-logging`
 
-- [ ] #PERMISSION-FIX-QA: Validate permission fix with regression tests
+- [x] #PERMISSION-FIX-QA: Validate permission fix with regression tests
 
 **Background:**
 Dual-CLI users (both Claude Code and Codex) experience issues when granting a second
