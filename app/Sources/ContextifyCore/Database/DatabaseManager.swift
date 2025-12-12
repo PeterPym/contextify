@@ -139,6 +139,11 @@ public final class DatabaseManager: @unchecked Sendable {
     let migrator = DatabaseSchema.createMigrator()
     try migrator.migrate(pool)
 
+    // Keep SQLite user_version aligned with current schema for tooling discovery.
+    try pool.write { db in
+      try db.execute(sql: "PRAGMA user_version = \(DatabaseSchema.version)")
+    }
+
     // Validate database and log summary
     try validateDatabase(pool, isNewDatabase: isNewDatabase)
 
@@ -150,6 +155,23 @@ public final class DatabaseManager: @unchecked Sendable {
       }
       try DatabaseAccessTracker.recordAccess(db: db)
     }
+
+    // Write discovery sidecar (best-effort).
+    let schemaVersion = try pool.read { db in
+      try Int.fetchOne(db, sql: "PRAGMA user_version") ?? DatabaseSchema.version
+    }
+    let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "Unknown"
+    let buildFlavor = Sandbox.isSandboxed ? "appstore" : "dmg"
+    let capabilities = ["fts_search", "summaries", "usage_stats", "project_metadata"]
+    StateWriter.writeState(
+      databaseURL: dbPath,
+      schemaVersion: schemaVersion,
+      appVersion: appVersion,
+      buildFlavor: buildFlavor,
+      capabilities: capabilities
+    )
+
+    log.info("Database opened and validated successfully")
 
     return pool
   }

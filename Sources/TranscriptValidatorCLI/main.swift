@@ -8,7 +8,7 @@ struct TranscriptValidatorCLI {
         var provider = "claude.code"
         var pathArgument: String?
 
-        var args = Array(CommandLine.arguments.dropFirst())
+        let args = Array(CommandLine.arguments.dropFirst())
         var index = 0
         while index < args.count {
             let arg = args[index]

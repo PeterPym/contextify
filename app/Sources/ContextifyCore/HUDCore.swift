@@ -570,7 +570,7 @@ public struct GitRepositoryResolver {
     }
 
     let data = stdout.fileHandleForReading.readDataToEndOfFile()
-    guard var output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else { return nil }
+    guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty else { return nil }
     if output == "HEAD" {
       return parseHEAD(at: dir)
     }
@@ -1167,7 +1167,9 @@ public final class HUDViewModel {
   private func startBranchMonitor(interval: TimeInterval = 2.0) {
     branchTimer?.invalidate()
     branchTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-      self?.updateGitInfo()
+      Task { @MainActor in
+        self?.updateGitInfo()
+      }
     }
   }
 

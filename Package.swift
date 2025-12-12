@@ -9,6 +9,7 @@ let package = Package(
   products: [
     .library(name: "ContextifyCore", targets: ["ContextifyCore"]),
     .executable(name: "TranscriptValidatorCLI", targets: ["TranscriptValidatorCLI"]),
+    .executable(name: "contextify-query", targets: ["ContextifyQueryCLI"]),
   ],
   dependencies: [
     .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.29.0"),
@@ -29,6 +30,11 @@ let package = Package(
       name: "TranscriptValidatorCLI",
       dependencies: ["ContextifyCore"],
       path: "Sources/TranscriptValidatorCLI"
+    ),
+    .executableTarget(
+      name: "ContextifyQueryCLI",
+      dependencies: ["ContextifyCore"],
+      path: "Sources/ContextifyQueryCLI"
     ),
     .testTarget(
       name: "ContextifyCoreTests",
