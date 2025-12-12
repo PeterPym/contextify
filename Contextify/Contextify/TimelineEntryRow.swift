@@ -28,6 +28,9 @@ struct TimelineEntryRow: View, Equatable {
 
     /// External binding for expansion state - allows parent to persist across redraws
     @Binding var isExpanded: Bool
+
+    /// Convenience for lite mode checks - summaries disabled on older macOS
+    private var isLiteMode: Bool { isLiteModeActive() }
     @State private var showCopiedToast = false
     @State private var showSafetyInfo = false
     @State private var showErrorInfo = false
@@ -45,18 +48,21 @@ struct TimelineEntryRow: View, Equatable {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            formatWithBackticks(entry.summary)
-                .font(.callout)
-                .foregroundStyle(.primary)
+            // Hide summary and detail in lite mode (no LLM available)
+            if !isLiteMode {
+                formatWithBackticks(entry.summary)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
 
-            if isExpanded {
-                Divider()
-                Text(entry.detail)
-                    .font(.caption)
-                    .textSelection(.enabled)
-                    .lineSpacing(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.opacity)
+                if isExpanded {
+                    Divider()
+                    Text(entry.detail)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                        .lineSpacing(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
+                }
             }
         }
         .padding(12)
@@ -83,6 +89,8 @@ struct TimelineEntryRow: View, Equatable {
         }
         .contentShape(Rectangle())
         .onTapGesture {
+            // Disable expansion in lite mode (no summary/detail to show)
+            guard !isLiteMode else { return }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isExpanded.toggle()
             }
@@ -97,7 +105,8 @@ struct TimelineEntryRow: View, Equatable {
                 }
             }
 
-            if entry.contentSha256 != nil && entry.windowSha256 != nil {
+            // Hide regenerate in lite mode (no LLM available)
+            if !isLiteMode && entry.contentSha256 != nil && entry.windowSha256 != nil {
                 Divider()
                 Button("Regenerate Summary") {
                     regenerateSummary()
@@ -128,22 +137,25 @@ struct TimelineEntryRow: View, Equatable {
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
                 .help(entry.timestamp.formatted(Date.FormatStyle.timelineTooltip))  // Re-enabled with static style
-            if case .generatingActive = entry.action {
-                // NOTE: Pulsing animation is not working as of 2025-11-07
-                // The .symbolEffect(.pulse) modifier is applied but visual pulsing doesn't appear
-                // TODO: Investigate why symbol effects aren't animating (possibly SwiftUI/macOS version issue)
-                Image(systemName: "hourglass")
-                    .font(.caption2)
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(.tertiary)
-                    .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)  // Always pulse when active
-                    .help("Summary being generated (active)")
-            } else if case .unsummarized = entry.action {
-                Image(systemName: "hourglass")
-                    .font(.caption2)
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(.tertiary)
-                    .help("Unsummarized (will generate when scrolled into view)")
+            // Hide generation badges in lite mode (no LLM available)
+            if !isLiteMode {
+                if case .generatingActive = entry.action {
+                    // NOTE: Pulsing animation is not working as of 2025-11-07
+                    // The .symbolEffect(.pulse) modifier is applied but visual pulsing doesn't appear
+                    // TODO: Investigate why symbol effects aren't animating (possibly SwiftUI/macOS version issue)
+                    Image(systemName: "hourglass")
+                        .font(.caption2)
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.tertiary)
+                        .symbolEffect(.pulse.byLayer, options: .repeating, isActive: true)  // Always pulse when active
+                        .help("Summary being generated (active)")
+                } else if case .unsummarized = entry.action {
+                    Image(systemName: "hourglass")
+                        .font(.caption2)
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.tertiary)
+                        .help("Unsummarized (will generate when scrolled into view)")
+                }
             }
             // Queue-operation indicator (user message sent while Claude was working)
             if entry.kind == .user && entry.isQueued {
