@@ -178,6 +178,32 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## macOS 15 Testing VM
+
+**Status:** Not started
+**Priority:** P1 (needed for legacy macOS QA)
+
+- [ ] #MACOS15-VM: Set up macOS 15 (Sequoia) VM for testing
+
+**Purpose:** Validate lite mode and backward compatibility on older macOS versions.
+
+**Setup steps:**
+1. Install UTM: `brew install --cask utm`
+2. Create new VM: Virtualize → macOS
+3. Download macOS 15 IPSW (~13GB)
+4. Allocate 4GB RAM, 60GB disk
+5. Complete macOS setup
+6. Build and test Contextify DMG
+
+**Test cases:**
+- [ ] App launches without dyld crash (proves `canImport` guards work)
+- [ ] Lite mode UI displays correctly
+- [ ] Timeline shows fallback content (no summaries)
+- [ ] Status bar shows "Lite Mode"
+- [ ] Search and indexing work normally
+
+---
+
 ## Performance Profiling & Optimization
 
 **Status:** Fixes complete, instrumentation optional

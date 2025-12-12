@@ -61,13 +61,7 @@ enum LLMAvailability: Sendable, Equatable {
   /// Use `isLiteModeActive()` for simple boolean checks. Use this for status bar
   /// display where you need the specific reason or status text.
   static var current: LLMAvailability {
-    #if DEBUG
-    if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") {
-      return .unavailableOldOS
-    }
-    #endif
-    guard #available(macOS 26, *) else { return .unavailableOldOS }
-    return .available
+    isLiteModeActive() ? .unavailableOldOS : .available
   }
 }
 
@@ -80,15 +74,13 @@ enum LLMAvailability: Sendable, Equatable {
 ///
 /// Note: `nonisolated` is required for Swift 6 to allow calling from actors
 /// without async/await. The check is a pure computation (OS version + launch args).
+/// We inline the simulation check here rather than using LLMAvailability.simulateLegacyMacOS
+/// to avoid actor isolation issues in Swift 6.
 nonisolated func isLiteModeActive() -> Bool {
   #if DEBUG
-  if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") {
-    return true
-  }
+  if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") { return true }
   #endif
-  if #available(macOS 26, *) {
-    return false
-  }
+  if #available(macOS 26, *) { return false }
   return true
 }
 

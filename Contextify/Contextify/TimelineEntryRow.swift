@@ -93,7 +93,9 @@ struct TimelineEntryRow: View, Equatable {
         .contentShape(Rectangle())
         .onTapGesture {
             // In lite mode, only allow expansion if there's raw content to show
-            if isLiteMode && entry.sourceContent == nil { return }
+            if isLiteMode {
+                guard let content = entry.sourceContent, !content.isEmpty else { return }
+            }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                 isExpanded.toggle()
             }
@@ -449,8 +451,9 @@ struct TimelineEntryRow: View, Equatable {
         guard let content = entry.sourceContent, !content.isEmpty else { return nil }
 
         // Get first non-empty line, trimmed and truncated
+        // Use maxSplits: 1 to avoid splitting entire content for large entries
         let firstLine = content
-            .split(separator: "\n", omittingEmptySubsequences: true)
+            .split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: true)
             .first
             .map(String.init)?
             .trimmingCharacters(in: .whitespaces)

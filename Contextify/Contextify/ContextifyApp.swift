@@ -383,6 +383,9 @@ struct ContextifyApp: App {
           // Brief delay to let project discovery and UI settle
           try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s
 
+          // Exit early if task was cancelled during sleep
+          guard !Task.isCancelled else { return }
+
           await MainActor.run {
             // Re-check conditions after sleep to avoid race with welcome modal:
             // - Projects must exist (otherwise welcome modal should show)
