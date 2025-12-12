@@ -260,7 +260,7 @@ struct ContentView: View {
                                 .popover(isPresented: $showBranchInfo) {
                                     InfoPopoverContent(
                                         title: "Git Branch",
-                                        message: "This branch name comes from AI transcript metadata (Claude Code or Codex), reflecting the branch at the time of your last AI session.\n\nIt may differ from the actual repository state if you've switched branches since then."
+                                        message: "This branch name comes from Claude Code transcript metadata, reflecting the branch at the time of your last AI session.\n\nIt may differ from the actual repository state if you've switched branches since then."
                                     )
                                 }
                         }
