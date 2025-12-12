@@ -1,10 +1,10 @@
-# Contextify QA Test Suite
+# Contextify E2E Test Suite
 
-Automated QA suite for validating Contextify functionality before releases.
+Automated end-to-end (E2E) test suite for validating Contextify user flows before releases.
 
 ## Overview
 
-This test suite validates 6 critical user flows through:
+This test suite validates critical user flows through:
 - Log analysis (OSLog capture)
 - Database queries (SQLite)
 - Filesystem verification
@@ -211,6 +211,35 @@ rm -rf ~/.claude/projects/-tmp-contextify-qa-test
 
 **Note:** CI runs don't have this issue since they execute in isolated environments.
 Local runs require manual cleanup if you want to return to your real transcript data.
+
+## Maintaining E2E Tests
+
+### When to Add New Tests
+
+Add a new E2E test when:
+- **New user flow** is introduced (new window, new feature, new interaction pattern)
+- **Critical path changes** significantly (search, discovery, project switching)
+- **Complex multi-step interaction** is added that unit tests can't cover
+
+### When to Update Existing Tests
+
+Update existing tests when:
+- **UI flow changes** (keyboard shortcuts, button behavior, menu items)
+- **Log patterns change** (test assertions use `[TAG]` patterns from OSLog)
+- **Database schema changes** affect expected counts or queries
+- **Timing changes** require adjusted wait times or patterns
+
+### Test Contract Requirements
+
+Every E2E test must have a `@test_contract` YAML header documenting:
+- `isolation`: How transcripts/database are isolated
+- `database`: Expected start state, mutations, end state
+- `dependencies`: Required orchestrator flags and run order
+
+This ensures tests are reproducible and don't interfere with each other.
+
+For the full feature development workflow including when to plan tests, see:
+`build/docs/guides/feature-development-workflow.md`
 
 ## Writing New Tests
 

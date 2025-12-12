@@ -48,6 +48,15 @@ These cause real problems when violated:
 
 **Full workflow details:** See TODOS.md front matter (priority definitions, doc naming, cleanup policy).
 
+### Feature Development Workflow
+
+For new features and significant refactors, follow the structured workflow:
+**Problem Statement → Technical Specification → Implementation Plan → Implementation → Review**
+
+The spec must include test requirements (unit tests + E2E tests).
+
+**Full workflow:** See `build/docs/guides/feature-development-workflow.md`
+
 ### Documentation Writing - Present Tense, No Meta-Commentary
 
 Write docs in the present tense; describe current behavior, not the act of updating docs. Brief context is fine, meta-chatter is not.
@@ -96,7 +105,7 @@ Common commands:
 - Linux/CI builds via GitHub Actions (`scripts/trigger-ci-build.sh`)
 - Database operations (`scripts/db_manager.sh`)
 - Release workflows (`make release`)
-- Automated QA suite (`scripts/qa/README.md`)
+- E2E test suite (`scripts/qa/README.md`)
 - First-run QA testing (`build/docs/testing/first-run-qa-guide.md`)
 
 ## Architecture Overview
