@@ -36,6 +36,7 @@ struct ContextifyQueryCLI {
   enum Command: String {
     case search
     case activity
+    case projects
     case summaries
     case stats
     case version
@@ -45,6 +46,7 @@ struct ContextifyQueryCLI {
     var dbPath: String?
     var dbDir: String?
     var projectId: String?
+    var project: String?
     var limit: Int = 50
     var jsonOutput: Bool = false
   }
@@ -84,6 +86,10 @@ struct ContextifyQueryCLI {
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing id after --project-id", exitCode: .invalidArgs) }
           options.projectId = args[index]
+        case "--project":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing path after --project", exitCode: .invalidArgs) }
+          options.project = args[index]
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else {
@@ -130,6 +136,12 @@ struct ContextifyQueryCLI {
         let results = try service.recentActivity(projectId: options.projectId, limit: options.limit)
         try printResponse(type: "activity", data: results, json: options.jsonOutput) {
           printTranscriptEntries(results)
+        }
+
+      case .projects:
+        let results = try service.listProjects(includeHidden: false, limit: nil)
+        try printResponse(type: "projects", data: results, json: options.jsonOutput) {
+          printProjects(results)
         }
 
       case .summaries:
@@ -334,12 +346,14 @@ struct ContextifyQueryCLI {
         --db-path <path>     Full path to contextify.db
         --db-dir <dir>       Directory containing contextify.db
         --project-id <id>    Scope queries to a project
+        --project <path>     Resolve project id from a path
         --limit <n>          Limit results (default 50)
         --json               Emit JSON output
 
       Commands:
         search <query>       Full-text search entries
         activity             Recent timeline activity
+        projects             List projects
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
@@ -407,6 +421,21 @@ private func printTranscriptEntries(_ entries: [TranscriptEntry]) {
 private extension String {
   func nonEmptyOr(_ fallback: String) -> String {
     isEmpty ? fallback : self
+  }
+}
+
+private func printProjects(_ projects: [ContextifyQueryService.ProjectListItem]) {
+  if projects.isEmpty {
+    print("(no projects)")
+    return
+  }
+  for project in projects {
+    let name = project.name?.isEmpty == false ? project.name! : project.id
+    let lastActivity = project.lastActivityTimestamp.map(String.init) ?? "-"
+    let transcripts = project.transcriptCount.map(String.init) ?? "-"
+    let entries = project.entryCount.map(String.init) ?? "-"
+    print("\(name)  last_ts=\(lastActivity)  transcripts=\(transcripts)  entries=\(entries)")
+    print("  \(project.rootPath)")
   }
 }
 
