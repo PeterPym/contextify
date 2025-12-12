@@ -3,11 +3,13 @@ todo_id: QUERY-CLI-FEEDBACK
 title: CLI feedback inbox for contextify-query
 type: spec
 date: 2025-12-12
-status: active
-description: Add a low-friction `contextify-query feedback` command family that records CLI gaps to an App Support inbox for later triage, without modifying the database or repo by default.
+status: obsolete
+description: Obsolete standalone spec; integrated into CONTEXT-REINJECTION-spec.md.
 ---
 
 # CLI Feedback Inbox for `contextify-query`
+
+This spec is obsolete. Use `build/notes/todo-support/CONTEXT-REINJECTION-spec.md` as the single consolidated spec.
 
 ## Goal
 

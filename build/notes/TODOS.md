@@ -541,6 +541,8 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - `build/notes/todo-support/CONTEXT-REINJECTION-browser-research-prompt.md` - Browser research prompt
 - `build/notes/todo-support/CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
 
+**Spec:** `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+
 **Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
 ---
@@ -617,12 +619,11 @@ Both should use identical card components for consistency.
 
 ## Query CLI Feedback Inbox (1 item)
 
-**Status:** Spec complete
+**Status:** Obsolete (integrated into #CONTEXT-REINJECTION spec)
 **Priority:** P2
-**Effort:** 1-2 hours
-**Spec:** `build/notes/todo-support/QUERY-CLI-FEEDBACK-spec.md`
+**Spec:** `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
 
-- [ ] #QUERY-CLI-FEEDBACK: Add `contextify-query feedback` inbox for low-friction CLI improvement capture
+- [x] #QUERY-CLI-FEEDBACK: Obsolete (integrated into #CONTEXT-REINJECTION spec)
 
 ---
 
