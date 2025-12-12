@@ -53,5 +53,11 @@ else
   # Show silent notification
   osascript -e 'display notification "Tests failed - see Desktop" with title "Contextify E2E FAILED"'
 
+  # Go back to sleep
+  osascript -e 'tell application "System Events" to sleep'
+
   exit $EXIT_CODE
 fi
+
+# Go back to sleep
+osascript -e 'tell application "System Events" to sleep'
