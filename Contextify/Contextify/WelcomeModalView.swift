@@ -230,6 +230,24 @@ struct WelcomeModalView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
+
+            // Lite mode callout for older macOS users
+            if isLiteModeActive() {
+                Divider()
+                    .padding(.vertical, 8)
+
+                VStack(spacing: 8) {
+                    Label("Lite Mode", systemImage: "info.circle")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+
+                    Text("Your conversations are being saved. AI-powered summaries will appear as you browse when you upgrade to macOS 26.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 16)
+            }
         }
         .padding(.vertical, 24)
     }
