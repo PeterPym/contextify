@@ -31,7 +31,7 @@ public enum QueryTimeParser {
     let sinceTs: Int?
     let untilTs: Int?
     if let days {
-      let sinceDate = Calendar(identifier: .gregorian).date(byAdding: .day, value: -days, to: now) ?? now
+      let sinceDate = now.addingTimeInterval(-Double(days) * 86_400)
       sinceTs = Int(sinceDate.timeIntervalSince1970)
       untilTs = nil
     } else {
