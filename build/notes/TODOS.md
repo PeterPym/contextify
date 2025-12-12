@@ -253,54 +253,6 @@ Extend `scripts/release.py` to include Sparkle signing, appcast.xml updates, and
 
 ---
 
-## Help Documentation Content (1 item)
-
-**Status:** Not Started - research complete, structure defined
-**Priority:** P1 (user education, support reduction, growth)
-**Effort:** 4-8 hours
-**Research:** `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
-
-- [ ] #HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
-
-**Goal:** Populate contextify.sh/help/ with useful content that educates users, reduces support burden, and drives engagement/growth.
-
-**Pages to Create:**
-1. `/help` - Hub page linking to all sections
-2. `/help/getting-started` - 5-minute setup guide
-3. `/help/keyboard-shortcuts` - Reference table
-4. `/help/troubleshooting` - Common issues and solutions
-5. `/help/features` - Feature discovery (post-launch)
-6. `/help/privacy` - Data handling, local-first architecture
-
-**Engagement Hooks to Embed:**
-- Newsletter signup (footer of help pages)
-- "Was this helpful?" feedback widget
-- "Still stuck? Contact us" funnel
-- "Try it now" deep links to app features
-- Feature discovery prompts
-
-**Growth Flywheels:**
-- Help → Feature Discovery → Usage → Referral
-- Troubleshooting → Resolution → Trust → Review
-- Keyboard Shortcuts → Power Users → Advocates
-- Newsletter → Tips → Engagement → Retention
-
-**Analytics to Implement:**
-- Page views per article
-- Time on page
-- Help → Support contact rate
-- Newsletter conversion rate
-- Search queries (content gaps)
-
-**Technical:**
-- UTM params from app: `?ref=app-help-menu`
-- Plausible or Fathom for privacy-respecting analytics
-- Anchor IDs for deep linking
-
-**Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
-
----
-
 ## Timeline Query Centralization
 
 **Status:** Deferred to P1 (after P0 filter fixes ship)
@@ -1771,6 +1723,29 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 ---
 
 # P3 (Low Priority / Deferred)
+
+## Help Documentation Content (1 item)
+
+**Status:** Not Started - research complete, structure defined
+**Priority:** P3 (deferred - user education, support reduction)
+**Effort:** 4-8 hours
+**Research:** `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
+
+- [ ] #HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
+
+**Goal:** Populate contextify.sh/help/ with useful content that educates users, reduces support burden, and drives engagement/growth.
+
+**Pages to Create:**
+1. `/help` - Hub page linking to all sections
+2. `/help/getting-started` - 5-minute setup guide
+3. `/help/keyboard-shortcuts` - Reference table
+4. `/help/troubleshooting` - Common issues and solutions
+5. `/help/features` - Feature discovery (post-launch)
+6. `/help/privacy` - Data handling, local-first architecture
+
+**Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
+
+---
 
 ## Project Directory Bookmarks (1 item) ⬇️
 
