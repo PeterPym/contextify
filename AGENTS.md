@@ -441,21 +441,6 @@ QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
 
 **Important:** Fixture mode installs test transcripts alongside real data. See "Cleanup After Local Runs" in `scripts/qa/README.md` if the app appears stuck on a test project.
 
-### VM Testing (macOS Version Compatibility)
-
-For testing on older macOS versions (e.g., Lite Mode on macOS 15):
-
-**Documentation:**
-- `build/docs/testing/macos-vm-setup.md` - UTM VM setup guide
-- `build/docs/testing/lite-mode-qa-checklist.md` - Lite mode validation checklist
-
-**Quick setup:**
-```bash
-brew install --cask utm
-# Download macOS 15 IPSW from https://ipsw.me/
-# Create VM in UTM: Virtualize → macOS → select IPSW
-```
-
 ## Git Hooks (Pre-commit Build Guard)
 
 Enable hooks: `git config core.hooksPath .githooks` or `make hooks-setup`
