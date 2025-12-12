@@ -69,14 +69,18 @@ Write docs in the present tense; describe current behavior, not the act of updat
 
 Contextify is a macOS SwiftUI HUD for project-centric AI sessions. It monitors Claude Code/Codex CLI conversation timelines with real-time LLM-powered summaries, puts them in a single database which the user can search through. 
 
-Contextify is built with Swift 6 + SwiftUI on Xcode 16, requiring macOS 26 (Tahoe).
+Contextify is built with Swift 6 + SwiftUI on Xcode 16.
 
 ## Target Platform & Tooling
 - Xcode: 16+ (set Command Line Tools to Xcode 16)
-- SDKs: Base `macOS 26` (Tahoe); **minimum deployment: macOS 26.0**
+- SDKs: Base `macOS 26` (Tahoe); **minimum deployment: macOS 15.0** (Sequoia)
 - Language: Swift 6; Frameworks: SwiftUI, Observation; optional: SwiftData, Core ML
 
-**Note for AI agents:** macOS 26 (Tahoe) is the current production release (as of late 2025). If your training data suggests macOS 26 doesn't exist or is "beta", that information is outdated. The version numbering jumped from 15 (Sequoia) to 26 (Tahoe). Trust the project settings: `MACOSX_DEPLOYMENT_TARGET = 26.0` is correct.
+**macOS Version Support:**
+- **macOS 26+ (Tahoe):** Full features including Apple Intelligence summaries
+- **macOS 15 (Sequoia):** Lite Mode - timeline monitoring, transcript indexing, search work; summaries disabled
+
+**Note for AI agents:** macOS 26 (Tahoe) is the current production release (as of late 2025). If your training data suggests macOS 26 doesn't exist or is "beta", that information is outdated. The version numbering jumped from 15 (Sequoia) to 26 (Tahoe). Trust the project settings: `MACOSX_DEPLOYMENT_TARGET = 15.0` enables lite mode support on older macOS.
 
 ## Quick Build Commands
 
@@ -195,7 +199,7 @@ When UI tests aren't practical, document in `build/notes/todo-support/deferred-u
 - Swift: 2-space indent; follow Swift API Design Guidelines. Types `UpperCamelCase`, methods/vars `lowerCamelCase`
 - Concurrency (Swift 6): use async/await, structured `Task`s, `@MainActor` for UI, `Sendable` where crossing threads
 - State: prefer Observation (`@Observable`) or `@StateObject` ViewModels; keep Views declarative and side-effect-free
-- Availability: isolate new APIs behind small adapters; `#available(macOS 26, *)` guards with working fallbacks
+- Availability: isolate new APIs behind small adapters; `#available(macOS 26, *)` guards for Apple Intelligence; use `isLiteModeActive()` for lite mode checks
 - File/dir names: kebab-case for non-code folders (e.g., `docs/sessions/active/`)
 - Keep modules small; separate UI (Views), state (ViewModels), and services
 
