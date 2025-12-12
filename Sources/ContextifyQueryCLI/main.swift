@@ -41,6 +41,7 @@ struct ContextifyQueryCLI {
     case entry
     case context
     case status
+    case feedback
     case summaries
     case stats
     case version
@@ -64,6 +65,16 @@ struct ContextifyQueryCLI {
     var maxWindow: Int?
     var limit: Int = 50
     var jsonOutput: Bool = false
+
+    // Feedback options
+    var intent: String?
+    var gap: String?
+    var workaround: String?
+    var proposal: String?
+    var format: String?
+    var olderThanDays: Int?
+    var all: Bool = false
+    var force: Bool = false
   }
 
   struct StateSidecar: Decodable {
@@ -153,6 +164,36 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --max-window", exitCode: .invalidArgs)
           }
           options.maxWindow = n
+        case "--intent":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --intent", exitCode: .invalidArgs) }
+          options.intent = args[index]
+        case "--gap":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --gap", exitCode: .invalidArgs) }
+          options.gap = args[index]
+        case "--workaround":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --workaround", exitCode: .invalidArgs) }
+          options.workaround = args[index]
+        case "--proposal":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --proposal", exitCode: .invalidArgs) }
+          options.proposal = args[index]
+        case "--format":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --format", exitCode: .invalidArgs) }
+          options.format = args[index]
+        case "--older-than-days":
+          index += 1
+          guard index < args.count, let n = Int(args[index]), n >= 0 else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --older-than-days", exitCode: .invalidArgs)
+          }
+          options.olderThanDays = n
+        case "--all":
+          options.all = true
+        case "--force":
+          options.force = true
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else {
@@ -305,6 +346,9 @@ struct ContextifyQueryCLI {
         try printResponse(type: "status", data: payload, json: options.jsonOutput) {
           printStatus(payload)
         }
+
+      case .feedback:
+        try runFeedback(commandArgs: commandArgs, options: options, dbURL: dbURL, versionInfo: versionInfo)
 
       case .summaries:
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
@@ -478,7 +522,7 @@ struct ContextifyQueryCLI {
     }
   }
 
-  private static func printResponse<T: Encodable>(
+  fileprivate static func printResponse<T: Encodable>(
     type: String,
     data: T,
     json: Bool,
@@ -531,6 +575,7 @@ struct ContextifyQueryCLI {
         entry <id>           Fetch an entry by id
         context <id>         Fetch context around an entry
         status               Show database status
+        feedback             Record or manage CLI feedback
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
@@ -647,6 +692,167 @@ private func parseCSV(_ value: String?) -> [String]? {
     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     .filter { !$0.isEmpty }
   return parts.isEmpty ? nil : parts
+}
+
+private func runFeedback(
+  commandArgs: [String],
+  options: ContextifyQueryCLI.Options,
+  dbURL: URL,
+  versionInfo: ContextifyQueryService.VersionInfo
+) throws {
+  let inboxRoot = try FileManager.default.url(
+    for: .applicationSupportDirectory,
+    in: .userDomainMask,
+    appropriateFor: nil,
+    create: true
+  ).appendingPathComponent("Contextify", isDirectory: true)
+  let inbox = QueryCLIFeedbackInbox(root: inboxRoot)
+
+  let capabilities = capabilitiesFrom(versionInfo: versionInfo)
+  let cliVersion = ProcessInfo.processInfo.environment["CONTEXTIFY_QUERY_VERSION"] ?? "dev"
+
+  func printWarnings(_ warnings: [String]) {
+    for warning in warnings {
+      fputs("Warning: \(warning)\n", stderr)
+    }
+  }
+
+  if let sub = commandArgs.first {
+    switch sub {
+    case "list":
+      let items = try inbox.list()
+      let payload = FeedbackListPayload(items: items, count: items.count)
+      try ContextifyQueryCLI.printResponse(type: "feedbackList", data: payload, json: options.jsonOutput) {
+        printFeedbackList(items)
+      }
+      return
+
+    case "show":
+      guard commandArgs.count >= 2 else { throw CLIError(code: "invalidArgs", message: "Missing feedback id", exitCode: .invalidArgs) }
+      let item = try inbox.load(id: commandArgs[1])
+      try ContextifyQueryCLI.printResponse(type: "feedbackShow", data: item, json: options.jsonOutput) {
+        print(inbox.exportMarkdown(item: item))
+      }
+      return
+
+    case "export":
+      guard commandArgs.count >= 2 else { throw CLIError(code: "invalidArgs", message: "Missing feedback id", exitCode: .invalidArgs) }
+      let id = commandArgs[1]
+      let item = try inbox.load(id: id)
+      let format = QueryCLIFeedbackFormat(rawValue: options.format ?? "md") ?? .md
+      switch format {
+      case .json:
+        try ContextifyQueryCLI.printResponse(type: "feedbackExport", data: item, json: options.jsonOutput) {
+          print(inbox.exportMarkdown(item: item))
+        }
+      case .md:
+        let content = inbox.exportMarkdown(item: item)
+        try ContextifyQueryCLI.printResponse(type: "feedbackExport", data: FeedbackExportPayload(id: id, format: "md", content: content), json: options.jsonOutput) {
+          print(content)
+        }
+      case .todo:
+        let content = inbox.exportTodoLine(item: item)
+        try ContextifyQueryCLI.printResponse(type: "feedbackExport", data: FeedbackExportPayload(id: id, format: "todo", content: content), json: options.jsonOutput) {
+          print(content)
+        }
+      }
+      return
+
+    case "dismiss":
+      guard commandArgs.count >= 2 else { throw CLIError(code: "invalidArgs", message: "Missing feedback id", exitCode: .invalidArgs) }
+      try inbox.dismiss(id: commandArgs[1])
+      try ContextifyQueryCLI.printResponse(type: "feedbackDismissed", data: ["id": commandArgs[1]], json: options.jsonOutput) {
+        print("Dismissed \(commandArgs[1])")
+      }
+      return
+
+    case "archive":
+      let moved = try inbox.archive(olderThanDays: options.olderThanDays)
+      try ContextifyQueryCLI.printResponse(type: "feedbackArchived", data: ["moved": moved], json: options.jsonOutput) {
+        print("Archived \(moved) item(s)")
+      }
+      return
+
+    case "clear":
+      guard options.all else { throw CLIError(code: "invalidArgs", message: "Use `feedback clear --all`", exitCode: .invalidArgs) }
+      let moved = try inbox.clearAll()
+      try ContextifyQueryCLI.printResponse(type: "feedbackCleared", data: ["moved": moved], json: options.jsonOutput) {
+        print("Cleared \(moved) item(s)")
+      }
+      return
+
+    default:
+      break
+    }
+  }
+
+  guard !commandArgs.isEmpty else { throw CLIError(code: "invalidArgs", message: "Missing feedback summary", exitCode: .invalidArgs) }
+  let summary = commandArgs.joined(separator: " ")
+  let result = try inbox.record(
+    summary: summary,
+    intent: options.intent,
+    gap: options.gap,
+    workaround: options.workaround,
+    proposal: options.proposal,
+    cliVersion: cliVersion,
+    appSchemaVersion: versionInfo.appSchemaVersion,
+    capabilities: capabilities,
+    force: options.force
+  )
+
+  if !options.jsonOutput {
+    printWarnings(result.warnings)
+  }
+
+  let payload = FeedbackRecordedPayload(
+    id: result.recorded.id,
+    path: result.recorded.path,
+    summary: result.recorded.summary,
+    warnings: result.warnings
+  )
+  try ContextifyQueryCLI.printResponse(type: "feedbackRecorded", data: payload, json: options.jsonOutput) {
+    if !result.warnings.isEmpty {
+      printWarnings(result.warnings)
+    }
+    print("Recorded \(payload.id)")
+    print(payload.path)
+  }
+}
+
+private struct FeedbackListPayload: Codable {
+  let items: [QueryCLIFeedbackListItem]
+  let count: Int
+}
+
+private struct FeedbackRecordedPayload: Codable {
+  let id: String
+  let path: String
+  let summary: String
+  let warnings: [String]
+}
+
+private struct FeedbackExportPayload: Codable {
+  let id: String
+  let format: String
+  let content: String
+}
+
+private func printFeedbackList(_ items: [QueryCLIFeedbackListItem]) {
+  if items.isEmpty {
+    print("(no feedback)")
+    return
+  }
+  for item in items {
+    print("\(item.id)  \(item.timestamp)")
+    print("  \(item.summary)")
+  }
+}
+
+private func capabilitiesFrom(versionInfo: ContextifyQueryService.VersionInfo) -> [String] {
+  var caps: [String] = []
+  if versionInfo.ftsEnabled { caps.append("fts_search") }
+  if versionInfo.summariesEnabled { caps.append("summaries") }
+  return caps
 }
 
 private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptListItem]) {
