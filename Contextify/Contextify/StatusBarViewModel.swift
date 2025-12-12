@@ -102,20 +102,26 @@ final class StatusBarViewModel {
         }
 
         // Check Apple Intelligence periodically (every 30s to respect cache)
-        aiHealthCheckTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        // In lite mode, just set status once and skip periodic checks
+        if LLMAvailability.current.isLiteMode {
+            aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
+            log.info("StatusBar: Lite mode - skipping AI health check task")
+        } else {
+            aiHealthCheckTask = Task { @MainActor [weak self] in
+                guard let self else { return }
 
-            // Load cached status immediately to avoid flicker on project switches
-            await self.loadCachedAIStatus()
+                // Load cached status immediately to avoid flicker on project switches
+                await self.loadCachedAIStatus()
 
-            // Then perform full health check (will use cache if recent)
-            await self.checkAppleIntelligenceHealth()
-
-            // Periodic refresh (every 30s)
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-                guard !Task.isCancelled else { break }
+                // Then perform full health check (will use cache if recent)
                 await self.checkAppleIntelligenceHealth()
+
+                // Periodic refresh (every 30s)
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                    guard !Task.isCancelled else { break }
+                    await self.checkAppleIntelligenceHealth()
+                }
             }
         }
 
@@ -267,6 +273,12 @@ final class StatusBarViewModel {
     /// Load cached AI status immediately (no health check)
     /// This avoids flicker when creating new StatusBarViewModel during project switches
     private func loadCachedAIStatus() async {
+        // Check lite mode first (covers both old OS and simulation)
+        if LLMAvailability.current.isLiteMode {
+            aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
+            return
+        }
+
         guard #available(macOS 26.0, *) else {
             aiStatus = .unavailable(reason: "Requires macOS 26+")
             return
@@ -290,6 +302,13 @@ final class StatusBarViewModel {
 
     /// Check AI availability using existing LLMHealthCheck
     private func checkAppleIntelligenceHealth() async {
+        // Check lite mode first (covers both old OS and simulation)
+        if LLMAvailability.current.isLiteMode {
+            aiStatus = .unavailable(reason: LLMAvailability.current.statusText)
+            log.debug("Apple Intelligence check: lite mode active")
+            return
+        }
+
         guard #available(macOS 26.0, *) else {
             aiStatus = .unavailable(reason: "Requires macOS 26+")
             log.debug("Apple Intelligence check: macOS < 26")
