@@ -37,6 +37,7 @@ struct ContextifyQueryCLI {
     case search
     case activity
     case projects
+    case transcripts
     case summaries
     case stats
     case version
@@ -47,6 +48,11 @@ struct ContextifyQueryCLI {
     var dbDir: String?
     var projectId: String?
     var project: String?
+    var transcriptId: String?
+    var since: String?
+    var until: String?
+    var days: Int?
+    var includeHidden: Bool = false
     var limit: Int = 50
     var jsonOutput: Bool = false
   }
@@ -90,6 +96,28 @@ struct ContextifyQueryCLI {
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing path after --project", exitCode: .invalidArgs) }
           options.project = args[index]
+        case "--transcript-id":
+          index += 1
+          guard index < args.count else {
+            throw CLIError(code: "invalidArgs", message: "Missing id after --transcript-id", exitCode: .invalidArgs)
+          }
+          options.transcriptId = args[index]
+        case "--since":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --since", exitCode: .invalidArgs) }
+          options.since = args[index]
+        case "--until":
+          index += 1
+          guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing value after --until", exitCode: .invalidArgs) }
+          options.until = args[index]
+        case "--days":
+          index += 1
+          guard index < args.count, let n = Int(args[index]) else {
+            throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --days", exitCode: .invalidArgs)
+          }
+          options.days = n
+        case "--include-hidden":
+          options.includeHidden = true
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else {
@@ -119,17 +147,29 @@ struct ContextifyQueryCLI {
       let dbURL = try resolveDatabaseURL(options: options)
       let service = try ContextifyQueryService(databaseURL: dbURL)
       let versionInfo = try service.versionInfo()
+      let timeRange = try parseTimeRange(options: options)
 
       switch command {
       case .search:
         guard !commandArgs.isEmpty else {
           throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
         }
+        guard options.limit <= 500 else {
+          throw CLIError(code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs)
+        }
         let query = commandArgs.joined(separator: " ")
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
-        let results = try service.ftsSearch(query: query, projectId: options.projectId, limit: options.limit)
+        let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let results = try service.search(
+          query: query,
+          projectId: resolvedProjectId,
+          transcriptId: options.transcriptId,
+          limit: options.limit,
+          includeHidden: options.includeHidden,
+          timeRange: timeRange
+        )
         try printResponse(type: "search", data: results, json: options.jsonOutput) {
-          printTranscriptEntries(results)
+          printSearchHits(results)
         }
 
       case .activity:
@@ -142,6 +182,15 @@ struct ContextifyQueryCLI {
         let results = try service.listProjects(includeHidden: false, limit: nil)
         try printResponse(type: "projects", data: results, json: options.jsonOutput) {
           printProjects(results)
+        }
+
+      case .transcripts:
+        guard let resolvedProjectId = try resolveProjectId(options: options, service: service, required: true) else {
+          throw CLIError(code: "invalidArgs", message: "Missing --project-id or --project", exitCode: .invalidArgs)
+        }
+        let results = try service.listTranscripts(projectId: resolvedProjectId, limit: options.limit, timeRange: timeRange)
+        try printResponse(type: "transcripts", data: results, json: options.jsonOutput) {
+          printTranscripts(results)
         }
 
       case .summaries:
@@ -347,6 +396,11 @@ struct ContextifyQueryCLI {
         --db-dir <dir>       Directory containing contextify.db
         --project-id <id>    Scope queries to a project
         --project <path>     Resolve project id from a path
+        --transcript-id <id> Scope queries to a transcript
+        --since <ts|iso>     Filter by time (inclusive)
+        --until <ts|iso>     Filter by time (inclusive)
+        --days <n>           Shorthand for --since (now - n days)
+        --include-hidden     Include non-timeline entries
         --limit <n>          Limit results (default 50)
         --json               Emit JSON output
 
@@ -354,6 +408,7 @@ struct ContextifyQueryCLI {
         search <query>       Full-text search entries
         activity             Recent timeline activity
         projects             List projects
+        transcripts          List transcripts for a project
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
@@ -436,6 +491,84 @@ private func printProjects(_ projects: [ContextifyQueryService.ProjectListItem])
     let entries = project.entryCount.map(String.init) ?? "-"
     print("\(name)  last_ts=\(lastActivity)  transcripts=\(transcripts)  entries=\(entries)")
     print("  \(project.rootPath)")
+  }
+}
+
+private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptListItem]) {
+  if transcripts.isEmpty {
+    print("(no transcripts)")
+    return
+  }
+  for transcript in transcripts {
+    let title = transcript.title?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOr("-") ?? "-"
+    let firstTs = transcript.firstEntryTimestamp.map(String.init) ?? "-"
+    let lastTs = transcript.lastEntryTimestamp.map(String.init) ?? "-"
+    let count = transcript.entryCount.map(String.init) ?? "-"
+    print("\(transcript.id)  provider=\(transcript.provider)  entries=\(count)  first_ts=\(firstTs)  last_ts=\(lastTs)")
+    print("  \(title)")
+  }
+}
+
+private func printSearchHits(_ hits: [ContextifyQueryService.SearchHit]) {
+  if hits.isEmpty {
+    print("(no results)")
+    return
+  }
+  for hit in hits {
+    let projectLabel = hit.projectName?.isEmpty == false ? hit.projectName! : hit.projectId
+    let transcriptLabel = hit.transcriptTitle?.isEmpty == false ? hit.transcriptTitle! : hit.transcriptId
+    print("[\(hit.timestamp)] \(projectLabel) / \(transcriptLabel)  \(hit.kind)  score=\(hit.score)")
+    print("  \(hit.contentSnippet)")
+  }
+}
+
+private func parseTimeRange(options: ContextifyQueryCLI.Options) throws -> QueryTimeRange {
+  do {
+    return try QueryTimeParser.parseSinceUntil(since: options.since, until: options.until, days: options.days)
+  } catch {
+    throw CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
+  }
+}
+
+private func resolveProjectId(
+  options: ContextifyQueryCLI.Options,
+  service: ContextifyQueryService,
+  required: Bool = false
+) throws -> String? {
+  if let id = options.projectId { return id }
+  guard let project = options.project else {
+    if required {
+      throw CLIError(code: "invalidArgs", message: "Missing --project-id or --project", exitCode: .invalidArgs)
+    }
+    return nil
+  }
+
+  let path: String
+  if project == "." || project == "current" {
+    path = FileManager.default.currentDirectoryPath
+  } else {
+    path = project
+  }
+
+  do {
+    return try service.resolveProjectId(forPath: path)
+  } catch let error as ContextifyQueryService.ProjectResolutionError {
+    switch error {
+    case let .notFound(path, suggestions, totalProjectCount):
+      let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+      throw CLIError(
+        code: "dbProjectNotFound",
+        message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
+        exitCode: .dbNotFound
+      )
+    case let .ambiguous(path, candidates):
+      let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+      throw CLIError(
+        code: "dbProjectNotFound",
+        message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
+        exitCode: .dbNotFound
+      )
+    }
   }
 }
 

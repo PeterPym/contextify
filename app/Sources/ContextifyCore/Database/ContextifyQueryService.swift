@@ -27,6 +27,30 @@ public struct ContextifyQueryService: Sendable {
     case ambiguous(path: String, candidates: [ProjectSuggestion])
   }
 
+  public struct TranscriptListItem: Codable, Sendable {
+    public let id: String
+    public let projectId: String
+    public let provider: String
+    public let entryCount: Int?
+    public let firstEntryTimestamp: Int?
+    public let lastEntryTimestamp: Int?
+    public let title: String?
+  }
+
+  public struct SearchHit: Codable, Sendable {
+    public let id: String
+    public let projectId: String
+    public let projectName: String?
+    public let transcriptId: String
+    public let transcriptTitle: String?
+    public let provider: String
+    public let kind: String
+    public let timestamp: Int
+    public let score: Double
+    public let contentSnippet: String
+    public let contentTruncated: Bool
+  }
+
   public struct ProjectStats: Codable, Sendable {
     public let projectId: String
     public let projectName: String?
@@ -210,6 +234,225 @@ public struct ContextifyQueryService: Sendable {
 
   private func foldPath(_ path: String) -> String {
     path.lowercased(with: Locale(identifier: "en_US_POSIX"))
+  }
+
+  public func listTranscripts(
+    projectId: String,
+    limit: Int = 50,
+    timeRange: QueryTimeRange = QueryTimeRange()
+  ) throws -> [TranscriptListItem] {
+    try pool.read { db in
+      var sql = """
+        SELECT
+          t.id AS id,
+          t.project_id AS project_id,
+          t.provider AS provider,
+          (
+            SELECT COUNT(*)
+            FROM transcript_entries e
+            WHERE e.transcript_id = t.id
+          ) AS entry_count,
+          (
+            SELECT MIN(e.timestamp)
+            FROM transcript_entries e
+            WHERE e.transcript_id = t.id
+          ) AS first_ts,
+          (
+            SELECT MAX(e.timestamp)
+            FROM transcript_entries e
+            WHERE e.transcript_id = t.id
+          ) AS last_ts,
+          tm.title AS title
+        FROM transcripts t
+        LEFT JOIN transcript_metadata tm ON tm.transcript_id = t.id
+        WHERE t.project_id = ?
+      """
+      var args: [DatabaseValueConvertible] = [projectId]
+
+      if let since = timeRange.sinceTimestamp, let until = timeRange.untilTimestamp {
+        sql += """
+           AND EXISTS (
+             SELECT 1
+             FROM transcript_entries e
+             WHERE e.transcript_id = t.id
+               AND e.timestamp >= ?
+               AND e.timestamp <= ?
+           )
+        """
+        args.append(since)
+        args.append(until)
+      } else if let since = timeRange.sinceTimestamp {
+        sql += """
+           AND EXISTS (
+             SELECT 1
+             FROM transcript_entries e
+             WHERE e.transcript_id = t.id
+               AND e.timestamp >= ?
+           )
+        """
+        args.append(since)
+      } else if let until = timeRange.untilTimestamp {
+        sql += """
+           AND EXISTS (
+             SELECT 1
+             FROM transcript_entries e
+             WHERE e.transcript_id = t.id
+               AND e.timestamp <= ?
+           )
+        """
+        args.append(until)
+      }
+
+      sql += " ORDER BY last_ts DESC NULLS LAST LIMIT ?"
+      args.append(limit)
+
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let projectId: String
+        let provider: String
+        let entryCount: Int?
+        let firstEntryTimestamp: Int?
+        let lastEntryTimestamp: Int?
+        let title: String?
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case projectId = "project_id"
+          case provider
+          case entryCount = "entry_count"
+          case firstEntryTimestamp = "first_ts"
+          case lastEntryTimestamp = "last_ts"
+          case title
+        }
+      }
+
+      let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+      return rows.map {
+        TranscriptListItem(
+          id: $0.id,
+          projectId: $0.projectId,
+          provider: $0.provider,
+          entryCount: $0.entryCount,
+          firstEntryTimestamp: $0.firstEntryTimestamp,
+          lastEntryTimestamp: $0.lastEntryTimestamp,
+          title: $0.title
+        )
+      }
+    }
+  }
+
+  public func search(
+    query: String,
+    projectId: String? = nil,
+    transcriptId: String? = nil,
+    limit: Int = 50,
+    includeHidden: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange()
+  ) throws -> [SearchHit] {
+    let safeQuery = ConversationSearchService.buildSafeFTSQuery(query)
+    guard !safeQuery.isEmpty else { return [] }
+
+    return try pool.read { db in
+      guard try db.tableExists("transcript_entries_fts") else {
+        throw NSError(
+          domain: "dev.contextify.ContextifyQueryService",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey: "FTS search is not available in this database."]
+        )
+      }
+
+      var sql = """
+        SELECT
+          e.id AS id,
+          e.project_id AS project_id,
+          p.name AS project_name,
+          e.transcript_id AS transcript_id,
+          tm.title AS transcript_title,
+          e.provider AS provider,
+          e.kind AS kind,
+          e.timestamp AS timestamp,
+          bm25(transcript_entries_fts) AS score,
+          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet,
+          CASE
+            WHEN length(e.content) > length(COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '')) THEN 1
+            ELSE 0
+          END AS content_truncated
+        FROM transcript_entries_fts
+        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+        LEFT JOIN projects p ON p.id = e.project_id
+        LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
+        WHERE transcript_entries_fts MATCH ?
+      """
+      var args: [DatabaseValueConvertible] = [safeQuery]
+
+      if !includeHidden {
+        sql += " AND e.display_in_timeline = 1"
+      }
+      if let projectId {
+        sql += " AND e.project_id = ?"
+        args.append(projectId)
+      }
+      if let transcriptId {
+        sql += " AND e.transcript_id = ?"
+        args.append(transcriptId)
+      }
+      if let since = timeRange.sinceTimestamp {
+        sql += " AND e.timestamp >= ?"
+        args.append(since)
+      }
+      if let until = timeRange.untilTimestamp {
+        sql += " AND e.timestamp <= ?"
+        args.append(until)
+      }
+
+      sql += " ORDER BY score, e.timestamp DESC LIMIT ?"
+      args.append(limit)
+
+      struct Row: FetchableRecord, Decodable {
+        let id: String
+        let projectId: String
+        let projectName: String?
+        let transcriptId: String
+        let transcriptTitle: String?
+        let provider: String
+        let kind: String
+        let timestamp: Int
+        let score: Double
+        let contentSnippet: String
+        let contentTruncated: Bool
+
+        enum CodingKeys: String, CodingKey {
+          case id
+          case projectId = "project_id"
+          case projectName = "project_name"
+          case transcriptId = "transcript_id"
+          case transcriptTitle = "transcript_title"
+          case provider
+          case kind
+          case timestamp
+          case score
+          case contentSnippet = "snippet"
+          case contentTruncated = "content_truncated"
+        }
+      }
+
+      let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+      return rows.map {
+        SearchHit(
+          id: $0.id,
+          projectId: $0.projectId,
+          projectName: $0.projectName,
+          transcriptId: $0.transcriptId,
+          transcriptTitle: $0.transcriptTitle,
+          provider: $0.provider,
+          kind: $0.kind,
+          timestamp: $0.timestamp,
+          score: $0.score,
+          contentSnippet: $0.contentSnippet,
+          contentTruncated: $0.contentTruncated
+        )
+      }
+    }
   }
 
   /// Most recent timeline-visible entries, optionally project scoped.
