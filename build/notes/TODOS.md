@@ -91,24 +91,6 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## v1.0 Public Launch
-
-**Status:** Website deployed, App Store approved, soft launch in progress
-**Priority:** P0
-
-- [ ] #LAUNCH: Complete v1.0 public launch sequence
-
-**Remaining:**
-- [x] Prepare Twitter announcement thread
-- [x] Soft launch: Tweet + Reddit
-- [x] Show HN post
-- [ ] Monitor and respond to feedback
-- [ ] Product Hunt (when ready)
-
-**Reference:** `releases/v1.0.0/release.json`, `releases/WORKFLOW.md`
-
----
-
 ## QA Review and Recent Feature Cleanup (4 items)
 
 **Status:** Complete
@@ -166,6 +148,25 @@ transcript provider permission via Settings. Two bugs were fixed:
 ---
 
 # P1 (High Priority)
+
+---
+
+## v1.0 Launch Follow-up
+
+**Status:** Core launch complete, follow-up submissions pending
+**Priority:** P1
+
+- [ ] #LAUNCH-FOLLOWUP: Complete additional launch submissions
+
+**Done:**
+- [x] Twitter announcement
+- [x] Reddit post
+- [x] Show HN
+
+**Remaining:**
+- [ ] TinyLaunch submission (inbound invite)
+- [ ] Product Hunt (when ready)
+- [ ] Monitor and respond to feedback (ongoing)
 
 ---
 
