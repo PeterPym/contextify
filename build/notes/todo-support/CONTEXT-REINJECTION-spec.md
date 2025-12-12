@@ -59,6 +59,55 @@ All commands support machine output:
 
 - `--json`
 
+### `status`
+
+Purpose: quick sanity check (discovery + open + counts + capabilities) before running deeper queries.
+
+Includes:
+
+- resolved database path (if available)
+- schema/capabilities snapshot
+- project/transcript/entry counts (best-effort)
+
+### `projects`
+
+Purpose: discover available projects and ids without relying on the UI.
+
+Options:
+
+- `--include-hidden` (default: exclude)
+- `--limit <n>` (default: all)
+
+Returns (per project, minimum):
+
+- `id`
+- `name?`
+- `rootPath`
+- `hidden`
+- `lastViewedTs?`
+- `lastActivityTs?` (best-effort; derived)
+- `transcriptCount?`
+- `entryCount?`
+
+### `transcripts`
+
+Purpose: discover available transcripts (conversation units) for a project.
+
+Options:
+
+- project selection: `--project-id <id>` or `--project <path|.|current>` (required)
+- `--limit <n>` (default: 50)
+- time filtering (see Time Filters): `--since`, `--until`, `--days`
+
+Returns (per transcript, minimum):
+
+- `id`
+- `projectId`
+- `provider`
+- `entryCount?`
+- `firstEntryTs?`, `lastEntryTs?` (best-effort; derived)
+- `title?` (from summaries when available; nullable)
+
 ### `version`
 
 Purpose: DB/schema visibility and feature availability.
@@ -81,6 +130,12 @@ Scoping options (v1):
 - `--project-id <id>`
 - `--project <path|.|current>` (resolves to project id; see Project Resolution)
 - `--transcript-id <id>`
+
+Time filtering (optional; see Time Filters):
+
+- `--since <ts|iso8601>`
+- `--until <ts|iso8601>`
+- `--days <n>` (shorthand; equivalent to `--since now - n days`)
 
 Notes:
 
@@ -137,12 +192,32 @@ Options:
 - `--project-id <id>` or `--project <path|.|current>`
 - `--limit <n>`
 - `--no-content`
+- time filtering (see Time Filters): `--since`, `--until`, `--days`
 
 Returns recent entries including `id` values to feed into `context`.
 
 ### `summaries` / `stats`
 
 Optional (nice-to-have for reinjection); existing behavior remains.
+
+---
+
+## Time Filters
+
+Some commands support time filtering (`search`, `activity`, `transcripts`).
+
+Supported input formats:
+
+- Unix timestamp seconds (e.g., `1702234567`)
+- ISO 8601 (e.g., `2025-12-12`, `2025-12-12T14:30:00Z`)
+
+Shorthand:
+
+- `--days <n>` sets `--since` to “now minus N days” (integer days).
+
+Non-goal (v1):
+
+- Natural-language parsing (`yesterday`, `3 days ago`) is deferred.
 
 ---
 
@@ -260,4 +335,3 @@ Optional enrichment:
 
 - Search architecture: `build/docs/architecture/search.md`
 - Entry-anchored retrieval addendum: `build/docs/architecture/search-cli-entry-anchored-retrieval.md`
-
