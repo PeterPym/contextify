@@ -199,6 +199,7 @@ struct ContextifyApp: App {
   @State private var backgroundRefreshTimer: Timer?
   @State private var projectDirectoryMonitor: FSEventsMonitor?
   @State private var showWelcomeModal = false  // C3.2: Welcome modal state
+  @State private var showLiteModeInfo = false  // Lite mode info modal for subsequent launches
 
   /// Startup-only cache for the access provider. Ensures single construction per process.
   /// NOTE: Mid-session reconfigureAccessProvider() does NOT update this cache.
@@ -349,6 +350,10 @@ struct ContextifyApp: App {
               WelcomeModalView(folderAccessController: folderAccessController)
                 .environment(vm)
             }
+            .sheet(isPresented: $showLiteModeInfo) {
+              // Lite mode info for subsequent launches (when welcome modal not shown)
+              LiteModeInfoView()
+            }
         } else {
           // Initialization loading state (brief)
           VStack(spacing: 12) {
@@ -367,6 +372,23 @@ struct ContextifyApp: App {
         guard !onboardingCoordinator.shouldShowWizard,
               !onboardingCoordinator.isHandlingCompletion else { return }
         await initializeProjectsSystem()
+
+        // Show lite mode info on subsequent launches (not first launch, which uses WelcomeModal)
+        // Conditions:
+        // 1. Lite mode is active (macOS < 26 or simulation)
+        // 2. Projects already exist (not showing welcome modal)
+        // 3. User hasn't dismissed the info modal
+        if isLiteModeActive(),
+           !HUDPreferences.hasLiteModeInfoBeenDismissed() {
+          // Brief delay to let the main UI settle before presenting modal
+          try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s
+          await MainActor.run {
+            // Only show if welcome modal isn't showing (it has its own lite mode callout)
+            if !showWelcomeModal {
+              showLiteModeInfo = true
+            }
+          }
+        }
       }
       .onReceive(NotificationCenter.default.publisher(for: .startupRequiresWelcomeModal)) { _ in
         let startupLog = Logger(subsystem: "dev.contextify", category: "Projects")
