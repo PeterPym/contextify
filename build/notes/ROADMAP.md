@@ -521,6 +521,11 @@ App Store (sandboxed) builds can only access transcript directories (`~/.claude/
 4. Enable git features for projects with granted access
 5. Show visual indicator for projects with/without full access
 
+**UX entry points to consider:**
+- Settings panel (explicit permission management)
+- Git branch InfoPopover (contextual nudge when showing transcript-based branch)
+- Project detail view (per-project action)
+
 **Files:**
 - `app/Sources/ContextifyCore/HUDCore.swift:707-728` - bookmark handling
 - `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift:490-519` - external project switch
