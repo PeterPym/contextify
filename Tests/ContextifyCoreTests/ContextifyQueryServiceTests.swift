@@ -147,4 +147,42 @@ final class ContextifyQueryServiceTests: XCTestCase {
     XCTAssertEqual(stats.first?.projectId, "p1")
     XCTAssertEqual(stats.first?.entryCount, 2)
   }
+
+  func testMissingFTSTableReturnsFriendlyError() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-query-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    _ = try DatabaseQueue(path: dbURL.path)
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    XCTAssertThrowsError(try service.ftsSearch(query: "hello", projectId: nil, limit: 10)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("FTS search is not available"))
+    }
+
+    let info = try service.versionInfo()
+    XCTAssertFalse(info.ftsEnabled)
+  }
+
+  func testMissingSummariesTableReturnsFriendlyError() throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-query-test-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    _ = try DatabaseQueue(path: dbURL.path)
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+
+    XCTAssertThrowsError(try service.summaries(projectId: nil, limit: 10)) { error in
+      XCTAssertTrue(error.localizedDescription.contains("Summaries are not available"))
+    }
+
+    let info = try service.versionInfo()
+    XCTAssertFalse(info.summariesEnabled)
+  }
 }

@@ -18,6 +18,7 @@ public struct ContextifyQueryService: Sendable {
     public let sqliteUserVersion: Int
     public let appSchemaVersion: Int
     public let ftsEnabled: Bool
+    public let summariesEnabled: Bool
   }
 
   public init(databaseURL: URL) throws {
@@ -51,6 +52,13 @@ public struct ContextifyQueryService: Sendable {
     let safeQuery = ConversationSearchService.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
     return try pool.read { db in
+      guard try db.tableExists("transcript_entries_fts") else {
+        throw NSError(
+          domain: "dev.contextify.ContextifyQueryService",
+          code: 1,
+          userInfo: [NSLocalizedDescriptionKey: "FTS search is not available in this database."]
+        )
+      }
       var sql = """
         SELECT e.*
         FROM transcript_entries_fts f
@@ -71,6 +79,13 @@ public struct ContextifyQueryService: Sendable {
   /// Transcript-level summaries, optionally project scoped.
   public func summaries(projectId: String? = nil, limit: Int = 50) throws -> [TranscriptMetadataRecord] {
     try pool.read { db in
+      guard try db.tableExists("transcript_metadata") else {
+        throw NSError(
+          domain: "dev.contextify.ContextifyQueryService",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Summaries are not available in this database."]
+        )
+      }
       var sql = """
         SELECT *
         FROM transcript_metadata
@@ -146,10 +161,12 @@ public struct ContextifyQueryService: Sendable {
     try pool.read { db in
       let sqliteUserVersion = try Int.fetchOne(db, sql: "PRAGMA user_version") ?? 0
       let ftsEnabled = (try? db.tableExists("transcript_entries_fts")) ?? false
+      let summariesEnabled = (try? db.tableExists("transcript_metadata")) ?? false
       return VersionInfo(
         sqliteUserVersion: sqliteUserVersion,
         appSchemaVersion: DatabaseSchema.version,
-        ftsEnabled: ftsEnabled
+        ftsEnabled: ftsEnabled,
+        summariesEnabled: summariesEnabled
       )
     }
   }

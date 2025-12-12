@@ -41,9 +41,10 @@ struct ContextifyQueryCLI {
       var options = Options()
       let args = Array(CommandLine.arguments.dropFirst())
 
-      // Parse global flags.
+      // Parse global flags anywhere (before/after the command).
+      var remaining: [String] = []
       var index = 0
-      while index < args.count, args[index].hasPrefix("--") || args[index] == "-h" {
+      while index < args.count {
         let arg = args[index]
         switch arg {
         case "--db-path":
@@ -61,19 +62,22 @@ struct ContextifyQueryCLI {
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else { usage("Missing/invalid number after --limit") }
+          guard n > 0 else { usage("--limit must be > 0") }
           options.limit = n
         case "--json":
           options.jsonOutput = true
         case "--help", "-h":
           usage(nil)
         default:
-          usage("Unknown option: \(arg)")
+          if arg.hasPrefix("--") {
+            usage("Unknown option: \(arg)")
+          }
+          remaining.append(arg)
         }
         index += 1
       }
 
       // Remaining args contain command + command args.
-      let remaining = Array(args.dropFirst(index))
       guard let commandString = remaining.first, let command = Command(rawValue: commandString) else {
         usage("Missing or unknown command")
       }
@@ -81,11 +85,13 @@ struct ContextifyQueryCLI {
 
       let dbURL = try resolveDatabaseURL(options: options)
       let service = try ContextifyQueryService(databaseURL: dbURL)
+      let versionInfo = try service.versionInfo()
 
       switch command {
       case .search:
-        guard let query = commandArgs.first else { usage("Missing search query") }
-        try validateCapability(command: command, dbURL: dbURL)
+        guard !commandArgs.isEmpty else { usage("Missing search query") }
+        let query = commandArgs.joined(separator: " ")
+        try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let results = try service.ftsSearch(query: query, projectId: options.projectId, limit: options.limit)
         try printResponse(type: "search", data: results, json: options.jsonOutput)
 
@@ -94,7 +100,7 @@ struct ContextifyQueryCLI {
         try printResponse(type: "activity", data: results, json: options.jsonOutput)
 
       case .summaries:
-        try validateCapability(command: command, dbURL: dbURL)
+        try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let results = try service.summaries(projectId: options.projectId, limit: options.limit)
         try printResponse(type: "summaries", data: results, json: options.jsonOutput)
 
@@ -103,8 +109,7 @@ struct ContextifyQueryCLI {
         try printResponse(type: "stats", data: results, json: options.jsonOutput)
 
       case .version:
-        let info = try service.versionInfo()
-        try printResponse(type: "version", data: info, json: options.jsonOutput)
+        try printResponse(type: "version", data: versionInfo, json: options.jsonOutput)
       }
     } catch {
       fputs("Error: \(error.localizedDescription)\n", stderr)
@@ -114,25 +119,52 @@ struct ContextifyQueryCLI {
 
   private static func resolveDatabaseURL(options: Options) throws -> URL {
     if let dbPath = options.dbPath {
-      return URL(fileURLWithPath: dbPath)
+      let url = URL(fileURLWithPath: dbPath)
+      guard isRegularFile(url) else {
+        throw NSError(
+          domain: "contextify-query",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Database file not found at \(dbPath)."]
+        )
+      }
+      return url
     }
     if let dbDir = options.dbDir {
-      return URL(fileURLWithPath: dbDir).appendingPathComponent("contextify.db")
+      let url = URL(fileURLWithPath: dbDir).appendingPathComponent("contextify.db")
+      guard isRegularFile(url) else {
+        throw NSError(
+          domain: "contextify-query",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Database file not found at \(url.path)."]
+        )
+      }
+      return url
     }
 
-    // DMG-only preference resolution.
-    if !Sandbox.isSandboxed, let customDir = HUDPreferences.getCustomDatabaseLocation() {
-      return URL(fileURLWithPath: customDir).appendingPathComponent("contextify.db")
+    // Preferences resolution (custom path, if set).
+    if let customDir = HUDPreferences.getCustomDatabaseLocation() {
+      let url = URL(fileURLWithPath: customDir).appendingPathComponent("contextify.db")
+      if isRegularFile(url) {
+        return url
+      }
+    }
+    if let legacyDir = HUDPreferences.getLegacyDatabaseLocation() {
+      let url = URL(fileURLWithPath: legacyDir).appendingPathComponent("contextify.db")
+      if isRegularFile(url) {
+        return url
+      }
     }
 
-    // Sidecar discovery at default location.
-    let defaultDir = try defaultDatabaseDirectory()
-    let sidecarURL = defaultDir.appendingPathComponent(".state/state.json")
-    if FileManager.default.fileExists(atPath: sidecarURL.path) {
-      let data = try Data(contentsOf: sidecarURL)
-      let sidecar = try JSONDecoder().decode(StateSidecar.self, from: data)
-      if let databasePath = sidecar.databasePath {
-        return URL(fileURLWithPath: databasePath)
+    // Sidecar discovery at default locations (DMG + App Store container).
+    for root in try candidateDatabaseDirectories() {
+      let stateURL = root.appendingPathComponent(".state/state.json")
+      if let discovered = try discoverDatabaseURL(from: stateURL), isRegularFile(discovered) {
+        return discovered
+      }
+
+      let dbURL = root.appendingPathComponent("contextify.db")
+      if isRegularFile(dbURL) {
+        return dbURL
       }
     }
 
@@ -141,6 +173,29 @@ struct ContextifyQueryCLI {
       code: 2,
       userInfo: [NSLocalizedDescriptionKey: "Open Contextify once to initialize discovery."]
     )
+  }
+
+  private static func candidateDatabaseDirectories() throws -> [URL] {
+    var candidates: [URL] = [try defaultDatabaseDirectory()]
+
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    for bundleId in ["sh.contextify.Contextify"] {
+      let containerSupport = home
+        .appendingPathComponent("Library/Containers", isDirectory: true)
+        .appendingPathComponent(bundleId, isDirectory: true)
+        .appendingPathComponent("Data/Library/Application Support/Contextify", isDirectory: true)
+      candidates.append(containerSupport)
+    }
+
+    return candidates
+  }
+
+  private static func discoverDatabaseURL(from stateURL: URL) throws -> URL? {
+    guard FileManager.default.fileExists(atPath: stateURL.path) else { return nil }
+    let data = try Data(contentsOf: stateURL)
+    let sidecar = try JSONDecoder().decode(StateSidecar.self, from: data)
+    guard let databasePath = sidecar.databasePath else { return nil }
+    return URL(fileURLWithPath: databasePath)
   }
 
   private static func defaultDatabaseDirectory() throws -> URL {
@@ -153,14 +208,20 @@ struct ContextifyQueryCLI {
     return appSupport.appendingPathComponent("Contextify", isDirectory: true)
   }
 
-  private static func validateCapability(command: Command, dbURL: URL) throws {
+  private static func validateCapability(
+    command: Command,
+    dbURL: URL,
+    versionInfo: ContextifyQueryService.VersionInfo
+  ) throws {
     let dir = dbURL.deletingLastPathComponent()
     let sidecarURL = dir.appendingPathComponent(".state/state.json")
-    guard FileManager.default.fileExists(atPath: sidecarURL.path) else { return }
 
-    let data = try Data(contentsOf: sidecarURL)
-    let sidecar = try JSONDecoder().decode(StateSidecar.self, from: data)
-    guard let capabilities = sidecar.capabilities else { return }
+    var sidecarCapabilities: [String]?
+    if FileManager.default.fileExists(atPath: sidecarURL.path) {
+      let data = try Data(contentsOf: sidecarURL)
+      let sidecar = try JSONDecoder().decode(StateSidecar.self, from: data)
+      sidecarCapabilities = sidecar.capabilities
+    }
 
     let required: String?
     switch command {
@@ -172,12 +233,39 @@ struct ContextifyQueryCLI {
       required = nil
     }
 
-    if let required, !capabilities.contains(required) {
+    guard let required else { return }
+
+    let sidecarDenies = sidecarCapabilities.map { !$0.contains(required) } ?? false
+    let liveSupports: Bool
+    switch command {
+    case .search:
+      liveSupports = versionInfo.ftsEnabled
+    case .summaries:
+      liveSupports = versionInfo.summariesEnabled
+    default:
+      liveSupports = true
+    }
+
+    guard liveSupports else {
+      let reason: String
+      switch command {
+      case .search:
+        reason = "FTS search table missing (transcript_entries_fts)."
+      case .summaries:
+        reason = "Summaries table missing (transcript_metadata)."
+      default:
+        reason = "Database does not support this command."
+      }
       throw NSError(
         domain: "contextify-query",
         code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "Database does not advertise capability '\(required)'."]
+        userInfo: [NSLocalizedDescriptionKey: "\(reason) Open Contextify to run migrations, or pass a different --db-path."]
       )
+    }
+
+    if sidecarDenies {
+      // Sidecar is treated as an advisory hint; prefer live DB state.
+      return
     }
   }
 
@@ -220,4 +308,10 @@ struct ContextifyQueryCLI {
     )
     exit(message == nil ? 0 : 1)
   }
+}
+
+private func isRegularFile(_ url: URL) -> Bool {
+  var isDirectory: ObjCBool = false
+  guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return false }
+  return !isDirectory.boolValue
 }
