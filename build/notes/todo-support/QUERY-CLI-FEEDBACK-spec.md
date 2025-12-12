@@ -48,10 +48,10 @@ Editor-based capture:
 contextify-query feedback --edit
 ```
 
-JSON stdin:
+JSON stdin (auto-detects when piped; `--stdin` forces stdin parsing even if TTY):
 
 ```bash
-cat feedback.json | contextify-query feedback --stdin --json
+cat feedback.json | contextify-query feedback --json
 ```
 
 ### Triage
@@ -59,8 +59,10 @@ cat feedback.json | contextify-query feedback --stdin --json
 ```bash
 contextify-query feedback list [--json]
 contextify-query feedback show <feedback-id> [--json]
-contextify-query feedback export <feedback-id> --format md|todo-line [--json]
+contextify-query feedback export <feedback-id> --format md|todo|json [--json]
 contextify-query feedback dismiss <feedback-id>
+contextify-query feedback archive [--older-than-days <n>]
+contextify-query feedback clear --all
 ```
 
 ## Storage Model
@@ -72,6 +74,19 @@ Default inbox directory:
 Files:
 
 - `fb_<YYYYMMDD>_<NNN>.json`
+
+ID rules:
+
+- Sequence is per-day and resets at `001`.
+- Sequence is always zero-padded (e.g., `001`) so lexicographic sorting works.
+
+Archive directory:
+
+- `~/Library/Application Support/Contextify/feedback/archive/`
+
+Dismissed items:
+
+- `dismiss` moves the item into `feedback/archive/dismissed/` (keeps history).
 
 ## Feedback Item Schema
 
@@ -128,13 +143,14 @@ Errors follow the CLI’s JSON error envelope.
 ## Guardrails
 
 - Duplicate detection: hash `summary + intent`; warn if similar exists in last 7 days; allow override via `--force`.
-- Soft rate limit: warn if > 5 feedback items in last hour.
+- Soft rate limit: warn if > 5 feedback items in last hour and suggest consolidating; allow override via `--force`.
 - Storage cap: keep last 100 items; archive older ones.
 - Never touch git.
 
 ## Repo Workflow
 
-`feedback export --format todo-line` prints a ready-to-paste TODO bullet that links the exported Markdown.
+`feedback export --format todo` prints a ready-to-paste TODO bullet that links the exported Markdown.
+
+`feedback export --format md` writes the Markdown to stdout; `--output <path>` optionally writes to a file.
 
 The CLI prints content but does not edit `build/notes/TODOS.md`.
-
