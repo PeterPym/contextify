@@ -413,50 +413,67 @@ public struct ContextifyQueryService: Sendable {
       }
 
       var sql = """
+        WITH hits AS (
+          SELECT
+            e.id AS id,
+            e.project_id AS project_id,
+            p.name AS project_name,
+            e.transcript_id AS transcript_id,
+            tm.title AS transcript_title,
+            e.provider AS provider,
+            e.kind AS kind,
+            e.timestamp AS timestamp,
+            e.created_at AS created_at,
+            e.display_in_timeline AS display_in_timeline,
+            bm25(transcript_entries_fts) AS score,
+            COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet
+          FROM transcript_entries_fts
+          JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+          LEFT JOIN projects p ON p.id = e.project_id
+          LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
+          WHERE transcript_entries_fts MATCH ?
+        )
         SELECT
-          e.id AS id,
-          e.project_id AS project_id,
-          p.name AS project_name,
-          e.transcript_id AS transcript_id,
-          tm.title AS transcript_title,
-          e.provider AS provider,
-          e.kind AS kind,
-          e.timestamp AS timestamp,
-          bm25(transcript_entries_fts) AS score,
-          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet,
+          id,
+          project_id,
+          project_name,
+          transcript_id,
+          transcript_title,
+          provider,
+          kind,
+          timestamp,
+          score,
+          snippet,
           CASE
-            WHEN length(e.content) > length(COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '')) THEN 1
+            WHEN instr(snippet, '…') > 0 THEN 1
             ELSE 0
           END AS content_truncated
-        FROM transcript_entries_fts
-        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
-        LEFT JOIN projects p ON p.id = e.project_id
-        LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
-        WHERE transcript_entries_fts MATCH ?
+        FROM hits
+        WHERE 1 = 1
       """
       var args: [DatabaseValueConvertible] = [safeQuery]
 
       if !includeHidden {
-        sql += " AND e.display_in_timeline = 1"
+        sql += " AND display_in_timeline = 1"
       }
       if let projectId {
-        sql += " AND e.project_id = ?"
+        sql += " AND project_id = ?"
         args.append(projectId)
       }
       if let transcriptId {
-        sql += " AND e.transcript_id = ?"
+        sql += " AND transcript_id = ?"
         args.append(transcriptId)
       }
       if let since = timeRange.sinceTimestamp {
-        sql += " AND e.timestamp >= ?"
+        sql += " AND timestamp >= ?"
         args.append(since)
       }
       if let until = timeRange.untilTimestamp {
-        sql += " AND e.timestamp <= ?"
+        sql += " AND timestamp <= ?"
         args.append(until)
       }
 
-      sql += " ORDER BY score, e.timestamp DESC LIMIT ?"
+      sql += " ORDER BY score ASC, timestamp DESC, created_at DESC, id ASC LIMIT ?"
       args.append(limit)
 
       struct Row: FetchableRecord, Decodable {
