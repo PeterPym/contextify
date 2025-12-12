@@ -76,6 +76,7 @@ struct ContextifyQueryCLI {
     var olderThanDays: Int?
     var all: Bool = false
     var force: Bool = false
+    var edit: Bool = false
   }
 
   struct StateSidecar: Decodable {
@@ -196,6 +197,8 @@ struct ContextifyQueryCLI {
           options.all = true
         case "--force":
           options.force = true
+        case "--edit":
+          options.edit = true
         case "--limit":
           index += 1
           guard index < args.count, let n = Int(args[index]) else {
@@ -712,13 +715,40 @@ private func runFeedback(
   ).appendingPathComponent("Contextify", isDirectory: true)
   let inbox = QueryCLIFeedbackInbox(root: inboxRoot)
 
-  let capabilities = capabilitiesFrom(versionInfo: versionInfo)
   let cliVersion = ProcessInfo.processInfo.environment["CONTEXTIFY_QUERY_VERSION"] ?? "dev"
 
   func printWarnings(_ warnings: [String]) {
     for warning in warnings {
       fputs("Warning: \(warning)\n", stderr)
     }
+  }
+
+  if options.edit {
+    let input = try editFeedbackInput()
+    try recordFeedback(
+      input: input,
+      options: options,
+      inbox: inbox,
+      dbURL: dbURL,
+      versionInfo: versionInfo,
+      cliVersion: cliVersion,
+      printWarnings: printWarnings
+    )
+    return
+  }
+
+  if commandArgs.isEmpty, !stdinIsTTY() {
+    let input = try readFeedbackInputFromStdin()
+    try recordFeedback(
+      input: input,
+      options: options,
+      inbox: inbox,
+      dbURL: dbURL,
+      versionInfo: versionInfo,
+      cliVersion: cliVersion,
+      printWarnings: printWarnings
+    )
+    return
   }
 
   if let sub = commandArgs.first {
@@ -791,36 +821,22 @@ private func runFeedback(
   }
 
   guard !commandArgs.isEmpty else { throw CLIError(code: "invalidArgs", message: "Missing feedback summary", exitCode: .invalidArgs) }
-  let summary = commandArgs.joined(separator: " ")
-  let result = try inbox.record(
-    summary: summary,
+  let input = FeedbackInput(
+    summary: commandArgs.joined(separator: " "),
     intent: options.intent,
     gap: options.gap,
     workaround: options.workaround,
-    proposal: options.proposal,
+    proposal: options.proposal
+  )
+  try recordFeedback(
+    input: input,
+    options: options,
+    inbox: inbox,
+    dbURL: dbURL,
+    versionInfo: versionInfo,
     cliVersion: cliVersion,
-    appSchemaVersion: versionInfo.appSchemaVersion,
-    capabilities: capabilities,
-    force: options.force
+    printWarnings: printWarnings
   )
-
-  if !options.jsonOutput {
-    printWarnings(result.warnings)
-  }
-
-  let payload = FeedbackRecordedPayload(
-    id: result.recorded.id,
-    path: result.recorded.path,
-    summary: result.recorded.summary,
-    warnings: result.warnings
-  )
-  try ContextifyQueryCLI.printResponse(type: "feedbackRecorded", data: payload, json: options.jsonOutput) {
-    if !result.warnings.isEmpty {
-      printWarnings(result.warnings)
-    }
-    print("Recorded \(payload.id)")
-    print(payload.path)
-  }
 }
 
 private struct FeedbackListPayload: Codable {
@@ -857,6 +873,102 @@ private func capabilitiesFrom(versionInfo: ContextifyQueryService.VersionInfo) -
   if versionInfo.ftsEnabled { caps.append("fts_search") }
   if versionInfo.summariesEnabled { caps.append("summaries") }
   return caps
+}
+
+private struct FeedbackInput: Codable {
+  let summary: String
+  let intent: String?
+  let gap: String?
+  let workaround: String?
+  let proposal: String?
+}
+
+private func recordFeedback(
+  input: FeedbackInput,
+  options: ContextifyQueryCLI.Options,
+  inbox: QueryCLIFeedbackInbox,
+  dbURL: URL,
+  versionInfo: ContextifyQueryService.VersionInfo,
+  cliVersion: String,
+  printWarnings: ([String]) -> Void
+) throws {
+  let capabilities = capabilitiesFrom(versionInfo: versionInfo)
+  let result = try inbox.record(
+    summary: input.summary,
+    intent: input.intent,
+    gap: input.gap,
+    workaround: input.workaround,
+    proposal: input.proposal,
+    cliVersion: cliVersion,
+    appSchemaVersion: versionInfo.appSchemaVersion,
+    capabilities: capabilities,
+    force: options.force
+  )
+
+  if !options.jsonOutput {
+    printWarnings(result.warnings)
+  }
+
+  let payload = FeedbackRecordedPayload(
+    id: result.recorded.id,
+    path: result.recorded.path,
+    summary: result.recorded.summary,
+    warnings: result.warnings
+  )
+  try ContextifyQueryCLI.printResponse(type: "feedbackRecorded", data: payload, json: options.jsonOutput) {
+    if !result.warnings.isEmpty {
+      printWarnings(result.warnings)
+    }
+    print("Recorded \(payload.id)")
+    print(payload.path)
+  }
+}
+
+private func stdinIsTTY() -> Bool {
+  isatty(fileno(stdin)) != 0
+}
+
+private func readFeedbackInputFromStdin() throws -> FeedbackInput {
+  let data = FileHandle.standardInput.readDataToEndOfFile()
+  guard !data.isEmpty else { throw CLIError(code: "invalidArgs", message: "Empty stdin", exitCode: .invalidArgs) }
+  do {
+    return try JSONDecoder().decode(FeedbackInput.self, from: data)
+  } catch {
+    throw CLIError(code: "invalidArgs", message: "Invalid JSON on stdin", exitCode: .invalidArgs)
+  }
+}
+
+private func editFeedbackInput() throws -> FeedbackInput {
+  let editor = ProcessInfo.processInfo.environment["EDITOR"] ?? ""
+  guard !editor.isEmpty else {
+    throw CLIError(code: "invalidArgs", message: "Missing $EDITOR for --edit", exitCode: .invalidArgs)
+  }
+
+  let template = FeedbackInput(summary: "", intent: nil, gap: nil, workaround: nil, proposal: nil)
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+  let data = try encoder.encode(template)
+
+  let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("contextify-query-feedback-\(UUID().uuidString).json")
+  try data.write(to: tmpURL, options: .atomic)
+  defer { try? FileManager.default.removeItem(at: tmpURL) }
+
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+  process.arguments = [editor, tmpURL.path]
+  try process.run()
+  process.waitUntilExit()
+
+  guard process.terminationStatus == 0 else {
+    throw CLIError(code: "invalidArgs", message: "$EDITOR exited with status \(process.terminationStatus)", exitCode: .invalidArgs)
+  }
+
+  let edited = try Data(contentsOf: tmpURL)
+  let input = try JSONDecoder().decode(FeedbackInput.self, from: edited)
+  if input.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    throw CLIError(code: "invalidArgs", message: "Feedback summary is required", exitCode: .invalidArgs)
+  }
+  return input
 }
 
 private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptListItem]) {

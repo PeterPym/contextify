@@ -77,34 +77,53 @@ public final class QueryCLIFeedbackInbox: Sendable {
     warnings.append(contentsOf: try checkDuplicateWarnings(summary: trimmed, intent: intent, force: force))
     warnings.append(contentsOf: try checkRateLimitWarnings(force: force))
 
-    let id = try nextId()
     let timestamp = iso8601(now())
 
-    let item = QueryCLIFeedbackItem(
-      id: id,
-      summary: trimmed,
-      intent: intent,
-      gap: gap,
-      workaround: workaround,
-      proposal: proposal,
-      context: QueryCLIFeedbackContext(
-        timestamp: timestamp,
-        cliVersion: cliVersion,
-        appSchemaVersion: appSchemaVersion,
-        capabilities: capabilities
-      )
-    )
-
-    let url = inboxURL(forId: id)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(item)
-    try data.write(to: url, options: .atomic)
+
+    var recorded: QueryCLIFeedbackRecorded?
+    var attempts = 0
+    while recorded == nil {
+      attempts += 1
+      if attempts > 10 {
+        throw QueryCLIFeedbackError.invalidArgs("Failed to allocate unique feedback id after 10 attempts")
+      }
+
+      let id = try nextId()
+      let item = QueryCLIFeedbackItem(
+        id: id,
+        summary: trimmed,
+        intent: intent,
+        gap: gap,
+        workaround: workaround,
+        proposal: proposal,
+        context: QueryCLIFeedbackContext(
+          timestamp: timestamp,
+          cliVersion: cliVersion,
+          appSchemaVersion: appSchemaVersion,
+          capabilities: capabilities
+        )
+      )
+
+      let data = try encoder.encode(item)
+
+      let destURL = inboxURL(forId: id)
+      let tmpURL = inboxDir().appendingPathComponent(".tmp-\(UUID().uuidString).json")
+      try data.write(to: tmpURL, options: .atomic)
+      do {
+        try FileManager.default.moveItem(at: tmpURL, to: destURL)
+        recorded = QueryCLIFeedbackRecorded(id: id, path: destURL.path, summary: trimmed)
+      } catch {
+        try? FileManager.default.removeItem(at: tmpURL)
+        continue
+      }
+    }
 
     try enforceStorageCap()
 
     return QueryCLIFeedbackRecordResult(
-      recorded: QueryCLIFeedbackRecorded(id: id, path: url.path, summary: trimmed),
+      recorded: recorded!,
       warnings: warnings
     )
   }
