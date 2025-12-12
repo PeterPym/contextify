@@ -93,7 +93,7 @@ priority_levels:
 
 **Vision:** Right-click transcripts to "Resume this conversation" or "Fork from here". Contextify becomes workflow participant, not just observer.
 
-**Spec:** `build/notes/todo-support/P2-RESUME-FORK-spec.md`
+**Spec:** `build/notes/todo-support/RESUME-FORK-spec.md`
 
 ---
 

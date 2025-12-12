@@ -216,7 +216,7 @@ transcript provider permission via Settings. Two bugs were fixed:
 **Status:** Complete
 **Priority:** P1 (enables CI integration)
 **Effort:** 4-6 hours
-**Plan:** `build/notes/todo-support/P1-QA-PHASE-2-plan.md`
+**Plan:** `build/notes/todo-support/QA-PHASE-2-plan.md`
 
 - [x] #QA-PHASE-2: Implement fixture-based testing, search tests, DB migration tests, and CI integration ✅ DONE
 
@@ -292,8 +292,8 @@ let entries = TimelineEntryQuery()
     .fetch()
 ```
 
-**Plan:** `build/notes/todo-support/P1-QUERY-CENTRALIZE-design.md`
-**Source Analysis:** `build/notes/todo-support/P1-QUERY-CENTRALIZE-source-analysis.md`
+**Plan:** `build/notes/todo-support/QUERY-CENTRALIZE-design.md`
+**Source Analysis:** `build/notes/todo-support/QUERY-CENTRALIZE-source-analysis.md`
 
 **Benefits:**
 - Impossible to forget filter
@@ -492,7 +492,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - Trust `classifyUserIntent` as source of truth in postProcess
 - Fix double-prefix bugs ("You requested Claude Code You...")
 
-**Spec:** `build/notes/todo-support/P1-USER-PROMPT-REWORK-spec.md`
+**Spec:** `build/notes/todo-support/USER-PROMPT-REWORK-spec.md`
 **Planning:** `build/docs/planning/user-timeline-summarization-improvement.md`
 **Related:** #SUMMARIZATION-FIX (attribution issues - separate)
 
@@ -535,11 +535,11 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 5. Local LLM summary - generate optimized context summary for re-injection
 
 **Research Docs:**
-- `build/notes/todo-support/P1-CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
-- `build/notes/todo-support/P1-CONTEXT-REINJECTION-claude-code-research-report.md` - Claude Code capabilities
-- `build/notes/todo-support/P1-CONTEXT-REINJECTION-codex-research-report.md` - Codex capabilities
-- `build/notes/todo-support/P1-CONTEXT-REINJECTION-browser-research-prompt.md` - Browser research prompt
-- `build/notes/todo-support/P1-CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
+- `build/notes/todo-support/CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
+- `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-research-report.md` - Claude Code capabilities
+- `build/notes/todo-support/CONTEXT-REINJECTION-codex-research-report.md` - Codex capabilities
+- `build/notes/todo-support/CONTEXT-REINJECTION-browser-research-prompt.md` - Browser research prompt
+- `build/notes/todo-support/CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
 
 **Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
@@ -580,6 +580,53 @@ Both should use identical card components for consistency.
 ---
 
 # P2 (Medium Priority)
+
+---
+
+## Search Follow-on Improvements (3 items)
+
+**Status:** Spec complete
+**Priority:** P2
+**Effort:** 5-7 hours total
+**Spec:** `build/notes/todo-support/SEARCH-FOLLOWON-spec.md`
+
+- [ ] #SEARCH-FOLLOWON: Implement search performance and UX follow-ons
+
+**Items:**
+1. Context load performance (2-3s → <200ms) - 1-2 hours
+2. QuickSearch row selection highlighting - 15 minutes
+3. ViewModel test infrastructure - 2-4 hours
+
+---
+
+## Deep Search UX Enhancements (3 items)
+
+**Status:** Spec complete
+**Priority:** P2
+**Effort:** 6-8 hours total
+**Spec:** `build/notes/todo-support/SEARCH-UX-spec.md`
+
+- [ ] #SEARCH-UX: Add sort control, multi-select, and sticky date header
+
+**Items:**
+1. Sort control (Date/Relevance/Both) - 2-3 hours
+2. Context pane multi-select (click, shift+click, cmd+click) - 2-3 hours
+3. Sticky date header - 1-2 hours
+
+---
+
+## Timeline Flicker Fix (1 item)
+
+**Status:** Root cause identified, fix ready
+**Priority:** P2
+**Effort:** 7 minutes
+**Investigation:** `build/notes/todo-support/TIMELINE-FLICKER-investigation.md`
+
+- [ ] #TIMELINE-FLICKER: Remove broken P1 check causing duplicate refreshes
+
+**Problem:** DMG builds show timeline flicker during startup. Root cause: P1 check compares total DB count (267) vs paginated display count (25), always fails, causes duplicate refreshes.
+
+**Fix:** Delete the broken check at `ConversationMonitor.swift:1265-1278`. The existing 500ms debounce handles rapid refreshes.
 
 ---
 
@@ -1464,7 +1511,7 @@ Text("Start a conversation with Claude Code or Codex in any project, and it will
 **Status:** Research Complete
 **Priority:** P2 (workflow improvement - current file is 2k+ lines)
 **Effort:** 4-6 hours
-**Research:** `build/notes/todo-support/P2-TODOS-REFACTOR-research.md`
+**Research:** `build/notes/todo-support/TODOS-REFACTOR-research.md`
 
 - [ ] #TODOS-REFACTOR: Refactor TODO system to reduce file size and improve AI efficiency
 
@@ -1563,7 +1610,7 @@ Multiple branches created during late-night token burn session with speculative 
 - Duplicate work → Check if superseded by other work
 - Experimental APIs → Requires architecture review
 
-**Reference:** `build/notes/todo-support/P2-TOKEN-BURN-prompt.md`
+**Reference:** `build/notes/todo-support/TOKEN-BURN-prompt.md`
 
 ---
 
@@ -1579,7 +1626,7 @@ Multiple branches created during late-night token burn session with speculative 
 
 **Current behavior:** LLM summarization completely disabled when backgrounded (log: "App resigned active - background processing DISABLED"). This is policy, not a bug, but a missed opportunity.
 
-**Design:** `build/notes/todo-support/P2-BACKGROUND-SUMM-design.md`
+**Design:** `build/notes/todo-support/BACKGROUND-SUMM-design.md`
 
 ---
 
@@ -1588,7 +1635,7 @@ Multiple branches created during late-night token burn session with speculative 
 **Status:** Not Started
 **Priority:** P2 (Quality improvement - summaries misrepresenting user intent)
 **Effort:** 4-6 hours
-**Spec:** `build/notes/todo-support/P2-SUMMARIZATION-FIX-spec.md`
+**Spec:** `build/notes/todo-support/SUMMARIZATION-FIX-spec.md`
 
 - [ ] #SUMMARIZATION-FIX: Improve LLM summarization to correctly identify action requests vs. explanations
 
@@ -1640,7 +1687,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 3. Fix root causes in parser/prompts/post-processing
 4. Validate fixes against collected examples
 
-**Reference:** `build/notes/todo-support/P2-SUMM-PARSING-BACKLOG-examples.md`
+**Reference:** `build/notes/todo-support/SUMM-PARSING-BACKLOG-examples.md`
 
 **Current Count:** 1 example (seed script markdown table output)
 
@@ -1658,7 +1705,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 
 **Main deliverable:** Hash git root path to consistent color, apply as tab background tint.
 
-**Investigation:** `build/notes/todo-support/P2-WORKTREE-investigation.md`
+**Investigation:** `build/notes/todo-support/WORKTREE-investigation.md`
 
 ---
 
@@ -1674,7 +1721,7 @@ Some transcript entries produce summaries that fail post-processing or contain u
 1. **Vertical drag sensitivity** - Small vertical drift cancels drag unexpectedly (fix: expand hit zone)
 2. **Missing keyboard shortcuts** - Add `Shift-Cmd-Opt-[/]` to move active tab (no wrap-around)
 
-**Investigation:** `build/notes/todo-support/P2-TAB-REORDER-UX-investigation.md`
+**Investigation:** `build/notes/todo-support/TAB-REORDER-UX-investigation.md`
 
 ---
 
@@ -1735,7 +1782,7 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 **Status:** Not Started - research complete, structure defined
 **Priority:** P3 (deferred - user education, support reduction)
 **Effort:** 4-8 hours
-**Research:** `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
+**Research:** `build/notes/todo-support/HELP-DOCUMENTATION-research.md`
 
 - [ ] #HELP-DOCUMENTATION: Create help pages on contextify.sh with engagement hooks
 
@@ -1749,7 +1796,7 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 5. `/help/features` - Feature discovery (post-launch)
 6. `/help/privacy` - Data handling, local-first architecture
 
-**Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/P1-HELP-DOCUMENTATION-research.md`
+**Reference:** Research on 1Password, Raycast, Bear patterns in `build/notes/todo-support/HELP-DOCUMENTATION-research.md`
 
 ---
 
@@ -1954,7 +2001,7 @@ When a project not currently visible in the tab bar receives new messages:
 
 - [ ] #TIMELINE-SUMMARY-HEIGHT: Add regression coverage for the row-height-capping behavior so any future change to `summaryFrameMinHeight` or the logged deltas is caught automatically.
 
-**Plan:** `build/notes/todo-support/P3-TIMELINE-SUMMARY-HEIGHT.md`
+**Plan:** `build/notes/todo-support/TIMELINE-SUMMARY-HEIGHT.md`
 
 ---
 
@@ -1963,7 +2010,7 @@ When a project not currently visible in the tab bar receives new messages:
 **Status:** Spec Complete
 **Priority:** Demoted from P2 (large effort, no immediate impact)
 **Effort:** 3-4 weeks (aligned with ConversationMonitor refactor)
-**Spec:** `build/notes/todo-support/P2-LAZY-WATCHERS-design.md`
+**Spec:** `build/notes/todo-support/LAZY-WATCHERS-design.md`
 
 - [ ] #LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
 
@@ -1991,17 +2038,17 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 **Priority:** P3 (post-launch stability)
 **Effort:** 4-6 hours
 
-- [ ] #EMPTY-TIMELINE-TESTS: Define and add UI/regression coverage for the empty-project timeline-to-empty-state transition so the spinner removal can be validated automatically (see `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`)
+- [ ] #EMPTY-TIMELINE-TESTS: Define and add UI/regression coverage for the empty-project timeline-to-empty-state transition so the spinner removal can be validated automatically (see `build/notes/todo-support/EMPTY-TIMELINE-TESTS.md`)
 
 **Problem:**
 - No automated verification currently guards the UI transition around `.loaded` vs `.loading`, so the spinner can reappear unnoticed.
 **Approach:**
-1. Draft acceptance criteria and scenario matrix in the supporting note (`build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`).
+1. Draft acceptance criteria and scenario matrix in the supporting note (`build/notes/todo-support/EMPTY-TIMELINE-TESTS.md`).
 2. Implement a lightweight guard (unit test or UI test) that drives `ConversationMonitor` through the zero-entry case and asserts `phase`, `isAwaitingPrimer`, and the rendered view branch.
 3. Hook the guard into CI/integration workflow so regressions are caught during automation.
 
 **Notes:**
-- Supporting details and future iterations go into `build/notes/todo-support/P3-EMPTY-TIMELINE-TESTS.md`.
+- Supporting details and future iterations go into `build/notes/todo-support/EMPTY-TIMELINE-TESTS.md`.
 
 ---
 
@@ -2033,8 +2080,8 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 - `Contextify/Contextify/ConversationMonitor.swift` (primary changes)
 
 **Reference:**
-- Implementation plan: `build/notes/todo-support/P2-SWITCH-refactor-plan.md`
-- Source code analysis: `build/notes/todo-support/P2-SWITCH-source-analysis.md`
+- Implementation plan: `build/notes/todo-support/SWITCH-refactor-plan.md`
+- Source code analysis: `build/notes/todo-support/SWITCH-source-analysis.md`
 
 ---
 
