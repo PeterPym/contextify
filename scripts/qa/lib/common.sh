@@ -268,6 +268,38 @@ launch_appstore_app() {
   return 1
 }
 
+# Ensure DMG app is running, launch if not
+# Usage: ensure_dmg_app_running
+ensure_dmg_app_running() {
+  if app_is_running; then
+    log_info "App already running"
+    return 0
+  fi
+
+  log_info "App not running, launching..."
+  if ! launch_dmg_app; then
+    return 1
+  fi
+
+  return 0
+}
+
+# Ensure App Store app is running, launch if not
+# Usage: ensure_appstore_app_running
+ensure_appstore_app_running() {
+  if app_is_running; then
+    log_info "App already running"
+    return 0
+  fi
+
+  log_info "App not running, launching..."
+  if ! launch_appstore_app; then
+    return 1
+  fi
+
+  return 0
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # UI Automation (AppleScript + System Events)
 # Prerequisite: Terminal must have Accessibility permission

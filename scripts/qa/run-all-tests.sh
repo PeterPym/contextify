@@ -30,8 +30,6 @@ declare -a ALL_TESTS=(
   # Phase 1: Tests that need existing data (run first, before destructive tests)
   "QA-01b-launch-dmg-existing.sh:0"
   "QA-02-project-switching.sh:0"
-  "QA-10-quick-search.sh:0"
-  "QA-11-deep-search.sh:0"
 
   # Phase 2: Destructive tests (delete DB, reset state)
   "QA-01a-launch-dmg-clean.sh:0"
@@ -49,6 +47,10 @@ declare -a ALL_TESTS=(
   "QA-07-transcript-window.sh:0"
   "QA-08-projects-window.sh:0"
   "QA-09-db-migration.sh:0"
+
+  # Phase 5: Search tests (require FTS5 index populated by discovery tests)
+  "QA-10-quick-search.sh:0"
+  "QA-11-deep-search.sh:0"
 )
 
 # Track results

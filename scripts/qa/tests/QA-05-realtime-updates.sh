@@ -32,12 +32,15 @@ TRANSCRIPT=""
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "codex"
   assert_command_exists "sqlite3"
 
   # Create test project if doesn't exist
   create_test_project "$TEST_PROJECT"
+
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
 
   log_success "Prerequisites met"
 }

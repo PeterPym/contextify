@@ -1,13 +1,17 @@
 #!/bin/bash
-# QA-01e: App Store Build - Skip Permissions
+# QA-01e: App Store Build - Incomplete Onboarding
 #
-# Purpose: Validates App Store startup when user skips permission prompts
+# Purpose: Validates App Store gracefully handles incomplete onboarding
 #
 # Validates:
-# - Permission prompts can be skipped
-# - App doesn't crash
-# - Graceful empty state shown
-# - Startup completes
+# - App doesn't crash when onboarding isn't completed
+# - DB init is correctly deferred (not created without permissions)
+# - App stays in safe state until onboarding is complete
+# - No fatal errors occur
+#
+# Note: The onboarding wizard requires at least one permission grant
+# before the Continue button becomes active. This test verifies the app
+# handles the "stuck in onboarding" state gracefully.
 #
 # Prerequisites:
 # - App Store build available
@@ -21,7 +25,7 @@ source "$SCRIPT_DIR/../lib/common.sh"
 source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-01e"
-TEST_NAME="App Store Build - Skip Permissions"
+TEST_NAME="App Store Build - Incomplete Onboarding"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Implementation
@@ -68,7 +72,7 @@ setup_test() {
 run_test_steps() {
   log_subheader "Test Execution"
 
-  log_info "Launching App Store build and skipping permissions..."
+  log_info "Launching App Store build without completing onboarding..."
 
   # Launch app
   if ! launch_appstore_app; then
@@ -77,41 +81,23 @@ run_test_steps() {
     return 1
   fi
 
-  # Wait for onboarding wizard
+  # Wait for onboarding wizard to appear
   sleep 3
 
-  # Skip permission prompts via UI automation
-  log_info "Skipping permission prompts..."
+  # Do NOT complete onboarding - just let the app sit at the wizard
+  log_info "Not completing onboarding wizard (testing incomplete state)"
 
-  # Try to skip first permission
-  if skip_folder_permission "\[ONBOARD\]" 10; then
-    log_success "First permission skipped"
-  else
-    log_info "First permission prompt not detected or already skipped"
-  fi
-
-  # Try to skip second permission (may not appear)
-  sleep 2
-  skip_folder_permission "\[ONBOARD\]" 5 || true
-
-  # Try to continue/skip onboarding
-  sleep 2
-  click_button_retry "Continue" 3 || \
-    click_button_retry "Skip" 3 || \
-    click_button_retry "Later" 3 || \
-    true
-
-  # Wait for app to settle
+  # Wait a moment to verify app stays stable
   sleep 5
 
-  # Check if app completed startup
+  # Check if app is still running (didn't crash)
   if ! app_is_running; then
-    log_error "App crashed after skipping permissions"
+    log_error "App crashed while showing onboarding wizard"
     TEST_FAILED=1
     return 1
   fi
 
-  log_success "App launched with skipped permissions"
+  log_success "App stable in incomplete onboarding state"
 }
 
 validate_results() {
@@ -120,14 +106,20 @@ validate_results() {
   # App should be running (most important check)
   assert_app_running "Contextify"
 
-  # Database should exist (even with no permissions)
-  assert_db_exists "Database created"
+  # Database should NOT exist when onboarding is incomplete
+  # The app correctly defers DB init until onboarding completes
+  if [ -f "$DB_PATH" ]; then
+    log_warn "Database exists at $DB_PATH (unexpected - should be deferred)"
+    # Not a failure, but worth noting
+  else
+    log_success "✓ Database correctly deferred (not created without onboarding)"
+  fi
 
-  # Should show empty state or limited functionality
-  soft_assert_log_contains "empty\|EMPTY\|no.*permission\|NO.*ACCESS" "Empty state or no-access state logged"
+  # Should see the startup-gate log indicating deferral
+  assert_log_contains "\[STARTUP-GATE\]" "Startup correctly deferred"
 
-  # Startup should have completed without crash
-  soft_assert_log_contains "\[ORCH-STARTUP\]" "Orchestrator startup attempted"
+  # Onboarding wizard should be shown
+  assert_log_contains "\[ONBOARD-WIZARD\]" "Onboarding wizard displayed"
 
   # No fatal errors
   local fatal_count

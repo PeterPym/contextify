@@ -29,8 +29,11 @@ TEST_NAME="Watcher Health and Recovery"
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "sqlite3"
+
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
 
   # Verify we have transcripts
   local transcript_count

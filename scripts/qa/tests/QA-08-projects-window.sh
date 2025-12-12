@@ -27,8 +27,11 @@ TEST_NAME="Projects Window"
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "osascript"
+
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
 
   # Check for projects
   local project_count
