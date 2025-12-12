@@ -51,7 +51,7 @@ final class DeepSearchWindowController {
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
 
-    log.info("[WINDOW] Opened Deep Search for project: \(projectName, privacy: .public)")
+    log.info("[DEEPSEARCH-INIT] Deep Search window opened for project: \(projectName, privacy: .public)")
   }
 
   /// Close the Deep Search window

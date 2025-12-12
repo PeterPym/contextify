@@ -58,8 +58,9 @@ check_prerequisites() {
   # Contract: transcripts: orchestrator
   require_isolation "Transcript isolation required"
 
-  # Contract: start.min_projects: 1, min_transcripts: 0 (Deep Search works without data)
+  # Contract: start.min_projects: 1, min_fts_entries: 1 (need data to search)
   assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcript_entries_fts;" 1 "FTS index populated"
 
   # Record baseline for end-state verification
   record_baseline_counts
@@ -82,23 +83,32 @@ run_test_steps() {
   type_text "$search_term"
   sleep 0.3
 
-  # 3. Record window count before
+  # 3. Submit search (press Enter to trigger search)
+  log_info "Submitting search (Enter)"
+  send_shortcut "$(printf '\r')" ""
+
+  # 4. Wait for search to complete (must have results for Deep Search to open)
+  log_info "Waiting for search results..."
+  if ! wait_for_log_pattern "\[SEARCH-DONE\].*hits=" 10; then
+    log_error "Search did not complete within timeout"
+    TEST_FAILED=1
+    return 1
+  fi
+  log_success "Search completed"
+
+  # 5. Record window count before
   local windows_before
   windows_before=$(get_window_count)
   log_info "Windows before: $windows_before"
 
-  # 4. Open Deep Search (Cmd+Enter)
+  # 6. Open Deep Search (Cmd+Enter)
   log_info "Opening Deep Search (Cmd+Enter)"
   send_shortcut "$(printf '\r')" "command down"
 
-  # 5. Wait for Deep Search window
-  # Note: [DEEPSEARCH-INIT] log pattern not yet implemented in Swift code
-  # Instead, wait and check window count
+  # 7. Wait for Deep Search window to open
   sleep 2
 
-  # Let window fully render
-
-  # 6. Verify window count increased
+  # 8. Verify window count increased
   local windows_after
   windows_after=$(get_window_count)
   log_info "Windows after: $windows_after"
@@ -107,12 +117,12 @@ run_test_steps() {
     log_warn "Window count did not increase (before: $windows_before, after: $windows_after)"
   fi
 
-  # 7. Close Deep Search (Cmd+W)
+  # 9. Close Deep Search (Cmd+W)
   log_info "Closing Deep Search (Cmd+W)"
   send_shortcut "w" "command down"
   sleep 0.5
 
-  # 8. Verify window closed
+  # 10. Verify window closed
   local windows_final
   windows_final=$(get_window_count)
   log_info "Windows final: $windows_final"
@@ -129,8 +139,8 @@ run_test_steps() {
 validate_results() {
   log_subheader "Validation"
 
-  # Deep Search log pattern not yet implemented in Swift code - use soft assertion
-  soft_assert_log_contains "\[DEEPSEARCH-INIT\]" "Deep Search window opened"
+  # Deep Search window must have opened (hard assertion)
+  assert_log_contains "\[DEEPSEARCH-INIT\]" "Deep Search window opened"
 
   # App still running (core requirement)
   assert_app_running "Contextify"

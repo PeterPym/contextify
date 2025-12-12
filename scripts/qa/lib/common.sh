@@ -397,7 +397,16 @@ send_shortcut() {
 # Type text
 type_text() {
   local text="$1"
-  osascript -e "tell application \"System Events\" to keystroke \"$text\"" 2>/dev/null
+  # Activate Contextify and type into it specifically (prevents typing into other windows)
+  osascript -e '
+    tell application "Contextify" to activate
+    delay 0.1
+    tell application "System Events"
+      tell process "Contextify"
+        keystroke "'"$text"'"
+      end tell
+    end tell
+  ' 2>/dev/null
   sleep 0.2
 }
 
