@@ -99,9 +99,9 @@ transcript provider permission via Settings. Two bugs were fixed:
 - [ ] #LAUNCH: Complete v1.0 public launch sequence
 
 **Remaining:**
-- [ ] Prepare Twitter announcement thread
-- [ ] Soft launch: Tweet + Reddit
-- [ ] Show HN post (1-2 days after soft launch)
+- [x] Prepare Twitter announcement thread
+- [x] Soft launch: Tweet + Reddit
+- [x] Show HN post
 - [ ] Monitor and respond to feedback
 - [ ] Product Hunt (when ready)
 
