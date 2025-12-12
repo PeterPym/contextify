@@ -592,6 +592,7 @@ if [[ "$action" == "dev-archive" ]]; then
   run_xcodebuild -project "$proj" -scheme "$archive_scheme" \
     -configuration Release \
     -destination "generic/platform=macOS" \
+    -derivedDataPath "$dd" \
     -archivePath "$archive_path" \
     archive
 
