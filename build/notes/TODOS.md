@@ -170,6 +170,36 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## macOS 15 Testing VM
+
+**Status:** Documentation complete, VM setup pending
+**Priority:** P1 (needed for legacy macOS QA)
+
+- [ ] #MACOS15-VM: Set up macOS 15 (Sequoia) VM for testing
+
+**Purpose:** Validate Lite Mode and backward compatibility on macOS 15 before shipping `#LEGACY-MACOS` feature.
+
+**Documentation:**
+- `build/docs/testing/macos-vm-setup.md` - Complete UTM setup guide
+- `build/docs/testing/lite-mode-qa-checklist.md` - 31-point QA checklist
+
+**Quick start:**
+```bash
+brew install --cask utm
+# Download macOS 15 IPSW from https://ipsw.me/ (~13GB)
+# Create VM: UTM → Virtualize → macOS → select IPSW
+# Allocate: 4GB RAM, 60GB disk
+```
+
+**Test cases (from QA checklist):**
+- [ ] App launches without dyld crash
+- [ ] Status bar shows "Lite Mode"
+- [ ] Timeline shows fallback content
+- [ ] Core features work (project switching, search)
+- [ ] No LLM-related errors in Console
+
+---
+
 ## Performance Profiling & Optimization
 
 **Status:** Fixes complete, instrumentation optional
