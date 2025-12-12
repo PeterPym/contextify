@@ -437,6 +437,11 @@ actor FoundationLLM {
         provider: TimelineSourceContext.Provider? = nil,
         actionHint: String? = nil
     ) async throws -> TimelineSummaryResult {
+        // Check lite mode first (handles both old OS and simulation)
+        guard !isLiteModeActive() else {
+            throw TimelineError.llmUnavailable(reason: "Summaries require macOS 26")
+        }
+
         guard #available(macOS 26.0, *) else {
             throw TimelineError.llmUnavailable(reason: "FoundationModels requires macOS 26.0+")
         }
