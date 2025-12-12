@@ -36,6 +36,8 @@ final class StateWriterTests: XCTestCase {
     XCTAssertEqual(json?["build_flavor"] as? String, "dmg")
     XCTAssertEqual(json?["app_version"] as? String, "1.2.3")
     XCTAssertEqual(json?["capabilities"] as? [String], ["fts_search"])
+    XCTAssertNotNil(json?["last_written_at"] as? String)
+    XCTAssertNotNil(json?["last_migrated_at"] as? String)
   }
 
   func testWriteState_newDirectoryDoesNotDeleteOldSidecar() throws {
@@ -76,4 +78,3 @@ final class StateWriterTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: newStateURL.path))
   }
 }
-

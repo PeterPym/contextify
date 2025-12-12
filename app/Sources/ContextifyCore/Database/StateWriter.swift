@@ -18,6 +18,7 @@ enum StateWriter {
     let buildFlavor: String
     let appVersion: String
     let lastMigratedAt: String
+    let lastWrittenAt: String
     let capabilities: [String]
 
     enum CodingKeys: String, CodingKey {
@@ -29,6 +30,7 @@ enum StateWriter {
       case buildFlavor = "build_flavor"
       case appVersion = "app_version"
       case lastMigratedAt = "last_migrated_at"
+      case lastWrittenAt = "last_written_at"
       case capabilities
     }
   }
@@ -53,7 +55,10 @@ enum StateWriter {
       let formatter = ISO8601DateFormatter()
       formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
       formatter.timeZone = TimeZone(secondsFromGMT: 0)
-      let lastMigratedAt = formatter.string(from: Date())
+      let now = Date()
+      let lastWrittenAt = formatter.string(from: now)
+      // Best-effort: actual migration time isn't currently tracked, so keep legacy field aligned.
+      let lastMigratedAt = lastWrittenAt
 
       let state = StateV1(
         schema: schemaURL,
@@ -64,6 +69,7 @@ enum StateWriter {
         buildFlavor: buildFlavor,
         appVersion: appVersion,
         lastMigratedAt: lastMigratedAt,
+        lastWrittenAt: lastWrittenAt,
         capabilities: capabilities
       )
 
@@ -86,9 +92,10 @@ enum StateWriter {
 
     - `state.json` describes the active database location and capabilities.
     - The schema is versioned and additive. Older readers should ignore unknown fields.
+    - `last_written_at` is the timestamp when this sidecar was written.
+    - `last_migrated_at` is a legacy timestamp field and may currently match `last_written_at`.
 
     If this folder is missing, open Contextify once to initialize discovery.
     """
   }
 }
-
