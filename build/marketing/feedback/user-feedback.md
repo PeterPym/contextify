@@ -117,14 +117,23 @@ Collected feedback from users, testers, and reviewers.
   4. No summaries at all
 - Shows interest in understanding Claude Code internals
 
-**Technical Notes on Summaries (from our transcript spec):**
-- `type: "summary"` records contain `summary` (string), `leafUuid` (conversation tree leaf), optional `cwd`
-- Only 48 summary records found across 18,589 records analyzed (0.3%)
-- Appear to be generated asynchronously (may arrive after session ends)
-- Used for session picker UI and search in Claude Code
-- `leafUuid` links to conversation tree structure for navigation
+**Technical Notes on Summaries (verified):**
+- `type: "summary"` records contain `summary` (string) and `leafUuid` fields
+- ~16% of transcript files (165/1035) contain summary records
+- ~97% appear in the first 10 lines of files, though some appear later
+- When multiple summaries exist in one file, each has a different `leafUuid`
+- Summary records do NOT have a `sessionId` field
 
-**Reply (drafted 2025-12-12):**
-> [See reply content below]
+**Reply (posted 2025-12-12):**
 
-**Status:** Draft reply prepared
+> Hey there, the queuing is a big deal--very big differentiator from codex and I don't think it is discussed much.
+>
+> I am not sure how it makes the call on whether to interrupt but your speculation on some prompting around it seems on target.
+>
+> I do know that once the message has been processed it is popped from the queue (at least as defined in the transcripts)
+>
+> This does not necessarily mean that the AI is going to act on the item immediately. In fact, it may complete what its working on and only mention the request. I believe it is possible for the queued item to fall completely through the cracks, though it seems uncommon these days.
+>
+> I've not looked closely at at summaries, can you tell me more about the single file containing summaries for other sessionIds? is that in ~/.claude/projects/?
+
+**Status:** Posted, awaiting response about the "summaries for other sessionIds" pattern
