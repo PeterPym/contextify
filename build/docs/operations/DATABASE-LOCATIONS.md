@@ -2,6 +2,13 @@
 
 **IMPORTANT:** Users can customize the database location via Settings > Database tab. ALWAYS check for custom location before querying the database.
 
+## Preferences & Discovery Keys (terse)
+
+- **Canonical app preference:** `dev.contextify.customDatabaseLocation` stores the directory containing `contextify.db`.
+- **Legacy mirror for tooling:** `dev.contextify.database_location` mirrors the canonical directory (DMG primarily). The app keeps this in sync when custom location changes.
+- **Sandbox/App Store note:** Do not rely on `defaults read dev.contextify …` for external tools in sandboxed installs. Use the sidecar `.contextify/state.json` next to the user-selected database directory once context reinjection lands.
+- **Default (DMG) location:** `~/Library/Application Support/Contextify/contextify.db` when no custom location is set.
+
 ## Location Precedence
 
 1. **Custom location** (if set by user): Check UserDefaults for custom path, or query the running app

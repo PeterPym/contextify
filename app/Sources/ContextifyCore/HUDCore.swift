@@ -18,6 +18,9 @@ public enum HUDPreferences {
   // Database location
   public static let customDatabaseLocationKey = "dev.contextify.customDatabaseLocation"
   public static let customDatabaseBookmarkKey = "dev.contextify.customDatabaseBookmark"
+  /// Legacy key used by automation/runbooks to locate the active DB directory.
+  /// Mirrors `customDatabaseLocationKey` when present.
+  public static let legacyDatabaseLocationKey = "dev.contextify.database_location"
 
   // App Store onboarding
   public static let appStoreOnboardingCompletedKey = "dev.contextify.appStoreOnboardingCompleted"
@@ -83,6 +86,17 @@ public enum HUDPreferences {
     return sharedDefaults.string(forKey: customDatabaseLocationKey)
   }
 
+  public static func getLegacyDatabaseLocation() -> String? {
+    warnIfLegacyDefaultsPresent()
+    return sharedDefaults.string(forKey: legacyDatabaseLocationKey)
+  }
+
+  internal static func setLegacyDatabaseLocationIfMissing(_ directory: URL) {
+    guard sharedDefaults.string(forKey: legacyDatabaseLocationKey) == nil else { return }
+    let canonical = canonicalDatabaseDirectory(from: directory)
+    sharedDefaults.set(canonical.path, forKey: legacyDatabaseLocationKey)
+  }
+
   public static func setCustomDatabaseLocation(_ path: String?) {
     guard let path, !path.isEmpty else {
       clearCustomDatabaseLocation()
@@ -99,14 +113,16 @@ public enum HUDPreferences {
   /// Use this when you already have security-scoped access (e.g., from NSOpenPanel)
   /// and have created the bookmark while in scope.
   public static func setCustomDatabaseLocation(_ url: URL, bookmarkData: Data) {
-    let canonical = url.resolvingSymlinksInPath()
-    sharedDefaults.set(canonical.path, forKey: customDatabaseLocationKey)
+    let directory = canonicalDatabaseDirectory(from: url)
+    sharedDefaults.set(directory.path, forKey: customDatabaseLocationKey)
+    sharedDefaults.set(directory.path, forKey: legacyDatabaseLocationKey)
     sharedDefaults.set(bookmarkData, forKey: customDatabaseBookmarkKey)
   }
 
   public static func clearCustomDatabaseLocation() {
     sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
     sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
+    sharedDefaults.removeObject(forKey: legacyDatabaseLocationKey)
   }
 
   public static func resolveDatabaseBookmark() -> URL? {
@@ -174,12 +190,22 @@ public enum HUDPreferences {
     sharedDefaults.removeObject(forKey: appStoreOnboardingCompletedKey)
     sharedDefaults.removeObject(forKey: customDatabaseBookmarkKey)
     sharedDefaults.removeObject(forKey: customDatabaseLocationKey)
+    sharedDefaults.removeObject(forKey: legacyDatabaseLocationKey)
   }
 
   private static func storeDatabaseURL(_ url: URL) {
+    let directory = canonicalDatabaseDirectory(from: url)
+    sharedDefaults.set(directory.path, forKey: customDatabaseLocationKey)
+    sharedDefaults.set(directory.path, forKey: legacyDatabaseLocationKey)
+    try? storeBookmark(for: directory, key: customDatabaseBookmarkKey)
+  }
+
+  private static func canonicalDatabaseDirectory(from url: URL) -> URL {
     let canonical = url.resolvingSymlinksInPath()
-    sharedDefaults.set(canonical.path, forKey: customDatabaseLocationKey)
-    try? storeBookmark(for: canonical, key: customDatabaseBookmarkKey)
+    if canonical.pathExtension == "db" {
+      return canonical.deletingLastPathComponent()
+    }
+    return canonical
   }
 
   // MARK: - Bookmark Resolution

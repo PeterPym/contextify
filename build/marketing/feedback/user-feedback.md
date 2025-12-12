@@ -93,3 +93,38 @@ Collected feedback from users, testers, and reviewers.
 - Validates #LEGACY-MACOS priority
 
 **Status:** Pending response - point to Reddit discussion about planned macOS 15 "lite mode" support
+
+---
+
+## Reddit r/ClaudeCode comment - 2025-12-12
+
+**Context:** Reply to older post about Claude Code transcripts (not a Contextify launch post)
+**URL:** https://www.reddit.com/r/ClaudeCode/comments/1pjbriy/comment/ntg0mlz/
+
+**Feedback:**
+> That's fascinating.
+>
+> I've been seeing those queue messages and never understood them. Could you explain a little more please? How does it make the call whether to interrupt or not? Is there a separate LLM call to haiku or something with the question "should I interrupt"?
+>
+> Did you understand where the "summary" items fit in? Sometimes I see a single jsonl file containing summaries for a a load of other sessionIds, sometimes I see a sessions.jsonl containing its own summary, sometimes I see several summary for a single sessionId, sometimes I see none.
+
+**Key Takeaways:**
+- **Queue mechanism interest** - Users see queue messages but don't understand them
+- **Summary records confusion** - Multiple patterns observed:
+  1. Single file with summaries for multiple sessionIds
+  2. Session file containing its own summary
+  3. Multiple summaries for single sessionId
+  4. No summaries at all
+- Shows interest in understanding Claude Code internals
+
+**Technical Notes on Summaries (from our transcript spec):**
+- `type: "summary"` records contain `summary` (string), `leafUuid` (conversation tree leaf), optional `cwd`
+- Only 48 summary records found across 18,589 records analyzed (0.3%)
+- Appear to be generated asynchronously (may arrive after session ends)
+- Used for session picker UI and search in Claude Code
+- `leafUuid` links to conversation tree structure for navigation
+
+**Reply (drafted 2025-12-12):**
+> [See reply content below]
+
+**Status:** Draft reply prepared
