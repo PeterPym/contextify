@@ -63,6 +63,7 @@ struct ContextifyQueryCLI {
     var noContent: Bool = false
     var fullContent: Bool = false
     var maxWindow: Int?
+    var limitWasProvided: Bool = false
     var limit: Int = 50
     var jsonOutput: Bool = false
 
@@ -90,6 +91,7 @@ struct ContextifyQueryCLI {
   }
 
   static func main() {
+    let jsonWanted = CommandLine.arguments.contains("--json")
     do {
       var options = Options()
       let args = Array(CommandLine.arguments.dropFirst())
@@ -200,6 +202,7 @@ struct ContextifyQueryCLI {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --limit", exitCode: .invalidArgs)
           }
           guard n > 0 else { throw CLIError(code: "invalidArgs", message: "--limit must be > 0", exitCode: .invalidArgs) }
+          options.limitWasProvided = true
           options.limit = n
         case "--json":
           options.jsonOutput = true
@@ -265,7 +268,8 @@ struct ContextifyQueryCLI {
         }
 
       case .projects:
-        let results = try service.listProjects(includeHidden: false, limit: nil)
+        let limit = options.limitWasProvided ? options.limit : nil
+        let results = try service.listProjects(includeHidden: options.includeHidden, limit: limit)
         try printResponse(type: "projects", data: results, json: options.jsonOutput) {
           printProjects(results)
         }
@@ -369,11 +373,11 @@ struct ContextifyQueryCLI {
         }
       }
     } catch let cliError as CLIError {
-      emitError(cliError, json: CommandLine.arguments.contains("--json"))
+      emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
     } catch {
       let cliError = CLIError(code: "unknown", message: error.localizedDescription, exitCode: .unknown)
-      emitError(cliError, json: CommandLine.arguments.contains("--json"))
+      emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
     }
   }
@@ -421,10 +425,10 @@ struct ContextifyQueryCLI {
       }
     }
 
-    throw NSError(
-      domain: "contextify-query",
-      code: 2,
-      userInfo: [NSLocalizedDescriptionKey: "Open Contextify once to initialize discovery."]
+    throw CLIError(
+      code: "dbNotFound",
+      message: "Open Contextify once to initialize discovery, or pass --db-path/--db-dir.",
+      exitCode: .dbNotFound
     )
   }
 
