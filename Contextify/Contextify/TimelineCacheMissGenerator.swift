@@ -160,6 +160,12 @@ actor TimelineCacheMissGenerator {
 
     /// Queue cache misses for background generation with de-duplication and cap
     func queueMisses(_ misses: [CacheMiss]) async {
+        // Skip in lite mode - no LLM available for summaries
+        if isLiteModeActive() {
+            log.info("[LITE-MODE] Skipping \(misses.count) cache misses - summaries disabled")
+            return
+        }
+
         log.info("[GENERATOR] queueMisses() called with \(misses.count) entries")
         guard !misses.isEmpty else {
             log.info("[GENERATOR] Empty misses array, returning")
@@ -266,6 +272,12 @@ actor TimelineCacheMissGenerator {
 
     /// Background processing loop
     private func processQueue() async {
+        // Skip in lite mode - no LLM available for summaries
+        guard !isLiteModeActive() else {
+            log.debug("[LITE-MODE] processQueue skipped - summaries disabled")
+            return
+        }
+
         log.debug("processQueue: start (pending: \(self.pendingMisses.count))")
         while !pendingMisses.isEmpty {
             if Task.isCancelled { break }

@@ -47,25 +47,26 @@ enum LLMAvailability: Sendable, Equatable {
     }
   }
 
-  // MARK: - Cached Availability (computed once per process)
+  // MARK: - Availability Check
 
-  /// Cached availability - computed once at process start, never changes.
-  /// OS version and launch args are constants for the process lifetime.
-  private static let cached: LLMAvailability = {
-    if simulateLegacyMacOS {
+  /// Current LLM availability
+  ///
+  /// Check this before any LLM operations. In lite mode, skip LLM calls entirely.
+  /// This is a pure computation (no side effects) so it's safe to call from any context.
+  static var current: LLMAvailability {
+    // Check simulation flag first (DEBUG only)
+    #if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") {
       return .unavailableOldOS
     }
+    #endif
+
+    // Check OS version
     guard #available(macOS 26, *) else {
       return .unavailableOldOS
     }
     return .available
-  }()
-
-  /// Current LLM availability (cached, safe to call from any context)
-  ///
-  /// Check this before any LLM operations. In lite mode, skip LLM calls entirely.
-  /// NOT @MainActor - can be called from views, actors, anywhere.
-  static var current: LLMAvailability { cached }
+  }
 
   /// Launch argument to simulate lite mode on macOS 26 for testing
   ///
@@ -81,6 +82,23 @@ enum LLMAvailability: Sendable, Equatable {
     return false
     #endif
   }
+}
+
+// MARK: - Nonisolated Helper
+
+/// Nonisolated helper for checking lite mode from any context (including actors).
+/// Use this instead of `LLMAvailability.current.isLiteMode` within actors.
+nonisolated func isLiteModeActive() -> Bool {
+  #if DEBUG
+  if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") {
+    return true
+  }
+  #endif
+
+  if #available(macOS 26, *) {
+    return false
+  }
+  return true
 }
 
 // MARK: - Logging
