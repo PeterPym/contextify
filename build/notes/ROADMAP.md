@@ -17,6 +17,22 @@ priority_levels:
 
 ## P4 (Future Considerations)
 
+### CHECKMARK-SCROLL: Completion checkmark should scroll to linked directive
+
+**Status:** Research needed
+**Priority:** P4
+**Effort:** 1-2 hours
+
+- [ ] Make green checkmark scroll to original directive instead of expanding row
+
+**Idea:** When a completion entry (green checkmark) is linked to a user directive, clicking the checkmark should scroll to that directive. Currently row's `.onTapGesture` captures all clicks.
+
+**Challenge:** SwiftUI gesture handling - tried `Button`, `.highPriorityGesture`, `.simultaneousGesture` but row's tap gesture still captures. Need to research gesture exclusion or view restructuring.
+
+**Location:** `TimelineEntryRow.swift:198-224`
+
+---
+
 ### HOMEBREW-CASK: Homebrew Cask formula for DMG distribution
 
 **Status:** Not started

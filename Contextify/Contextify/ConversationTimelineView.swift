@@ -177,7 +177,9 @@ struct ConversationTimelineView: View {
                     TimelineEntryRow(
                         entry: entry,
                         onScrollToEntry: { entryId in
-                            // Row linking - not currently used for scroll control
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                scrollPositionId = entryId
+                            }
                         },
                         isExpanded: expansionBinding(for: entry.id)
                     )
