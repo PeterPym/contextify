@@ -93,23 +93,33 @@ struct ContextifyQueryCLI {
         let query = commandArgs.joined(separator: " ")
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let results = try service.ftsSearch(query: query, projectId: options.projectId, limit: options.limit)
-        try printResponse(type: "search", data: results, json: options.jsonOutput)
+        try printResponse(type: "search", data: results, json: options.jsonOutput) {
+          printTranscriptEntries(results)
+        }
 
       case .activity:
         let results = try service.recentActivity(projectId: options.projectId, limit: options.limit)
-        try printResponse(type: "activity", data: results, json: options.jsonOutput)
+        try printResponse(type: "activity", data: results, json: options.jsonOutput) {
+          printTranscriptEntries(results)
+        }
 
       case .summaries:
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let results = try service.summaries(projectId: options.projectId, limit: options.limit)
-        try printResponse(type: "summaries", data: results, json: options.jsonOutput)
+        try printResponse(type: "summaries", data: results, json: options.jsonOutput) {
+          printTranscriptSummaries(results)
+        }
 
       case .stats:
         let results = try service.projectStats(projectId: options.projectId)
-        try printResponse(type: "stats", data: results, json: options.jsonOutput)
+        try printResponse(type: "stats", data: results, json: options.jsonOutput) {
+          printProjectStats(results)
+        }
 
       case .version:
-        try printResponse(type: "version", data: versionInfo, json: options.jsonOutput)
+        try printResponse(type: "version", data: versionInfo, json: options.jsonOutput) {
+          printVersionInfo(versionInfo)
+        }
       }
     } catch {
       fputs("Error: \(error.localizedDescription)\n", stderr)
@@ -269,7 +279,12 @@ struct ContextifyQueryCLI {
     }
   }
 
-  private static func printResponse<T: Encodable>(type: String, data: T, json: Bool) throws {
+  private static func printResponse<T: Encodable>(
+    type: String,
+    data: T,
+    json: Bool,
+    human: () -> Void
+  ) throws {
     if json {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -278,7 +293,7 @@ struct ContextifyQueryCLI {
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
     } else {
-      print(data)
+      human()
     }
   }
 
@@ -314,4 +329,58 @@ private func isRegularFile(_ url: URL) -> Bool {
   var isDirectory: ObjCBool = false
   guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return false }
   return !isDirectory.boolValue
+}
+
+private func printVersionInfo(_ info: ContextifyQueryService.VersionInfo) {
+  print("sqlite_user_version: \(info.sqliteUserVersion)")
+  print("app_schema_version: \(info.appSchemaVersion)")
+  print("fts_enabled: \(info.ftsEnabled)")
+  print("summaries_enabled: \(info.summariesEnabled)")
+}
+
+private func printProjectStats(_ stats: [ContextifyQueryService.ProjectStats]) {
+  if stats.isEmpty {
+    print("(no projects)")
+    return
+  }
+  for row in stats {
+    let name = row.projectName?.isEmpty == false ? row.projectName! : row.projectId
+    let lastTs = row.lastEntryTimestamp.map(String.init) ?? "-"
+    print("\(name)  transcripts=\(row.transcriptCount)  entries=\(row.entryCount)  last_ts=\(lastTs)")
+  }
+}
+
+private func printTranscriptSummaries(_ summaries: [TranscriptMetadataRecord]) {
+  if summaries.isEmpty {
+    print("(no summaries)")
+    return
+  }
+  for summary in summaries {
+    let title = summary.title.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOr("-")
+    let description = summary.description.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyOr("-")
+    print("[\(summary.generatedAt)] \(title)")
+    print("  \(description)")
+  }
+}
+
+private func printTranscriptEntries(_ entries: [TranscriptEntry]) {
+  if entries.isEmpty {
+    print("(no results)")
+    return
+  }
+  for entry in entries {
+    let ts = String(entry.timestamp)
+    let kind = entry.kind
+    let preview = entry.content
+      .replacingOccurrences(of: "\n", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .prefix(200)
+    print("[\(ts)] \(kind): \(preview)")
+  }
+}
+
+private extension String {
+  func nonEmptyOr(_ fallback: String) -> String {
+    isEmpty ? fallback : self
+  }
 }
