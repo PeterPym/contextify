@@ -695,10 +695,10 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         ORDER BY timestamp DESC, created_ts DESC
         LIMIT 1
         """
-      let row = try Row.fetchOne(db, sql: sql, arguments: [projectId])
-      guard let branch = row?["git_branch"] as? String else { return nil }
-      let provider = row?["provider"] as? String
-      let timestamp = row?["timestamp"] as? Int ?? 0
+      guard let row = try Row.fetchOne(db, sql: sql, arguments: [projectId]) else { return nil }
+      let branch: String = row["git_branch"]
+      let provider: String? = row["provider"]
+      let timestamp: Int = row["timestamp"] ?? 0
       return (branch, provider, timestamp)
     }
   }

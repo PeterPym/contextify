@@ -699,31 +699,39 @@ public final class HUDViewModel {
     projectRootURL = url
 
     // Branch resolution: Git monitoring (DMG) > Transcript metadata (App Store) > fallback
-    let transcriptBranch = AppStateOrchestrator.shared.getCurrentBranch(forProject: context.id)
+    let transcriptMetadata = AppStateOrchestrator.shared.getCurrentBranchWithMetadata(forProject: context.id)
+    let transcriptBranch = transcriptMetadata?.branch
+    var branchSource = "none"
 
     if let gitBranch = context.branch {
       branch = gitBranch
+      branchSource = "git"
       lifecycleLog.debug("[COORD-UPDATE] Branch from git: \(gitBranch, privacy: .public)")
 
       // DMG validation: Compare git-monitored vs transcript-based branch for QA
       if !Sandbox.isSandboxed {
-        if let transcriptBranch {
-          if gitBranch == transcriptBranch {
-            lifecycleLog.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(gitBranch, privacy: .public)")
+        if let metadata = transcriptMetadata {
+          let provider = metadata.provider ?? "unknown"
+          if gitBranch == metadata.branch {
+            lifecycleLog.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(gitBranch, privacy: .public) (provider=\(provider, privacy: .public), ts=\(metadata.timestamp))")
           } else {
-            lifecycleLog.info("[BRANCH-VALIDATE] ⚠ Branch mismatch - git: \(gitBranch, privacy: .public), transcript: \(transcriptBranch, privacy: .public)")
+            lifecycleLog.debug("[BRANCH-VALIDATE] Branch mismatch - git: \(gitBranch, privacy: .public), transcript: \(metadata.branch, privacy: .public) (provider=\(provider, privacy: .public), ts=\(metadata.timestamp))")
           }
         } else {
           lifecycleLog.debug("[BRANCH-VALIDATE] No transcript branch for comparison (git: \(gitBranch, privacy: .public))")
         }
       }
     } else if let transcriptBranch {
+      let provider = transcriptMetadata?.provider ?? "unknown"
       branch = transcriptBranch
-      lifecycleLog.info("[COORD-UPDATE] Branch from transcript metadata: \(transcriptBranch, privacy: .public)")
+      branchSource = "transcript"
+      lifecycleLog.info("[COORD-UPDATE] Branch from transcript metadata: \(transcriptBranch, privacy: .public) (provider=\(provider, privacy: .public))")
     } else {
       branch = "—"
       lifecycleLog.debug("[COORD-UPDATE] No branch available (git nor transcript)")
     }
+
+    lifecycleLog.info("[BRANCH-RESOLVED] branch=\(self.branch, privacy: .public) source=\(branchSource, privacy: .public)")
 
     // Restore security-scoped access to project root if available.
     // In App Store (sandboxed) builds, bookmarks are typically nil for discovered projects because:

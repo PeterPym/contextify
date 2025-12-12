@@ -566,6 +566,24 @@ public final class AppStateOrchestrator: ObservableObject {
     }
   }
 
+  /// Get the current git branch with metadata (provider, timestamp) for validation logging.
+  /// Used by DMG builds to compare git-monitored branch vs transcript-based branch.
+  /// - Parameter projectId: The project ID to look up
+  /// - Returns: Tuple of (branch, provider, timestamp) or nil
+  public func getCurrentBranchWithMetadata(forProject projectId: String) -> (branch: String, provider: String?, timestamp: Int)? {
+    guard let orchestrator else {
+      log.debug("[ORCH-BRANCH] No orchestrator available for branch metadata lookup")
+      return nil
+    }
+
+    do {
+      return try orchestrator.getCurrentBranchWithMetadata(forProject: projectId)
+    } catch {
+      log.error("[ORCH-BRANCH] Failed to get branch metadata for project \(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
   // MARK: - Background Indexing
 
   /// Low-priority background task to pre-ingest inactive projects
