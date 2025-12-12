@@ -2,19 +2,46 @@
 # QA-04: New Claude Code Transcript Discovery
 #
 # Purpose: Validates end-to-end pipeline from file creation to timeline display
-#          for Claude Code transcripts.
+#          for Claude Code transcripts. Tests the full ingestion path.
+#
+# @test_contract
+# isolation:
+#   transcripts: backup        # Self-isolates: backs up production, uses fixtures
+#   database: reset            # Deletes DB for clean orchestrator initialization
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: false            # Database deleted in setup
+#     min_projects: 0          # Fresh DB
+#     min_transcripts: 0       # Fresh DB
+#   mutations:
+#     - "Creates new Claude transcript via CLI (or seeds fixture)"
+#     - "FSEvents detects new .jsonl file"
+#     - "Hoover ingests transcript and entries"
+#     - "Project created/updated for test project path"
+#     - "Watcher created for new transcript"
+#   end:
+#     exists: true
+#     projects: +1 or same     # May add test project
+#     transcripts: +1          # Adds new Claude transcript
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03]         # Phase 3 - runs after Codex discovery
+#   notes: "Self-isolating: backs up transcripts if run standalone. CLI mode needs claude."
 #
 # Pipeline stages verified:
-# 1. File System Events (FSEvents detects new .jsonl file)
-# 2. Transcript Discovery (File identified and project extracted)
-# 3. Database Ingestion (Transcript + entries written to SQLite)
-# 4. Watcher Creation (TranscriptWatcher started for real-time updates)
-# 5. Timeline Update (ConversationMonitor displays entries)
+# 1. FSEvents detects new .jsonl file
+# 2. Transcript discovery extracts project from path
+# 3. Database ingestion (transcript + entries)
+# 4. Watcher creation for real-time updates
+# 5. Timeline update
 #
 # Prerequisites:
-# - App running with FSEvents monitoring active
-# - Test project exists: /tmp/contextify-qa-test (git repo initialized)
-# - Claude Code installed and authenticated
+# - App running with FSEvents monitoring
+# - Test project: /tmp/contextify-qa-test
+# - Claude Code CLI (if not in fixture mode)
 
 set -euo pipefail
 
@@ -24,17 +51,41 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-04"
 TEST_NAME="New Claude Code Transcript Discovery"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
+SELF_ISOLATED=0  # Track if we set up our own isolation
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Implementation
 # ─────────────────────────────────────────────────────────────────────────────
 
+setup_isolation() {
+  # If already isolated (by orchestrator), skip
+  if transcripts_are_isolated; then
+    log_info "Transcripts already isolated (orchestrator mode)"
+    return 0
+  fi
+
+  # Set up our own isolation
+  log_info "Setting up transcript isolation for standalone test..."
+  backup_and_isolate_transcripts
+  SELF_ISOLATED=1
+  export QA_FIXTURE_MODE=1  # Use fixture transcripts instead of CLI
+  log_success "Transcript isolation active (fixture mode enabled)"
+}
+
+cleanup_isolation() {
+  # Only restore if we set up isolation ourselves
+  if [ "$SELF_ISOLATED" -eq 1 ]; then
+    log_info "Restoring production transcripts..."
+    restore_transcripts_from_backup
+    log_success "Production transcripts restored"
+  fi
+}
+
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "sqlite3"
 
   # Claude CLI only required if not in fixture mode
@@ -48,22 +99,50 @@ check_prerequisites() {
   # Create test project if doesn't exist
   create_test_project "$TEST_PROJECT"
 
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
+
   log_success "Prerequisites met"
 }
 
 setup_test() {
   log_subheader "Setup"
 
-  # Ensure app is active
-  activate_app
+  # Kill any existing instance for clean state
+  kill_app_if_running
 
-  # Start log capture
-  LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
-  mkdir -p "$LOGDIR"
+  # Delete database to ensure clean orchestrator initialization
+  # (Avoids schema mismatch issues from prior test runs)
+  rm -f "$DB_PATH"* 2>/dev/null || true
+
+  # In fixture mode, seed the transcript BEFORE launching app
+  # so it's discovered during initial startup (FSEvents won't catch post-launch seeding)
+  if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
+    log_info "Fixture mode: seeding Claude transcript before app launch"
+    cd "$TEST_PROJECT"
+    TRANSCRIPT=$(seed_fixture_transcript "claude" "project1.jsonl")
+    cd - > /dev/null
+    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+      log_error "Failed to seed fixture transcript"
+      TEST_FAILED=1
+      return 1
+    fi
+    log_success "Fixture transcript seeded: $TRANSCRIPT"
+  fi
+
+  # Start log capture before launching app
   start_log_capture "$LOGDIR"
 
-  # Wait for log capture to initialize
-  sleep 2
+  # Launch the app fresh
+  log_info "Launching DMG build..."
+  if ! launch_dmg_app; then
+    log_error "Failed to launch app"
+    TEST_FAILED=1
+    return 1
+  fi
+
+  log_success "Setup complete"
 }
 
 run_test_steps() {
@@ -72,15 +151,8 @@ run_test_steps() {
   cd "$TEST_PROJECT"
 
   if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
-    log_info "Fixture mode: seeding Claude transcript"
-    TRANSCRIPT=$(seed_fixture_transcript "claude")
-    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-      log_error "Failed to seed fixture transcript"
-      TEST_FAILED=1
-      cd - > /dev/null
-      return 1
-    fi
-    log_success "Fixture transcript seeded: $TRANSCRIPT"
+    # Transcript already seeded in setup_test, just wait for discovery
+    log_info "Waiting for app to discover pre-seeded fixture..."
   else
     log_info "Creating new Claude Code conversation in test project..."
 
@@ -92,8 +164,8 @@ run_test_steps() {
     # Using --dangerously-skip-permissions to avoid interactive prompts
     log_info "Running: claude --dangerously-skip-permissions -p \"print '$test_marker'\""
 
-    # Run claude with timeout in background
-    timeout 60 claude --dangerously-skip-permissions -p "print '$test_marker' in Python" > /dev/null 2>&1 &
+    # Run claude with timeout in background (supports timeout/gtimeout via common.sh)
+    run_with_timeout 60 claude --dangerously-skip-permissions -p "print '$test_marker' in Python" > /dev/null 2>&1 &
     local CLAUDE_PID=$!
 
     # Wait for transcript file creation
@@ -245,8 +317,24 @@ report_results() {
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+cleanup() {
+  kill_app_if_running
+  stop_log_capture
+  cleanup_isolation
+}
+
 main() {
+  # Set up log directory
+  LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
+  mkdir -p "$LOGDIR"
+
+  # Ensure cleanup runs on exit
+  trap cleanup EXIT
+
   log_header "$TEST_ID: $TEST_NAME"
+
+  # Set up transcript isolation (backs up production data, seeds fixtures)
+  setup_isolation
 
   check_prerequisites
   setup_test

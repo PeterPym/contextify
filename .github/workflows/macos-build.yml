@@ -3,12 +3,32 @@ name: macOS Build
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'Contextify/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/macos-build.yml'
+      - 'scripts/qa/**'
+    paths-ignore:
+      - '**/*.md'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'Contextify/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/workflows/macos-build.yml'
+      - 'scripts/qa/**'
+    paths-ignore:
+      - '**/*.md'
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v4

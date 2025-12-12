@@ -2,19 +2,46 @@
 # QA-03: New Codex Transcript Discovery
 #
 # Purpose: Validates end-to-end pipeline from file creation to timeline display
-#          for Codex CLI transcripts.
+#          for Codex CLI transcripts. Tests the full ingestion path.
+#
+# @test_contract
+# isolation:
+#   transcripts: backup        # Self-isolates: backs up production, uses fixtures
+#   database: reset            # Deletes DB for clean orchestrator initialization
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: false            # Database deleted in setup
+#     min_projects: 0          # Fresh DB
+#     min_transcripts: 0       # Fresh DB
+#   mutations:
+#     - "Creates new Codex transcript via CLI (or seeds fixture)"
+#     - "FSEvents detects new .jsonl file"
+#     - "Hoover ingests transcript and entries"
+#     - "Project created/updated for test project path"
+#     - "Watcher created for new transcript"
+#   end:
+#     exists: true
+#     projects: +1 or same     # May add test project
+#     transcripts: +1          # Adds new Codex transcript
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-01a]        # Phase 3 - needs DB to exist
+#   notes: "Self-isolating: backs up transcripts if run standalone. CLI mode needs codex."
 #
 # Pipeline stages verified:
-# 1. File System Events (FSEvents detects new .jsonl file)
-# 2. Transcript Discovery (File identified and project extracted from CWD field)
-# 3. Database Ingestion (Transcript + entries written to SQLite)
-# 4. Watcher Creation (TranscriptWatcher started for real-time updates)
-# 5. Timeline Update (ConversationMonitor displays entries)
+# 1. FSEvents detects new .jsonl file
+# 2. Transcript discovery extracts project from CWD field
+# 3. Database ingestion (transcript + entries)
+# 4. Watcher creation for real-time updates
+# 5. Timeline update
 #
 # Prerequisites:
-# - App running with FSEvents monitoring active
-# - Test project exists: /tmp/contextify-qa-test (git repo initialized)
-# - Codex CLI installed and authenticated
+# - App running with FSEvents monitoring
+# - Test project: /tmp/contextify-qa-test
+# - Codex CLI (if not in fixture mode)
 
 set -euo pipefail
 
@@ -24,17 +51,42 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-03"
 TEST_NAME="New Codex Transcript Discovery"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
+TEST_MARKER=""
+SELF_ISOLATED=0  # Track if we set up our own isolation
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Implementation
 # ─────────────────────────────────────────────────────────────────────────────
 
+setup_isolation() {
+  # If already isolated (by orchestrator), skip
+  if transcripts_are_isolated; then
+    log_info "Transcripts already isolated (orchestrator mode)"
+    return 0
+  fi
+
+  # Set up our own isolation
+  log_info "Setting up transcript isolation for standalone test..."
+  backup_and_isolate_transcripts
+  SELF_ISOLATED=1
+  export QA_FIXTURE_MODE=1  # Use fixture transcripts instead of CLI
+  log_success "Transcript isolation active (fixture mode enabled)"
+}
+
+cleanup_isolation() {
+  # Only restore if we set up isolation ourselves
+  if [ "$SELF_ISOLATED" -eq 1 ]; then
+    log_info "Restoring production transcripts..."
+    restore_transcripts_from_backup
+    log_success "Production transcripts restored"
+  fi
+}
+
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "sqlite3"
 
   # Codex CLI only required if not in fixture mode
@@ -54,14 +106,40 @@ check_prerequisites() {
 setup_test() {
   log_subheader "Setup"
 
-  # Ensure app is active
-  activate_app
+  # Kill any existing instance for clean state
+  kill_app_if_running
 
-  # Start log capture
+  # Delete database to ensure clean orchestrator initialization
+  # (Avoids schema mismatch issues from prior test runs)
+  rm -f "$DB_PATH"* 2>/dev/null || true
+
+  # In fixture mode, seed the transcript BEFORE launching app
+  # so it's discovered during initial startup (FSEvents won't catch post-launch seeding)
+  if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
+    log_info "Fixture mode: seeding Codex transcript before app launch"
+    cd "$TEST_PROJECT"
+    TRANSCRIPT=$(seed_fixture_transcript "codex" "project1.jsonl")
+    cd - > /dev/null
+    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
+      log_error "Failed to seed fixture transcript"
+      TEST_FAILED=1
+      return 1
+    fi
+    log_success "Fixture transcript seeded: $TRANSCRIPT"
+  fi
+
+  # Start log capture before launching app
   start_log_capture "$LOGDIR"
 
-  # Wait a moment for log capture to initialize
-  sleep 2
+  # Launch the app
+  log_info "Launching DMG build..."
+  if ! launch_dmg_app; then
+    log_error "Failed to launch app"
+    TEST_FAILED=1
+    return 1
+  fi
+
+  log_success "Setup complete"
 }
 
 run_test_steps() {
@@ -70,27 +148,20 @@ run_test_steps() {
   cd "$TEST_PROJECT"
 
   if [ "${QA_FIXTURE_MODE:-0}" = "1" ]; then
-    log_info "Fixture mode: seeding Codex transcript"
-    TRANSCRIPT=$(seed_fixture_transcript "codex")
-    if [ -z "$TRANSCRIPT" ] || [ ! -f "$TRANSCRIPT" ]; then
-      log_error "Failed to seed fixture transcript"
-      TEST_FAILED=1
-      cd - > /dev/null
-      return 1
-    fi
-    log_success "Fixture transcript seeded: $TRANSCRIPT"
+    # Transcript already seeded in setup_test, just wait for discovery
+    log_info "Waiting for app to discover pre-seeded fixture..."
   else
     log_info "Creating new Codex conversation in test project..."
 
     # Generate unique test identifier
-    local test_marker
-    test_marker="QA-$(date +%s)"
+    TEST_MARKER="QA-$(date +%s)"
 
-    # Start Codex conversation with simple prompt
-    log_info "Running: codex \"print '$test_marker' and exit\" --full-auto"
+    # Start Codex conversation with simple prompt (use 'exec' for non-interactive mode)
+    # See: appstore-metadata/review-materials/generate-transcripts.sh for pattern
+    log_info "Running: codex exec -C $TEST_PROJECT \"print '$TEST_MARKER' in Python\""
 
-    # Run codex with timeout in background (uses run_with_timeout for portability)
-    run_with_timeout 45 codex "print '$test_marker' in Python and then exit immediately" --full-auto > /dev/null 2>&1 &
+    # Run codex exec (non-interactive mode) with timeout in background
+    run_with_timeout 45 codex exec -C "$TEST_PROJECT" --dangerously-bypass-approvals-and-sandbox "print '$TEST_MARKER' in Python and then exit immediately" > /dev/null 2>&1 &
     local CODEX_PID=$!
 
     # Wait for transcript file creation
@@ -206,9 +277,21 @@ validate_results() {
   log_info "Stage 4: Validating watcher creation..."
   soft_assert_log_contains "\[WATCHER" "Watcher activity detected"
 
-  # Stage 5: Timeline Update
-  log_info "Stage 5: Validating timeline update..."
-  soft_assert_log_contains "\[TIMELINE" "Timeline activity detected"
+  # Stage 5: Content verification - check test marker made it through
+  log_info "Stage 5: Validating test content ingested..."
+  if [ -n "$TEST_MARKER" ] && [ -n "$transcript_id" ]; then
+    local content_match
+    content_match=$(db_count "SELECT COUNT(*) FROM transcript_entries WHERE transcript_id = '$transcript_id' AND content LIKE '%$TEST_MARKER%';")
+    if [ "$content_match" -ge 1 ]; then
+      log_success "✓ Test marker '$TEST_MARKER' found in ingested content"
+    else
+      log_error "ASSERTION FAILED: Test marker not found in database"
+      log_error "  Expected content containing: $TEST_MARKER"
+      TEST_FAILED=1
+    fi
+  else
+    soft_assert_log_contains "\[TIMELINE" "Timeline activity detected"
+  fi
 
   # Optional: LLM summary queueing (informational)
   if grep -q "\[LLM" "$LOGFILE" 2>/dev/null; then
@@ -245,12 +328,24 @@ report_results() {
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
+cleanup() {
+  kill_app_if_running
+  stop_log_capture
+  cleanup_isolation
+}
+
 main() {
   # Set up log directory
   LOGDIR="${LOGDIR:-/tmp/qa-${TEST_ID}-$(date +%Y%m%d-%H%M%S)}"
   mkdir -p "$LOGDIR"
 
+  # Ensure cleanup runs on exit
+  trap cleanup EXIT
+
   log_header "$TEST_ID: $TEST_NAME"
+
+  # Set up transcript isolation (backs up production data, seeds fixtures)
+  setup_isolation
 
   check_prerequisites
   setup_test

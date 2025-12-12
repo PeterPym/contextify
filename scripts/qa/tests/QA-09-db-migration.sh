@@ -1,8 +1,41 @@
 #!/bin/bash
 # QA-09: DB Migration & Integrity
 #
-# Validates that the app successfully migrates older database schemas.
-# Uses fixture databases from known older versions.
+# Purpose: Validates that the app successfully migrates older database schemas.
+#          Tests backwards compatibility with fixture databases from older versions.
+#
+# @test_contract
+# isolation:
+#   transcripts: none          # Doesn't touch transcript directories
+#   database: fixture          # Installs fixture DBs, restores original at end
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: varies           # Installs fixture DB for each test iteration
+#     min_projects: 0          # Fixture may have projects
+#     min_transcripts: 0       # Fixture may have transcripts
+#   mutations:
+#     - "Backs up current database"
+#     - "Installs old-version fixture database"
+#     - "App runs migrations on startup"
+#     - "Schema version updated to current"
+#     - "Restores original database at end"
+#   end:
+#     exists: true             # Original DB restored
+#     projects: same as original
+#     transcripts: same as original
+#
+# dependencies:
+#   orchestrator_flags: []     # No isolation needed - uses fixture DBs
+#   run_after: []              # Phase 2 - run before discovery to avoid wiping FTS data
+#   notes: "Self-contained. Backs up/restores production DB. Tests each fixture."
+#
+# Validates:
+# - App migrates old schemas successfully
+# - No data corruption during migration
+# - App starts after migration
+# - Schema version updated
 #
 # Prerequisites:
 # - DMG app build available

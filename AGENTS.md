@@ -23,6 +23,9 @@ These cause real problems when violated:
 
    App Store-specific features (onboarding, security-scoped bookmarks) only work in App Store builds.
 8. **No unassisted merges/deletes** - Do not merge to main or delete branches without user approval, even in autonomous mode.
+9. **Generate transcripts via CLI** - Never manually create transcript JSONL files. Always use `claude` or `codex` CLIs to generate real transcripts. Manual creation risks format mismatches. See:
+   - `build/docs/specifications/transcript-formats.md` (format specs, non-interactive CLI usage)
+   - `appstore-metadata/review-materials/generate-transcripts.sh` (reference implementation)
 
 ---
 
@@ -44,6 +47,15 @@ These cause real problems when violated:
 - TODOS.md is the single source of truth (don't create other tracking files)
 
 **Full workflow details:** See TODOS.md front matter (priority definitions, doc naming, cleanup policy).
+
+### Feature Development Workflow
+
+For new features and significant refactors, follow the structured workflow:
+**Problem Statement → Technical Specification → Implementation Plan → Implementation → Review**
+
+The spec must include test requirements (unit tests + E2E tests).
+
+**Full workflow:** See `build/docs/guides/feature-development-workflow.md`
 
 ### Documentation Writing - Present Tense, No Meta-Commentary
 
@@ -93,7 +105,7 @@ Common commands:
 - Linux/CI builds via GitHub Actions (`scripts/trigger-ci-build.sh`)
 - Database operations (`scripts/db_manager.sh`)
 - Release workflows (`make release`)
-- Automated QA suite (`scripts/qa/README.md`)
+- E2E test suite (`scripts/qa/README.md`)
 - First-run QA testing (`build/docs/testing/first-run-qa-guide.md`)
 
 ## Architecture Overview

@@ -396,9 +396,7 @@ struct DatabaseSettingsTab: View {
     log.info("[DB-RESET] App Store build - clearing onboarding state, restart required")
     HUDPreferences.clearAppStoreOnboardingState()
     pendingRestart = true
-    return
-    #endif
-
+    #else
     // DMG builds: run the heavy migration work off the main thread
     Task.detached(priority: .userInitiated) {
       // Capture old path before migration
@@ -434,6 +432,7 @@ struct DatabaseSettingsTab: View {
         isMigrating = false
       }
     }
+    #endif
   }
 
 }

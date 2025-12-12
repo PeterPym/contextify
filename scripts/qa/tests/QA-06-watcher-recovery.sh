@@ -1,17 +1,43 @@
 #!/bin/bash
 # QA-06: Watcher Health and Recovery
 #
-# Purpose: Validates watcher health monitoring and recovery mechanisms
+# Purpose: Validates watcher health monitoring and recovery mechanisms.
+#          Tests that the app self-heals when watchers fail.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-heavy test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Needs transcripts with watchers
+#   mutations:
+#     - "Monitors health check cycle (read-only)"
+#     - "May update transcript status if recovery needed"
+#     - "No structural changes expected"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs active transcripts
+#   notes: "Read-heavy test. Monitors watcher health, doesn't force failures."
 #
 # Validates:
 # - Health check runs periodically
-# - Missing watchers are detected
-# - Recovery mechanism works
+# - [HEALTH] or similar logging detected
 # - No infinite recovery loops
+# - No fatal errors
 #
 # Prerequisites:
 # - App running with active project
-# - Transcripts in database
+# - Active transcripts in database
 
 set -euo pipefail
 
@@ -29,19 +55,21 @@ TEST_NAME="Watcher Health and Recovery"
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "sqlite3"
 
-  # Verify we have transcripts
-  local transcript_count
-  transcript_count=$(db_count "SELECT COUNT(*) FROM transcripts WHERE status = 'active';")
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
 
-  if [ "$transcript_count" -lt 1 ]; then
-    log_warn "No active transcripts in database"
-    log_info "Watcher recovery test may have limited coverage"
-  else
-    log_info "Active transcripts: $transcript_count"
-  fi
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
+
+  # Contract: start.min_projects: 1, min_transcripts: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -148,6 +176,9 @@ validate_results() {
   else
     log_warn "$error_transcripts transcript(s) in error state"
   fi
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after watcher monitoring"
 }
 
 report_results() {

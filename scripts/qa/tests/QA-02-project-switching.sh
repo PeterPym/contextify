@@ -1,14 +1,38 @@
 #!/bin/bash
 # QA-02: Project Switching
 #
-# Purpose: Validates project switching via keyboard shortcuts
+# Purpose: Validates project switching via keyboard shortcuts (Cmd+Shift+] and [).
+#          Tests that switching between projects works correctly.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for consistent project set
+#   database: preserve         # Uses existing database, doesn't reset
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 2          # Need at least 2 projects to switch between
+#     min_transcripts: 0
+#   mutations:
+#     - "Updates last_viewed_ts on switched-to project"
+#     - "May trigger timeline refresh"
+#     - "No structural changes to projects/transcripts tables"
+#   end:
+#     exists: true
+#     projects: same           # No projects added/removed
+#     transcripts: same        # No transcripts added/removed
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs projects from discovery
+#   notes: "Read-heavy test. Needs 2+ projects. Updates timestamps only."
 #
 # Validates:
-# - UI freezes during switch
 # - Orchestrator receives switch request
-# - Switch completes successfully
-# - Timeline refreshes
-# - Watchers created
+# - [ORCH-SELECT] logged
+# - Timeline refreshes after switch
 # - No errors during switch
 #
 # Prerequisites:
@@ -34,6 +58,9 @@ check_prerequisites() {
   assert_command_exists "sqlite3"
   assert_command_exists "osascript"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   # Check if app is running, start if not
   if ! app_is_running; then
     log_info "App not running, launching..."
@@ -43,16 +70,19 @@ check_prerequisites() {
 
   assert_app_running "Contextify"
 
-  # Check for multiple projects
+  # Contract: start.min_projects: 2
   local project_count
   project_count=$(db_count "SELECT COUNT(*) FROM projects;")
 
   if [ "$project_count" -lt 2 ]; then
-    log_warn "Only $project_count project(s) in database"
-    log_info "Project switching test works best with 2+ projects"
-    log_info "Creating test project for switching..."
-    # The switch will still work, just might wrap around to same project
+    log_error "Contract requires min_projects: 2, found: $project_count"
+    log_error "Run QA-03 and QA-04 first to create fixture projects"
+    TEST_FAILED=1
+    exit 1
   fi
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met (projects: $project_count)"
 }
@@ -138,16 +168,8 @@ validate_results() {
     log_warn "Found $error_count error(s) in logs during switch"
   fi
 
-  # Verify projects table wasn't corrupted
-  local project_count
-  project_count=$(db_count "SELECT COUNT(*) FROM projects;")
-
-  if [ "$project_count" -ge 1 ]; then
-    log_success "✓ Projects table intact (count: $project_count)"
-  else
-    log_error "Projects table may be corrupted"
-    TEST_FAILED=1
-  fi
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after switching"
 }
 
 cleanup_and_report() {

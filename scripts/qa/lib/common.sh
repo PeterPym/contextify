@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-# Source shared cleanup library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../../lib/cleanup.sh"
+# Source shared cleanup library (use internal var to avoid conflict with caller's SCRIPT_DIR)
+_COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_COMMON_LIB_DIR/../../lib/cleanup.sh"
 
 # Bundle IDs for the two app variants
 BUNDLE_ID_DMG="dev.contextify"
@@ -176,10 +176,45 @@ app_is_running() {
 }
 
 kill_app_if_running() {
-  if app_is_running; then
-    log_info "Killing running Contextify instance..."
-    pkill -9 "Contextify" 2>/dev/null || true
+  local found_any=0
+
+  # Check for any Contextify process
+  if pgrep -x "Contextify" > /dev/null 2>&1; then
+    found_any=1
+  fi
+
+  # Also check by bundle ID paths (catches launched-but-not-yet-running)
+  if pgrep -f "Contextify.app/Contents/MacOS/Contextify" > /dev/null 2>&1; then
+    found_any=1
+  fi
+
+  if [ "$found_any" -eq 1 ]; then
+    log_info "Killing all Contextify instances..."
+
+    # Method 1: Kill by process name
+    pkill -9 -x "Contextify" 2>/dev/null || true
+
+    # Method 2: Kill by app path patterns (catches both DMG and App Store builds)
+    pkill -9 -f "derived-dmg.*Contextify" 2>/dev/null || true
+    pkill -9 -f "derived-appstore.*Contextify" 2>/dev/null || true
+
+    # Method 3: Quit gracefully via AppleScript (handles any Contextify)
+    osascript -e 'tell application "Contextify" to quit' 2>/dev/null || true
+
+    # Method 4: killall as final fallback
+    killall -9 "Contextify" 2>/dev/null || true
+
     sleep 2
+
+    # Verify kill succeeded
+    if pgrep -x "Contextify" > /dev/null 2>&1; then
+      log_warn "Contextify still running after kill attempts!"
+      # One more aggressive attempt
+      pkill -9 -f "Contextify" 2>/dev/null || true
+      sleep 1
+    fi
+
+    log_info "Kill complete"
   fi
 }
 
@@ -231,6 +266,38 @@ launch_appstore_app() {
 
   log_error "App Store build launch failed"
   return 1
+}
+
+# Ensure DMG app is running, launch if not
+# Usage: ensure_dmg_app_running
+ensure_dmg_app_running() {
+  if app_is_running; then
+    log_info "App already running"
+    return 0
+  fi
+
+  log_info "App not running, launching..."
+  if ! launch_dmg_app; then
+    return 1
+  fi
+
+  return 0
+}
+
+# Ensure App Store app is running, launch if not
+# Usage: ensure_appstore_app_running
+ensure_appstore_app_running() {
+  if app_is_running; then
+    log_info "App already running"
+    return 0
+  fi
+
+  log_info "App not running, launching..."
+  if ! launch_appstore_app; then
+    return 1
+  fi
+
+  return 0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +397,16 @@ send_shortcut() {
 # Type text
 type_text() {
   local text="$1"
-  osascript -e "tell application \"System Events\" to keystroke \"$text\"" 2>/dev/null
+  # Activate Contextify and type into it specifically (prevents typing into other windows)
+  osascript -e '
+    tell application "Contextify" to activate
+    delay 0.1
+    tell application "System Events"
+      tell process "Contextify"
+        keystroke "'"$text"'"
+      end tell
+    end tell
+  ' 2>/dev/null
   sleep 0.2
 }
 
@@ -587,19 +663,20 @@ reset_dmg_state() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Seed a fixture transcript into the appropriate provider location
-# Usage: seed_fixture_transcript "codex"|"claude" [fixture_name]
+# Usage: seed_fixture_transcript "codex"|"claude" [fixture_name] [project_path]
 # Returns: path to seeded transcript file
-# Requires: TEST_PROJECT to be set
+# Requires: TEST_PROJECT to be set (or project_path provided)
 seed_fixture_transcript() {
   local provider="$1"
   local fixture_name="${2:-simple-session.jsonl}"
+  local project_path="${3:-$TEST_PROJECT}"
   local src_file="$QA_FIXTURE_DIR/transcripts/$provider/$fixture_name"
   local dest_dir=""
   local dest_file=""
 
-  # Validate TEST_PROJECT is set
-  if [ -z "${TEST_PROJECT:-}" ]; then
-    log_error "TEST_PROJECT is not set; required for fixture transcripts"
+  # Validate project path is set
+  if [ -z "${project_path:-}" ]; then
+    log_error "TEST_PROJECT is not set and no project_path provided"
     return 1
   fi
 
@@ -621,7 +698,7 @@ seed_fixture_transcript() {
       # Note: This is a simplified hash (tr '/' '-'), not Claude's actual algorithm.
       # Tests validate CWD-based discovery, not directory hash logic.
       local project_hash
-      project_hash=$(echo "$TEST_PROJECT" | tr '/' '-')
+      project_hash=$(echo "$project_path" | tr '/' '-')
       dest_dir="$HOME/.claude/projects/$project_hash"
       dest_file="$dest_dir/$(uuidgen | tr '[:upper:]' '[:lower:]').jsonl"
       ;;
@@ -633,11 +710,13 @@ seed_fixture_transcript() {
 
   mkdir -p "$dest_dir"
 
-  # Escape & in path to prevent sed expansion issues
-  local escaped_project="${TEST_PROJECT//&/\\&}"
+  # Escape sed replacement metacharacters in the path
+  local escaped_project
+  escaped_project=$(printf '%s' "$project_path" | sed -e 's/[\\&|]/\\&/g')
 
   # Copy and update cwd to point to test project
-  sed "s|\"cwd\": \"[^\"]*\"|\"cwd\": \"$escaped_project\"|g" "$src_file" > "$dest_file"
+  # Handle both "cwd":"..." and "cwd": "..." formats
+  sed "s|\"cwd\": *\"[^\"]*\"|\"cwd\":\"$escaped_project\"|g" "$src_file" > "$dest_file"
 
   # Touch to ensure fresh mtime for discovery
   touch "$dest_file"
@@ -689,6 +768,9 @@ restore_db_from_backup() {
     rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm"
     mv "${DB_PATH}.qa-backup" "$DB_PATH"
     log_info "Restored DB from backup"
+  else
+    rm -f "$DB_PATH" "${DB_PATH}-wal" "${DB_PATH}-shm"
+    log_info "No DB backup found; removed test DB"
   fi
 }
 
@@ -696,6 +778,8 @@ restore_db_from_backup() {
 # Cleanup
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Default cleanup function for tests
+# Individual tests should call setup_test_cleanup_trap() or define their own
 cleanup_test() {
   log_info "Cleaning up test..."
   stop_log_capture
@@ -710,8 +794,110 @@ cleanup_test() {
   fi
 }
 
-# Trap for cleanup on exit
-trap cleanup_test EXIT
+# Set up the default cleanup trap (tests should call this in main())
+# NOTE: Not set at module level to avoid affecting orchestrator scripts
+setup_test_cleanup_trap() {
+  trap cleanup_test EXIT
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Transcript Backup/Restore (isolate tests from production data)
+# ─────────────────────────────────────────────────────────────────────────────
+
+CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
+CODEX_SESSIONS_DIR="$HOME/.codex/sessions"
+CLAUDE_BACKUP_DIR="$HOME/.claude/projects-QA-BACKUP"
+CODEX_BACKUP_DIR="$HOME/.codex/sessions-QA-BACKUP"
+
+# Backup real transcripts and install minimal test data
+# Usage: backup_and_isolate_transcripts
+backup_and_isolate_transcripts() {
+  log_info "Backing up production transcripts for isolated QA..."
+
+  # Backup Claude projects (if not already backed up)
+  if [ -d "$CLAUDE_PROJECTS_DIR" ] && [ ! -d "$CLAUDE_BACKUP_DIR" ]; then
+    mv "$CLAUDE_PROJECTS_DIR" "$CLAUDE_BACKUP_DIR"
+    log_info "Backed up Claude projects to $CLAUDE_BACKUP_DIR"
+  elif [ -d "$CLAUDE_BACKUP_DIR" ]; then
+    log_info "Claude backup already exists, removing current projects"
+    rm -rf "$CLAUDE_PROJECTS_DIR"
+  fi
+
+  # Backup Codex sessions (if not already backed up)
+  if [ -d "$CODEX_SESSIONS_DIR" ] && [ ! -d "$CODEX_BACKUP_DIR" ]; then
+    mv "$CODEX_SESSIONS_DIR" "$CODEX_BACKUP_DIR"
+    log_info "Backed up Codex sessions to $CODEX_BACKUP_DIR"
+  elif [ -d "$CODEX_BACKUP_DIR" ]; then
+    log_info "Codex backup already exists, removing current sessions"
+    rm -rf "$CODEX_SESSIONS_DIR"
+  fi
+
+  # Create empty directories for test data
+  mkdir -p "$CLAUDE_PROJECTS_DIR"
+  mkdir -p "$CODEX_SESSIONS_DIR"
+
+  # Seed baseline fixtures for tests that need multiple projects
+  # Project 1: Both providers (TEST_PROJECT)
+  # Project 2: Claude only
+  # Project 3: Codex only
+  log_info "Seeding baseline test fixtures..."
+
+  local TEST_PROJECT_2="/tmp/contextify-qa-test-2"
+  local TEST_PROJECT_3="/tmp/contextify-qa-test-3"
+
+  # Create test project directories (git repos for project detection)
+  for proj in "$TEST_PROJECT" "$TEST_PROJECT_2" "$TEST_PROJECT_3"; do
+    if [ ! -d "$proj" ]; then
+      mkdir -p "$proj"
+      git -C "$proj" init -q 2>/dev/null || true
+    fi
+  done
+
+  # Check for multi-project fixtures (generated via generate-fixtures.sh)
+  local seeded_count=0
+  if [ -f "$QA_FIXTURE_DIR/transcripts/claude/project1.jsonl" ]; then
+    # Use generated fixtures with real multi-turn conversations
+    seed_fixture_transcript "claude" "project1.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "project1.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "claude" "project2.jsonl" "$TEST_PROJECT_2" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "project3.jsonl" "$TEST_PROJECT_3" > /dev/null && ((seeded_count++)) || true
+  else
+    # Fallback to simple fixtures (single project only)
+    log_warn "Multi-project fixtures not found. Run: scripts/qa/fixtures/generate-fixtures.sh"
+    seed_fixture_transcript "claude" "simple-session.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+    seed_fixture_transcript "codex" "simple-session.jsonl" "$TEST_PROJECT" > /dev/null && ((seeded_count++)) || true
+  fi
+
+  log_success "Transcripts isolated for QA ($seeded_count fixtures seeded)"
+}
+
+# Restore production transcripts from backup
+# Usage: restore_transcripts_from_backup
+restore_transcripts_from_backup() {
+  log_info "Restoring production transcripts..."
+
+  # Restore Claude projects
+  if [ -d "$CLAUDE_BACKUP_DIR" ]; then
+    rm -rf "$CLAUDE_PROJECTS_DIR"
+    mv "$CLAUDE_BACKUP_DIR" "$CLAUDE_PROJECTS_DIR"
+    log_info "Restored Claude projects"
+  fi
+
+  # Restore Codex sessions
+  if [ -d "$CODEX_BACKUP_DIR" ]; then
+    rm -rf "$CODEX_SESSIONS_DIR"
+    mv "$CODEX_BACKUP_DIR" "$CODEX_SESSIONS_DIR"
+    log_info "Restored Codex sessions"
+  fi
+
+  log_success "Production transcripts restored"
+}
+
+# Check if transcripts are currently isolated (backup exists)
+# Usage: if transcripts_are_isolated; then ...
+transcripts_are_isolated() {
+  [ -d "$CLAUDE_BACKUP_DIR" ] || [ -d "$CODEX_BACKUP_DIR" ]
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test Framework

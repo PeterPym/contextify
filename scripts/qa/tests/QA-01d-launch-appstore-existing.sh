@@ -1,16 +1,42 @@
 #!/bin/bash
 # QA-01d: App Store Build - Existing Bookmarks
 #
-# Purpose: Validates App Store startup with existing security-scoped bookmarks
+# Purpose: Validates App Store startup when bookmarks already exist.
+#          Tests that onboarding is skipped on subsequent launches.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for consistent state
+#   database: sandbox          # Uses App Store sandbox (preserves bookmarks)
+#
+# database:
+#   location: appstore
+#   start:
+#     exists: either           # May or may not have DB (bookmarks more important)
+#     min_projects: 0
+#     min_transcripts: 0
+#   mutations:
+#     - "Opens using existing security-scoped bookmarks"
+#     - "Skips onboarding wizard"
+#     - "May create DB if missing, may discover projects"
+#   end:
+#     exists: true
+#     projects: same or +N
+#     transcripts: same or +N
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-01c]        # Needs bookmarks from 01c
+#   notes: "Depends on 01c for bookmarks. Phase 4 - after 01c creates bookmarks."
 #
 # Validates:
-# - No permission prompt shown
-# - Existing bookmarks resolved
-# - Startup completes successfully
+# - No permission prompt shown (bookmarks used)
+# - Existing bookmarks resolved successfully
+# - Startup completes without onboarding
 #
 # Prerequisites:
 # - App Store build available
-# - Existing bookmarks from previous grant (run QA-01c first)
+# - Existing bookmarks (run QA-01c first)
 
 set -euo pipefail
 
@@ -30,6 +56,9 @@ check_prerequisites() {
 
   assert_command_exists "sqlite3"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   if [ ! -d "$APPSTORE_APP_PATH" ]; then
     log_error "App Store build not found: $APPSTORE_APP_PATH"
     log_error "Build with: bash scripts/xc.sh --dist=appstore Debug build"
@@ -40,10 +69,13 @@ check_prerequisites() {
   DB_PATH="$(get_appstore_db_path)"
   log_info "DB_PATH set to: $DB_PATH"
 
-  # Check for existing database (suggests previous run)
+  # Contract: start.exists: either (bookmarks more important than DB)
   if [ ! -f "$DB_PATH" ]; then
     log_warn "No existing database - bookmarks may not exist"
     log_info "Run QA-01c first to grant permissions and create bookmarks"
+  else
+    # Record baseline for end-state verification
+    record_baseline_counts
   fi
 
   log_success "Prerequisites met"

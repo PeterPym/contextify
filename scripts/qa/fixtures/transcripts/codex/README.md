@@ -1,24 +1,36 @@
 # Codex CLI Fixture Transcripts
 
-These fixtures are used for deterministic QA testing of Codex CLI transcript discovery.
+Fixtures for deterministic QA testing of Codex CLI transcript discovery.
 
-## Files
+## Generating Fixtures
 
-- `simple-session.jsonl` - Basic session with user/assistant exchange and search term
+**Never manually create JSONL files.** Always generate via CLI:
 
-## Important Notes
+```bash
+./scripts/qa/fixtures/generate-fixtures.sh
+```
 
-1. **Date-based paths**: Codex stores transcripts in `~/.codex/sessions/YYYY/MM/DD/`.
-   The `seed_fixture_transcript` helper creates this structure dynamically.
+This creates real transcripts using the Codex CLI with proper session structure.
 
-2. **CWD rewriting**: The `cwd` field is rewritten by `seed_fixture_transcript`
-   to match `TEST_PROJECT` (default: `/tmp/contextify-qa-test`).
+## Expected Files (after generation)
 
-3. **Search terms**: Include `QA_FIXTURE_SEARCH_TERM_CODEX` for search tests.
+- `project1.jsonl` - Project 1 (both providers), includes QA_FIXTURE_SEARCH_TERM_CODEX
+- `project3.jsonl` - Project 3 (Codex only)
 
-## Creating New Fixtures
+## How Seeding Works
 
-1. Copy an existing session from `~/.codex/sessions/`
-2. Sanitize any sensitive content
-3. Add `QA_FIXTURE_SEARCH_TERM_CODEX` to a user message for search testing
-4. Keep fixtures minimal (2-3 exchanges)
+The `seed_fixture_transcript` function in `common.sh`:
+1. Copies the fixture to `~/.codex/sessions/YYYY/MM/DD/`
+2. Rewrites the `cwd` field to match the target project path
+3. Uses current date for the directory structure
+
+## Cleanup
+
+Seeded transcripts create `qa-fixture-*.jsonl` files in the date-based directory.
+Use `--isolate` mode which backs up and restores production data, or manually
+remove test files.
+
+## References
+
+- `build/docs/specifications/transcript-formats.md` - Format specification
+- `appstore-metadata/review-materials/generate-transcripts.sh` - Reference implementation

@@ -1,16 +1,44 @@
 #!/bin/bash
 # QA-07: Transcript Window
 #
-# Purpose: Validates transcript window opening and content loading
+# Purpose: Validates transcript window opens and loads content.
+#          Tests Cmd+Ctrl+I keyboard shortcut.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-only UI test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Need transcript to display
+#   mutations:
+#     - "Opens transcript window (UI only)"
+#     - "Reads transcript data for display"
+#     - "No database changes"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs transcripts to display
+#   notes: "Read-only UI test. Tests window creation, not data modification."
 #
 # Validates:
-# - Window opens via keyboard shortcut
-# - Transcript content loads
+# - Window opens via Cmd+Ctrl+I
+# - Window count increases
+# - Transcript content loads (log activity)
 # - Window can be closed
 #
 # Prerequisites:
-# - App running with active project
+# - App running
 # - At least one transcript in database
+# - Terminal has Accessibility permission
 
 set -euo pipefail
 
@@ -28,18 +56,21 @@ TEST_NAME="Transcript Window"
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "osascript"
 
-  # Check for transcripts
-  local transcript_count
-  transcript_count=$(db_count "SELECT COUNT(*) FROM transcripts;")
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
 
-  if [ "$transcript_count" -lt 1 ]; then
-    log_warn "No transcripts in database - window may show empty state"
-  else
-    log_info "Transcripts available: $transcript_count"
-  fi
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
+
+  # Contract: start.min_projects: 1, min_transcripts: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -122,6 +153,9 @@ validate_results() {
   else
     log_warn "Found $error_count error(s) in logs"
   fi
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after window operation"
 }
 
 cleanup_and_close() {

@@ -1,7 +1,35 @@
 #!/bin/bash
 # QA-05: Real-time Transcript Updates
 #
-# Purpose: Validates real-time updates when transcript files change
+# Purpose: Validates real-time updates when transcript files change.
+#          Tests the watcher -> incremental hoover -> timeline pipeline.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate for fixture transcripts
+#   database: preserve         # Uses existing DB with transcripts
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1
+#     min_transcripts: 1       # Needs existing transcript to update
+#   mutations:
+#     - "Appends new entries to existing transcript file"
+#     - "Watcher detects file change"
+#     - "Incremental hoover processes new content"
+#     - "Adds new entries to transcript_entries table"
+#     - "LLM queue receives entries for summarization"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same        # Same transcript, more entries
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: [QA-03, QA-04]  # Phase 4 - needs transcripts from discovery tests
+#   notes: "Uses Codex CLI to generate new content. Tests incremental ingestion."
 #
 # Validates:
 # - Watcher detects file changes
@@ -12,7 +40,7 @@
 # Prerequisites:
 # - App running with active project
 # - Existing transcript with watcher
-# - Codex CLI installed (to generate new content)
+# - Codex CLI (to generate new content)
 
 set -euo pipefail
 
@@ -22,7 +50,7 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="QA-05"
 TEST_NAME="Real-time Transcript Updates"
-TEST_PROJECT="/tmp/contextify-qa-test"
+TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 TRANSCRIPT=""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,12 +60,25 @@ TRANSCRIPT=""
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "codex"
   assert_command_exists "sqlite3"
 
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
   # Create test project if doesn't exist
   create_test_project "$TEST_PROJECT"
+
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
+
+  # Contract: start.min_projects: 1, min_transcripts: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+  assert_db_count_min "SELECT COUNT(*) FROM transcripts;" 1 "At least 1 transcript exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -56,7 +97,7 @@ setup_test() {
     log_info "No recent transcript found, creating one..."
 
     cd "$TEST_PROJECT"
-    timeout 30 codex "say 'setup' in Python" --full-auto > /dev/null 2>&1 || true
+    run_with_timeout 30 codex "say 'setup' in Python" --full-auto > /dev/null 2>&1 || true
     cd - > /dev/null
 
     sleep 3
@@ -98,7 +139,7 @@ run_test_steps() {
   # Run another Codex command to append to transcript
   log_info "Running: codex \"print '$test_marker'\" --full-auto"
 
-  timeout 45 codex "print '$test_marker' and exit" --full-auto > /dev/null 2>&1 &
+  run_with_timeout 45 codex "print '$test_marker' and exit" --full-auto > /dev/null 2>&1 &
   local CODEX_PID=$!
 
   # Wait for file to be modified
@@ -167,6 +208,9 @@ validate_results() {
   else
     log_warn "Found $error_count error(s) during update"
   fi
+
+  # Contract: end state projects: same, transcripts: same (more entries)
+  assert_counts_unchanged "Database counts unchanged (new entries added to existing transcript)"
 }
 
 report_results() {

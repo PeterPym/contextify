@@ -545,3 +545,95 @@ soft_assert_db_count_min() {
   fi
   return 0  # Soft assertions always return 0
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Isolation Assertions
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Require transcript isolation (fails test if not isolated)
+# Use this for tests that declare "transcripts: orchestrator" in their contract
+require_isolation() {
+  local desc="${1:-Transcript isolation active}"
+
+  if transcripts_are_isolated; then
+    log_success "✓ $desc"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  Test requires transcript isolation but none detected"
+    log_error "  Run with orchestrator --isolate flag, or run QA-03/QA-04 first"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
+# Record counts at test start for end-state verification
+# Usage: record_baseline_counts
+# Sets: BASELINE_PROJECTS, BASELINE_TRANSCRIPTS, BASELINE_ENTRIES
+record_baseline_counts() {
+  BASELINE_PROJECTS=$(db_count "SELECT COUNT(*) FROM projects;")
+  BASELINE_TRANSCRIPTS=$(db_count "SELECT COUNT(*) FROM transcripts;")
+  BASELINE_ENTRIES=$(db_count "SELECT COUNT(*) FROM transcript_entries;")
+  log_info "Baseline counts - projects: $BASELINE_PROJECTS, transcripts: $BASELINE_TRANSCRIPTS, entries: $BASELINE_ENTRIES"
+}
+
+# Assert counts unchanged from baseline (for "preserve" contracts)
+assert_counts_unchanged() {
+  local desc="${1:-Database counts unchanged}"
+
+  local current_projects current_transcripts
+  current_projects=$(db_count "SELECT COUNT(*) FROM projects;")
+  current_transcripts=$(db_count "SELECT COUNT(*) FROM transcripts;")
+
+  if [ "$current_projects" -eq "${BASELINE_PROJECTS:-0}" ] && \
+     [ "$current_transcripts" -eq "${BASELINE_TRANSCRIPTS:-0}" ]; then
+    log_success "✓ $desc (projects: $current_projects, transcripts: $current_transcripts)"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  Projects: was ${BASELINE_PROJECTS:-?}, now $current_projects"
+    log_error "  Transcripts: was ${BASELINE_TRANSCRIPTS:-?}, now $current_transcripts"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
+# Assert project count is in expected range
+assert_project_count_range() {
+  local min="$1"
+  local max="$2"
+  local desc="${3:-Project count in range $min-$max}"
+
+  local actual
+  actual=$(db_count "SELECT COUNT(*) FROM projects;")
+
+  if [ "$actual" -ge "$min" ] && [ "$actual" -le "$max" ]; then
+    log_success "✓ $desc (count: $actual)"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  Expected $min-$max projects, got $actual"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
+# Assert transcript count is in expected range
+assert_transcript_count_range() {
+  local min="$1"
+  local max="$2"
+  local desc="${3:-Transcript count in range $min-$max}"
+
+  local actual
+  actual=$(db_count "SELECT COUNT(*) FROM transcripts;")
+
+  if [ "$actual" -ge "$min" ] && [ "$actual" -le "$max" ]; then
+    log_success "✓ $desc (count: $actual)"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  Expected $min-$max transcripts, got $actual"
+    TEST_FAILED=1
+    return 1
+  fi
+}

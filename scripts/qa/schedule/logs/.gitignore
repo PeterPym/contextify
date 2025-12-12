@@ -1,0 +1,3 @@
+# Ignore nightly log files but keep directory
+*.log
+!.gitignore

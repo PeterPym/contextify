@@ -1,15 +1,43 @@
 #!/bin/bash
 # QA-08: Projects Window
 #
-# Purpose: Validates projects window opening and project list loading
+# Purpose: Validates projects window opens and loads project list.
+#          Tests Cmd+Shift+P keyboard shortcut.
+#
+# @test_contract
+# isolation:
+#   transcripts: orchestrator  # Relies on --isolate
+#   database: preserve         # Uses existing DB, read-only UI test
+#
+# database:
+#   location: dmg
+#   start:
+#     exists: true
+#     min_projects: 1          # Need projects to display
+#     min_transcripts: 0
+#   mutations:
+#     - "Opens projects window (UI only)"
+#     - "Reads project data for display"
+#     - "No database changes"
+#   end:
+#     exists: true
+#     projects: same
+#     transcripts: same
+#
+# dependencies:
+#   orchestrator_flags: [--isolate]
+#   run_after: []              # Phase 4 - can run anytime after DB exists
+#   notes: "Read-only UI test. Tests window creation, not data modification."
 #
 # Validates:
-# - Window opens via keyboard shortcut
+# - Window opens via Cmd+Shift+P
+# - Window count increases
 # - Project list loads
 # - Window can be closed
 #
 # Prerequisites:
 # - App running
+# - Terminal has Accessibility permission
 
 set -euo pipefail
 
@@ -27,13 +55,20 @@ TEST_NAME="Projects Window"
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
 
-  assert_app_running "Contextify"
   assert_command_exists "osascript"
 
-  # Check for projects
-  local project_count
-  project_count=$(db_count "SELECT COUNT(*) FROM projects;")
-  log_info "Projects in database: $project_count"
+  # Contract: transcripts: orchestrator
+  require_isolation "Transcript isolation required"
+
+  # Ensure app is running (launch if needed)
+  ensure_dmg_app_running
+  assert_app_running "Contextify"
+
+  # Contract: start.min_projects: 1
+  assert_db_count_min "SELECT COUNT(*) FROM projects;" 1 "At least 1 project exists"
+
+  # Record baseline for end-state verification
+  record_baseline_counts
 
   log_success "Prerequisites met"
 }
@@ -142,6 +177,9 @@ validate_results() {
   else
     log_warn "Found $error_count error(s) in logs"
   fi
+
+  # Contract: end state projects: same, transcripts: same
+  assert_counts_unchanged "Database counts unchanged after window operation"
 }
 
 cleanup_and_close() {

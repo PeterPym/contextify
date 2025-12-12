@@ -103,7 +103,25 @@ public final class DatabaseManager: @unchecked Sendable {
     }
 
     let dbPath = try databasePath()
-    log.info("Opening database at: \(dbPath.path)")
+    let isNewDatabase = !FileManager.default.fileExists(atPath: dbPath.path)
+
+    if isNewDatabase {
+      log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+      log.info("[DB-INIT] CREATING NEW DATABASE FROM SCRATCH")
+      log.info("[DB-INIT] Path: \(dbPath.path, privacy: .public)")
+      log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    } else {
+      log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+      log.info("[DB-INIT] OPENING EXISTING DATABASE")
+      log.info("[DB-INIT] Path: \(dbPath.path, privacy: .public)")
+      // Get file size for context
+      if let attrs = try? FileManager.default.attributesOfItem(atPath: dbPath.path),
+         let size = attrs[.size] as? Int64 {
+        let sizeStr = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        log.info("[DB-INIT] Size: \(sizeStr, privacy: .public)")
+      }
+      log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    }
 
     var config = Configuration()
     config.foreignKeysEnabled = true
@@ -121,8 +139,8 @@ public final class DatabaseManager: @unchecked Sendable {
     let migrator = DatabaseSchema.createMigrator()
     try migrator.migrate(pool)
 
-    // Validate database
-    try validateDatabase(pool)
+    // Validate database and log summary
+    try validateDatabase(pool, isNewDatabase: isNewDatabase)
 
     // Record access for conflict detection (post-migration safe)
     try pool.write { db in
@@ -132,8 +150,6 @@ public final class DatabaseManager: @unchecked Sendable {
       }
       try DatabaseAccessTracker.recordAccess(db: db)
     }
-
-    log.info("Database opened and validated successfully")
 
     return pool
   }
@@ -218,17 +234,49 @@ public final class DatabaseManager: @unchecked Sendable {
     return appSupportDB
   }
 
-  /// Validates database integrity
-  private func validateDatabase(_ pool: DatabasePool) throws {
+  /// Validates database integrity and logs summary
+  private func validateDatabase(_ pool: DatabasePool, isNewDatabase: Bool) throws {
     try pool.read { db in
       try db.execute(sql: "PRAGMA quick_check")
     }
 
-    let projectCount = try pool.read { db in
-      try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
-    }
+    // Get record counts (schema version comes from DatabaseSchema.version)
+    let (projectCount, transcriptCount, entryCount, providerCounts) = try pool.read {
+      db -> (Int, Int, Int, [String: Int]) in
+      let projects = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM projects") ?? 0
+      let transcripts = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcripts") ?? 0
+      let entries = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM transcript_entries") ?? 0
 
-    log.info("Database OK: \(projectCount) projects")
+      // Get per-provider transcript counts
+      var providers: [String: Int] = [:]
+      let rows = try Row.fetchAll(
+        db,
+        sql: "SELECT provider, COUNT(*) as count FROM transcripts GROUP BY provider"
+      )
+      for row in rows {
+        if let provider: String = row["provider"], let count: Int = row["count"] {
+          providers[provider] = count
+        }
+      }
+      return (projects, transcripts, entries, providers)
+    }
+    let schemaVersion = DatabaseSchema.version
+
+    // Log summary with clear distinction between new and existing
+    log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    if isNewDatabase {
+      log.info("[DB-INIT] NEW DATABASE READY (schema v\(schemaVersion))")
+    } else {
+      log.info("[DB-INIT] EXISTING DATABASE LOADED (schema v\(schemaVersion))")
+      log.info("[DB-INIT] Records: \(projectCount) projects, \(transcriptCount) transcripts, \(entryCount) entries")
+      if !providerCounts.isEmpty {
+        let providerStr = providerCounts.sorted(by: { $0.key < $1.key })
+          .map { "\($0.key): \($0.value)" }
+          .joined(separator: ", ")
+        log.info("[DB-INIT] Transcripts by provider: \(providerStr, privacy: .public)")
+      }
+    }
+    log.info("[DB-INIT] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
   }
 
   /// Checks for multi-machine access conflicts

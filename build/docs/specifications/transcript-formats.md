@@ -641,6 +641,29 @@ Codex CLI automatically injects context (AGENTS.md + environment) at conversatio
 
 ---
 
+## Generating Transcripts Programmatically
+
+For automated testing, sample data generation, or scripted workflows, both CLIs support non-interactive modes:
+
+**Claude Code:**
+```bash
+claude -p --dangerously-skip-permissions "your message"                    # Single message
+claude --resume "$session_id" -p --dangerously-skip-permissions "followup" # Continue session
+```
+
+**Codex CLI:**
+```bash
+codex exec -C "/path/to/project" --dangerously-bypass-approvals-and-sandbox "message"
+codex exec resume "$session_id" --dangerously-bypass-approvals-and-sandbox "followup"
+```
+
+**Reference implementations:**
+- `appstore-metadata/review-materials/generate-transcripts.sh` - Full sample data generation workflow
+- `scripts/qa/tests/QA-03-codex-discovery.sh` - QA test using Codex exec
+- `scripts/qa/tests/QA-04-claude-discovery.sh` - QA test using Claude print mode
+
+---
+
 ## Implementation References
 
 **Parsers:**
