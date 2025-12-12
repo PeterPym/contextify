@@ -28,11 +28,14 @@ struct StatusBarView: View {
             // Apple Intelligence indicator
             aiStatusIndicator
 
-            Divider()
-                .frame(height: 12)
+            // Hide queue status in lite mode (no LLM processing happening)
+            if !isLiteModeActive() {
+                Divider()
+                    .frame(height: 12)
 
-            // Queue status
-            queueStatusView
+                // Queue status
+                queueStatusView
+            }
 
             if let ingestMessage = viewModel?.backgroundIngestMessage {
                 Divider()
@@ -182,7 +185,7 @@ struct StatusBarView: View {
         switch viewModel.aiStatus {
         case .checking: return "Checking AI..."
         case .available: return "Apple Intelligence"
-        case .unavailable: return "AI Unavailable"
+        case .unavailable(let reason): return reason  // Shows "Lite Mode" in lite mode
         case .error: return "AI Error"
         }
     }
