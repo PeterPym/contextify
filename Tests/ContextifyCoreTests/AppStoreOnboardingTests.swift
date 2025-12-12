@@ -14,6 +14,7 @@ final class AppStoreOnboardingTests: XCTestCase {
     super.setUp()
     // Clear onboarding state before each test
     HUDPreferences.clearAppStoreOnboardingState()
+    HUDPreferences.setLiteModeInfoDismissed(false)
     #if DEBUG
     Sandbox.isSandboxedOverrideForTests = nil
     #endif
@@ -22,6 +23,7 @@ final class AppStoreOnboardingTests: XCTestCase {
   override func tearDown() {
     // Clean up after each test
     HUDPreferences.clearAppStoreOnboardingState()
+    HUDPreferences.setLiteModeInfoDismissed(false)
     #if DEBUG
     Sandbox.isSandboxedOverrideForTests = nil
     #endif
@@ -196,4 +198,35 @@ final class AppStoreOnboardingTests: XCTestCase {
     XCTAssertFalse(Sandbox.isSandboxed && !HUDPreferences.hasCompletedAppStoreOnboarding())
   }
   #endif
+
+  // MARK: - Lite Mode Info Dismissed Tests
+
+  func testLiteModeInfoDismissed_defaultsFalse() {
+    // Given: Fresh state (cleared in setUp)
+    // When/Then
+    XCTAssertFalse(HUDPreferences.hasLiteModeInfoBeenDismissed())
+  }
+
+  func testLiteModeInfoDismissed_setTrue_returnsTrue() {
+    // Given
+    XCTAssertFalse(HUDPreferences.hasLiteModeInfoBeenDismissed())
+
+    // When
+    HUDPreferences.setLiteModeInfoDismissed(true)
+
+    // Then
+    XCTAssertTrue(HUDPreferences.hasLiteModeInfoBeenDismissed())
+  }
+
+  func testLiteModeInfoDismissed_setFalse_returnsFalse() {
+    // Given
+    HUDPreferences.setLiteModeInfoDismissed(true)
+    XCTAssertTrue(HUDPreferences.hasLiteModeInfoBeenDismissed())
+
+    // When
+    HUDPreferences.setLiteModeInfoDismissed(false)
+
+    // Then
+    XCTAssertFalse(HUDPreferences.hasLiteModeInfoBeenDismissed())
+  }
 }
