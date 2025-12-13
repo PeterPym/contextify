@@ -45,7 +45,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 DURATION="${DURATION:-${1:-30}}"
-LOGFILE="${LOGFILE:-/tmp/transcript-queue-monitor-$(date +%Y%m%d-%H%M%S).log}"
+LOG_DIR="${LOG_DIR:-/tmp}"
+LOGFILE="${LOGFILE:-${LOG_DIR}/transcript-queue-monitor-$(date +%Y%m%d-%H%M%S).log}"
 LOGFILE_BASE="${LOGFILE%.log}"
 PREDICATE="${PREDICATE:-subsystem CONTAINS \"dev.contextify\"}"
 STYLE="${STYLE:-compact}"

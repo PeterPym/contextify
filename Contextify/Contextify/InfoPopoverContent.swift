@@ -9,6 +9,18 @@
 
 import SwiftUI
 
+/// Conditional modifier for presentationSizing (macOS 26+ only)
+private struct PresentationSizingModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.presentationSizing(.fitted)
+        } else {
+            // On macOS 15, just use the frame constraints
+            content
+        }
+    }
+}
+
 /// Reusable popover content for displaying help information
 ///
 /// Features:
@@ -66,10 +78,11 @@ struct InfoPopoverContent: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: 320, alignment: .leading)
+        .frame(width: 320, alignment: .leading)  // Fixed width for consistent sizing
+        .fixedSize(horizontal: false, vertical: true)  // Force intrinsic height
         .background(.regularMaterial)  // Native vibrancy effect
-        // SwiftUI 6: Explicit sizing control
-        .presentationSizing(.fitted)
+        // SwiftUI 6: Explicit sizing control (macOS 26+)
+        .modifier(PresentationSizingModifier())
         .presentationCompactAdaptation(.popover)  // Always popover, never sheet
     }
 
@@ -100,11 +113,19 @@ struct InfoPopoverContent: View {
 
     @ViewBuilder
     private var bodyContent: some View {
-        Text(message)
-            .font(.body)
-            .foregroundStyle(.primary)
-            .fixedSize(horizontal: false, vertical: true)  // Allow multi-line wrapping
-            .textSelection(.enabled)  // Allow copying help text
+        // Gate textSelection on macOS 26+ - it causes sizing issues on macOS 15
+        if #available(macOS 26, *) {
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        } else {
+            Text(message)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder

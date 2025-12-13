@@ -12,13 +12,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var hasLaunchedOnce = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    guard isAppleIntelligenceAvailable() else {
-      presentAvailabilityAlert()
-      NSApp.terminate(nil)
+    // Log build stamp for debugging (critical for VM testing)
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+    log.info("[BUILD] Contextify v\(version, privacy: .public) (\(build, privacy: .public))")
+
+    // Log LLM availability status at startup
+    LLMAvailability.logStatus()
+
+    // In lite mode, skip LLM health check - the app works without Apple Intelligence
+    guard !isLiteModeActive() else {
+      log.info("Lite mode active - skipping LLM health check")
       return
     }
 
-    // Perform comprehensive LLM health check
+    // Perform comprehensive LLM health check (only when Apple Intelligence is available)
     Task {
       await performLLMHealthCheck()
     }
@@ -75,30 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return false
   }
 
-  private func presentAvailabilityAlert() {
-    let alert = NSAlert()
-    alert.messageText = "Apple Intelligence Not Available"
-    alert.informativeText = "Enable Apple Intelligence in System Settings and ensure on-device models are ready."
-    alert.alertStyle = .critical
-    alert.addButton(withTitle: "Quit")
-    alert.runModal()
-  }
-
-  private func isAppleIntelligenceAvailable() -> Bool {
-    #if canImport(FoundationModels)
-    if #available(macOS 26.0, *) {
-      switch SystemLanguageModel.default.availability {
-      case .available:
-        return true
-      case .unavailable:
-        return false
-      @unknown default:
-        return false
-      }
-    }
-    #endif
-    return false
-  }
 
   private func performLLMHealthCheck() async {
     #if canImport(FoundationModels)

@@ -149,25 +149,27 @@ struct TranscriptDetailView: View {
 
               Spacer()
 
-              Button {
-                Task {
-                  await regenerateMetadata()
-                }
-              } label: {
-                HStack(spacing: 4) {
-                  if isRegenerating {
-                    ProgressView()
-                      .controlSize(.mini)
-                      .frame(width: 10, height: 10)
-                  } else {
-                    Image(systemName: "arrow.clockwise")
+              if !isLiteModeActive() {
+                Button {
+                  Task {
+                    await regenerateMetadata()
                   }
-                  Text("Regenerate")
+                } label: {
+                  HStack(spacing: 4) {
+                    if isRegenerating {
+                      ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 10, height: 10)
+                    } else {
+                      Image(systemName: "arrow.clockwise")
+                    }
+                    Text("Regenerate")
+                  }
+                  .font(.caption)
                 }
-                .font(.caption)
+                .buttonStyle(.bordered)
+                .disabled(isRegenerating)
               }
-              .buttonStyle(.bordered)
-              .disabled(isRegenerating)
             }
 
             HStack(alignment: .top) {
@@ -203,13 +205,21 @@ struct TranscriptDetailView: View {
               Text("AI Summary")
                 .font(.headline)
               Spacer()
-              ProgressView()
-                .controlSize(.mini)
-                .frame(width: 10, height: 10)
+              if !isLiteModeActive() {
+                ProgressView()
+                  .controlSize(.mini)
+                  .frame(width: 10, height: 10)
+              }
             }
-            Text("Generating metadata…")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            if isLiteModeActive() {
+              Text("Lite Mode: \(LLMAvailability.current.reasonText)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              Text("Generating metadata…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
 
           Divider()

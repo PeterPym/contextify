@@ -152,7 +152,7 @@ struct StatusBarView: View {
             InfoButton(isPresented: $showAIInfo)
                 .popover(isPresented: $showAIInfo) {
                     InfoPopoverContent(
-                        title: "Apple Intelligence",
+                        title: aiInfoTitle,
                         message: aiInfoMessage,
                         actionLabel: aiInfoActionLabel,
                         action: aiInfoAction
@@ -160,7 +160,7 @@ struct StatusBarView: View {
                 }
         }
         .frame(minHeight: 44)  // Tappable for accessibility
-        .help(aiStatusText)  // Simplified tooltip - just the status
+        .help(aiStatusTooltip)
         .accessibilityLabel(aiStatusAccessibilityLabel)
     }
 
@@ -187,6 +187,16 @@ struct StatusBarView: View {
         case .available: return "Apple Intelligence"
         case .unavailable(let reason): return reason  // Shows "Lite Mode" in lite mode
         case .error: return "AI Error"
+        }
+    }
+
+    private var aiStatusTooltip: String {
+        guard let viewModel else { return "Initializing" }
+        switch viewModel.aiStatus {
+        case .checking: return "Checking Apple Intelligence availability..."
+        case .available: return "Apple Intelligence"
+        case .unavailable: return "Lite Mode: \(LLMAvailability.current.reasonText)"
+        case .error: return "AI Error - click (i) for details"
         }
     }
 
@@ -291,6 +301,17 @@ struct StatusBarView: View {
 
     // MARK: - Info Popover Content
 
+    /// Title for AI status info popover
+    private var aiInfoTitle: String {
+        guard let viewModel else { return "Apple Intelligence" }
+        switch viewModel.aiStatus {
+        case .unavailable:
+            return "Lite Mode"
+        default:
+            return "Apple Intelligence"
+        }
+    }
+
     /// Detailed message for AI status info popover
     private var aiInfoMessage: String {
         guard let viewModel else { return "Initializing..." }
@@ -307,13 +328,11 @@ struct StatusBarView: View {
 
             Summaries are generated with no network latency or additional API costs.
             """
-        case .unavailable(let reason):
+        case .unavailable:
             return """
-            Apple Intelligence is unavailable.
+            AI-generated summaries and drag-and-drop re-ordering of projects are both disabled.
 
-            Reason: \(reason)
-
-            Summaries will be generated using fallback heuristics (less detailed).
+            Local AI summaries require Apple Intelligence (Tahoe + Apple Silicon).
             """
         case .error(let message):
             return """

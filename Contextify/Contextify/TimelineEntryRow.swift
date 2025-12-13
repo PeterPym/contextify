@@ -92,6 +92,7 @@ struct TimelineEntryRow: View, Equatable {
         }
         .contentShape(Rectangle())
         .onTapGesture {
+            log.info("[TAP-TEST] Timeline entry tapped: \(entry.id)")
             // In lite mode, only allow expansion if there's raw content to show
             if isLiteMode {
                 guard let content = entry.sourceContent, !content.isEmpty else { return }

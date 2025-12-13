@@ -8,6 +8,10 @@
 import Foundation
 import OSLog
 
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
+
 /// Centralized LLM availability detection.
 ///
 /// Use `isLiteModeActive()` to check if lite mode is active.
@@ -18,7 +22,10 @@ import OSLog
 enum LLMAvailability: Sendable, Equatable {
   case available
   case unavailableOldOS
-  case unavailableNotEnabled(reason: String)
+  case unavailableSimulated
+  case unavailableNotEnabled
+  case unavailableDeviceNotEligible
+  case unavailableModelNotReady
   case unavailableOther(reason: String)
 
   /// True if running in lite mode (no LLM summaries)
@@ -26,20 +33,38 @@ enum LLMAvailability: Sendable, Equatable {
     switch self {
     case .available:
       return false
-    case .unavailableOldOS, .unavailableNotEnabled, .unavailableOther:
+    case .unavailableOldOS, .unavailableSimulated, .unavailableNotEnabled,
+         .unavailableDeviceNotEligible, .unavailableModelNotReady, .unavailableOther:
       return true
     }
   }
 
-  /// User-facing description for status bar
+  /// User-facing label for status bar (short)
   var statusText: String {
     switch self {
     case .available:
       return "Apple Intelligence"
-    case .unavailableOldOS:
+    case .unavailableOldOS, .unavailableSimulated, .unavailableNotEnabled,
+         .unavailableDeviceNotEligible, .unavailableModelNotReady, .unavailableOther:
       return "Lite Mode"
-    case .unavailableNotEnabled(let reason):
-      return reason
+    }
+  }
+
+  /// User-facing reason for (i) tooltip (detailed explanation)
+  var reasonText: String {
+    switch self {
+    case .available:
+      return "Apple Intelligence is available"
+    case .unavailableOldOS:
+      return "Requires macOS 26 (Tahoe) or later"
+    case .unavailableSimulated:
+      return "Lite mode simulated via launch argument"
+    case .unavailableNotEnabled:
+      return "Enable Apple Intelligence in System Settings"
+    case .unavailableDeviceNotEligible:
+      return "Requires Apple Silicon Mac"
+    case .unavailableModelNotReady:
+      return "Apple Intelligence is still downloading"
     case .unavailableOther(let reason):
       return reason
     }
@@ -60,8 +85,42 @@ enum LLMAvailability: Sendable, Equatable {
   ///
   /// Use `isLiteModeActive()` for simple boolean checks. Use this for status bar
   /// display where you need the specific reason or status text.
+  ///
+  /// On macOS 26+, this checks `SystemLanguageModel.default.availability` to get
+  /// the actual reason (disabled, Intel Mac, downloading, etc.).
   static var current: LLMAvailability {
-    isLiteModeActive() ? .unavailableOldOS : .available
+    // Check simulation first (DEBUG only)
+    #if DEBUG
+    if ProcessInfo.processInfo.arguments.contains("-simulate-legacy-macos") {
+      return .unavailableSimulated
+    }
+    #endif
+
+    // Check OS version
+    guard #available(macOS 26, *) else {
+      return .unavailableOldOS
+    }
+
+    // On macOS 26+, check actual SystemLanguageModel availability
+    #if canImport(FoundationModels)
+    switch SystemLanguageModel.default.availability {
+    case .available:
+      return .available
+    case .unavailable(let reason):
+      switch reason {
+      case .appleIntelligenceNotEnabled:
+        return .unavailableNotEnabled
+      case .deviceNotEligible:
+        return .unavailableDeviceNotEligible
+      case .modelNotReady:
+        return .unavailableModelNotReady
+      @unknown default:
+        return .unavailableOther(reason: "Apple Intelligence unavailable")
+      }
+    }
+    #else
+    return .available
+    #endif
   }
 }
 
@@ -96,13 +155,15 @@ extension LLMAvailability {
     case .available:
       log.info("[LLM-AVAILABILITY] Full mode - Apple Intelligence available")
     case .unavailableOldOS:
-      if simulateLegacyMacOS {
-        log.notice("[LLM-AVAILABILITY] Lite mode - simulating legacy macOS via launch argument")
-      } else {
-        log.notice("[LLM-AVAILABILITY] Lite mode - macOS version < 26")
-      }
-    case .unavailableNotEnabled(let reason):
-      log.warning("[LLM-AVAILABILITY] Lite mode - \(reason, privacy: .public)")
+      log.notice("[LLM-AVAILABILITY] Lite mode - macOS version < 26")
+    case .unavailableSimulated:
+      log.notice("[LLM-AVAILABILITY] Lite mode - simulating via launch argument")
+    case .unavailableNotEnabled:
+      log.warning("[LLM-AVAILABILITY] Lite mode - Apple Intelligence not enabled in System Settings")
+    case .unavailableDeviceNotEligible:
+      log.warning("[LLM-AVAILABILITY] Lite mode - device not eligible (Intel Mac)")
+    case .unavailableModelNotReady:
+      log.warning("[LLM-AVAILABILITY] Lite mode - model not ready (still downloading)")
     case .unavailableOther(let reason):
       log.warning("[LLM-AVAILABILITY] Lite mode - \(reason, privacy: .public)")
     }
