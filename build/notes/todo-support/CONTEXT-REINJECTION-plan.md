@@ -18,6 +18,12 @@ Implement the contract in `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
 - No compiler warnings.
 - Avoid breaking existing CLI output/behavior unless explicitly versioned.
 
+## QA scripts
+
+When manual QA is non-trivial, a small scripted runner makes review faster and more repeatable. Keep these scripts alongside the spec and plan so they archive together when the supporting docs are archived.
+
+Example: `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
+
 ## Expected Commit Series
 
 This is the intended commit shape; it can deviate if implementation realities demand it.
