@@ -519,20 +519,23 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ## Context Re-injection (1 item)
 
-**Status:** Research complete, ready for implementation
+**Status:** Phase 1 complete; Phase 2 queued
 **Priority:** P1 (enables AI workflow continuity)
-**Effort:** 4-8 hours (Phase 1 MVP)
+**Effort:** Phase 2: 4-8 hours (skills + install story)
 
 - [ ] #CONTEXT-REINJECTION: Enable re-injection of found context into new AI conversations
 
 **Problem:** User finds relevant message via search, wants to inject it (with surrounding context) into new Claude Code session. Current "Copy as JSON" lacks db entry ID, AI cannot look up surrounding context.
 
-**Research Areas:**
-1. "Copy with Context" action - fetch N surrounding messages, format as Markdown
-2. Local web server / quasi-MCP - AI queries `localhost:PORT/context?entry_id=X`
-3. File-based handoff - export to `~/.contextify/context-export/latest.md`
-4. Enhanced Copy as JSON - include surrounding_context array
-5. Local LLM summary - generate optimized context summary for re-injection
+**Phase 1 (done):**
+- `contextify-query` provides a stable, read-only JSON contract for discovery + search + entry-anchored context retrieval.
+- Feedback inbox exists to capture query/UX gaps during dogfooding.
+
+**Phase 2 (current plan):**
+1. Skills-first adoption (Codex + Claude Code): teach “search → entry id → context window → reinject” with budgeting and error handling.
+2. CLI install/distribution story:
+   - DMG: install/symlink into a PATH directory with explicit user consent.
+   - App Store: bundle CLI and support user-driven install to a user-writable directory, or document absolute-path invocation.
 
 **Research Docs:**
 - `build/notes/todo-support/CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
