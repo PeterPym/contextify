@@ -48,6 +48,15 @@ Each skill is a directory containing `SKILL.md` with YAML frontmatter:
 
 Codex injects only name/description/path at startup; the body is read when needed.
 
+### Codex install/enable behavior (MUST FILL IN)
+
+This section is intentionally a stub and must be completed before Phase 2 implementation.
+
+- How skills are enabled/disabled in Codex (flags/config).
+- How users verify skills are loaded (expected command + expected output).
+- Upgrade/removal workflow (copy/rsync overwrite semantics, git clone/pull semantics).
+- Any constraints Codex enforces (symlink rules, hidden directory rules, reload behavior).
+
 ### Skill set
 
 #### Skill 1: `contextify-reinject`
@@ -110,13 +119,37 @@ Provide a one-liner install instruction:
 
 ## Deliverable B: Claude Code skill/instructions (optional)
 
-Claude’s skills mechanism differs from Codex; if we don’t have a reliable “installable skill” channel, ship a short “Contextify query usage” instruction file that users can drop into their Claude Code environment.
+### Claude Code install/enable behavior (MUST FILL IN)
+
+This section is intentionally a stub and must be completed before Phase 2 implementation.
+
+- Whether Claude Code supports “skills” directly vs plugins vs instructions.
+- Exact install location / command(s) to install the skill/instructions.
+- How users verify it is active (expected UI or command output).
+- Upgrade/removal workflow.
+
+### Claude Code content surface (MUST FILL IN)
+
+Define which surface we ship for Claude Code in Phase 2:
+
+- A skill (if supported), or
+- A plugin/repo marketplace entry, or
+- A drop-in instructions file and where it lives.
 
 Phase 2 success does not require a first-class Claude skill if Codex adoption is the main driver.
 
 ---
 
 ## Deliverable C: CLI Install / Distribution Story
+
+### Packaging requirement (Phase 2)
+
+Homebrew is deferred. Phase 2 packages `contextify-query` with both distribution channels:
+
+- DMG (Contextify)
+- App Store (Contextify App Store)
+
+This section defines how external tools get a stable, usable invocation path for the packaged CLI.
 
 ### DMG channel (preferred)
 
@@ -141,6 +174,16 @@ Implementation notes:
   - on failure, prints copy/paste `sudo ln -sf ...` command
   - also offers uninstall
 
+### DMG install target selection (MUST FILL IN)
+
+Decide the exact behavior:
+
+- Preferred target order (e.g., `/opt/homebrew/bin` then `/usr/local/bin`), including detection rules.
+- Whether we create missing directories.
+- Exact prompts/consent UX (including any authorization prompts if writing outside the home directory).
+- Upgrade behavior (replace existing file/symlink, what if it points elsewhere).
+- Uninstall behavior (remove only if it points to our bundled CLI).
+
 ### App Store channel
 
 Constraints: sandbox and review make “install into /usr/local/bin” impractical.
@@ -152,6 +195,16 @@ Supported approaches:
 - Provide a fallback: use absolute path to the bundled CLI.
 
 Phase 2 can ship without perfect PATH ergonomics for App Store builds; prioritize clarity and a reliable fallback.
+
+### Absolute-path invocation strategy (MUST FILL IN)
+
+If `contextify-query` is not on PATH, skills and docs need a deterministic fallback.
+
+Define:
+
+- The canonical bundled path inside the app bundle (if we ship it there).
+- How we locate the app bundle robustly (do we assume `/Applications`, support `~/Applications`, etc.).
+- Whether we ship a tiny “shim” in a stable location (home directory) that forwards to the bundled CLI.
 
 ---
 
@@ -176,4 +229,4 @@ Phase 2 can ship without perfect PATH ergonomics for App Store builds; prioritiz
 - Where do we store versioned skills in the repo (`build/skills/...` vs `build/docs/...`)?
 - Preferred DMG install target:
   - `/opt/homebrew/bin` vs `/usr/local/bin` vs both?
-- Do we ship a Homebrew formula/cask for the CLI (separate from the app)?
+- Homebrew: deferred (not a Phase 2 deliverable).
