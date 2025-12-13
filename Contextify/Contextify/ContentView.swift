@@ -54,6 +54,9 @@ struct ContentView: View {
         ZStack {
             // Main content
             VStack(spacing: 0) {
+                // TEST: Does any content with height fix it, or specifically a button?
+                Color.clear.frame(height: 1)
+
                 // Project switcher (top navigation)
                 // Show only when we have 2+ projects (otherwise just wastes vertical space)
                 if projectSwitcher.tabProjects.count >= 2 {

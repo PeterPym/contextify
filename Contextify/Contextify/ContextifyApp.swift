@@ -443,6 +443,13 @@ struct ContextifyApp: App {
           ProjectSwitcherState.shared.triggerManualHooverRescan(reason: "DiagnosticsMenu")
         }
         .keyboardShortcut("r", modifiers: [.command, .option, .shift])
+
+        Divider()
+
+        Button("ScrollView Click Test...") {
+          DebugScrollTestWindowController.shared.showWindow()
+        }
+        .keyboardShortcut("t", modifiers: [.command, .option, .shift])
       }
     }
 
