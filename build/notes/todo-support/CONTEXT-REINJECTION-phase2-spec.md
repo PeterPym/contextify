@@ -151,6 +151,15 @@ Homebrew is deferred. Phase 2 packages `contextify-query` with both distribution
 
 This section defines how external tools get a stable, usable invocation path for the packaged CLI.
 
+### Core approach: symlink to bundled CLI + repair flow
+
+The preferred design is to bundle the `contextify-query` binary inside the app bundle and install a lightweight entrypoint on the user’s PATH (typically a symlink that points at the bundled binary).
+
+This implies a clear behavior:
+
+- If the user moves or renames the app, the symlink can break.
+- This is acceptable UX as long as the app provides an explicit “Repair CLI” action and the CLI prints a clear remediation message when invoked via a broken link.
+
 ### DMG channel (preferred)
 
 Goal: `contextify-query` is invokable as `contextify-query` from a typical shell.
@@ -168,11 +177,12 @@ Options:
 
 Implementation notes:
 
-- Provide an in-app “Install CLI…” UI (DMG only) that:
+- Provide an in-app “Install/Repair CLI…” UI (DMG only) that:
   - detects likely PATH dir
   - attempts install
   - on failure, prints copy/paste `sudo ln -sf ...` command
-  - also offers uninstall
+  - offers “Repair” when an existing symlink is broken or points elsewhere
+  - offers uninstall
 
 ### DMG install target selection (MUST FILL IN)
 
