@@ -1,8 +1,14 @@
 import Foundation
 import GRDB
+import OSLog
+
+private let log = Logger(subsystem: "dev.contextify", category: "ContextifyQueryService")
 
 /// Read-only query core for external tools.
 public struct ContextifyQueryService: Sendable {
+  public enum QueryError: Error, Sendable, Equatable {
+    case featureUnavailable(feature: String, message: String)
+  }
   private let pool: DatabasePool
 
   public struct ProjectListItem: Codable, Sendable {
@@ -169,9 +175,11 @@ public struct ContextifyQueryService: Sendable {
     config.busyMode = .timeout(5.0)
     config.prepareDatabase { db in
       // Defense-in-depth: ensure this connection never writes, even if misused.
-      try? db.execute(sql: "PRAGMA query_only = ON")
+      do { try db.execute(sql: "PRAGMA query_only = ON") }
+      catch { log.warning("Failed to set PRAGMA query_only=ON: \(error.localizedDescription, privacy: .public)") }
       // Defense-in-depth: avoid loading/using schema from untrusted sources.
-      try? db.execute(sql: "PRAGMA trusted_schema = OFF")
+      do { try db.execute(sql: "PRAGMA trusted_schema = OFF") }
+      catch { log.warning("Failed to set PRAGMA trusted_schema=OFF: \(error.localizedDescription, privacy: .public)") }
     }
     self.pool = try DatabasePool(path: databaseURL.path, configuration: config)
   }
@@ -450,11 +458,7 @@ public struct ContextifyQueryService: Sendable {
 
     return try pool.read { db in
       guard try db.tableExists("transcript_entries_fts") else {
-        throw NSError(
-          domain: "dev.contextify.ContextifyQueryService",
-          code: 3,
-          userInfo: [NSLocalizedDescriptionKey: "FTS search is not available in this database."]
-        )
+        throw QueryError.featureUnavailable(feature: "fts_search", message: "FTS search is not available in this database.")
       }
 
       var sql = """
@@ -994,11 +998,7 @@ public struct ContextifyQueryService: Sendable {
     guard !safeQuery.isEmpty else { return [] }
     return try pool.read { db in
       guard try db.tableExists("transcript_entries_fts") else {
-        throw NSError(
-          domain: "dev.contextify.ContextifyQueryService",
-          code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "FTS search is not available in this database."]
-        )
+        throw QueryError.featureUnavailable(feature: "fts_search", message: "FTS search is not available in this database.")
       }
       var sql = """
         SELECT e.*
@@ -1021,11 +1021,7 @@ public struct ContextifyQueryService: Sendable {
   public func summaries(projectId: String? = nil, limit: Int = 50) throws -> [TranscriptMetadataRecord] {
     try pool.read { db in
       guard try db.tableExists("transcript_metadata") else {
-        throw NSError(
-          domain: "dev.contextify.ContextifyQueryService",
-          code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "Summaries are not available in this database."]
-        )
+        throw QueryError.featureUnavailable(feature: "summaries", message: "Summaries are not available in this database.")
       }
       var sql = """
         SELECT *
