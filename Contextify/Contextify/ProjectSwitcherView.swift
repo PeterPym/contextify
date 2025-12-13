@@ -429,6 +429,29 @@ struct ProjectTabView: View {
     .animation(.easeInOut(duration: 0.15), value: isDragging)
     .onDrag(onDragStart)
     .contextMenu {
+      // Move Left/Right for reordering (works on all macOS versions)
+      let projectIndex = state.tabProjects.firstIndex(where: { $0.id == project.id })
+      let canMoveLeft = projectIndex.map { $0 > 0 } ?? false
+      let canMoveRight = projectIndex.map { $0 < state.tabProjects.count - 1 } ?? false
+
+      Button("Move Left") {
+        guard let idx = projectIndex, idx > 0 else { return }
+        var newOrder = state.tabProjects.map(\.id)
+        newOrder.swapAt(idx, idx - 1)
+        Task { await state.reorderProjects(newOrder) }
+      }
+      .disabled(!canMoveLeft)
+
+      Button("Move Right") {
+        guard let idx = projectIndex, idx < state.tabProjects.count - 1 else { return }
+        var newOrder = state.tabProjects.map(\.id)
+        newOrder.swapAt(idx, idx + 1)
+        Task { await state.reorderProjects(newOrder) }
+      }
+      .disabled(!canMoveRight)
+
+      Divider()
+
       Button("Hide this Project") {
         Task {
           await state.hideProject(project.id)

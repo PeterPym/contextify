@@ -46,6 +46,34 @@ struct WindowCommands: Commands {
         }
       }
       .keyboardShortcut("]", modifiers: [.command, .shift])
+
+      Divider()
+
+      Button("Move Tab Left") {
+        Task {
+          let state = ProjectSwitcherState.shared
+          guard let activeId = state.activeProjectId,
+                let idx = state.tabProjects.firstIndex(where: { $0.id == activeId }),
+                idx > 0 else { return }
+          var newOrder = state.tabProjects.map(\.id)
+          newOrder.swapAt(idx, idx - 1)
+          await state.reorderProjects(newOrder)
+        }
+      }
+      .keyboardShortcut("[", modifiers: [.command, .shift, .option])
+
+      Button("Move Tab Right") {
+        Task {
+          let state = ProjectSwitcherState.shared
+          guard let activeId = state.activeProjectId,
+                let idx = state.tabProjects.firstIndex(where: { $0.id == activeId }),
+                idx < state.tabProjects.count - 1 else { return }
+          var newOrder = state.tabProjects.map(\.id)
+          newOrder.swapAt(idx, idx + 1)
+          await state.reorderProjects(newOrder)
+        }
+      }
+      .keyboardShortcut("]", modifiers: [.command, .shift, .option])
     }
   }
 }
@@ -443,13 +471,6 @@ struct ContextifyApp: App {
           ProjectSwitcherState.shared.triggerManualHooverRescan(reason: "DiagnosticsMenu")
         }
         .keyboardShortcut("r", modifiers: [.command, .option, .shift])
-
-        Divider()
-
-        Button("ScrollView Click Test...") {
-          DebugScrollTestWindowController.shared.showWindow()
-        }
-        .keyboardShortcut("t", modifiers: [.command, .option, .shift])
       }
     }
 
