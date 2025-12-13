@@ -4,6 +4,7 @@ import Foundation
 import GRDB
 
 private let responseSchemaVersion = 1
+private let maxContextWindowCap = 2000
 
 private struct SuccessEnvelope<T: Encodable>: Encodable {
   let type: String
@@ -114,6 +115,13 @@ struct ContextifyQueryCLI {
       while index < args.count {
         let arg = args[index]
         switch arg {
+        case "--":
+          let restIndex = index + 1
+          if restIndex < args.count {
+            remaining.append(contentsOf: args[restIndex...])
+          }
+          index = args.count
+          continue
         case "--db-path":
           index += 1
           guard index < args.count else { throw CLIError(code: "invalidArgs", message: "Missing path after --db-path", exitCode: .invalidArgs) }
@@ -176,6 +184,9 @@ struct ContextifyQueryCLI {
           index += 1
           guard index < args.count, let n = Int(args[index]), n > 0 else {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --max-window", exitCode: .invalidArgs)
+          }
+          guard n <= maxContextWindowCap else {
+            throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
           }
           options.maxWindow = n
         case "--intent":
@@ -249,6 +260,9 @@ struct ContextifyQueryCLI {
         }
         guard options.limit <= 500 else {
           throw CLIError(code: "invalidArgs", message: "--limit must be <= 500 for search", exitCode: .invalidArgs)
+        }
+        if options.noContent {
+          fputs("Warning: --no-content has no effect on search (snippets are always returned)\n", stderr)
         }
         let query = commandArgs.joined(separator: " ")
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
@@ -325,6 +339,9 @@ struct ContextifyQueryCLI {
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
         let maxWindow = options.maxWindow ?? 200
+        guard maxWindow <= maxContextWindowCap else {
+          throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
+        }
         guard beforeCount + afterCount <= maxWindow else {
           throw CLIError(code: "invalidArgs", message: "--before + --after must be <= --max-window (\(maxWindow))", exitCode: .invalidArgs)
         }
