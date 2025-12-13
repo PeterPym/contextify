@@ -290,13 +290,13 @@ public actor ProjectDiscoveryService {
 
     var candidateByProject: [String: Candidate] = [:]
 
-      func recordCandidate(_ candidate: Candidate) {
-        let key = candidate.projectPath.path
-        if let existing = candidateByProject[key], existing.mtime >= candidate.mtime {
-          return
-        }
-        candidateByProject[key] = candidate
+    func recordCandidate(_ candidate: Candidate) {
+      let key = candidate.projectPath.path
+      if let existing = candidateByProject[key], existing.mtime >= candidate.mtime {
+        return
       }
+      candidateByProject[key] = candidate
+    }
 
       // PART 1: Scan Claude Code projects (~/.claude/projects)
       let claudeCandidates: [(projectPath: URL, transcriptFile: URL, mtime: Date)]
@@ -481,8 +481,8 @@ public actor ProjectDiscoveryService {
       let duration = Date().timeIntervalSince(startTime)
       logger.info("[QUICK-DISCOVERY-DONE] Newest: \(newest.projectPath.lastPathComponent, privacy: .public) transcript=\(newest.transcriptFile.lastPathComponent, privacy: .public) mtime=\(newest.mtime, privacy: .public) (duration: \(Int(duration * 1000), privacy: .public)ms)")
 
-      return (newest.projectPath, newest.transcriptFile, newest.mtime)
-  }
+    return (newest.projectPath, newest.transcriptFile, newest.mtime)
+   }
 
   /// Ingests all transcripts for all discovered projects
   /// - Parameters:

@@ -29,7 +29,7 @@ func locateRepoRoot(startingAt url: URL? = nil) -> URL? {
 
 @discardableResult
 @MainActor
-func allowSecurityScopedAccess(to url: URL, file: StaticString = #file, line: UInt = #line) -> URL {
+func allowSecurityScopedAccess(to url: URL, file: StaticString = #filePath, line: UInt = #line) -> URL {
   do {
     let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
     var stale = false
@@ -59,7 +59,7 @@ func waitForCondition(
   _ reason: String,
   timeout: TimeInterval = 2.0,
   poll: TimeInterval = 0.05,
-  file: StaticString = #file, line: UInt = #line,
+  file: StaticString = #filePath, line: UInt = #line,
   condition: @escaping () -> Bool
 ) async throws -> Bool {
   let start = Date()

@@ -47,7 +47,6 @@ public enum DatabaseMigration {
 
     // 2. Get current database location BEFORE closing connection
     let sourcePath = try DatabaseManager.shared.databasePath()
-    let sourceDir = sourcePath.deletingLastPathComponent()
 
     // 3. Close existing database connection to release file locks
     DatabaseManager.shared.closeDatabase()

@@ -34,6 +34,7 @@ DerivedData/
 Packages/
 .derived-dmg/
 .derived-appstore/
+.derived/
 # CocoaPods (if ever used)
 Pods/
 

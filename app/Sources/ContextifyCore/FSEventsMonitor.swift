@@ -53,7 +53,7 @@ private actor FSEventsDebouncer {
     debounceTask = Task { [quietPeriod] in
       do {
         try await Task.sleep(for: quietPeriod)
-        await self.flush()
+        self.flush()
       } catch {
         // Task cancelled - ignore
       }
@@ -177,7 +177,7 @@ public final class FSEventsMonitor {
 
       // Route events through debouncer (coalesces and batches)
       Task {
-        guard let debouncer = await monitor.debouncer else { return }
+        guard let debouncer = monitor.debouncer else { return }
         for change in batch {
           await debouncer.addEvent(change)
         }

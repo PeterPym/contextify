@@ -285,7 +285,6 @@ public actor TranscriptConverter {
         defer { outputStream.close() }
 
         var lineNumber = 0
-        var convertedCalls = Set<String>()
 
         // Process messages
         for (idx, record) in records.enumerated() {
@@ -310,7 +309,7 @@ public actor TranscriptConverter {
                 continue
             }
 
-            guard let timestamp = record["timestamp"] as? String else {
+            guard record["timestamp"] as? String != nil else {
                 log("Line \(lineNumber): Missing timestamp")
                 stats.errors += 1
                 continue
