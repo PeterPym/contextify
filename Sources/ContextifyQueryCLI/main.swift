@@ -1328,15 +1328,46 @@ private enum JSONValue: Encodable, Equatable {
 }
 
 private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
-  let message = error.message ?? error.localizedDescription
+  let message = (error.message ?? error.localizedDescription).trimmingCharacters(in: .whitespacesAndNewlines)
+  let result = error.resultCode
+  let extended = error.extendedResultCode
+
+  switch result {
+  case .SQLITE_CANTOPEN, .SQLITE_NOTADB, .SQLITE_PERM, .SQLITE_AUTH, .SQLITE_READONLY, .SQLITE_IOERR:
+    return CLIError(code: "dbNotFound", message: message, exitCode: .dbNotFound)
+  default:
+    break
+  }
+
+  if extended == .SQLITE_CANTOPEN || extended == .SQLITE_NOTADB || extended == .SQLITE_PERM || extended == .SQLITE_AUTH || extended == .SQLITE_READONLY || extended == .SQLITE_IOERR {
+    return CLIError(code: "dbNotFound", message: message, exitCode: .dbNotFound)
+  }
+
   if message.contains("no such table: transcript_entries_fts") {
     return CLIError(code: "featureUnavailable", message: "FTS search table missing (transcript_entries_fts). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
   }
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
   }
-  if message.contains("no such table") {
-    return CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+  if let table = parseMissingTableName(message: message) {
+    return CLIError(
+      code: "dbNotFound",
+      message: "Database schema is missing required table '\(table)'. Is this a Contextify database? (\(message))",
+      exitCode: .dbNotFound
+    )
   }
   return CLIError(code: "unknown", message: message, exitCode: .unknown)
+}
+
+private func parseMissingTableName(message: String) -> String? {
+  let marker = "no such table:"
+  guard let range = message.range(of: marker) else { return nil }
+  let suffix = message[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !suffix.isEmpty else { return nil }
+  let table = suffix.split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
+  guard let table else { return nil }
+  if let dot = table.lastIndex(of: ".") {
+    return String(table[table.index(after: dot)...])
+  }
+  return table
 }
