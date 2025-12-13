@@ -87,6 +87,9 @@ A structured document that defines the solution before implementation.
 
 ### Manual Testing
 - [ ] What needs manual verification?
+- [ ] Is a small QA script useful for repeatability?
+  - If yes, keep it alongside the spec/plan while the work is active so it archives with the supporting docs.
+  - Example: `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
 
 ## Rollout Considerations
 - Feature flag needed?
