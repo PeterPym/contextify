@@ -43,6 +43,7 @@ public enum QueryCLIFeedbackFormat: String, Sendable {
 public enum QueryCLIFeedbackError: Error, Sendable {
   case notFound(String)
   case invalidArgs(String)
+  case ioError(String)
 }
 
 public final class QueryCLIFeedbackInbox: Sendable {
@@ -116,7 +117,10 @@ public final class QueryCLIFeedbackInbox: Sendable {
         recorded = QueryCLIFeedbackRecorded(id: id, path: destURL.path, summary: trimmed)
       } catch {
         try? FileManager.default.removeItem(at: tmpURL)
-        continue
+        if isCollisionError(error) {
+          continue
+        }
+        throw QueryCLIFeedbackError.ioError("Failed to write feedback item: \(error.localizedDescription)")
       }
     }
 
@@ -228,6 +232,14 @@ public final class QueryCLIFeedbackInbox: Sendable {
     try FileManager.default.createDirectory(at: archiveDir(), withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: dismissedDir(), withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: clearedDir(), withIntermediateDirectories: true)
+  }
+
+  private func isCollisionError(_ error: Error) -> Bool {
+    let ns = error as NSError
+    if ns.domain == NSCocoaErrorDomain, ns.code == CocoaError.fileWriteFileExists.rawValue {
+      return true
+    }
+    return false
   }
 
   private func inboxDir() -> URL {

@@ -414,6 +414,18 @@ struct ContextifyQueryCLI {
         emitError(cliError, json: jsonWanted)
         exit(cliError.exitCode.rawValue)
       }
+    } catch let error as QueryCLIFeedbackError {
+      let cliError: CLIError
+      switch error {
+      case let .notFound(id):
+        cliError = CLIError(code: "invalidArgs", message: "No feedback with id '\(id)'", exitCode: .invalidArgs)
+      case let .invalidArgs(message):
+        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+      case let .ioError(message):
+        cliError = CLIError(code: "invalidArgs", message: message, exitCode: .invalidArgs)
+      }
+      emitError(cliError, json: jsonWanted)
+      exit(cliError.exitCode.rawValue)
     } catch let error as QueryTimeParseError {
       let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
       emitError(cliError, json: jsonWanted)
