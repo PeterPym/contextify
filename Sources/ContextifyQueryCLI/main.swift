@@ -1,5 +1,7 @@
 import ContextifyCore
+import Darwin
 import Foundation
+import GRDB
 
 private let responseSchemaVersion = 1
 
@@ -14,6 +16,7 @@ private struct ErrorEnvelope: Encodable {
   let type: String = "error"
   let code: String
   let message: String
+  let details: JSONValue?
 }
 
 private enum ExitCode: Int32 {
@@ -29,6 +32,14 @@ private struct CLIError: Error {
   let code: String
   let message: String
   let exitCode: ExitCode
+  let details: JSONValue?
+
+  init(code: String, message: String, exitCode: ExitCode, details: JSONValue? = nil) {
+    self.code = code
+    self.message = message
+    self.exitCode = exitCode
+    self.details = details
+  }
 }
 
 @main
@@ -379,6 +390,21 @@ struct ContextifyQueryCLI {
     } catch let cliError as CLIError {
       emitError(cliError, json: jsonWanted)
       exit(cliError.exitCode.rawValue)
+    } catch let error as ContextifyQueryService.QueryError {
+      switch error {
+      case let .featureUnavailable(_, message):
+        let cliError = CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+        emitError(cliError, json: jsonWanted)
+        exit(cliError.exitCode.rawValue)
+      }
+    } catch let error as QueryTimeParseError {
+      let cliError = CLIError(code: "invalidArgs", message: String(describing: error), exitCode: .invalidArgs)
+      emitError(cliError, json: jsonWanted)
+      exit(cliError.exitCode.rawValue)
+    } catch let error as DatabaseError {
+      let mapped = mapDatabaseError(error)
+      emitError(mapped, json: jsonWanted)
+      exit(mapped.exitCode.rawValue)
     } catch {
       let cliError = CLIError(code: "unknown", message: error.localizedDescription, exitCode: .unknown)
       emitError(cliError, json: jsonWanted)
@@ -605,7 +631,7 @@ struct ContextifyQueryCLI {
         --older-than-days <n>   Archive items older than N days
         --all                   Apply to all items (clear)
         --force                 Override warnings/guardrails
-        --edit                  Capture feedback via $EDITOR
+        --edit                  Capture feedback via $CONTEXTIFY_QUERY_EDITOR, $VISUAL, or $EDITOR
       """,
       stderr
     )
@@ -949,7 +975,7 @@ private func stdinIsTTY() -> Bool {
 }
 
 private func readFeedbackInputFromStdin() throws -> FeedbackInput {
-  let data = FileHandle.standardInput.readDataToEndOfFile()
+  let data = try readAllStdin(maxBytes: 256 * 1024)
   guard !data.isEmpty else { throw CLIError(code: "invalidArgs", message: "Empty stdin", exitCode: .invalidArgs) }
   do {
     return try JSONDecoder().decode(FeedbackInput.self, from: data)
@@ -959,9 +985,14 @@ private func readFeedbackInputFromStdin() throws -> FeedbackInput {
 }
 
 private func editFeedbackInput() throws -> FeedbackInput {
-  let editor = ProcessInfo.processInfo.environment["EDITOR"] ?? ""
-  guard !editor.isEmpty else {
-    throw CLIError(code: "invalidArgs", message: "Missing $EDITOR for --edit", exitCode: .invalidArgs)
+  let env = ProcessInfo.processInfo.environment
+  let editorSpec = env["CONTEXTIFY_QUERY_EDITOR"] ?? env["VISUAL"] ?? env["EDITOR"] ?? ""
+  guard !editorSpec.isEmpty else {
+    throw CLIError(
+      code: "invalidArgs",
+      message: "Missing editor. Set $CONTEXTIFY_QUERY_EDITOR, $VISUAL, or $EDITOR for --edit.",
+      exitCode: .invalidArgs
+    )
   }
 
   let template = FeedbackInput(summary: "", intent: nil, gap: nil, workaround: nil, proposal: nil)
@@ -973,9 +1004,14 @@ private func editFeedbackInput() throws -> FeedbackInput {
   try data.write(to: tmpURL, options: .atomic)
   defer { try? FileManager.default.removeItem(at: tmpURL) }
 
+  let editorArgs = parseCommandLine(editorSpec) ?? [editorSpec]
+  guard let editorExe = editorArgs.first, !editorExe.isEmpty else {
+    throw CLIError(code: "invalidArgs", message: "Invalid editor command in $CONTEXTIFY_QUERY_EDITOR/$VISUAL/$EDITOR", exitCode: .invalidArgs)
+  }
+
   let process = Process()
   process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-  process.arguments = [editor, tmpURL.path]
+  process.arguments = editorArgs + [tmpURL.path]
   try process.run()
   process.waitUntilExit()
 
@@ -989,6 +1025,73 @@ private func editFeedbackInput() throws -> FeedbackInput {
     throw CLIError(code: "invalidArgs", message: "Feedback summary is required", exitCode: .invalidArgs)
   }
   return input
+}
+
+private func readAllStdin(maxBytes: Int) throws -> Data {
+  var data = Data()
+  var buffer = [UInt8](repeating: 0, count: 4096)
+  while true {
+    let n = read(STDIN_FILENO, &buffer, buffer.count)
+    if n < 0 {
+      throw CLIError(code: "invalidArgs", message: "Failed reading stdin", exitCode: .invalidArgs)
+    }
+    if n == 0 { break }
+    if data.count + n > maxBytes {
+      throw CLIError(code: "invalidArgs", message: "Stdin payload too large (max \(maxBytes) bytes)", exitCode: .invalidArgs)
+    }
+    data.append(buffer, count: n)
+  }
+  return data
+}
+
+private func parseCommandLine(_ input: String) -> [String]? {
+  var args: [String] = []
+  var current = ""
+  var inSingle = false
+  var inDouble = false
+  var escape = false
+
+  func flush() {
+    if !current.isEmpty {
+      args.append(current)
+      current = ""
+    }
+  }
+
+  for scalar in input.unicodeScalars {
+    let ch = Character(scalar)
+    if escape {
+      current.append(ch)
+      escape = false
+      continue
+    }
+
+    if ch == "\\" && !inSingle {
+      escape = true
+      continue
+    }
+
+    if ch == "'" && !inDouble {
+      inSingle.toggle()
+      continue
+    }
+    if ch == "\"" && !inSingle {
+      inDouble.toggle()
+      continue
+    }
+
+    if !inSingle && !inDouble, ch.isWhitespace {
+      flush()
+      continue
+    }
+    current.append(ch)
+  }
+
+  if escape || inSingle || inDouble {
+    return nil
+  }
+  flush()
+  return args.isEmpty ? nil : args
 }
 
 private func printTranscripts(_ transcripts: [ContextifyQueryService.TranscriptListItem]) {
@@ -1119,17 +1222,44 @@ private func resolveProjectId(
     switch error {
     case let .notFound(path, suggestions, totalProjectCount):
       let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+      let details: JSONValue = .object([
+        "path": .string(path),
+        "suggestions": .array(suggestions.map { suggestion in
+          .object([
+            "id": .string(suggestion.id),
+            "name": suggestion.name.map(JSONValue.string) ?? .null,
+            "rootPath": .string(suggestion.rootPath),
+            "hidden": .bool(suggestion.hidden),
+            "lastViewedTs": suggestion.lastViewedTs.map { .number($0) } ?? .null,
+          ])
+        }),
+        "totalProjectCount": .number(Double(totalProjectCount)),
+      ])
       throw CLIError(
         code: "dbProjectNotFound",
         message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
-        exitCode: .dbNotFound
+        exitCode: .dbNotFound,
+        details: details
       )
     case let .ambiguous(path, candidates):
       let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
+      let details: JSONValue = .object([
+        "path": .string(path),
+        "candidates": .array(candidates.map { candidate in
+          .object([
+            "id": .string(candidate.id),
+            "name": candidate.name.map(JSONValue.string) ?? .null,
+            "rootPath": .string(candidate.rootPath),
+            "hidden": .bool(candidate.hidden),
+            "lastViewedTs": candidate.lastViewedTs.map { .number($0) } ?? .null,
+          ])
+        }),
+      ])
       throw CLIError(
         code: "dbProjectNotFound",
         message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
-        exitCode: .dbNotFound
+        exitCode: .dbNotFound,
+        details: details
       )
     }
   }
@@ -1140,7 +1270,7 @@ private func emitError(_ cliError: CLIError, json: Bool) {
     do {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = ErrorEnvelope(code: cliError.code, message: cliError.message)
+      let payload = ErrorEnvelope(code: cliError.code, message: cliError.message, details: cliError.details)
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -1150,4 +1280,45 @@ private func emitError(_ cliError: CLIError, json: Bool) {
   } else {
     fputs("Error: \(cliError.message)\n", stderr)
   }
+}
+
+private enum JSONValue: Encodable, Equatable {
+  case string(String)
+  case number(Double)
+  case bool(Bool)
+  case null
+  case array([JSONValue])
+  case object([String: JSONValue])
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case let .string(value):
+      try container.encode(value)
+    case let .number(value):
+      try container.encode(value)
+    case let .bool(value):
+      try container.encode(value)
+    case .null:
+      try container.encodeNil()
+    case let .array(values):
+      try container.encode(values)
+    case let .object(values):
+      try container.encode(values)
+    }
+  }
+}
+
+private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
+  let message = error.message ?? error.localizedDescription
+  if message.contains("no such table: transcript_entries_fts") {
+    return CLIError(code: "featureUnavailable", message: "FTS search table missing (transcript_entries_fts). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
+  }
+  if message.contains("no such table: transcript_metadata") {
+    return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
+  }
+  if message.contains("no such table") {
+    return CLIError(code: "featureUnavailable", message: message, exitCode: .featureUnavailable)
+  }
+  return CLIError(code: "unknown", message: message, exitCode: .unknown)
 }
