@@ -230,3 +230,14 @@ Define:
 - Preferred DMG install target:
   - `/opt/homebrew/bin` vs `/usr/local/bin` vs both?
 - Homebrew: deferred (not a Phase 2 deliverable).
+
+---
+
+## References
+
+- Phase 1 spec: `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+- Phase 1 QA runner: `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
+- Skills adoption research: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-skills-research.md`
+- Claude Code install reference: `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-skills-installation.md`
+- Codex official skills doc: https://github.com/openai/codex/blob/main/docs/skills.md
+- OpenAI skills overview (Simon Willison): https://simonwillison.net/2025/Dec/12/openai-skills/

@@ -1,0 +1,43 @@
+---
+todo_id: CONTEXT-REINJECTION
+title: Reference - Installing skills in Claude Code
+type: reference
+date: 2025-12-13
+status: active
+description: Reference notes for installing skills into Claude Code, used to scope Phase 2 skill distribution and documentation.
+sources:
+  - https://github.com/anthropics/skills
+  - https://support.claude.com/en/articles/12512176-what-are-skills
+---
+
+# Reference: installing skills in Claude Code
+
+This document captures the current official installation guidance that is relevant to Phase 2. It is intentionally concise and should be refreshed if Anthropic changes their install flow.
+
+## Claude Code plugin marketplace install (Anthropic skills repo)
+
+From `https://github.com/anthropics/skills`:
+
+1) Add the repository as a plugin marketplace:
+
+```text
+/plugin marketplace add anthropics/skills
+```
+
+2) Browse and install:
+
+- Select “Browse and install plugins”
+- Select `anthropic-agent-skills`
+- Select a skill set (e.g. `document-skills` or `example-skills`)
+- Select “Install now”
+
+3) Or install directly:
+
+```text
+/plugin install document-skills@anthropic-agent-skills
+/plugin install example-skills@anthropic-agent-skills
+```
+
+## Missing: dedicated “install your own skill” docs (TO ADD)
+
+The Contextify Phase 2 plan needs an explicit “install a local custom skill” flow for Claude Code. If Anthropic publishes a definitive doc for that workflow, add it here as a Markdown reference.
