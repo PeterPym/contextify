@@ -1222,19 +1222,15 @@ private func resolveProjectId(
     switch error {
     case let .notFound(path, suggestions, totalProjectCount):
       let projects = suggestions.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let details: JSONValue = .object([
+      let suggestionObjects: [JSONValue] = suggestions.map { project in
+        jsonProjectSuggestion(project)
+      }
+      let detailsObject: [String: JSONValue] = [
         "path": .string(path),
-        "suggestions": .array(suggestions.map { suggestion in
-          .object([
-            "id": .string(suggestion.id),
-            "name": suggestion.name.map(JSONValue.string) ?? .null,
-            "rootPath": .string(suggestion.rootPath),
-            "hidden": .bool(suggestion.hidden),
-            "lastViewedTs": suggestion.lastViewedTs.map { .number($0) } ?? .null,
-          ])
-        }),
+        "suggestions": .array(suggestionObjects),
         "totalProjectCount": .number(Double(totalProjectCount)),
-      ])
+      ]
+      let details: JSONValue = .object(detailsObject)
       throw CLIError(
         code: "dbProjectNotFound",
         message: "No Contextify project found for \(path).\n\nKnown projects:\n  - \(projects)\n\nTotal projects: \(totalProjectCount)",
@@ -1243,18 +1239,14 @@ private func resolveProjectId(
       )
     case let .ambiguous(path, candidates):
       let projects = candidates.map { "\($0.name ?? $0.id) (\($0.rootPath))" }.joined(separator: "\n  - ")
-      let details: JSONValue = .object([
+      let candidateObjects: [JSONValue] = candidates.map { project in
+        jsonProjectSuggestion(project)
+      }
+      let detailsObject: [String: JSONValue] = [
         "path": .string(path),
-        "candidates": .array(candidates.map { candidate in
-          .object([
-            "id": .string(candidate.id),
-            "name": candidate.name.map(JSONValue.string) ?? .null,
-            "rootPath": .string(candidate.rootPath),
-            "hidden": .bool(candidate.hidden),
-            "lastViewedTs": candidate.lastViewedTs.map { .number($0) } ?? .null,
-          ])
-        }),
-      ])
+        "candidates": .array(candidateObjects),
+      ]
+      let details: JSONValue = .object(detailsObject)
       throw CLIError(
         code: "dbProjectNotFound",
         message: "Ambiguous project match for \(path).\n\nCandidates:\n  - \(projects)",
@@ -1263,6 +1255,15 @@ private func resolveProjectId(
       )
     }
   }
+}
+
+private func jsonProjectSuggestion(_ project: ContextifyQueryService.ProjectSuggestion) -> JSONValue {
+  var object: [String: JSONValue] = [
+    "id": .string(project.id),
+    "rootPath": .string(project.rootPath),
+  ]
+  object["name"] = project.name.map(JSONValue.string) ?? .null
+  return .object(object)
 }
 
 private func emitError(_ cliError: CLIError, json: Bool) {

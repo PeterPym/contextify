@@ -160,7 +160,12 @@ final class ContextifyQueryServiceTests: XCTestCase {
     let service = try ContextifyQueryService(databaseURL: dbURL)
 
     XCTAssertThrowsError(try service.ftsSearch(query: "hello", projectId: nil, limit: 10)) { error in
-      XCTAssertTrue(error.localizedDescription.contains("FTS search is not available"))
+      guard case let ContextifyQueryService.QueryError.featureUnavailable(feature, message) = error else {
+        XCTFail("Unexpected error: \(error)")
+        return
+      }
+      XCTAssertEqual(feature, "fts_search")
+      XCTAssertTrue(message.contains("FTS search is not available"))
     }
 
     let info = try service.versionInfo()
@@ -179,7 +184,12 @@ final class ContextifyQueryServiceTests: XCTestCase {
     let service = try ContextifyQueryService(databaseURL: dbURL)
 
     XCTAssertThrowsError(try service.summaries(projectId: nil, limit: 10)) { error in
-      XCTAssertTrue(error.localizedDescription.contains("Summaries are not available"))
+      guard case let ContextifyQueryService.QueryError.featureUnavailable(feature, message) = error else {
+        XCTFail("Unexpected error: \(error)")
+        return
+      }
+      XCTAssertEqual(feature, "summaries")
+      XCTAssertTrue(message.contains("Summaries are not available"))
     }
 
     let info = try service.versionInfo()
