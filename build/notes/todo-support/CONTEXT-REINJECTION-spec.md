@@ -46,6 +46,13 @@ All multi-entry results are ordered deterministically:
 2) `createdAt ASC` (when available)
 3) `id ASC`
 
+Search is a ranked list:
+
+- `search` results are ordered by relevance (`score` ascending for BM25), then tie-broken deterministically by:
+  1) `timestamp DESC`
+  2) `createdAt DESC` (when available)
+  3) `id ASC`
+
 ---
 
 ## CLI Commands (Retrieval)
