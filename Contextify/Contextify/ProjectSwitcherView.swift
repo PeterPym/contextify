@@ -229,73 +229,161 @@ private struct ProjectTabsDropDelegate: DropDelegate {
 /// Shows project tabs with unread badges and active state
 struct ProjectSwitcherView: View {
   @Environment(ProjectSwitcherState.self) private var state
+  @State private var draggingProject: ProjectInfo?
+  @State private var insertionIndex: Int?
+  @State private var tabPositions: [String: CGRect] = [:]
+  @State private var skipNextAutoScroll = false
+
+  private let baseSpacing: CGFloat = 8
+
+  /// Calculate gap width between two adjacent tabs
+  /// Collapses to 0 only on the LEFT side of the dragged tab (keeps right side normal)
+  private func gapWidth(betweenIndex i: Int) -> CGFloat {
+    guard let dragged = draggingProject else { return baseSpacing }
+    let right = state.tabProjects[i + 1].id
+    // Only collapse if the gap is immediately to the left of (before) the dragged tab
+    return (dragged.id == right) ? 0 : baseSpacing
+  }
 
   var body: some View {
-    // FULL: With spacer fix, test full feature set
-    let _ = log.info("[FULL-WITH-SPACER] Full features with 1pt spacer fix")
+    let _ = log.debug("[TABBAR-BODY] body recomputed, tabs=\(state.tabProjects.count, privacy: .public)")
     ScrollViewReader { proxy in
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          ForEach(state.tabProjects) { project in
+        HStack(spacing: 0) {  // No global spacing - use explicit Gap views
+          ForEach(Array(state.tabProjects.enumerated()), id: \.element.id) { index, project in
+            // Insertion indicator before this tab
+            if insertionIndex == index, let draggingProject {
+              // Gap before insertion indicator (unless at start)
+              if index > 0 {
+                Gap(width: baseSpacing)
+              }
+
+              InsertionIndicator(draggingProject: draggingProject)
+                .transition(.asymmetric(
+                  insertion: .scale(scale: 0.5).combined(with: .opacity),
+                  removal: .scale(scale: 0.5).combined(with: .opacity)
+                ))
+
+              // Gap after insertion indicator
+              Gap(width: baseSpacing)
+            }
+
             ProjectTabView(
               project: project,
               isActive: project.id == state.activeProjectId,
-              unreadCount: state.unreadCounts[project.id] ?? 0
+              unreadCount: state.unreadCounts[project.id] ?? 0,
+              isDragging: draggingProject?.id == project.id,
+              onDragStart: {
+                self.draggingProject = project
+                return NSItemProvider(object: project.id as NSString)
+              }
             )
             .id(project.id)
+            .trackTabFrame(id: project.id)
+            .frame(
+              width: draggingProject?.id == project.id ? 0 : nil,
+              height: draggingProject?.id == project.id ? 0 : nil
+            )
+            .clipped()  // Clip content when frame is 0x0
+
+            // Pairwise gap - skip if insertion indicator will appear at next position
+            if index < state.tabProjects.count - 1 {
+              // Skip gap if insertion indicator will appear between this tab and next
+              let skipGap = insertionIndex == index + 1
+              if !skipGap {
+                Gap(width: gapWidth(betweenIndex: index))
+              }
+            }
+          }
+
+          // Insertion indicator after last tab
+          if let insertionIndex,
+             insertionIndex == state.tabProjects.count,
+             let draggingProject {
+            // Gap before insertion indicator
+            Gap(width: baseSpacing)
+
+            InsertionIndicator(draggingProject: draggingProject)
+              .transition(.asymmetric(
+                insertion: .scale(scale: 0.5).combined(with: .opacity),
+                removal: .scale(scale: 0.5).combined(with: .opacity)
+              ))
           }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: insertionIndex)
+        .coordinateSpace(name: "projectsContainer")
+        .onPreferenceChange(TabPositionPreferenceKey.self) { v in
+          tabPositions = v
+        }
+        // Container-level drop delegate (wide, stable)
+        .onDrop(
+          of: [.text],
+          delegate: ProjectTabsDropDelegate(
+            projects: state.tabProjects,
+            tabFrames: tabPositions,
+            draggingProject: $draggingProject,
+            insertionIndex: $insertionIndex,
+            activeProjectId: state.activeProjectId,
+            onReorder: { orderedIds in
+              Task { await state.reorderProjects(orderedIds) }
+            },
+            onActivate: { projectId in
+              Task { await state.switchToProject(projectId) }
+            },
+            onDragActivate: {
+              skipNextAutoScroll = true
+            }
+          )
+        )
       }
       .background(Color(nsColor: .windowBackgroundColor).opacity(0.5))
       .onChange(of: state.activeProjectId) { oldValue, newValue in
-        if let newValue {
+        log.info("[UIOPT-TABS-UPDATE] Active project changed from \(oldValue ?? "nil", privacy: .public) to \(newValue ?? "nil", privacy: .public)")
+
+        // Auto-scroll to active project when it changes (especially for keyboard nav)
+        // Skip if activation was triggered by drag-drop (user can already see the tab)
+        if let newValue, !skipNextAutoScroll {
           withAnimation(.spring(response: 0.6, dampingFraction: 0.85)) {
             proxy.scrollTo(newValue, anchor: .center)
           }
         }
+
+        // Reset flag for next activation
+        if skipNextAutoScroll {
+          skipNextAutoScroll = false
+        }
       }
     }
   }
 }
 
-/// Simple project tab - minimal label matching inline version
-struct ProjectTabViewSimple: View {
-  let project: ProjectInfo
-  let isActive: Bool
-  @Environment(ProjectSwitcherState.self) private var state
-
-  var body: some View {
-    Button {
-      Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
-        .info("[BUTTON-TAP] CLICKED: \(project.name, privacy: .public)")
-      Task { await state.switchToProject(project.id) }
-    } label: {
-      Text(project.name)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(isActive ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
-        .cornerRadius(6)
-    }
-    .buttonStyle(ScrollViewButtonStyle())
-  }
-}
-
-/// Individual project tab component - complex label
+/// Individual project tab component
+/// Uses Button+ButtonStyle for clicks (macOS 15 workaround) with onDrag for reordering.
 struct ProjectTabView: View {
   let project: ProjectInfo
   let isActive: Bool
   let unreadCount: Int
+  let isDragging: Bool
+  var onDragStart: () -> NSItemProvider
   @Environment(ProjectSwitcherState.self) private var state
 
   private let log = Logger(subsystem: "dev.contextify", category: "ProjectSwitcher")
 
+  private var tabBackgroundColor: Color {
+    isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear
+  }
+
+  private var tabBorderColor: Color {
+    isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3)
+  }
+
   var body: some View {
     // Using Button with custom ButtonStyle to work inside ScrollView on macOS 15
-    // See: https://danielsaidi.com/blog/2022/11/16/using-complex-gestures-in-a-scroll-view
+    // onDrag is attached to the Button for reordering support
     Button {
-      log.info("[BUTTON-TAP] CLICKED via Button: \(project.name)")
+      log.info("[BUTTON-TAP] CLICKED: \(project.name, privacy: .public)")
       guard state.activeProjectId != project.id else {
         log.debug("ProjectTab: already active, skipping switch")
         return
@@ -309,11 +397,14 @@ struct ProjectTabView: View {
           Image(systemName: "exclamationmark.triangle.fill")
             .font(.caption2)
             .foregroundStyle(.orange)
+            .help("Project directory is missing")
         }
+
         Text(project.name)
           .font(.subheadline)
           .fontWeight(isActive ? .semibold : .regular)
           .lineLimit(1)
+
         if unreadCount > 0 {
           Text(unreadCount > 99 ? "(99+)" : "(\(unreadCount))")
             .font(.caption)
@@ -326,14 +417,42 @@ struct ProjectTabView: View {
       .contentShape(Rectangle())  // Expand hit area to full frame
       .background(
         RoundedRectangle(cornerRadius: 6)
-          .fill(isActive ? Color.contextifyBlue.opacity(0.2) : Color.clear)
+          .fill(tabBackgroundColor)
       )
       .overlay(
         RoundedRectangle(cornerRadius: 6)
-          .strokeBorder(isActive ? Color.contextifyBlue : Color.secondary.opacity(0.3), lineWidth: 1)
+          .strokeBorder(tabBorderColor, lineWidth: 1)
       )
     }
     .buttonStyle(ScrollViewButtonStyle())
+    .opacity(isDragging ? 0.0 : 1.0)
+    .animation(.easeInOut(duration: 0.15), value: isDragging)
+    .onDrag(onDragStart)
+    .contextMenu {
+      Button("Hide this Project") {
+        Task {
+          await state.hideProject(project.id)
+        }
+      }
+
+      if state.hasHiddenProjects {
+        Button("Restore Hidden Projects") {
+          Task {
+            await state.restoreAllHiddenProjects()
+          }
+        }
+      }
+
+      if project.isOrphaned {
+        Divider()
+        Text("Directory Missing: \(project.rootPath)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .accessibilityLabel("Project \(project.name), \(unreadCount) unread")
+    .accessibilityHint("Activate to switch to this project")
+    .accessibilityAddTraits(.isButton)
   }
 }
 
@@ -397,7 +516,6 @@ struct InsertionIndicator: View {
 
 #Preview("Single Project") {
   let state = ProjectSwitcherState.shared
-  // TODO: Mock state for preview
   return ProjectSwitcherView()
     .environment(state)
     .frame(width: 600, height: 50)
@@ -405,7 +523,6 @@ struct InsertionIndicator: View {
 
 #Preview("Multiple Projects") {
   let state = ProjectSwitcherState.shared
-  // TODO: Mock state for preview
   return ProjectSwitcherView()
     .environment(state)
     .frame(width: 600, height: 50)
