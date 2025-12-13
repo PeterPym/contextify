@@ -388,3 +388,11 @@ Logs stay local by default.
 3. **Latency budget**
 
    * What's your acceptable 95th percentile latency for the most common queries (e.g., project feed, FTS search)?
+
+---
+
+## References
+
+- Phase 1 spec: `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+- Phase 1 plan: `build/notes/todo-support/CONTEXT-REINJECTION-plan.md`
+- Phase 2 spec: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`

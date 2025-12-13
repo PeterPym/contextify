@@ -729,6 +729,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - `build/notes/todo-support/CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
 
 **Spec:** `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+**Phase 2:** `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`
 
 **Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
