@@ -635,8 +635,8 @@ struct ContextifyQueryCLI {
         activity             Recent timeline activity
         projects             List projects
         transcripts          List transcripts for a project
-        entry <id>           Fetch an entry by id
-        context <id>         Fetch context around an entry
+        entry <uuid>         Fetch an entry by id (UUID)
+        context <uuid>       Fetch context around an entry (UUID)
         status               Show database status
         feedback             Record or manage CLI feedback
         summaries            Recent transcript summaries

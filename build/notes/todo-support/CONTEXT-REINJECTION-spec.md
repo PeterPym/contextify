@@ -53,6 +53,10 @@ Search is a ranked list:
   2) `createdAt DESC` (when available)
   3) `id ASC`
 
+### Entry id format
+
+In practice, `Entry.id` values are UUID strings (e.g., `5224db66-b1b1-4a10-ac13-dd0b2929f782`).
+
 ---
 
 ## CLI Commands (Retrieval)
