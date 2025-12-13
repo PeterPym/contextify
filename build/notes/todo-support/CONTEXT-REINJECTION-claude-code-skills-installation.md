@@ -8,6 +8,8 @@ description: Reference notes for installing skills into Claude Code, used to sco
 sources:
   - https://github.com/anthropics/skills
   - https://support.claude.com/en/articles/12512176-what-are-skills
+  - https://support.claude.com/en/articles/12512180-using-skills-in-claude
+  - https://code.claude.com/docs/en/skills
 ---
 
 # Reference: installing skills in Claude Code

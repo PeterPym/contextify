@@ -249,5 +249,12 @@ Define:
 - Phase 1 QA runner: `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
 - Skills adoption research: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-skills-research.md`
 - Claude Code install reference: `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-skills-installation.md`
+- Local skills reference docs:
+  - `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills.md`
+  - `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-developer-guide.md`
+  - `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-api-quickstart.md`
+  - `build/notes/todo-support/CONTEXT-REINJECTION-skill-authoring-best-practices.md`
+  - `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-plugins-reference.md`
+- Anthropic official skills docs: https://support.claude.com/en/articles/12512180-using-skills-in-claude
 - Codex official skills doc: https://github.com/openai/codex/blob/main/docs/skills.md
 - OpenAI skills overview (Simon Willison): https://simonwillison.net/2025/Dec/12/openai-skills/
