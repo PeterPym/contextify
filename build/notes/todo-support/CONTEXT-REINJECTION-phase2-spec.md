@@ -217,7 +217,7 @@ Implementation notes:
 - Provide an in-app “Install/Repair CLI…” UI that:
   - detects likely PATH dir
   - offers DMG mode: install into `/opt/homebrew/bin` or `/usr/local/bin` with an authorization prompt or copy/paste `sudo` command fallback
-  - offers App Store mode: user-driven install into a user-chosen folder (recommend `~/bin`)
+  - offers App Store mode: user-driven install into a user-chosen folder (recommend `~/bin`) with a persisted security-scoped bookmark
   - offers “Repair” when an existing shim/symlink is broken or points elsewhere
   - offers uninstall
 
@@ -257,6 +257,28 @@ Supported approaches:
 - Provide a fallback: invoke a known shim path (if installed) or call the bundled binary via app-driven UI.
 
 Phase 2 can ship without perfect PATH ergonomics for App Store builds; prioritize clarity and a reliable fallback.
+
+#### App Store “Install/Repair CLI…” UX (pinned down)
+
+This flow is user-driven and sandbox-safe:
+
+1) Present a folder picker (recommend `~/bin`).
+2) Persist a security-scoped bookmark for the chosen folder (same pattern as transcript folder bookmarks; see `build/docs/operations/app-store/sandbox-implementation-plan.md`).
+3) Write `contextify-query` shim into that folder.
+4) Show:
+  - the installed path (e.g. `~/bin/contextify-query`)
+  - the detected shell(s)
+  - a copy/pasteable PATH line if `~/bin` is not already on PATH
+
+Repair behavior:
+
+- If the shim exists but fails to invoke the bundled CLI, re-write it (and keep the existing install location).
+- If the bookmark is stale or missing, re-prompt for a folder.
+
+Uninstall behavior:
+
+- Remove the shim only if it matches the Contextify shim marker.
+- Offer “Forget install location” (clears the bookmark).
 
 ### When `contextify-query` is not on PATH
 
