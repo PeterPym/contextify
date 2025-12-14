@@ -9,6 +9,10 @@ description: Manual QA checklist for Phase 2 adoption work: skills loading/verif
 
 # Phase 2 QA checklist: skills + CLI install
 
+Canonical interactive runner:
+
+- `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-runner.sh`
+
 Record for each QA run:
 
 - Date:
