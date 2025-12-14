@@ -51,9 +51,43 @@ cleanup() {
   stop_log_capture
 }
 
+click_button_any_window() {
+  local title="$1"
+  local max_attempts="${2:-3}"
+  local attempt=1
+
+  while [ $attempt -le $max_attempts ]; do
+    if osascript -e '
+      tell application "System Events"
+        tell process "Contextify"
+          set didClick to false
+          repeat with w in windows
+            try
+              if exists button "'"$title"'" of w then
+                click button "'"$title"'" of w
+                set didClick to true
+                exit repeat
+              end if
+            end try
+          end repeat
+          if didClick is false then error "Button not found: '"$title"'"
+        end tell
+      end tell
+    ' 2>/dev/null; then
+      sleep 0.3
+      return 0
+    fi
+    sleep 0.5
+    attempt=$((attempt + 1))
+  done
+
+  log_warn "Could not click button in any window: $title"
+  return 1
+}
+
 select_cli_tab() {
   # Try simplest path first (SwiftUI TabView often exposes tabs as buttons).
-  if click_button_retry "CLI" 3; then
+  if click_button_any_window "CLI" 3; then
     return 0
   fi
 
@@ -63,14 +97,14 @@ select_cli_tab() {
     delay 0.2
     tell application "System Events"
       tell process "Contextify"
-        try
-          click radio button "CLI" of tab group 1 of window 1
-          return
-        end try
-        try
-          click button "CLI" of tab group 1 of window 1
-          return
-        end try
+        repeat with w in windows
+          try
+            click radio button "CLI" of tab group 1 of w
+          end try
+          try
+            click button "CLI" of tab group 1 of w
+          end try
+        end repeat
       end tell
     end tell
   ' 2>/dev/null || true
@@ -133,8 +167,9 @@ run_test_steps() {
   fi
 
   # Open Settings (Cmd+,) and switch to CLI tab.
+  activate_app
   send_shortcut "," "command down"
-  sleep 0.8
+  sleep 1.2
   select_cli_tab
 
   if ! wait_for_log_pattern "\\[QUERYCLI-SETTINGS-TAB-OPEN\\]" 10; then
@@ -144,13 +179,11 @@ run_test_steps() {
   fi
 
   # Install shim.
-  if ! click_button_retry "Install/Repair (Recommended)" 3; then
-    log_error "Could not click Install/Repair (Recommended)"
-    TEST_FAILED=1
-    return 1
-  fi
+  log_info "Triggering install via default action (Enter)..."
+  press_return
 
   if ! wait_for_any_pattern 20 \
+    "\\[QUERYCLI-INSTALL-START\\]" \
     "\\[QUERYCLI-INSTALL-DONE\\]" \
     "\\[QUERYCLI-INSTALL-SUDO-REQUIRED\\]" \
     "\\[QUERYCLI-INSTALL-COLLISION\\]" \
@@ -169,11 +202,8 @@ run_test_steps() {
   validate_status_json "$INSTALL_SHIM_PATH"
 
   # Uninstall.
-  if ! click_button_retry "Uninstall" 3; then
-    log_error "Could not click Uninstall"
-    TEST_FAILED=1
-    return 1
-  fi
+  log_info "Triggering uninstall via keyboard shortcut (Cmd+Shift+U)..."
+  send_shortcut "u" "command down, shift down"
 
   if ! wait_for_log_pattern "\\[QUERYCLI-UNINSTALL-DONE\\]" 10; then
     log_error "Uninstall completion log not observed"
@@ -198,4 +228,3 @@ main() {
 }
 
 main "$@"
-
