@@ -14,10 +14,10 @@ struct SettingsView: View {
   private static let selectedTabOverrideKey = "Contextify.Settings.SelectedTabOverride"
   private static let selectedTabKey = "Contextify.Settings.SelectedTab"
 
-  @AppStorage(selectedTabKey) private var selectedTab: String = "database"
+  @State private var selectedTab: String = "database"
 
   private var overriddenSelectedTab: String? {
-    UserDefaults.standard.string(forKey: Self.selectedTabOverrideKey)
+    ContextifyDefaults.shared.string(forKey: Self.selectedTabOverrideKey)
   }
 
   var body: some View {
@@ -43,9 +43,13 @@ struct SettingsView: View {
           .tag("cli")
       }
       .onAppear {
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
         if let overriddenSelectedTab {
           selectedTab = overriddenSelectedTab
         }
+      }
+      .onChange(of: selectedTab) { _, newValue in
+        ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
       .frame(width: 450)
     } else {
@@ -64,9 +68,13 @@ struct SettingsView: View {
           .tag("cli")
       }
       .onAppear {
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
         if let overriddenSelectedTab {
           selectedTab = overriddenSelectedTab
         }
+      }
+      .onChange(of: selectedTab) { _, newValue in
+        ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
       .frame(width: 520)
     }

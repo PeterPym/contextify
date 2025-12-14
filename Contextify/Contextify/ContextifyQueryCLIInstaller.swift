@@ -258,7 +258,7 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
   }
 
   private static func dmgInstallDirectoryOverrideURL(createIfMissing: Bool) throws -> URL? {
-    guard let raw = UserDefaults.standard.string(forKey: dmgInstallDirOverrideKey) else { return nil }
+    guard let raw = ContextifyDefaults.shared.string(forKey: dmgInstallDirOverrideKey) else { return nil }
     let expanded = expandedPath(raw).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !expanded.isEmpty else { return nil }
 
@@ -288,23 +288,29 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
   }
 
   private static func findInstalledShim(named name: String, sandboxedInstallDirectory: URL?) -> URL? {
-    if let onPath = findExecutableOnPATH(named: name) {
-      return onPath
-    }
-
     var candidates: [URL] = []
 
     if let override = try? dmgInstallDirectoryOverrideURL(createIfMissing: false) {
       candidates.append(override.appendingPathComponent(name))
     }
 
-    candidates.append(URL(fileURLWithPath: "/opt/homebrew/bin").appendingPathComponent(name))
-    candidates.append(URL(fileURLWithPath: "/usr/local/bin").appendingPathComponent(name))
-    candidates.append(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/\(name)"))
-
     if let sandboxedInstallDirectory {
       candidates.append(sandboxedInstallDirectory.appendingPathComponent(name))
     }
+
+    for candidate in candidates {
+      if FileManager.default.isExecutableFile(atPath: candidate.path) {
+        return candidate
+      }
+    }
+
+    if let onPath = findExecutableOnPATH(named: name) {
+      return onPath
+    }
+
+    candidates.append(URL(fileURLWithPath: "/opt/homebrew/bin").appendingPathComponent(name))
+    candidates.append(URL(fileURLWithPath: "/usr/local/bin").appendingPathComponent(name))
+    candidates.append(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/\(name)"))
 
     for candidate in candidates {
       if FileManager.default.isExecutableFile(atPath: candidate.path) {
