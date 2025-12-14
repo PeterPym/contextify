@@ -124,10 +124,14 @@ Implement “Install/Repair CLI…” in the app (DMG + App Store):
 
 Define how the shim locates the app bundle:
 
-- Primary: LaunchServices lookup by bundle identifier.
-- Multi-install behavior (DMG + App Store both installed):
-  - deterministic tie-break (prefer App Store build, or prefer newest version), or
-  - fail with an actionable error explaining how to uninstall/repair.
+- Primary: LaunchServices lookup by bundle identifier (`sh.contextify.Contextify`).
+- Multi-install tie-break (must be deterministic and unit-testable):
+  1) Prefer App Store install by checking for `Contents/_MASReceipt/receipt`.
+  2) Prefer highest `CFBundleVersion` (then `CFBundleShortVersionString`).
+  3) Prefer lexicographically smallest bundle path.
+  4) If still ambiguous, fail with remediation that lists candidates and instructs uninstall/repair.
+- Fallback if LaunchServices returns no candidates:
+  - check `/Applications/Contextify.app`, then fail with a clear error if missing.
 
 Repair behavior for root-owned installs:
 

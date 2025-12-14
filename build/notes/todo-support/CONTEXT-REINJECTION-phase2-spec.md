@@ -284,8 +284,16 @@ Advantages:
 
 Shim app discovery strategy (pinned down):
 
-- Primary: locate the Contextify app via LaunchServices lookup by bundle identifier.
-- If multiple candidates exist (for example DMG + App Store builds), apply a deterministic tie-break (prefer App Store build, else newest version, else fail with remediation).
+- Primary: locate the Contextify app via LaunchServices lookup by bundle identifier (`sh.contextify.Contextify`).
+- If multiple candidates exist (multiple copies installed), apply a deterministic tie-break:
+  1) Prefer a bundle that looks like an App Store install (presence of `Contents/_MASReceipt/receipt`).
+  2) Prefer the highest `CFBundleVersion` (then `CFBundleShortVersionString` if needed).
+  3) Prefer the lexicographically smallest bundle path for determinism.
+  4) If still ambiguous, fail with a remediation message that lists the candidates and tells the user how to uninstall one or run “Install/Repair CLI…” to re-point the shim.
+
+Fallbacks:
+
+- If LaunchServices lookup returns no candidates, check common locations (`/Applications/Contextify.app`) and then fail with a clear message if not found.
 
 #### Alternate entrypoint: symlink (simple)
 
