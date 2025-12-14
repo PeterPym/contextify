@@ -11,11 +11,13 @@
 			D4APPSTORE00000000000002 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 			D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
 			D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
-			D4C0B0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0B0012E77AAAA00747100 /* main.swift */; };
-			D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0B0062E77AAAA00747100 /* ContextifyCore */; };
-			D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */ = {isa = PBXBuildFile; fileRef = D4C0B0072E77AAAA00747100 /* contextify-query */; };
-			D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
-			D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
+				D4C0B0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0B0012E77AAAA00747100 /* main.swift */; };
+				D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0B0062E77AAAA00747100 /* ContextifyCore */; };
+				D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */ = {isa = PBXBuildFile; fileRef = D4C0B0072E77AAAA00747100 /* contextify-query */; };
+				D4C0B0212E77AAAA00747100 /* skills in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0202E77AAAA00747100 /* skills */; };
+				D4C0B0222E77AAAA00747100 /* skills in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0202E77AAAA00747100 /* skills */; };
+				D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
+				D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,37 +51,60 @@
 			};
 /* End PBXContainerItemProxy section */
 
-/* Begin PBXCopyFilesBuildPhase section */
-			D4C0B0112E77AAAA00747100 /* Embed contextify-query */ = {
-				isa = PBXCopyFilesBuildPhase;
-				buildActionMask = 2147483647;
-				dstPath = "";
-				dstSubfolderSpec = 6;
-				files = (
-					D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
-				);
-				name = "Embed contextify-query";
-				runOnlyForDeploymentPostprocessing = 0;
-			};
-			D4C0B0122E77AAAA00747100 /* Embed contextify-query */ = {
-				isa = PBXCopyFilesBuildPhase;
-				buildActionMask = 2147483647;
-				dstPath = "";
-				dstSubfolderSpec = 6;
-				files = (
-					D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
-				);
-				name = "Embed contextify-query";
-				runOnlyForDeploymentPostprocessing = 0;
-			};
-/* End PBXCopyFilesBuildPhase section */
+	/* Begin PBXCopyFilesBuildPhase section */
+				D4C0B0112E77AAAA00747100 /* Embed contextify-query */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "";
+					dstSubfolderSpec = 6;
+					files = (
+						D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
+					);
+					name = "Embed contextify-query";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+				D4C0B0122E77AAAA00747100 /* Embed contextify-query */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "";
+					dstSubfolderSpec = 6;
+					files = (
+						D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
+					);
+					name = "Embed contextify-query";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+				D4C0B0232E77AAAA00747100 /* Copy contextify-query resources */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "contextify-query";
+					dstSubfolderSpec = 7;
+					files = (
+						D4C0B0212E77AAAA00747100 /* skills in Copy Resources */,
+					);
+					name = "Copy contextify-query resources";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+				D4C0B0242E77AAAA00747100 /* Copy contextify-query resources */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "contextify-query";
+					dstSubfolderSpec = 7;
+					files = (
+						D4C0B0222E77AAAA00747100 /* skills in Copy Resources */,
+					);
+					name = "Copy contextify-query resources";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+	/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 			43584A98AE6A48C8B600354BB4041D2D /* Contextify/LaunchAgentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/LaunchAgentManager.swift; sourceTree = SOURCE_ROOT; };
 			71D15D3226D94598B321C960A30DC387 /* Contextify/ITerm2DaemonClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/ITerm2DaemonClient.swift; sourceTree = SOURCE_ROOT; };
-			D4C0B0012E77AAAA00747100 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/ContextifyQueryCLI/main.swift; sourceTree = SOURCE_ROOT; };
-			D4C0B0072E77AAAA00747100 /* contextify-query */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "contextify-query"; sourceTree = BUILT_PRODUCTS_DIR; };
-			D4A7739D2E76936700747100 /* Contextify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
+				D4C0B0012E77AAAA00747100 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ../Sources/ContextifyQueryCLI/main.swift; sourceTree = SOURCE_ROOT; };
+				D4C0B0072E77AAAA00747100 /* contextify-query */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "contextify-query"; sourceTree = BUILT_PRODUCTS_DIR; };
+				D4C0B0202E77AAAA00747100 /* skills */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ../contextify-query/skills; sourceTree = SOURCE_ROOT; };
+				D4A7739D2E76936700747100 /* Contextify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 			D4A773AA2E76936800747100 /* ContextifyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 			D4A773B42E76936800747100 /* ContextifyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContextifyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 			D4APPSTORE00000000000003 /* Contextify AppStore.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "Contextify AppStore.app"; path = Contextify.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -192,6 +217,7 @@
 					D4A7739A2E76936700747100 /* Frameworks */,
 					D4A7739B2E76936700747100 /* Resources */,
 					D4C0B0112E77AAAA00747100 /* Embed contextify-query */,
+					D4C0B0232E77AAAA00747100 /* Copy contextify-query resources */,
 				);
 				buildRules = (
 				);
@@ -265,6 +291,7 @@
 					D4APPSTORE00000000000004 /* Frameworks */,
 					D4APPSTORE00000000000007 /* Resources */,
 					D4C0B0122E77AAAA00747100 /* Embed contextify-query */,
+					D4C0B0242E77AAAA00747100 /* Copy contextify-query resources */,
 				);
 				buildRules = (
 				);
