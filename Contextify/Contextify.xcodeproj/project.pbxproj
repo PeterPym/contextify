@@ -7,32 +7,72 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D4APPSTORE00000000000001 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4APPSTORE00000000000010 /* ContextifyCore */; };
-		D4APPSTORE00000000000002 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
-		D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
-		D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
-		D4C0B0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0B0012E77AAAA00747100 /* main.swift */; };
-		D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0B0062E77AAAA00747100 /* ContextifyCore */; };
-		D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
-		D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
+			D4APPSTORE00000000000001 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4APPSTORE00000000000010 /* ContextifyCore */; };
+			D4APPSTORE00000000000002 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
+			D4C0A0082E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0062E77AAAA00747100 /* ContextifyCore */; };
+			D4C0A0092E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0A0072E77AAAA00747100 /* ContextifyCore */; };
+			D4C0B0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0B0012E77AAAA00747100 /* main.swift */; };
+			D4C0B0052E77AAAA00747100 /* ContextifyCore in Frameworks */ = {isa = PBXBuildFile; productRef = D4C0B0062E77AAAA00747100 /* ContextifyCore */; };
+			D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */ = {isa = PBXBuildFile; fileRef = D4C0B0072E77AAAA00747100 /* contextify-query */; };
+			D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
+			D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		D4A773AB2E76936800747100 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D4A773952E76936700747100 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D4A7739C2E76936700747100;
-			remoteInfo = Contextify;
-		};
-		D4A773B52E76936800747100 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = D4A773952E76936700747100 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = D4A7739C2E76936700747100;
-			remoteInfo = Contextify;
-		};
+			D4A773AB2E76936800747100 /* PBXContainerItemProxy */ = {
+				isa = PBXContainerItemProxy;
+				containerPortal = D4A773952E76936700747100 /* Project object */;
+				proxyType = 1;
+				remoteGlobalIDString = D4A7739C2E76936700747100;
+				remoteInfo = Contextify;
+			};
+			D4A773B52E76936800747100 /* PBXContainerItemProxy */ = {
+				isa = PBXContainerItemProxy;
+				containerPortal = D4A773952E76936700747100 /* Project object */;
+				proxyType = 1;
+				remoteGlobalIDString = D4A7739C2E76936700747100;
+				remoteInfo = Contextify;
+			};
+			D4C0B0132E77AAAA00747100 /* PBXContainerItemProxy */ = {
+				isa = PBXContainerItemProxy;
+				containerPortal = D4A773952E76936700747100 /* Project object */;
+				proxyType = 1;
+				remoteGlobalIDString = D4C0B00A2E77AAAA00747100;
+				remoteInfo = "contextify-query";
+			};
+			D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */ = {
+				isa = PBXContainerItemProxy;
+				containerPortal = D4A773952E76936700747100 /* Project object */;
+				proxyType = 1;
+				remoteGlobalIDString = D4C0B00A2E77AAAA00747100;
+				remoteInfo = "contextify-query";
+			};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+			D4C0B0112E77AAAA00747100 /* Embed contextify-query */ = {
+				isa = PBXCopyFilesBuildPhase;
+				buildActionMask = 2147483647;
+				dstPath = "";
+				dstSubfolderSpec = 6;
+				files = (
+					D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
+				);
+				name = "Embed contextify-query";
+				runOnlyForDeploymentPostprocessing = 0;
+			};
+			D4C0B0122E77AAAA00747100 /* Embed contextify-query */ = {
+				isa = PBXCopyFilesBuildPhase;
+				buildActionMask = 2147483647;
+				dstPath = "";
+				dstSubfolderSpec = 6;
+				files = (
+					D4C0B0102E77AAAA00747100 /* contextify-query in Embed Executables */,
+				);
+				name = "Embed contextify-query";
+				runOnlyForDeploymentPostprocessing = 0;
+			};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 			43584A98AE6A48C8B600354BB4041D2D /* Contextify/LaunchAgentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/LaunchAgentManager.swift; sourceTree = SOURCE_ROOT; };
@@ -144,22 +184,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		D4A7739C2E76936700747100 /* Contextify */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D4A773BE2E76936800747100 /* Build configuration list for PBXNativeTarget "Contextify" */;
-			buildPhases = (
-				D4A773992E76936700747100 /* Sources */,
-				D4A7739A2E76936700747100 /* Frameworks */,
-				D4A7739B2E76936700747100 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				D4A7739F2E76936700747100 /* Contextify */,
-			);
-			name = Contextify;
+			D4A7739C2E76936700747100 /* Contextify */ = {
+				isa = PBXNativeTarget;
+				buildConfigurationList = D4A773BE2E76936800747100 /* Build configuration list for PBXNativeTarget "Contextify" */;
+				buildPhases = (
+					D4A773992E76936700747100 /* Sources */,
+					D4A7739A2E76936700747100 /* Frameworks */,
+					D4A7739B2E76936700747100 /* Resources */,
+					D4C0B0112E77AAAA00747100 /* Embed contextify-query */,
+				);
+				buildRules = (
+				);
+				dependencies = (
+					D4C0B0142E77AAAA00747100 /* PBXTargetDependency */,
+				);
+				fileSystemSynchronizedGroups = (
+					D4A7739F2E76936700747100 /* Contextify */,
+				);
+				name = Contextify;
 			packageProductDependencies = (
 				D4C0A0062E77AAAA00747100 /* ContextifyCore */,
 				D4SPAR00010000000000002 /* Sparkle */,
@@ -216,21 +258,23 @@
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 			D4APPSTORE00000000000005 /* Contextify AppStore */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D4APPSTORE00000000000020 /* Build configuration list for PBXNativeTarget "Contextify AppStore" */;
-			buildPhases = (
-				D4APPSTORE00000000000006 /* Sources */,
-				D4APPSTORE00000000000004 /* Frameworks */,
-				D4APPSTORE00000000000007 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				D4A7739F2E76936700747100 /* Contextify */,
-			);
-			name = "Contextify AppStore";
+				isa = PBXNativeTarget;
+				buildConfigurationList = D4APPSTORE00000000000020 /* Build configuration list for PBXNativeTarget "Contextify AppStore" */;
+				buildPhases = (
+					D4APPSTORE00000000000006 /* Sources */,
+					D4APPSTORE00000000000004 /* Frameworks */,
+					D4APPSTORE00000000000007 /* Resources */,
+					D4C0B0122E77AAAA00747100 /* Embed contextify-query */,
+				);
+				buildRules = (
+				);
+				dependencies = (
+					D4C0B0162E77AAAA00747100 /* PBXTargetDependency */,
+				);
+				fileSystemSynchronizedGroups = (
+					D4A7739F2E76936700747100 /* Contextify */,
+				);
+				name = "Contextify AppStore";
 			packageProductDependencies = (
 				D4APPSTORE00000000000010 /* ContextifyCore */,
 			);
@@ -386,16 +430,26 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		D4A773AC2E76936800747100 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D4A7739C2E76936700747100 /* Contextify */;
-			targetProxy = D4A773AB2E76936800747100 /* PBXContainerItemProxy */;
-		};
-		D4A773B62E76936800747100 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = D4A7739C2E76936700747100 /* Contextify */;
-			targetProxy = D4A773B52E76936800747100 /* PBXContainerItemProxy */;
-		};
+			D4A773AC2E76936800747100 /* PBXTargetDependency */ = {
+				isa = PBXTargetDependency;
+				target = D4A7739C2E76936700747100 /* Contextify */;
+				targetProxy = D4A773AB2E76936800747100 /* PBXContainerItemProxy */;
+			};
+			D4A773B62E76936800747100 /* PBXTargetDependency */ = {
+				isa = PBXTargetDependency;
+				target = D4A7739C2E76936700747100 /* Contextify */;
+				targetProxy = D4A773B52E76936800747100 /* PBXContainerItemProxy */;
+			};
+			D4C0B0142E77AAAA00747100 /* PBXTargetDependency */ = {
+				isa = PBXTargetDependency;
+				target = D4C0B00A2E77AAAA00747100 /* contextify-query */;
+				targetProxy = D4C0B0132E77AAAA00747100 /* PBXContainerItemProxy */;
+			};
+			D4C0B0162E77AAAA00747100 /* PBXTargetDependency */ = {
+				isa = PBXTargetDependency;
+				target = D4C0B00A2E77AAAA00747100 /* contextify-query */;
+				targetProxy = D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */;
+			};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -757,6 +811,7 @@
 				buildSettings = {
 					CODE_SIGN_STYLE = Automatic;
 					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					OTHER_SWIFT_FLAGS = "-parse-as-library";
 					PRODUCT_NAME = "contextify-query";
 					SUPPORTED_PLATFORMS = macosx;
 					SWIFT_VERSION = 6.0;
@@ -768,6 +823,7 @@
 				buildSettings = {
 					CODE_SIGN_STYLE = Automatic;
 					DEVELOPMENT_TEAM = VQ7RPM8H77;
+					OTHER_SWIFT_FLAGS = "-parse-as-library";
 					PRODUCT_NAME = "contextify-query";
 					SUPPORTED_PLATFORMS = macosx;
 					SWIFT_VERSION = 6.0;
