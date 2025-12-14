@@ -91,7 +91,15 @@ Decisions:
 Development note:
 
 - It is acceptable to validate the marketplace mechanics using a private development repo first, but the published installation instructions and marketplace source target `PeterPym/contextify`.
-- If Claude Code requires the plugin id to match `plugin.json.name`, use `contextify-query@contextify` instead of `query@contextify`.
+- Claude Code installs by `plugin@marketplace` where `plugin` matches `plugin.json.name` and `marketplace` matches `marketplace.json.name`. With the pinned naming above, the correct install is `query@contextify`.
+
+Marketplace name collision (dev vs public):
+
+- The marketplace id is `contextify` for both local dev (`./`) and the public marketplace repo (`PeterPym/contextify`).
+- Claude Code keys marketplaces by marketplace id, so only one `contextify` marketplace can be installed at a time.
+- When switching between local dev and public installs, remove and re-add the marketplace source:
+  - `/plugin marketplace remove contextify`
+  - `/plugin marketplace add <desired source>`
 
 Plugin layout (Claude Code requirement):
 
@@ -126,13 +134,14 @@ If the plugin is installed before Contextify:
 
 - Skills guide the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
 
-Session metadata capture:
+Session metadata capture (best-effort):
 
 - The plugin registers a `SessionStart` hook that persists:
   - `CONTEXTIFY_CLAUDE_SESSION_ID`
   - `CONTEXTIFY_CLAUDE_TRANSCRIPT_PATH`
   - `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID`
 - Skills use `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` to avoid selecting search hits from the active transcript when better historical matches exist.
+- Session metadata capture is best-effort only. Skills remain correct when these env vars are missing.
 
 Local development validation:
 
@@ -167,6 +176,13 @@ Required behaviors:
   - default to `--before 10 --after 20`
   - only widen windows when needed
   - never exceed `--max-window` cap
+
+Active session demotion:
+
+- If the user is clearly asking about earlier context (not “in this chat”), prefer anchors that are not from the active transcript.
+- If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is unavailable, treat anchors from very recent activity as suspect when there are multiple plausible hits:
+  - do not auto-select anchors from the last 30 minutes unless the user explicitly confirms the active session is relevant
+  - never apply demotion when the user is asking about “this chat / what we just discussed”
 
 Error handling contract:
 
@@ -246,6 +262,17 @@ The preferred design is to bundle the `contextify-query` binary inside the app b
 
 This implies a clear behavior: the entrypoint must be repairable when the app moves/renames or the user changes PATH locations. The app provides an explicit “Install/Repair CLI…” action.
 
+Bundling acceptance criteria:
+
+- The bundled CLI executes directly from the app bundle:
+  - `"<Contextify.app>/Contents/MacOS/contextify-query" status --json`
+- The final signed app validates nested code signing:
+  - `codesign --verify --deep --strict "<Contextify.app>"`
+- Architecture matches distribution intent:
+  - `file "<Contextify.app>/Contents/MacOS/contextify-query"`
+- Gatekeeper-style assessment is best-effort (varies by environment) but is a useful diagnostic:
+  - `spctl --assess --type execute "<Contextify.app>/Contents/MacOS/contextify-query"`
+
 #### Preferred entrypoint: shim (recommended)
 
 Install a small shim executable (or script) named `contextify-query` onto `PATH`. The shim locates the Contextify app bundle and then execs the bundled `contextify-query` binary.
@@ -254,6 +281,11 @@ Advantages:
 
 - If the app moves, the shim can emit a clear remediation message (instead of “No such file or directory” from a broken symlink).
 - The shim can support both DMG and App Store distribution with the same behavior.
+
+Shim app discovery strategy (pinned down):
+
+- Primary: locate the Contextify app via LaunchServices lookup by bundle identifier.
+- If multiple candidates exist (for example DMG + App Store builds), apply a deterministic tie-break (prefer App Store build, else newest version, else fail with remediation).
 
 #### Alternate entrypoint: symlink (simple)
 

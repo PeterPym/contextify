@@ -50,6 +50,15 @@ Install forms:
 - Public-facing (future): `/plugin marketplace add PeterPym/contextify` then `/plugin install query@contextify`
 - Local dev validation: `claude plugin marketplace add ./` then `claude plugin install query@contextify`
 
+#### Marketplace name collision (dev vs public)
+
+The marketplace id is `contextify` for both local dev (`./`) and the public marketplace repo (`PeterPym/contextify`). Claude Code keys marketplaces by name, so you cannot have both installed at once without replacement.
+
+Dev workflow:
+
+- Use `claude plugin marketplace remove contextify` before switching between local (`./`) and public (`PeterPym/contextify`).
+- Re-add the desired marketplace source, then re-run `claude plugin install query@contextify`.
+
 #### Session metadata capture (best-effort)
 
 This branch implements a `SessionStart` hook that attempts to persist:
@@ -62,6 +71,14 @@ However, treat this as best-effort only:
 
 - Skills must behave correctly when these env vars are missing.
 - Phase 2 acceptance does not depend on session metadata capture being present (it is an optimization to avoid selecting the active transcript as a search hit).
+
+#### Plugin version sync (must not drift)
+
+Phase 2 expects `plugin.json.version` to track the Contextify app version.
+
+Implementation requirement:
+
+- Update `contextify-query/claude-plugin/.claude-plugin/plugin.json` version at build/release time from the app version source of truth (for example `MARKETING_VERSION`) so manual edits do not drift.
 
 ### 3) Bundle `contextify-query` + skills into the app
 
@@ -76,6 +93,17 @@ Pin down the bundling and executability details (this is production-critical):
 - Add QA assertions:
   - run the bundled binary directly (not via shim) and confirm it executes
   - confirm the nested binary is signed/valid in the final DMG/App Store build
+
+Acceptance checks (copy/paste):
+
+- Direct execution:
+  - `\"<Contextify.app>/Contents/MacOS/contextify-query\" status --json`
+- Code-sign validity:
+  - `codesign --verify --deep --strict \"<Contextify.app>\"`
+- Gatekeeper assessment (best-effort; can vary by environment):
+  - `spctl --assess --type execute \"<Contextify.app>/Contents/MacOS/contextify-query\"`
+- Architecture sanity:
+  - `file \"<Contextify.app>/Contents/MacOS/contextify-query\"`
 
 ### 4) Implement CLI entrypoint install: shim + repair
 
@@ -101,6 +129,12 @@ Define how the shim locates the app bundle:
   - deterministic tie-break (prefer App Store build, or prefer newest version), or
   - fail with an actionable error explaining how to uninstall/repair.
 
+Repair behavior for root-owned installs:
+
+- If the shim is installed via `sudo` into `/opt/homebrew/bin` or `/usr/local/bin`, repairs must either:
+  - present a new copy/pasteable `sudo` snippet to re-install the updated shim, or
+  - offer switching to a user-writable install location (`~/bin`) and explain the tradeoff.
+
 Unit tests:
 
 - Given an app bundle path, generate shim text deterministically (marker present, path quoting safe).
@@ -113,7 +147,7 @@ Add a Settings pane or onboarding affordance that:
 - Shows the plugin install commands (copy button):
   - `/plugin marketplace add PeterPym/contextify`
   - `/plugin install query@contextify`
-- Shows how to verify plugin loading (`claude --debug`) and notes restart requirement.
+- Provides stable verification checks (cache path + installed plugin record) and notes restart requirement; treat `claude --debug` as an optional diagnostic.
 - Handles “Contextify not installed” messaging (skills already guide, but app should also be clear).
 
 ### 6) QA hardening
@@ -134,7 +168,7 @@ Tighten skill guidance to cover real-world branches (keep concise):
 - `featureUnavailable`:
   - explain the missing capability; do not imply a fallback search exists
 - “current session dominates results”:
-  - if `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` missing, apply a time-based demotion (skip very recent hits) rather than picking the current session
+  - if `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is missing and the request is not about “this chat”, avoid auto-selecting anchors from the last 30 minutes when multiple plausible hits exist
 
 ### 7) Validation and review gate
 

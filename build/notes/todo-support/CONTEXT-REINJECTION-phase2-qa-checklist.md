@@ -42,6 +42,42 @@ contextify-query search "test" --limit 1 --json
 
 Expected: the first result’s `id` is a UUID string (no `e_` prefix).
 
+## A1) Bundled CLI sanity (DMG/App Store artifact)
+
+Run these checks against the built `Contextify.app` to catch nested-binary signing/executability issues early.
+
+1) Direct execution from the app bundle
+
+```bash
+"<Contextify.app>/Contents/MacOS/contextify-query" status --json
+```
+
+Expected: exit code `0` and JSON output.
+
+2) Nested signing validity
+
+```bash
+codesign --verify --deep --strict "<Contextify.app>"
+```
+
+Expected: exit code `0`.
+
+3) Architecture sanity
+
+```bash
+file "<Contextify.app>/Contents/MacOS/contextify-query"
+```
+
+Expected: output includes the expected architecture(s).
+
+4) Gatekeeper-style assessment (best-effort; environment-dependent)
+
+```bash
+spctl --assess --type execute "<Contextify.app>/Contents/MacOS/contextify-query"
+```
+
+Expected: exit code `0` (if available/meaningful in the environment); treat failures as a diagnostic, not an automatic Phase 2 failure.
+
 ## A0) First-run onboarding (Contextify not installed yet)
 
 If the skills are installed before Contextify is installed:
@@ -137,7 +173,22 @@ Verification (on-disk):
 - Session metadata env vars (interactive session):
   - Run a prompt that triggers a Bash tool call, then ask for:
     - `echo "$CONTEXTIFY_CLAUDE_TRANSCRIPT_ID"`
-  - Expected: a non-empty value that matches the active `.jsonl` filename (without `.jsonl`).
+  - Expected: best-effort.
+    - If non-empty: value matches the active `.jsonl` filename (without `.jsonl`).
+    - If empty: skills still behave correctly (they do not require the env vars).
+
+### C0) Marketplace name collision (dev vs public)
+
+Because the marketplace id is `contextify` for both local dev (`./`) and the public repo (`PeterPym/contextify`), Claude Code only keeps one installed at a time.
+
+When switching sources, remove and re-add:
+
+```text
+/plugin marketplace remove contextify
+/plugin marketplace add <desired source>
+```
+
+Expected: the marketplace source changes without installing duplicate `contextify` entries.
 
 2) Install (fallback: personal skills)
 
