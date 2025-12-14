@@ -107,8 +107,8 @@ Expected: agent runs `contextify-query search ...` then `contextify-query contex
 In Claude Code:
 
 ```text
-/plugin marketplace add banagale/contextify
-/plugin install contextify@banagale-contextify
+/plugin marketplace add PeterPym/contextify
+/plugin install contextify@peterpym-contextify
 ```
 
 Expected:

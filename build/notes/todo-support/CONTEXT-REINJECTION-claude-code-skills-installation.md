@@ -23,8 +23,8 @@ Phase 2 prefers plugin-based distribution for Contextify skills. Filesystem inst
 Phase 2 ships a Claude Code plugin from this repository via a marketplace:
 
 ```text
-/plugin marketplace add banagale/contextify
-/plugin install contextify@banagale-contextify
+/plugin marketplace add PeterPym/contextify
+/plugin install contextify@peterpym-contextify
 ```
 
 Claude Code requires a restart after installing a plugin.

@@ -83,10 +83,14 @@ Phase 2 ships a Claude Code plugin from this repository via a plugin marketplace
 
 Decisions:
 
-- Marketplace repo: `banagale/contextify` (this repo)
-- Marketplace id: `banagale-contextify`
+- Marketplace repo (public-facing): `PeterPym/contextify`
+- Marketplace id: `peterpym-contextify`
 - Plugin id: `contextify`
 - Plugin source path (within this repo): `./contextify-query/claude-plugin`
+
+Development note:
+
+- It is acceptable to validate the marketplace mechanics using a private development repo first, but the published installation instructions and marketplace source target `PeterPym/contextify`.
 
 Plugin layout (Claude Code requirement):
 
@@ -106,14 +110,14 @@ Versioning:
 Install/upgrade/uninstall (user steps):
 
 1) Add the marketplace:
-  - `/plugin marketplace add banagale/contextify`
+  - `/plugin marketplace add PeterPym/contextify`
 2) Install:
-  - `/plugin install contextify@banagale-contextify`
+  - `/plugin install contextify@peterpym-contextify`
   - restart Claude Code after install
 3) Upgrade:
-  - re-run `/plugin install contextify@banagale-contextify` (then restart)
+  - re-run `/plugin install contextify@peterpym-contextify` (then restart)
 4) Uninstall:
-  - `/plugin uninstall contextify@banagale-contextify`
+  - `/plugin uninstall contextify@peterpym-contextify`
 
 If the plugin is installed before Contextify:
 
