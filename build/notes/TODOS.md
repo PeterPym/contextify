@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-13
+**Last Updated:** 2025-12-14
 **Status:** Active
 
 **Priority Levels:**
@@ -58,62 +58,30 @@ See tracking file for current branches in flight and review status.
 
 ## Historical Transcript Ingestion Gap
 
-**Status:** Not started
+**Status:** Core fix complete (2025-12-14), follow-up items in P1
 **Priority:** P0 (data loss - user history not searchable)
 **Discovered:** 2025-12-13
+**Branch:** `fix/ingest-gap-historical-transcripts`
 
-- [ ] #INGEST-GAP: Investigate and fix missing historical transcript ingestion
+- [x] #INGEST-GAP: Fix missing historical transcript ingestion
 
-**Problem:**
-Contextify only ingests transcripts that are actively watched during a session. Historical transcripts are never backfilled, causing massive data gaps.
+**Fix Applied (2025-12-14):**
 
-**Evidence (Contextify project):**
-- 762 transcript files on disk in `~/.claude/projects/-Users-rob-code-projects-contextify/`
-- Only 13 transcripts in database (1.7% coverage)
-- Database only has entries from Nov 18, 2025 onwards
-- Files on disk go back further (at least Nov 13)
-- Current session IS being ingested (confirmed working for active transcripts)
+1. **Added `startWatching` parameter** to `ingestTranscript()` - completion work uses `false` to avoid watcher explosion
+2. **Bounded worker pool** (4 workers max) replaces unbounded `Task.detached`
+3. **Enqueue ALL remaining transcripts** immediately after preview subset (not blocked on preview)
+4. **Added `watcherCount` getter** to TranscriptWatcher for diagnostics
 
-**Impact:**
-- Search doesn't find older conversations
-- Analytics (message volume, activity patterns) are incomplete
-- User loses access to historical context
+**Results:**
+- Coverage improved from 1.7% to 95.1% for active main session transcripts
+- Remaining 5% are legitimately empty files (0 bytes, session-only metadata)
+- Build: zero warnings, 196 tests passing
 
-**Investigation findings (2025-12-13):**
+**Follow-up items (see P1):**
+- `#INGEST-PARSER-BUG`: Some transcripts with content produce 0 entries
+- `#INGEST-PERIODIC-CHECK`: No periodic check for late-arriving partials
 
-1. Transcripts ARE discovered and registered in `transcripts` table (818 records)
-2. But 794 are stuck as `partial` with 0 entries in `transcript_entries`
-3. FastPath limits processing to `maxTranscriptsPerProject = 5` per project (line 23)
-4. Only those 5 get `enqueueCompletion()` called - the other 794 are never queued!
-5. Log evidence: `[FAST-PATH-FILTER] Filtered 799 targets` → `[FAST-PATH-PROJECT] Processing 5 transcripts`
-6. Interacting with a project triggers JIT ingestion which works, but also limited to 5
-
-**Root Cause (two issues):**
-
-1. **Race condition:** `resumePendingCompletions()` runs BEFORE transcripts are registered
-   - `initializeDatabaseComponents()` spawns background Task calling `resumePendingCompletions()` (line 89-93)
-   - But `startup()` (which discovers and registers transcripts) runs LATER
-   - So `resumePendingCompletions()` queries an empty/stale `transcripts` table
-
-2. **Incomplete enqueue:** FastPath only enqueues 5 transcripts per project
-   - `processProject()` limits to `maxTranscriptsPerProject = 5` (line 260)
-   - Only those 5 get `enqueueCompletion()` called
-   - The other 794 are registered as `partial` but never enqueued
-
-**Code locations:**
-- Race: `AppStateOrchestrator.swift:89-93` (spawns too early)
-- Limit: `FastPathIngestionCoordinator.swift:260` (only processes 5)
-
-**Potential Fixes:**
-1. Move `resumePendingCompletions()` to run AFTER `startup()` completes (or after first JIT ingest)
-2. After FastPath preview, enqueue ALL remaining partials (not just the 5 previewed)
-3. Use TaskGroup with concurrency limit instead of unbounded Task.detached
-4. Add progress indicator for background ingestion
-5. Manual "Reindex All" button in Settings as user-facing workaround
-
-**Related:** `#LAZY-WATCHERS` - Fixing this will create 1000+ file watchers. Consider implementing lazy watchers alongside or before this fix to avoid file descriptor exhaustion.
-
-**Reference:** `app/Sources/ContextifyCore/Monitoring/` (file watchers), `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 
 ---
 
@@ -217,6 +185,71 @@ transcript provider permission via Settings. Two bugs were fixed:
 ---
 
 # P1 (High Priority)
+
+---
+
+## Transcript Parser Bug - Content Without Entries
+
+**Status:** Not started
+**Priority:** P1 (data completeness)
+**Discovered:** 2025-12-14
+**Related:** `#INGEST-GAP`
+
+- [ ] #INGEST-PARSER-BUG: Investigate transcripts with content but 0 entries
+
+**Problem:**
+Some Claude Code transcripts have real user/assistant messages but produce 0 entries after parsing.
+
+**Evidence (FCB3B514):**
+- File: `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/FCB3B514-A11B-419D-8157-E1BE18DEC02B.jsonl`
+- Size: 85KB (88 lines)
+- Content: 26 assistant messages, 31 user messages with `userType: "external"`
+- All have `isSidechain: false`
+- DB shows: `ingest_state: complete`, `last_processed_line: 88`, but 0 entries
+
+**Parser analysis:**
+- `extractContentWithType()` should handle string content (line 274-275)
+- `validateMessageIntegrity()` returns `false` for string content (line 355-358)
+- No parse errors recorded in `parse_errors` table
+
+**Next steps:**
+1. Add parser logging for this specific transcript
+2. Trace execution path to find where entries are being filtered
+3. Check if content format differs from expected structure
+
+**Reference:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+---
+
+## Periodic Ingestion Check for Resilience
+
+**Status:** Not started
+**Priority:** P1 (robustness)
+**Discovered:** 2025-12-14
+**Related:** `#INGEST-GAP`
+
+- [ ] #INGEST-PERIODIC-CHECK: Add periodic check for partial transcripts
+
+**Problem:**
+`resumePendingCompletions()` only runs once at app startup. Transcripts marked `partial` after startup (manual DB edits, edge cases, late-arriving files) are never picked up until app restart.
+
+**Current behavior:**
+- `AppStateOrchestrator.swift:89-92` - runs once during init
+- `ProjectSwitcherState.swift:182-183` - runs once when coordinator initialized
+- No periodic timer or event-driven re-check
+
+**Proposed fix:**
+Add a periodic check (every 5-10 minutes) or event-driven trigger:
+1. Timer-based: `Timer.scheduledTimer` calling `resumePendingCompletions()`
+2. Event-driven: Trigger on project switch, settings change, or file system events
+3. Hybrid: Event-driven with minimum interval to avoid thrashing
+
+**Acceptance criteria:**
+- Partial transcripts picked up within 10 minutes without app restart
+- No performance impact during normal operation
+- Proper cancellation on app termination
+
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 
 ---
 
