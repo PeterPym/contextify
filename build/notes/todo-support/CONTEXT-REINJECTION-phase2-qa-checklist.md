@@ -136,3 +136,29 @@ In a clean shell where `contextify-query` is not on PATH (or after temporarily a
 
 - Skills do not hardcode `/Applications/Contextify.app/...` paths.
 - Skills instruct the user to run Contextify → “Install/Repair CLI…” or to invoke the shim from a known location (recommended `~/bin/contextify-query`) if installed there.
+
+## E) macOS 15 (Sequoia) VM QA gate
+
+Run this on a macOS 15 VM to validate “Lite Mode” compatibility assumptions.
+
+1) Install and launch Contextify (DMG build).
+
+Expected:
+
+- App launches successfully on macOS 15.
+- UI does not assume summaries exist.
+
+2) Verify “Install/Repair CLI…” flow is usable.
+
+Expected:
+
+- The install UI is present and functional.
+- If installing to a user-writable folder (`~/bin`), it succeeds without requiring privileged writes.
+- The installed shim runs: `contextify-query status --json` works (after the CLI is on PATH or invoked via full path).
+
+3) Verify Claude Code plugin onboarding UI (or instructions) is accessible.
+
+Expected:
+
+- The UI/instructions can be used without any Apple Intelligence features.
+- Copy/paste commands are visible and correct.
