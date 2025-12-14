@@ -109,6 +109,14 @@ Guidelines:
 - If the action is expected to emit `[TAG]-START`, assert that tag first before waiting for completion.
 - If a click succeeds in AppleScript but no logs appear, the click likely targeted a different element (or an element that does not map to the intended action).
 
+### App Store build: embedded CLI may not be runnable standalone
+
+In the current Phase 2 implementation, `contextify-query` embedded in the App Store build can terminate at process startup (e.g. `SIGTRAP` / exit `133`) due to sandbox initialization.
+
+Implications:
+- E2E tests that validate “the shim runs the CLI and returns JSON” should force the **DMG** app bundle explicitly (see `CONTEXTIFY_QUERY_APP_PATH` below) on machines that have both DMG and App Store builds present.
+- Prefer log-tag assertions + filesystem side effects for App Store flows unless/until the embedded CLI is safe to execute outside the app.
+
 ### Capture stderr for subprocess assertions
 
 If E2E runs a tool and expects JSON:
@@ -135,9 +143,20 @@ Recommended selection precedence:
 
 This prevents the shim from selecting an install that cannot run `contextify-query`.
 
+### Forcing the shim to a specific app bundle (QA/debug)
+
+When validating shim behavior in a multi-install environment, set:
+
+- `CONTEXTIFY_QUERY_APP_PATH=/path/to/Contextify.app`
+
+This forces the shim to exec `Contents/MacOS/contextify-query` from that bundle (and avoids “picked the wrong install” failures).
+
+## Concrete AppleScript selectors that worked
+
+- Settings tabs as toolbar buttons (DMG build): `click button 2 of toolbar 1 of window 1` selects the CLI tab.
+
 ## Documentation to Keep Updated
 
 - `build/docs/guides/logging-best-practices.md`: keep an “E2E-Friendly UI Patterns” section current.
 - `scripts/qa/README.md`: document QA-only defaults overrides and any required one-time system setup (e.g. Terminal Accessibility).
 - `build/docs/guides/feature-development-workflow.md`: require `[TAG]` logs and E2E additions for user-facing flows.
-

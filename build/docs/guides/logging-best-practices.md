@@ -23,6 +23,7 @@ log.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(branch)")
 - Include relevant data in the message (counts, IDs, status)
 - E2E tests use `assert_log_contains "[TAG]"` to verify behavior
 - Tags at `.info` are always captured; `.debug` requires `--level debug` in log stream
+- For user-driven flows, prefer paired markers like `[TAG-START]` and `[TAG-DONE]` (plus a state marker like `[TAB-OPEN]`) so tests can wait on readiness and then assert completion.
 
 See `scripts/qa/README.md` for E2E assertion patterns and `scripts/qa/lib/assertions.sh` for available assertions.
 

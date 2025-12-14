@@ -140,6 +140,11 @@ Some E2E tests use narrowly-scoped UserDefaults overrides to avoid brittle UI tr
 - `dev.contextify Contextify.QueryCLI.DMGInstallDirOverride` → forces DMG CLI shim install into a deterministic directory (e.g. `/tmp/contextify-qa-bin`) for unattended tests.
 - `dev.contextify Contextify.Settings.SelectedTabOverride` → forces Settings to open on a specific tab (e.g. `cli`) for unattended tests.
 
+### Troubleshooting
+
+- Prefer `/usr/bin/log` instead of `log` in scripts/notes (some shells define `log` as a builtin).
+- If a PATH shim runs the “wrong” installed app on a dev machine with multiple builds, prefer forcing the target bundle with `CONTEXTIFY_QUERY_APP_PATH=/path/to/Contextify.app` for diagnosis.
+
 ## Fixture Mode
 
 Set `QA_FIXTURE_MODE=1` to run Codex/Claude tests using local transcript fixtures
