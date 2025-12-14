@@ -152,7 +152,7 @@ public actor FastPathIngestionCoordinator {
     }
     if nsError.domain == NSPOSIXErrorDomain {
       // Common "won't succeed without external change" POSIX failures.
-      return nsError.code == ENOENT || nsError.code == EACCES || nsError.code == EPERM
+      return nsError.code == Int(ENOENT) || nsError.code == Int(EACCES) || nsError.code == Int(EPERM)
     }
     return false
   }
@@ -202,7 +202,7 @@ public actor FastPathIngestionCoordinator {
           try? await Task.sleep(nanoseconds: delay)
           // Re-check cancellation after sleep
           if isBackfillPaused || isShutdownCancelled || Task.isCancelled {
-            inFlightCount -= 1
+            inFlightCount = max(0, inFlightCount - 1)
             requeueFront(work)
             break
           }
@@ -229,7 +229,7 @@ public actor FastPathIngestionCoordinator {
         }
       } catch is CancellationError {
         // Cancellation: requeue at front with same attempt count
-        inFlightCount -= 1
+        inFlightCount = max(0, inFlightCount - 1)
         requeueFront(work)
         log.info("[FAST-PATH-CANCELLED] slot=\(slotIndex, privacy: .public) transcript=\(work.transcriptId.prefix(8), privacy: .public) requeued runId=\(self.runId, privacy: .public)")
         break  // Exit worker loop on cancellation
@@ -257,7 +257,7 @@ public actor FastPathIngestionCoordinator {
         }
       }
 
-      inFlightCount -= 1
+      inFlightCount = max(0, inFlightCount - 1)
     }
 
     // SYNCHRONOUS slot cleanup (v6 fix - no Task { } wrapper)
