@@ -8,6 +8,8 @@ private let log = Logger(subsystem: "dev.contextify", category: "QueryCLIInstall
 
 @MainActor
 final class ContextifyQueryCLIInstaller: ObservableObject {
+  private static let dmgInstallDirOverrideKey = "Contextify.QueryCLI.DMGInstallDirOverride"
+
   enum InstallError: LocalizedError {
     case bundledShimMissing(URL)
     case installDirectoryMissing(URL)
@@ -76,13 +78,13 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
     lastSudoCommand = nil
     lastSuccess = nil
 
-    let pathHit = Self.findExecutableOnPATH(named: "contextify-query")
-    let installedIsOurShim = pathHit.map { ContextifyQueryShimMarker.fileLooksLikeOurShim(at: $0) } ?? false
-
     var sandboxedInstallDirectory: URL?
     if Sandbox.isSandboxed, let stored = try? bookmarkStore.resolveFolderURL() {
       sandboxedInstallDirectory = stored
     }
+
+    let pathHit = Self.findInstalledShim(named: "contextify-query", sandboxedInstallDirectory: sandboxedInstallDirectory)
+    let installedIsOurShim = pathHit.map { ContextifyQueryShimMarker.fileLooksLikeOurShim(at: $0) } ?? false
 
     status = Status(
       bundledCLIURL: Self.bundledCLIURL(),
@@ -251,8 +253,27 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
     Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/contextify-query/shim/contextify-query-shim")
   }
 
+  private static func expandedPath(_ raw: String) -> String {
+    (raw as NSString).expandingTildeInPath
+  }
+
+  private static func dmgInstallDirectoryOverrideURL(createIfMissing: Bool) throws -> URL? {
+    guard let raw = UserDefaults.standard.string(forKey: dmgInstallDirOverrideKey) else { return nil }
+    let expanded = expandedPath(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !expanded.isEmpty else { return nil }
+
+    let url = URL(fileURLWithPath: expanded)
+    if createIfMissing, !FileManager.default.fileExists(atPath: url.path) {
+      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+    return url
+  }
+
   private static func recommendedInstallDirectoryForDMG() throws -> URL {
     let fm = FileManager.default
+    if let override = try dmgInstallDirectoryOverrideURL(createIfMissing: true) {
+      return override
+    }
     let optHomebrew = URL(fileURLWithPath: "/opt/homebrew/bin")
     if fm.fileExists(atPath: optHomebrew.path) { return optHomebrew }
     let usrLocal = URL(fileURLWithPath: "/usr/local/bin")
@@ -264,6 +285,33 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       try fm.createDirectory(at: bin, withIntermediateDirectories: true)
     }
     return bin
+  }
+
+  private static func findInstalledShim(named name: String, sandboxedInstallDirectory: URL?) -> URL? {
+    if let onPath = findExecutableOnPATH(named: name) {
+      return onPath
+    }
+
+    var candidates: [URL] = []
+
+    if let override = try? dmgInstallDirectoryOverrideURL(createIfMissing: false) {
+      candidates.append(override.appendingPathComponent(name))
+    }
+
+    candidates.append(URL(fileURLWithPath: "/opt/homebrew/bin").appendingPathComponent(name))
+    candidates.append(URL(fileURLWithPath: "/usr/local/bin").appendingPathComponent(name))
+    candidates.append(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/\(name)"))
+
+    if let sandboxedInstallDirectory {
+      candidates.append(sandboxedInstallDirectory.appendingPathComponent(name))
+    }
+
+    for candidate in candidates {
+      if FileManager.default.isExecutableFile(atPath: candidate.path) {
+        return candidate
+      }
+    }
+    return nil
   }
 
   private static func promptForInstallFolder() throws -> URL {
