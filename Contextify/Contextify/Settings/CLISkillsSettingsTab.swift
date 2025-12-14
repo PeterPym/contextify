@@ -52,6 +52,7 @@ struct CLISkillsSettingsTab: View {
               installer.installRecommendedDMG()
             }
             .keyboardShortcut(.defaultAction)
+            .keyboardShortcut("i", modifiers: [.command, .shift])
           }
 
           if installer.status.installedIsOurShim, installer.status.installedOnPATH != nil {

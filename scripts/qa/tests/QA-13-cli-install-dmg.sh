@@ -114,6 +114,21 @@ validate_status_json() {
   return 1
 }
 
+select_cli_tab() {
+  # Settings tabs are exposed as unnamed toolbar buttons; in DMG builds this is:
+  # 1) Database, 2) CLI
+  osascript -e '
+    tell application "System Events"
+      tell process "Contextify"
+        try
+          click button 2 of toolbar 1 of window 1
+        end try
+      end tell
+    end tell
+  ' 2>/dev/null || true
+  sleep 0.3
+}
+
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
   assert_command_exists "osascript"
@@ -145,6 +160,7 @@ run_test_steps() {
   activate_app
   send_shortcut "," "command down"
   sleep 1.2
+  select_cli_tab
 
   if ! wait_for_log_pattern "\\[QUERYCLI-SETTINGS-TAB-OPEN\\]" 10; then
     log_error "CLI settings tab did not appear (missing log tag)"
@@ -153,8 +169,8 @@ run_test_steps() {
   fi
 
   # Install shim.
-  log_info "Triggering install via default action (Enter)..."
-  press_return
+  log_info "Triggering install via keyboard shortcut (Cmd+Shift+I)..."
+  send_shortcut "i" "command down, shift down"
 
   if ! wait_for_any_pattern 20 \
     "\\[QUERYCLI-INSTALL-START\\]" \
