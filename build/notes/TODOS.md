@@ -747,6 +747,35 @@ Test should grep for log message indicating Deep Search window opened (e.g., `[D
 
 ---
 
+## Project Switch Timeline Preview Prefetch (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX - avoids “empty” timeline after switching projects)
+**Effort:** 4-8 hours
+**Spec:** `build/notes/todo-support/PROJECT-SWITCH-TIMELINE-PREVIEW-PREFETCH-spec.md`
+
+- [ ] #PROJECT-SWITCH-TIMELINE-PREVIEW-PREFETCH: Prefetch a lightweight, cancelable preview subset for non-active projects so switching projects shows content quickly without starting watchers.
+
+**Problem:**
+Only the active project gets FastPath preview + watchers. Inactive projects may have `ingest_state='partial'` with 0 entries until completion/backfill runs. When a user switches projects, the timeline can appear empty for a long time even though transcripts exist.
+
+**Goal:**
+Reduce perceived latency on project switching by ensuring a small amount of displayable content exists for likely-next projects, while keeping resource usage bounded and avoiding watcher/file-descriptor explosion.
+
+**Constraints:**
+- Must not start watchers for non-active projects (keep `startWatching: false` for prefetch work).
+- Must be bounded, cancelable, and deprioritized relative to the active project’s ingestion.
+- Must not introduce meaningful startup tax (prefetch runs after UI is usable / idle).
+
+**Acceptance Criteria:**
+- [ ] Switching to a recently-viewed/recently-active project shows non-empty timeline content quickly when transcripts exist (target: within ~200ms once DB has entries; within a short bounded window after prefetch begins on first run).
+- [ ] Active project ingestion remains prioritized (project switching does not regress perceived latency for the current project).
+- [ ] Watcher count does not scale with total project count (non-active prefetch does not create watchers).
+- [ ] Prefetch is cancelable (project switch pauses/deprioritizes background prefetch).
+- [ ] Unit tests cover prefetch scheduling rules and watcher safety; E2E coverage updated or added if needed.
+
+---
+
 ## Lite Mode Public Announcement (1 item)
 
 **Status:** In Progress
