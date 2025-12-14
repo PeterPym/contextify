@@ -56,6 +56,67 @@ See tracking file for current branches in flight and review status.
 
 ---
 
+## Historical Transcript Ingestion Gap
+
+**Status:** Not started
+**Priority:** P0 (data loss - user history not searchable)
+**Discovered:** 2025-12-13
+
+- [ ] #INGEST-GAP: Investigate and fix missing historical transcript ingestion
+
+**Problem:**
+Contextify only ingests transcripts that are actively watched during a session. Historical transcripts are never backfilled, causing massive data gaps.
+
+**Evidence (Contextify project):**
+- 762 transcript files on disk in `~/.claude/projects/-Users-rob-code-projects-contextify/`
+- Only 13 transcripts in database (1.7% coverage)
+- Database only has entries from Nov 18, 2025 onwards
+- Files on disk go back further (at least Nov 13)
+- Current session IS being ingested (confirmed working for active transcripts)
+
+**Impact:**
+- Search doesn't find older conversations
+- Analytics (message volume, activity patterns) are incomplete
+- User loses access to historical context
+
+**Investigation findings (2025-12-13):**
+
+1. Transcripts ARE discovered and registered in `transcripts` table (818 records)
+2. But 794 are stuck as `partial` with 0 entries in `transcript_entries`
+3. FastPath limits processing to `maxTranscriptsPerProject = 5` per project (line 23)
+4. Only those 5 get `enqueueCompletion()` called - the other 794 are never queued!
+5. Log evidence: `[FAST-PATH-FILTER] Filtered 799 targets` → `[FAST-PATH-PROJECT] Processing 5 transcripts`
+6. Interacting with a project triggers JIT ingestion which works, but also limited to 5
+
+**Root Cause (two issues):**
+
+1. **Race condition:** `resumePendingCompletions()` runs BEFORE transcripts are registered
+   - `initializeDatabaseComponents()` spawns background Task calling `resumePendingCompletions()` (line 89-93)
+   - But `startup()` (which discovers and registers transcripts) runs LATER
+   - So `resumePendingCompletions()` queries an empty/stale `transcripts` table
+
+2. **Incomplete enqueue:** FastPath only enqueues 5 transcripts per project
+   - `processProject()` limits to `maxTranscriptsPerProject = 5` (line 260)
+   - Only those 5 get `enqueueCompletion()` called
+   - The other 794 are registered as `partial` but never enqueued
+
+**Code locations:**
+- Race: `AppStateOrchestrator.swift:89-93` (spawns too early)
+- Limit: `FastPathIngestionCoordinator.swift:260` (only processes 5)
+
+**Potential Fixes:**
+1. Move `resumePendingCompletions()` to run AFTER `startup()` completes (or after first JIT ingest)
+2. After FastPath preview, enqueue ALL remaining partials (not just the 5 previewed)
+3. Use TaskGroup with concurrency limit instead of unbounded Task.detached
+4. Add progress indicator for background ingestion
+5. Manual "Reindex All" button in Settings as user-facing workaround
+
+**Related:** `#LAZY-WATCHERS` - Fixing this will create 1000+ file watchers. Consider implementing lazy watchers alongside or before this fix to avoid file descriptor exhaustion.
+
+**Reference:** `app/Sources/ContextifyCore/Monitoring/` (file watchers), `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+
+---
+
 ## Permission Fix for Dual-CLI Users (1 item)
 
 **Status:** Complete (verified 2025-12-11, E2E test backlogged)
@@ -2037,6 +2098,8 @@ When a project not currently visible in the tab bar receives new messages:
 **Spec:** `build/notes/todo-support/LAZY-WATCHERS-design.md`
 
 - [ ] #LAZY-WATCHERS: Implement lazy watchers for inactive projects to reduce file descriptor usage
+
+**Related:** `#INGEST-GAP` - Once ingestion is fixed, watcher count will spike from ~300 to 1000+. This optimization becomes critical.
 
 **Problem:**
 Current implementation creates DispatchSource watchers for ALL transcripts across ALL projects. With 672+ transcripts, this consumes 1600+ file descriptors.
