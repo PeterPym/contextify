@@ -714,6 +714,37 @@ Test should grep for log message indicating Deep Search window opened (e.g., `[D
 
 ---
 
+## Lite Mode Public Announcement (1 item)
+
+**Status:** In Progress
+**Priority:** P2 (user outreach)
+**Branch:** `feature/lite-mode-announcement`
+
+- [ ] #LITE-MODE-ANNOUNCE: Complete public announcement for macOS 15 support
+
+**Done:**
+- [x] Website updated (index.html, download page)
+- [x] App Store metadata updated (min OS 15.0, description)
+- [x] Draft replies for u/quinncom and Tom (ifun.de)
+
+**Remaining:**
+- [ ] Deploy website (`./scripts/deploy-website.sh`)
+- [ ] Build and upload release DMG
+- [ ] Post Reddit reply to u/quinncom
+- [ ] Post ifun.de reply to Tom
+- [ ] Optional: New Reddit announcement post
+
+**Context:**
+Two users explicitly asked for macOS 15 support. Lite Mode is now shipped on main. Need to update public surfaces and notify waiting users.
+
+**Files:**
+- `website/index.html` - Lite Mode callout added
+- `website/download/index.html` - Requirements updated
+- `appstore-metadata/metadata.json` - Min OS and description
+- `build/marketing/feedback/user-feedback.md` - Draft replies
+
+---
+
 ## Search Follow-on Improvements (3 items)
 
 **Status:** Spec complete
