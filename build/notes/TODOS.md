@@ -773,6 +773,25 @@ Both should use identical card components for consistency.
 
 ---
 
+## Contextify Query Reports (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (demo + workflow acceleration)
+**Effort:** 3-6 hours
+**Reference:** `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+
+- [ ] #CONTEXTIFY-QUERY-REPORTS: Add `contextify-query report ...` aggregations to support RAG query planning and “killer demo” outputs (activity histograms, decision index, recurring themes).
+
+**Problem:**
+Reinjection workflows benefit from lightweight aggregations that guide better searches (time windows, project scope, recurring topics) and enable high-signal demos beyond raw text search.
+
+**Notes:**
+- Keep outputs deterministic and read-only.
+- Prefer “RAG-adjacent” reports (decision points, revisited topics) over vanity metrics.
+- Consider a telemetry/trace loop to learn how skills actually construct queries before expanding the report set.
+
+---
+
 ## QA-11 Test Fix (1 item)
 
 **Status:** Not Started
