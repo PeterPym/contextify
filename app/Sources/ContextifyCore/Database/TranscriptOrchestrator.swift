@@ -142,6 +142,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   public var hooverScheduler: HooverScheduler { _hooverScheduler }
 
+  /// Number of active file watchers (for diagnostics and testing)
+  public var watcherCount: Int { watcher.watcherCount }
+
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
 
@@ -1282,7 +1285,8 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public func ingestTranscript(
     transcriptId: String,
     mode: IngestionMode,
-    notifyUI: Bool = true
+    notifyUI: Bool = true,
+    startWatching: Bool = true
   ) async throws -> Bool {
     guard let initialTranscript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
@@ -1324,7 +1328,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       fileURL: fileURL,
       provider: transcript.provider,
       providerSessionId: transcript.providerSessionId,
-      startWatching: true,
+      startWatching: startWatching,
       progress: nil,
       ingestLimit: mode.ingestLimit
     )
