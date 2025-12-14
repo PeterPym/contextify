@@ -203,13 +203,6 @@ Canonical skill source lives alongside the CLI contract surface:
 
 Build-time packaging copies these into the app bundle for shipping (DMG + App Store).
 
-Current repo paths (to be migrated as part of implementation):
-
-- `build/skills/claude/contextify-reinject/SKILL.md` → `contextify-query/skills/claude/contextify-reinject/SKILL.md`
-- `build/skills/claude/contextify-query-debug/SKILL.md` → `contextify-query/skills/claude/contextify-query-debug/SKILL.md`
-- `build/skills/codex/contextify-reinject/SKILL.md` → `contextify-query/skills/codex/contextify-reinject/SKILL.md` (Phase 2.1)
-- `build/skills/codex/contextify-query-debug/SKILL.md` → `contextify-query/skills/codex/contextify-query-debug/SKILL.md` (Phase 2.1)
-
 ### Install
 
 Preferred: package skills as a Claude Code plugin and distribute via Claude’s plugin install UX.
@@ -217,7 +210,7 @@ Preferred: package skills as a Claude Code plugin and distribute via Claude’s 
 Fallback (for local development and early adopters):
 
 - `mkdir -p ~/.claude/skills`
-- `rsync -a --delete build/skills/claude/ ~/.claude/skills/`
+- `rsync -a --delete contextify-query/skills/claude/ ~/.claude/skills/`
 
 ### Cross-tool skill deployment
 

@@ -25,10 +25,10 @@ This is the intended commit shape; it can deviate if implementation realities de
 
 ### 1) Canonicalize skill sources under `contextify-query/`
 
-- Create `contextify-query/skills/claude/` and move skill templates from `build/skills/claude/`:
+- Create `contextify-query/skills/claude/` and move skill templates there:
   - `contextify-query/skills/claude/contextify-reinject/SKILL.md`
   - `contextify-query/skills/claude/contextify-query-debug/SKILL.md`
-- Leave Codex templates in place but treat as Phase 2.1; optionally move into `contextify-query/skills/codex/` at the same time for symmetry.
+- Move Codex templates into `contextify-query/skills/codex/` for symmetry, but treat Codex usage as Phase 2.1.
 - Update references:
   - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`
   - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
@@ -95,4 +95,3 @@ Before merging:
 - `bash scripts/xc.sh build` (zero warnings)
 - Run the Phase 2 checklist manually:
   - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
-
