@@ -63,6 +63,8 @@ This test suite validates critical user flows through:
 | QA-10 | Quick Search | DMG build, searchable content |
 | QA-11 | Deep Search Window | DMG build |
 | **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
+| QA-13 | CLI Install/Repair/Uninstall (DMG) | DMG build, Accessibility |
+| QA-15 | contextify-query bundle integrity | DMG build (App Store optional) |
 
 ## Test Output
 
