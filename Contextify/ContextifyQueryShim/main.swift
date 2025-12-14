@@ -14,10 +14,12 @@ private let bundleIdentifier = "sh.contextify.Contextify"
 private let bundledCLIRelativePath = "Contents/MacOS/contextify-query"
 private let appStoreReceiptRelativePath = "Contents/_MASReceipt/receipt"
 private let marker = "dev.contextify.contextify-query-shim.v1"
+private let appPathOverrideEnv = "CONTEXTIFY_QUERY_APP_PATH"
 
 private struct Candidate {
   let url: URL
   let isAppStore: Bool
+  let hasBundledCLI: Bool
   let bundleVersion: String?
   let shortVersion: String?
 
@@ -61,6 +63,7 @@ private func selectBestCandidate(_ candidates: [Candidate]) -> Candidate? {
   guard !candidates.isEmpty else { return nil }
 
   let sorted = candidates.sorted { a, b in
+    if a.hasBundledCLI != b.hasBundledCLI { return a.hasBundledCLI && !b.hasBundledCLI }
     if a.isAppStore != b.isAppStore { return a.isAppStore && !b.isAppStore }
     let versionOrder = compareVersion(a, b)
     if versionOrder != .orderedSame { return versionOrder == .orderedDescending }
@@ -91,9 +94,11 @@ private func discoverCandidates() -> [Candidate] {
 
   return unique.values.map { url in
     let versions = readInfoPlistVersions(url)
+    let cliPath = url.appendingPathComponent(bundledCLIRelativePath).path
     return Candidate(
       url: url,
       isAppStore: isAppStoreBundle(url),
+      hasBundledCLI: FileManager.default.isExecutableFile(atPath: cliPath),
       bundleVersion: versions.bundleVersion,
       shortVersion: versions.shortVersion
     )
@@ -129,6 +134,16 @@ private func run() -> Never {
   if argv.count >= 2, argv[1] == "--shim-help" || argv[1] == "--shim-version" {
     printUsage()
     exit(ExitCode.success.rawValue)
+  }
+
+  if let overridden = ProcessInfo.processInfo.environment[appPathOverrideEnv], !overridden.isEmpty {
+    let url = URL(fileURLWithPath: overridden).standardizedFileURL
+    let cliURL = url.appendingPathComponent(bundledCLIRelativePath)
+    if FileManager.default.isExecutableFile(atPath: cliURL.path) {
+      execBundledCLI(appURL: url, argv: argv)
+    }
+    fputs("Contextify override \(appPathOverrideEnv)=\"\(overridden)\" did not contain an executable bundled CLI at \"\(cliURL.path)\".\n", stderr)
+    exit(ExitCode.execFailed.rawValue)
   }
 
   let candidates = discoverCandidates()
