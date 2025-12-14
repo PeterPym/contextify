@@ -77,6 +77,48 @@ Claude Code supports skills via:
 
 Phase 2 targets Claude Code first because plugin-based distribution provides deterministic install/upgrade UX. Codex skills are a follow-on once Codex skill support is stable and documented.
 
+### Claude Code plugin packaging/release story (pinned down)
+
+Phase 2 ships a Claude Code plugin from this repository via a plugin marketplace.
+
+Decisions:
+
+- Marketplace repo: `banagale/contextify` (this repo)
+- Marketplace id: `banagale-contextify`
+- Plugin id: `contextify`
+- Plugin source path (within this repo): `./contextify-query/claude-plugin`
+
+Plugin layout (Claude Code requirement):
+
+- `contextify-query/claude-plugin/.claude-plugin/plugin.json`
+- `contextify-query/claude-plugin/skills/contextify-reinject/SKILL.md`
+- `contextify-query/claude-plugin/skills/contextify-query-debug/SKILL.md`
+
+Marketplace manifest:
+
+- `.claude-plugin/marketplace.json` at repo root with an entry for `contextify` pointing at `./contextify-query/claude-plugin`.
+
+Versioning:
+
+- `plugin.json.version` matches the Contextify app version (semver).
+- Skills assume a minimum `contextify-query` CLI contract version and provide remediation (“update Contextify”) when flags/subcommands are missing.
+
+Install/upgrade/uninstall (user steps):
+
+1) Add the marketplace:
+  - `/plugin marketplace add banagale/contextify`
+2) Install:
+  - `/plugin install contextify@banagale-contextify`
+  - restart Claude Code after install
+3) Upgrade:
+  - re-run `/plugin install contextify@banagale-contextify` (then restart)
+4) Uninstall:
+  - `/plugin uninstall contextify@banagale-contextify`
+
+If the plugin is installed before Contextify:
+
+- Skills guide the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
+
 ### Skill set
 
 #### Skill 1: `contextify-reinject`

@@ -18,6 +18,17 @@ This document captures the current official installation guidance that is releva
 
 Phase 2 prefers plugin-based distribution for Contextify skills. Filesystem installs (`~/.claude/skills/`) are a fallback.
 
+## Contextify plugin install (Phase 2)
+
+Phase 2 ships a Claude Code plugin from this repository via a marketplace:
+
+```text
+/plugin marketplace add banagale/contextify
+/plugin install contextify@banagale-contextify
+```
+
+Claude Code requires a restart after installing a plugin.
+
 ## Claude Code plugin marketplace install (Anthropic skills repo)
 
 From `https://github.com/anthropics/skills`:

@@ -104,7 +104,17 @@ Expected: agent runs `contextify-query search ...` then `contextify-query contex
 
 1) Install (preferred: plugin)
 
-- Install/enable via Claude Code’s plugin UI/commands (record exact steps used and the plugin identifier).
+In Claude Code:
+
+```text
+/plugin marketplace add banagale/contextify
+/plugin install contextify@banagale-contextify
+```
+
+Expected:
+
+- Claude Code prompts to install.
+- After restart, `claude --debug` shows the plugin is loaded.
 
 2) Install (fallback: personal skills)
 
