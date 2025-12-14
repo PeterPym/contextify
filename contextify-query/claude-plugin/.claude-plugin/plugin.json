@@ -1,10 +1,9 @@
 {
   "name": "query",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Contextify query + reinjection skills (requires Contextify + contextify-query CLI)",
   "author": {
     "name": "Contextify"
   },
   "repository": "https://github.com/PeterPym/contextify"
 }
-

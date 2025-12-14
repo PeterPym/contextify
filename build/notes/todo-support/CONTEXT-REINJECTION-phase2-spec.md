@@ -98,6 +98,8 @@ Plugin layout (Claude Code requirement):
 - `contextify-query/claude-plugin/.claude-plugin/plugin.json`
 - `contextify-query/claude-plugin/skills/contextify-reinject/SKILL.md`
 - `contextify-query/claude-plugin/skills/contextify-query-debug/SKILL.md`
+- `contextify-query/claude-plugin/hooks/hooks.json`
+- `contextify-query/claude-plugin/scripts/session_start.py`
 
 Marketplace manifest:
 
@@ -123,6 +125,14 @@ Install/upgrade/uninstall (user steps):
 If the plugin is installed before Contextify:
 
 - Skills guide the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
+
+Session metadata capture:
+
+- The plugin registers a `SessionStart` hook that persists:
+  - `CONTEXTIFY_CLAUDE_SESSION_ID`
+  - `CONTEXTIFY_CLAUDE_TRANSCRIPT_PATH`
+  - `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID`
+- Skills use `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` to avoid selecting search hits from the active transcript when better historical matches exist.
 
 Local development validation:
 

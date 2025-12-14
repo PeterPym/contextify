@@ -134,6 +134,10 @@ Verification (on-disk):
 - Skills exist in cache:
   - `~/.claude/plugins/cache/contextify/query/<version>/skills/contextify-reinject/SKILL.md`
   - `~/.claude/plugins/cache/contextify/query/<version>/skills/contextify-query-debug/SKILL.md`
+- Session metadata env vars (interactive session):
+  - Run a prompt that triggers a Bash tool call, then ask for:
+    - `echo "$CONTEXTIFY_CLAUDE_TRANSCRIPT_ID"`
+  - Expected: a non-empty value that matches the active `.jsonl` filename (without `.jsonl`).
 
 2) Install (fallback: personal skills)
 

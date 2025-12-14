@@ -34,6 +34,8 @@ contextify-query status --json
 contextify-query search "<query>" --project . --days 30 --limit 10 --json
 ```
 
+If `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is set, prefer results from other transcripts (the active transcript is often a trivial match because it contains the current prompt).
+
 3) Use the selected result’s `id` (UUID) as the anchor:
 
 ```bash
@@ -52,4 +54,3 @@ contextify-query context "<entry-uuid>" --before 10 --after 20 --project . --jso
 - `dbProjectNotFound`: consult `details.suggestions` if present.
 - `featureUnavailable`: explain missing capability and fall back to narrower methods.
 - `entryNotFound`: re-search for a new anchor.
-
