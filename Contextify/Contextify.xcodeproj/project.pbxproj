@@ -19,11 +19,13 @@
 				D4C0B0312E77AAAA00747100 /* claude-plugin in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0302E77AAAA00747100 /* claude-plugin */; };
 				D4C0B0322E77AAAA00747100 /* claude-plugin in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0B0302E77AAAA00747100 /* claude-plugin */; };
 				D4C0C0022E77AAAA00747100 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C0C0012E77AAAA00747100 /* main.swift */; };
+				D4C0C0102E77AAAA00747100 /* contextify-query-shim in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0C0052E77AAAA00747100 /* contextify-query-shim */; };
+				D4C0C0112E77AAAA00747100 /* contextify-query-shim in Copy Resources */ = {isa = PBXBuildFile; fileRef = D4C0C0052E77AAAA00747100 /* contextify-query-shim */; };
 				D4D14A0F2E9B7BA0004EC334 /* icon-composer-project.icon in Resources */ = {isa = PBXBuildFile; fileRef = D4D14A0E2E9B7BA0004EC334 /* icon-composer-project.icon */; };
 				D4SPAR00010000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D4SPAR00010000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
+	/* Begin PBXContainerItemProxy section */
 			D4A773AB2E76936800747100 /* PBXContainerItemProxy */ = {
 				isa = PBXContainerItemProxy;
 				containerPortal = D4A773952E76936700747100 /* Project object */;
@@ -45,14 +47,28 @@
 				remoteGlobalIDString = D4C0B00A2E77AAAA00747100;
 				remoteInfo = "contextify-query";
 			};
-			D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */ = {
-				isa = PBXContainerItemProxy;
-				containerPortal = D4A773952E76936700747100 /* Project object */;
-				proxyType = 1;
-				remoteGlobalIDString = D4C0B00A2E77AAAA00747100;
-				remoteInfo = "contextify-query";
-			};
-/* End PBXContainerItemProxy section */
+				D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */ = {
+					isa = PBXContainerItemProxy;
+					containerPortal = D4A773952E76936700747100 /* Project object */;
+					proxyType = 1;
+					remoteGlobalIDString = D4C0B00A2E77AAAA00747100;
+					remoteInfo = "contextify-query";
+				};
+				D4C0C0142E77AAAA00747100 /* PBXContainerItemProxy */ = {
+					isa = PBXContainerItemProxy;
+					containerPortal = D4A773952E76936700747100 /* Project object */;
+					proxyType = 1;
+					remoteGlobalIDString = D4C0C0062E77AAAA00747100;
+					remoteInfo = "contextify-query-shim";
+				};
+				D4C0C0152E77AAAA00747100 /* PBXContainerItemProxy */ = {
+					isa = PBXContainerItemProxy;
+					containerPortal = D4A773952E76936700747100 /* Project object */;
+					proxyType = 1;
+					remoteGlobalIDString = D4C0C0062E77AAAA00747100;
+					remoteInfo = "contextify-query-shim";
+				};
+	/* End PBXContainerItemProxy section */
 
 	/* Begin PBXCopyFilesBuildPhase section */
 				D4C0B0112E77AAAA00747100 /* Embed contextify-query */ = {
@@ -101,7 +117,29 @@
 					name = "Copy contextify-query resources";
 					runOnlyForDeploymentPostprocessing = 0;
 				};
-	/* End PBXCopyFilesBuildPhase section */
+				D4C0C0122E77AAAA00747100 /* Copy contextify-query shim */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "contextify-query/shim";
+					dstSubfolderSpec = 7;
+					files = (
+						D4C0C0102E77AAAA00747100 /* contextify-query-shim in Copy Resources */,
+					);
+					name = "Copy contextify-query shim";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+				D4C0C0132E77AAAA00747100 /* Copy contextify-query shim */ = {
+					isa = PBXCopyFilesBuildPhase;
+					buildActionMask = 2147483647;
+					dstPath = "contextify-query/shim";
+					dstSubfolderSpec = 7;
+					files = (
+						D4C0C0112E77AAAA00747100 /* contextify-query-shim in Copy Resources */,
+					);
+					name = "Copy contextify-query shim";
+					runOnlyForDeploymentPostprocessing = 0;
+				};
+		/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 			43584A98AE6A48C8B600354BB4041D2D /* Contextify/LaunchAgentManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Contextify/LaunchAgentManager.swift; sourceTree = SOURCE_ROOT; };
@@ -234,11 +272,13 @@
 					D4A7739B2E76936700747100 /* Resources */,
 					D4C0B0112E77AAAA00747100 /* Embed contextify-query */,
 					D4C0B0232E77AAAA00747100 /* Copy contextify-query resources */,
+					D4C0C0122E77AAAA00747100 /* Copy contextify-query shim */,
 				);
 				buildRules = (
 				);
 				dependencies = (
 					D4C0B0142E77AAAA00747100 /* PBXTargetDependency */,
+					D4C0C0162E77AAAA00747100 /* PBXTargetDependency */,
 				);
 				fileSystemSynchronizedGroups = (
 					D4A7739F2E76936700747100 /* Contextify */,
@@ -308,12 +348,14 @@
 					D4APPSTORE00000000000007 /* Resources */,
 					D4C0B0122E77AAAA00747100 /* Embed contextify-query */,
 					D4C0B0242E77AAAA00747100 /* Copy contextify-query resources */,
+					D4C0C0132E77AAAA00747100 /* Copy contextify-query shim */,
 				);
 				buildRules = (
 				);
-				dependencies = (
-					D4C0B0162E77AAAA00747100 /* PBXTargetDependency */,
-				);
+					dependencies = (
+						D4C0B0162E77AAAA00747100 /* PBXTargetDependency */,
+						D4C0C0172E77AAAA00747100 /* PBXTargetDependency */,
+					);
 				fileSystemSynchronizedGroups = (
 					D4A7739F2E76936700747100 /* Contextify */,
 				);
@@ -500,7 +542,7 @@
 				};
 /* End PBXSourcesBuildPhase section */
 
-/* Begin PBXTargetDependency section */
+	/* Begin PBXTargetDependency section */
 			D4A773AC2E76936800747100 /* PBXTargetDependency */ = {
 				isa = PBXTargetDependency;
 				target = D4A7739C2E76936700747100 /* Contextify */;
@@ -516,12 +558,22 @@
 				target = D4C0B00A2E77AAAA00747100 /* contextify-query */;
 				targetProxy = D4C0B0132E77AAAA00747100 /* PBXContainerItemProxy */;
 			};
-			D4C0B0162E77AAAA00747100 /* PBXTargetDependency */ = {
-				isa = PBXTargetDependency;
-				target = D4C0B00A2E77AAAA00747100 /* contextify-query */;
-				targetProxy = D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */;
-			};
-/* End PBXTargetDependency section */
+				D4C0B0162E77AAAA00747100 /* PBXTargetDependency */ = {
+					isa = PBXTargetDependency;
+					target = D4C0B00A2E77AAAA00747100 /* contextify-query */;
+					targetProxy = D4C0B0152E77AAAA00747100 /* PBXContainerItemProxy */;
+				};
+				D4C0C0162E77AAAA00747100 /* PBXTargetDependency */ = {
+					isa = PBXTargetDependency;
+					target = D4C0C0062E77AAAA00747100 /* contextify-query-shim */;
+					targetProxy = D4C0C0142E77AAAA00747100 /* PBXContainerItemProxy */;
+				};
+				D4C0C0172E77AAAA00747100 /* PBXTargetDependency */ = {
+					isa = PBXTargetDependency;
+					target = D4C0C0062E77AAAA00747100 /* contextify-query-shim */;
+					targetProxy = D4C0C0152E77AAAA00747100 /* PBXContainerItemProxy */;
+				};
+	/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D4A773BC2E76936800747100 /* Debug */ = {

@@ -124,22 +124,25 @@ private func printUsage() {
   print("This shim locates Contextify (\(bundleIdentifier)) and execs its bundled contextify-query CLI.")
 }
 
-let argv = CommandLine.arguments
-if argv.count >= 2, argv[1] == "--shim-help" || argv[1] == "--shim-version" {
-  printUsage()
-  exit(ExitCode.success.rawValue)
+private func run() -> Never {
+  let argv = CommandLine.arguments
+  if argv.count >= 2, argv[1] == "--shim-help" || argv[1] == "--shim-version" {
+    printUsage()
+    exit(ExitCode.success.rawValue)
+  }
+
+  let candidates = discoverCandidates()
+  guard let selected = selectBestCandidate(candidates) else {
+    fputs("Contextify is not installed (bundle id \(bundleIdentifier)). Install Contextify, then run Contextify → “Install/Repair CLI…”.\n", stderr)
+    exit(ExitCode.notFound.rawValue)
+  }
+
+  if candidates.count > 1 {
+    let list = candidates.sorted { $0.path < $1.path }.map(\.path).joined(separator: "\n- ")
+    fputs("Multiple Contextify installs detected; using:\n- \(selected.path)\nOther candidates:\n- \(list)\n", stderr)
+  }
+
+  execBundledCLI(appURL: selected.url, argv: argv)
 }
 
-let candidates = discoverCandidates()
-guard let selected = selectBestCandidate(candidates) else {
-  fputs("Contextify is not installed (bundle id \(bundleIdentifier)). Install Contextify, then run Contextify → “Install/Repair CLI…”.\n", stderr)
-  exit(ExitCode.notFound.rawValue)
-}
-
-if candidates.count > 1 {
-  let list = candidates.sorted { $0.path < $1.path }.map(\.path).joined(separator: "\n- ")
-  fputs("Multiple Contextify installs detected; using:\n- \(selected.path)\nOther candidates:\n- \(list)\n", stderr)
-}
-
-execBundledCLI(appURL: selected.url, argv: argv)
-
+run()
