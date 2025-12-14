@@ -27,6 +27,5 @@ contextify-query projects --json
 
 - `dbNotFound`: ask the user to open Contextify at least once and retry.
 - `dbProjectNotFound`: pick from `details.suggestions` if present; otherwise ask user.
-- `featureUnavailable`: explain the missing capability and suggest a narrower fallback.
+- `featureUnavailable`: explain the missing capability and how to confirm it (for example `status --json`), without implying unavailable commands will work.
 - `entryNotFound`: re-run `search` and use the returned `id` verbatim.
-
