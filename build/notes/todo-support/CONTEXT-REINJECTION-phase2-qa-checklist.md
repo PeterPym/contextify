@@ -82,7 +82,11 @@ Expected: agent runs `contextify-query search ...` then `contextify-query contex
 
 ## C) Claude Code skills (best-effort)
 
-1) Install personal skill
+1) Install (preferred: plugin)
+
+- Install/enable via Claude Code’s plugin UI/commands (record exact steps used and the plugin identifier).
+
+2) Install (fallback: personal skills)
 
 ```bash
 rsync -a --delete build/skills/claude/ ~/.claude/skills/
@@ -90,7 +94,7 @@ rsync -a --delete build/skills/claude/ ~/.claude/skills/
 
 Expected: `~/.claude/skills/contextify-reinject/SKILL.md` exists.
 
-2) Trigger behavior
+3) Trigger behavior
 
 Ask Claude Code a reinjection task that should obviously use the skill.
 

@@ -16,6 +16,8 @@ sources:
 
 This document captures the current official installation guidance that is relevant to Phase 2. It is intentionally concise and should be refreshed if Anthropic changes their install flow.
 
+Phase 2 prefers plugin-based distribution for Contextify skills. Filesystem installs (`~/.claude/skills/`) are a fallback.
+
 ## Claude Code plugin marketplace install (Anthropic skills repo)
 
 From `https://github.com/anthropics/skills`:
@@ -49,6 +51,5 @@ The Contextify Phase 2 plan needs an explicit “install a local custom skill”
 Claude Code also discovers skills from the filesystem:
 
 - Personal: `~/.claude/skills/`
-- Project: `.claude/skills/` within a repo
 
 This flow is described in `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-developer-guide-reference.md` and is validated during Phase 2 QA.

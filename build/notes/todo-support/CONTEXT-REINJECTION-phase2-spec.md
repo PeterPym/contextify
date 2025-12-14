@@ -151,8 +151,8 @@ Deployment options:
 
 - App-driven installer (preferred): Contextify provides “Install Skills…” with options for:
   - Codex (`~/.codex/skills/`)
-  - Claude Code personal skills (`~/.claude/skills/`)
-  - Claude Code project skills (`.claude/skills/` in the selected repo)
+- Claude Code plugin install (preferred for Claude Code): guides the user through plugin install/upgrade
+- Claude Code personal skills (`~/.claude/skills/`) as a fallback when plugin install is unavailable
 - Terminal install (fallback): `rsync` commands documented above.
 
 Rules:
@@ -166,22 +166,22 @@ Rules:
 
 ### Claude Code install/enable behavior
 
-Claude Code discovers skills from two locations:
+Claude Code supports skills via:
 
-- Personal skills: `~/.claude/skills/`
-- Project skills (shared via git): `.claude/skills/` within a repo
+- Plugins (preferred for Phase 2 distribution)
+- Personal skills on disk (fallback): `~/.claude/skills/`
 
-#### Install (personal skills)
+#### Install (preferred: plugin)
+
+Package the Contextify skills as a Claude Code plugin so users can install/upgrade via Claude’s plugin UX rather than copying folders manually.
+
+This avoids introducing repo-local skill installs and keeps upgrades deterministic.
+
+#### Install (fallback: personal skills)
 
 - Install by copying the skill directory:
   - `mkdir -p ~/.claude/skills`
   - `rsync -a --delete build/skills/claude/ ~/.claude/skills/`
-
-#### Install (project skills)
-
-- Install by copying into the repo:
-  - `mkdir -p .claude/skills`
-  - `rsync -a --delete build/skills/claude/ .claude/skills/`
 
 #### Verify
 
@@ -190,8 +190,12 @@ Claude Code discovers skills from two locations:
 
 #### Upgrade/removal
 
-- Upgrade: overwrite the skill folders (same rsync commands as install).
-- Removal: delete the skill folder from `~/.claude/skills/<skill-name>` or `.claude/skills/<skill-name>`.
+- Upgrade:
+  - Plugin: use Claude Code’s plugin upgrade flow
+  - Fallback: overwrite the skill folders (same rsync commands as install)
+- Removal:
+  - Plugin: uninstall the plugin
+  - Fallback: delete the skill folder from `~/.claude/skills/<skill-name>`
 
 ### Claude Code content surface
 
