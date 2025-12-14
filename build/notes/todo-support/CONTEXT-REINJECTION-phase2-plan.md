@@ -76,9 +76,10 @@ However, treat this as best-effort only:
 
 Phase 2 expects `plugin.json.version` to track the Contextify app version.
 
-Implementation requirement:
+Implementation requirement (release-time, not build-time):
 
-- Update `contextify-query/claude-plugin/.claude-plugin/plugin.json` version at build/release time from the app version source of truth (for example `MARKETING_VERSION`) so manual edits do not drift.
+- Do not mutate checked-in manifests during normal builds (avoids perpetually dirty working trees and nondeterministic CI diffs).
+- Update `contextify-query/claude-plugin/.claude-plugin/plugin.json` version as part of the release workflow from the app version source of truth (for example `MARKETING_VERSION`) so manual edits do not drift.
 
 ### 3) Bundle `contextify-query` + skills into the app
 
@@ -86,7 +87,10 @@ Pin down the bundling and executability details (this is production-critical):
 
 - Choose a bundle location that supports nested code signing and direct execution:
   - Prefer `Contextify.app/Contents/MacOS/contextify-query` (or another executable-friendly location).
-- Add an Xcode build phase to copy:
+- Prefer Xcode-native build phases that remain warning-free:
+  - Prefer Copy Files phases for copying the bundled binary and resources.
+  - Avoid Run Script phases that always run (unless Input/Output files are declared to prevent warnings).
+- Add build phases to copy:
   - the `contextify-query` CLI binary into the chosen bundle location
   - `contextify-query/skills/` into `Contextify.app/Contents/Resources/contextify-query/skills/`
   - `contextify-query/claude-plugin/` into `Contextify.app/Contents/Resources/contextify-query/claude-plugin/`
@@ -119,6 +123,10 @@ Implement “Install/Repair CLI…” in the app (DMG + App Store):
   - deterministic, includes a Contextify marker
   - execs the bundled `contextify-query` binary
   - prints actionable remediation if the app/binary cannot be found
+
+#### Shim implementation form (pinned down)
+
+The shim uses LaunchServices, so ship it as a native executable (small Swift tool) rather than a shell script.
 
 #### Shim app discovery strategy (must be pinned)
 
@@ -173,6 +181,8 @@ Tighten skill guidance to cover real-world branches (keep concise):
   - explain the missing capability; do not imply a fallback search exists
 - “current session dominates results”:
   - if `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` is missing and the request is not about “this chat”, avoid auto-selecting anchors from the last 30 minutes when multiple plausible hits exist
+
+Note: these skill edits are small but high leverage for demos; implement them early rather than deferring to the end of Phase 2.
 
 ### 7) Validation and review gate
 

@@ -116,6 +116,7 @@ Marketplace manifest:
 Versioning:
 
 - `plugin.json.version` matches the Contextify app version (semver).
+- Version sync happens as part of the release workflow (do not mutate checked-in manifests during normal builds).
 - Skills assume a minimum `contextify-query` CLI contract version and provide remediation (“update Contextify”) when flags/subcommands are missing.
 
 Install/upgrade/uninstall (user steps):
