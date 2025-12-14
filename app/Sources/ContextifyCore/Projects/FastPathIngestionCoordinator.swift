@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import Darwin
 
 /// Fast-path transcript ingestion coordinator with bounded worker pool.
 /// Coordinates preview ingestion to populate the UI instantly and queues full ingestion
@@ -61,7 +62,6 @@ public actor FastPathIngestionCoordinator {
   public init(
     orchestrator: TranscriptOrchestrator,
     previewLimit: Int = 25,
-    maxPreviewConcurrency: Int = 4,
     maxTranscriptsPerProject: Int = 5,
     forcedPreviewCount: Int = 25,
     maxWorkers: Int = 4
@@ -146,12 +146,15 @@ public actor FastPathIngestionCoordinator {
 
   private nonisolated func isNonRetryableError(_ error: Error) -> Bool {
     let nsError = error as NSError
-    // File not found, permission denied, etc.
-    return nsError.domain == NSCocoaErrorDomain && (
-      nsError.code == NSFileNoSuchFileError ||
-      nsError.code == NSFileReadNoPermissionError ||
-      nsError.code == NSFileReadUnknownError
-    )
+    if nsError.domain == NSCocoaErrorDomain {
+      // File not found, permission denied, etc.
+      return nsError.code == NSFileNoSuchFileError || nsError.code == NSFileReadNoPermissionError
+    }
+    if nsError.domain == NSPOSIXErrorDomain {
+      // Common "won't succeed without external change" POSIX failures.
+      return nsError.code == ENOENT || nsError.code == EACCES || nsError.code == EPERM
+    }
+    return false
   }
 
   // MARK: - Worker Management
@@ -389,9 +392,12 @@ public actor FastPathIngestionCoordinator {
     activePreviewTask = nil
 
     // Cancel all worker tasks
-    for slot in workerSlots {
-      slot?.cancel()
+    for i in workerSlots.indices {
+      workerSlots[i]?.cancel()
+      workerSlots[i] = nil
     }
+    activeWorkerCount = 0
+    inFlightCount = 0
 
     // Clear state
     completionQueue.removeAll()
@@ -501,9 +507,17 @@ public actor FastPathIngestionCoordinator {
   }
 
   public func runFastPath(projectIds: [String], activeProjectId: String?) async {
-    // Reset for new run
-    runId = UUID().uuidString
-    isBackfillPaused = false
+    // Rotate runId only when we're idle; otherwise keep stable for in-flight correlation.
+    if activeWorkerCount == 0 && inFlightCount == 0 {
+      runId = UUID().uuidString
+    }
+
+    // If we have a paused backlog from a previous run, resume it and re-kick workers.
+    if isBackfillPaused {
+      resumeBackfill()
+    } else if queueDepth > 0 {
+      startWorkersIfNeeded()
+    }
 
     let startTime = Date()
     let orderedIds = orderProjects(projectIds: projectIds, activeProjectId: activeProjectId)
