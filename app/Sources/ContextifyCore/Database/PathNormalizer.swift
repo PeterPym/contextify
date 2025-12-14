@@ -27,7 +27,7 @@ public enum PathNormalizer {
         // Only resolve symlinks if file exists (avoid errors on non-existent paths)
         let resolved: URL
         if FileManager.default.fileExists(atPath: path) {
-            resolved = (try? rawURL.resolvingSymlinksInPath()) ?? rawURL
+            resolved = rawURL.resolvingSymlinksInPath()
         } else {
             resolved = rawURL
         }
