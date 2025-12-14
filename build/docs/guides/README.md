@@ -31,6 +31,21 @@ This directory contains practical guides for:
 - Pre-commit hooks
 - Architecture overview and performance expectations
 
+### [Feature Development Workflow](feature-development-workflow.md)
+**Topics:** Structured workflow for new features and refactors
+- Problem statement → Spec → Plan → Implement → Review
+- Technical specification template
+- Implementation plan format
+- E2E test requirements
+
+### [Pre-Merge Checklist](pre-merge-checklist.md)
+**Topics:** Comprehensive checklist before merging to main
+- Code validation (tests, build, warnings)
+- E2E testing requirements
+- Documentation audit
+- TODOS.md administration (removing items, archiving support docs)
+- Technical debt tracking
+
 ---
 
 ## Debugging

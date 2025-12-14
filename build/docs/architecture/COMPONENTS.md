@@ -133,6 +133,13 @@ Contextify uses **two independent LLM processing queues** for content generation
 - **Requires macOS 26.0+**
 - On older macOS, systems fall back to heuristics (no LLM)
 
+**LLMAvailability** (`Contextify/Contextify/LLMAvailability.swift`):
+- Centralized availability check (cached per process, computed once at startup)
+- Detects Lite Mode for macOS 15 (Sequoia) users
+- Gates all LLM queue operations via `LLMAvailability.current.isLiteMode`
+- Supports `-simulate-legacy-macos` launch argument for testing
+- See `build/docs/architecture/llm-processing.md` for Lite Mode details
+
 **StatusBar** (`Contextify/Contextify/StatusBarView.swift`, `StatusBarViewModel.swift`):
 - Aggregates both LLM queues for unified monitoring
 - Shows processing status, pending counts, ETAs, and errors

@@ -2,7 +2,30 @@
 
 **Status:** Production (macOS 26+ Apple Intelligence)
 **Platform:** FoundationLLM (on-device)
-**Minimum:** macOS 26.0 (Tahoe) for LLM features; older systems use fallbacks
+**Minimum:** macOS 15.0 (Sequoia) - Lite Mode; macOS 26.0 (Tahoe) for full LLM features
+
+---
+
+## Lite Mode (macOS 15)
+
+On macOS 15 (Sequoia), Contextify runs in **Lite Mode** - all LLM processing is disabled, but core features work:
+
+**What works in Lite Mode:**
+- Timeline monitoring and display
+- Transcript indexing and search
+- Project switching and organization
+- Real-time file watching
+
+**What's disabled:**
+- AI-generated summaries (shows fallback text instead)
+- Transcript title/description generation (uses heuristics)
+- Status bar shows "Lite Mode" instead of queue status
+
+**Detection:** `LLMAvailability.current.isLiteMode` gates all LLM queue operations. This check is cached per process and evaluated once at startup based on OS version and launch arguments.
+
+**Testing:** Use `-simulate-legacy-macos` launch argument on macOS 26 to test Lite Mode behavior without a VM.
+
+**When users upgrade to macOS 26:** Summaries auto-generate for existing transcripts as they're viewed.
 
 ---
 

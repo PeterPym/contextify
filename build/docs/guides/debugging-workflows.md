@@ -48,8 +48,11 @@ What type of issue are you investigating?
 ├─ 🧪 Verifying Bug Fix Works
 │   └─→ Workflow 6: Automated Test Harness
 │
-└─ ❓ Unknown Issue (Exploratory)
-    └─→ Workflow 7: Interactive Monitoring
+├─ ❓ Unknown Issue (Exploratory)
+│   └─→ Workflow 7: Interactive Monitoring
+│
+└─ 🖥️ Works on One OS, Broken on Another
+    └─→ Workflow 8: Platform Bug Isolation
 ```
 
 ---
@@ -664,6 +667,185 @@ log stream --predicate 'category == "ConversationMonitor"' --level debug
 
 ---
 
+## Workflow 8: Platform Bug Isolation
+
+### When to Use
+
+**Symptoms:**
+- Feature works on macOS 26 but fails on macOS 15 (or vice versa)
+- UI element responds on one OS version but not another
+- Behavior differs between OS versions with identical code
+
+**Goal:** Isolate which component causes the platform-specific failure using baseline + incremental methodology.
+
+### Core Methodology: Baseline + Incremental Build
+
+The key insight: **Find a working baseline, then add components back one at a time.**
+
+```
+1. STRIP DOWN    → Remove suspected components until it works
+2. BASELINE      → Document the minimal working state
+3. INCREMENT     → Add ONE component back
+4. TEST          → Verify on target OS
+5. DOCUMENT      → Record result (pass/fail)
+6. REPEAT        → Continue until failure identified
+```
+
+### Step 1: Establish Working Baseline
+
+**Remove components until the feature works:**
+
+```swift
+// Example: If clicks aren't working in ScrollView
+// Try removing ScrollView entirely
+var body: some View {
+  // ScrollView(.horizontal) {  // REMOVED
+    HStack {
+      ForEach(items) { item in
+        ItemView(item: item)
+          .onTapGesture { handleTap(item) }
+      }
+    }
+  // }  // REMOVED
+}
+```
+
+**Test on target OS.** If it works, you've found your baseline.
+
+**Document:** "Clicks work without ScrollView wrapper"
+
+### Step 2: Add Build Verification
+
+Add a build stamp to confirm correct build is running:
+
+```swift
+// In AppDelegate.applicationDidFinishLaunching
+let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+logger.info("[BUILD] App v\(version) (\(build)) launched at \(Date())")
+```
+
+**Always check logs for build stamp before testing.** Stale builds cause false negatives.
+
+### Step 3: Incremental Component Addition
+
+Add back ONE component at a time:
+
+```
+Iteration 1: Add ScrollView wrapper
+  → Result: FAIL - clicks blocked
+  → Conclusion: ScrollView is the problem component
+
+Iteration 2: Try simultaneousGesture instead of onTapGesture
+  → Result: FAIL - still blocked
+  → Conclusion: Gesture type doesn't matter
+
+Iteration 3: Try Button instead of gesture
+  → Result: FAIL - still blocked
+  → Conclusion: Not gesture-specific, ScrollView blocks all clicks
+
+...continue until solution found...
+```
+
+### Step 4: Document Each Iteration
+
+Create an analysis document tracking every attempt:
+
+```markdown
+## Iteration Log
+
+### Iteration 1: simultaneousGesture
+**Approach:** Replace .onTapGesture with .simultaneousGesture(TapGesture())
+**Result:** FAIL - no clicks registered
+**Conclusion:** simultaneousGesture doesn't help
+
+### Iteration 2: highPriorityGesture
+**Approach:** Use .highPriorityGesture instead
+**Result:** FAIL - no clicks registered
+**Conclusion:** Priority doesn't matter, gesture is fully blocked
+
+### Iteration 3: Button with .plain style
+**Approach:** Replace gesture with Button
+**Result:** FAIL - no clicks registered
+**Conclusion:** Not gesture-specific, all click mechanisms blocked
+```
+
+### Step 5: Research Known Issues
+
+Search for platform-specific bugs:
+
+```bash
+# Web search patterns
+"SwiftUI ScrollView tap gesture macOS 15"
+"horizontal ScrollView click not working Sequoia"
+"SwiftUI gesture regression macOS 15"
+```
+
+**Key sources:**
+- Apple Developer Forums
+- Swift Forums
+- Daniel Saidi's blog (SwiftUI gestures)
+- Hacking with Swift forums
+
+### Step 6: Track Failed Approaches
+
+Maintain a "do not retry" list:
+
+```markdown
+## Failed Approaches - DO NOT RETRY
+
+1. **simultaneousGesture** - ScrollView still blocks
+2. **highPriorityGesture** - ScrollView still blocks
+3. **Button with .plain/.borderless** - ScrollView still blocks
+4. **NSClickGestureRecognizer** - Still blocked at AppKit level
+5. **mouseDown override** - Still blocked
+```
+
+This prevents wasting time re-trying approaches that already failed.
+
+### Step 7: VM Testing Infrastructure
+
+For cross-version testing, set up reliable VM workflow:
+
+```bash
+# Host: Build and copy to shared folder
+bash scripts/xc.sh build
+cp -R .derived-dmg/Build/Products/Debug/Contextify.app ~/Public/VMShare/
+
+# VM: Install and run with logging
+bash /Volumes/VMShare/install-app.sh
+LOG_DIR=/Volumes/VMShare/vm-logs bash /Volumes/VMShare/monitor-transcript-queues.sh
+```
+
+**Key files for VM testing:**
+- `scripts/qa/vm-bootstrap.sh` - Seed test data
+- `scripts/logging/monitor-transcript-queues.sh` - Log capture
+- `build/docs/testing/macos-vm-setup.md` - VM setup guide
+
+### Example: macOS 15 ScrollView Click Bug
+
+**Problem:** Clicks on horizontal ScrollView children don't register on macOS 15.
+
+**Baseline found:** Removing ScrollView entirely makes clicks work.
+
+**17 iterations tested:** simultaneousGesture, highPriorityGesture, Button styles, NSView wrappers, gesture recognizers...
+
+**Solution found:** Button + custom ButtonStyle (doesn't interfere with ScrollView gesture handling).
+
+**Reference:** `build/docs/design/swiftui-patterns.md` (macOS 15 Quirks section)
+
+### Checklist
+
+- [ ] Build stamp added for verification
+- [ ] Baseline established (minimal working state)
+- [ ] Each iteration documented with approach/result/conclusion
+- [ ] Failed approaches listed to prevent re-tries
+- [ ] Research conducted for known platform issues
+- [ ] Solution documented in `swiftui-patterns.md` or relevant doc
+- [ ] VM testing confirmed fix works on target OS
+
+---
+
 ## Tool Selection Matrix
 
 | Goal | Automated Tool | Manual Tool | Time Investment |
@@ -674,6 +856,7 @@ log stream --predicate 'category == "ConversationMonitor"' --level debug
 | Explore unknown issue | `monitor-interactive.sh` | Log grep/filtering | 10 min |
 | Verify database health | `sqlite3 PRAGMA quick_check` | `.recover` | 10 sec / 10 min |
 | Check sandbox permissions | TCC query | System Settings UI | 1 min / 5 min |
+| Isolate platform-specific bug | N/A | Baseline + increment | 1-4 hours |
 
 **General Rule:** Start with automated tools (exit code 0/1), escalate to manual tools if needed.
 
@@ -689,6 +872,8 @@ log stream --predicate 'category == "ConversationMonitor"' --level debug
 | "No authorization" error (sandbox) | TCC permission missing | TCC query + welcome modal |
 | Projects missing from switcher | Discovery failed or security scope issue | Check discovery logs |
 | Database corruption | Interrupted write or multi-machine conflict | `PRAGMA integrity_check` |
+| Works on macOS 26, broken on 15 | Platform-specific regression | Workflow 8: Baseline + increment |
+| UI clicks not registering (macOS 15) | Horizontal ScrollView gesture blocking | See `swiftui-patterns.md` quirks |
 
 ---
 
@@ -704,6 +889,11 @@ log stream --predicate 'category == "ConversationMonitor"' --level debug
 ---
 
 ## Changelog
+
+**2025-12-13:**
+- Added Workflow 8: Platform Bug Isolation (baseline + incremental methodology)
+- Documents systematic approach used to isolate macOS 15 ScrollView click bug
+- Updated decision tree, tool matrix, and common issues table
 
 **2025-11-17:**
 - Initial debugging workflows guide created

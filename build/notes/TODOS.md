@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2025-12-13
 **Status:** Active
 
 **Priority Levels:**
@@ -622,6 +622,37 @@ Both should use identical card components for consistency.
 
 ---
 
+## QA-11 Test Fix (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (test infrastructure - assertion approach is fragile)
+**Effort:** 1-2 hours
+
+- [ ] #QA-11-FIX: Fix Deep Search test to use log messages instead of window count
+
+**Problem:**
+QA-11 (Deep Search E2E test) currently validates that Deep Search opened by counting windows. This is fragile because:
+- Other windows may be open
+- Window count detection depends on AppleScript timing
+- Log messages are more reliable and already available
+
+**Current Behavior:**
+Test counts windows before/after triggering Deep Search, expects +1.
+
+**Desired Behavior:**
+Test should grep for log message indicating Deep Search window opened (e.g., `[DEEP-SEARCH] Window opened` or similar).
+
+**Files:**
+- `scripts/qa/tests/qa-11-deep-search.sh`
+- May need to add logging to `DeepSearchView.swift` if not already present
+
+**Acceptance Criteria:**
+- [ ] Test uses log messages for validation, not window count
+- [ ] Test passes in isolation and as part of full suite
+- [ ] Test works in fixture mode (`QA_FIXTURE_MODE=1`)
+
+---
+
 ## Search Follow-on Improvements (3 items)
 
 **Status:** Spec complete
@@ -1017,10 +1048,10 @@ Implement server-side redirects or static file forwarders:
 - [ ] #EMAIL-COLLECTION: Add email signup for release notifications on website
 
 **Problem:**
-Users interested in Contextify but unable to use it yet (e.g., macOS 15 holdouts) have no way to be notified when features they want ship. We're losing potential users who would convert later.
+Users interested in Contextify may want to be notified about new features and releases. Email list enables direct communication with interested users.
 
 **Context:**
-u/quinncom on r/MacApps expressed interest but can't use macOS 26. Wants to know when "lite mode" (macOS 15 support) ships. Currently no way to notify such users.
+Lite Mode for macOS 15 is now shipped. Email list would still be useful for announcing new features, major releases, and other updates.
 
 **Solution:**
 Add email signup form to website for release/update notifications.
@@ -1034,70 +1065,12 @@ Add email signup form to website for release/update notifications.
 - Add signup form to website (footer or dedicated section)
 - "Get notified about new releases and features"
 - Privacy-focused messaging (no spam, release announcements only)
-- Consider targeting: "Waiting for macOS 15 support? Sign up to be notified."
 
 **Acceptance criteria:**
 - [ ] Email signup form on contextify.sh
 - [ ] Confirmation email on signup
 - [ ] Unsubscribe link in all emails
 - [ ] Privacy policy updated if needed
-
----
-
-## Pre-macOS 26 Compatibility (1 item)
-
-**Status:** In Progress
-**Priority:** P2 (growth enabler - lets users start collecting history before upgrading)
-**Effort:** 6-10 hours
-**Spec:** `build/notes/todo-support/LEGACY-MACOS-spec.md`
-**Implementation Plan:** `build/notes/todo-support/LEGACY-MACOS-implementation-plan.md`
-
-- [ ] #LEGACY-MACOS: Add support for macOS 15 with graceful degradation (Lite Mode)
-
-**User Validation:** u/quinncom (r/MacApps, 2025-12-10) - "I would be fine without summarization. My main use case would be to search for previous coding sessions by keyword, tag, or directory path." See `build/docs/operations/marketing/user-feedback.md`.
-
-**Problem:**
-Current app requires macOS 26 (Tahoe) because Apple Intelligence powers the LLM summaries. This excludes users on older macOS who could still benefit from:
-- Timeline monitoring
-- Transcript indexing
-- Project organization
-- Search (when implemented)
-
-**Growth strategy:**
-Let users on older macOS "bank" their conversation history now. When they upgrade to Tahoe, summaries auto-generate for their existing transcripts. This creates upgrade incentive and builds loyalty.
-
-**Implementation options:**
-
-1. **Lite mode (recommended for v1):**
-   - Lower deployment target to macOS 14 or 15
-   - Detect Apple Intelligence availability at runtime
-   - Show timeline without summaries on older macOS
-   - Display "Upgrade to macOS 26 for AI summaries" prompt
-   - Summaries auto-generate when user upgrades
-
-2. **Alternative LLM support (future):**
-   - Ollama integration for local models
-   - OpenAI/Anthropic API option (opt-in, user provides key)
-   - Requires significant additional work
-
-**Scope for P2:**
-- Focus on option 1 (lite mode)
-- Runtime detection of FoundationModels availability
-- Graceful UI fallback (hide summary column, show "upgrade" badge)
-- Ensure database schema works on older macOS
-- Test on macOS 14 and 15
-
-**Files:**
-- `Contextify/Contextify.xcodeproj` (deployment target)
-- `FoundationLLM.swift` (availability checks)
-- `TimelineEntryRow.swift` (conditional summary display)
-- Various views (upgrade prompts)
-
-**Acceptance criteria:**
-- [ ] App installs and runs on macOS 14+
-- [ ] Timeline, project switching, indexing work without summaries
-- [ ] Clear messaging about what requires macOS 26
-- [ ] Summaries appear automatically after macOS upgrade
 
 ---
 

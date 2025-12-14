@@ -62,6 +62,7 @@ This test suite validates critical user flows through:
 | QA-09 | DB Migration & Integrity | DMG build, DB fixtures |
 | QA-10 | Quick Search | DMG build, searchable content |
 | QA-11 | Deep Search Window | DMG build |
+| **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
 
 ## Test Output
 
@@ -355,3 +356,33 @@ See `scripts/qa/schedule/README.md` for setup instructions.
 
 For detailed methodology and design decisions, see:
 `build/notes/todo-support/P2-AUTOMATED-QA-methodology.md`
+
+---
+
+## macOS 15 (Lite Mode) Testing
+
+The automated QA suite runs on macOS 26 only. For macOS 15 validation, use manual testing:
+
+### When to Run Lite Mode Tests
+
+- Before any release that touches LLM features
+- After changes to `LLMAvailability.swift` or availability detection
+- When updating `#available(macOS 26, *)` guarded code
+
+### Testing Resources
+
+| Resource | Location | Purpose |
+|----------|----------|---------|
+| **QA Checklist** | `build/docs/testing/lite-mode-qa-checklist.md` | 24-point manual validation |
+| **VM Setup** | `build/docs/testing/macos-vm-setup.md` | UTM VM configuration guide |
+| **Bootstrap Script** | `scripts/qa/vm-bootstrap.sh` | Seed test transcripts in VM |
+
+### Quick Validation (macOS 26)
+
+For development iteration without a VM:
+```bash
+# Simulate Lite Mode on macOS 26
+./Contextify.app/Contents/MacOS/Contextify -simulate-legacy-macos
+```
+
+This tests Lite Mode code paths but is not a substitute for full VM testing before releases.

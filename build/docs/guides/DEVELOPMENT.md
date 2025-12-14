@@ -240,6 +240,31 @@ Commands:
 
 **For detailed debugging workflows:** See `scripts/logging/README.md` (primary debugging toolkit) and `scripts/QUICK-REFERENCE.md`
 
+### macOS 15 (Lite Mode) Testing
+
+Contextify supports macOS 15 (Sequoia) in "Lite Mode" - timeline monitoring and search work, but AI summaries are disabled.
+
+**Simulate Lite Mode on macOS 26:**
+```bash
+# In Xcode: Edit Scheme > Run > Arguments > Add -simulate-legacy-macos
+# Or via terminal:
+./Contextify.app/Contents/MacOS/Contextify -simulate-legacy-macos
+```
+
+This enables Lite Mode on macOS 26 for quick testing without needing a VM.
+
+**VM Testing (Full Validation):**
+
+For actual macOS 15 testing, use a virtual machine:
+- **VM Setup:** `build/docs/testing/macos-vm-setup.md`
+- **QA Checklist:** `build/docs/testing/lite-mode-qa-checklist.md` (24-point validation)
+- **Bootstrap Script:** `scripts/qa/vm-bootstrap.sh` (seed test transcripts in VM)
+
+**When to run VM tests:**
+- Before any release that touches LLM features
+- After changes to `LLMAvailability.swift` or availability detection
+- When updating `#available(macOS 26, *)` guarded code
+
 ### Quick-Discovery Logs (Phase 2)
 
 Quick-discovery runs at app launch to identify the project with newest transcript activity before full discovery begins.

@@ -59,15 +59,28 @@ priority_levels:
 
 ---
 
-### OS-COMPATIBILITY: macOS version compatibility modal
+### THIRD-PARTY-LLM: Alternative LLM providers for Lite Mode users
 
-**Status:** Not started
+**Status:** Research needed
 **Priority:** P4
-**Effort:** 2-3 hours
+**Effort:** 8-12 hours
 
-- [ ] Investigate App Store OS restrictions and implement compatibility modal
+- [ ] Investigate Ollama/OpenAI/Anthropic integration for macOS 15 users
 
-**Problem:** App requires macOS 26+ (Tahoe). Need graceful handling if user on older OS tries to run it.
+**Context:** Lite Mode (shipped) gives macOS 15 users timeline/search without summaries. Some users may want AI summaries via third-party LLMs instead of waiting for macOS 26.
+
+**Options to research:**
+1. **Ollama** - Local models, no API key needed
+2. **OpenAI/Anthropic API** - User provides own key
+3. **Both** - User chooses in Settings
+
+**Considerations:**
+- Cost model (API calls vs local)
+- Privacy implications (sending transcripts to cloud)
+- UI for API key management
+- Quality parity with Apple Intelligence
+
+**Note:** This replaces the original OS-COMPATIBILITY entry. The compatibility modal approach was superseded by Lite Mode implementation.
 
 ---
 

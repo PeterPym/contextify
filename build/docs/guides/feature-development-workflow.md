@@ -73,6 +73,12 @@ A structured document that defines the solution before implementation.
 - Why this approach over alternatives?
 - Trade-offs accepted?
 
+### macOS Compatibility
+- Does this feature require macOS 26+ (Apple Intelligence)?
+- Is fallback behavior defined for Lite Mode (macOS 15)?
+- Are `#available(macOS 26, *)` guards needed?
+- Does `LLMAvailability.current.isLiteMode` need to gate any functionality?
+
 ## Test Requirements
 
 ### Unit Tests
@@ -146,15 +152,27 @@ Execute the plan, committing atomically.
 
 ## Phase 5: Review
 
-Before merging to main:
+Before merging to main, complete the pre-merge checklist.
 
-**Checklist:**
+**Quick validation:**
+```bash
+swift test                    # Unit tests pass
+bash scripts/xc.sh build      # Zero warnings
+```
+
+**Full checklist:** See `pre-merge-checklist.md` for comprehensive guidance on:
+- E2E testing requirements
+- Documentation audit
+- TODOS.md administration (removing items, archiving support docs)
+- Technical debt tracking
+
+**Minimum checklist:**
 - [ ] All planned tasks complete
 - [ ] Unit tests written and passing
 - [ ] E2E tests added/updated as specified
 - [ ] Build has zero warnings
 - [ ] TODOS.md updated (items removed/added)
-- [ ] Documentation updated if needed
+- [ ] Support docs archived to `build/docs/archive/completed-work/`
 
 ## E2E Test Requirements
 

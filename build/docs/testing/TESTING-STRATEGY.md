@@ -428,6 +428,45 @@ A: Add to `Package.swift` dependencies and to `ContextifyCoreTests` target.
 
 ---
 
+## macOS Version Testing
+
+### When VM Testing is Required
+
+Run the Lite Mode QA checklist on macOS 15 VM when:
+- Changes touch `LLMAvailability.swift` or lite mode detection
+- Changes affect `#available(macOS 26, *)` guarded code
+- Changes touch TimelineEntryRow fallback content
+- Changes affect StatusBarView or StatusBarViewModel
+- Before any release that includes LLM-related changes
+
+### Quick Validation (macOS 26)
+
+For development iteration, use the simulation flag:
+```bash
+# In Xcode: Edit Scheme > Run > Arguments > Add -simulate-legacy-macos
+# Or via terminal:
+./Contextify.app/Contents/MacOS/Contextify -simulate-legacy-macos
+```
+
+This enables Lite Mode on macOS 26 without needing a VM. Useful for quick checks but not a substitute for full VM testing.
+
+### Full Validation (Before Release)
+
+Before any release, run the full QA checklist on macOS 15 VM:
+- **QA Checklist:** `build/docs/testing/lite-mode-qa-checklist.md` (24-point validation)
+- **VM Setup:** `build/docs/testing/macos-vm-setup.md`
+- **Bootstrap Script:** `scripts/qa/vm-bootstrap.sh` (seed test transcripts)
+
+### What to Verify
+
+1. **App launches** - No dyld crash (proves `#if canImport` guards work)
+2. **Status bar** - Shows "Lite Mode" instead of queue status
+3. **Timeline** - Entries display with fallback content (not AI summaries)
+4. **Core features** - Project switching, search, indexing all work
+5. **Console logs** - No FoundationModels errors or crashes
+
+---
+
 ## Summary for AI Agents
 
 **Three rules:**

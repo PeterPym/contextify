@@ -224,6 +224,27 @@ After rejection, fix the issues and reset for a new build:
 ./scripts/release/test-app.sh --keep-tcc
 ```
 
+### macOS 15 (Lite Mode) Validation
+
+If the release touches LLM features, run Lite Mode validation:
+
+```bash
+# Quick validation on macOS 26 (simulate Lite Mode)
+./Contextify.app/Contents/MacOS/Contextify -simulate-legacy-macos
+```
+
+**Full validation (before any major release):**
+1. Set up macOS 15 VM: `build/docs/testing/macos-vm-setup.md`
+2. Run the 24-point checklist: `build/docs/testing/lite-mode-qa-checklist.md`
+3. Seed test data: `scripts/qa/vm-bootstrap.sh`
+
+**What to verify:**
+- [ ] App launches without dyld crash
+- [ ] Status bar shows "Lite Mode"
+- [ ] Timeline displays with fallback content
+- [ ] Core features work (search, indexing, project switching)
+- [ ] No FoundationModels errors in Console
+
 ### Release Notes Generation
 
 Release notes are generated via LLM analysis of git history, scoped to app code only.

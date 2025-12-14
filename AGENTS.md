@@ -419,6 +419,8 @@ bash scripts/xc.sh build        # Must show 0 warnings
 
 Do NOT merge if either fails.
 
+**For larger features:** See `build/docs/guides/pre-merge-checklist.md` for comprehensive checklist including E2E tests, documentation audit, and TODOS.md administration.
+
 ### Test Requirements
 
 - **New features:** happy path + edge case + error case tests
