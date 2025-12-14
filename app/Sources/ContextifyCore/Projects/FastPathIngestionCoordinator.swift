@@ -16,14 +16,14 @@ public actor FastPathIngestionCoordinator {
   // MARK: - Configuration
   private let maxWorkers: Int
   private let maxTranscriptsPerProject: Int
-  private let maxRetries: Int = 3
+  private let maxAttempts: Int = 3
   private let previewLimit: Int
   private let forcedPreviewCount: Int
 
   // MARK: - Queue State (Completion work always uses startWatching: false)
   private struct CompletionWork: Sendable {
     let transcriptId: String
-    var attempt: Int = 0
+    var attempt: Int = 1
   }
 
   private var completionQueue: [CompletionWork] = []
@@ -133,10 +133,10 @@ public actor FastPathIngestionCoordinator {
 
   private nonisolated func retryDelay(for attempt: Int) -> UInt64 {
     switch attempt {
-    case 1:
+    case 2:
       // 50-150ms jittered
       return UInt64.random(in: 50_000_000...150_000_000)
-    case 2:
+    case 3:
       // 200-500ms jittered
       return UInt64.random(in: 200_000_000...500_000_000)
     default:
@@ -196,7 +196,7 @@ public actor FastPathIngestionCoordinator {
       inFlightCount += 1
 
       // Apply retry backoff if this is a retry
-      if work.attempt > 0 {
+      if work.attempt > 1 {
         let delay = retryDelay(for: work.attempt)
         if delay > 0 {
           try? await Task.sleep(nanoseconds: delay)
@@ -239,16 +239,24 @@ public actor FastPathIngestionCoordinator {
           failed += 1
           totalFailed += 1
           enqueuedCompletions.remove(work.transcriptId)
+          do {
+            try orchestrator.markTranscriptUnavailable(
+              transcriptId: work.transcriptId,
+              lastError: error.localizedDescription
+            )
+          } catch {
+            log.error("[FAST-PATH-FAIL-PERMANENT] Failed to mark transcript unavailable: \(work.transcriptId.prefix(8), privacy: .public) error=\(error.localizedDescription, privacy: .public) runId=\(self.runId, privacy: .public)")
+          }
           log.error("[FAST-PATH-FAIL-PERMANENT] slot=\(slotIndex, privacy: .public) transcript=\(work.transcriptId.prefix(8), privacy: .public) error=\(error.localizedDescription, privacy: .public) runId=\(self.runId, privacy: .public)")
         } else {
           // Retryable error
-          work.attempt += 1
-          if work.attempt < maxRetries {
+          if work.attempt < maxAttempts {
+            work.attempt += 1
             // Requeue for retry (at back, with backoff applied on next dequeue)
             requeueBack(work)
-            log.warning("[FAST-PATH-RETRY] slot=\(slotIndex, privacy: .public) transcript=\(work.transcriptId.prefix(8), privacy: .public) attempt=\(work.attempt, privacy: .public)/\(self.maxRetries, privacy: .public) error=\(error.localizedDescription, privacy: .public) runId=\(self.runId, privacy: .public)")
+            log.warning("[FAST-PATH-RETRY] slot=\(slotIndex, privacy: .public) transcript=\(work.transcriptId.prefix(8), privacy: .public) attempt=\(work.attempt, privacy: .public)/\(self.maxAttempts, privacy: .public) error=\(error.localizedDescription, privacy: .public) runId=\(self.runId, privacy: .public)")
           } else {
-            // Max retries exceeded - terminal failure
+            // Max attempts exceeded - terminal failure
             failed += 1
             totalFailed += 1
             enqueuedCompletions.remove(work.transcriptId)
@@ -313,7 +321,7 @@ public actor FastPathIngestionCoordinator {
     projectId: String,
     isActiveProject: Bool
   ) async {
-    // Only notify UI once per project (on first transcript completion)
+    // Only notify UI once per project (on first successful transcript completion)
     let shouldNotifyUI = registerProjectNotificationIfNeeded(projectId: projectId)
     if shouldNotifyUI {
       pendingNotificationTokens.insert(projectId)
@@ -338,10 +346,16 @@ public actor FastPathIngestionCoordinator {
               notifyUI: notifyForThisTranscript,
               startWatching: isActiveProject  // Only active project gets watchers
             )
+            if notifyForThisTranscript {
+              await self.markProjectNotified(projectId: projectId)
+            }
             if needsCompletion {
               await self.enqueueCompletion(transcriptId: transcript.id)
             }
           } catch {
+            if notifyForThisTranscript {
+              await self.restoreNotificationTokenIfNeeded(for: projectId)
+            }
             log.error("[FAST-PATH] Preview failed: \(transcript.id.prefix(8), privacy: .public) error=\(error.localizedDescription, privacy: .public)")
           }
         }
@@ -525,8 +539,9 @@ public actor FastPathIngestionCoordinator {
     log.info("[FAST-PATH-PREVIEW-START] projects=\(projectIds.count, privacy: .public) active=\(activeProjectId ?? "none", privacy: .public) runId=\(self.runId, privacy: .public)")
 
     for projectId in orderedIds {
-      if isShutdownCancelled || Task.isCancelled {
-        log.info("[FAST-PATH] Aborting runFastPath due to cancellation runId=\(self.runId, privacy: .public)")
+      if isShutdownCancelled || Task.isCancelled || isBackfillPaused {
+        let reason = isBackfillPaused ? "paused" : "cancelled"
+        log.info("[FAST-PATH] Aborting runFastPath due to \(reason, privacy: .public) runId=\(self.runId, privacy: .public)")
         break
       }
       await processProject(projectId: projectId, activeProjectId: activeProjectId)
@@ -576,8 +591,9 @@ public actor FastPathIngestionCoordinator {
   }
 
   private func processProject(projectId: String, activeProjectId: String?) async {
-    if isShutdownCancelled || Task.isCancelled {
-      log.info("[FAST-PATH] Skipping project \(projectId, privacy: .public) due to cancellation runId=\(self.runId, privacy: .public)")
+    if isShutdownCancelled || Task.isCancelled || isBackfillPaused {
+      let reason = isBackfillPaused ? "paused" : "cancelled"
+      log.info("[FAST-PATH] Skipping project \(projectId, privacy: .public) due to \(reason, privacy: .public) runId=\(self.runId, privacy: .public)")
       return
     }
 
@@ -674,12 +690,20 @@ public actor FastPathIngestionCoordinator {
   }
 
   private func registerProjectNotificationIfNeeded(projectId: String) -> Bool {
-    guard !notifiedProjects.contains(projectId) else { return false }
-    notifiedProjects.insert(projectId)
-    return true
+    !notifiedProjects.contains(projectId)
   }
 
   private func consumeNotificationToken(for projectId: String) -> Bool {
     pendingNotificationTokens.remove(projectId) != nil
+  }
+
+  private func restoreNotificationTokenIfNeeded(for projectId: String) {
+    guard !notifiedProjects.contains(projectId) else { return }
+    pendingNotificationTokens.insert(projectId)
+  }
+
+  private func markProjectNotified(projectId: String) {
+    notifiedProjects.insert(projectId)
+    pendingNotificationTokens.remove(projectId)
   }
 }
