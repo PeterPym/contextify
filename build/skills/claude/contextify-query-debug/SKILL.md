@@ -7,6 +7,17 @@ description: Diagnose missing DB/projects/features for contextify-query and prov
 
 ## Status and discovery
 
+First, confirm `contextify-query` exists:
+
+```bash
+command -v contextify-query
+```
+
+If missing:
+
+- Explain that this skill requires the Contextify app (it builds and maintains the DB).
+- Ask the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
+
 ```bash
 contextify-query status --json
 contextify-query projects --json

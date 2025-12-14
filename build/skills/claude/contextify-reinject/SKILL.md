@@ -7,8 +7,18 @@ description: Use contextify-query to locate an anchor entry and retrieve a bound
 
 ## Preconditions
 
-- Prefer `contextify-query` on `PATH`.
-- If `contextify-query` is missing, ask the user to run Contextify → “Install/Repair CLI…”, then retry.
+This skill depends on the Contextify app (it builds and maintains the database that `contextify-query` reads).
+
+1) Check whether the CLI is available:
+
+```bash
+command -v contextify-query
+```
+
+2) If `contextify-query` is missing:
+
+- If Contextify is installed: ask the user to run Contextify → “Install/Repair CLI…”, then retry.
+- If Contextify is not installed: instruct the user to install Contextify first, then retry.
 
 ## Canonical loop
 

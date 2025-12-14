@@ -7,6 +7,17 @@ description: Diagnose why contextify-query cannot find the database, projects, e
 
 ## Quick triage
 
+0) Confirm `contextify-query` exists:
+
+```bash
+command -v contextify-query
+```
+
+If missing:
+
+- Explain that the skill requires the Contextify app (it builds and maintains the DB).
+- Ask the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
+
 1) Check basic status:
 
 ```bash

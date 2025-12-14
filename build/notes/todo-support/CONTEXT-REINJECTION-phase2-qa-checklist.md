@@ -34,6 +34,16 @@ contextify-query status --json
 
 Expected: exit code `0` and JSON output.
 
+## A0) First-run onboarding (Contextify not installed yet)
+
+If the skills are installed before Contextify is installed:
+
+- Trigger `contextify-reinject`.
+- Confirm the guidance:
+  - explains Contextify must be installed first (because it ingests transcripts and builds the DB)
+  - then instructs the user to run Contextify → “Install/Repair CLI…”
+  - then retries the `contextify-query` command sequence
+
 ## B) Codex skills
 
 1) Install skills

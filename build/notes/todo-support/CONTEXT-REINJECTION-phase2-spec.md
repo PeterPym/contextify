@@ -24,6 +24,7 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
   - time filtering (`--days`)
   - budgeting (caps, truncation awareness)
   - error handling using structured error `details`
+  - first-run onboarding when Contextify is not installed yet
 
 ## Non-goals
 
@@ -91,6 +92,7 @@ Purpose: Teach the canonical reinjection loop.
 
 Required behaviors:
 
+- If `contextify-query` is not found, guide the user through installing Contextify first (if needed), then installing/repairing the CLI, then retry.
 - Start with `contextify-query status --json` when DB availability is uncertain.
 - Prefer `--project .` when the user’s request is clearly about the current repo.
 - Prefer `--days N` for “recent” queries.
