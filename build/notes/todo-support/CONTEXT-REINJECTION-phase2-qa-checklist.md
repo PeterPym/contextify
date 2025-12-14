@@ -125,6 +125,16 @@ claude plugin install query@contextify
 
 Note: `claude plugin marketplace add .` is rejected; use `./`.
 
+Verification (on-disk):
+
+- Marketplace config: `~/.claude/plugins/known_marketplaces.json` contains `contextify`.
+- Installed plugin record: `~/.claude/plugins/installed_plugins_v2.json` contains `query@contextify`.
+- Plugin cache path exists:
+  - `~/.claude/plugins/cache/contextify/query/<version>/`
+- Skills exist in cache:
+  - `~/.claude/plugins/cache/contextify/query/<version>/skills/contextify-reinject/SKILL.md`
+  - `~/.claude/plugins/cache/contextify/query/<version>/skills/contextify-query-debug/SKILL.md`
+
 2) Install (fallback: personal skills)
 
 ```bash
