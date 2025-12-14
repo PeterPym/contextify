@@ -40,13 +40,16 @@ INSTALL_DIR="/tmp/contextify-qa-bin"
 INSTALL_SHIM_PATH="$INSTALL_DIR/contextify-query"
 
 DEFAULTS_DOMAIN="$BUNDLE_ID_DMG"
+ALT_DEFAULTS_DOMAIN="sh.contextify.Contextify"
 DEFAULTS_KEY="Contextify.QueryCLI.DMGInstallDirOverride"
 SETTINGS_TAB_OVERRIDE_KEY="Contextify.Settings.SelectedTabOverride"
 
 cleanup() {
   # Best-effort cleanup; preserve logs for debugging.
   defaults delete "$DEFAULTS_DOMAIN" "$DEFAULTS_KEY" >/dev/null 2>&1 || true
+  defaults delete "$ALT_DEFAULTS_DOMAIN" "$DEFAULTS_KEY" >/dev/null 2>&1 || true
   defaults delete "$DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" >/dev/null 2>&1 || true
+  defaults delete "$ALT_DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" >/dev/null 2>&1 || true
   rm -f "$INSTALL_SHIM_PATH" >/dev/null 2>&1 || true
   rmdir "$INSTALL_DIR" >/dev/null 2>&1 || true
   kill_app_if_running
@@ -92,12 +95,23 @@ validate_status_json() {
 
   set +e
   local output
-  output=$("$bin_path" status --json 2>/dev/null)
+  local stderr_path="$LOGDIR/contextify-query-status.stderr"
+  output=$(CONTEXTIFY_QUERY_APP_PATH="$DMG_APP_PATH" "$bin_path" status --json 2>"$stderr_path")
   local rc=$?
   set -e
 
   # Must be JSON either way.
-  echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)'
+  if ! echo "$output" | python3 -c 'import json,sys; json.load(sys.stdin)' >/dev/null 2>&1; then
+    log_error "contextify-query status --json did not emit valid JSON"
+    log_error "STDOUT:"
+    echo "$output" | cat -n >&2
+    if [ -s "$stderr_path" ]; then
+      log_error "STDERR (saved to $stderr_path):"
+      cat -n "$stderr_path" >&2
+    fi
+    TEST_FAILED=1
+    return 1
+  fi
 
   if [ "$rc" -eq 0 ]; then
     return 0
@@ -129,6 +143,35 @@ select_cli_tab() {
   sleep 0.3
 }
 
+click_cli_actions_button() {
+  local idx="$1"
+  osascript -e '
+    tell application "System Events"
+      tell process "Contextify"
+        try
+          click button '"$idx"' of group 1 of group 1 of window "CLI"
+        on error
+          error "button missing"
+        end try
+      end tell
+    end tell
+  ' >/dev/null 2>&1
+}
+
+trigger_install() {
+  if ! click_cli_actions_button 1; then
+    return 1
+  fi
+  wait_for_any_pattern 5 "\\[QUERYCLI-INSTALL-START\\]" "\\[QUERYCLI-INSTALL-DIR\\]"
+}
+
+trigger_uninstall() {
+  if ! click_cli_actions_button 2; then
+    return 1
+  fi
+  wait_for_any_pattern 5 "\\[QUERYCLI-UNINSTALL-START\\]" "\\[QUERYCLI-UNINSTALL-DONE\\]"
+}
+
 check_prerequisites() {
   log_subheader "Checking Prerequisites"
   assert_command_exists "osascript"
@@ -145,6 +188,8 @@ run_test_steps() {
   mkdir -p "$INSTALL_DIR"
   defaults write "$DEFAULTS_DOMAIN" "$DEFAULTS_KEY" -string "$INSTALL_DIR"
   defaults write "$DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" -string "cli"
+  defaults write "$ALT_DEFAULTS_DOMAIN" "$DEFAULTS_KEY" -string "$INSTALL_DIR"
+  defaults write "$ALT_DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" -string "cli"
 
   # Start with app fresh.
   kill_app_if_running
@@ -169,8 +214,12 @@ run_test_steps() {
   fi
 
   # Install shim.
-  log_info "Triggering install via keyboard shortcut (Cmd+Shift+I)..."
-  send_shortcut "i" "command down, shift down"
+  log_info "Triggering install..."
+  if ! trigger_install; then
+    log_error "Could not trigger install action in UI"
+    TEST_FAILED=1
+    return 1
+  fi
 
   if ! wait_for_any_pattern 20 \
     "\\[QUERYCLI-INSTALL-START\\]" \
@@ -192,8 +241,12 @@ run_test_steps() {
   validate_status_json "$INSTALL_SHIM_PATH"
 
   # Uninstall.
-  log_info "Triggering uninstall via keyboard shortcut (Cmd+Shift+U)..."
-  send_shortcut "u" "command down, shift down"
+  log_info "Triggering uninstall..."
+  if ! trigger_uninstall; then
+    log_error "Could not trigger uninstall action in UI"
+    TEST_FAILED=1
+    return 1
+  fi
 
   if ! wait_for_log_pattern "\\[QUERYCLI-UNINSTALL-DONE\\]" 10; then
     log_error "Uninstall completion log not observed"

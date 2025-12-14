@@ -8,10 +8,6 @@ set -euo pipefail
 _COMMON_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_COMMON_LIB_DIR/../../lib/cleanup.sh"
 
-# Bundle IDs for the two app variants
-BUNDLE_ID_DMG="dev.contextify"
-BUNDLE_ID_APPSTORE="sh.contextify.Contextify"
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
@@ -20,6 +16,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
 DB_PATH="${DB_PATH:-$HOME/Library/Application Support/Contextify/contextify.db}"
 DMG_APP_PATH="${DMG_APP_PATH:-$REPO_ROOT/.derived-dmg/Build/Products/Debug/Contextify.app}"
 APPSTORE_APP_PATH="${APPSTORE_APP_PATH:-$REPO_ROOT/.derived-appstore/Build/Products/Debug/Contextify.app}"
+
+# Bundle IDs for the two app variants
+BUNDLE_ID_DMG="dev.contextify"
+BUNDLE_ID_APPSTORE="sh.contextify.Contextify"
 
 # Fixture mode configuration
 QA_FIXTURE_MODE="${QA_FIXTURE_MODE:-0}"
