@@ -24,12 +24,27 @@ struct SettingsView: View {
           .tabItem {
             Label("Permissions", systemImage: "folder.badge.plus")
           }
+
+        CLISkillsSettingsTab()
+          .tabItem {
+            Label("CLI", systemImage: "terminal")
+          }
       }
       .frame(width: 450)
     } else {
-      // DMG build: only Database tab (no permissions needed)
-      DatabaseSettingsTab()
-        .frame(width: 450)
+      // DMG build: Database + CLI (no permissions needed)
+      TabView {
+        DatabaseSettingsTab()
+          .tabItem {
+            Label("Database", systemImage: "cylinder")
+          }
+
+        CLISkillsSettingsTab()
+          .tabItem {
+            Label("CLI", systemImage: "terminal")
+          }
+      }
+      .frame(width: 520)
     }
   }
 }
