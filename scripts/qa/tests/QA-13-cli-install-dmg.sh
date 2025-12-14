@@ -41,10 +41,12 @@ INSTALL_SHIM_PATH="$INSTALL_DIR/contextify-query"
 
 DEFAULTS_DOMAIN="$BUNDLE_ID_DMG"
 DEFAULTS_KEY="Contextify.QueryCLI.DMGInstallDirOverride"
+SETTINGS_TAB_OVERRIDE_KEY="Contextify.Settings.SelectedTabOverride"
 
 cleanup() {
   # Best-effort cleanup; preserve logs for debugging.
   defaults delete "$DEFAULTS_DOMAIN" "$DEFAULTS_KEY" >/dev/null 2>&1 || true
+  defaults delete "$DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" >/dev/null 2>&1 || true
   rm -f "$INSTALL_SHIM_PATH" >/dev/null 2>&1 || true
   rmdir "$INSTALL_DIR" >/dev/null 2>&1 || true
   kill_app_if_running
@@ -83,34 +85,6 @@ click_button_any_window() {
 
   log_warn "Could not click button in any window: $title"
   return 1
-}
-
-select_cli_tab() {
-  # Try simplest path first (SwiftUI TabView often exposes tabs as buttons).
-  if click_button_any_window "CLI" 3; then
-    return 0
-  fi
-
-  # Fallback to common macOS accessibility shapes.
-  osascript -e '
-    tell application "Contextify" to activate
-    delay 0.2
-    tell application "System Events"
-      tell process "Contextify"
-        repeat with w in windows
-          try
-            click radio button "CLI" of tab group 1 of w
-          end try
-          try
-            click button "CLI" of tab group 1 of w
-          end try
-        end repeat
-      end tell
-    end tell
-  ' 2>/dev/null || true
-
-  # No hard failure here; caller will assert via log tags.
-  return 0
 }
 
 validate_status_json() {
@@ -155,6 +129,7 @@ run_test_steps() {
   rm -rf "$INSTALL_DIR"
   mkdir -p "$INSTALL_DIR"
   defaults write "$DEFAULTS_DOMAIN" "$DEFAULTS_KEY" -string "$INSTALL_DIR"
+  defaults write "$DEFAULTS_DOMAIN" "$SETTINGS_TAB_OVERRIDE_KEY" -string "cli"
 
   # Start with app fresh.
   kill_app_if_running
@@ -170,7 +145,6 @@ run_test_steps() {
   activate_app
   send_shortcut "," "command down"
   sleep 1.2
-  select_cli_tab
 
   if ! wait_for_log_pattern "\\[QUERYCLI-SETTINGS-TAB-OPEN\\]" 10; then
     log_error "CLI settings tab did not appear (missing log tag)"

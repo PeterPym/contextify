@@ -133,6 +133,13 @@ QA_DEBUG=1 ./scripts/qa/tests/QA-03-codex-discovery.sh
 | `QA_FIXTURE_DIR` | $REPO_ROOT/scripts/qa/fixtures | Fixture directory |
 | `TEST_PROJECT` | /tmp/contextify-qa-test | Test project path (cwd written into fixtures) |
 
+### QA-only UserDefaults overrides
+
+Some E2E tests use narrowly-scoped UserDefaults overrides to avoid brittle UI traversal and privileged filesystem writes:
+
+- `dev.contextify Contextify.QueryCLI.DMGInstallDirOverride` → forces DMG CLI shim install into a deterministic directory (e.g. `/tmp/contextify-qa-bin`) for unattended tests.
+- `dev.contextify Contextify.Settings.SelectedTabOverride` → forces Settings to open on a specific tab (e.g. `cli`) for unattended tests.
+
 ## Fixture Mode
 
 Set `QA_FIXTURE_MODE=1` to run Codex/Claude tests using local transcript fixtures

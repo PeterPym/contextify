@@ -11,38 +11,62 @@ private let log = Logger(subsystem: "dev.contextify", category: "Settings")
 struct SettingsView: View {
   @ObservedObject var folderAccessController: FolderAccessController
 
+  private static let selectedTabOverrideKey = "Contextify.Settings.SelectedTabOverride"
+  private static let selectedTabKey = "Contextify.Settings.SelectedTab"
+
+  @AppStorage(selectedTabKey) private var selectedTab: String = "database"
+
+  private var overriddenSelectedTab: String? {
+    UserDefaults.standard.string(forKey: Self.selectedTabOverrideKey)
+  }
+
   var body: some View {
     if Sandbox.isSandboxed {
       // App Store build: show both Database and Permissions tabs
-      TabView {
+      TabView(selection: $selectedTab) {
         DatabaseSettingsTab()
           .tabItem {
             Label("Database", systemImage: "cylinder")
           }
+          .tag("database")
 
         PermissionsSettingsTab(folderAccessController: folderAccessController)
           .tabItem {
             Label("Permissions", systemImage: "folder.badge.plus")
           }
+          .tag("permissions")
 
         CLISkillsSettingsTab()
           .tabItem {
             Label("CLI", systemImage: "terminal")
           }
+          .tag("cli")
+      }
+      .onAppear {
+        if let overriddenSelectedTab {
+          selectedTab = overriddenSelectedTab
+        }
       }
       .frame(width: 450)
     } else {
       // DMG build: Database + CLI (no permissions needed)
-      TabView {
+      TabView(selection: $selectedTab) {
         DatabaseSettingsTab()
           .tabItem {
             Label("Database", systemImage: "cylinder")
           }
+          .tag("database")
 
         CLISkillsSettingsTab()
           .tabItem {
             Label("CLI", systemImage: "terminal")
           }
+          .tag("cli")
+      }
+      .onAppear {
+        if let overriddenSelectedTab {
+          selectedTab = overriddenSelectedTab
+        }
       }
       .frame(width: 520)
     }
