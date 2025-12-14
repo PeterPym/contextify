@@ -56,6 +56,16 @@ Minimum required CLI behaviors (skills depend on these):
   - `featureUnavailable` for missing FTS/search capability (no silent fallback).
   - `dbNotFound`, `dbProjectNotFound`, `entryNotFound` surfaced as structured errors (skills should treat `details.*` as optional).
 
+## Legacy macOS (15) compatibility
+
+Contextify currently targets macOS 26, but Phase 2 is written to stay compatible with the “Lite Mode” approach in `build/notes/todo-support/LEGACY-MACOS-spec.md`.
+
+Requirements:
+
+- Phase 2 must not introduce new dependencies on Apple Intelligence / `FoundationModels`.
+- “Install/Repair CLI…” and any plugin/skills onboarding UI must work in Lite Mode (no summaries, no LLM queue).
+- Any code paths that touch macOS 26-only APIs remain isolated behind `#available(macOS 26, *)` and have safe fallbacks.
+
 ## Deliverable A: Claude Code skill (plugin-first)
 
 ### Target mechanism
