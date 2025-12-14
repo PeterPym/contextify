@@ -25,32 +25,57 @@ This is the intended commit shape; it can deviate if implementation realities de
 
 ### 1) Canonicalize skill sources under `contextify-query/`
 
-- Create `contextify-query/skills/claude/` and move skill templates there:
+Completed on this branch:
+
+- Canonical skills live at:
   - `contextify-query/skills/claude/contextify-reinject/SKILL.md`
   - `contextify-query/skills/claude/contextify-query-debug/SKILL.md`
-- Move Codex templates into `contextify-query/skills/codex/` for symmetry, but treat Codex usage as Phase 2.1.
-- Update references:
-  - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`
-  - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
+- Codex templates live at:
+  - `contextify-query/skills/codex/contextify-reinject/SKILL.md` (Phase 2.1)
+  - `contextify-query/skills/codex/contextify-query-debug/SKILL.md` (Phase 2.1)
 
 ### 2) Add Claude Code plugin + marketplace files (repo-hosted)
 
-- Add plugin root at `contextify-query/claude-plugin/` with:
-  - `.claude-plugin/plugin.json` (name/version/description)
-  - `skills/` populated from `contextify-query/skills/claude/`
-- Add marketplace manifest at repo root:
-  - `.claude-plugin/marketplace.json` with marketplace id `banagale-contextify`
-  - entry for plugin id `contextify` with source `./contextify-query/claude-plugin`
-- Add a short plugin README with install commands and “Contextify not installed” onboarding guidance.
-- Update `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-skills-installation.md` if commands differ from the spec.
+Completed on this branch (derisked with Claude Code 2.0.65):
+
+- Marketplace manifest at repo root:
+  - `.claude-plugin/marketplace.json` with `name: "contextify"`
+  - plugin entry `name: "query"` → `source: "./contextify-query/claude-plugin"`
+- Plugin root at `contextify-query/claude-plugin/`:
+  - `.claude-plugin/plugin.json` with `name: "query"`
+  - `skills/` populated with the two skills
+
+Install forms:
+
+- Public-facing (future): `/plugin marketplace add PeterPym/contextify` then `/plugin install query@contextify`
+- Local dev validation: `claude plugin marketplace add ./` then `claude plugin install query@contextify`
+
+#### Session metadata capture (best-effort)
+
+This branch implements a `SessionStart` hook that attempts to persist:
+
+- `CONTEXTIFY_CLAUDE_SESSION_ID`
+- `CONTEXTIFY_CLAUDE_TRANSCRIPT_PATH`
+- `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID`
+
+However, treat this as best-effort only:
+
+- Skills must behave correctly when these env vars are missing.
+- Phase 2 acceptance does not depend on session metadata capture being present (it is an optimization to avoid selecting the active transcript as a search hit).
 
 ### 3) Bundle `contextify-query` + skills into the app
 
+Pin down the bundling and executability details (this is production-critical):
+
+- Choose a bundle location that supports nested code signing and direct execution:
+  - Prefer `Contextify.app/Contents/MacOS/contextify-query` (or another executable-friendly location).
 - Add an Xcode build phase to copy:
-  - the `contextify-query` CLI binary (existing build artifact) into the app bundle
+  - the `contextify-query` CLI binary into the chosen bundle location
   - `contextify-query/skills/` into `Contextify.app/Contents/Resources/contextify-query/skills/`
-  - `contextify-query/claude-plugin/` into `Contextify.app/Contents/Resources/contextify-query/claude-plugin/` (for easy “open in Finder” / “copy commands” UX)
-- Ensure this build phase is deterministic and does not require network access.
+  - `contextify-query/claude-plugin/` into `Contextify.app/Contents/Resources/contextify-query/claude-plugin/`
+- Add QA assertions:
+  - run the bundled binary directly (not via shim) and confirm it executes
+  - confirm the nested binary is signed/valid in the final DMG/App Store build
 
 ### 4) Implement CLI entrypoint install: shim + repair
 
@@ -67,6 +92,15 @@ Implement “Install/Repair CLI…” in the app (DMG + App Store):
   - execs the bundled `contextify-query` binary
   - prints actionable remediation if the app/binary cannot be found
 
+#### Shim app discovery strategy (must be pinned)
+
+Define how the shim locates the app bundle:
+
+- Primary: LaunchServices lookup by bundle identifier.
+- Multi-install behavior (DMG + App Store both installed):
+  - deterministic tie-break (prefer App Store build, or prefer newest version), or
+  - fail with an actionable error explaining how to uninstall/repair.
+
 Unit tests:
 
 - Given an app bundle path, generate shim text deterministically (marker present, path quoting safe).
@@ -77,8 +111,8 @@ Unit tests:
 Add a Settings pane or onboarding affordance that:
 
 - Shows the plugin install commands (copy button):
-  - `/plugin marketplace add banagale/contextify`
-  - `/plugin install contextify@banagale-contextify`
+  - `/plugin marketplace add PeterPym/contextify`
+  - `/plugin install query@contextify`
 - Shows how to verify plugin loading (`claude --debug`) and notes restart requirement.
 - Handles “Contextify not installed” messaging (skills already guide, but app should also be clear).
 
@@ -86,6 +120,21 @@ Add a Settings pane or onboarding affordance that:
 
 - Update/extend the Phase 2 QA checklist (`build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`) with any newly-implemented UI flows.
 - Keep QA scripts alongside Phase 2 supporting docs while active.
+
+### 6.1 Skill branches (completeness pass)
+
+Tighten skill guidance to cover real-world branches (keep concise):
+
+- `search` returns 0 results:
+  - widen `--days`
+  - try without `--project .` if the cwd isn’t a known Contextify project
+  - consult `contextify-query projects --json` for discovery
+- `dbProjectNotFound`:
+  - prompt user to pick from suggestions (when present) or explicitly pick a project
+- `featureUnavailable`:
+  - explain the missing capability; do not imply a fallback search exists
+- “current session dominates results”:
+  - if `CONTEXTIFY_CLAUDE_TRANSCRIPT_ID` missing, apply a time-based demotion (skip very recent hits) rather than picking the current session
 
 ### 7) Validation and review gate
 
