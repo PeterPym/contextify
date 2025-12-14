@@ -4,10 +4,10 @@ title: Context reinjection Phase 2 - Skills + CLI install/distribution
 type: spec
 date: 2025-12-13
 status: active
-description: Define Phase 2 for context reinjection: ship skills that teach Codex/Claude Code how to use contextify-query, plus a reliable CLI install/distribution story (DMG/App Store constraints).
+description: Define Phase 2 for context reinjection: ship Claude Code plugin skills that use contextify-query, plus a reliable CLI install/distribution story (DMG/App Store constraints).
 ---
 
-# Phase 2: Skills + `contextify-query` Install/Distribution
+# Phase 2: Claude Code Skills + `contextify-query` Install/Distribution
 
 Phase 1 establishes a stable, read-only query surface (`contextify-query`) with deterministic results and machine-friendly JSON.
 
@@ -15,7 +15,7 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
 
 ## Goals
 
-- Make Codex (and optionally Claude Code) reliably perform: search → anchor entry id → bounded context window → reinject.
+- Make Claude Code reliably perform: search → anchor entry id → bounded context window → reinject.
 - Provide a low-friction way for tools/humans to invoke `contextify-query`:
   - DMG: “it’s on PATH” is achievable.
   - App Store: provide a best-effort, user-consented flow that doesn’t fight sandbox constraints.
@@ -25,6 +25,7 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
   - budgeting (caps, truncation awareness)
   - error handling using structured error `details`
   - first-run onboarding when Contextify is not installed yet
+- Preserve macOS 15 “Lite Mode” compatibility (no Apple Intelligence requirement for any Phase 2 deliverable).
 
 ## Non-goals
 
@@ -34,55 +35,16 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
 
 ---
 
-## Deliverable A: Codex Skill(s)
+## Deliverable A: Claude Code skill (plugin-first)
 
 ### Target mechanism
 
-Codex CLI discovers skills under:
+Claude Code supports skills via:
 
-- `~/.codex/skills/**/SKILL.md`
+- Plugins (preferred for Phase 2 distribution)
+- Personal skills on disk (fallback): `~/.claude/skills/`
 
-Each skill is a directory containing `SKILL.md` with YAML frontmatter:
-
-- `name` (<= 100 chars)
-- `description` (<= 500 chars)
-
-Codex injects only name/description/path at startup; the body is read when needed.
-
-### Codex install/enable behavior
-
-#### Install location
-
-- Skills are discovered from `~/.codex/skills/`, where each skill is a directory containing `SKILL.md`.
-
-#### Enable/disable
-
-- Skills are enabled per session using `--enable skills`:
-  - Enable: `codex --enable skills`
-  - Disable: omit the flag
-
-#### Verify skills are loaded
-
-- In an active Codex session, prompt: `list skills`
-- Expect the response to list:
-  - skill names and descriptions
-  - the filesystem path to `SKILL.md`
-
-#### Reload behavior
-
-- Skills are loaded once per session; changes require starting a new Codex session.
-
-#### Upgrade/removal
-
-- Upgrade: overwrite skill folders:
-  - `rsync -a --delete build/skills/codex/ ~/.codex/skills/`
-- Removal: delete a skill folder:
-  - `rm -rf ~/.codex/skills/<skill-name>`
-
-#### Constraints / gotchas
-
-- Treat skills as an evolving feature; Phase 2 QA captures a “last verified” Codex version and date.
-- Do not assume symlink behavior for skills; install as real directories/files.
+Phase 2 targets Claude Code first because plugin-based distribution provides deterministic install/upgrade UX. Codex skills are a follow-on once Codex skill support is stable and documented.
 
 ### Skill set
 
@@ -136,14 +98,19 @@ Purpose: Teach diagnosis of discovery, schema, and “why did this fail” cases
 
 Ship canonical skill content inside the repo as templates:
 
-- `build/skills/codex/contextify-reinject/SKILL.md`
-- `build/skills/codex/contextify-query-debug/SKILL.md`
 - `build/skills/claude/contextify-reinject/SKILL.md`
 - `build/skills/claude/contextify-query-debug/SKILL.md`
+- `build/skills/codex/contextify-reinject/SKILL.md` (Phase 2.1)
+- `build/skills/codex/contextify-query-debug/SKILL.md` (Phase 2.1)
 
-Provide a one-liner install instruction:
+### Install
 
-- `rsync -a --delete build/skills/codex/ ~/.codex/skills/`
+Preferred: package skills as a Claude Code plugin and distribute via Claude’s plugin install UX.
+
+Fallback (for local development and early adopters):
+
+- `mkdir -p ~/.claude/skills`
+- `rsync -a --delete build/skills/claude/ ~/.claude/skills/`
 
 ### Cross-tool skill deployment
 
@@ -151,10 +118,8 @@ To avoid drift across tools, Phase 2 treats the repo (and the app bundle built f
 
 Deployment options:
 
-- App-driven installer (preferred): Contextify provides “Install Skills…” with options for:
-  - Codex (`~/.codex/skills/`)
-- Claude Code plugin install (preferred for Claude Code): guides the user through plugin install/upgrade
-- Claude Code personal skills (`~/.claude/skills/`) as a fallback when plugin install is unavailable
+- Claude Code plugin install (preferred): guides the user through plugin install/upgrade.
+- Claude Code personal skills (`~/.claude/skills/`) as a fallback when plugin install is unavailable.
 - Terminal install (fallback): `rsync` commands documented above.
 
 Rules:
@@ -162,60 +127,11 @@ Rules:
 - Install skills as real directories/files (no symlinks).
 - Each install flow provides a “Verify” step that is copy/pasteable and has expected output.
 
----
-
-## Deliverable B: Claude Code skill/instructions (optional)
-
-### Claude Code install/enable behavior
-
-Claude Code supports skills via:
-
-- Plugins (preferred for Phase 2 distribution)
-- Personal skills on disk (fallback): `~/.claude/skills/`
-
-#### Install (preferred: plugin)
-
-Package the Contextify skills as a Claude Code plugin so users can install/upgrade via Claude’s plugin UX rather than copying folders manually.
-
-This avoids introducing repo-local skill installs and keeps upgrades deterministic.
-
-#### Install (fallback: personal skills)
-
-- Install by copying the skill directory:
-  - `mkdir -p ~/.claude/skills`
-  - `rsync -a --delete build/skills/claude/ ~/.claude/skills/`
-
-#### Verify
-
-- Ask Claude Code to perform a reinjection task that should trigger the skill (for example: “Use Contextify to find context for <topic> in this repo and bring back the relevant neighborhood.”).
-- Confirm the response uses `contextify-query` and follows the reinjection workflow.
-
-#### Upgrade/removal
-
-- Upgrade:
-  - Plugin: use Claude Code’s plugin upgrade flow
-  - Fallback: overwrite the skill folders (same rsync commands as install)
-- Removal:
-  - Plugin: uninstall the plugin
-  - Fallback: delete the skill folder from `~/.claude/skills/<skill-name>`
-
-### Claude Code content surface
-
-Define which surface we ship for Claude Code in Phase 2:
-
-- A skill (if supported), or
-- A plugin/repo marketplace entry, or
-- A drop-in instructions file and where it lives.
-
-Phase 2 success does not require a first-class Claude skill if Codex adoption is the main driver.
-
----
-
 ## Deliverable C: CLI Install / Distribution Story
 
 ### Packaging requirement (Phase 2)
 
-Homebrew is deferred. Phase 2 packages `contextify-query` with both distribution channels:
+Homebrew is deferred as a packaging channel for the CLI. Phase 2 still packages `contextify-query` with both distribution channels:
 
 - DMG (Contextify)
 - App Store (Contextify App Store)
@@ -322,9 +238,9 @@ Skills do not hardcode `/Applications/Contextify.app/...` paths.
 - Use a Phase 2 adoption checklist:
   - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
 - Add a Phase 2 skills QA checklist:
-  - verify Codex loads skills (`list skills` shows the Contextify skills)
+  - verify Claude Code plugin install/upgrade works
   - verify end-to-end flow works using only skill guidance
-  - record “last verified” date + Codex version
+  - record “last verified” date + Claude Code version
 - Add a CLI install QA checklist:
   - install (DMG)
   - PATH presence
@@ -348,11 +264,14 @@ Guidelines:
 
 ## Open questions (Phase 2)
 
-- Do we target Codex first and treat Claude Code as best-effort, or ship both skills in the same phase?
 - Where do we store versioned skills in the repo (`build/skills/...` vs `build/docs/...`)?
 - Preferred DMG install target:
   - `/opt/homebrew/bin` vs `/usr/local/bin` vs both?
 - Homebrew: deferred (not a Phase 2 deliverable).
+
+## Follow-on: Codex skills (Phase 2.1)
+
+Codex skills are a follow-on once Codex skills support is stable and documented.
 
 ---
 

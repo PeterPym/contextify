@@ -46,6 +46,8 @@ If the skills are installed before Contextify is installed:
 
 ## B) Codex skills
 
+Phase 2 does not ship Codex skills. This section is a Phase 2.1 follow-on once Codex skills are stable and documented.
+
 1) Install skills
 
 ```bash
