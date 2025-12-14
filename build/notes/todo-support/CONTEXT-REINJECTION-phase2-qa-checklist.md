@@ -34,6 +34,14 @@ contextify-query status --json
 
 Expected: exit code `0` and JSON output.
 
+3) Entry ids are UUID strings
+
+```bash
+contextify-query search "test" --limit 1 --json
+```
+
+Expected: the first result’s `id` is a UUID string (no `e_` prefix).
+
 ## A0) First-run onboarding (Contextify not installed yet)
 
 If the skills are installed before Contextify is installed:

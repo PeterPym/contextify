@@ -35,6 +35,27 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
 
 ---
 
+## Phase 1 contract dependencies
+
+Phase 2 assumes the Phase 1 `contextify-query` contract is implemented as specified in `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`.
+
+Minimum required CLI behaviors (skills depend on these):
+
+- Read-only DB access (no writes) and stable JSON output via `--json`.
+- Entry ids are UUID strings (no `e_` prefix).
+- Commands:
+  - `status --json`
+  - `search <query> --json`
+  - `context <entry-id> --json`
+- Flags used by skills:
+  - scoping: `--project .` (project resolution by path)
+  - time: `--days N`
+  - result size: `--limit N`
+  - neighborhood size: `--before N --after N --max-window N`
+- Errors:
+  - `featureUnavailable` for missing FTS/search capability (no silent fallback).
+  - `dbNotFound`, `dbProjectNotFound`, `entryNotFound` surfaced as structured errors (skills should treat `details.*` as optional).
+
 ## Deliverable A: Claude Code skill (plugin-first)
 
 ### Target mechanism
