@@ -701,7 +701,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-## Context Re-injection (1 item)
+## Context Re-injection (3 items)
 
 **Status:** Phase 1 complete; Phase 2 queued
 **Priority:** P1 (enables AI workflow continuity)
@@ -723,6 +723,11 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 **Follow-ons (tracked):**
 - `#CONTEXTIFY-QUERY-REPORTS` - add `contextify-query report ...` aggregations (demos + query planning): `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+- `#QA-14-APPSTORE-CLI-REPAIR` - add App Store E2E coverage for CLI repair flow: `build/notes/todo-support/QA-14-appstore-cli-repair-e2e.md`
+- `#CONTEXTIFY-QUERY-APPSTORE-CLI` - resolve standalone execution model for embedded CLI in App Store builds (current crash): `build/notes/todo-support/CONTEXTIFY-QUERY-APPSTORE-CLI-investigation.md`
+
+- [ ] #QA-14-APPSTORE-CLI-REPAIR: Add E2E test for App Store “Repair (Saved Folder)” CLI install flow (bookmark seeding + log-tag assertions)
+- [ ] #CONTEXTIFY-QUERY-APPSTORE-CLI: Decide/fix whether `contextify-query` embedded in App Store builds is expected to run standalone, and if yes, make it stable
 
 **Research Docs:**
 - `build/notes/todo-support/CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation

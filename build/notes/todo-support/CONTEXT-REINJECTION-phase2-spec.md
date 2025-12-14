@@ -33,6 +33,13 @@ Phase 2 focuses on adoption: external agents reliably use that surface without b
 - Writing to the Contextify database.
 - A full “Copy with Context” UI flow in Contextify (can be Phase 3+).
 
+## Follow-ons (tracked)
+
+Phase 2 ships a usable baseline. These follow-ons remain tracked in `build/notes/TODOS.md` and have supporting docs:
+
+- `#QA-14-APPSTORE-CLI-REPAIR` — App Store E2E coverage for “Repair (Saved Folder)” install flow: `build/notes/todo-support/QA-14-appstore-cli-repair-e2e.md`
+- `#CONTEXTIFY-QUERY-APPSTORE-CLI` — decide/fix whether bundled `contextify-query` is expected to run standalone in App Store builds (current crash): `build/notes/todo-support/CONTEXTIFY-QUERY-APPSTORE-CLI-investigation.md`
+
 ---
 
 ## Phase 1 contract dependencies
