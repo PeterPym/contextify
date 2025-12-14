@@ -219,6 +219,75 @@ In a clean shell where `contextify-query` is not on PATH (or after temporarily a
 
 Run this on a macOS 15 VM to validate “Lite Mode” compatibility assumptions.
 
+## F) App Store distribution manual QA (best-effort)
+
+These checks validate the App Store constraints described in the Phase 2 spec. Some portions are intentionally not automated yet (tracked as follow-ons).
+
+1) Build App Store distribution
+
+```bash
+bash scripts/xc.sh --dist=appstore Debug build
+```
+
+Expected: build succeeds with 0 warnings.
+
+2) Bundle integrity (App Store)
+
+Use the same checks as A1 (pointing at the App Store build’s `Contextify.app`), plus:
+
+- The app bundle includes `contextify-query` and `contextify-query-shim` at the expected locations.
+- The Claude plugin assets are present under `Contents/Resources/contextify-query/claude-plugin/`.
+
+3) Settings → CLI tab install flow (App Store)
+
+Manual:
+
+- Launch Contextify App Store build.
+- Open Settings → CLI tab.
+- Use the “Install/Repair …” action.
+- Pick a user-writable directory (recommend `~/bin`) if prompted.
+
+Expected:
+
+- The app requests access only as required (folder picker).
+- After install, `command -v contextify-query` resolves to a path under the chosen directory.
+- Re-opening Settings shows an installed state and offers repair/uninstall actions.
+
+4) Repair flow (App Store; manual until QA-14 exists)
+
+Manual:
+
+- Quit the app.
+- Delete the installed shim from the chosen directory.
+- Relaunch the app and use “Repair” in the CLI tab.
+
+Expected: shim is restored in the same directory without requiring the user to re-pick a folder.
+
+Note: Automated coverage for this is tracked as `#QA-14-APPSTORE-CLI-REPAIR`.
+
+5) Standalone execution behavior (App Store)
+
+Manual:
+
+```bash
+"<Contextify.app>/Contents/MacOS/contextify-query" status --json
+```
+
+Expected: either:
+
+- works and returns JSON (preferred), or
+- fails with a documented, stable error envelope/exit code if sandbox constraints prevent standalone execution.
+
+Note: current observed behavior is a crash in some environments; investigation is tracked as `#CONTEXTIFY-QUERY-APPSTORE-CLI`.
+
+## G) Automated QA scripts (recommended)
+
+Run the scripts below after the build checks above. These are designed to be readable and safe to run locally.
+
+- Run all scripted QA tests: `bash scripts/qa/run-all-tests.sh`
+- DMG UI-driven CLI install E2E: `bash scripts/qa/tests/QA-13-cli-install-dmg.sh`
+- Bundle integrity (DMG + App Store): `bash scripts/qa/tests/QA-15-query-bundle-integrity.sh`
+
 1) Install and launch Contextify (DMG build).
 
 Expected:
