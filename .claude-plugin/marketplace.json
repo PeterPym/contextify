@@ -1,0 +1,13 @@
+{
+  "name": "contextify",
+  "owner": {
+    "name": "Contextify"
+  },
+  "plugins": [
+    {
+      "name": "query",
+      "source": "./contextify-query/claude-plugin",
+      "description": "Contextify query + reinjection skills (requires Contextify + contextify-query CLI)"
+    }
+  ]
+}
