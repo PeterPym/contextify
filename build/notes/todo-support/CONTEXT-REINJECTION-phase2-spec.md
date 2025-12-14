@@ -404,6 +404,12 @@ Guidelines:
 
 Codex skills are a follow-on once Codex skills support is stable and documented.
 
+## Follow-on: Report aggregations (Phase 2.2)
+
+Read-only `contextify-query report ...` aggregations are tracked as a follow-on to support query planning and demo-quality outputs:
+
+- `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+
 ---
 
 ## References

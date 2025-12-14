@@ -19,6 +19,21 @@ related:
 
 ---
 
+## Current status
+
+Contextify provides a read-only query CLI (`contextify-query`) and a Claude Code plugin marketplace entry (`query@contextify`) that installs skills for search → anchor → neighborhood reinjection.
+
+Active docs:
+
+- Phase 1 CLI contract: `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+- Phase 2 adoption spec: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`
+- Phase 2 plan: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-plan.md`
+- Phase 2 QA checklist: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
+
+Follow-ons:
+
+- Aggregation/report commands for query planning and demos: `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+
 ## 0. Brief Comparison: Report A vs Report B
 
 * **Where they fully agree**

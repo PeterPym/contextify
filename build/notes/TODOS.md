@@ -721,6 +721,9 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
    - DMG: install/symlink into a PATH directory with explicit user consent.
    - App Store: bundle CLI and support user-driven install to a user-writable directory, or document absolute-path invocation.
 
+**Follow-ons (tracked):**
+- `#CONTEXTIFY-QUERY-REPORTS` - add `contextify-query report ...` aggregations (demos + query planning): `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+
 **Research Docs:**
 - `build/notes/todo-support/CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
 - `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-research-report.md` - Claude Code capabilities
