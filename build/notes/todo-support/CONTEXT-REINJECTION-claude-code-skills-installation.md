@@ -24,7 +24,7 @@ Phase 2 ships a Claude Code plugin from this repository via a marketplace:
 
 ```text
 /plugin marketplace add PeterPym/contextify
-/plugin install contextify@peterpym-contextify
+/plugin install contextify@peterpym
 ```
 
 Claude Code requires a restart after installing a plugin.

@@ -108,7 +108,7 @@ In Claude Code:
 
 ```text
 /plugin marketplace add PeterPym/contextify
-/plugin install contextify@peterpym-contextify
+/plugin install contextify@peterpym
 ```
 
 Expected:

@@ -84,7 +84,7 @@ Phase 2 ships a Claude Code plugin from this repository via a plugin marketplace
 Decisions:
 
 - Marketplace repo (public-facing): `PeterPym/contextify`
-- Marketplace id: `peterpym-contextify`
+- Marketplace id (marketplace.json.name): `peterpym`
 - Plugin id: `contextify`
 - Plugin source path (within this repo): `./contextify-query/claude-plugin`
 
@@ -112,12 +112,12 @@ Install/upgrade/uninstall (user steps):
 1) Add the marketplace:
   - `/plugin marketplace add PeterPym/contextify`
 2) Install:
-  - `/plugin install contextify@peterpym-contextify`
+  - `/plugin install contextify@peterpym`
   - restart Claude Code after install
 3) Upgrade:
-  - re-run `/plugin install contextify@peterpym-contextify` (then restart)
+  - re-run `/plugin install contextify@peterpym` (then restart)
 4) Uninstall:
-  - `/plugin uninstall contextify@peterpym-contextify`
+  - `/plugin uninstall contextify@peterpym`
 
 If the plugin is installed before Contextify:
 
