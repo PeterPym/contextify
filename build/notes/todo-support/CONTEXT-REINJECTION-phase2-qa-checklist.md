@@ -116,6 +116,15 @@ Expected:
 - Claude Code prompts to install.
 - After restart, `claude --debug` shows the plugin is loaded.
 
+Local development validation (repo marketplace):
+
+```bash
+claude plugin marketplace add ./
+claude plugin install query@contextify
+```
+
+Note: `claude plugin marketplace add .` is rejected; use `./`.
+
 2) Install (fallback: personal skills)
 
 ```bash

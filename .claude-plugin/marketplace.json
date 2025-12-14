@@ -1,5 +1,8 @@
 {
   "name": "contextify",
+  "metadata": {
+    "description": "Contextify plugins (starting with query/reinjection skills via contextify-query)."
+  },
   "owner": {
     "name": "Contextify"
   },

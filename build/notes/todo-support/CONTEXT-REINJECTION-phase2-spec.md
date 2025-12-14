@@ -124,6 +124,11 @@ If the plugin is installed before Contextify:
 
 - Skills guide the user to install Contextify, then run Contextify → “Install/Repair CLI…”, then retry.
 
+Local development validation:
+
+- `claude plugin marketplace add ./`
+- `claude plugin install query@contextify`
+
 ### Skill set
 
 #### Skill 1: `contextify-reinject`
