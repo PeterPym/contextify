@@ -1,8 +1,12 @@
 import SwiftUI
 import ContextifyCore
+import OSLog
 
 struct CLISkillsSettingsTab: View {
   @StateObject private var installer = ContextifyQueryCLIInstaller()
+  @State private var didLogAppear: Bool = false
+
+  private let log = Logger(subsystem: "dev.contextify", category: "QueryCLIInstall")
 
   var body: some View {
     Form {
@@ -32,22 +36,26 @@ struct CLISkillsSettingsTab: View {
         HStack(spacing: 12) {
           if Sandbox.isSandboxed {
             Button("Choose Install Folder…") {
+              log.info("[QUERYCLI-INSTALL-START] mode=appstore action=chooseFolder")
               installer.chooseFolderAndInstallSandboxed()
             }
 
             if installer.status.sandboxedInstallDirectory != nil {
               Button("Repair (Saved Folder)") {
+                log.info("[QUERYCLI-INSTALL-START] mode=appstore action=repairSavedFolder")
                 installer.repairUsingSavedSandboxedFolder()
               }
             }
           } else {
             Button("Install/Repair (Recommended)") {
+              log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
               installer.installRecommendedDMG()
             }
           }
 
           if installer.status.installedIsOurShim, installer.status.installedOnPATH != nil {
             Button("Uninstall") {
+              log.info("[QUERYCLI-UNINSTALL-START]")
               installer.uninstallFromInstalledPATH()
             }
           }
@@ -103,6 +111,7 @@ struct CLISkillsSettingsTab: View {
               .background(Color(nsColor: .controlBackgroundColor))
               .cornerRadius(4)
             Button("Copy sudo command") {
+              log.info("[QUERYCLI-INSTALL-SUDO-COPY]")
               sudo.copyToClipboard()
             }
             .controlSize(.small)
@@ -121,8 +130,13 @@ struct CLISkillsSettingsTab: View {
         }
       }
     }
-    .onAppear { installer.refreshStatus() }
+    .onAppear {
+      if !didLogAppear {
+        didLogAppear = true
+        log.info("[QUERYCLI-SETTINGS-TAB-OPEN]")
+      }
+      installer.refreshStatus()
+    }
     .frame(width: 520)
   }
 }
-

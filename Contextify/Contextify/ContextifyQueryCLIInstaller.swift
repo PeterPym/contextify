@@ -91,13 +91,21 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       installedIsOurShim: installedIsOurShim,
       sandboxedInstallDirectory: sandboxedInstallDirectory
     )
+
+    if let pathHit {
+      log.info("[QUERYCLI-STATUS] onPath=1 isOurShim=\(installedIsOurShim) path=\(pathHit.path, privacy: .public)")
+    } else {
+      log.info("[QUERYCLI-STATUS] onPath=0")
+    }
   }
 
   func installRecommendedDMG() {
     do {
       let dir = try Self.recommendedInstallDirectoryForDMG()
+      log.info("[QUERYCLI-INSTALL-DIR] mode=dmg dir=\(dir.path, privacy: .public)")
       try installShim(toDirectory: dir, allowSudoSnippet: true)
     } catch {
+      log.error("[QUERYCLI-INSTALL-ERROR] \(error.localizedDescription, privacy: .public)")
       lastError = error.localizedDescription
     }
     refreshStatus()
@@ -106,12 +114,14 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
   func chooseFolderAndInstallSandboxed() {
     do {
       let folder = try Self.promptForInstallFolder()
+      log.info("[QUERYCLI-INSTALL-DIR] mode=appstore dir=\(folder.path, privacy: .public)")
       try bookmarkStore.saveFolderURL(folder)
       try withSecurityScopedAccess(folder) { scoped in
         try installShim(toDirectory: scoped, allowSudoSnippet: false)
       }
       refreshStatus()
     } catch {
+      log.error("[QUERYCLI-INSTALL-ERROR] \(error.localizedDescription, privacy: .public)")
       lastError = error.localizedDescription
       refreshStatus()
     }
@@ -122,11 +132,13 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       guard let folder = try? bookmarkStore.resolveFolderURL() else {
         throw InstallError.bookmarkMissing
       }
+      log.info("[QUERYCLI-INSTALL-DIR] mode=appstore dir=\(folder.path, privacy: .public) action=repair")
       try withSecurityScopedAccess(folder) { scoped in
         try installShim(toDirectory: scoped, allowSudoSnippet: false)
       }
       refreshStatus()
     } catch {
+      log.error("[QUERYCLI-INSTALL-ERROR] \(error.localizedDescription, privacy: .public)")
       lastError = error.localizedDescription
       refreshStatus()
     }
@@ -138,6 +150,7 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       try uninstallShim(at: installed)
       refreshStatus()
     } catch {
+      log.error("[QUERYCLI-UNINSTALL-ERROR] \(error.localizedDescription, privacy: .public)")
       lastError = error.localizedDescription
       refreshStatus()
     }
@@ -149,6 +162,7 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
     }
     try FileManager.default.removeItem(at: url)
     lastSuccess = "Removed \(url.path)"
+    log.info("[QUERYCLI-UNINSTALL-DONE] path=\(url.path, privacy: .public)")
   }
 
   private func installShim(toDirectory directory: URL, allowSudoSnippet: Bool) throws {
@@ -163,11 +177,17 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       lastSuccess = "Installed to \(destination.path)"
       lastSudoCommand = nil
       lastError = nil
-      log.info("Installed shim to \(destination.path, privacy: .public)")
+      log.info("[QUERYCLI-INSTALL-DONE] path=\(destination.path, privacy: .public)")
     } catch {
       if allowSudoSnippet, Self.isPermissionDenied(error) {
         lastSudoCommand = Self.makeSudoInstallCommand(from: shimSource, to: destination)
+        log.warning("[QUERYCLI-INSTALL-SUDO-REQUIRED] path=\(destination.path, privacy: .public)")
         throw InstallError.permissionDenied(target: destination, sudoCommand: lastSudoCommand)
+      }
+      if case InstallError.collision(let existing) = error {
+        log.error("[QUERYCLI-INSTALL-COLLISION] path=\(existing.path, privacy: .public)")
+      } else {
+        log.error("[QUERYCLI-INSTALL-ERROR] \(error.localizedDescription, privacy: .public)")
       }
       throw error
     }
