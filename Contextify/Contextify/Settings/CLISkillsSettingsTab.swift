@@ -51,6 +51,7 @@ struct CLISkillsSettingsTab: View {
               log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
               installer.installRecommendedDMG()
             }
+            .keyboardShortcut(.defaultAction)
           }
 
           if installer.status.installedIsOurShim, installer.status.installedOnPATH != nil {
@@ -58,6 +59,7 @@ struct CLISkillsSettingsTab: View {
               log.info("[QUERYCLI-UNINSTALL-START]")
               installer.uninstallFromInstalledPATH()
             }
+            .keyboardShortcut("u", modifiers: [.command, .shift])
           }
         }
       }
