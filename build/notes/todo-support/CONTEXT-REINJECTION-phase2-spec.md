@@ -48,14 +48,40 @@ Each skill is a directory containing `SKILL.md` with YAML frontmatter:
 
 Codex injects only name/description/path at startup; the body is read when needed.
 
-### Codex install/enable behavior (MUST FILL IN)
+### Codex install/enable behavior
 
-This section is intentionally a stub and must be completed before Phase 2 implementation.
+#### Install location
 
-- How skills are enabled/disabled in Codex (flags/config).
-- How users verify skills are loaded (expected command + expected output).
-- Upgrade/removal workflow (copy/rsync overwrite semantics, git clone/pull semantics).
-- Any constraints Codex enforces (symlink rules, hidden directory rules, reload behavior).
+- Skills are discovered from `~/.codex/skills/`, where each skill is a directory containing `SKILL.md`.
+
+#### Enable/disable
+
+- Skills are enabled per session using `--enable skills`:
+  - Enable: `codex --enable skills`
+  - Disable: omit the flag
+
+#### Verify skills are loaded
+
+- In an active Codex session, prompt: `list skills`
+- Expect the response to list:
+  - skill names and descriptions
+  - the filesystem path to `SKILL.md`
+
+#### Reload behavior
+
+- Skills are loaded once per session; changes require starting a new Codex session.
+
+#### Upgrade/removal
+
+- Upgrade: overwrite skill folders:
+  - `rsync -a --delete build/skills/codex/ ~/.codex/skills/`
+- Removal: delete a skill folder:
+  - `rm -rf ~/.codex/skills/<skill-name>`
+
+#### Constraints / gotchas
+
+- Treat skills as an evolving feature; Phase 2 QA captures a “last verified” Codex version and date.
+- Do not assume symlink behavior for skills; install as real directories/files.
 
 ### Skill set
 
@@ -110,25 +136,64 @@ Ship canonical skill content inside the repo as templates:
 
 - `build/skills/codex/contextify-reinject/SKILL.md`
 - `build/skills/codex/contextify-query-debug/SKILL.md`
+- `build/skills/claude/contextify-reinject/SKILL.md`
+- `build/skills/claude/contextify-query-debug/SKILL.md`
 
 Provide a one-liner install instruction:
 
-- `rsync -a build/skills/codex/ ~/.codex/skills/`
+- `rsync -a --delete build/skills/codex/ ~/.codex/skills/`
+
+### Cross-tool skill deployment
+
+To avoid drift across tools, Phase 2 treats the repo (and the app bundle built from it) as the canonical source of skill content.
+
+Deployment options:
+
+- App-driven installer (preferred): Contextify provides “Install Skills…” with options for:
+  - Codex (`~/.codex/skills/`)
+  - Claude Code personal skills (`~/.claude/skills/`)
+  - Claude Code project skills (`.claude/skills/` in the selected repo)
+- Terminal install (fallback): `rsync` commands documented above.
+
+Rules:
+
+- Install skills as real directories/files (no symlinks).
+- Each install flow provides a “Verify” step that is copy/pasteable and has expected output.
 
 ---
 
 ## Deliverable B: Claude Code skill/instructions (optional)
 
-### Claude Code install/enable behavior (MUST FILL IN)
+### Claude Code install/enable behavior
 
-This section is intentionally a stub and must be completed before Phase 2 implementation.
+Claude Code discovers skills from two locations:
 
-- Whether Claude Code supports “skills” directly vs plugins vs instructions.
-- Exact install location / command(s) to install the skill/instructions.
-- How users verify it is active (expected UI or command output).
-- Upgrade/removal workflow.
+- Personal skills: `~/.claude/skills/`
+- Project skills (shared via git): `.claude/skills/` within a repo
 
-### Claude Code content surface (MUST FILL IN)
+#### Install (personal skills)
+
+- Install by copying the skill directory:
+  - `mkdir -p ~/.claude/skills`
+  - `rsync -a --delete build/skills/claude/ ~/.claude/skills/`
+
+#### Install (project skills)
+
+- Install by copying into the repo:
+  - `mkdir -p .claude/skills`
+  - `rsync -a --delete build/skills/claude/ .claude/skills/`
+
+#### Verify
+
+- Ask Claude Code to perform a reinjection task that should trigger the skill (for example: “Use Contextify to find context for <topic> in this repo and bring back the relevant neighborhood.”).
+- Confirm the response uses `contextify-query` and follows the reinjection workflow.
+
+#### Upgrade/removal
+
+- Upgrade: overwrite the skill folders (same rsync commands as install).
+- Removal: delete the skill folder from `~/.claude/skills/<skill-name>` or `.claude/skills/<skill-name>`.
+
+### Claude Code content surface
 
 Define which surface we ship for Claude Code in Phase 2:
 
@@ -151,14 +216,24 @@ Homebrew is deferred. Phase 2 packages `contextify-query` with both distribution
 
 This section defines how external tools get a stable, usable invocation path for the packaged CLI.
 
-### Core approach: symlink to bundled CLI + repair flow
+### Core approach: PATH entrypoint + repair flow
 
-The preferred design is to bundle the `contextify-query` binary inside the app bundle and install a lightweight entrypoint on the user’s PATH (typically a symlink that points at the bundled binary).
+The preferred design is to bundle the `contextify-query` binary inside the app bundle and install a lightweight entrypoint on the user’s PATH.
 
-This implies a clear behavior:
+This implies a clear behavior: the entrypoint must be repairable when the app moves/renames or the user changes PATH locations. The app provides an explicit “Install/Repair CLI…” action.
 
-- If the user moves or renames the app, the symlink can break.
-- This is acceptable UX as long as the app provides an explicit “Repair CLI” action and the CLI prints a clear remediation message when invoked via a broken link.
+#### Preferred entrypoint: shim (recommended)
+
+Install a small shim executable (or script) named `contextify-query` onto `PATH`. The shim locates the Contextify app bundle and then execs the bundled `contextify-query` binary.
+
+Advantages:
+
+- If the app moves, the shim can emit a clear remediation message (instead of “No such file or directory” from a broken symlink).
+- The shim can support both DMG and App Store distribution with the same behavior.
+
+#### Alternate entrypoint: symlink (simple)
+
+A symlink to the bundled binary is simpler but produces a hard failure when the app moves. It is acceptable as a Phase 2 fallback, but the shim is preferred.
 
 ### DMG channel (preferred)
 
@@ -166,9 +241,9 @@ Goal: `contextify-query` is invokable as `contextify-query` from a typical shell
 
 Options:
 
-1) Symlink into a PATH directory (preferred UX)
+1) Install shim into a PATH directory (preferred UX)
 - Target: `/opt/homebrew/bin/contextify-query` if present else `/usr/local/bin/contextify-query`.
-- Source: a bundled binary inside `Contextify.app` (stable path).
+- Source: a shim that locates the app and runs the bundled binary.
 - Requires user consent; may require admin privileges.
 
 2) User-writable install fallback
@@ -177,22 +252,37 @@ Options:
 
 Implementation notes:
 
-- Provide an in-app “Install/Repair CLI…” UI (DMG only) that:
+- Provide an in-app “Install/Repair CLI…” UI that:
   - detects likely PATH dir
-  - attempts install
-  - on failure, prints copy/paste `sudo ln -sf ...` command
-  - offers “Repair” when an existing symlink is broken or points elsewhere
+  - offers DMG mode: install into `/opt/homebrew/bin` or `/usr/local/bin` with an authorization prompt or copy/paste `sudo` command fallback
+  - offers App Store mode: user-driven install into a user-chosen folder (recommend `~/bin`)
+  - offers “Repair” when an existing shim/symlink is broken or points elsewhere
   - offers uninstall
 
-### DMG install target selection (MUST FILL IN)
+### DMG install target selection
 
-Decide the exact behavior:
+Target selection chain:
 
-- Preferred target order (e.g., `/opt/homebrew/bin` then `/usr/local/bin`), including detection rules.
-- Whether we create missing directories.
-- Exact prompts/consent UX (including any authorization prompts if writing outside the home directory).
-- Upgrade behavior (replace existing file/symlink, what if it points elsewhere).
-- Uninstall behavior (remove only if it points to our bundled CLI).
+1) If `/opt/homebrew/bin` exists:
+  - if writable: install shim there
+  - else: provide a copy/paste `sudo` command to install
+2) Else if `/usr/local/bin` exists:
+  - if writable: install shim there
+  - else: provide a copy/paste `sudo` command to install
+3) Else fallback to `~/bin`:
+  - create `~/bin` if missing
+  - provide a copy/paste PATH export line for common shells
+
+Upgrade behavior:
+
+- Replace only if the existing `contextify-query` is:
+  - a shim installed by Contextify (marker embedded), or
+  - a symlink pointing to a Contextify bundle path
+- Otherwise, refuse and explain how to uninstall/rename the existing file.
+
+Uninstall behavior:
+
+- Remove only if it is recognized as Contextify’s shim/symlink target.
 
 ### App Store channel
 
@@ -202,19 +292,20 @@ Supported approaches:
 
 - Bundle the CLI in the app.
 - Offer a user-driven install to a user-writable location (commonly `~/bin`) with explicit instruction.
-- Provide a fallback: use absolute path to the bundled CLI.
+- Provide a fallback: invoke a known shim path (if installed) or call the bundled binary via app-driven UI.
 
 Phase 2 can ship without perfect PATH ergonomics for App Store builds; prioritize clarity and a reliable fallback.
 
-### Absolute-path invocation strategy (MUST FILL IN)
+### When `contextify-query` is not on PATH
 
-If `contextify-query` is not on PATH, skills and docs need a deterministic fallback.
+Skills use this strategy:
 
-Define:
+1) Attempt: `contextify-query ...`
+2) If unavailable, instruct the user to:
+  - open Contextify and run “Install/Repair CLI…”, or
+  - run the shim from a known location (recommended `~/bin/contextify-query`) if they installed it there
 
-- The canonical bundled path inside the app bundle (if we ship it there).
-- How we locate the app bundle robustly (do we assume `/Applications`, support `~/Applications`, etc.).
-- Whether we ship a tiny “shim” in a stable location (home directory) that forwards to the bundled CLI.
+Skills do not hardcode `/Applications/Contextify.app/...` paths.
 
 ---
 
@@ -222,14 +313,30 @@ Define:
 
 - Maintain a scripted runner for manual QA:
   - `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
-- Add a Phase 2 skill QA doc:
-  - verify Codex loads skills (skill appears in “list skills”)
+- Use a Phase 2 adoption checklist:
+  - `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
+- Add a Phase 2 skills QA checklist:
+  - verify Codex loads skills (`list skills` shows the Contextify skills)
   - verify end-to-end flow works using only skill guidance
-- Add a DMG install QA checklist:
-  - install
+  - record “last verified” date + Codex version
+- Add a CLI install QA checklist:
+  - install (DMG)
   - PATH presence
   - uninstall
-  - upgrades (existing symlink)
+  - upgrades (existing shim/symlink)
+  - App Store user-driven install flow (folder picker)
+
+## Skill versioning / compatibility
+
+Skills avoid assuming flags that may not exist in older CLI versions.
+
+Guidelines:
+
+- Start flows with `contextify-query status --json` when capability is uncertain.
+- On missing flags or subcommands:
+  - instruct the user to update Contextify, or
+  - fall back to a simpler query pattern.
+- Keep the skills and CLI shipped from the same app release to avoid drift.
 
 ---
 
@@ -249,6 +356,7 @@ Define:
 - Phase 1 QA runner: `build/notes/todo-support/CONTEXT-REINJECTION-qa-runner.sh`
 - Skills adoption research: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-skills-research.md`
 - Claude Code install reference: `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-skills-installation.md`
+- Phase 2 QA checklist: `build/notes/todo-support/CONTEXT-REINJECTION-phase2-qa-checklist.md`
 - Local skills reference docs:
   - `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-overview-reference.md`
   - `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-developer-guide-reference.md`

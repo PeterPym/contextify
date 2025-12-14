@@ -43,3 +43,12 @@ From `https://github.com/anthropics/skills`:
 ## Missing: dedicated “install your own skill” docs (TO ADD)
 
 The Contextify Phase 2 plan needs an explicit “install a local custom skill” flow for Claude Code. If Anthropic publishes a definitive doc for that workflow, add it here as a Markdown reference.
+
+## Filesystem installs for Claude Code
+
+Claude Code also discovers skills from the filesystem:
+
+- Personal: `~/.claude/skills/`
+- Project: `.claude/skills/` within a repo
+
+This flow is described in `build/notes/todo-support/CONTEXT-REINJECTION-agent-skills-developer-guide-reference.md` and is validated during Phase 2 QA.
