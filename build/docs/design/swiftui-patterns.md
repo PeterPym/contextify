@@ -1,6 +1,6 @@
 # SwiftUI Architecture Patterns
 
-**Last Updated:** 2025-12-11
+**Last Updated:** 2025-12-13
 **Status:** ✅ Active
 **Audience:** Developers working on Contextify's SwiftUI views
 
@@ -20,7 +20,9 @@
 10. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
 11. [Migration from StateObject to Observable](#migration-from-stateobject-to-observable)
 12. [Platform Quirks and Workarounds](#platform-quirks-and-workarounds)
-13. [Custom Keyboard Navigation (Tab/Shift+Tab/Enter)](#custom-keyboard-navigation-tabshift-tabenter)
+13. [macOS 15 (Sequoia) Quirks](#macos-15-sequoia-quirks)
+14. [Search Field Conventions](#search-field-conventions)
+15. [Custom Keyboard Navigation (Tab/Shift+Tab/Enter)](#custom-keyboard-navigation-tabshift-tabenter)
 
 ---
 
@@ -1321,6 +1323,183 @@ private func scrollToTargetIfNeeded(proxy: ScrollViewProxy) {
 **Implementation Example:**
 - `Contextify/Contextify/DeepSearchView.swift:164-172` - Combined `onAppear` + `onChange` pattern
 - `Contextify/Contextify/DeepSearchView.swift:186-203` - `scrollToHitIfNeeded` helper function
+
+---
+
+## macOS 15 (Sequoia) Quirks
+
+macOS 15 introduces several SwiftUI regressions, particularly around horizontal ScrollViews and gestures. These quirks do NOT exist on macOS 26 (Tahoe).
+
+### Horizontal ScrollView Blocks onTapGesture
+
+**Problem:** Inside a horizontal `ScrollView`, `onTapGesture` is completely blocked on macOS 15. Taps are intercepted by the ScrollView's gesture handling and never reach the tap handler.
+
+**Symptoms:**
+- Buttons using `onTapGesture` don't respond to clicks
+- `simultaneousGesture`, `highPriorityGesture` don't help
+- `NSClickGestureRecognizer` doesn't help
+- Works fine in vertical ScrollViews and on macOS 26
+
+**Workaround:** Use `Button` with a custom `ButtonStyle` instead of `onTapGesture`:
+
+```swift
+// ❌ BAD: Doesn't work on macOS 15
+Text("Tab")
+  .onTapGesture { handleTap() }
+
+// ✅ GOOD: Works on all macOS versions
+private struct ScrollViewButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .opacity(configuration.isPressed ? 0.7 : 1.0)
+  }
+}
+
+Button { handleTap() } label: {
+  Text("Tab")
+    .contentShape(Rectangle())  // Expand hit area to full frame
+}
+.buttonStyle(ScrollViewButtonStyle())
+```
+
+**Why this works:** Button styles use a different gesture handling mechanism that doesn't conflict with ScrollView's pan gesture recognition.
+
+**Additional fix:** Add a 1pt invisible spacer above the ScrollView to fix hit-testing layout calculation:
+
+```swift
+VStack(spacing: 0) {
+  // Workaround: 1pt spacer fixes macOS 15 hit-testing in horizontal ScrollView
+  Color.clear.frame(height: 1)
+
+  ScrollView(.horizontal) {
+    // Content with Button+ButtonStyle
+  }
+}
+```
+
+**Implementation Reference:**
+- `Contextify/Contextify/ProjectSwitcherView.swift:15-20` - ScrollViewButtonStyle
+- `Contextify/Contextify/ContentView.swift` - 1pt spacer workaround
+
+---
+
+### .onDrag() Doesn't Work in Horizontal ScrollView
+
+**Problem:** The `.onDrag()` modifier fails to initiate drag operations inside horizontal ScrollViews on macOS 15. The drag preview never appears and the drag never starts.
+
+**Symptoms:**
+- Long-press/drag gesture is captured by ScrollView
+- No drag preview appears
+- Works fine on macOS 26
+
+**Failed alternatives:**
+- `.draggable()` modifier - Also doesn't work on macOS 15 (and breaks macOS 26)
+- `NSItemProvider` variations - Same result
+
+**Workaround:** Provide alternative reordering via context menu:
+
+```swift
+.contextMenu {
+  Button("Move Left") {
+    guard let idx = items.firstIndex(of: item), idx > 0 else { return }
+    var newOrder = items.map(\.id)
+    newOrder.swapAt(idx, idx - 1)
+    reorder(newOrder)
+  }
+  .disabled(isFirstItem)
+
+  Button("Move Right") {
+    guard let idx = items.firstIndex(of: item), idx < items.count - 1 else { return }
+    var newOrder = items.map(\.id)
+    newOrder.swapAt(idx, idx + 1)
+    reorder(newOrder)
+  }
+  .disabled(isLastItem)
+}
+```
+
+**Note:** Keep `.onDrag()` for macOS 26 users where it works correctly. The context menu provides a universal fallback.
+
+**Implementation Reference:**
+- `Contextify/Contextify/ProjectSwitcherView.swift:431-475` - Context menu with Move Left/Right
+- `Contextify/Contextify/ContextifyApp.swift:52-76` - Keyboard shortcuts (⌘⇧⌥[ / ⌘⇧⌥])
+
+---
+
+### .textSelection(.enabled) Causes Popover Sizing Issues
+
+**Problem:** Adding `.textSelection(.enabled)` to text in a popover causes incorrect sizing on macOS 15. The popover may be too small, clip content, or show incorrect layout.
+
+**Symptoms:**
+- Popover content is clipped
+- Height calculation is wrong
+- Works fine on macOS 26
+
+**Workaround:** Gate `.textSelection()` on macOS 26+:
+
+```swift
+@ViewBuilder
+private var bodyContent: some View {
+  if #available(macOS 26, *) {
+    Text(message)
+      .textSelection(.enabled)
+  } else {
+    Text(message)
+    // No textSelection on macOS 15
+  }
+}
+```
+
+**Implementation Reference:**
+- `Contextify/Contextify/InfoPopoverContent.swift:116-128` - Gated textSelection
+
+---
+
+### .presentationSizing(.fitted) Not Available
+
+**Problem:** The `.presentationSizing(.fitted)` modifier was introduced in macOS 26 and is not available on macOS 15.
+
+**Workaround:** Use a conditional modifier:
+
+```swift
+private struct PresentationSizingModifier: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(macOS 26, *) {
+      content.presentationSizing(.fitted)
+    } else {
+      content  // Rely on frame constraints
+    }
+  }
+}
+
+// Usage
+.modifier(PresentationSizingModifier())
+```
+
+**Alternative:** Use explicit `.frame()` and `.fixedSize()` that work on both versions:
+
+```swift
+.frame(width: 320, alignment: .leading)
+.fixedSize(horizontal: false, vertical: true)
+```
+
+**Implementation Reference:**
+- `Contextify/Contextify/InfoPopoverContent.swift:13-22` - PresentationSizingModifier
+
+---
+
+### Summary: macOS 15 ScrollView Workarounds
+
+| Issue | Workaround |
+|-------|------------|
+| `onTapGesture` blocked | Use `Button` + custom `ButtonStyle` |
+| Hit-testing broken | Add 1pt `Color.clear` spacer above ScrollView |
+| `.onDrag()` fails | Keep for macOS 26, add context menu fallback |
+| `.draggable()` fails | Don't use - breaks both macOS versions |
+| `.textSelection()` sizing | Gate with `#available(macOS 26, *)` |
+| `.presentationSizing()` unavailable | Use conditional modifier |
+
+**Testing Recommendation:** Test horizontal ScrollView interactions on BOTH macOS 15 and 26 VMs when making changes to tab bars, carousels, or similar horizontal scrolling UI.
 
 ---
 
