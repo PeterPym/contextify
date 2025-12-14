@@ -96,12 +96,19 @@ Purpose: Teach diagnosis of discovery, schema, and “why did this fail” cases
 
 ### Where these skills live
 
-Ship canonical skill content inside the repo as templates:
+Canonical skill source lives alongside the CLI contract surface:
 
-- `build/skills/claude/contextify-reinject/SKILL.md`
-- `build/skills/claude/contextify-query-debug/SKILL.md`
-- `build/skills/codex/contextify-reinject/SKILL.md` (Phase 2.1)
-- `build/skills/codex/contextify-query-debug/SKILL.md` (Phase 2.1)
+- `contextify-query/skills/claude/**/SKILL.md`
+- `contextify-query/skills/codex/**/SKILL.md` (Phase 2.1)
+
+Build-time packaging copies these into the app bundle for shipping (DMG + App Store).
+
+Current repo paths (to be migrated as part of implementation):
+
+- `build/skills/claude/contextify-reinject/SKILL.md` → `contextify-query/skills/claude/contextify-reinject/SKILL.md`
+- `build/skills/claude/contextify-query-debug/SKILL.md` → `contextify-query/skills/claude/contextify-query-debug/SKILL.md`
+- `build/skills/codex/contextify-reinject/SKILL.md` → `contextify-query/skills/codex/contextify-reinject/SKILL.md` (Phase 2.1)
+- `build/skills/codex/contextify-query-debug/SKILL.md` → `contextify-query/skills/codex/contextify-query-debug/SKILL.md` (Phase 2.1)
 
 ### Install
 
@@ -131,7 +138,9 @@ Rules:
 
 ### Packaging requirement (Phase 2)
 
-Homebrew is deferred as a packaging channel for the CLI. Phase 2 still packages `contextify-query` with both distribution channels:
+Homebrew is deferred as a packaging channel for the CLI (no formula/cask).
+
+Phase 2 still packages `contextify-query` with both distribution channels:
 
 - DMG (Contextify)
 - App Store (Contextify App Store)
@@ -185,10 +194,10 @@ Implementation notes:
 
 Target selection chain:
 
-1) If `/opt/homebrew/bin` exists:
+1) If `/opt/homebrew/bin` exists (common on Homebrew systems):
   - if writable: install shim there
   - else: provide a copy/paste `sudo` command to install
-2) Else if `/usr/local/bin` exists:
+2) Else if `/usr/local/bin` exists (common on non-Homebrew systems):
   - if writable: install shim there
   - else: provide a copy/paste `sudo` command to install
 3) Else fallback to `~/bin`:
@@ -264,10 +273,10 @@ Guidelines:
 
 ## Open questions (Phase 2)
 
-- Where do we store versioned skills in the repo (`build/skills/...` vs `build/docs/...`)?
-- Preferred DMG install target:
-  - `/opt/homebrew/bin` vs `/usr/local/bin` vs both?
-- Homebrew: deferred (not a Phase 2 deliverable).
+- Claude Code plugin packaging details:
+  - plugin identifier/name
+  - install/upgrade commands or UI steps (as verified)
+  - whether we publish to a marketplace vs provide a local install workflow
 
 ## Follow-on: Codex skills (Phase 2.1)
 

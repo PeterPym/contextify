@@ -51,7 +51,7 @@ Phase 2 does not ship Codex skills. This section is a Phase 2.1 follow-on once C
 1) Install skills
 
 ```bash
-rsync -a --delete build/skills/codex/ ~/.codex/skills/
+rsync -a --delete contextify-query/skills/codex/ ~/.codex/skills/
 ```
 
 Expected: `~/.codex/skills/contextify-reinject/SKILL.md` exists and `~/.codex/skills/contextify-query-debug/SKILL.md` exists.
@@ -101,7 +101,7 @@ Expected: agent runs `contextify-query search ...` then `contextify-query contex
 2) Install (fallback: personal skills)
 
 ```bash
-rsync -a --delete build/skills/claude/ ~/.claude/skills/
+rsync -a --delete contextify-query/skills/claude/ ~/.claude/skills/
 ```
 
 Expected: `~/.claude/skills/contextify-reinject/SKILL.md` exists.
