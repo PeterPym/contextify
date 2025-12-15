@@ -84,6 +84,7 @@ private struct SetupStepCard<Content: View, Action: View>: View {
       content
     }
     .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .background(Color(nsColor: .controlBackgroundColor))
     .cornerRadius(8)
   }
