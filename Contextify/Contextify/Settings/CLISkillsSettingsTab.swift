@@ -2,6 +2,31 @@ import SwiftUI
 import ContextifyCore
 import OSLog
 
+private struct MonospaceCopyRow: View {
+  let value: String
+  let copyLabel: String
+
+  init(_ value: String, copyLabel: String = "Copy") {
+    self.value = value
+    self.copyLabel = copyLabel
+  }
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Text(value)
+        .font(.system(.caption, design: .monospaced))
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .textSelection(.enabled)
+
+      Button(copyLabel) {
+        value.copyToClipboard()
+      }
+      .controlSize(.small)
+    }
+  }
+}
+
 struct CLISkillsSettingsTab: View {
   @StateObject private var installer = ContextifyQueryCLIInstaller()
   @State private var didLogAppear: Bool = false
@@ -16,9 +41,7 @@ struct CLISkillsSettingsTab: View {
           VStack(alignment: .leading, spacing: 12) {
             LabeledContent("Installed on PATH:") {
               if let path = installer.status.installedOnPATH?.path {
-                Text(path)
-                  .font(.system(.caption, design: .monospaced))
-                  .textSelection(.enabled)
+                MonospaceCopyRow(path)
               } else {
                 Text("Not found")
                   .foregroundStyle(.secondary)
@@ -119,23 +142,22 @@ struct CLISkillsSettingsTab: View {
               .background(Color(nsColor: .controlBackgroundColor))
               .cornerRadius(6)
 
-            HStack(spacing: 8) {
-              Button("Copy marketplace") {
-                "/plugin marketplace add PeterPym/contextify".copyToClipboard()
-              }
-              .controlSize(.small)
-
-              Button("Copy install") {
-                "/plugin install query@contextify".copyToClipboard()
+            HStack {
+              Menu("Copy…") {
+                Button("Marketplace command") {
+                  "/plugin marketplace add PeterPym/contextify".copyToClipboard()
+                }
+                Button("Install command") {
+                  "/plugin install query@contextify".copyToClipboard()
+                }
+                Divider()
+                Button("Both commands") {
+                  claudePluginCommands.copyToClipboard()
+                }
               }
               .controlSize(.small)
 
               Spacer()
-
-              Button("Copy both") {
-                claudePluginCommands.copyToClipboard()
-              }
-              .controlSize(.small)
             }
           }
           .padding(.vertical, 4)
@@ -148,9 +170,7 @@ struct CLISkillsSettingsTab: View {
                 Text("Bundled CLI:")
                   .font(.caption)
                   .foregroundStyle(.secondary)
-                Text(installer.status.bundledCLIURL.path)
-                  .font(.system(.caption, design: .monospaced))
-                  .textSelection(.enabled)
+                MonospaceCopyRow(installer.status.bundledCLIURL.path)
                   .foregroundStyle(.secondary)
               }
 
@@ -158,9 +178,7 @@ struct CLISkillsSettingsTab: View {
                 Text("Bundled shim:")
                   .font(.caption)
                   .foregroundStyle(.secondary)
-                Text(installer.status.bundledShimURL.path)
-                  .font(.system(.caption, design: .monospaced))
-                  .textSelection(.enabled)
+                MonospaceCopyRow(installer.status.bundledShimURL.path)
                   .foregroundStyle(.secondary)
               }
             }
