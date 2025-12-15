@@ -111,33 +111,55 @@ public final class CLICoordinator: ObservableObject {
     log.info("[CLI-DISABLE-COMPLETE]")
   }
 
-  /// Check for upgrades and install if bundled version > installed version
-  /// Called on app launch
+  /// Check for installation/upgrades and install if needed
+  /// Called on app launch (DMG only)
   public func checkAndUpgrade() async {
-    guard case .enabled(let installedVersion, _) = state else {
-      // Not installed, nothing to upgrade
-      return
-    }
+    // For DMG builds: auto-install on first launch or auto-upgrade if outdated
+    // For App Store builds: this should not be called (requires permission first)
 
     let bundledVersion = readBundledVersion()
-    guard bundledVersion != installedVersion else {
-      log.info("[CLI-UPGRADE-SKIP] version=\(bundledVersion) (already installed)")
+
+    switch state {
+    case .disabled:
+      // First-time install: auto-enable for DMG builds
+      log.info("[CLI-AUTO-INSTALL-START] version=\(bundledVersion)")
+      isHandlingOperation = true
+      defer { isHandlingOperation = false }
+
+      state = .installing
+      do {
+        try await installShimAndPlugin()
+        refreshState()
+        log.info("[CLI-AUTO-INSTALL-SUCCESS] version=\(bundledVersion)")
+      } catch {
+        state = .failed(error: error.localizedDescription)
+        log.error("[CLI-AUTO-INSTALL-FAILED] error=\(error.localizedDescription)")
+      }
+
+    case .enabled(let installedVersion, _):
+      // Check if upgrade needed
+      guard bundledVersion != installedVersion else {
+        log.info("[CLI-UPGRADE-SKIP] version=\(bundledVersion) (already installed)")
+        return
+      }
+
+      log.info("[CLI-UPGRADE-START] from=\(installedVersion) to=\(bundledVersion)")
+      isHandlingOperation = true
+      defer { isHandlingOperation = false }
+
+      state = .upgrading(from: installedVersion, to: bundledVersion)
+      do {
+        try await upgradePlugin(to: bundledVersion)
+        refreshState()
+        log.info("[CLI-UPGRADE-SUCCESS] version=\(bundledVersion)")
+      } catch {
+        state = .failed(error: error.localizedDescription)
+        log.error("[CLI-UPGRADE-FAILED] error=\(error.localizedDescription)")
+      }
+
+    default:
+      // Don't auto-install if installing, upgrading, or failed
       return
-    }
-
-    isHandlingOperation = true
-    defer { isHandlingOperation = false }
-
-    state = .upgrading(from: installedVersion, to: bundledVersion)
-    log.info("[CLI-UPGRADE-START] from=\(installedVersion) to=\(bundledVersion)")
-
-    do {
-      try await upgradePlugin(to: bundledVersion)
-      refreshState()
-      log.info("[CLI-UPGRADE-SUCCESS] version=\(bundledVersion)")
-    } catch {
-      state = .failed(error: error.localizedDescription)
-      log.error("[CLI-UPGRADE-FAILED] error=\(error.localizedDescription)")
     }
   }
 
