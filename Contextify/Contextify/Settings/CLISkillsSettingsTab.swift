@@ -126,13 +126,12 @@ private struct CommandSheet: View {
 
 struct CLISkillsSettingsTab: View {
   @StateObject private var installer = ContextifyQueryCLIInstaller()
+  @StateObject private var pluginDetector = ClaudePluginDetector()
   @State private var didLogAppear: Bool = false
   @State private var showingSudoSheet: Bool = false
-  @State private var showingClaudeSheet: Bool = false
   @State private var isAdvancedExpanded: Bool = false
 
   private let log = Logger(subsystem: "dev.contextify", category: "QueryCLIInstall")
-  private let claudePluginCommands = "/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify"
 
   var body: some View {
     Form {
@@ -254,14 +253,170 @@ struct CLISkillsSettingsTab: View {
           }
 
           SetupStepCard(title: "Enable Claude Code plugin", state: .neutral) {
-            Button("Show commands…") {
-              showingClaudeSheet = true
-            }
-            .buttonStyle(.bordered)
+            EmptyView()
           } content: {
-            Text("Install the Contextify query plugin so Claude Code can run deterministic searches and context windows.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+              if pluginDetector.status.canDetect {
+                // DMG build - show status
+                if pluginDetector.status.marketplaceAdded && pluginDetector.status.pluginInstalled {
+                  HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                      .foregroundStyle(.green)
+                    Text("Plugin installed")
+                      .font(.body)
+                  }
+
+                  Text("The Contextify query plugin is ready to use in Claude Code.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                  VStack(alignment: .leading, spacing: 12) {
+                    // Step 1: Add marketplace
+                    VStack(alignment: .leading, spacing: 6) {
+                      HStack(spacing: 6) {
+                        if pluginDetector.status.marketplaceAdded {
+                          Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                          Text("Step 1: Marketplace added")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        } else {
+                          Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color.contextifyYellow)
+                          Text("Step 1: Add marketplace")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        }
+                      }
+
+                      if !pluginDetector.status.marketplaceAdded {
+                        Text("Run in Claude Code:")
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                          Text("/plugin marketplace add PeterPym/contextify")
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(4)
+
+                          Button {
+                            "/plugin marketplace add PeterPym/contextify".copyToClipboard()
+                          } label: {
+                            Image(systemName: "doc.on.doc")
+                          }
+                          .buttonStyle(.borderless)
+                          .help("Copy command")
+                        }
+                      }
+                    }
+
+                    // Step 2: Install plugin
+                    VStack(alignment: .leading, spacing: 6) {
+                      HStack(spacing: 6) {
+                        if pluginDetector.status.pluginInstalled {
+                          Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                          Text("Step 2: Plugin installed")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        } else if pluginDetector.status.marketplaceAdded {
+                          Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color.contextifyYellow)
+                          Text("Step 2: Install plugin")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        } else {
+                          Text("Step 2: Install plugin")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.secondary)
+                        }
+                      }
+
+                      if pluginDetector.status.marketplaceAdded && !pluginDetector.status.pluginInstalled {
+                        Text("Run in Claude Code:")
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                          Text("/plugin install query@contextify")
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(4)
+
+                          Button {
+                            "/plugin install query@contextify".copyToClipboard()
+                          } label: {
+                            Image(systemName: "doc.on.doc")
+                          }
+                          .buttonStyle(.borderless)
+                          .help("Copy command")
+                        }
+                      } else if !pluginDetector.status.marketplaceAdded {
+                        Text("Complete Step 1 first")
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+                      }
+                    }
+                  }
+                }
+              } else {
+                // App Store build - static instructions
+                Text("Install the Contextify query plugin so Claude Code can run deterministic searches and context windows.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+
+                Text("Run these commands in Claude Code (one at a time):")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .padding(.top, 8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                  HStack(spacing: 8) {
+                    Text("/plugin marketplace add PeterPym/contextify")
+                      .font(.system(.caption, design: .monospaced))
+                      .textSelection(.enabled)
+                      .padding(.vertical, 4)
+                      .padding(.horizontal, 8)
+                      .background(Color(nsColor: .controlBackgroundColor))
+                      .cornerRadius(4)
+
+                    Button {
+                      "/plugin marketplace add PeterPym/contextify".copyToClipboard()
+                    } label: {
+                      Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy command")
+                  }
+
+                  HStack(spacing: 8) {
+                    Text("/plugin install query@contextify")
+                      .font(.system(.caption, design: .monospaced))
+                      .textSelection(.enabled)
+                      .padding(.vertical, 4)
+                      .padding(.horizontal, 8)
+                      .background(Color(nsColor: .controlBackgroundColor))
+                      .cornerRadius(4)
+
+                    Button {
+                      "/plugin install query@contextify".copyToClipboard()
+                    } label: {
+                      Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy command")
+                  }
+                }
+              }
+            }
           }
 
           SetupStepCard(title: "Advanced", state: .neutral) {
@@ -312,19 +467,13 @@ struct CLISkillsSettingsTab: View {
         )
       }
     }
-    .sheet(isPresented: $showingClaudeSheet) {
-      CommandSheet(
-        title: "Claude Code plugin commands",
-        subtitle: "Run these commands in Claude Code:",
-        command: claudePluginCommands
-      )
-    }
     .onAppear {
       if !didLogAppear {
         didLogAppear = true
         log.info("[QUERYCLI-SETTINGS-TAB-OPEN]")
       }
       installer.refreshStatus()
+      pluginDetector.refreshStatus()
     }
     .frame(width: 520)
   }
