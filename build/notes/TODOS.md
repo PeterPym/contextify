@@ -777,6 +777,26 @@ Both should use identical card components for consistency.
 
 ---
 
+## Settings Window UX Modernization (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (polish - affects perceived quality)
+**Effort:** 4-10 hours
+**Reference:** `build/notes/todo-support/SETTINGS-UX-MODERNIZATION.md`
+
+- [ ] #SETTINGS-UX-MODERNIZATION: Modernize Settings window navigation and pane layout to match macOS conventions (sidebar/toolbar norms, grid alignment, padding/spacing) and avoid “web/mobile-in-a-window” feel.
+
+**Problem:**
+Several settings panes (including the CLI tab) are functionally correct but visually read as “unstyled” and can feel cramped or misaligned, undermining trust in the app.
+
+**Acceptance Criteria:**
+- [ ] Settings navigation uses a macOS-idiomatic pattern (pinned down in the support doc)
+- [ ] Pane content uses consistent margins/padding and aligned control columns
+- [ ] Actions (buttons) are visually distinct from state (toggles/labels)
+- [ ] Key panes (Database, Permissions, CLI) pass a “quick vibe check” without requiring scrolling to find primary actions
+
+---
+
 # P2 (Medium Priority)
 
 ---
