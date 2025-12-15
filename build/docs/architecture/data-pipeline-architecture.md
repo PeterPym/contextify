@@ -3,6 +3,8 @@
 **Status:** Current architecture documentation
 **Purpose:** Complete reference for Contextify's data pipeline
 
+**Related:** `build/docs/architecture/ingestion-workflow.md` (DMG vs App Store ingestion, FastPath preview/backfill, core ingest call chain)
+
 ---
 
 ## Document Structure
