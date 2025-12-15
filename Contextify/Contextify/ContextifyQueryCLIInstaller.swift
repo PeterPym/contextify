@@ -202,14 +202,6 @@ final class ContextifyQueryCLIInstaller: ObservableObject {
       try fileManager.createDirectory(at: destinationDir, withIntermediateDirectories: true)
     }
 
-    if fileManager.fileExists(atPath: destination.path) {
-      let isSymlink = (try? destination.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
-      let isOurShim = ContextifyQueryShimMarker.fileLooksLikeOurShim(at: destination)
-      guard isSymlink || isOurShim else {
-        throw InstallError.collision(existing: destination)
-      }
-    }
-
     let tmp = destinationDir.appendingPathComponent(".contextify-query.install.\(ProcessInfo.processInfo.processIdentifier)")
     if fileManager.fileExists(atPath: tmp.path) {
       try? fileManager.removeItem(at: tmp)

@@ -137,14 +137,8 @@ struct CLISkillsSettingsTab: View {
   var body: some View {
     Form {
       Section {
-        let installState: CLIStepState = {
-          if installer.status.installedIsOurShim { return .completed }
-          if installer.status.installedOnPATH != nil { return .warning }
-          return .neutral
-        }()
-
         VStack(alignment: .leading, spacing: 12) {
-          SetupStepCard(title: "Installation Status", state: installState) {
+          SetupStepCard(title: "Installation Status", state: .neutral) {
             if Sandbox.isSandboxed {
               if installer.status.installedIsOurShim {
                 Button("Install/Repair") {
@@ -174,12 +168,22 @@ struct CLISkillsSettingsTab: View {
               }
               .buttonStyle(.bordered)
               .keyboardShortcut("u", modifiers: [.command, .shift])
-            } else {
-              Button("Install/Repair") {
+            } else if installer.status.installedOnPATH != nil {
+              Button("Install") {
                 log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
                 installer.installRecommendedDMG()
               }
               .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
+              .keyboardShortcut(.defaultAction)
+              .keyboardShortcut("i", modifiers: [.command, .shift])
+            } else {
+              Button("Install") {
+                log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
+                installer.installRecommendedDMG()
+              }
+              .buttonStyle(.borderedProminent)
+              .tint(Color.contextifyBlue)
               .keyboardShortcut(.defaultAction)
               .keyboardShortcut("i", modifiers: [.command, .shift])
             }
@@ -202,15 +206,15 @@ struct CLISkillsSettingsTab: View {
                 HStack(spacing: 6) {
                   Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(Color.contextifyYellow)
-                  Text("Found non-Contextify executable")
+                  Text("Wrong version installed")
                     .font(.body)
                 }
 
-                Text("A `contextify-query` executable is on PATH, but it does not look like Contextify's shim.")
+                Text("Click Install to replace with Contextify's version.")
                   .font(.caption)
                   .foregroundStyle(.secondary)
 
-                LabeledContent("Location") {
+                LabeledContent("Install path") {
                   PathValueRow(value: path)
                 }
               } else {
