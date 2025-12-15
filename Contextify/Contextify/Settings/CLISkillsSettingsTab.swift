@@ -2,14 +2,22 @@ import SwiftUI
 import ContextifyCore
 import OSLog
 
-private struct MonospaceCopyRow: View {
+private struct CopyIconButton: View {
   let value: String
-  let copyLabel: String
 
-  init(_ value: String, copyLabel: String = "Copy") {
-    self.value = value
-    self.copyLabel = copyLabel
+  var body: some View {
+    Button {
+      value.copyToClipboard()
+    } label: {
+      Image(systemName: "doc.on.doc")
+    }
+    .buttonStyle(.borderless)
+    .help("Copy")
   }
+}
+
+private struct PathValueRow: View {
+  let value: String
 
   var body: some View {
     HStack(spacing: 8) {
@@ -18,11 +26,13 @@ private struct MonospaceCopyRow: View {
         .lineLimit(1)
         .truncationMode(.middle)
         .textSelection(.enabled)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .cornerRadius(6)
 
-      Button(copyLabel) {
-        value.copyToClipboard()
-      }
-      .controlSize(.small)
+      CopyIconButton(value: value)
     }
   }
 }
@@ -36,10 +46,10 @@ struct CLISkillsSettingsTab: View {
 
   var body: some View {
     Form {
-      Section("CLI") {
-        LabeledContent("Installed on PATH:") {
+      Section {
+        LabeledContent("Install path") {
           if let path = installer.status.installedOnPATH?.path {
-            MonospaceCopyRow(path)
+            PathValueRow(value: path)
           } else {
             Text("Not found")
               .foregroundStyle(.secondary)
@@ -160,10 +170,10 @@ struct CLISkillsSettingsTab: View {
         DisclosureGroup("Bundled paths") {
           VStack(alignment: .leading, spacing: 12) {
             LabeledContent("Bundled CLI:") {
-              MonospaceCopyRow(installer.status.bundledCLIURL.path)
+              PathValueRow(value: installer.status.bundledCLIURL.path)
             }
             LabeledContent("Bundled shim:") {
-              MonospaceCopyRow(installer.status.bundledShimURL.path)
+              PathValueRow(value: installer.status.bundledShimURL.path)
             }
           }
           .padding(.top, 6)
