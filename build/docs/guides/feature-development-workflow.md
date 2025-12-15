@@ -44,6 +44,11 @@ A structured document that defines the solution before implementation.
 
 **Location:** `build/notes/specs/` or `/tmp/` for drafts
 
+**Design references (for any user-facing macOS UI work):**
+- Review the in-repo design library first: `build/docs/design/README.md`
+- Review the local Apple HIG snapshots and pull additional ones as needed: `build/docs/design/references/apple-hig/README.md`
+- In the spec, explicitly note which HIG/design docs were consulted and what UI decisions they influenced.
+
 **Template:**
 
 ```markdown
@@ -59,6 +64,7 @@ A structured document that defines the solution before implementation.
 - How does the user interact with this feature?
 - What UI changes are needed?
 - What keyboard shortcuts (if any)?
+- What HIG guidance or internal design docs are relevant? (link them)
 
 ## Technical Design
 
