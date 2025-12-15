@@ -352,15 +352,21 @@ public final class CLICoordinator: ObservableObject {
         .appendingPathComponent("bin/contextify-query")
     }
 
-    // DMG: prefer homebrew/local paths
-    if fileManager.fileExists(atPath: "/opt/homebrew/bin") {
-      return URL(fileURLWithPath: "/opt/homebrew/bin/contextify-query")
-    }
-    if fileManager.fileExists(atPath: "/usr/local/bin") {
-      return URL(fileURLWithPath: "/usr/local/bin/contextify-query")
+    // DMG: Try writable system paths (homebrew-enabled systems)
+    // Check WRITABILITY, not just existence - /usr/local/bin exists but may be root-owned
+    let systemPaths = [
+      "/opt/homebrew/bin",      // Apple Silicon homebrew
+      "/usr/local/bin"          // Intel homebrew (if user-owned)
+    ]
+
+    for path in systemPaths {
+      if fileManager.isWritableFile(atPath: path) {
+        return URL(fileURLWithPath: "\(path)/contextify-query")
+      }
     }
 
-    // Fallback: ~/bin
+    // Fallback: ~/bin (always writable, may need PATH configuration)
+    // PATH warning will be shown in UI via needsPathWarning computed property
     return fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent("bin/contextify-query")
   }
