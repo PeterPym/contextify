@@ -20,8 +20,20 @@ Pulled from `https://sosumi.ai/design/human-interface-guidelines/` (an AI-readab
 - `settings.md`
 - `tab-views.md`
 - `buttons.md`
+- `text-fields.md`
 - `text-views.md`
 - `labels.md`
 - `boxes.md`
 - `writing.md`
-
+- `windows.md`
+- `toolbars.md`
+- `the-menu-bar.md`
+- `menus.md`
+- `context-menus.md`
+- `lists-and-tables.md`
+- `search-fields.md`
+- `sidebars.md`
+- `scroll-views.md`
+- `popovers.md`
+- `sheets.md`
+- `alerts.md`
