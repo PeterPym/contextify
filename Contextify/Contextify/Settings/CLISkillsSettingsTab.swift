@@ -129,6 +129,7 @@ struct CLISkillsSettingsTab: View {
   @State private var didLogAppear: Bool = false
   @State private var showingSudoSheet: Bool = false
   @State private var showingClaudeSheet: Bool = false
+  @State private var isAdvancedExpanded: Bool = false
 
   private let log = Logger(subsystem: "dev.contextify", category: "QueryCLIInstall")
   private let claudePluginCommands = "/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify"
@@ -143,7 +144,7 @@ struct CLISkillsSettingsTab: View {
         }()
 
         VStack(alignment: .leading, spacing: 12) {
-          SetupStepCard(title: "Install Contextify CLI", state: installState) {
+          SetupStepCard(title: "Installation Status", state: installState) {
             if Sandbox.isSandboxed {
               if installer.status.installedIsOurShim {
                 Button("Install/Repair") {
@@ -184,25 +185,39 @@ struct CLISkillsSettingsTab: View {
             }
           } content: {
             VStack(alignment: .leading, spacing: 8) {
-              LabeledContent("Install path") {
-                if let path = installer.status.installedOnPATH?.path {
-                  PathValueRow(value: path)
-                } else {
-                  Text("Not found")
-                    .foregroundStyle(.secondary)
+              if installer.status.installedIsOurShim {
+                HStack(spacing: 6) {
+                  Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                  Text("Installed")
+                    .font(.body)
                 }
-              }
 
-              if installer.status.installedIsOurShim, let path = installer.status.installedOnPATH?.path {
-                Text("Contextify shim is installed at \(path).")
+                LabeledContent("Install path") {
+                  if let path = installer.status.installedOnPATH?.path {
+                    PathValueRow(value: path)
+                  }
+                }
+              } else if let path = installer.status.installedOnPATH?.path {
+                HStack(spacing: 6) {
+                  Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.contextifyYellow)
+                  Text("Found non-Contextify executable")
+                    .font(.body)
+                }
+
+                Text("A `contextify-query` executable is on PATH, but it does not look like Contextify's shim.")
                   .font(.caption)
                   .foregroundStyle(.secondary)
-              } else if installer.status.installedOnPATH != nil {
-                Text("A `contextify-query` executable is on PATH, but it does not look like Contextify’s shim.")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+
+                LabeledContent("Location") {
+                  PathValueRow(value: path)
+                }
               } else {
-                Text("Install Contextify’s shim so tools can run `contextify-query` reliably.")
+                Text("Not installed")
+                  .font(.body)
+
+                Text("Install Contextify's shim so tools can run `contextify-query` reliably.")
                   .font(.caption)
                   .foregroundStyle(.secondary)
               }
@@ -244,29 +259,43 @@ struct CLISkillsSettingsTab: View {
               .font(.caption)
               .foregroundStyle(.secondary)
           }
+
+          SetupStepCard(title: "Advanced", state: .neutral) {
+            Spacer()
+          } content: {
+            VStack(alignment: .leading, spacing: 10) {
+              Button {
+                isAdvancedExpanded.toggle()
+              } label: {
+                HStack(spacing: 8) {
+                  Image(systemName: "chevron.right")
+                    .rotationEffect(.degrees(isAdvancedExpanded ? 90 : 0))
+                    .foregroundStyle(.secondary)
+
+                  Text("Bundled paths")
+                    .foregroundStyle(.primary)
+
+                  Spacer()
+                }
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+
+              if isAdvancedExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                  LabeledContent("Bundled CLI:") {
+                    PathValueRow(value: installer.status.bundledCLIURL.path)
+                  }
+                  LabeledContent("Bundled shim:") {
+                    PathValueRow(value: installer.status.bundledShimURL.path)
+                  }
+                }
+              }
+            }
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
-        .listRowBackground(Color.clear)
-      }
-
-      Section {
-        SetupStepCard(title: "Advanced", state: .neutral) {
-          Spacer()
-        } content: {
-          DisclosureGroup("Bundled paths") {
-            VStack(alignment: .leading, spacing: 12) {
-              LabeledContent("Bundled CLI:") {
-                PathValueRow(value: installer.status.bundledCLIURL.path)
-              }
-              LabeledContent("Bundled shim:") {
-                PathValueRow(value: installer.status.bundledShimURL.path)
-              }
-            }
-            .padding(.top, 6)
-          }
-        }
-        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
         .listRowBackground(Color.clear)
       }
     }
