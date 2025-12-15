@@ -2043,6 +2043,25 @@ In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` be
 
 - [ ] #TESTS: Validate reinstated test infrastructure and re-enable skipped integration tests
 
+---
+
+## Project Bar Hide Activation (1 item)
+
+**Status:** Not started
+**Priority:** P3 (UI state correctness)
+**Discovered:** 2025-12-14
+
+- [ ] #PROJECT-HIDE-ACTIVATE-NEXT: When hiding active project, activate next project to the right
+
+**Problem:**
+When a project is hidden via the project bar context menu while it is the active project, the UI can remain logically “active” on the now-hidden project (stale git branch / project row / conversation timeline).
+
+**Expected:**
+Hiding the active project activates the next visible project to the right (or the nearest neighbor if none to the right).
+
+**Notes:**
+- Repro: Right-click active project tab in the project bar → Hide → observe active selection state.
+
 **Summary:** FoundationLLM/SDK/actor blockers have been addressed, so this work is now about verification: ensure `swift test` passes cleanly, re-enable `testInitialHooverWorkflow`, `testOrchestratorWorkflow`, and `testCrashRecovery`, and confirm the CI workflow references the reactivated suites.
 
 **Files to check:**
