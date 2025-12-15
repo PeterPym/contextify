@@ -51,7 +51,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 450)
+      .frame(width: 450, height: 520)
     } else {
       // DMG build: Database + CLI (no permissions needed)
       TabView(selection: $selectedTab) {
@@ -76,7 +76,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 520)
+      .frame(width: 520, height: 520)
     }
   }
 }
