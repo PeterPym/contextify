@@ -250,18 +250,24 @@ struct CLISkillsSettingsTab: View {
         .listRowBackground(Color.clear)
       }
 
-      Section("Advanced") {
-        DisclosureGroup("Bundled paths") {
-          VStack(alignment: .leading, spacing: 12) {
-            LabeledContent("Bundled CLI:") {
-              PathValueRow(value: installer.status.bundledCLIURL.path)
+      Section {
+        SetupStepCard(title: "Advanced", state: .neutral) {
+          Spacer()
+        } content: {
+          DisclosureGroup("Bundled paths") {
+            VStack(alignment: .leading, spacing: 12) {
+              LabeledContent("Bundled CLI:") {
+                PathValueRow(value: installer.status.bundledCLIURL.path)
+              }
+              LabeledContent("Bundled shim:") {
+                PathValueRow(value: installer.status.bundledShimURL.path)
+              }
             }
-            LabeledContent("Bundled shim:") {
-              PathValueRow(value: installer.status.bundledShimURL.path)
-            }
+            .padding(.top, 6)
           }
-          .padding(.top, 6)
         }
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 10, trailing: 0))
+        .listRowBackground(Color.clear)
       }
     }
     .sheet(isPresented: $showingSudoSheet) {
