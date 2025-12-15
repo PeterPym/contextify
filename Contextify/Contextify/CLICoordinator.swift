@@ -158,33 +158,276 @@ public final class CLICoordinator: ObservableObject {
     lastCheckTime = now
   }
 
-  // MARK: - Private Implementation (stubs for now)
+  // MARK: - Private Implementation
 
   private static func computeState() -> State {
-    // TODO: Implement filesystem checks
     // Check if shim exists
+    guard let shimPath = findInstalledShim() else {
+      return .disabled
+    }
+
     // Check if plugin exists
-    // Check if ~/bin on PATH
-    return .disabled
+    guard let pluginVersion = readInstalledPluginVersion() else {
+      return .disabled
+    }
+
+    // Check if ~/bin is on PATH (for App Store builds)
+    let pathWarning = shimPath.contains("/bin/") && !isHomeBinOnPath()
+
+    return .enabled(version: pluginVersion, pathWarning: pathWarning)
   }
 
   private func readBundledVersion() -> String {
-    // TODO: Read from Info.plist CFBundleShortVersionString
     return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.1"
   }
 
   private func installShimAndPlugin() async throws {
-    // TODO: Implement atomic installation
     log.info("[CLI-INSTALL] Starting installation...")
+
+    // Atomic installation: temp → final location
+    let fileManager = FileManager.default
+    let tempDir = fileManager.temporaryDirectory
+
+    // 1. Copy shim to temp location
+    let tempShimURL = tempDir.appendingPathComponent("contextify-query-\(UUID().uuidString)")
+    guard let bundledShimURL = Bundle.main.url(forResource: "contextify-query/contextify-query", withExtension: nil) else {
+      throw InstallError.bundledShimMissing
+    }
+    try fileManager.copyItem(at: bundledShimURL, to: tempShimURL)
+
+    // 2. Copy plugin to temp location
+    let tempPluginURL = tempDir.appendingPathComponent("contextify-plugin-\(UUID().uuidString)")
+    guard let bundledPluginURL = Bundle.main.resourceURL?
+      .appendingPathComponent("contextify-query/claude-plugin") else {
+      throw InstallError.bundledPluginMissing
+    }
+    try fileManager.copyItem(at: bundledPluginURL, to: tempPluginURL)
+
+    // 3. Make shim executable
+    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempShimURL.path)
+
+    // 4. Determine final locations
+    let finalShimURL = determineShimPath()
+    let finalPluginURL = pluginCachePath()
+
+    // 5. Create parent directories if needed
+    let shimParent = finalShimURL.deletingLastPathComponent()
+    if !fileManager.fileExists(atPath: shimParent.path) {
+      try fileManager.createDirectory(at: shimParent, withIntermediateDirectories: true)
+    }
+    let pluginParent = finalPluginURL.deletingLastPathComponent()
+    if !fileManager.fileExists(atPath: pluginParent.path) {
+      try fileManager.createDirectory(at: pluginParent, withIntermediateDirectories: true)
+    }
+
+    // 6. Atomic moves to final locations
+    // Remove existing files first if they exist
+    if fileManager.fileExists(atPath: finalShimURL.path) {
+      try fileManager.removeItem(at: finalShimURL)
+    }
+    if fileManager.fileExists(atPath: finalPluginURL.path) {
+      try fileManager.removeItem(at: finalPluginURL)
+    }
+
+    try fileManager.moveItem(at: tempShimURL, to: finalShimURL)
+    try fileManager.moveItem(at: tempPluginURL, to: finalPluginURL)
+
+    // 7. Update plugin manifest
+    try updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
+
+    log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path) plugin=\(finalPluginURL.path)")
   }
 
   private func upgradePlugin(to version: String) async throws {
-    // TODO: Implement upgrade (same as install but logs differently)
-    log.info("[CLI-INSTALL] Upgrading to version \(version)...")
+    log.info("[CLI-UPGRADE] Upgrading to version \(version)...")
+    // Upgrade is same as install (overwrites existing)
+    try await installShimAndPlugin()
   }
 
   private func removeShimAndPlugin() {
-    // TODO: Implement removal
     log.info("[CLI-REMOVE] Removing shim and plugin...")
+    let fileManager = FileManager.default
+
+    // Remove shim from all possible locations
+    let possibleShimPaths = [
+      "/opt/homebrew/bin/contextify-query",
+      "/usr/local/bin/contextify-query",
+      fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
+      fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
+    ]
+
+    for path in possibleShimPaths {
+      if fileManager.fileExists(atPath: path) {
+        try? fileManager.removeItem(atPath: path)
+        log.info("[CLI-REMOVE] Removed shim at \(path)")
+      }
+    }
+
+    // Remove plugin directory
+    let pluginDir = fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/cache/contextify")
+    if fileManager.fileExists(atPath: pluginDir.path) {
+      try? fileManager.removeItem(at: pluginDir)
+      log.info("[CLI-REMOVE] Removed plugin at \(pluginDir.path)")
+    }
+
+    // Update manifest to remove plugin entry
+    removePluginFromManifest()
+  }
+
+  // MARK: - Helper Methods
+
+  /// Find installed shim in common locations
+  private static func findInstalledShim() -> String? {
+    let fileManager = FileManager.default
+    let possiblePaths = [
+      "/opt/homebrew/bin/contextify-query",
+      "/usr/local/bin/contextify-query",
+      fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
+      fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
+    ]
+
+    for path in possiblePaths {
+      if fileManager.fileExists(atPath: path) {
+        return path
+      }
+    }
+    return nil
+  }
+
+  /// Read installed plugin version from manifest
+  private static func readInstalledPluginVersion() -> String? {
+    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+
+    guard let data = try? Data(contentsOf: manifestURL),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let plugins = json["plugins"] as? [String: Any],
+          let pluginEntries = plugins["query@contextify"] as? [[String: Any]],
+          let firstEntry = pluginEntries.first,
+          let version = firstEntry["version"] as? String else {
+      return nil
+    }
+
+    return version
+  }
+
+  /// Check if ~/bin is on PATH
+  private static func isHomeBinOnPath() -> Bool {
+    let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
+    let homeBin = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("bin").path
+    return path.split(separator: ":").contains { String($0) == homeBin }
+  }
+
+  /// Determine where to install shim (DMG: homebrew/local, App Store: ~/bin)
+  private func determineShimPath() -> URL {
+    let fileManager = FileManager.default
+
+    // App Store: always use ~/bin (no permissions needed)
+    if Sandbox.isSandboxed {
+      return fileManager.homeDirectoryForCurrentUser
+        .appendingPathComponent("bin/contextify-query")
+    }
+
+    // DMG: prefer homebrew/local paths
+    if fileManager.fileExists(atPath: "/opt/homebrew/bin") {
+      return URL(fileURLWithPath: "/opt/homebrew/bin/contextify-query")
+    }
+    if fileManager.fileExists(atPath: "/usr/local/bin") {
+      return URL(fileURLWithPath: "/usr/local/bin/contextify-query")
+    }
+
+    // Fallback: ~/bin
+    return fileManager.homeDirectoryForCurrentUser
+      .appendingPathComponent("bin/contextify-query")
+  }
+
+  /// Plugin cache path (same for DMG and App Store)
+  private func pluginCachePath() -> URL {
+    let version = readBundledVersion()
+    return FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/cache/contextify/query/\(version)")
+  }
+
+  /// Update installed_plugins_v2.json manifest
+  private func updatePluginManifest(version: String, pluginPath: URL) throws {
+    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+
+    // Read existing manifest or create new one
+    var manifest: [String: Any]
+    if let data = try? Data(contentsOf: manifestURL),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      manifest = json
+    } else {
+      manifest = ["version": 2, "plugins": [:]]
+    }
+
+    // Get or create plugins dictionary
+    var plugins = (manifest["plugins"] as? [String: Any]) ?? [:]
+
+    // Create plugin entry
+    let now = ISO8601DateFormatter().string(from: Date())
+    let pluginEntry: [String: Any] = [
+      "scope": "user",
+      "installPath": pluginPath.path,
+      "version": version,
+      "installedAt": now,
+      "lastUpdated": now,
+      "isLocal": true
+    ]
+
+    // Update or add entry
+    plugins["query@contextify"] = [pluginEntry]
+    manifest["plugins"] = plugins
+
+    // Write back to file
+    let jsonData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+    try jsonData.write(to: manifestURL)
+
+    log.info("[CLI-MANIFEST-UPDATE] version=\(version) path=\(pluginPath.path)")
+  }
+
+  /// Remove plugin entry from manifest
+  private func removePluginFromManifest() {
+    let manifestURL = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".claude/plugins/installed_plugins_v2.json")
+
+    guard let data = try? Data(contentsOf: manifestURL),
+          var manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          var plugins = manifest["plugins"] as? [String: Any] else {
+      return
+    }
+
+    plugins.removeValue(forKey: "query@contextify")
+    manifest["plugins"] = plugins
+
+    if let jsonData = try? JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys]) {
+      try? jsonData.write(to: manifestURL)
+      log.info("[CLI-MANIFEST-REMOVE] Removed query@contextify entry")
+    }
+  }
+
+  // MARK: - Error Types
+
+  enum InstallError: LocalizedError {
+    case bundledShimMissing
+    case bundledPluginMissing
+    case permissionDenied
+    case manifestWriteFailed
+
+    var errorDescription: String? {
+      switch self {
+      case .bundledShimMissing:
+        return "Bundled CLI shim not found in app bundle"
+      case .bundledPluginMissing:
+        return "Bundled plugin not found in app bundle"
+      case .permissionDenied:
+        return "Permission denied to install plugin (grant access in Settings)"
+      case .manifestWriteFailed:
+        return "Failed to update plugin manifest"
+      }
+    }
   }
 }
