@@ -76,7 +76,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 520, height: 300)
+      .frame(width: 520, height: 330)
     }
   }
 }
