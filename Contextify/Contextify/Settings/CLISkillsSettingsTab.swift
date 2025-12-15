@@ -142,109 +142,113 @@ struct CLISkillsSettingsTab: View {
           return .neutral
         }()
 
-        SetupStepCard(title: "Install Contextify CLI", state: installState) {
-          if Sandbox.isSandboxed {
-            if installer.status.installedIsOurShim {
-              Button("Install/Repair") {
-                log.info("[QUERYCLI-INSTALL-START] mode=appstore action=chooseFolder")
-                installer.chooseFolderAndInstallSandboxed()
+        VStack(alignment: .leading, spacing: 12) {
+          SetupStepCard(title: "Install Contextify CLI", state: installState) {
+            if Sandbox.isSandboxed {
+              if installer.status.installedIsOurShim {
+                Button("Install/Repair") {
+                  log.info("[QUERYCLI-INSTALL-START] mode=appstore action=chooseFolder")
+                  installer.chooseFolderAndInstallSandboxed()
+                }
+                .buttonStyle(.bordered)
+              } else {
+                Button("Install/Repair") {
+                  log.info("[QUERYCLI-INSTALL-START] mode=appstore action=chooseFolder")
+                  installer.chooseFolderAndInstallSandboxed()
+                }
+                .buttonStyle(.borderedProminent)
+              }
+
+              if installer.status.sandboxedInstallDirectory != nil, !installer.status.installedIsOurShim {
+                Button("Repair") {
+                  log.info("[QUERYCLI-INSTALL-START] mode=appstore action=repairSavedFolder")
+                  installer.repairUsingSavedSandboxedFolder()
+                }
+                .buttonStyle(.bordered)
+              }
+            } else if installer.status.installedIsOurShim {
+              Button("Uninstall") {
+                log.info("[QUERYCLI-UNINSTALL-START]")
+                installer.uninstallFromInstalledPATH()
               }
               .buttonStyle(.bordered)
+              .keyboardShortcut("u", modifiers: [.command, .shift])
             } else {
               Button("Install/Repair") {
-                log.info("[QUERYCLI-INSTALL-START] mode=appstore action=chooseFolder")
-                installer.chooseFolderAndInstallSandboxed()
+                log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
+                installer.installRecommendedDMG()
               }
               .buttonStyle(.borderedProminent)
+              .keyboardShortcut(.defaultAction)
+              .keyboardShortcut("i", modifiers: [.command, .shift])
             }
-
-            if installer.status.sandboxedInstallDirectory != nil, !installer.status.installedIsOurShim {
-              Button("Repair") {
-                log.info("[QUERYCLI-INSTALL-START] mode=appstore action=repairSavedFolder")
-                installer.repairUsingSavedSandboxedFolder()
+          } content: {
+            VStack(alignment: .leading, spacing: 8) {
+              LabeledContent("Install path") {
+                if let path = installer.status.installedOnPATH?.path {
+                  PathValueRow(value: path)
+                } else {
+                  Text("Not found")
+                    .foregroundStyle(.secondary)
+                }
               }
-              .buttonStyle(.bordered)
-            }
-          } else if installer.status.installedIsOurShim {
-            Button("Uninstall") {
-              log.info("[QUERYCLI-UNINSTALL-START]")
-              installer.uninstallFromInstalledPATH()
-            }
-            .buttonStyle(.bordered)
-            .keyboardShortcut("u", modifiers: [.command, .shift])
-          } else {
-            Button("Install/Repair") {
-              log.info("[QUERYCLI-INSTALL-START] mode=dmg action=installRecommended")
-              installer.installRecommendedDMG()
-            }
-            .buttonStyle(.borderedProminent)
-            .keyboardShortcut(.defaultAction)
-            .keyboardShortcut("i", modifiers: [.command, .shift])
-          }
-        } content: {
-          VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Install path") {
-              if let path = installer.status.installedOnPATH?.path {
-                PathValueRow(value: path)
-              } else {
-                Text("Not found")
-                  .foregroundStyle(.secondary)
-              }
-            }
 
-            if installer.status.installedIsOurShim, let path = installer.status.installedOnPATH?.path {
-              Text("Contextify shim is installed at \(path).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else if installer.status.installedOnPATH != nil {
-              Text("A `contextify-query` executable is on PATH, but it does not look like Contextify’s shim.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              Text("Install Contextify’s shim so tools can run `contextify-query` reliably.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            if installer.lastSudoCommand != nil {
-              HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                  .foregroundStyle(Color.contextifyYellow)
-                Text("Permission is required to install into the selected folder.")
+              if installer.status.installedIsOurShim, let path = installer.status.installedOnPATH?.path {
+                Text("Contextify shim is installed at \(path).")
                   .font(.caption)
                   .foregroundStyle(.secondary)
-                Spacer()
-                Button("Show…") { showingSudoSheet = true }
-                  .controlSize(.small)
+              } else if installer.status.installedOnPATH != nil {
+                Text("A `contextify-query` executable is on PATH, but it does not look like Contextify’s shim.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("Install Contextify’s shim so tools can run `contextify-query` reliably.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+
+              if installer.lastSudoCommand != nil {
+                HStack(spacing: 8) {
+                  Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.contextifyYellow)
+                  Text("Permission is required to install into the selected folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Spacer()
+                  Button("Show…") { showingSudoSheet = true }
+                    .controlSize(.small)
+                }
+              }
+
+              if let success = installer.lastSuccess {
+                Text(success)
+                  .font(.caption)
+                  .foregroundStyle(.green)
+              }
+
+              if let error = installer.lastError {
+                Text(error)
+                  .font(.caption)
+                  .foregroundStyle(.red)
               }
             }
+          }
 
-            if let success = installer.lastSuccess {
-              Text(success)
-                .font(.caption)
-                .foregroundStyle(.green)
+          SetupStepCard(title: "Enable Claude Code plugin", state: .neutral) {
+            Button("Show commands…") {
+              showingClaudeSheet = true
             }
-
-            if let error = installer.lastError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
+            .buttonStyle(.bordered)
+          } content: {
+            Text("Install the Contextify query plugin so Claude Code can run deterministic searches and context windows.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
         }
-
-        SetupStepCard(title: "Enable Claude Code plugin", state: .neutral) {
-          Button("Show commands…") {
-            showingClaudeSheet = true
-          }
-          .buttonStyle(.bordered)
-        } content: {
-          Text("Install the Contextify query plugin so Claude Code can run deterministic searches and context windows.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+        .listRowBackground(Color.clear)
       }
-      .listRowBackground(Color.clear)
 
       Section("Advanced") {
         DisclosureGroup("Bundled paths") {
