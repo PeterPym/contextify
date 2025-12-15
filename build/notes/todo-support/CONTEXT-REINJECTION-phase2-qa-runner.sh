@@ -122,8 +122,8 @@ ui_step \
 
 bold "7) Claude Code plugin commands present (manual)"
 ui_step \
-  "In Settings → CLI tab, confirm the plugin install commands are visible:\n\n/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify" \
-  "Expected: commands shown exactly, with text selection enabled."
+  "In Settings → CLI tab, click \"Show commands…\" under the Claude Code section.\n\nConfirm the sheet shows these commands:\n\n/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify" \
+  "Expected: commands shown exactly in the sheet, with text selection enabled and a copy affordance."
 
 bold "8) Optional: verify new E2E log tags exist"
 echo "Will stream Contextify logs and grep for [QUERYCLI-...] tags."
@@ -133,4 +133,3 @@ run_cmd "/usr/bin/log stream --style syslog --level info --predicate 'subsystem 
 
 bold "Done."
 echo "Build log: /tmp/contextify-phase2-build.log"
-
