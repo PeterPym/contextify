@@ -7,31 +7,31 @@ struct CLISkillsSettingsTab: View {
   @State private var didLogAppear: Bool = false
 
   private let log = Logger(subsystem: "dev.contextify", category: "QueryCLIInstall")
+  private let claudePluginCommands = "/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify"
 
   var body: some View {
     Form {
-      Section("CLI") {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Bundled CLI:")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(installer.status.bundledCLIURL.path)
-            .font(.system(.caption, design: .monospaced))
-            .textSelection(.enabled)
-            .foregroundStyle(.secondary)
+      Section("Command-line tool") {
+        LabeledContent("Installed on PATH:") {
+          if let path = installer.status.installedOnPATH?.path {
+            Text(path)
+              .font(.system(.caption, design: .monospaced))
+              .textSelection(.enabled)
+          } else {
+            Text("Not found")
+              .foregroundStyle(.secondary)
+          }
         }
 
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Bundled shim (installed onto PATH):")
+        if let path = installer.status.installedOnPATH, installer.status.installedIsOurShim {
+          Text("Detected Contextify shim at \(path.path)")
             .font(.caption)
             .foregroundStyle(.secondary)
-          Text(installer.status.bundledShimURL.path)
-            .font(.system(.caption, design: .monospaced))
-            .textSelection(.enabled)
+        } else if installer.status.installedOnPATH != nil {
+          Text("An executable named `contextify-query` is on PATH, but it does not look like Contextify’s shim.")
+            .font(.caption)
             .foregroundStyle(.secondary)
         }
-
-        Divider()
 
         HStack(spacing: 12) {
           if Sandbox.isSandboxed {
@@ -63,31 +63,6 @@ struct CLISkillsSettingsTab: View {
             .keyboardShortcut("u", modifiers: [.command, .shift])
           }
         }
-      }
-
-      Section("Status") {
-        HStack {
-          Text("Installed on PATH:")
-          Spacer()
-          if let path = installer.status.installedOnPATH?.path {
-            Text(path)
-              .font(.system(.caption, design: .monospaced))
-              .textSelection(.enabled)
-          } else {
-            Text("Not found")
-              .foregroundStyle(.secondary)
-          }
-        }
-
-        if let path = installer.status.installedOnPATH, installer.status.installedIsOurShim {
-          Text("Detected Contextify shim at \(path.path)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else if installer.status.installedOnPATH != nil {
-          Text("An executable named `contextify-query` is on PATH, but it does not look like Contextify’s shim.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
 
         if let success = installer.lastSuccess {
           Text(success)
@@ -102,10 +77,19 @@ struct CLISkillsSettingsTab: View {
         }
 
         if let sudo = installer.lastSudoCommand {
+          Divider()
           VStack(alignment: .leading, spacing: 8) {
-            Text("Permission Fix (copy/paste):")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            HStack {
+              Text("Permission Fix (copy/paste):")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Spacer()
+              Button("Copy") {
+                log.info("[QUERYCLI-INSTALL-SUDO-COPY]")
+                sudo.copyToClipboard()
+              }
+              .controlSize(.small)
+            }
             Text(sudo)
               .font(.system(.caption, design: .monospaced))
               .textSelection(.enabled)
@@ -113,23 +97,69 @@ struct CLISkillsSettingsTab: View {
               .frame(maxWidth: .infinity, alignment: .leading)
               .background(Color(nsColor: .controlBackgroundColor))
               .cornerRadius(4)
-            Button("Copy sudo command") {
-              log.info("[QUERYCLI-INSTALL-SUDO-COPY]")
-              sudo.copyToClipboard()
+          }
+        }
+      }
+
+      Section("Claude Code") {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Install the Contextify query plugin in Claude Code:")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Text(claudePluginCommands)
+            .font(.system(.caption, design: .monospaced))
+            .textSelection(.enabled)
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .cornerRadius(4)
+
+          HStack(spacing: 8) {
+            Button("Copy marketplace") {
+              "/plugin marketplace add PeterPym/contextify".copyToClipboard()
+            }
+            .controlSize(.small)
+
+            Button("Copy install") {
+              "/plugin install query@contextify".copyToClipboard()
+            }
+            .controlSize(.small)
+
+            Spacer()
+
+            Button("Copy both") {
+              claudePluginCommands.copyToClipboard()
             }
             .controlSize(.small)
           }
         }
       }
 
-      Section("Claude Code plugin") {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Install in Claude Code (after Contextify is installed):")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text("/plugin marketplace add PeterPym/contextify\n/plugin install query@contextify")
-            .font(.system(.caption, design: .monospaced))
-            .textSelection(.enabled)
+      Section("Advanced") {
+        DisclosureGroup("Bundled paths") {
+          VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
+              Text("Bundled CLI:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(installer.status.bundledCLIURL.path)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+              Text("Bundled shim:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(installer.status.bundledShimURL.path)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(.top, 6)
         }
       }
     }
