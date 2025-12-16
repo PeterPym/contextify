@@ -3,6 +3,8 @@
 **Status:** Current architecture documentation
 **Purpose:** Complete reference for Contextify's data pipeline
 
+**Related:** `build/docs/architecture/ingestion-workflow.md` (DMG vs App Store ingestion, FastPath preview/backfill, core ingest call chain)
+
 ---
 
 ## Document Structure
@@ -159,11 +161,13 @@ graph TB
 - **Actor:** Thread-safe background execution
 
 **FastPathIngestionCoordinator** (`app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`)
-- **Purpose:** JIT ingestion for selected projects
+- **Purpose:** JIT ingestion for selected projects with bounded worker pool
 - **Key Method:**
   - `ingestProjectJIT(_ project: LightweightProject)` → DB project ID
-- **Batching:** Processes transcripts with progress tracking
-- **Resume:** Pending completions restored on app restart
+- **Worker Pool:** 4 concurrent workers (configurable), drop-proof lifecycle
+- **Preview vs Completion:** Preview subset gets watchers; completion work uses `startWatching: false`
+- **Resume:** Pending completions restored on app restart via `resumePendingCompletions()`
+- **Lifecycle:** `pauseBackfill()` for project switch (resumable), `shutdown()` for termination
 
 ### Discovery Layer (Legacy)
 

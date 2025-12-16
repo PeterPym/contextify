@@ -1126,12 +1126,12 @@ Transcripts should be classified across **four orthogonal axes**:
 
 ### Classification Scripts
 
-**Simple Classification:** `scripts/classify_transcript.sh`
+**Simple Classification:** `scripts/transcripts/classify_transcript.sh`
 - Fast single-dimension classification
 - Returns: conversational | metadata-only | empty
 
 ```bash
-./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+./scripts/transcripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
 ```
 
 **Multi-Dimensional Classification:** `scripts/classify_transcript_detailed.sh`
@@ -1167,7 +1167,7 @@ Transcripts should be classified across **four orthogonal axes**:
 
 When analyzing a transcript:
 
-1. **Classify first:** `./scripts/classify_transcript.sh <id>`
+1. **Classify first:** `./scripts/transcripts/classify_transcript.sh <id>`
 2. **Read relevant sections:**
    - `conversational` → Read §1-2, optionally §3-5
    - `metadata-only` → Read §3-5 only

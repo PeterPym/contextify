@@ -142,6 +142,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   public var hooverScheduler: HooverScheduler { _hooverScheduler }
 
+  /// Number of active file watchers (for diagnostics and testing)
+  public var watcherCount: Int { watcher.watcherCount }
+
   // v23: Write queue for serialized write operations (prevents SQLITE_BUSY)
   private let writeQueue: DatabaseWriteQueue
 
@@ -1282,11 +1285,13 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   public func ingestTranscript(
     transcriptId: String,
     mode: IngestionMode,
-    notifyUI: Bool = true
+    notifyUI: Bool = true,
+    startWatching: Bool = true
   ) async throws -> Bool {
     guard let initialTranscript = try transcriptRepo.get(transcriptId) else {
       throw RepositoryError.notFound
     }
+    let transcript = initialTranscript
 
     if case .preview = mode, initialTranscript.ingestState == "complete" {
       log.debug("[FAST-PATH] Transcript already complete, skipping preview: \(transcriptId, privacy: .public)")
@@ -1297,12 +1302,20 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       log.debug("[INGEST-LOCK] Another worker is processing transcript: \(transcriptId, privacy: .public)")
       // Reload transcript to get current state (may have changed since initial read)
       let refreshedTranscript = try transcriptRepo.get(transcriptId)
+      if notifyUI {
+        log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(
+            name: Notification.Name("TranscriptUpdated"),
+            object: nil,
+            userInfo: ["projectId": transcript.projectId]
+          )
+        }
+      }
       return refreshedTranscript?.ingestState == "partial"
     }
 
     defer { releaseIngestionLock(transcriptId: transcriptId) }
-
-    let transcript = initialTranscript
 
     let fileURL = URL(fileURLWithPath: transcript.filePath)
     guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -1316,6 +1329,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         ingestState: "complete",
         lastError: "File no longer exists"
       )
+      if notifyUI {
+        log.info("[ORCHESTRATOR-NOTIFY] Posting TranscriptUpdated notification for project: \(transcript.projectId, privacy: .public) transcript: \(transcriptId.prefix(8), privacy: .public)")
+        DispatchQueue.main.async {
+          NotificationCenter.default.post(
+            name: Notification.Name("TranscriptUpdated"),
+            object: nil,
+            userInfo: ["projectId": transcript.projectId]
+          )
+        }
+      }
       return false
     }
 
@@ -1324,7 +1347,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       fileURL: fileURL,
       provider: transcript.provider,
       providerSessionId: transcript.providerSessionId,
-      startWatching: true,
+      startWatching: startWatching,
       progress: nil,
       ingestLimit: mode.ingestLimit
     )
@@ -1359,6 +1382,21 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       }
       return try Transcript.fetchAll(db, sql: sql)
     }
+  }
+
+  /// Mark a transcript as terminally unavailable to prevent repeated retries across runs.
+  /// Uses `ingest_state = 'complete'` so it won't be picked up by startup partial resumption.
+  public func markTranscriptUnavailable(transcriptId: String, lastError: String) throws {
+    guard let transcript = try transcriptRepo.get(transcriptId) else { return }
+    try transcriptRepo.setIngestionState(
+      id: transcript.id,
+      lastProcessedLine: transcript.lastProcessedLine,
+      lineCount: transcript.lineCount,
+      parserVersion: transcript.parserVersion,
+      status: "unavailable",
+      ingestState: "complete",
+      lastError: lastError
+    )
   }
 
   // MARK: - Private Helpers

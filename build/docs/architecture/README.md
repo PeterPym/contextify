@@ -40,6 +40,12 @@ This directory contains high-level architectural documentation that explains:
 - Comprehensive with mermaid diagrams (1568 lines)
 - Covers discovery → ingestion → database → timeline UI
 
+### [Ingestion Workflow](ingestion-workflow.md)
+**Topics:** DMG vs App Store ingestion workflow and FastPath behavior
+- FastPath preview vs completion backfill (bounded worker pool)
+- Core ingest call chain (locks → discovery → hoover → watchers)
+- Sandboxed file access (`TranscriptAccessProvider.withAccess`) constraints
+
 ### [Architecture Refactoring Analysis](architecture-refactoring-analysis.md)
 **Topics:** Refactoring opportunities and roadmap
 - Current state: 85% alignment achieved, architecture grade A- (up from B+)

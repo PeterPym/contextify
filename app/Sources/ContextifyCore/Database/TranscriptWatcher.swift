@@ -57,6 +57,11 @@ public final class TranscriptWatcher: @unchecked Sendable {
     }
   }
 
+  /// Number of active watchers (for diagnostics and testing)
+  public var watcherCount: Int {
+    watcherQueue.sync { watchers.count }
+  }
+
   /// Start watching a transcript file for changes (idempotent - skips if already watching)
   public func watch(transcriptId: String, fileURL: URL, provider: String) throws {
     if LoggingConfig.enableVerboseWatcherLogs {

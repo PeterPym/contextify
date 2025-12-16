@@ -825,6 +825,50 @@ final class DatabaseTests: XCTestCase {
     XCTAssertFalse(secondCallResult, "Second call should return false (already complete or locked)")
   }
 
+  func testMarkTranscriptUnavailableRemovesFromPartialResumption() async throws {
+    let dbPath = tempDir.appendingPathComponent("test-unavailable.db")
+    let pool = try makeMigratedPool(at: dbPath)
+
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbPath)
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+
+    let projectRepo = ProjectRepositoryImpl(db: pool)
+    let projectId = try projectRepo.create(name: "Test Project", rootPath: tempDir.path, bookmark: nil)
+
+    let transcriptFile = tempDir.appendingPathComponent("unavailable-transcript.jsonl")
+    try "[]\n".write(to: transcriptFile, atomically: true, encoding: .utf8)
+
+    let transcriptRepo = TranscriptRepositoryImpl(db: pool)
+    let transcriptId = try transcriptRepo.upsert(
+      projectId: projectId,
+      fileURL: transcriptFile,
+      provider: "claude.code",
+      providerSessionId: nil,
+      lastModified: Date(),
+      fileSize: 3
+    )
+
+    try transcriptRepo.setIngestionState(
+      id: transcriptId,
+      lastProcessedLine: 0,
+      lineCount: 0,
+      parserVersion: 1,
+      status: "active",
+      ingestState: "partial",
+      lastError: nil
+    )
+
+    try orchestrator.markTranscriptUnavailable(transcriptId: transcriptId, lastError: "Permission denied")
+
+    let updated = try transcriptRepo.get(transcriptId)!
+    XCTAssertEqual(updated.status, "unavailable")
+    XCTAssertEqual(updated.ingestState, "complete")
+    XCTAssertEqual(updated.lastError, "Permission denied")
+
+    let partials = try orchestrator.getPartialTranscripts()
+    XCTAssertFalse(partials.contains(where: { $0.id == transcriptId }), "Unavailable transcripts should not be returned as partials")
+  }
+
   func testIngestStateIndexExists() throws {
     let dbPath = tempDir.appendingPathComponent("test.db")
     var config = Configuration()

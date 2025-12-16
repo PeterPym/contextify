@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/lib/db_location.sh"
+source "$(dirname "$0")/../lib/db_location.sh"
 
 # Database discovery (override with DB_PATH env var if needed)
 if [ -z "${DB_PATH:-}" ]; then

@@ -804,42 +804,24 @@ setup_test_cleanup_trap() {
 # Transcript Backup/Restore (isolate tests from production data)
 # ─────────────────────────────────────────────────────────────────────────────
 
-CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
-CODEX_SESSIONS_DIR="$HOME/.codex/sessions"
-CLAUDE_BACKUP_DIR="$HOME/.claude/projects-QA-BACKUP"
-CODEX_BACKUP_DIR="$HOME/.codex/sessions-QA-BACKUP"
+# Source transcript isolation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../lib/transcript-isolation.sh"
 
 # Backup real transcripts and install minimal test data
 # Usage: backup_and_isolate_transcripts
 backup_and_isolate_transcripts() {
-  log_info "Backing up production transcripts for isolated QA..."
+  # Call shared library backup
+  backup_transcripts || return $?
 
-  # Backup Claude projects (if not already backed up)
-  if [ -d "$CLAUDE_PROJECTS_DIR" ] && [ ! -d "$CLAUDE_BACKUP_DIR" ]; then
-    mv "$CLAUDE_PROJECTS_DIR" "$CLAUDE_BACKUP_DIR"
-    log_info "Backed up Claude projects to $CLAUDE_BACKUP_DIR"
-  elif [ -d "$CLAUDE_BACKUP_DIR" ]; then
-    log_info "Claude backup already exists, removing current projects"
-    rm -rf "$CLAUDE_PROJECTS_DIR"
-  fi
+  # Install QA-specific fixtures (stays in QA script)
+  install_qa_fixtures
 
-  # Backup Codex sessions (if not already backed up)
-  if [ -d "$CODEX_SESSIONS_DIR" ] && [ ! -d "$CODEX_BACKUP_DIR" ]; then
-    mv "$CODEX_SESSIONS_DIR" "$CODEX_BACKUP_DIR"
-    log_info "Backed up Codex sessions to $CODEX_BACKUP_DIR"
-  elif [ -d "$CODEX_BACKUP_DIR" ]; then
-    log_info "Codex backup already exists, removing current sessions"
-    rm -rf "$CODEX_SESSIONS_DIR"
-  fi
+  return 0
+}
 
-  # Create empty directories for test data
-  mkdir -p "$CLAUDE_PROJECTS_DIR"
-  mkdir -p "$CODEX_SESSIONS_DIR"
-
-  # Seed baseline fixtures for tests that need multiple projects
-  # Project 1: Both providers (TEST_PROJECT)
-  # Project 2: Claude only
-  # Project 3: Codex only
+# QA-specific fixture installation
+install_qa_fixtures() {
   log_info "Seeding baseline test fixtures..."
 
   local TEST_PROJECT_2="/tmp/contextify-qa-test-2"
@@ -874,29 +856,21 @@ backup_and_isolate_transcripts() {
 # Restore production transcripts from backup
 # Usage: restore_transcripts_from_backup
 restore_transcripts_from_backup() {
-  log_info "Restoring production transcripts..."
+  # Call shared library restore with QA-specific settings
+  restore_transcripts \
+    --yes \
+    --exclude '*-tmp-contextify-qa-test*' \
+    --exclude '*-tmp-contextify-qa-fixture*' \
+    --exclude '*-private-tmp-contextify-qa-*' \
+    --exclude '*qa-fixture*'
 
-  # Restore Claude projects
-  if [ -d "$CLAUDE_BACKUP_DIR" ]; then
-    rm -rf "$CLAUDE_PROJECTS_DIR"
-    mv "$CLAUDE_BACKUP_DIR" "$CLAUDE_PROJECTS_DIR"
-    log_info "Restored Claude projects"
-  fi
-
-  # Restore Codex sessions
-  if [ -d "$CODEX_BACKUP_DIR" ]; then
-    rm -rf "$CODEX_SESSIONS_DIR"
-    mv "$CODEX_BACKUP_DIR" "$CODEX_SESSIONS_DIR"
-    log_info "Restored Codex sessions"
-  fi
-
-  log_success "Production transcripts restored"
+  return $?
 }
 
 # Check if transcripts are currently isolated (backup exists)
 # Usage: if transcripts_are_isolated; then ...
 transcripts_are_isolated() {
-  [ -d "$CLAUDE_BACKUP_DIR" ] || [ -d "$CODEX_BACKUP_DIR" ]
+  check_isolation_status --quiet
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

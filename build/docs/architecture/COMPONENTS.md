@@ -217,9 +217,10 @@ Contextify uses **two independent LLM processing queues** for content generation
 - Converted to DiscoveredProject by ProjectsViewModel for UI compatibility
 
 **FastPathIngestionCoordinator** (`app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`):
-- JIT ingestion coordinator for selected projects
-- Batched ingestion with progress tracking
-- Resume pending completions on app restart
+- JIT ingestion coordinator with bounded 4-worker pool
+- Preview subset (active project) gets watchers; completion work uses `startWatching: false`
+- Drop-proof lifecycle: check pause before dequeue, requeue on cancellation/failure
+- Two lifecycle modes: `pauseBackfill()` (resumable) vs `shutdown()` (terminal)
 - Called by AppStateOrchestrator.selectProject()
 
 **ProjectsViewModel** (`Contextify/Contextify/ProjectsViewModel.swift`):

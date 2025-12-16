@@ -128,95 +128,53 @@ if [[ "${1:-}" == "--clean" || "${1:-}" == "clean" ]]; then
   exit 0
 fi
 
+# Source transcript isolation library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/transcript-isolation.sh"
+
+# Demo-specific sample data installation
+install_demo_fixtures() {
+  log_info "Installing demo sample data..."
+
+  # Install sample transcripts
+  rm -rf ~/.claude/projects ~/.codex/sessions
+  mkdir -p ~/.claude/projects ~/.codex/sessions
+  cp -r appstore-metadata/review-materials/sample-transcripts/claude/projects/* ~/.claude/projects/
+  cp -r appstore-metadata/review-materials/sample-transcripts/codex/sessions/* ~/.codex/sessions/
+  echo "✓ Sample data: $(ls ~/.claude/projects/ | tr '\n' ' ')"
+
+  # Create stub project directories
+  mkdir -p ~/code/sample-projects/{taskflow,recipebox,weatherly}
+  for dir in ~/code/sample-projects/{taskflow,recipebox,weatherly}; do
+    if [ ! -d "$dir/.git" ]; then
+      git -C "$dir" init -q
+      echo "# Sample Project" > "$dir/README.md"
+      git -C "$dir" add README.md
+      git -C "$dir" commit -q -m "Initial commit"
+    fi
+  done
+
+  log_success "Demo fixtures installed"
+}
+
 # Restore function - can be called from --restore flag or from pause() during workflow
 do_restore() {
   echo "Restoring real transcripts from backup..."
   echo ""
 
-  if [[ ! -d ~/.claude/projects-REAL-BACKUP ]]; then
-    echo "❌ No backup found at ~/.claude/projects-REAL-BACKUP"
+  # Migrate old backup format if needed
+  if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
+    echo "Migrating old backup format..."
+    migrate_old_backup
     echo ""
-    echo "Tip: If you just have mixed data (real + sample), use --clean instead:"
-    echo "  ./scripts/release/demo-recording.sh --clean"
-    return 1
   fi
 
-  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "Found backup with $BACKUP_COUNT projects"
-  echo ""
+  # Call shared library restore with demo-specific exclusions
+  restore_transcripts \
+    --exclude '*-sample-projects-*' \
+    "$@"  # Pass through any flags (--dry-run, etc.)
 
-  # Auto-merge any non-sample work done during demo mode back to backup
-  SAMPLE_PATTERN="sample-projects"
-  MERGED_COUNT=0
-
-  echo "Checking for real work done during demo mode..."
-
-  # Claude Code: merge any non-sample project directories
-  if [[ -d ~/.claude/projects ]]; then
-    for dir in ~/.claude/projects/*/; do
-      dirname=$(basename "$dir")
-      if [[ ! "$dirname" =~ $SAMPLE_PATTERN ]]; then
-        if [[ -d ~/.claude/projects-REAL-BACKUP/"$dirname" ]]; then
-          # Directory exists in backup - merge new files
-          echo "  Merging updates: $dirname"
-          cp -rn "$dir"* ~/.claude/projects-REAL-BACKUP/"$dirname"/ 2>/dev/null || true
-        else
-          # New directory - copy entire thing
-          echo "  Adding new project: $dirname"
-          cp -r "$dir" ~/.claude/projects-REAL-BACKUP/
-        fi
-        MERGED_COUNT=$((MERGED_COUNT + 1))
-      fi
-    done
-  fi
-
-  # Codex: merge any non-sample session files
-  if [[ -d ~/.codex/sessions && -d ~/.codex/sessions-REAL-BACKUP ]]; then
-    # Find session files that aren't in the sample data
-    for year_dir in ~/.codex/sessions/*/; do
-      if [[ -d "$year_dir" ]]; then
-        year=$(basename "$year_dir")
-        for month_dir in "$year_dir"*/; do
-          if [[ -d "$month_dir" ]]; then
-            month=$(basename "$month_dir")
-            for day_dir in "$month_dir"*/; do
-              if [[ -d "$day_dir" ]]; then
-                day=$(basename "$day_dir")
-                # Copy any new session files
-                target_dir=~/.codex/sessions-REAL-BACKUP/"$year"/"$month"/"$day"
-                mkdir -p "$target_dir"
-                for session in "$day_dir"*.jsonl; do
-                  if [[ -f "$session" ]]; then
-                    session_name=$(basename "$session")
-                    if [[ ! -f "$target_dir/$session_name" ]]; then
-                      echo "  Adding Codex session: $year/$month/$day/$session_name"
-                      cp "$session" "$target_dir/"
-                      MERGED_COUNT=$((MERGED_COUNT + 1))
-                    fi
-                  fi
-                done
-              fi
-            done
-          fi
-        done
-      fi
-    done
-  fi
-
-  if [[ "$MERGED_COUNT" -gt 0 ]]; then
-    echo ""
-    echo "✅ Merged $MERGED_COUNT items back to backup"
-  else
-    echo "  No new work to merge"
-  fi
-  echo ""
-
-  # Remove current data (sample or mixed)
-  rm -rf ~/.claude/projects ~/.codex/sessions
-
-  # Restore backups
-  mv ~/.claude/projects-REAL-BACKUP ~/.claude/projects
-  mv ~/.codex/sessions-REAL-BACKUP ~/.codex/sessions 2>/dev/null || true
+  local restore_exit=$?
 
   # Clean up stub project directories
   if [[ -d ~/code/sample-projects ]]; then
@@ -224,15 +182,7 @@ do_restore() {
     echo "✅ Stub project directories removed"
   fi
 
-  echo "✅ Real transcripts restored!"
-  echo ""
-  echo "Projects now in ~/.claude/projects/:"
-  ls ~/.claude/projects/ 2>/dev/null | head -10
-  COUNT=$(ls ~/.claude/projects/ 2>/dev/null | wc -l | tr -d ' ')
-  if [[ "$COUNT" -gt 10 ]]; then
-    echo "... and $((COUNT - 10)) more"
-  fi
-  return 0
+  return $restore_exit
 }
 
 # Handle --restore flag for quick recovery after bailing early
@@ -370,61 +320,23 @@ echo "════════════════════════�
 echo ""
 
 # --- Backup real data ---
-SAMPLE_PATTERN="sample-projects"
-CURRENT_HAS_REAL=false
+echo "Backing up production transcripts..."
 
-if [[ -d ~/.claude/projects ]]; then
-  if ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | grep -q .; then
-    CURRENT_HAS_REAL=true
-  fi
-fi
-
-# Backup Claude projects
+# Migrate old backup format if needed
 if [[ -d ~/.claude/projects-REAL-BACKUP ]]; then
-  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  if [[ "$CURRENT_HAS_REAL" == "true" ]]; then
-    CURRENT_COUNT=$(ls ~/.claude/projects/ 2>/dev/null | grep -v "$SAMPLE_PATTERN" | wc -l | tr -d ' ')
-    echo "⚠️  Merging $CURRENT_COUNT new projects into existing backup..."
-    cp -rn ~/.claude/projects/* ~/.claude/projects-REAL-BACKUP/ 2>/dev/null || true
-  fi
-  echo "✓ Claude backup: ~/.claude/projects-REAL-BACKUP ($BACKUP_COUNT projects)"
-else
-  mv ~/.claude/projects ~/.claude/projects-REAL-BACKUP 2>/dev/null || true
-  BACKUP_COUNT=$(ls ~/.claude/projects-REAL-BACKUP/ 2>/dev/null | wc -l | tr -d ' ')
-  echo "✓ Backed up $BACKUP_COUNT Claude projects"
+  echo "Migrating old backup format..."
+  migrate_old_backup
+  echo ""
 fi
 
-# Backup Codex sessions (separate from Claude backup check)
-if [[ -d ~/.codex/sessions-REAL-BACKUP ]]; then
-  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
-  # Merge any new Codex sessions into backup
-  if [[ -d ~/.codex/sessions ]]; then
-    cp -rn ~/.codex/sessions/* ~/.codex/sessions-REAL-BACKUP/ 2>/dev/null || true
-  fi
-  echo "✓ Codex backup: ~/.codex/sessions-REAL-BACKUP ($CODEX_BACKUP_COUNT sessions)"
-else
-  mv ~/.codex/sessions ~/.codex/sessions-REAL-BACKUP 2>/dev/null || true
-  CODEX_BACKUP_COUNT=$(find ~/.codex/sessions-REAL-BACKUP -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
-  echo "✓ Backed up $CODEX_BACKUP_COUNT Codex sessions"
-fi
+# Call shared library backup
+backup_transcripts || {
+  echo "❌ Backup failed"
+  exit 1
+}
 
-# --- Install sample data ---
-rm -rf ~/.claude/projects ~/.codex/sessions
-mkdir -p ~/.claude/projects ~/.codex/sessions
-cp -r appstore-metadata/review-materials/sample-transcripts/claude/projects/* ~/.claude/projects/
-cp -r appstore-metadata/review-materials/sample-transcripts/codex/sessions/* ~/.codex/sessions/
-echo "✓ Sample data: $(ls ~/.claude/projects/ | tr '\n' ' ')"
-
-# --- Create stub project directories ---
-mkdir -p ~/code/sample-projects/{taskflow,recipebox,weatherly}
-for dir in ~/code/sample-projects/{taskflow,recipebox,weatherly}; do
-  if [ ! -d "$dir/.git" ]; then
-    git -C "$dir" init -q
-    echo "# Sample Project" > "$dir/README.md"
-    git -C "$dir" add README.md
-    git -C "$dir" commit -q -m "Initial commit"
-  fi
-done
+# Install demo fixtures
+install_demo_fixtures
 echo "✓ Stub dirs: ~/code/sample-projects/{taskflow,recipebox,weatherly}"
 
 # --- Quit app ---

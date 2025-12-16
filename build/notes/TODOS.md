@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-13
+**Last Updated:** 2025-12-14
 **Status:** Active
 
 **Priority Levels:**
@@ -58,62 +58,30 @@ See tracking file for current branches in flight and review status.
 
 ## Historical Transcript Ingestion Gap
 
-**Status:** Not started
+**Status:** Core fix complete (2025-12-14), follow-up items in P1
 **Priority:** P0 (data loss - user history not searchable)
 **Discovered:** 2025-12-13
+**Branch:** `fix/ingest-gap-historical-transcripts`
 
-- [ ] #INGEST-GAP: Investigate and fix missing historical transcript ingestion
+- [x] #INGEST-GAP: Fix missing historical transcript ingestion
 
-**Problem:**
-Contextify only ingests transcripts that are actively watched during a session. Historical transcripts are never backfilled, causing massive data gaps.
+**Fix Applied (2025-12-14):**
 
-**Evidence (Contextify project):**
-- 762 transcript files on disk in `~/.claude/projects/-Users-rob-code-projects-contextify/`
-- Only 13 transcripts in database (1.7% coverage)
-- Database only has entries from Nov 18, 2025 onwards
-- Files on disk go back further (at least Nov 13)
-- Current session IS being ingested (confirmed working for active transcripts)
+1. **Added `startWatching` parameter** to `ingestTranscript()` - completion work uses `false` to avoid watcher explosion
+2. **Bounded worker pool** (4 workers max) replaces unbounded `Task.detached`
+3. **Enqueue ALL remaining transcripts** immediately after preview subset (not blocked on preview)
+4. **Added `watcherCount` getter** to TranscriptWatcher for diagnostics
 
-**Impact:**
-- Search doesn't find older conversations
-- Analytics (message volume, activity patterns) are incomplete
-- User loses access to historical context
+**Results:**
+- Coverage improved from 1.7% to 95.1% for active main session transcripts
+- Remaining 5% are legitimately empty files (0 bytes, session-only metadata)
+- Build: zero warnings, 196 tests passing
 
-**Investigation findings (2025-12-13):**
+**Follow-up items (see P1):**
+- `#INGEST-PARSER-BUG`: Some transcripts with content produce 0 entries
+- `#INGEST-PERIODIC-CHECK`: No periodic check for late-arriving partials
 
-1. Transcripts ARE discovered and registered in `transcripts` table (818 records)
-2. But 794 are stuck as `partial` with 0 entries in `transcript_entries`
-3. FastPath limits processing to `maxTranscriptsPerProject = 5` per project (line 23)
-4. Only those 5 get `enqueueCompletion()` called - the other 794 are never queued!
-5. Log evidence: `[FAST-PATH-FILTER] Filtered 799 targets` → `[FAST-PATH-PROJECT] Processing 5 transcripts`
-6. Interacting with a project triggers JIT ingestion which works, but also limited to 5
-
-**Root Cause (two issues):**
-
-1. **Race condition:** `resumePendingCompletions()` runs BEFORE transcripts are registered
-   - `initializeDatabaseComponents()` spawns background Task calling `resumePendingCompletions()` (line 89-93)
-   - But `startup()` (which discovers and registers transcripts) runs LATER
-   - So `resumePendingCompletions()` queries an empty/stale `transcripts` table
-
-2. **Incomplete enqueue:** FastPath only enqueues 5 transcripts per project
-   - `processProject()` limits to `maxTranscriptsPerProject = 5` (line 260)
-   - Only those 5 get `enqueueCompletion()` called
-   - The other 794 are registered as `partial` but never enqueued
-
-**Code locations:**
-- Race: `AppStateOrchestrator.swift:89-93` (spawns too early)
-- Limit: `FastPathIngestionCoordinator.swift:260` (only processes 5)
-
-**Potential Fixes:**
-1. Move `resumePendingCompletions()` to run AFTER `startup()` completes (or after first JIT ingest)
-2. After FastPath preview, enqueue ALL remaining partials (not just the 5 previewed)
-3. Use TaskGroup with concurrency limit instead of unbounded Task.detached
-4. Add progress indicator for background ingestion
-5. Manual "Reindex All" button in Settings as user-facing workaround
-
-**Related:** `#LAZY-WATCHERS` - Fixing this will create 1000+ file watchers. Consider implementing lazy watchers alongside or before this fix to avoid file descriptor exhaustion.
-
-**Reference:** `app/Sources/ContextifyCore/Monitoring/` (file watchers), `app/Sources/ContextifyCore/Database/TranscriptOrchestrator.swift`
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 
 ---
 
@@ -217,6 +185,127 @@ transcript provider permission via Settings. Two bugs were fixed:
 ---
 
 # P1 (High Priority)
+
+---
+
+## Missing 112 Transcripts - Never Ingested
+
+**Status:** Not started
+**Priority:** P0 (data completeness - 9.3% of transcripts missing)
+**Discovered:** 2025-12-15
+**Related:** `#INGEST-GAP`
+
+- [ ] #INGEST-GAP-REMAINING: Investigate why 112 transcripts never made it into database
+
+**Current state (2025-12-15 23:10):**
+- On disk: 1,208 transcripts
+- In database: 1,096 transcripts
+- **Not ingested: 112 transcripts (9.3%)**
+
+**Possible causes:**
+1. Transcripts in projects that weren't monitored at startup
+2. Transcripts arrived after app startup (late-arriving files)
+3. FastPath worker pool completed before discovering these files
+4. Permission issues or file access errors
+5. Files created after initial project scan
+
+**Investigation queries:**
+```bash
+# Get all file paths on disk
+find ~/.claude/projects ~/.codex/sessions -name "*.jsonl" > /tmp/disk_transcripts.txt
+
+# Get all file paths in DB
+sqlite3 "$DB_PATH" "SELECT file_path FROM transcripts;" > /tmp/db_transcripts.txt
+
+# Find missing ones
+comm -23 <(sort /tmp/disk_transcripts.txt) <(sort /tmp/db_transcripts.txt)
+```
+
+**Next steps:**
+1. Run investigation queries to identify specific missing transcripts
+2. Check if they're in specific projects (pattern analysis)
+3. Check file creation dates vs app startup time
+4. Check ingestion logs for errors related to these files
+5. Determine if this is related to #INGEST-PERIODIC-CHECK need
+6. Fix and test with clean build (5-7 min full ingestion time)
+
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
+
+---
+
+## Transcript Parser Bug - Content Without Entries
+
+**Status:** Not started
+**Priority:** P0 (data completeness - 6.8% of transcripts unusable)
+**Discovered:** 2025-12-14, analyzed 2025-12-15
+**Related:** `#INGEST-GAP`
+
+- [ ] #INGEST-PARSER-BUG: Fix parser for 82 transcripts with content but 0 entries
+
+**Updated analysis (2025-12-15):**
+- Total transcripts: 1,208
+- In database: 1,096
+- With 0 entries: 719 (but 637 are agent sidechains - correct behavior!)
+- **Real parser failures: 82 transcripts (6.8%)**
+  - 73 Claude regular conversations (non-agent files)
+  - 9 Codex transcripts
+
+**Important:** Agent sidechains (files matching `agent-*.jsonl`) SHOULD have 0 entries. They're background work files with `isSidechain: true`, not conversations.
+
+**Evidence (FCB3B514):**
+- File: `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/FCB3B514-A11B-419D-8157-E1BE18DEC02B.jsonl`
+- Size: 85KB (88 lines)
+- Content: 26 assistant messages, 31 user messages with `userType: "external"`
+- All have `isSidechain: false`
+- DB shows: `ingest_state: complete`, `last_processed_line: 88`, but 0 entries
+
+**Parser analysis:**
+- `extractContentWithType()` should handle string content (line 274-275)
+- `validateMessageIntegrity()` returns `false` for string content (line 355-358)
+- No parse errors recorded in `parse_errors` table
+
+**Next steps:**
+1. Sample 5-10 failing transcripts (use query from continuation doc)
+2. Examine file structure and identify common patterns
+3. Add parser logging for these specific cases
+4. Fix parser to handle these edge cases
+5. Test with clean build (5-7 min full ingestion time)
+
+**Reference:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+
+---
+
+## Periodic Ingestion Check for Resilience
+
+**Status:** Not started
+**Priority:** P1 (robustness - may explain some of the 112 missing transcripts)
+**Discovered:** 2025-12-14
+**Related:** `#INGEST-GAP`, `#INGEST-GAP-REMAINING`
+
+- [ ] #INGEST-PERIODIC-CHECK: Add periodic check for partial transcripts
+
+**Problem:**
+`resumePendingCompletions()` only runs once at app startup. Transcripts marked `partial` after startup (manual DB edits, edge cases, late-arriving files) are never picked up until app restart.
+
+**Possibly related to 112 missing transcripts:** If transcripts arrive after app startup or after FastPath completes, they won't be ingested until next restart. Periodic check would catch these late arrivals.
+
+**Current behavior:**
+- `AppStateOrchestrator.swift:89-92` - runs once during init
+- `ProjectSwitcherState.swift:182-183` - runs once when coordinator initialized
+- No periodic timer or event-driven re-check
+
+**Proposed fix:**
+Add a periodic check (every 5-10 minutes) or event-driven trigger:
+1. Timer-based: `Timer.scheduledTimer` calling `resumePendingCompletions()`
+2. Event-driven: Trigger on project switch, settings change, or file system events
+3. Hybrid: Event-driven with minimum interval to avoid thrashing
+
+**Acceptance criteria:**
+- Partial transcripts picked up within 10 minutes without app restart
+- No performance impact during normal operation
+- Proper cancellation on app termination
+
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 
 ---
 
@@ -711,6 +800,35 @@ Test should grep for log message indicating Deep Search window opened (e.g., `[D
 - [ ] Test uses log messages for validation, not window count
 - [ ] Test passes in isolation and as part of full suite
 - [ ] Test works in fixture mode (`QA_FIXTURE_MODE=1`)
+
+---
+
+## Project Switch Timeline Preview Prefetch (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (UX - avoids “empty” timeline after switching projects)
+**Effort:** 4-8 hours
+**Spec:** `build/notes/todo-support/PROJECT-SWITCH-TIMELINE-PREVIEW-PREFETCH-spec.md`
+
+- [ ] #PROJECT-SWITCH-TIMELINE-PREVIEW-PREFETCH: Prefetch a lightweight, cancelable preview subset for non-active projects so switching projects shows content quickly without starting watchers.
+
+**Problem:**
+Only the active project gets FastPath preview + watchers. Inactive projects may have `ingest_state='partial'` with 0 entries until completion/backfill runs. When a user switches projects, the timeline can appear empty for a long time even though transcripts exist.
+
+**Goal:**
+Reduce perceived latency on project switching by ensuring a small amount of displayable content exists for likely-next projects, while keeping resource usage bounded and avoiding watcher/file-descriptor explosion.
+
+**Constraints:**
+- Must not start watchers for non-active projects (keep `startWatching: false` for prefetch work).
+- Must be bounded, cancelable, and deprioritized relative to the active project’s ingestion.
+- Must not introduce meaningful startup tax (prefetch runs after UI is usable / idle).
+
+**Acceptance Criteria:**
+- [ ] Switching to a recently-viewed/recently-active project shows non-empty timeline content quickly when transcripts exist (target: within ~200ms once DB has entries; within a short bounded window after prefetch begins on first run).
+- [ ] Active project ingestion remains prioritized (project switching does not regress perceived latency for the current project).
+- [ ] Watcher count does not scale with total project count (non-active prefetch does not create watchers).
+- [ ] Prefetch is cancelable (project switch pauses/deprioritizes background prefetch).
+- [ ] Unit tests cover prefetch scheduling rules and watcher safety; E2E coverage updated or added if needed.
 
 ---
 
@@ -1980,6 +2098,25 @@ In App Store (sandboxed) builds, discovered projects have `hasBookmark=false` be
 **Effort:** 6-8 hours
 
 - [ ] #TESTS: Validate reinstated test infrastructure and re-enable skipped integration tests
+
+---
+
+## Project Bar Hide Activation (1 item)
+
+**Status:** Not started
+**Priority:** P3 (UI state correctness)
+**Discovered:** 2025-12-14
+
+- [ ] #PROJECT-HIDE-ACTIVATE-NEXT: When hiding active project, activate next project to the right
+
+**Problem:**
+When a project is hidden via the project bar context menu while it is the active project, the UI can remain logically “active” on the now-hidden project (stale git branch / project row / conversation timeline).
+
+**Expected:**
+Hiding the active project activates the next visible project to the right (or the nearest neighbor if none to the right).
+
+**Notes:**
+- Repro: Right-click active project tab in the project bar → Hide → observe active selection state.
 
 **Summary:** FoundationLLM/SDK/actor blockers have been addressed, so this work is now about verification: ensure `swift test` passes cleanly, re-enable `testInitialHooverWorkflow`, `testOrchestratorWorkflow`, and `testCrashRecovery`, and confirm the CI workflow references the reactivated suites.
 
