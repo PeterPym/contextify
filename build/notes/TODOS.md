@@ -188,17 +188,69 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Missing 112 Transcripts - Never Ingested
+
+**Status:** Not started
+**Priority:** P0 (data completeness - 9.3% of transcripts missing)
+**Discovered:** 2025-12-15
+**Related:** `#INGEST-GAP`
+
+- [ ] #INGEST-GAP-REMAINING: Investigate why 112 transcripts never made it into database
+
+**Current state (2025-12-15 23:10):**
+- On disk: 1,208 transcripts
+- In database: 1,096 transcripts
+- **Not ingested: 112 transcripts (9.3%)**
+
+**Possible causes:**
+1. Transcripts in projects that weren't monitored at startup
+2. Transcripts arrived after app startup (late-arriving files)
+3. FastPath worker pool completed before discovering these files
+4. Permission issues or file access errors
+5. Files created after initial project scan
+
+**Investigation queries:**
+```bash
+# Get all file paths on disk
+find ~/.claude/projects ~/.codex/sessions -name "*.jsonl" > /tmp/disk_transcripts.txt
+
+# Get all file paths in DB
+sqlite3 "$DB_PATH" "SELECT file_path FROM transcripts;" > /tmp/db_transcripts.txt
+
+# Find missing ones
+comm -23 <(sort /tmp/disk_transcripts.txt) <(sort /tmp/db_transcripts.txt)
+```
+
+**Next steps:**
+1. Run investigation queries to identify specific missing transcripts
+2. Check if they're in specific projects (pattern analysis)
+3. Check file creation dates vs app startup time
+4. Check ingestion logs for errors related to these files
+5. Determine if this is related to #INGEST-PERIODIC-CHECK need
+6. Fix and test with clean build (5-7 min full ingestion time)
+
+**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
+
+---
+
 ## Transcript Parser Bug - Content Without Entries
 
 **Status:** Not started
-**Priority:** P1 (data completeness)
-**Discovered:** 2025-12-14
+**Priority:** P0 (data completeness - 6.8% of transcripts unusable)
+**Discovered:** 2025-12-14, analyzed 2025-12-15
 **Related:** `#INGEST-GAP`
 
-- [ ] #INGEST-PARSER-BUG: Investigate transcripts with content but 0 entries
+- [ ] #INGEST-PARSER-BUG: Fix parser for 82 transcripts with content but 0 entries
 
-**Problem:**
-Some Claude Code transcripts have real user/assistant messages but produce 0 entries after parsing.
+**Updated analysis (2025-12-15):**
+- Total transcripts: 1,208
+- In database: 1,096
+- With 0 entries: 719 (but 637 are agent sidechains - correct behavior!)
+- **Real parser failures: 82 transcripts (6.8%)**
+  - 73 Claude regular conversations (non-agent files)
+  - 9 Codex transcripts
+
+**Important:** Agent sidechains (files matching `agent-*.jsonl`) SHOULD have 0 entries. They're background work files with `isSidechain: true`, not conversations.
 
 **Evidence (FCB3B514):**
 - File: `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/FCB3B514-A11B-419D-8157-E1BE18DEC02B.jsonl`
@@ -213,9 +265,11 @@ Some Claude Code transcripts have real user/assistant messages but produce 0 ent
 - No parse errors recorded in `parse_errors` table
 
 **Next steps:**
-1. Add parser logging for this specific transcript
-2. Trace execution path to find where entries are being filtered
-3. Check if content format differs from expected structure
+1. Sample 5-10 failing transcripts (use query from continuation doc)
+2. Examine file structure and identify common patterns
+3. Add parser logging for these specific cases
+4. Fix parser to handle these edge cases
+5. Test with clean build (5-7 min full ingestion time)
 
 **Reference:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
 
@@ -224,14 +278,16 @@ Some Claude Code transcripts have real user/assistant messages but produce 0 ent
 ## Periodic Ingestion Check for Resilience
 
 **Status:** Not started
-**Priority:** P1 (robustness)
+**Priority:** P1 (robustness - may explain some of the 112 missing transcripts)
 **Discovered:** 2025-12-14
-**Related:** `#INGEST-GAP`
+**Related:** `#INGEST-GAP`, `#INGEST-GAP-REMAINING`
 
 - [ ] #INGEST-PERIODIC-CHECK: Add periodic check for partial transcripts
 
 **Problem:**
 `resumePendingCompletions()` only runs once at app startup. Transcripts marked `partial` after startup (manual DB edits, edge cases, late-arriving files) are never picked up until app restart.
+
+**Possibly related to 112 missing transcripts:** If transcripts arrive after app startup or after FastPath completes, they won't be ingested until next restart. Periodic check would catch these late arrivals.
 
 **Current behavior:**
 - `AppStateOrchestrator.swift:89-92` - runs once during init
