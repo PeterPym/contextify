@@ -51,7 +51,7 @@ struct SettingsView: View {
       .onChange(of: selectedTab) { _, newValue in
         ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
       }
-      .frame(width: 450, height: 520)
+      .frame(width: 520, height: 520)
     } else {
       // DMG build: Database + CLI (no permissions needed)
       TabView(selection: $selectedTab) {
@@ -492,18 +492,18 @@ struct PermissionsSettingsTab: View {
 
   var body: some View {
     VStack(spacing: 24) {
-      VStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 8) {
         Text("Transcript Sources")
           .font(.headline)
 
         Text("Grant access to folders containing Claude Code and Codex transcripts.")
           .font(.body)
           .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
       }
       .padding(.top, 8)
+      .frame(maxWidth: .infinity, alignment: .leading)
 
-      VStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 12) {
         ForEach(SourceID.allCases, id: \.self) { source in
           SourceAuthorizationRow(
             source: source,

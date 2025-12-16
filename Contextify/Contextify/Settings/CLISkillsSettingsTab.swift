@@ -142,10 +142,11 @@ struct CLISkillsSettingsTab: View {
   }
 
   var body: some View {
-    Form {
-      Section {
-        VStack(alignment: .leading, spacing: 12) {
-          SetupStepCard(title: "CLI Installation", state: statusState) {
+    VStack(spacing: 0) {
+      Form {
+        Section {
+          VStack(alignment: .leading, spacing: 12) {
+            SetupStepCard(title: "CLI Installation", state: statusState) {
             // Action buttons
             if coordinator.isHandlingOperation {
               ProgressView()
@@ -275,6 +276,10 @@ struct CLISkillsSettingsTab: View {
       }
       coordinator.refreshState()
     }
-    .frame(width: 520)
+
+    Spacer()
+  }
+  .padding()
+  .frame(maxWidth: .infinity, alignment: .leading)
   }
 }

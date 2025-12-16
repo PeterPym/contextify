@@ -560,6 +560,40 @@ App Store (sandboxed) builds can only access transcript directories (`~/.claude/
 - `app/Sources/ContextifyCore/Coordination/StartupCoordinator.swift:490-519` - external project switch
 - `Contextify/Contextify/SourceAuthorizationRow.swift` - permission UI pattern to follow
 
+### APPSTORE-CLI-ADMIN: App Store CLI Admin Install with Apple Entitlement
+
+**Goal:** Enable admin privilege CLI installation for App Store builds using Apple's privileged file operations entitlement.
+
+**Background:**
+- DMG builds use osascript with admin (implemented in feat/cli-auto-install)
+- App Store builds blocked from osascript by sandbox
+- Apple provides special entitlement: `com.apple.developer.security.privileged-file-operations`
+- Must be requested via special form (not automatically available)
+- BBEdit successfully uses this for their App Store version
+
+**Current state:**
+- DMG builds: osascript with admin fallback ✅
+- App Store builds: ~/bin only (shows PATH warning)
+
+**Implementation plan:**
+1. Research entitlement request process
+2. Submit request form to Apple
+3. If approved: Implement NSWorkspaceAuthorization API
+4. Use NSWorkspaceAuthorizationTypeCreateSymbolicLink
+5. Update App Store build to offer admin option (like DMG)
+6. Update App Store review notes with justification
+
+**Trigger for promotion to P3:**
+- App Store user feedback about PATH configuration difficulty
+- Support tickets about ~/bin not on PATH
+- After v1.0 ships and we validate demand
+
+**Research:** See `build/design/research/ux/appstore-cli-install/README.md`
+
+**Related:**
+- Spec: `build/docs/specifications/claude-plugin-auto-install.md` (section 3a)
+- Implementation: `Contextify/Contextify/CLICoordinator.swift`
+
 ---
 
 ## P5 (Research / Exploratory)

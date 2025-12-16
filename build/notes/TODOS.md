@@ -777,6 +777,36 @@ Both should use identical card components for consistency.
 
 ---
 
+## Settings Window Width - App Store Build (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (App Store build quality issue)
+**Effort:** 1-2 hours
+**Discovered:** During App Store QA testing (2025-12-15)
+
+- [ ] #SETTINGS-APPSTORE-WIDTH: Fix Settings window width in App Store build to match DMG version
+
+**Problem:**
+Settings window is narrower in App Store builds compared to DMG builds, causing layout issues:
+- Database tab shows text wrapping/truncation (multi-machine warning)
+- Overall cramped appearance
+- Likely caused by different window restoration behavior or frame constraints between sandboxed/unsandboxed builds
+
+**Impact:**
+- Functional but looks unprofessional
+- May confuse users about database status
+- Affects perceived quality of App Store version
+
+**Investigation needed:**
+- Check window frame constraints in Settings window definition
+- Compare window restoration code between DMG/App Store entitlements
+- Verify if sandbox affects window sizing APIs
+
+**Location:**
+- Settings window definition (likely `Contextify/Contextify/Settings/SettingsView.swift` or similar)
+
+---
+
 ## Settings Window UX Modernization (1 item)
 
 **Status:** Not Started
@@ -784,10 +814,10 @@ Both should use identical card components for consistency.
 **Effort:** 4-10 hours
 **Reference:** `build/notes/todo-support/SETTINGS-UX-MODERNIZATION.md`
 
-- [ ] #SETTINGS-UX-MODERNIZATION: Modernize Settings window navigation and pane layout to match macOS conventions (sidebar/toolbar norms, grid alignment, padding/spacing) and avoid “web/mobile-in-a-window” feel.
+- [ ] #SETTINGS-UX-MODERNIZATION: Modernize Settings window navigation and pane layout to match macOS conventions (sidebar/toolbar norms, grid alignment, padding/spacing) and avoid "web/mobile-in-a-window" feel.
 
 **Problem:**
-Several settings panes (including the CLI tab) are functionally correct but visually read as “unstyled” and can feel cramped or misaligned, undermining trust in the app.
+Several settings panes (including the CLI tab) are functionally correct but visually read as "unstyled" and can feel cramped or misaligned, undermining trust in the app.
 
 **Acceptance Criteria:**
 - [ ] Settings navigation uses a macOS-idiomatic pattern (pinned down in the support doc)
@@ -2427,21 +2457,31 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 - Extend parser for additional debugging data
 - **Effort:** 2-3 hours each
 
-## Code Quality (1 item)
+## Code Quality (2 items)
 
 **Status:** Not Started
 **Priority:** P3 (low priority refactoring)
-**Effort:** 1-2 hours
+**Effort:** 2-3 hours
 
 - [ ] #91: Remove hardcoded magic number 25 for timeline entry limits
+- [ ] #DATABASE-MULTI-MACHINE-WARNING: Fix duplicate machine names in Database settings multi-machine access warning
 
-**Details:**
+**#91 Details:**
 - Currently hardcoded in 3 places:
   - `ConversationMonitor.swift:185` - `visibleEntryLimit = 25`
   - `TimelineModels.swift:252` - `maxEntries: Int = 25`
   - `TranscriptMetadataFormatters.swift:21` - `fullStrategyLimit = 25`
 - Should be centralized constant or user preference
 - Low priority: current value works fine, just poor code hygiene
+
+**#DATABASE-MULTI-MACHINE-WARNING Details:**
+- **Issue:** Multi-machine database access warning shows duplicate machine names
+- **Observed behavior:** Settings > Database tab shows "Rob's MacBook Air" repeated ~25+ times
+- **Expected behavior:** Should deduplicate machine names or show unique access count
+- **Screenshot:** Available in session /tmp/transcript-queue-monitor-20251215-222104.log
+- **Impact:** Low - warning is functional but ugly/confusing
+- **Effort:** ~1 hour (find deduplication logic, add Set or grouping)
+- **Location:** Likely in database settings view or multi-machine conflict detection code
 
 ---
 

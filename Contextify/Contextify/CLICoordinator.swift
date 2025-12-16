@@ -16,6 +16,7 @@ import SwiftUI
 import Combine
 import ContextifyCore
 import OSLog
+import AppKit  // For NSAlert
 
 private let log = Logger(subsystem: "dev.contextify", category: "CLICoordinator")
 
@@ -92,7 +93,7 @@ public final class CLICoordinator: ObservableObject {
 
     do {
       try await installShimAndPlugin()
-      refreshState()
+      refreshState(force: true)  // Force refresh after operation completes
       log.info("[CLI-ENABLE-SUCCESS] state=\(String(describing: self.state))")
     } catch {
       state = .failed(error: error.localizedDescription)
@@ -107,33 +108,42 @@ public final class CLICoordinator: ObservableObject {
 
     log.info("[CLI-DISABLE-START]")
     removeShimAndPlugin()
-    state = .disabled
+    refreshState(force: true)  // Force refresh after operation completes
     log.info("[CLI-DISABLE-COMPLETE]")
   }
 
   /// Check for installation/upgrades and install if needed
   /// Called on app launch (DMG only)
   public func checkAndUpgrade() async {
-    // For DMG builds: auto-install on first launch or auto-upgrade if outdated
+    // For DMG builds: auto-install on first launch IF writable paths exist (homebrew users)
+    // For non-homebrew users: stay disabled, require manual enable
     // For App Store builds: this should not be called (requires permission first)
 
     let bundledVersion = readBundledVersion()
 
     switch state {
     case .disabled:
-      // First-time install: auto-enable for DMG builds
-      log.info("[CLI-AUTO-INSTALL-START] version=\(bundledVersion)")
-      isHandlingOperation = true
-      defer { isHandlingOperation = false }
+      // Only auto-install if we have writable system paths (homebrew users)
+      let hasWritablePath = await hasWritableSystemPath()
 
-      state = .installing
-      do {
-        try await installShimAndPlugin()
-        refreshState()
-        log.info("[CLI-AUTO-INSTALL-SUCCESS] version=\(bundledVersion)")
-      } catch {
-        state = .failed(error: error.localizedDescription)
-        log.error("[CLI-AUTO-INSTALL-FAILED] error=\(error.localizedDescription)")
+      if hasWritablePath {
+        // Homebrew user: silent auto-install
+        log.info("[CLI-AUTO-INSTALL-START] version=\(bundledVersion)")
+        isHandlingOperation = true
+        defer { isHandlingOperation = false }
+
+        state = .installing
+        do {
+          try await installShimAndPlugin()
+          refreshState(force: true)  // Force refresh after operation completes
+          log.info("[CLI-AUTO-INSTALL-SUCCESS] version=\(bundledVersion)")
+        } catch {
+          state = .failed(error: error.localizedDescription)
+          log.error("[CLI-AUTO-INSTALL-FAILED] error=\(error.localizedDescription)")
+        }
+      } else {
+        // Non-homebrew user: stay disabled, require manual enable
+        log.info("[CLI-AUTO-INSTALL-SKIP] No writable paths, requires manual enable")
       }
 
     case .enabled(let installedVersion, _):
@@ -150,7 +160,7 @@ public final class CLICoordinator: ObservableObject {
       state = .upgrading(from: installedVersion, to: bundledVersion)
       do {
         try await upgradePlugin(to: bundledVersion)
-        refreshState()
+        refreshState(force: true)  // Force refresh after operation completes
         log.info("[CLI-UPGRADE-SUCCESS] version=\(bundledVersion)")
       } catch {
         state = .failed(error: error.localizedDescription)
@@ -164,10 +174,10 @@ public final class CLICoordinator: ObservableObject {
   }
 
   /// Refresh state by re-computing from filesystem
-  /// Throttled to avoid expensive checks
-  public func refreshState() {
+  /// Throttled to avoid expensive checks unless force=true
+  public func refreshState(force: Bool = false) {
     let now = Date()
-    if let lastCheck = lastCheckTime,
+    if !force, let lastCheck = lastCheckTime,
        now.timeIntervalSince(lastCheck) < checkThrottleDuration {
       return
     }
@@ -212,12 +222,15 @@ public final class CLICoordinator: ObservableObject {
 
     // 1. Copy shim to temp location
     let tempShimURL = tempDir.appendingPathComponent("contextify-query-\(UUID().uuidString)")
-    guard let bundledShimURL = Bundle.main.url(forResource: "contextify-query/contextify-query", withExtension: nil) else {
+    guard let bundledShimURL = Bundle.main.url(forResource: "contextify-query/shim/contextify-query-shim", withExtension: nil) else {
       throw InstallError.bundledShimMissing
     }
     try fileManager.copyItem(at: bundledShimURL, to: tempShimURL)
 
-    // 2. Copy plugin to temp location
+    // 2. Make shim executable
+    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempShimURL.path)
+
+    // 3. Copy plugin to temp location
     let tempPluginURL = tempDir.appendingPathComponent("contextify-plugin-\(UUID().uuidString)")
     guard let bundledPluginURL = Bundle.main.resourceURL?
       .appendingPathComponent("contextify-query/claude-plugin") else {
@@ -225,11 +238,8 @@ public final class CLICoordinator: ObservableObject {
     }
     try fileManager.copyItem(at: bundledPluginURL, to: tempPluginURL)
 
-    // 3. Make shim executable
-    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempShimURL.path)
-
-    // 4. Determine final locations
-    let finalShimURL = determineShimPath()
+    // 4. Determine final locations (may show dialog)
+    let (finalShimURL, requiresAdmin) = try await determineShimPath()
     let finalPluginURL = pluginCachePath()
 
     // 5. Create parent directories if needed
@@ -242,19 +252,27 @@ public final class CLICoordinator: ObservableObject {
       try fileManager.createDirectory(at: pluginParent, withIntermediateDirectories: true)
     }
 
-    // 6. Atomic moves to final locations
-    // Remove existing files first if they exist
-    if fileManager.fileExists(atPath: finalShimURL.path) {
-      try fileManager.removeItem(at: finalShimURL)
+    // 6. Install shim (admin or regular)
+    if requiresAdmin {
+      // Use osascript with admin privileges
+      try await installWithAdmin(shimSource: tempShimURL, destination: finalShimURL)
+      // Clean up temp file manually (osascript created the target)
+      try? fileManager.removeItem(at: tempShimURL)
+    } else {
+      // Regular file move (atomic)
+      if fileManager.fileExists(atPath: finalShimURL.path) {
+        try fileManager.removeItem(at: finalShimURL)
+      }
+      try fileManager.moveItem(at: tempShimURL, to: finalShimURL)
     }
+
+    // 7. Install plugin (always regular move)
     if fileManager.fileExists(atPath: finalPluginURL.path) {
       try fileManager.removeItem(at: finalPluginURL)
     }
-
-    try fileManager.moveItem(at: tempShimURL, to: finalShimURL)
     try fileManager.moveItem(at: tempPluginURL, to: finalPluginURL)
 
-    // 7. Update plugin manifest
+    // 8. Update plugin manifest
     try updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
 
     log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path) plugin=\(finalPluginURL.path)")
@@ -297,7 +315,97 @@ public final class CLICoordinator: ObservableObject {
     removePluginFromManifest()
   }
 
+  // MARK: - Admin Install Support
+
+  private enum AdminInstallChoice {
+    case install
+    case cancel
+  }
+
+  @MainActor
+  private func showAdminInstallDialog() async -> AdminInstallChoice {
+    let alert = NSAlert()
+    alert.messageText = "Administrator Access Required"
+    alert.informativeText = """
+      Contextify will request administrator privileges to install the 'contextify-query' command to /usr/local/bin.
+
+      The request to make changes will come from 'osascript'. This one-time access is used solely to add the contextify-query command to your system path.
+      """
+    alert.alertStyle = .informational
+    alert.addButton(withTitle: "Install")
+    alert.addButton(withTitle: "Cancel")
+
+    let response = alert.runModal()
+
+    switch response {
+    case .alertFirstButtonReturn:
+      log.info("[CLI-ADMIN-DIALOG-APPROVED]")
+      return .install
+    default:
+      log.info("[CLI-ADMIN-DIALOG-CANCELLED]")
+      return .cancel
+    }
+  }
+
+  private func installWithAdmin(shimSource: URL, destination: URL) async throws {
+    log.info("[CLI-ADMIN-INSTALL-START] destination=\(destination.path)")
+
+    // Use cp to copy the actual file (not create symlink to temp file)
+    // cp -f will overwrite existing regular files; chmod to ensure it's executable
+    let script = """
+      do shell script "cp -f '\(shimSource.path)' '\(destination.path)' && chmod 755 '\(destination.path)'" with administrator privileges
+    """
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    process.arguments = ["-e", script]
+
+    let errorPipe = Pipe()
+    process.standardError = errorPipe
+
+    try process.run()
+    process.waitUntilExit()
+
+    guard process.terminationStatus == 0 else {
+      let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+
+      // Detect user cancellation by exit code or error message
+      // osascript returns 1 with "User canceled" message when user cancels password prompt
+      let userCancelled = process.terminationStatus == 128 ||
+                          process.terminationStatus == -128 ||
+                          errorMessage.lowercased().contains("user cancel")
+
+      if userCancelled {
+        log.info("[CLI-ADMIN-INSTALL-CANCELLED]")
+        throw InstallError.adminCancelled
+      }
+
+      log.error("[CLI-ADMIN-INSTALL-FAILED] error=\(errorMessage)")
+      throw InstallError.adminInstallFailed(message: errorMessage)
+    }
+
+    log.info("[CLI-ADMIN-INSTALL-SUCCESS] destination=\(destination.path)")
+  }
+
   // MARK: - Helper Methods
+
+  /// Check if any writable system paths exist (homebrew detection)
+  private func hasWritableSystemPath() async -> Bool {
+    let fileManager = FileManager.default
+    let systemPaths = [
+      "/opt/homebrew/bin",      // Apple Silicon homebrew
+      "/usr/local/bin"          // Intel homebrew (if user-owned)
+    ]
+
+    for path in systemPaths {
+      if fileManager.isWritableFile(atPath: path) {
+        return true
+      }
+    }
+
+    return false
+  }
 
   /// Find installed shim in common locations
   private static func findInstalledShim() -> String? {
@@ -342,14 +450,17 @@ public final class CLICoordinator: ObservableObject {
     return path.split(separator: ":").contains { String($0) == homeBin }
   }
 
-  /// Determine where to install shim (DMG: homebrew/local, App Store: ~/bin)
-  private func determineShimPath() -> URL {
+  /// Determine where to install shim (DMG: homebrew/local/admin, App Store: ~/bin)
+  /// Returns tuple: (url: final install path, requiresAdmin: whether to use osascript)
+  private func determineShimPath() async throws -> (url: URL, requiresAdmin: Bool) {
     let fileManager = FileManager.default
 
-    // App Store: always use ~/bin (no permissions needed)
+    // App Store: always use ~/bin (no admin option)
     if Sandbox.isSandboxed {
-      return fileManager.homeDirectoryForCurrentUser
-        .appendingPathComponent("bin/contextify-query")
+      return (
+        url: fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query"),
+        requiresAdmin: false
+      )
     }
 
     // DMG: Try writable system paths (homebrew-enabled systems)
@@ -361,14 +472,27 @@ public final class CLICoordinator: ObservableObject {
 
     for path in systemPaths {
       if fileManager.isWritableFile(atPath: path) {
-        return URL(fileURLWithPath: "\(path)/contextify-query")
+        return (
+          url: URL(fileURLWithPath: "\(path)/contextify-query"),
+          requiresAdmin: false
+        )
       }
     }
 
-    // Fallback: ~/bin (always writable, may need PATH configuration)
-    // PATH warning will be shown in UI via needsPathWarning computed property
-    return fileManager.homeDirectoryForCurrentUser
-      .appendingPathComponent("bin/contextify-query")
+    // No writable system paths - request admin install
+    log.info("[CLI-NO-WRITABLE-PATHS] Requesting admin install")
+
+    let choice = await showAdminInstallDialog()
+
+    switch choice {
+    case .install:
+      return (
+        url: URL(fileURLWithPath: "/usr/local/bin/contextify-query"),
+        requiresAdmin: true
+      )
+    case .cancel:
+      throw InstallError.adminCancelled
+    }
   }
 
   /// Plugin cache path (same for DMG and App Store)
@@ -444,6 +568,8 @@ public final class CLICoordinator: ObservableObject {
     case bundledPluginMissing
     case permissionDenied
     case manifestWriteFailed
+    case adminInstallFailed(message: String)
+    case adminCancelled
 
     var errorDescription: String? {
       switch self {
@@ -455,6 +581,10 @@ public final class CLICoordinator: ObservableObject {
         return "Permission denied to install plugin (grant access in Settings)"
       case .manifestWriteFailed:
         return "Failed to update plugin manifest"
+      case .adminInstallFailed(let message):
+        return "Admin installation failed: \(message)"
+      case .adminCancelled:
+        return "Installation cancelled"
       }
     }
   }
