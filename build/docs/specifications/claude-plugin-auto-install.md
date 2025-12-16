@@ -616,6 +616,106 @@ export PATH="$HOME/bin:$PATH"
 [Copy Command]
 ```
 
+### 3a. Admin Install Fallback (DMG Only)
+
+**For users without writable system paths (no homebrew):**
+
+**Auto-install behavior:**
+- DMG builds with writable system paths (`/opt/homebrew/bin` or `/usr/local/bin`): Auto-install on first launch (silent, no user interaction)
+- DMG builds WITHOUT writable system paths: Skip auto-install, require manual enable via Settings
+
+**Manual enable flow (non-homebrew users):**
+
+When user clicks "Enable" in Settings > CLI tab and no writable system paths exist:
+1. Show dialog: "Administrator Access Required"
+2. Offer two choices:
+   - **Install** (default) → Install to `/usr/local/bin` (requires password)
+   - **Cancel** → Abort installation, user can retry later
+3. If Install chosen: Use `osascript` with `administrator privileges` to copy shim
+4. If cancelled: Transition to failed state, "Enable" button remains available for retry
+
+**Dialog text (follows Cursor pattern):**
+
+**Title:** "Administrator Access Required"
+
+**Message:**
+```
+Contextify will request administrator privileges to install the 'contextify-query' command to /usr/local/bin.
+```
+
+**Buttons:**
+- "Install" (default, blue)
+- "Cancel" (secondary, gray)
+
+**Error handling:**
+- User cancels password prompt → Treat as cancel, allow retry via "Enable" button
+- Admin install fails → Show error message, allow retry
+- User explicitly cancels dialog → Show "Installation cancelled" message, allow retry
+
+**OSLog tags:**
+```
+[CLI-AUTO-INSTALL-SKIP] No writable paths, requires manual enable
+[CLI-ENABLE-START]
+[CLI-NO-WRITABLE-PATHS] Requesting admin install
+[CLI-ADMIN-DIALOG-SHOWN]
+[CLI-ADMIN-DIALOG-APPROVED]
+[CLI-ADMIN-DIALOG-CANCELLED]
+[CLI-ADMIN-INSTALL-START] destination=/usr/local/bin/contextify-query
+[CLI-ADMIN-INSTALL-SUCCESS] destination=/usr/local/bin/contextify-query
+[CLI-ADMIN-INSTALL-FAILED] error={message}
+[CLI-ENABLE-SUCCESS]
+[CLI-ENABLE-FAILED] error={message}
+```
+
+**Implementation:**
+```swift
+private func installWithAdmin(shimSource: URL, destination: URL) async throws {
+  // Use cp instead of ln to copy actual file (not symlink)
+  let script = """
+    do shell script "cp -f '\(shimSource.path)' '\(destination.path)'" with administrator privileges
+  """
+
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+  process.arguments = ["-e", script]
+
+  let errorPipe = Pipe()
+  process.standardError = errorPipe
+
+  try process.run()
+  process.waitUntilExit()
+
+  guard process.terminationStatus == 0 else {
+    let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+    let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+
+    // Exit code 128 = user cancelled password dialog
+    // Also check error message for "User canceled" (sometimes returns exit code 1)
+    if process.terminationStatus == 128 || errorMessage.contains("User canceled") {
+      throw InstallError.adminCancelled
+    }
+    throw InstallError.adminInstallFailed(message: errorMessage)
+  }
+}
+```
+
+**Key differences from ~/bin fallback:**
+- DMG builds: Only admin install OR writable homebrew paths (no ~/bin option)
+- App Store builds: Always use `~/bin` (no admin option available)
+- Admin dialog only appears on manual "Enable" click, never during auto-install
+- Uses `cp -f` (copy) instead of `ln -sf` (symlink) to avoid broken symlinks
+- Checks both exit code 128 AND error message for user cancellation
+
+**App Store builds:**
+Not applicable - App Store builds always use `~/bin` (no admin option).
+`osascript` with admin privileges is blocked by sandbox.
+Future enhancement: Request `com.apple.developer.security.privileged-file-operations` entitlement (filed as P4 in ROADMAP.md).
+
+**See also:**
+- `build/design/research/ux/appstore-cli-install/README.md` - App Store alternatives research
+- `build/design/research/ux/cursor-cli-install/` - Cursor UX pattern reference
+- `/tmp/cli-admin-install-revised-design.md` - Complete revision design doc
+
 ### 4. Atomic Installation
 
 To avoid partial installs if app crashes:
