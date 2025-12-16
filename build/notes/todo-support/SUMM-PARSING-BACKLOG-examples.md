@@ -522,6 +522,47 @@ The summary is "Claude Code Claude Code's Queue System" - gibberish with "Claude
 
 ---
 
+## Example 15: Timeout on Markdown Table Echo
+
+**Date Added:** 2025-12-16
+**Category:** markdown table in summary output
+**Transcript:** `9923fab6-535a-4930-95f4-ba917e7d135e.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Done. \n\n| Alias | Path | Port |\n|-------|------|------|\n| `gdrive` | `~/code/consulting/openai/repos/gheeggle` | 3000 |\n| `gdrivewb` | `~/code/consulting/openai-workerbee/repos/gheeggle` | 4000 |\n\nRun `source ~/.zshrc` or open a new terminal to use `gdrivewb`.",
+  "entry_id": "58b3e004-bcad-4900-ba1b-4292b204e8ee",
+  "summary": "Done. \n\n| Alias | Path | Port |\n|-------|------|------|\n| `gdrive` | `~/code/consulting/openai/repos…",
+  "timestamp": "2025-12-16T17:46:09Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-consulting-openai-workerbee/9923fab6-535a-4930-95f4-ba917e7d135e.jsonl"
+}
+```
+
+**Error Message:**
+> "2 conversation entries failed to generate summaries. Top error: Generation timed out. Summary generation took too long and was cancelled."
+
+**Problem:**
+The summary is a truncated echo of the detail, which contains a markdown table. Reported as a timeout, but the actual failure mode appears to be the LLM echoing table content rather than summarizing. The truncation with "…" suggests fallback behavior after the timeout.
+
+**Expected Summary:**
+- "Claude Code configured shell aliases for the gdrive and gdrivewb repositories with their respective ports."
+- Or: "Claude Code set up two project aliases pointing to OpenAI repos on ports 3000 and 4000."
+
+**Root Cause (suspected):**
+- Markdown tables trigger echo/passthrough behavior (similar to Example 1)
+- The timeout may be a secondary symptom - LLM may loop or stall when attempting to summarize tabular data
+- Alternatively, the response exceeded token limits causing truncation
+- User notes "not sure if gen length was what really happened" - timeout may be a red herring
+
+**Fix Approach:**
+1. Pre-process: detect markdown tables (`|---|`) and either strip or convert to prose before summarization
+2. Investigate timeout thresholds - if tables trigger longer processing, may need special handling
+3. Add post-processing to detect table markers in output and reject/regenerate
+4. Consider whether tables should bypass LLM summarization entirely and use template: "Claude Code displayed [N]-row table of [topic]"
+
+---
+
 ## Template for New Examples
 
 ```markdown
