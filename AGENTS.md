@@ -403,7 +403,7 @@ try accessProvider.withAccess(for: TranscriptProviderID.claude) { root in
 
 **ALWAYS read first:** `build/docs/specifications/transcript-formats.md` (storage locations, record types, format comparison).
 
-**Workflow:** `./scripts/classify_transcript.sh <transcript-id>` then see `build/docs/guides/TRANSCRIPT-ANALYSIS.md`.
+**Workflow:** `./scripts/transcripts/classify_transcript.sh <transcript-id>` then see `build/docs/guides/TRANSCRIPT-ANALYSIS.md`.
 
 ## Testing
 
@@ -477,5 +477,5 @@ Clients are marked as failed in the `connectToServer` function in src/services/p
 - Main project: `Contextify/Contextify.xcodeproj`
 - Source: `Contextify/Contextify/*.swift`, `app/Sources/ContextifyCore/*.swift`
 - Tests: `Contextify/ContextifyTests/*.swift`, `Contextify/ContextifyUITests/*.swift`
-- Scripts: `scripts/xc.sh`, `scripts/db_manager.sh`, `scripts/classify_transcript.sh`
+- Scripts: `scripts/xc.sh`, `scripts/db_manager.sh`, `scripts/transcripts/classify_transcript.sh`
 - Hooks: `.githooks/pre-commit`

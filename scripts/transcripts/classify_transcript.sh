@@ -2,8 +2,8 @@
 # Classify a transcript file by examining its structure
 #
 # Usage:
-#   ./scripts/classify_transcript.sh <file_path>
-#   ./scripts/classify_transcript.sh <transcript_id>
+#   ./scripts/transcripts/classify_transcript.sh <file_path>
+#   ./scripts/transcripts/classify_transcript.sh <transcript_id>
 #
 # Returns JSON with:
 #   - type: "claude-code" | "codex-cli" | "unknown"
@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-source "$(dirname "$0")/lib/db_location.sh"
+source "$(dirname "$0")/../lib/db_location.sh"
 
 # Database discovery (override with DB_PATH env var if needed)
 if [ -z "${DB_PATH:-}" ]; then

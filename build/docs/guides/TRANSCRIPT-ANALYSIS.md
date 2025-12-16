@@ -7,7 +7,7 @@ When working with Claude Code transcript files, **ALWAYS classify first** before
 ### Simple (Fast)
 
 ```bash
-./scripts/classify_transcript.sh <transcript-id-or-file-path>
+./scripts/transcripts/classify_transcript.sh <transcript-id-or-file-path>
 ```
 
 **Returns:** `"conversational"` | `"metadata-only"` | `"empty"`
@@ -25,7 +25,7 @@ When working with Claude Code transcript files, **ALWAYS classify first** before
 ### Step 1: Classify
 
 ```bash
-./scripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
+./scripts/transcripts/classify_transcript.sh A31F3D0A-4820-41AB-8121-0C81AC8533C4
 ```
 
 ### Step 2: Read Relevant Documentation

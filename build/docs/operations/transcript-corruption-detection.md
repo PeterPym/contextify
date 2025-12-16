@@ -226,7 +226,7 @@ This allows partial ingestion of corrupted transcripts while preserving valid co
 
 **Documentation:**
 - Claude Code format spec: `build/docs/specifications/claude-code-transcript-format.md`
-- Transcript classification: `scripts/classify_transcript.sh`
+- Transcript classification: `scripts/transcripts/classify_transcript.sh`
 
 **Real-world example:**
 - Session: `42d110d2-9011-4dc3-85ff-a86a26ae0b82`

@@ -248,7 +248,7 @@ across sessions.
    - In memory only (lost on session end)?
 
 2. **Can we extract checkpoint data from transcripts?**
-   - Use `scripts/classify_transcript.sh` to find `file-history-snapshot` records
+   - Use `scripts/transcripts/classify_transcript.sh` to find `file-history-snapshot` records
    - Parse `trackedFileBackups` arrays
    - Reconstruct file state at checkpoint N
 
