@@ -1,6 +1,7 @@
 import Foundation
 import GRDB
 import OSLog
+import CryptoKit
 
 /// Service for discovering and managing Claude Code and Codex projects
 public actor ProjectDiscoveryService {
@@ -374,7 +375,8 @@ public actor ProjectDiscoveryService {
           var localCandidates: [String: Candidate] = [:]
           var processed = 0
           var projectSet = Set<String>()
-          var codexProjectsSeen = Set<String>()
+          // Phase 1: Track by transcript file (not CWD) to respect longest-prefix deduping
+          var seenTranscripts = Set<String>()
 
           let yearDirs = sortedDirectories(at: codexRoot)
           outerLoop: for yearDir in yearDirs {
@@ -434,10 +436,12 @@ public actor ProjectDiscoveryService {
 
                   let projectKey = projectPath.path
 
-                  if codexProjectsSeen.contains(projectKey) {
+                  // Phase 1: Dedupe by transcript file (not CWD) to allow multiple CWDs per root
+                  let transcriptKey = transcript.path
+                  if seenTranscripts.contains(transcriptKey) {
                     continue
                   }
-                  codexProjectsSeen.insert(projectKey)
+                  seenTranscripts.insert(transcriptKey)
                   projectSet.insert(projectKey)
 
                   if let baseline = claudeBaseline[projectKey], baseline >= mtime {
@@ -496,7 +500,10 @@ public actor ProjectDiscoveryService {
 
     // Clear previous errors
     ingestionErrors.removeAll()
-    await ensureCodexTranscriptCache()
+
+    // Wire known project roots for Codex instrumentation (Issue #1 Phase 0a)
+    let knownProjectRoots = projects.map { $0.path }
+    await ensureCodexTranscriptCache(knownProjectRoots: knownProjectRoots)
 
     let total = projects.count
 
@@ -725,7 +732,7 @@ public actor ProjectDiscoveryService {
     }
   }
 
-  private func ensureCodexTranscriptCache() async {
+  private func ensureCodexTranscriptCache(knownProjectRoots: [String]) async {
     guard !codexScanPerformed else { return }
     codexScanPerformed = true
 
@@ -737,18 +744,62 @@ public actor ProjectDiscoveryService {
         }
 
         let files = enumerateCodexTranscripts(at: root)
-        var grouped: [String: [String]] = [:]
 
+        // Instrumentation counters (Issue #1 Phase 0a)
+        var extractionFailures = 0
+        var exactMatches = 0
+        var prefixMatches = 0
+        var codexOnlyMatches = 0
+
+        // Phase 1: Build CWD → Transcript mapping with Set-based deduping
+        var cwdToTranscripts: [String: Set<String>] = [:]
         for file in files {
           guard let cwd = try? ProjectIdentity.extractCwdFromTranscriptForOrphaned(file) else {
+            extractionFailures += 1
             continue
           }
 
           let relative = relativeCodexPath(root: root, file: file)
-          grouped[cwd, default: []].append(relative)
+          cwdToTranscripts[cwd, default: []].insert(relative)
+        }
+
+        // Phase 1: Longest-prefix root assignment
+        var grouped: [String: [String]] = [:]
+        for (cwd, transcripts) in cwdToTranscripts {
+          // Find longest matching prefix from knownProjectRoots
+          let longestMatch = knownProjectRoots
+            .filter { cwd.hasPrefix($0 + "/") || cwd == $0 }
+            .max(by: { $0.count < $1.count })
+
+          let assignedRoot: String
+          if let match = longestMatch {
+            assignedRoot = match
+            if cwd == match {
+              exactMatches += 1
+            } else {
+              prefixMatches += 1
+            }
+          } else {
+            // No prefix match - use original CWD (codex-only project)
+            assignedRoot = cwd
+            codexOnlyMatches += 1
+            // Sanitize path for logging (SHA256 first 12 hex chars)
+            let hash = Insecure.SHA1.hash(data: Data(cwd.utf8))
+            let sanitized = hash.prefix(6).map { String(format: "%02x", $0) }.joined()
+            logger.info("[CODEX-INSTRUMENTATION] Codex-only project: \(sanitized, privacy: .public) (no Claude root match)")
+          }
+
+          // Accumulate transcripts for assigned root (Set ensures deduping)
+          grouped[assignedRoot, default: []].append(contentsOf: transcripts)
+        }
+
+        // Phase 1: Sort arrays for deterministic ordering
+        for key in grouped.keys {
+          grouped[key] = grouped[key]!.sorted()
         }
 
         logger.debug("[INGEST-CODEX] Cached \(files.count) Codex transcripts grouped into \(grouped.count) projects")
+        logger.info("[CODEX-INSTRUMENTATION] Match breakdown: exact=\(exactMatches, privacy: .public) prefix=\(prefixMatches, privacy: .public) codex-only=\(codexOnlyMatches, privacy: .public) extraction-failures=\(extractionFailures, privacy: .public)")
         return grouped
       }
 
