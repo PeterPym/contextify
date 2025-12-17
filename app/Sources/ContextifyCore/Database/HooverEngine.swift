@@ -50,6 +50,8 @@ public struct HooverOutcome {
   public let reachedEOF: Bool
   public let lastEntryId: String?
   public let contentSha256: String?
+  public let entriesSkipped: Int      // ParserError.skipEntry count
+  public let entriesInserted: Int     // Actual DB inserts (from db.changesCount)
 }
 
 // MARK: - Parsed Entry Insert
@@ -310,6 +312,8 @@ public final class HooverEngine {
     var hasLoggedParseErrorOverflow = false
     var limitReached = false
     var hitEOF = false
+    var totalEntriesSkipped = 0  // Track skipEntry count
+    var totalEntriesInserted = 0  // Track actual DB inserts
 
     // Seed previousEntries from last processed entry for correct window state on resume
     var previousEntries: [String] = []
@@ -409,6 +413,7 @@ public final class HooverEngine {
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
+          totalEntriesSkipped += 1
 
           // NEW: Log if this was a large line (diagnostic for hang investigation)
           if lineData.count > 50_000 {
@@ -472,7 +477,7 @@ public final class HooverEngine {
           log.debug("[HOOVER-BATCH-INSERT-START] Starting batch insertion for \(batch.count) entries at line \(lineNo)")
           #endif
 
-          try commitBatch(
+          let inserted = try commitBatch(
             transcriptId: transcript.id,
             entries: batch,
             metadata: metadataBatch,
@@ -481,6 +486,7 @@ public final class HooverEngine {
             lineCount: lineNo,
             previousEntries: &previousEntries
           )
+          totalEntriesInserted += inserted
 
           let duration = Date().timeIntervalSince(batchStart)
           #if DEBUG
@@ -562,6 +568,7 @@ public final class HooverEngine {
         } catch ParserError.skipEntry {
           // Silently skip - this is expected for meta messages, empty content, etc.
           // Don't add to batch, don't record as error
+          totalEntriesSkipped += 1
         } catch {
           let truncated = String(lineString.prefix(MonitorConfig.parseErrorMaxChars))
           errors.append((lineNo, truncated, error.localizedDescription))
@@ -589,7 +596,7 @@ public final class HooverEngine {
 
     // Final batch
     if !batch.isEmpty || !errors.isEmpty || !metadataBatch.isEmpty {
-      try commitBatch(
+      let inserted = try commitBatch(
         transcriptId: transcript.id,
         entries: batch,
         metadata: metadataBatch,
@@ -598,6 +605,7 @@ public final class HooverEngine {
         lineCount: lineNo,
         previousEntries: &previousEntries
       )
+      totalEntriesInserted += inserted
     }
 
     // ALWAYS update checkpoint, regardless of whether there were new entries
@@ -662,13 +670,16 @@ public final class HooverEngine {
       newEntries: parsedEntryCount,
       reachedEOF: hitEOF,
       lastEntryId: lastEntryId,
-      contentSha256: transcriptSHA256
+      contentSha256: transcriptSHA256,
+      entriesSkipped: totalEntriesSkipped,
+      entriesInserted: totalEntriesInserted
     )
   }
 
   /// Commit a batch of entries and errors to the database
   /// All operations are atomic within a single transaction
   /// Tracks previous entries for window SHA256 computation
+  /// Returns the number of entries actually inserted to the database
   private func commitBatch(
     transcriptId: String,
     entries: [EntryInsert],
@@ -677,7 +688,8 @@ public final class HooverEngine {
     lastProcessedLine: Int,
     lineCount: Int,
     previousEntries: inout [String]
-  ) throws {
+  ) throws -> Int {
+    var insertedCount = 0
     try db.write { db in
       // Insert entries with window tracking
       for entry in entries {
@@ -712,6 +724,7 @@ public final class HooverEngine {
           // Only update window tracking if insert actually happened (not ignored due to conflict)
           let inserted = db.changesCount > 0
           if inserted {
+            insertedCount += 1
             previousEntries.append(entry.id)
             if previousEntries.count > 2 {
               previousEntries.removeFirst()
@@ -939,6 +952,7 @@ public final class HooverEngine {
       // NOTE: Checkpoint UPDATE removed - now handled unconditionally in hooverTranscript()
       // This ensures checkpoint is persisted even when batch is empty (already-processed transcripts)
     }
+    return insertedCount
   }
 }
 

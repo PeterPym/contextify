@@ -2327,6 +2327,48 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  // MARK: - Repair Functions (Issue #2 fix)
+
+  /// Get transcripts with 0 entries (parser failures that need re-ingestion)
+  public func getZeroEntryTranscripts(limit: Int) throws -> [String] {
+    try dbManager.pool.read { db in
+      try String.fetchAll(
+        db,
+        sql: """
+          SELECT t.id
+          FROM transcripts t
+          LEFT JOIN transcript_entries e ON e.transcript_id = t.id
+          WHERE e.transcript_id IS NULL
+            AND t.file_path NOT LIKE '%/agent-%'
+            AND NOT EXISTS (SELECT 1 FROM parse_errors pe WHERE pe.transcript_id = t.id)
+          ORDER BY t.updated_at DESC
+          LIMIT ?
+        """,
+        arguments: [limit]
+      )
+    }
+  }
+
+  /// Reset transcript checkpoints for re-ingestion
+  public func resetTranscriptCheckpoints(transcriptIds: [String]) throws {
+    try dbManager.pool.write { db in
+      for transcriptId in transcriptIds {
+        try db.execute(
+          sql: """
+            UPDATE transcripts
+            SET ingest_state = 'partial',
+                last_processed_line = 0,
+                last_processed_entry_id = NULL,
+                last_error = NULL,
+                status = 'active'
+            WHERE id = ?
+          """,
+          arguments: [transcriptId]
+        )
+      }
+    }
+  }
+
   // MARK: - Cleanup
 
   public func stopAllWatchers() {

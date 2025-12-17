@@ -269,39 +269,71 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
   /// Extract content from message and track if it contains displayable text
   /// Returns: (content: String, hasTextContent: Bool)
   /// - hasTextContent: true if content contains "text" blocks (displayable)
-  ///                   false if only "thinking" blocks (hidden from timeline)
+  ///                   false if only "thinking" or "tool_use" blocks (hidden from timeline)
   private func extractContentWithType(_ content: Any?) -> (String, Bool) {
     if let str = content as? String {
       return (str, true)  // String content is displayable
-    } else if let arr = content as? [[String: Any]] {
-      var hasText = false
-      let parts = arr.compactMap { block -> String? in
-        if let text = block["text"] as? String {
-          hasText = true
-          return text
-        } else if let thinking = block["thinking"] as? String {
-          return thinking
-        } else if let blockType = block["type"] as? String,
-                  blockType == "tool_result",
-                  let isError = block["is_error"] as? Bool,
-                  isError,
-                  let toolResultContent = block["content"] as? String {
-          // Extract option 3 permission dialog responses
-          // Format: "The user doesn't want to proceed... To tell you how to proceed, the user said:\n<user's custom text>"
-          if let markerRange = toolResultContent.range(of: "To tell you how to proceed, the user said:\n") {
-            let customText = String(toolResultContent[markerRange.upperBound...])
-            if !customText.isEmpty {
-              hasText = true
-              return customText
-            }
-          }
-        }
-        return nil
-      }
-      return (parts.joined(separator: "\n"), hasText)
-    } else {
+    }
+    guard let arr = content as? [[String: Any]] else {
       return ("", false)
     }
+
+    var textParts: [String] = []
+    var thinkingParts: [String] = []
+    var toolParts: [String] = []
+
+    for block in arr {
+      // Prefer explicit type when available, but tolerate missing type (backwards compat)
+      let blockType = block["type"] as? String
+
+      // Text blocks (displayable)
+      if blockType == "text" || (blockType == nil && block["text"] != nil) {
+        if let text = block["text"] as? String, !text.isEmpty {
+          textParts.append(text)
+        }
+        continue
+      }
+
+      // Thinking blocks (internal reasoning)
+      if blockType == "thinking" || (blockType == nil && block["thinking"] != nil) {
+        if let thinking = block["thinking"] as? String, !thinking.isEmpty {
+          thinkingParts.append(thinking)
+        }
+        continue
+      }
+
+      // Tool use blocks (NEW - searchable markers)
+      // Backwards compat: detect tool blocks even without explicit type field
+      let hasToolShape = block["name"] != nil && block["input"] != nil &&
+                         block["text"] == nil && block["thinking"] == nil
+      if blockType == "tool_use" || (blockType == nil && hasToolShape) {
+        if let name = block["name"] as? String, !name.isEmpty {
+          toolParts.append("[Tool: \(name)]")
+        }
+        continue
+      }
+
+      // Tool result blocks (permission dialogs)
+      if blockType == "tool_result",
+         let isError = block["is_error"] as? Bool, isError,
+         let toolResultContent = block["content"] as? String,
+         let markerRange = toolResultContent.range(of: "To tell you how to proceed, the user said:\n") {
+        let customText = String(toolResultContent[markerRange.upperBound...])
+        if !customText.isEmpty {
+          textParts.append(customText)  // User text is displayable
+        }
+        continue
+      }
+    }
+
+    let hasText = !textParts.isEmpty
+
+    // Q8 noise filter: only include tool markers when there was no normal text
+    let parts = hasText
+      ? (textParts + thinkingParts)
+      : (thinkingParts + toolParts)
+
+    return (parts.joined(separator: "\n"), hasText)
   }
 
   private func containsCommandContent(_ text: String) -> Bool {
@@ -411,22 +443,17 @@ private func validateMessageIntegrity(
 
     // VALIDATION 3: Check for invalid content block structures
     for block in contentBlocks {
-      guard let blockType = block["type"] as? String else {
-        let details = """
-          Line \(lineNumber): Invalid content block (uuid=\(uuid), missing 'type' field).
-          Content blocks must have a 'type' field.
-          """
-        throw ParserError.corruptedRecord(.invalidContentBlock, details: details)
-      }
-
-      // Validate tool_result has required fields
-      if blockType == "tool_result" {
-        guard block["tool_use_id"] is String else {
-          let details = """
-            Line \(lineNumber): Invalid tool_result block (uuid=\(uuid), missing tool_use_id).
-            tool_result blocks must have a tool_use_id field.
-            """
-          throw ParserError.corruptedRecord(.invalidContentBlock, details: details)
+      // Backwards compat: 'type' field is optional (can infer from shape)
+      if let blockType = block["type"] as? String {
+        // Validate tool_result has required fields
+        if blockType == "tool_result" {
+          guard block["tool_use_id"] is String else {
+            let details = """
+              Line \(lineNumber): Invalid tool_result block (uuid=\(uuid), missing tool_use_id).
+              tool_result blocks must have a tool_use_id field.
+              """
+            throw ParserError.corruptedRecord(.invalidContentBlock, details: details)
+          }
         }
       }
     }
