@@ -209,8 +209,9 @@ public final class CLICoordinator: ObservableObject {
       return .disabled
     }
 
-    // Check if ~/bin is on PATH (for App Store builds)
-    let pathWarning = shimPath.contains("/bin/") && !isHomeBinOnPath()
+    // Check if shim's parent directory is on PATH
+    let shimDir = URL(fileURLWithPath: shimPath).deletingLastPathComponent().path
+    let pathWarning = !isDirectoryOnPath(shimDir)
 
     return .enabled(version: pluginVersion, pathWarning: pathWarning)
   }
@@ -244,12 +245,30 @@ public final class CLICoordinator: ObservableObject {
     }
     try fileManager.copyItem(at: bundledPluginURL, to: tempPluginURL)
 
-    // 4. Determine final locations (may show dialog)
+    // 4. Determine final locations (may show dialog/picker)
     let (finalShimURL, requiresAdmin) = try await determineShimPath()
     let finalPluginURL = pluginCachePath()
 
-    // 5. Create parent directories if needed
+    // 5. For sandboxed builds, start security-scoped access to shim directory
+    var accessStarted = false
     let shimParent = finalShimURL.deletingLastPathComponent()
+    if Sandbox.isSandboxed {
+      accessStarted = shimParent.startAccessingSecurityScopedResource()
+      if !accessStarted {
+        log.error("[CLI-INSTALL] Failed to start security-scoped access to \(shimParent.path, privacy: .public)")
+        throw InstallError.permissionDenied
+      }
+      log.info("[CLI-INSTALL] Started security-scoped access to \(shimParent.path, privacy: .public)")
+    }
+
+    defer {
+      if accessStarted {
+        shimParent.stopAccessingSecurityScopedResource()
+        log.info("[CLI-INSTALL] Stopped security-scoped access")
+      }
+    }
+
+    // 6. Create parent directories if needed
     if !fileManager.fileExists(atPath: shimParent.path) {
       try fileManager.createDirectory(at: shimParent, withIntermediateDirectories: true)
     }
@@ -258,7 +277,7 @@ public final class CLICoordinator: ObservableObject {
       try fileManager.createDirectory(at: pluginParent, withIntermediateDirectories: true)
     }
 
-    // 6. Install shim (admin or regular)
+    // 7. Install shim (admin or regular)
     if requiresAdmin {
       // Use osascript with admin privileges
       try await installWithAdmin(shimSource: tempShimURL, destination: finalShimURL)
@@ -272,16 +291,16 @@ public final class CLICoordinator: ObservableObject {
       try fileManager.moveItem(at: tempShimURL, to: finalShimURL)
     }
 
-    // 7. Install plugin (always regular move)
+    // 8. Install plugin (always regular move)
     if fileManager.fileExists(atPath: finalPluginURL.path) {
       try fileManager.removeItem(at: finalPluginURL)
     }
     try fileManager.moveItem(at: tempPluginURL, to: finalPluginURL)
 
-    // 8. Update plugin manifest
+    // 9. Update plugin manifest
     try updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
 
-    log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path) plugin=\(finalPluginURL.path)")
+    log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path, privacy: .public) plugin=\(finalPluginURL.path, privacy: .public)")
   }
 
   private func upgradePlugin(to version: String) async throws {
@@ -294,27 +313,56 @@ public final class CLICoordinator: ObservableObject {
     log.info("[CLI-REMOVE] Removing shim and plugin...")
     let fileManager = FileManager.default
 
-    // Remove shim from all possible locations
-    let possibleShimPaths = [
-      "/opt/homebrew/bin/contextify-query",
-      "/usr/local/bin/contextify-query",
-      fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
-      fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
-    ]
+    // For sandboxed builds: use stored bookmark location
+    if Sandbox.isSandboxed {
+      if let storedURL = resolveStoredCLIBookmark() {
+        let shimPath = storedURL.appendingPathComponent("contextify-query")
 
-    for path in possibleShimPaths {
-      if fileManager.fileExists(atPath: path) {
-        try? fileManager.removeItem(atPath: path)
-        log.info("[CLI-REMOVE] Removed shim at \(path)")
+        // Start security-scoped access
+        guard storedURL.startAccessingSecurityScopedResource() else {
+          log.error("[CLI-REMOVE] Failed to access stored location: \(storedURL.path, privacy: .public)")
+          // Clear bookmark anyway since we can't access it
+          HUDPreferences.clearCLIInstallLocation()
+          return
+        }
+
+        defer {
+          storedURL.stopAccessingSecurityScopedResource()
+        }
+
+        if fileManager.fileExists(atPath: shimPath.path) {
+          try? fileManager.removeItem(at: shimPath)
+          log.info("[CLI-REMOVE] Removed shim at \(shimPath.path, privacy: .public)")
+        }
+
+        // Clear the stored bookmark
+        HUDPreferences.clearCLIInstallLocation()
+      } else {
+        log.warning("[CLI-REMOVE] No stored bookmark for sandboxed build")
+      }
+    } else {
+      // DMG: Remove shim from all possible locations
+      let possibleShimPaths = [
+        "/opt/homebrew/bin/contextify-query",
+        "/usr/local/bin/contextify-query",
+        fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query").path,
+        fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/contextify-query").path
+      ]
+
+      for path in possibleShimPaths {
+        if fileManager.fileExists(atPath: path) {
+          try? fileManager.removeItem(atPath: path)
+          log.info("[CLI-REMOVE] Removed shim at \(path, privacy: .public)")
+        }
       }
     }
 
-    // Remove plugin directory
+    // Remove plugin directory (same for both builds - we have access to ~/.claude/)
     let pluginDir = fileManager.homeDirectoryForCurrentUser
       .appendingPathComponent(".claude/plugins/cache/contextify")
     if fileManager.fileExists(atPath: pluginDir.path) {
       try? fileManager.removeItem(at: pluginDir)
-      log.info("[CLI-REMOVE] Removed plugin at \(pluginDir.path)")
+      log.info("[CLI-REMOVE] Removed plugin at \(pluginDir.path, privacy: .public)")
     }
 
     // Update manifest to remove plugin entry
@@ -384,7 +432,7 @@ public final class CLICoordinator: ObservableObject {
 
       if userCancelled {
         log.info("[CLI-ADMIN-INSTALL-CANCELLED]")
-        throw InstallError.adminCancelled
+        throw InstallError.userCancelled
       }
 
       log.error("[CLI-ADMIN-INSTALL-FAILED] error=\(errorMessage)")
@@ -416,6 +464,21 @@ public final class CLICoordinator: ObservableObject {
   /// Find installed shim in common locations
   private static func findInstalledShim() -> String? {
     let fileManager = FileManager.default
+
+    // For sandboxed builds: check stored bookmark location first
+    if Sandbox.isSandboxed {
+      if let stored = HUDPreferences.getCLIInstallLocation() {
+        let shimPath = URL(fileURLWithPath: stored.path).appendingPathComponent("contextify-query").path
+        // Note: We can't check fileExists without security-scoped access,
+        // but if we have a stored bookmark, assume it's installed there
+        // The actual existence will be verified when we try to use it
+        return shimPath
+      }
+      // No stored bookmark = not installed in sandboxed build
+      return nil
+    }
+
+    // DMG: check all possible locations
     let possiblePaths = [
       "/opt/homebrew/bin/contextify-query",
       "/usr/local/bin/contextify-query",
@@ -448,25 +511,34 @@ public final class CLICoordinator: ObservableObject {
     return version
   }
 
-  /// Check if ~/bin is on PATH
-  private static func isHomeBinOnPath() -> Bool {
+  /// Check if a directory is on the system PATH
+  private static func isDirectoryOnPath(_ dir: String) -> Bool {
     let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-    let homeBin = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("bin").path
-    return path.split(separator: ":").contains { String($0) == homeBin }
+    // Normalize the directory path (remove trailing slash) for comparison
+    let normalizedDir = dir.hasSuffix("/") ? String(dir.dropLast()) : dir
+    return path.split(separator: ":").contains { String($0) == normalizedDir }
   }
 
-  /// Determine where to install shim (DMG: homebrew/local/admin, App Store: ~/bin)
+  /// Determine where to install shim (DMG: homebrew/local/admin, App Store: user-selected folder)
   /// Returns tuple: (url: final install path, requiresAdmin: whether to use osascript)
   private func determineShimPath() async throws -> (url: URL, requiresAdmin: Bool) {
     let fileManager = FileManager.default
 
-    // App Store: always use ~/bin (no admin option)
+    // App Store: Use stored bookmark or show file picker
     if Sandbox.isSandboxed {
-      return (
-        url: fileManager.homeDirectoryForCurrentUser.appendingPathComponent("bin/contextify-query"),
-        requiresAdmin: false
-      )
+      // Check for existing bookmark first
+      if let existingURL = resolveStoredCLIBookmark() {
+        log.info("[CLI-APPSTORE] Using stored location: \(existingURL.path, privacy: .public)")
+        return (url: existingURL.appendingPathComponent("contextify-query"), requiresAdmin: false)
+      }
+
+      // No stored bookmark - show file picker
+      let (selectedDir, bookmark) = try await showInstallLocationPicker()
+
+      // Store for future use (upgrades)
+      HUDPreferences.setCLIInstallLocation(selectedDir, bookmarkData: bookmark)
+
+      return (url: selectedDir.appendingPathComponent("contextify-query"), requiresAdmin: false)
     }
 
     // DMG: Try writable system paths (homebrew-enabled systems)
@@ -497,8 +569,57 @@ public final class CLICoordinator: ObservableObject {
         requiresAdmin: true
       )
     case .cancel:
-      throw InstallError.adminCancelled
+      throw InstallError.userCancelled
     }
+  }
+
+  // MARK: - App Store File Picker
+
+  /// Resolve stored bookmark to get access to CLI install location
+  private func resolveStoredCLIBookmark() -> URL? {
+    HUDPreferences.resolveCLIInstallBookmark()
+  }
+
+  /// Show file picker for App Store builds to choose CLI install location
+  /// Returns (directory URL, bookmark data) on success, throws on cancel or error
+  @MainActor
+  private func showInstallLocationPicker() async throws -> (url: URL, bookmark: Data) {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.canCreateDirectories = true  // User can create ~/bin if it doesn't exist
+    panel.prompt = "Open"
+    panel.message = "Select where to install contextify-query"
+
+    // Start in home directory, prefer ~/bin if it exists
+    let homeURL = FileManager.default.homeDirectoryForCurrentUser
+    let suggestedBin = homeURL.appendingPathComponent("bin")
+
+    if FileManager.default.fileExists(atPath: suggestedBin.path) {
+      panel.directoryURL = suggestedBin
+    } else {
+      panel.directoryURL = homeURL
+    }
+
+    log.info("[CLI-PICKER] Showing file picker, starting at: \(panel.directoryURL?.path ?? "nil", privacy: .public)")
+
+    let response = panel.runModal()
+    guard response == .OK, let selectedURL = panel.url else {
+      log.info("[CLI-PICKER] User cancelled")
+      throw InstallError.userCancelled
+    }
+
+    log.info("[CLI-PICKER] User selected: \(selectedURL.path, privacy: .public)")
+
+    // Create security-scoped bookmark for persistent access
+    let bookmarkData = try selectedURL.bookmarkData(
+      options: .withSecurityScope,
+      includingResourceValuesForKeys: nil,
+      relativeTo: nil
+    )
+
+    return (url: selectedURL, bookmark: bookmarkData)
   }
 
   /// Plugin cache path (same for DMG and App Store)
@@ -575,7 +696,7 @@ public final class CLICoordinator: ObservableObject {
     case permissionDenied
     case manifestWriteFailed
     case adminInstallFailed(message: String)
-    case adminCancelled
+    case userCancelled
 
     var errorDescription: String? {
       switch self {
@@ -589,7 +710,7 @@ public final class CLICoordinator: ObservableObject {
         return "Failed to update plugin manifest"
       case .adminInstallFailed(let message):
         return "Admin installation failed: \(message)"
-      case .adminCancelled:
+      case .userCancelled:
         return "Installation cancelled"
       }
     }
