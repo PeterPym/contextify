@@ -183,7 +183,7 @@ public actor LightweightDiscoveryService {
         )
         remapped.append(remappedProject)
 
-        log.debug("[CODEX-REMAP] Remapped \(cwdNorm, privacy: .public) -> \(assignedRoot, privacy: .public) (\(isExact ? "exact" : "prefix", privacy: .public))")
+        log.debug("[CODEX-REMAP] Remapped \(cwdNorm, privacy: .private) -> \(assignedRoot, privacy: .private) (\(isExact ? "exact" : "prefix", privacy: .public))")
       } else {
         // No prefix match - keep as Codex-only project
         codexOnlyMatches += 1
@@ -359,6 +359,10 @@ public actor LightweightDiscoveryService {
 
     log.debug("[DISC-LIGHT] Found \(files.count, privacy: .public) Codex transcripts")
 
+    // Track CWD extraction failures for aggregate reporting
+    var cwdFailureCount = 0
+    var cwdFailureFiles: [URL] = []
+
     // Parallel process headers to extract CWD, but cap concurrency to avoid FD pressure.
     let batchSize = 64
     var index = 0
@@ -367,20 +371,17 @@ public actor LightweightDiscoveryService {
       let end = min(index + batchSize, files.count)
       let slice = files[index..<end]
 
-      await withTaskGroup(of: (String, Date, URL)?.self) { group in
+      await withTaskGroup(of: (String?, Date, URL).self) { group in
         for url in slice {
           group.addTask {
-            guard let cwd = getCWD(url: url) else {
-              log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .public)")
-              return nil
-            }
+            let cwd = getCWD(url: url)
             let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
             return (cwd, date, url)
           }
         }
 
-        for await result in group {
-          if let (cwd, date, url) = result {
+        for await (cwd, date, url) in group {
+          if let cwd = cwd {
             // Aggregate by CWD - collect file URLs
             if var p = projects[cwd] {
               p.files.append(url)  // Accumulate file list
@@ -389,6 +390,11 @@ public actor LightweightDiscoveryService {
             } else {
               projects[cwd] = ([url], date, URL(fileURLWithPath: cwd))
             }
+          } else {
+            // CWD extraction failed - track for fallback bucket
+            cwdFailureCount += 1
+            cwdFailureFiles.append(url)
+            log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .private)")
           }
         }
       }
@@ -396,10 +402,15 @@ public actor LightweightDiscoveryService {
       index = end
     }
 
-    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts")
+    // Log aggregate failure count at info level (not just per-file debug)
+    if cwdFailureCount > 0 {
+      log.info("[DISC-LIGHT] CWD extraction failed for \(cwdFailureCount, privacy: .public) Codex transcripts")
+    }
+
+    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts (failures: \(cwdFailureCount, privacy: .public))")
 
     // Convert to LightweightProject array
-    return projects.map { cwd, data in
+    var result = projects.map { cwd, data in
       // Generate stable ID from path (base64 encoding)
       let id = cwd.data(using: .utf8)!.base64EncodedString()
         .replacingOccurrences(of: "/", with: "_")
@@ -416,6 +427,33 @@ public actor LightweightDiscoveryService {
         transcriptFiles: data.files  // Pass file URLs for JIT ingestion
       )
     }
+
+    // Create fallback bucket for transcripts with CWD extraction failures
+    // These are still ingested so they remain searchable and inspectable
+    if !cwdFailureFiles.isEmpty {
+      let maxDate = cwdFailureFiles.compactMap {
+        (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+      }.max() ?? Date.distantPast
+
+      // Root-specific ID to avoid collisions across multiple Codex roots/profiles
+      let rootHash = SHA256.hash(data: Data(root.path.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+      let unknownId = "codex-unknown-cwd-\(rootHash)"
+
+      let unknownProject = LightweightProject(
+        id: unknownId,
+        path: root,
+        displayName: "Unknown Codex Sessions",
+        transcriptCount: cwdFailureFiles.count,
+        lastActivity: maxDate,
+        provider: "codex.cli",
+        cwd: nil,  // No CWD - these couldn't be extracted
+        transcriptFiles: cwdFailureFiles
+      )
+      result.append(unknownProject)
+      log.info("[DISC-LIGHT] Created fallback bucket for \(cwdFailureFiles.count, privacy: .public) Codex transcripts with CWD extraction failures")
+    }
+
+    return result
   }
 
   // MARK: - Helper Functions
