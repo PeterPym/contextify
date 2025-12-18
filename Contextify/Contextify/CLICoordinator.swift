@@ -48,6 +48,7 @@ public final class CLICoordinator: ObservableObject {
     case disabled
     case installing
     case enabled(version: String, pathWarning: Bool)
+    case enabledViaHomebrew(version: String)  // App Store: CLI installed via Homebrew
     case upgrading(from: String, to: String)
     case failed(error: String)
   }
@@ -68,10 +69,14 @@ public final class CLICoordinator: ObservableObject {
     log.info("[CLI-INIT] state=\(String(describing: self.state))")
   }
 
-  /// Returns true if CLI is enabled (shim + plugin both exist)
+  /// Returns true if CLI is enabled (shim + plugin for DMG, or Homebrew CLI for App Store)
   public var isEnabled: Bool {
-    if case .enabled = state { return true }
-    return false
+    switch state {
+    case .enabled, .enabledViaHomebrew:
+      return true
+    default:
+      return false
+    }
   }
 
   /// Returns true if PATH warning should be shown
@@ -199,7 +204,17 @@ public final class CLICoordinator: ObservableObject {
   // MARK: - Private Implementation
 
   private static func computeState() -> State {
-    // Check if shim exists
+    // App Store builds: Check for Homebrew-installed CLI (external distribution)
+    if Sandbox.isSandboxed {
+      if let cliPath = findHomebrewCLI() {
+        // Read version from CLI itself
+        let version = readVersionFromCLI(at: cliPath) ?? "unknown"
+        return .enabledViaHomebrew(version: version)
+      }
+      return .disabled
+    }
+
+    // DMG builds: Check for shim + plugin installation
     guard let shimPath = findInstalledShim() else {
       return .disabled
     }
@@ -214,6 +229,64 @@ public final class CLICoordinator: ObservableObject {
     let pathWarning = !isDirectoryOnPath(shimDir)
 
     return .enabled(version: pluginVersion, pathWarning: pathWarning)
+  }
+
+  /// Find contextify-query on PATH (for Homebrew-installed CLI)
+  private static func findHomebrewCLI() -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = ["contextify-query"]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+    } catch {
+      return nil
+    }
+
+    guard process.terminationStatus == 0 else { return nil }
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    return path?.isEmpty == false ? path : nil
+  }
+
+  /// Read version from CLI binary by running --version
+  private static func readVersionFromCLI(at path: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: path)
+    process.arguments = ["--version"]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+    } catch {
+      return nil
+    }
+
+    guard process.terminationStatus == 0 else { return nil }
+
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Parse version from output (e.g., "contextify-query 0.8.5" -> "0.8.5")
+    if let output = output {
+      let parts = output.split(separator: " ")
+      if parts.count >= 2 {
+        return String(parts[1])
+      }
+    }
+
+    return output
   }
 
   private func readBundledVersion() -> String {
@@ -277,14 +350,48 @@ public final class CLICoordinator: ObservableObject {
       try fileManager.createDirectory(at: pluginParent, withIntermediateDirectories: true)
     }
 
-    // 7. Install shim (admin or regular)
-    if requiresAdmin {
-      // Use osascript with admin privileges
+    // 7. Install shim
+    if Sandbox.isSandboxed {
+      // App Store: Write shell script shim (binary won't pass Gatekeeper)
+      let shellScript = """
+#!/bin/bash
+# Contextify CLI shim - finds and runs contextify-query from Contextify.app
+
+# 1. Production: /Applications (App Store install)
+CLI="/Applications/Contextify.app/Contents/MacOS/contextify-query"
+[ -x "$CLI" ] && exec "$CLI" "$@"
+
+# 2. Dev: running Contextify process (works with any build location)
+RUNNING=$(ps -xo comm= | grep -m1 '/Contextify.app/Contents/MacOS/Contextify$' | sed 's|/Contents/MacOS/Contextify$||')
+if [ -n "$RUNNING" ]; then
+  CLI="$RUNNING/Contents/MacOS/contextify-query"
+  [ -x "$CLI" ] && exec "$CLI" "$@"
+fi
+
+# 3. Fallback: Spotlight search
+for APP in $(mdfind "kMDItemCFBundleIdentifier == 'sh.contextify.Contextify'" 2>/dev/null); do
+  CLI="$APP/Contents/MacOS/contextify-query"
+  [ -x "$CLI" ] && exec "$CLI" "$@"
+done
+
+echo "Error: Contextify.app with CLI not found" >&2
+exit 1
+"""
+      if fileManager.fileExists(atPath: finalShimURL.path) {
+        try fileManager.removeItem(at: finalShimURL)
+      }
+      try shellScript.write(to: finalShimURL, atomically: true, encoding: .utf8)
+      try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: finalShimURL.path)
+      // Clean up unused temp shim
+      try? fileManager.removeItem(at: tempShimURL)
+      log.info("[CLI-INSTALL] Wrote shell script shim for App Store build")
+    } else if requiresAdmin {
+      // DMG with admin: Use osascript with admin privileges
       try await installWithAdmin(shimSource: tempShimURL, destination: finalShimURL)
       // Clean up temp file manually (osascript created the target)
       try? fileManager.removeItem(at: tempShimURL)
     } else {
-      // Regular file move (atomic)
+      // DMG without admin: Regular file move (atomic)
       if fileManager.fileExists(atPath: finalShimURL.path) {
         try fileManager.removeItem(at: finalShimURL)
       }

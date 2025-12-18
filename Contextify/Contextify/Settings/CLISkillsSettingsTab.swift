@@ -130,9 +130,82 @@ struct CLISkillsSettingsTab: View {
 
   private let log = Logger(subsystem: "dev.contextify", category: "CLISettings")
 
+  private let homebrewCommand = "brew install PeterPym/contextify/contextify-query"
+
+  @ViewBuilder
+  private func instructionRow(number: String, text: String) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      Text(number)
+        .font(.system(.caption, design: .monospaced).weight(.semibold))
+        .foregroundStyle(.secondary)
+        .frame(width: 16)
+      Text(text)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder
+  private var homebrewInstructionsView: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Enable Contextify skills in Claude Code and Codex.")
+        .font(.body)
+
+      Text("Due to App Store sandbox restrictions, the CLI must be installed separately via Homebrew:")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      HStack(spacing: 8) {
+        Text(homebrewCommand)
+          .font(.system(.caption, design: .monospaced))
+          .textSelection(.enabled)
+          .padding(.vertical, 6)
+          .padding(.horizontal, 8)
+          .background(Color(nsColor: .controlBackgroundColor))
+          .cornerRadius(6)
+
+        Button {
+          homebrewCommand.copyToClipboard()
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
+        .buttonStyle(.borderless)
+        .help("Copy command")
+      }
+
+      Text("Then verify installation:")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      HStack(spacing: 8) {
+        Text("contextify-query status")
+          .font(.system(.caption, design: .monospaced))
+          .textSelection(.enabled)
+          .padding(.vertical, 6)
+          .padding(.horizontal, 8)
+          .background(Color(nsColor: .controlBackgroundColor))
+          .cornerRadius(6)
+
+        Button {
+          "contextify-query status".copyToClipboard()
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
+        .buttonStyle(.borderless)
+        .help("Copy command")
+      }
+
+      Button("Refresh Status") {
+        coordinator.refreshState(force: true)
+      }
+      .buttonStyle(.bordered)
+      .padding(.top, 4)
+    }
+  }
+
   private var statusState: CLIStepState {
     switch coordinator.state {
-    case .enabled:
+    case .enabled, .enabledViaHomebrew:
       return .completed
     case .failed, .upgrading:
       return .warning
@@ -147,8 +220,10 @@ struct CLISkillsSettingsTab: View {
         Section {
           VStack(alignment: .leading, spacing: 12) {
             SetupStepCard(title: "CLI Installation", state: statusState) {
-            // Action buttons
-            if coordinator.isHandlingOperation {
+            // Action buttons - App Store has no buttons (Homebrew-managed)
+            if Sandbox.isSandboxed {
+              EmptyView()
+            } else if coordinator.isHandlingOperation {
               ProgressView()
                 .controlSize(.small)
             } else if coordinator.isEnabled {
@@ -174,11 +249,17 @@ struct CLISkillsSettingsTab: View {
               // Status display
               switch coordinator.state {
               case .disabled:
-                Text("Not installed")
-                  .font(.body)
-                Text("The CLI shim and Claude Code plugin are not installed. Click Enable to install automatically.")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+                if Sandbox.isSandboxed {
+                  // App Store: Show Homebrew instructions
+                  homebrewInstructionsView
+                } else {
+                  // DMG: Simple text
+                  Text("Not installed")
+                    .font(.body)
+                  Text("The CLI shim and Claude Code plugin are not installed. Click Enable to install automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
 
               case .installing:
                 HStack(spacing: 6) {
@@ -233,6 +314,36 @@ struct CLISkillsSettingsTab: View {
                     }
                   }
                   .padding(.top, 4)
+                }
+
+              case .enabledViaHomebrew(let version):
+                HStack(spacing: 6) {
+                  Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                  Text("Installed via Homebrew (v\(version))")
+                    .font(.body)
+                }
+
+                Text("The CLI is installed via Homebrew. To upgrade, run:")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                  Text("brew upgrade contextify-query")
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(4)
+
+                  Button {
+                    "brew upgrade contextify-query".copyToClipboard()
+                  } label: {
+                    Image(systemName: "doc.on.doc")
+                  }
+                  .buttonStyle(.borderless)
+                  .help("Copy command")
                 }
 
               case .upgrading(let from, let to):

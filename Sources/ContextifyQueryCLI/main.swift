@@ -3,8 +3,12 @@ import Darwin
 import Foundation
 import GRDB
 
-private let responseSchemaVersion = 1
-private let maxContextWindowCap = 2000
+// MARK: - Response Types
+
+private enum ResponseConstants {
+  static let schemaVersion = 1
+  static let maxContextWindowCap = 2000
+}
 
 private struct SuccessEnvelope<T: Encodable>: Encodable {
   let type: String
@@ -103,11 +107,20 @@ struct ContextifyQueryCLI {
     }
   }
 
+  static let cliVersion = "1.0.2"
+
   static func main() {
-    let jsonWanted = CommandLine.arguments.contains("--json")
+    // Handle --version early (before any other parsing)
+    let allArgs = CommandLine.arguments
+    if allArgs.contains("--version") || allArgs.contains("-v") {
+      print("contextify-query \(cliVersion)")
+      exit(0)
+    }
+
+    let jsonWanted = allArgs.contains("--json")
     do {
       var options = Options()
-      let args = Array(CommandLine.arguments.dropFirst())
+      let args = Array(allArgs.dropFirst())
 
       // Parse global flags anywhere (before/after the command).
       var remaining: [String] = []
@@ -185,8 +198,8 @@ struct ContextifyQueryCLI {
           guard index < args.count, let n = Int(args[index]), n > 0 else {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --max-window", exitCode: .invalidArgs)
           }
-          guard n <= maxContextWindowCap else {
-            throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
+          guard n <= ResponseConstants.maxContextWindowCap else {
+            throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(ResponseConstants.maxContextWindowCap)", exitCode: .invalidArgs)
           }
           options.maxWindow = n
         case "--intent":
@@ -339,8 +352,8 @@ struct ContextifyQueryCLI {
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
         let maxWindow = options.maxWindow ?? 200
-        guard maxWindow <= maxContextWindowCap else {
-          throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
+        guard maxWindow <= ResponseConstants.maxContextWindowCap else {
+          throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(ResponseConstants.maxContextWindowCap)", exitCode: .invalidArgs)
         }
         guard beforeCount + afterCount <= maxWindow else {
           throw CLIError(code: "invalidArgs", message: "--before + --after must be <= --max-window (\(maxWindow))", exitCode: .invalidArgs)
@@ -486,7 +499,19 @@ struct ContextifyQueryCLI {
 
     throw CLIError(
       code: "dbNotFound",
-      message: "Open Contextify once to initialize discovery, or pass --db-path/--db-dir.",
+      message: """
+        Contextify database not found.
+
+        If Contextify is installed:
+          Open Contextify once to initialize the database.
+
+        If Contextify is not installed:
+          Install from the Mac App Store: https://apps.apple.com/app/contextify
+
+        Or specify the database location:
+          --db-path /path/to/contextify.db
+          --db-dir  /path/to/directory/containing/db
+        """,
       exitCode: .dbNotFound
     )
   }
@@ -594,7 +619,7 @@ struct ContextifyQueryCLI {
     if json {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = SuccessEnvelope(type: type, schemaVersion: responseSchemaVersion, data: data, meta: nil)
+      let payload = SuccessEnvelope(type: type, schemaVersion: ResponseConstants.schemaVersion, data: data, meta: nil)
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
