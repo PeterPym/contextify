@@ -59,8 +59,22 @@ private func compareVersion(_ lhs: Candidate, _ rhs: Candidate) -> ComparisonRes
   return .orderedSame
 }
 
+private func getRunningContextifyPath() -> String? {
+  let ws = NSWorkspace.shared
+  for app in ws.runningApplications where app.bundleIdentifier == bundleIdentifier {
+    return app.bundleURL?.standardizedFileURL.path
+  }
+  return nil
+}
+
 private func selectBestCandidate(_ candidates: [Candidate]) -> Candidate? {
   guard !candidates.isEmpty else { return nil }
+
+  // Prefer the currently running instance if it's a valid candidate
+  if let runningPath = getRunningContextifyPath(),
+     let running = candidates.first(where: { $0.path == runningPath }) {
+    return running
+  }
 
   let sorted = candidates.sorted { a, b in
     if a.hasBundledCLI != b.hasBundledCLI { return a.hasBundledCLI && !b.hasBundledCLI }
@@ -92,13 +106,18 @@ private func discoverCandidates() -> [Candidate] {
     unique[url.standardizedFileURL.path] = url.standardizedFileURL
   }
 
-  return unique.values.map { url in
+  return unique.values.compactMap { url in
     let versions = readInfoPlistVersions(url)
     let cliPath = url.appendingPathComponent(bundledCLIRelativePath).path
+    let hasCLI = FileManager.default.isExecutableFile(atPath: cliPath)
+
+    // Skip candidates without a valid CLI to avoid selection issues
+    guard hasCLI else { return nil }
+
     return Candidate(
       url: url,
       isAppStore: isAppStoreBundle(url),
-      hasBundledCLI: FileManager.default.isExecutableFile(atPath: cliPath),
+      hasBundledCLI: hasCLI,
       bundleVersion: versions.bundleVersion,
       shortVersion: versions.shortVersion
     )
@@ -153,8 +172,8 @@ private func run() -> Never {
   }
 
   if candidates.count > 1 {
-    let list = candidates.sorted { $0.path < $1.path }.map(\.path).joined(separator: "\n- ")
-    fputs("Multiple Contextify installs detected; using:\n- \(selected.path)\nOther candidates:\n- \(list)\n", stderr)
+    let others = candidates.filter { $0.path != selected.path }.sorted { $0.path < $1.path }.map(\.path).joined(separator: "\n- ")
+    fputs("Multiple Contextify installs detected; using:\n- \(selected.path)\nOther candidates:\n- \(others)\n", stderr)
   }
 
   execBundledCLI(appURL: selected.url, argv: argv)
