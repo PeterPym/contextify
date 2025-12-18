@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import CryptoKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "LightweightDiscovery")
 
@@ -39,7 +40,15 @@ public actor LightweightDiscoveryService {
     async let codexProjectsTask = scanCodexSessions()
 
     let claudeProjects = await claudeProjectsTask
-    let codexProjects = await codexProjectsTask
+    var codexProjects = await codexProjectsTask
+
+    // Remap Codex project paths to Claude roots using longest-prefix matching
+    // This recovers orphaned sessions from nested project structures
+    codexProjects = remapCodexToClaudeRoots(
+      claudeProjects: claudeProjects,
+      codexProjects: codexProjects
+    )
+
     let rawProjects = claudeProjects + codexProjects
 
     // Count transcript files per provider for startup diagnostics
@@ -71,7 +80,14 @@ public actor LightweightDiscoveryService {
 
       if let existing = merged[key] {
         // Merge: combine transcripts, keep most recent activity, mark as multi-provider
+        // Dedupe by standardized file path to avoid counting same file twice
         let combinedFiles = existing.transcriptFiles + project.transcriptFiles
+        let deduped = Array(
+          Dictionary(grouping: combinedFiles) { $0.standardizedFileURL.path }
+            .compactMapValues { $0.first }
+            .values
+        ).sorted { $0.path < $1.path }  // Sort for deterministic ordering
+
         let providers = Set([existing.provider, project.provider])
         let providerStr = providers.count > 1 ? "multi" : existing.provider
 
@@ -79,19 +95,110 @@ public actor LightweightDiscoveryService {
           id: existing.id,  // Keep first ID for consistency
           path: existing.path,
           displayName: existing.displayName,
-          transcriptCount: combinedFiles.count,
+          transcriptCount: deduped.count,
           lastActivity: max(existing.lastActivity, project.lastActivity),
           provider: providerStr,
           cwd: existing.cwd ?? project.cwd,
-          transcriptFiles: combinedFiles
+          transcriptFiles: deduped
         )
-        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public))")
+        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public)), deduped \(combinedFiles.count, privacy: .public) -> \(deduped.count, privacy: .public) files")
       } else {
         merged[key] = project
       }
     }
 
     return Array(merged.values)
+  }
+
+  /// Remap Codex project paths to Claude roots using longest-prefix matching.
+  /// This recovers orphaned sessions from nested project structures (Issue #1).
+  ///
+  /// Example: Codex sessions with cwd `/repo/subdir` get assigned to Claude project root `/repo`.
+  ///
+  /// - Parameters:
+  ///   - claudeProjects: Projects discovered from ~/.claude/projects
+  ///   - codexProjects: Projects discovered from ~/.codex/sessions
+  /// - Returns: Updated Codex projects with paths remapped to Claude roots
+  nonisolated func remapCodexToClaudeRoots(
+    claudeProjects: [LightweightProject],
+    codexProjects: [LightweightProject]
+  ) -> [LightweightProject] {
+    guard !codexProjects.isEmpty else { return codexProjects }
+    guard !claudeProjects.isEmpty else {
+      log.info("[CODEX-REMAP] No Claude projects found - keeping \(codexProjects.count, privacy: .public) Codex-only projects")
+      return codexProjects
+    }
+
+    // Extract known Claude project roots (canonicalized, deduped, sorted by length descending)
+    // Sorting by length descending allows early-break on first match (longest prefix wins)
+    let knownRoots = Array(Set(claudeProjects.map { $0.canonicalRootPath }))
+      .sorted { $0.count > $1.count }
+
+    // Instrumentation counters
+    var exactMatches = 0
+    var prefixMatches = 0
+    var codexOnlyMatches = 0
+
+    var remapped: [LightweightProject] = []
+
+    for project in codexProjects {
+      guard let cwd = project.cwd else {
+        log.debug("[CODEX-REMAP] Skipping project without cwd: \(project.displayName, privacy: .public)")
+        remapped.append(project)
+        continue
+      }
+
+      // Canonicalize CWD to match canonicalRootPath normalization
+      let cwdNorm = PathUtils.canonicalizePath(cwd)
+
+      // Find longest matching prefix from knownRoots (sorted by length desc, so first match wins)
+      // Boundary-aware: cwd == root OR cwd starts with root + "/"
+      var assignedRoot: String? = nil
+      for root in knownRoots {
+        if cwdNorm == root || cwdNorm.hasPrefix(root + "/") {
+          assignedRoot = root
+          break  // First match is longest (sorted by length desc)
+        }
+      }
+
+      if let assignedRoot = assignedRoot {
+        // Remap project to Claude root
+        let isExact = (cwdNorm == assignedRoot)
+        if isExact {
+          exactMatches += 1
+        } else {
+          prefixMatches += 1
+        }
+
+        // Create new project with updated path
+        let remappedProject = LightweightProject(
+          id: project.id,
+          path: URL(fileURLWithPath: assignedRoot),
+          displayName: project.displayName,
+          transcriptCount: project.transcriptCount,
+          lastActivity: project.lastActivity,
+          provider: project.provider,
+          cwd: cwd,  // Keep original CWD for reference
+          transcriptFiles: project.transcriptFiles
+        )
+        remapped.append(remappedProject)
+
+        log.debug("[CODEX-REMAP] Remapped \(cwdNorm, privacy: .public) -> \(assignedRoot, privacy: .public) (\(isExact ? "exact" : "prefix", privacy: .public))")
+      } else {
+        // No prefix match - keep as Codex-only project
+        codexOnlyMatches += 1
+        remapped.append(project)
+
+        // Sanitize path for logging (SHA256 first 12 hex chars)
+        let hash = SHA256.hash(data: Data(cwdNorm.utf8))
+        let sanitized = hash.prefix(6).map { String(format: "%02x", $0) }.joined()
+        log.info("[CODEX-REMAP] Codex-only project: \(sanitized, privacy: .public) (no Claude root match)")
+      }
+    }
+
+    log.info("[CODEX-REMAP] Match breakdown: exact=\(exactMatches, privacy: .public) prefix=\(prefixMatches, privacy: .public) codex-only=\(codexOnlyMatches, privacy: .public) total=\(codexProjects.count, privacy: .public)")
+
+    return remapped
   }
 
   // MARK: - Claude Projects (~/.claude/projects/HASH/*.jsonl)
@@ -212,8 +319,8 @@ public actor LightweightDiscoveryService {
       guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
       defer { try? handle.close() }
 
-      // Read 4KB to capture multiple lines (Codex payload lines can be long)
-      guard let data = try? handle.read(upToCount: 4096),
+      // Read 64KB to capture first line (Codex session_meta can be 30KB+ with large AGENTS.md)
+      guard let data = try? handle.read(upToCount: 65536),
             let str = String(data: data, encoding: .utf8) else {
         return nil
       }
