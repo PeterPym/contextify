@@ -115,9 +115,15 @@ public final class CLICoordinator: ObservableObject {
   /// Check for installation/upgrades and install if needed
   /// Called on app launch (DMG only)
   public func checkAndUpgrade() async {
+    // App Store builds: Skip auto-install - requires file picker for user to grant access
+    // User must manually enable via Settings → CLI tab
+    if Sandbox.isSandboxed {
+      log.info("[CLI-AUTO-INSTALL-SKIP] App Store build - user must enable via Settings")
+      return
+    }
+
     // For DMG builds: auto-install on first launch IF writable paths exist (homebrew users)
     // For non-homebrew users: stay disabled, require manual enable
-    // For App Store builds: this should not be called (requires permission first)
 
     let bundledVersion = readBundledVersion()
 
