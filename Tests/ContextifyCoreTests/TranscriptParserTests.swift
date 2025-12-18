@@ -13,16 +13,19 @@ final class TranscriptParserTests: XCTestCase {
     {"type":"assistant","uuid":"assistant-1","timestamp":"2025-11-16T12:00:00Z","message":{"content":[{"type":"tool_use","id":"toolu_123","name":"bash","input":{"command":"ls"}}],"stop_reason":"tool_use"}}
     """
 
-    XCTAssertThrowsError(
-      try parser.parse(
-        line: assistantLine,
-        lineNumber: 1,
-        transcriptId: transcriptId,
-        projectId: projectId,
-        provider: "claude.code",
-        sessionId: "session"
-      )
+    // Tool_use messages now produce entries (Issue #2 fix)
+    let assistantEntry = try parser.parse(
+      line: assistantLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
     )
+
+    XCTAssertEqual(assistantEntry.kind, "assistant")
+    XCTAssertTrue(assistantEntry.content.contains("[Tool: bash]"), "Tool use should be indexed as searchable marker")
+    XCTAssertFalse(assistantEntry.hasTextContent, "Tool-only entries should be hidden from timeline")
 
     // Tool_result-only messages are skipped (structural), so add text content for timeline display
     let userLine = """
@@ -108,5 +111,104 @@ final class TranscriptParserTests: XCTestCase {
     )
 
     XCTAssertFalse(entry.hasTextContent, "Shell stdout entries should be hidden from the timeline")
+  }
+
+  // MARK: - Tool Use Extraction Tests (Issue #2 fix)
+
+  func testToolUseOnlyMessage() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"test-uuid","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"/test"}}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertTrue(entry.content.contains("[Tool: Read]"), "Tool use blocks should be extracted as searchable markers")
+    XCTAssertFalse(entry.hasTextContent, "Tool-only entries should be hidden from timeline")
+  }
+
+  func testMixedContentBlocks_NoiseFilter() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"test-uuid","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Analyzing..."},{"type":"tool_use","name":"Grep","input":{}},{"type":"text","text":"Found results"}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertTrue(entry.content.contains("Analyzing"), "Thinking content should be included")
+    XCTAssertTrue(entry.content.contains("Found results"), "Text content should be included")
+    XCTAssertFalse(entry.content.contains("[Tool:"), "Tool markers should be filtered out when text is present (noise filter)")
+    XCTAssertTrue(entry.hasTextContent, "Messages with text blocks should be displayable")
+  }
+
+  func testThinkingOnlyMessage() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"test-uuid","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Planning approach"}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertTrue(entry.content.contains("Planning approach"), "Thinking content should be extracted")
+    XCTAssertFalse(entry.hasTextContent, "Thinking-only entries should be hidden from timeline")
+  }
+
+  func testBackwardsCompat_MissingTypeField_Text() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"test-uuid","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":[{"text":"Hello"}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertTrue(entry.content.contains("Hello"), "Text blocks without type field should still be extracted")
+    XCTAssertTrue(entry.hasTextContent, "Text content should be displayable")
+  }
+
+  func testBackwardsCompat_MissingTypeField_ToolUse() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"test-uuid","timestamp":"2025-01-01T00:00:00Z","message":{"role":"assistant","content":[{"name":"Read","input":{"file_path":"/test"}}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertTrue(entry.content.contains("[Tool: Read]"), "Tool use blocks without type field should be detected via shape")
+    XCTAssertFalse(entry.hasTextContent, "Tool markers are not displayable text")
   }
 }

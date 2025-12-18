@@ -706,4 +706,29 @@ public actor FastPathIngestionCoordinator {
     notifiedProjects.insert(projectId)
     pendingNotificationTokens.remove(projectId)
   }
+
+  // MARK: - Repair Functions
+
+  /// Reset transcripts with 0 entries for re-parsing after parser fix
+  /// Handles parser improvements (e.g., tool_use extraction) that require re-ingesting
+  /// previously skipped content
+  public func repairZeroEntryTranscripts(limit: Int = 100) async throws {
+    log.info("[REPAIR] Identifying transcripts with 0 entries for re-ingestion")
+
+    let transcriptIds = try orchestrator.getZeroEntryTranscripts(limit: limit)
+    log.info("[REPAIR] Found \(transcriptIds.count) transcripts to repair")
+
+    guard !transcriptIds.isEmpty else { return }
+
+    // Reset full checkpoint tuple before enqueuing
+    try orchestrator.resetTranscriptCheckpoints(transcriptIds: transcriptIds)
+    log.info("[REPAIR] Reset \(transcriptIds.count) transcripts to partial state")
+
+    // Now enqueue for completion (enqueueCompletion is already idempotent)
+    for transcriptId in transcriptIds {
+      enqueueCompletion(transcriptId: transcriptId)
+    }
+
+    log.info("[REPAIR] Enqueued \(transcriptIds.count) transcripts for re-ingestion")
+  }
 }

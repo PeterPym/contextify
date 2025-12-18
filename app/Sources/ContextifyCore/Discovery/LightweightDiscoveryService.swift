@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import CryptoKit
 
 private let log = Logger(subsystem: "dev.contextify", category: "LightweightDiscovery")
 
@@ -39,7 +40,15 @@ public actor LightweightDiscoveryService {
     async let codexProjectsTask = scanCodexSessions()
 
     let claudeProjects = await claudeProjectsTask
-    let codexProjects = await codexProjectsTask
+    var codexProjects = await codexProjectsTask
+
+    // Remap Codex project paths to Claude roots using longest-prefix matching
+    // This recovers orphaned sessions from nested project structures
+    codexProjects = remapCodexToClaudeRoots(
+      claudeProjects: claudeProjects,
+      codexProjects: codexProjects
+    )
+
     let rawProjects = claudeProjects + codexProjects
 
     // Count transcript files per provider for startup diagnostics
@@ -71,7 +80,14 @@ public actor LightweightDiscoveryService {
 
       if let existing = merged[key] {
         // Merge: combine transcripts, keep most recent activity, mark as multi-provider
+        // Dedupe by standardized file path to avoid counting same file twice
         let combinedFiles = existing.transcriptFiles + project.transcriptFiles
+        let deduped = Array(
+          Dictionary(grouping: combinedFiles) { $0.standardizedFileURL.path }
+            .compactMapValues { $0.first }
+            .values
+        ).sorted { $0.path < $1.path }  // Sort for deterministic ordering
+
         let providers = Set([existing.provider, project.provider])
         let providerStr = providers.count > 1 ? "multi" : existing.provider
 
@@ -79,19 +95,110 @@ public actor LightweightDiscoveryService {
           id: existing.id,  // Keep first ID for consistency
           path: existing.path,
           displayName: existing.displayName,
-          transcriptCount: combinedFiles.count,
+          transcriptCount: deduped.count,
           lastActivity: max(existing.lastActivity, project.lastActivity),
           provider: providerStr,
           cwd: existing.cwd ?? project.cwd,
-          transcriptFiles: combinedFiles
+          transcriptFiles: deduped
         )
-        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public))")
+        log.debug("[DISC-LIGHT-MERGE] Merged \(project.displayName, privacy: .public) (\(project.provider, privacy: .public)) into existing (\(existing.provider, privacy: .public)), deduped \(combinedFiles.count, privacy: .public) -> \(deduped.count, privacy: .public) files")
       } else {
         merged[key] = project
       }
     }
 
     return Array(merged.values)
+  }
+
+  /// Remap Codex project paths to Claude roots using longest-prefix matching.
+  /// This recovers orphaned sessions from nested project structures (Issue #1).
+  ///
+  /// Example: Codex sessions with cwd `/repo/subdir` get assigned to Claude project root `/repo`.
+  ///
+  /// - Parameters:
+  ///   - claudeProjects: Projects discovered from ~/.claude/projects
+  ///   - codexProjects: Projects discovered from ~/.codex/sessions
+  /// - Returns: Updated Codex projects with paths remapped to Claude roots
+  nonisolated func remapCodexToClaudeRoots(
+    claudeProjects: [LightweightProject],
+    codexProjects: [LightweightProject]
+  ) -> [LightweightProject] {
+    guard !codexProjects.isEmpty else { return codexProjects }
+    guard !claudeProjects.isEmpty else {
+      log.info("[CODEX-REMAP] No Claude projects found - keeping \(codexProjects.count, privacy: .public) Codex-only projects")
+      return codexProjects
+    }
+
+    // Extract known Claude project roots (canonicalized, deduped, sorted by length descending)
+    // Sorting by length descending allows early-break on first match (longest prefix wins)
+    let knownRoots = Array(Set(claudeProjects.map { $0.canonicalRootPath }))
+      .sorted { $0.count > $1.count }
+
+    // Instrumentation counters
+    var exactMatches = 0
+    var prefixMatches = 0
+    var codexOnlyMatches = 0
+
+    var remapped: [LightweightProject] = []
+
+    for project in codexProjects {
+      guard let cwd = project.cwd else {
+        log.debug("[CODEX-REMAP] Skipping project without cwd: \(project.displayName, privacy: .public)")
+        remapped.append(project)
+        continue
+      }
+
+      // Canonicalize CWD to match canonicalRootPath normalization
+      let cwdNorm = PathUtils.canonicalizePath(cwd)
+
+      // Find longest matching prefix from knownRoots (sorted by length desc, so first match wins)
+      // Boundary-aware: cwd == root OR cwd starts with root + "/"
+      var assignedRoot: String? = nil
+      for root in knownRoots {
+        if cwdNorm == root || cwdNorm.hasPrefix(root + "/") {
+          assignedRoot = root
+          break  // First match is longest (sorted by length desc)
+        }
+      }
+
+      if let assignedRoot = assignedRoot {
+        // Remap project to Claude root
+        let isExact = (cwdNorm == assignedRoot)
+        if isExact {
+          exactMatches += 1
+        } else {
+          prefixMatches += 1
+        }
+
+        // Create new project with updated path
+        let remappedProject = LightweightProject(
+          id: project.id,
+          path: URL(fileURLWithPath: assignedRoot),
+          displayName: project.displayName,
+          transcriptCount: project.transcriptCount,
+          lastActivity: project.lastActivity,
+          provider: project.provider,
+          cwd: cwd,  // Keep original CWD for reference
+          transcriptFiles: project.transcriptFiles
+        )
+        remapped.append(remappedProject)
+
+        log.debug("[CODEX-REMAP] Remapped \(cwdNorm, privacy: .private) -> \(assignedRoot, privacy: .private) (\(isExact ? "exact" : "prefix", privacy: .public))")
+      } else {
+        // No prefix match - keep as Codex-only project
+        codexOnlyMatches += 1
+        remapped.append(project)
+
+        // Sanitize path for logging (SHA256 first 12 hex chars)
+        let hash = SHA256.hash(data: Data(cwdNorm.utf8))
+        let sanitized = hash.prefix(6).map { String(format: "%02x", $0) }.joined()
+        log.info("[CODEX-REMAP] Codex-only project: \(sanitized, privacy: .public) (no Claude root match)")
+      }
+    }
+
+    log.info("[CODEX-REMAP] Match breakdown: exact=\(exactMatches, privacy: .public) prefix=\(prefixMatches, privacy: .public) codex-only=\(codexOnlyMatches, privacy: .public) total=\(codexProjects.count, privacy: .public)")
+
+    return remapped
   }
 
   // MARK: - Claude Projects (~/.claude/projects/HASH/*.jsonl)
@@ -212,8 +319,8 @@ public actor LightweightDiscoveryService {
       guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
       defer { try? handle.close() }
 
-      // Read 4KB to capture multiple lines (Codex payload lines can be long)
-      guard let data = try? handle.read(upToCount: 4096),
+      // Read 64KB to capture first line (Codex session_meta can be 30KB+ with large AGENTS.md)
+      guard let data = try? handle.read(upToCount: 65536),
             let str = String(data: data, encoding: .utf8) else {
         return nil
       }
@@ -252,6 +359,10 @@ public actor LightweightDiscoveryService {
 
     log.debug("[DISC-LIGHT] Found \(files.count, privacy: .public) Codex transcripts")
 
+    // Track CWD extraction failures for aggregate reporting
+    var cwdFailureCount = 0
+    var cwdFailureFiles: [URL] = []
+
     // Parallel process headers to extract CWD, but cap concurrency to avoid FD pressure.
     let batchSize = 64
     var index = 0
@@ -260,20 +371,17 @@ public actor LightweightDiscoveryService {
       let end = min(index + batchSize, files.count)
       let slice = files[index..<end]
 
-      await withTaskGroup(of: (String, Date, URL)?.self) { group in
+      await withTaskGroup(of: (String?, Date, URL).self) { group in
         for url in slice {
           group.addTask {
-            guard let cwd = getCWD(url: url) else {
-              log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .public)")
-              return nil
-            }
+            let cwd = getCWD(url: url)
             let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date.distantPast
             return (cwd, date, url)
           }
         }
 
-        for await result in group {
-          if let (cwd, date, url) = result {
+        for await (cwd, date, url) in group {
+          if let cwd = cwd {
             // Aggregate by CWD - collect file URLs
             if var p = projects[cwd] {
               p.files.append(url)  // Accumulate file list
@@ -282,6 +390,11 @@ public actor LightweightDiscoveryService {
             } else {
               projects[cwd] = ([url], date, URL(fileURLWithPath: cwd))
             }
+          } else {
+            // CWD extraction failed - track for fallback bucket
+            cwdFailureCount += 1
+            cwdFailureFiles.append(url)
+            log.debug("[DISC-LIGHT] getCWD failed for Codex transcript: \(url.lastPathComponent, privacy: .private)")
           }
         }
       }
@@ -289,10 +402,15 @@ public actor LightweightDiscoveryService {
       index = end
     }
 
-    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts")
+    // Log aggregate failure count at info level (not just per-file debug)
+    if cwdFailureCount > 0 {
+      log.info("[DISC-LIGHT] CWD extraction failed for \(cwdFailureCount, privacy: .public) Codex transcripts")
+    }
+
+    log.info("[DISC-LIGHT] Codex scan produced \(projects.count, privacy: .public) projects from \(files.count, privacy: .public) transcripts (failures: \(cwdFailureCount, privacy: .public))")
 
     // Convert to LightweightProject array
-    return projects.map { cwd, data in
+    var result = projects.map { cwd, data in
       // Generate stable ID from path (base64 encoding)
       let id = cwd.data(using: .utf8)!.base64EncodedString()
         .replacingOccurrences(of: "/", with: "_")
@@ -309,6 +427,33 @@ public actor LightweightDiscoveryService {
         transcriptFiles: data.files  // Pass file URLs for JIT ingestion
       )
     }
+
+    // Create fallback bucket for transcripts with CWD extraction failures
+    // These are still ingested so they remain searchable and inspectable
+    if !cwdFailureFiles.isEmpty {
+      let maxDate = cwdFailureFiles.compactMap {
+        (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+      }.max() ?? Date.distantPast
+
+      // Root-specific ID to avoid collisions across multiple Codex roots/profiles
+      let rootHash = SHA256.hash(data: Data(root.path.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+      let unknownId = "codex-unknown-cwd-\(rootHash)"
+
+      let unknownProject = LightweightProject(
+        id: unknownId,
+        path: root,
+        displayName: "Unknown Codex Sessions",
+        transcriptCount: cwdFailureFiles.count,
+        lastActivity: maxDate,
+        provider: "codex.cli",
+        cwd: nil,  // No CWD - these couldn't be extracted
+        transcriptFiles: cwdFailureFiles
+      )
+      result.append(unknownProject)
+      log.info("[DISC-LIGHT] Created fallback bucket for \(cwdFailureFiles.count, privacy: .public) Codex transcripts with CWD extraction failures")
+    }
+
+    return result
   }
 
   // MARK: - Helper Functions
