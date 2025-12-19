@@ -302,17 +302,32 @@ package_cli() {
   local binary="$ROOT_DIR/.build/release/$BINARY_NAME"
   local arch=$(uname -m)
   local tarball="$OUTPUT_DIR/${BINARY_NAME}-${arch}.tar.gz"
+  local staging="$OUTPUT_DIR/staging"
 
   # Create output directory
   mkdir -p "$OUTPUT_DIR"
+  rm -rf "$staging"
+  mkdir -p "$staging"
 
-  # Copy binary to output
-  cp "$binary" "$OUTPUT_DIR/$BINARY_NAME"
-  chmod +x "$OUTPUT_DIR/$BINARY_NAME"
+  # Copy binary to staging
+  cp "$binary" "$staging/$BINARY_NAME"
+  chmod +x "$staging/$BINARY_NAME"
 
-  # Create tarball
+  # Copy plugin files for install-plugin command
+  local plugin_source="$ROOT_DIR/contextify-query/claude-plugin"
+  if [ -d "$plugin_source" ]; then
+    log_info "Including plugin files..."
+    cp -R "$plugin_source" "$staging/claude-plugin"
+  else
+    log_warn "Plugin source not found at $plugin_source"
+  fi
+
+  # Create tarball with binary and plugin
   rm -f "$tarball"
-  tar -czvf "$tarball" -C "$OUTPUT_DIR" "$BINARY_NAME"
+  tar -czvf "$tarball" -C "$staging" .
+
+  # Clean up staging
+  rm -rf "$staging"
 
   # Calculate SHA256
   local sha256=$(shasum -a 256 "$tarball" | cut -d' ' -f1)
