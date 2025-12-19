@@ -190,13 +190,16 @@ public final class CLICoordinator: ObservableObject {
     let now = Date()
     if !force, let lastCheck = lastCheckTime,
        now.timeIntervalSince(lastCheck) < checkThrottleDuration {
+      log.debug("[CLI-REFRESH] throttled, skipping")
       return
     }
 
+    log.info("[CLI-REFRESH] checking... sandboxed=\(Sandbox.isSandboxed)")
     let oldState = state
     state = Self.computeState()
+    log.info("[CLI-REFRESH] oldState=\(String(describing: oldState)) newState=\(String(describing: self.state))")
     if state != oldState {
-      log.info("[CLI-REFRESH] state=\(String(describing: self.state))")
+      log.info("[CLI-REFRESH] state changed to \(String(describing: self.state))")
     }
     lastCheckTime = now
   }
@@ -204,13 +207,12 @@ public final class CLICoordinator: ObservableObject {
   // MARK: - Private Implementation
 
   private static func computeState() -> State {
-    // App Store builds: Check for Homebrew-installed CLI (external distribution)
+    // App Store builds: Cannot detect Homebrew CLI due to sandbox restrictions
+    // Just show install instructions - user verifies in terminal
     if Sandbox.isSandboxed {
-      if let cliPath = findHomebrewCLI() {
-        // Read version from CLI itself
-        let version = readVersionFromCLI(at: cliPath) ?? "unknown"
-        return .enabledViaHomebrew(version: version)
-      }
+      // Sandbox prevents us from checking /opt/homebrew/bin or running `which`
+      // Always return disabled to show install instructions
+      // User can verify installation by running `contextify-query status` in terminal
       return .disabled
     }
 
@@ -231,33 +233,37 @@ public final class CLICoordinator: ObservableObject {
     return .enabled(version: pluginVersion, pathWarning: pathWarning)
   }
 
-  /// Find contextify-query on PATH (for Homebrew-installed CLI)
+  /// Find contextify-query at known Homebrew paths
+  /// Note: Sandboxed apps cannot run `which`, so we check paths directly
   private static func findHomebrewCLI() -> String? {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-    process.arguments = ["contextify-query"]
+    let homebrewPaths = [
+      "/opt/homebrew/bin/contextify-query",  // Apple Silicon Homebrew
+      "/usr/local/bin/contextify-query"      // Intel Homebrew
+    ]
 
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
-
-    do {
-      try process.run()
-      process.waitUntilExit()
-    } catch {
-      return nil
+    for path in homebrewPaths {
+      if FileManager.default.isExecutableFile(atPath: path) {
+        log.debug("[CLI] Found Homebrew CLI at \(path, privacy: .public)")
+        return path
+      }
     }
 
-    guard process.terminationStatus == 0 else { return nil }
-
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    return path?.isEmpty == false ? path : nil
+    log.debug("[CLI] No Homebrew CLI found at standard paths")
+    return nil
   }
 
-  /// Read version from CLI binary by running --version
+  /// Read version from CLI binary
+  /// Note: Sandboxed apps cannot spawn processes, so we return "installed" as placeholder
+  /// The actual version can be checked by running `contextify-query --version` in terminal
   private static func readVersionFromCLI(at path: String) -> String? {
+    // In sandbox, we can't run the CLI to get version
+    // Just confirm it exists and return a placeholder
+    if Sandbox.isSandboxed {
+      log.debug("[CLI] Sandboxed - returning 'installed' as version placeholder")
+      return "installed"
+    }
+
+    // Non-sandboxed: actually run the CLI
     let process = Process()
     process.executableURL = URL(fileURLWithPath: path)
     process.arguments = ["--version"]

@@ -195,11 +195,6 @@ struct CLISkillsSettingsTab: View {
         .help("Copy command")
       }
 
-      Button("Refresh Status") {
-        coordinator.refreshState(force: true)
-      }
-      .buttonStyle(.bordered)
-      .padding(.top, 4)
     }
   }
 
