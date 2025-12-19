@@ -109,7 +109,7 @@ struct ContextifyQueryCLI {
     }
   }
 
-  static let cliVersion = "1.0.3"
+  static let cliVersion = "1.0.4"
 
   static func main() {
     // Handle --version early (before any other parsing)
@@ -1517,28 +1517,23 @@ private func findPluginSource() throws -> URL {
   }
 
   // 2. Check alongside the executable (Homebrew install - tarball extraction)
-  let executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
-  let siblingPlugin = executableURL.appendingPathComponent("claude-plugin")
+  let executablePath = CommandLine.arguments[0]
+  let executableURL = URL(fileURLWithPath: executablePath)
+  let execDir = executableURL.deletingLastPathComponent()
+  let siblingPlugin = execDir.appendingPathComponent("claude-plugin")
   if FileManager.default.fileExists(atPath: siblingPlugin.path) {
     return siblingPlugin
   }
 
-  // 3. Check in Homebrew Cellar structure
-  // /opt/homebrew/Cellar/contextify-query/1.0.2/bin/contextify-query
-  // Plugin at: /opt/homebrew/Cellar/contextify-query/1.0.2/share/contextify-query/claude-plugin/
-  let cellarShare = executableURL.deletingLastPathComponent().appendingPathComponent("share/contextify-query/claude-plugin")
+  // 3. Resolve symlinks and check Homebrew Cellar structure
+  // /opt/homebrew/bin/contextify-query -> ../Cellar/contextify-query/1.0.3/bin/contextify-query
+  // Plugin at: /opt/homebrew/Cellar/contextify-query/1.0.3/share/claude-plugin/
+  let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
+  let cellarBin = resolvedExec.deletingLastPathComponent()  // .../1.0.3/bin/
+  let cellarRoot = cellarBin.deletingLastPathComponent()    // .../1.0.3/
+  let cellarShare = cellarRoot.appendingPathComponent("share/claude-plugin")
   if FileManager.default.fileExists(atPath: cellarShare.path) {
     return cellarShare
-  }
-
-  // 4. Homebrew linked path: /opt/homebrew/bin -> Cellar
-  // Resolve symlink and check share directory
-  let resolvedExec = executableURL.resolvingSymlinksInPath()
-  if resolvedExec != executableURL {
-    let resolvedShare = resolvedExec.deletingLastPathComponent().appendingPathComponent("share/contextify-query/claude-plugin")
-    if FileManager.default.fileExists(atPath: resolvedShare.path) {
-      return resolvedShare
-    }
   }
 
   throw CLIError(
