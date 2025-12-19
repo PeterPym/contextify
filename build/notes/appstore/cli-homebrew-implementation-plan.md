@@ -334,15 +334,46 @@ Contextify/Contextify/Settings/CLISkillsSettingsTab.swift
   - Full Homebrew UI
 ```
 
-## Implementation Status (COMPLETED 2025-12-18)
+## Implementation Status (COMPLETED 2025-12-19)
 
-All phases implemented in a single session:
+### What Was Built
 
-1. **CLICoordinator.swift** - Added `enabledViaHomebrew` state, `findHomebrewCLI()`, `readVersionFromCLI()`
-2. **CLISkillsSettingsTab.swift** - Added Homebrew instructions view, refresh button
-3. **homebrew-contextify repo** - Created at github.com/PeterPym/homebrew-contextify
-4. **Formula** - contextify-query.rb with v1.0.2 binary
-5. **GitHub Release** - v1.0.2 with arm64 binary at PeterPym/contextify
+1. **CLICoordinator.swift**
+   - App Store builds: Always show Homebrew instructions (no detection possible due to sandbox)
+   - DMG builds: Existing shim-based detection unchanged
+   - Removed: `enabledViaHomebrew` state, `findHomebrewCLI()`, `readVersionFromCLI()` (sandbox blocks these)
+
+2. **CLISkillsSettingsTab.swift**
+   - App Store: Shows Homebrew install instructions with copy button
+   - Removed: Refresh Status button (can't detect anything outside sandbox)
+
+3. **CLI install-plugin command** (NEW)
+   - `contextify-query install-plugin` - Installs Claude Code plugin to ~/.claude/plugins/
+   - `contextify-query uninstall-plugin` - Removes plugin
+   - Works for both Homebrew and DMG builds
+
+4. **homebrew-contextify repo**
+   - Created at github.com/PeterPym/homebrew-contextify
+   - Formula includes plugin files in share/ directory
+   - README with full setup instructions
+
+5. **CLI signing integration**
+   - `scripts/sign_cli.sh` - Standalone CLI build/sign/notarize script
+   - Integrated with `sign_and_notarize.py` - CLI signed alongside DMG releases
+   - Change detection to avoid unnecessary rebuilds
+
+6. **GitHub Releases**
+   - v1.0.4 at PeterPym/contextify with signed/notarized arm64 binary
+   - Tarball includes binary + plugin files
+
+### Key Design Decision: No Detection in Sandbox
+
+The App Store sandbox blocks:
+- `Process()` spawning (can't run `which`)
+- File access outside container (can't check `/opt/homebrew/bin/`)
+
+Therefore, App Store builds simply show install instructions without attempting detection.
+Users verify installation in terminal with `contextify-query status`.
 
 ## Coexistence Scenarios
 
@@ -395,21 +426,25 @@ If DMG user runs `brew install contextify-query`:
 - [x] App Store CLI tab shows Homebrew instructions
 - [x] No Enable/Disable buttons (just instructions)
 - [x] Copy button works for brew command
-- [x] Refresh Status button works
-- [x] Detects Homebrew-installed CLI correctly
-- [x] Shows "Installed via Homebrew (vX.X.X)" when detected
+- [x] No Refresh Status button (removed - sandbox can't detect)
+- [ ] ~~Detects Homebrew-installed CLI~~ (removed - sandbox blocks detection)
 
 ### Homebrew Installation Testing
-- [x] `brew tap PeterPym/contextify` works
-- [x] `brew install contextify-query` installs binary
-- [x] `contextify-query --version` shows correct version (1.0.2)
+- [x] `brew install PeterPym/contextify/contextify-query` installs binary + plugin files
+- [x] `contextify-query --version` shows correct version (1.0.4)
 - [x] `contextify-query status` works with database
 - [x] Error message helpful when database not found
+
+### Plugin Installation Testing
+- [x] `contextify-query install-plugin` installs to ~/.claude/plugins/
+- [x] Plugin files include .claude-plugin/, skills/, hooks/, scripts/
+- [x] installed_plugins.json updated correctly
+- [x] `contextify-query uninstall-plugin` removes plugin
 
 ### CLI UX Testing
 - [x] `--version` flag works
 - [x] Database not found error suggests App Store installation
-- [x] Error messages are clear and actionable
+- [x] Plugin not found error suggests brew reinstall or DMG
 
 ## Full QA Procedure
 
@@ -423,13 +458,22 @@ If DMG user runs `brew install contextify-query`:
 # 2. Open Contextify, complete onboarding
 # 3. Go to Settings > CLI
 # 4. Verify: Shows Homebrew instructions, no Enable button
-# 5. Copy brew command, run in terminal
+
+# 5. Install CLI via Homebrew
 brew install PeterPym/contextify/contextify-query
-# 6. Click "Refresh Status" in app
-# 7. Verify: Shows "Installed via Homebrew (v1.0.2)"
+
+# 6. Install plugin
+contextify-query install-plugin
+
+# 7. Restart Claude Code
+
 # 8. Test CLI
-contextify-query status
-contextify-query --version
+contextify-query --version  # Should show 1.0.4
+contextify-query status     # Should show database info
+
+# 9. Verify plugin
+ls ~/.claude/plugins/cache/contextify/query/
+cat ~/.claude/plugins/installed_plugins.json | grep contextify
 ```
 
 ### Test 2: Fresh DMG Installation
