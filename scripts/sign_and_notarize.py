@@ -8,6 +8,10 @@ Usage:
     python3 scripts/sign_and_notarize.py              # Full signing + notarization
     python3 scripts/sign_and_notarize.py --no-sign     # Skip signing (DMG layout preview)
     python3 scripts/sign_and_notarize.py --no-notarize # Sign but don't notarize (faster testing)
+    python3 scripts/sign_and_notarize.py --skip-cli    # Skip CLI signing (app only)
+
+The script automatically checks if CLI sources have changed and rebuilds/signs
+the standalone CLI for Homebrew distribution when needed.
 """
 
 from __future__ import annotations
@@ -39,6 +43,9 @@ DMG_PATH = DIST / "Contextify.dmg"
 DMG_SETTINGS = ROOT / "build/assets/dmg/settings.json"
 ENTITLEMENTS = ROOT / "Contextify/Contextify.entitlements"
 NOTARY_PROFILE = "NotaryProfile"
+
+# CLI signing script
+CLI_SIGN_SCRIPT = ROOT / "scripts/sign_cli.sh"
 
 
 # --------------------------------------------------------------------------- #
@@ -140,6 +147,56 @@ def gatekeeper_warn_only(app: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# CLI Signing (Homebrew distribution)
+# --------------------------------------------------------------------------- #
+def sign_cli_for_homebrew(*, skip_notarize: bool) -> bool:
+    """
+    Build and sign the standalone CLI for Homebrew distribution.
+
+    Calls scripts/sign_cli.sh which handles:
+    - Change detection (only rebuilds if CLI sources changed)
+    - Swift build
+    - Developer ID signing
+    - Notarization (unless skipped)
+    - Packaging for Homebrew
+
+    Returns True on success, False on failure.
+    Exit codes from sign_cli.sh:
+      0  - Success
+      10 - No rebuild needed (cached build is current)
+      1-5 - Various failures (build, sign, notarize, package, prereqs)
+    """
+    if not CLI_SIGN_SCRIPT.exists():
+        print(f"⚠️  CLI sign script not found: {CLI_SIGN_SCRIPT}")
+        return False
+
+    print()
+    print("=" * 70)
+    print("🔧 CLI Signing (Homebrew Distribution)")
+    print("=" * 70)
+    print()
+
+    cmd = ["bash", str(CLI_SIGN_SCRIPT)]
+    if skip_notarize:
+        cmd.append("--no-notarize")
+
+    result = subprocess.run(cmd, cwd=str(ROOT))
+
+    if result.returncode == 0:
+        print()
+        print("✅ CLI signed successfully")
+        return True
+    elif result.returncode == 10:
+        print()
+        print("✅ CLI unchanged, using cached build")
+        return True
+    else:
+        print()
+        print(f"✖ CLI signing failed (exit code {result.returncode})")
+        return False
+
+
+# --------------------------------------------------------------------------- #
 # Staging & DMG
 # --------------------------------------------------------------------------- #
 def ditto_copy(src: Path, dst: Path) -> None:
@@ -226,6 +283,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-sign", action="store_true", help="Skip code-signing")
     ap.add_argument("--no-notarize", action="store_true", help="Skip notarization")
+    ap.add_argument("--skip-cli", action="store_true", help="Skip CLI signing for Homebrew")
     return ap.parse_args()
 
 
@@ -247,6 +305,14 @@ def main() -> None:
 
     DIST.mkdir(exist_ok=True)
 
+    # Sign CLI for Homebrew distribution (before app signing)
+    # This ensures CLI is always in sync with app releases
+    if not args.skip_cli and not args.no_sign:
+        if not sign_cli_for_homebrew(skip_notarize=args.no_notarize):
+            sys.exit("✖ CLI signing failed - aborting build")
+    elif args.skip_cli:
+        print("⏭️  Skipping CLI signing (--skip-cli)")
+
     if not args.no_sign:
         sign_binaries_inside_out(APP_BUNDLE)
         sign_outer_bundle(APP_BUNDLE)
@@ -264,6 +330,15 @@ def main() -> None:
         print("  1. Test DMG on this machine: open dist/Contextify.dmg")
         print("  2. Test on fresh Mac to verify notarization")
         print("  3. Create GitHub release with: gh release create v1.0 dist/Contextify.dmg")
+        if not args.skip_cli:
+            print()
+            print("CLI for Homebrew:")
+            cli_tarball = BUILD / "cli-release" / f"contextify-query-{os.uname().machine}.tar.gz"
+            if cli_tarball.exists():
+                print(f"  4. Upload CLI: {cli_tarball}")
+                sha_file = BUILD / "cli-release" / "sha256.txt"
+                if sha_file.exists():
+                    print(f"     SHA256: {sha_file.read_text().strip()}")
     elif not args.no_sign and args.no_notarize:
         print("✅ DMG built & signed (notarization skipped).")
         print(f"📦 {DMG_PATH}")

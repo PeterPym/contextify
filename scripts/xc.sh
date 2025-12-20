@@ -107,7 +107,7 @@ parse_arg() {
       echo "  export-pkg         Export archive as .pkg for App Store Connect" >&2
       echo "  upload             Upload .pkg to App Store Connect via altool" >&2
       echo "  reset-perms        Reset macOS privacy (TCC) permissions only" >&2
-      echo "  reset-state        Reset app state (DB, prefs, bookmarks) only" >&2
+      echo "  reset-state        Reset app state (DB, prefs, bookmarks, CLI shim, plugin)" >&2
       echo "  reset-all          Reset both permissions and state" >&2
       echo "  logs               Stream app logs in real-time" >&2
       exit 2
@@ -149,11 +149,13 @@ if [[ "$action" == "cleanrun" || "$action" == "ca" || "$action" == "da" || "$act
     echo "      • Reset app preferences and bookmarks"
   fi
   echo "      • Reset TCC permissions (folder access, etc.)"
+  echo "      • Remove CLI shim and plugin installations"
   echo "      • Launch fresh app instance"
 elif [[ "$action" == "reset-state" ]]; then
   echo "  ⚠️  This will:"
   echo "      • Wipe database (all projects/transcripts/entries)"
   echo "      • Reset app preferences and bookmarks"
+  echo "      • Remove CLI shim and plugin installations"
 elif [[ "$action" == "reset-perms" ]]; then
   echo "  ⚠️  This will:"
   echo "      • Reset TCC permissions (folder access, etc.)"
@@ -162,6 +164,7 @@ elif [[ "$action" == "reset-all" ]]; then
   echo "      • Wipe database (all projects/transcripts/entries)"
   echo "      • Reset app preferences and bookmarks"
   echo "      • Reset TCC permissions (folder access, etc.)"
+  echo "      • Remove CLI shim and plugin installations"
 fi
 echo "═══════════════════════════════════════════════════════════════"
 echo ""
@@ -329,6 +332,34 @@ reset_state_for_bid() {
   clean_caches_for_bid "$bid"
   echo "  Cleaning UserDefaults (bundle + $CONTEXTIFY_SUITE suite)..."
   clean_userdefaults_for_bid "$bid"
+
+  # Clean CLI installations (shim + plugin)
+  echo "  Cleaning CLI shim..."
+  rm -f /opt/homebrew/bin/contextify-query 2>/dev/null || true
+  rm -f /usr/local/bin/contextify-query 2>/dev/null || true
+  rm -f "$HOME/bin/contextify-query" 2>/dev/null || true
+  rm -f "$HOME/.local/bin/contextify-query" 2>/dev/null || true
+
+  echo "  Cleaning Claude Code plugin..."
+  rm -rf "$HOME/.claude/plugins/cache/contextify" 2>/dev/null || true
+
+  # Update installed_plugins_v2.json to remove our plugin entry
+  local plugins_manifest="$HOME/.claude/plugins/installed_plugins_v2.json"
+  if [[ -f "$plugins_manifest" ]]; then
+    # Use jq to remove query@contextify entry if available
+    if command -v jq >/dev/null 2>&1; then
+      local temp_manifest="/tmp/contextify-plugins-$$.json"
+      jq 'del(.plugins["query@contextify"])' "$plugins_manifest" > "$temp_manifest" 2>/dev/null || true
+      if [[ -s "$temp_manifest" ]]; then
+        mv "$temp_manifest" "$plugins_manifest"
+      else
+        rm -f "$temp_manifest"
+      fi
+    else
+      # Fallback: just remove the whole file if jq not available
+      rm -f "$plugins_manifest" 2>/dev/null || true
+    fi
+  fi
 
   echo "App state reset complete"
 }

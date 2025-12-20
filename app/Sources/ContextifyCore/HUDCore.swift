@@ -28,6 +28,10 @@ public enum HUDPreferences {
   // Lite mode info modal
   public static let liteModeInfoDismissedKey = "dev.contextify.liteModeInfoDismissed"
 
+  // CLI install location (App Store builds)
+  public static let cliInstallLocationKey = "dev.contextify.cliInstallLocation"
+  public static let cliInstallBookmarkKey = "dev.contextify.cliInstallBookmark"
+
   nonisolated(unsafe) private static let sharedDefaults: UserDefaults = {
     if let suite = UserDefaults(suiteName: "dev.contextify"), probeDefaultsWriteability(suite) {
       return suite
@@ -206,6 +210,60 @@ public enum HUDPreferences {
   /// Mark the lite mode info modal as dismissed.
   public static func setLiteModeInfoDismissed(_ dismissed: Bool) {
     sharedDefaults.set(dismissed, forKey: liteModeInfoDismissedKey)
+  }
+
+  // MARK: - CLI Install Location (App Store)
+
+  /// Gets the stored CLI install location and bookmark data.
+  /// Returns nil if no location has been set.
+  public static func getCLIInstallLocation() -> (path: String, bookmark: Data)? {
+    guard let path = sharedDefaults.string(forKey: cliInstallLocationKey),
+          let bookmark = sharedDefaults.data(forKey: cliInstallBookmarkKey) else {
+      return nil
+    }
+    return (path, bookmark)
+  }
+
+  /// Sets the CLI install location with pre-created bookmark data.
+  /// Use this when you have security-scoped access (from NSOpenPanel).
+  public static func setCLIInstallLocation(_ url: URL, bookmarkData: Data) {
+    let path = url.resolvingSymlinksInPath().path
+    sharedDefaults.set(path, forKey: cliInstallLocationKey)
+    sharedDefaults.set(bookmarkData, forKey: cliInstallBookmarkKey)
+  }
+
+  /// Resolves the stored CLI install bookmark to a URL.
+  /// Returns nil if no bookmark exists or resolution fails.
+  public static func resolveCLIInstallBookmark() -> URL? {
+    guard let data = sharedDefaults.data(forKey: cliInstallBookmarkKey) else { return nil }
+
+    var isStale = false
+    do {
+      let url = try URL(
+        resolvingBookmarkData: data,
+        options: .withSecurityScope,
+        relativeTo: nil,
+        bookmarkDataIsStale: &isStale
+      )
+
+      if isStale {
+        // Bookmark is stale - clear it so user can re-select
+        clearCLIInstallLocation()
+        return nil
+      }
+
+      return url
+    } catch {
+      // Resolution failed - clear stored data
+      clearCLIInstallLocation()
+      return nil
+    }
+  }
+
+  /// Clears the stored CLI install location and bookmark.
+  public static func clearCLIInstallLocation() {
+    sharedDefaults.removeObject(forKey: cliInstallLocationKey)
+    sharedDefaults.removeObject(forKey: cliInstallBookmarkKey)
   }
 
   private static func storeDatabaseURL(_ url: URL) {

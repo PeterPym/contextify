@@ -11,25 +11,72 @@ private let log = Logger(subsystem: "dev.contextify", category: "Settings")
 struct SettingsView: View {
   @ObservedObject var folderAccessController: FolderAccessController
 
+  private static let selectedTabOverrideKey = "Contextify.Settings.SelectedTabOverride"
+  private static let selectedTabKey = "Contextify.Settings.SelectedTab"
+
+  @State private var selectedTab: String = "database"
+
+  private var overriddenSelectedTab: String? {
+    ContextifyDefaults.shared.string(forKey: Self.selectedTabOverrideKey)
+  }
+
   var body: some View {
     if Sandbox.isSandboxed {
       // App Store build: show both Database and Permissions tabs
-      TabView {
+      TabView(selection: $selectedTab) {
         DatabaseSettingsTab()
           .tabItem {
             Label("Database", systemImage: "cylinder")
           }
+          .tag("database")
 
         PermissionsSettingsTab(folderAccessController: folderAccessController)
           .tabItem {
             Label("Permissions", systemImage: "folder.badge.plus")
           }
+          .tag("permissions")
+
+        CLISkillsSettingsTab()
+          .tabItem {
+            Label("CLI", systemImage: "terminal")
+          }
+          .tag("cli")
       }
-      .frame(width: 450)
+      .onAppear {
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
+        if let overriddenSelectedTab {
+          selectedTab = overriddenSelectedTab
+        }
+      }
+      .onChange(of: selectedTab) { _, newValue in
+        ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
+      }
+      .frame(width: 520, height: 520)
     } else {
-      // DMG build: only Database tab (no permissions needed)
-      DatabaseSettingsTab()
-        .frame(width: 450)
+      // DMG build: Database + CLI (no permissions needed)
+      TabView(selection: $selectedTab) {
+        DatabaseSettingsTab()
+          .tabItem {
+            Label("Database", systemImage: "cylinder")
+          }
+          .tag("database")
+
+        CLISkillsSettingsTab()
+          .tabItem {
+            Label("CLI", systemImage: "terminal")
+          }
+          .tag("cli")
+      }
+      .onAppear {
+        selectedTab = ContextifyDefaults.shared.string(forKey: Self.selectedTabKey) ?? "database"
+        if let overriddenSelectedTab {
+          selectedTab = overriddenSelectedTab
+        }
+      }
+      .onChange(of: selectedTab) { _, newValue in
+        ContextifyDefaults.shared.set(newValue, forKey: Self.selectedTabKey)
+      }
+      .frame(width: 520, height: 330)
     }
   }
 }
@@ -445,18 +492,18 @@ struct PermissionsSettingsTab: View {
 
   var body: some View {
     VStack(spacing: 24) {
-      VStack(spacing: 8) {
+      VStack(alignment: .leading, spacing: 8) {
         Text("Transcript Sources")
           .font(.headline)
 
         Text("Grant access to folders containing Claude Code and Codex transcripts.")
           .font(.body)
           .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
       }
       .padding(.top, 8)
+      .frame(maxWidth: .infinity, alignment: .leading)
 
-      VStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 12) {
         ForEach(SourceID.allCases, id: \.self) { source in
           SourceAuthorizationRow(
             source: source,

@@ -525,15 +525,15 @@ enum DatabaseSchema {
         return
       }
 
-      let projectIds = containerProjects.map { $0["id"] as! String }
-      logger.info("[MIGRATION-v26] Removing \(containerProjects.count, privacy: .public) sandbox container path projects")
-
-      for row in containerProjects {
-        let projectId = row["id"] as! String
-        let rootPath = row["root_path"] as! String
-        let name = row["name"] as! String
-        logger.info("[MIGRATION-v26]   • \(name, privacy: .public) at \(rootPath, privacy: .public)")
-      }
+	      let projectIds = containerProjects.map { $0["id"] as! String }
+	      logger.info("[MIGRATION-v26] Removing \(containerProjects.count, privacy: .public) sandbox container path projects")
+	
+	      for row in containerProjects {
+	        let projectId = row["id"] as! String
+	        let rootPath = row["root_path"] as! String
+	        let name = row["name"] as! String
+	        logger.info("[MIGRATION-v26]   • \(name, privacy: .public) (\(projectId, privacy: .public)) at \(rootPath, privacy: .public)")
+	      }
 
       // Cascade delete: transcripts, entries, preflight cache
       // Foreign key constraints will automatically delete related records

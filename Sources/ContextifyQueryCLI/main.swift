@@ -3,8 +3,12 @@ import Darwin
 import Foundation
 import GRDB
 
-private let responseSchemaVersion = 1
-private let maxContextWindowCap = 2000
+// MARK: - Response Types
+
+private enum ResponseConstants {
+  static let schemaVersion = 1
+  static let maxContextWindowCap = 2000
+}
 
 private struct SuccessEnvelope<T: Encodable>: Encodable {
   let type: String
@@ -57,6 +61,8 @@ struct ContextifyQueryCLI {
     case summaries
     case stats
     case version
+    case installPlugin = "install-plugin"
+    case uninstallPlugin = "uninstall-plugin"
   }
 
   struct Options {
@@ -103,11 +109,20 @@ struct ContextifyQueryCLI {
     }
   }
 
+  static let cliVersion = "1.0.4"
+
   static func main() {
-    let jsonWanted = CommandLine.arguments.contains("--json")
+    // Handle --version early (before any other parsing)
+    let allArgs = CommandLine.arguments
+    if allArgs.contains("--version") || allArgs.contains("-v") {
+      print("contextify-query \(cliVersion)")
+      exit(0)
+    }
+
+    let jsonWanted = allArgs.contains("--json")
     do {
       var options = Options()
-      let args = Array(CommandLine.arguments.dropFirst())
+      let args = Array(allArgs.dropFirst())
 
       // Parse global flags anywhere (before/after the command).
       var remaining: [String] = []
@@ -185,8 +200,8 @@ struct ContextifyQueryCLI {
           guard index < args.count, let n = Int(args[index]), n > 0 else {
             throw CLIError(code: "invalidArgs", message: "Missing/invalid number after --max-window", exitCode: .invalidArgs)
           }
-          guard n <= maxContextWindowCap else {
-            throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
+          guard n <= ResponseConstants.maxContextWindowCap else {
+            throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(ResponseConstants.maxContextWindowCap)", exitCode: .invalidArgs)
           }
           options.maxWindow = n
         case "--intent":
@@ -248,6 +263,21 @@ struct ContextifyQueryCLI {
       }
       let commandArgs = Array(remaining.dropFirst())
 
+      // Commands that don't need database connection
+      switch command {
+      case .installPlugin:
+        try runInstallPlugin(options: options)
+        return
+
+      case .uninstallPlugin:
+        try runUninstallPlugin(options: options)
+        return
+
+      default:
+        break
+      }
+
+      // All other commands need database
       let dbURL = try resolveDatabaseURL(options: options)
       let service = try ContextifyQueryService(databaseURL: dbURL)
       let versionInfo = try service.versionInfo()
@@ -339,8 +369,8 @@ struct ContextifyQueryCLI {
         let beforeCount = options.before ?? 10
         let afterCount = options.after ?? 20
         let maxWindow = options.maxWindow ?? 200
-        guard maxWindow <= maxContextWindowCap else {
-          throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(maxContextWindowCap)", exitCode: .invalidArgs)
+        guard maxWindow <= ResponseConstants.maxContextWindowCap else {
+          throw CLIError(code: "invalidArgs", message: "--max-window must be <= \(ResponseConstants.maxContextWindowCap)", exitCode: .invalidArgs)
         }
         guard beforeCount + afterCount <= maxWindow else {
           throw CLIError(code: "invalidArgs", message: "--before + --after must be <= --max-window (\(maxWindow))", exitCode: .invalidArgs)
@@ -403,6 +433,10 @@ struct ContextifyQueryCLI {
         try printResponse(type: "version", data: versionInfo, json: options.jsonOutput) {
           printVersionInfo(versionInfo)
         }
+
+      case .installPlugin, .uninstallPlugin:
+        // Handled above (before database connection)
+        fatalError("Unreachable")
       }
     } catch let cliError as CLIError {
       emitError(cliError, json: jsonWanted)
@@ -486,7 +520,19 @@ struct ContextifyQueryCLI {
 
     throw CLIError(
       code: "dbNotFound",
-      message: "Open Contextify once to initialize discovery, or pass --db-path/--db-dir.",
+      message: """
+        Contextify database not found.
+
+        If Contextify is installed:
+          Open Contextify once to initialize the database.
+
+        If Contextify is not installed:
+          Install from the Mac App Store: https://apps.apple.com/app/contextify
+
+        Or specify the database location:
+          --db-path /path/to/contextify.db
+          --db-dir  /path/to/directory/containing/db
+        """,
       exitCode: .dbNotFound
     )
   }
@@ -594,7 +640,7 @@ struct ContextifyQueryCLI {
     if json {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = SuccessEnvelope(type: type, schemaVersion: responseSchemaVersion, data: data, meta: nil)
+      let payload = SuccessEnvelope(type: type, schemaVersion: ResponseConstants.schemaVersion, data: data, meta: nil)
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -642,6 +688,8 @@ struct ContextifyQueryCLI {
         summaries            Recent transcript summaries
         stats                Project statistics
         version              Database version info
+        install-plugin       Install Claude Code plugin (enables skills)
+        uninstall-plugin     Remove Claude Code plugin
 
       Feedback commands:
         feedback "<summary>"
@@ -1382,4 +1430,192 @@ private func parseMissingTableName(message: String) -> String? {
     return String(table[table.index(after: dot)...])
   }
   return table
+}
+
+// MARK: - Plugin Installation
+
+private let pluginVersion = ContextifyQueryCLI.cliVersion
+private let pluginName = "query"
+private let pluginNamespace = "contextify"
+private let pluginIdentifier = "\(pluginName)@\(pluginNamespace)"
+
+private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let pluginsDir = home.appendingPathComponent(".claude/plugins")
+  let cacheDir = pluginsDir.appendingPathComponent("cache/\(pluginNamespace)/\(pluginName)/\(pluginVersion)")
+  let manifestPath = pluginsDir.appendingPathComponent("installed_plugins.json")
+
+  // Find plugin source - check multiple locations
+  let pluginSource = try findPluginSource()
+
+  // Create plugins directory structure
+  try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+
+  // Copy plugin files
+  let sourceContents = try FileManager.default.contentsOfDirectory(at: pluginSource, includingPropertiesForKeys: nil)
+  for item in sourceContents {
+    let destPath = cacheDir.appendingPathComponent(item.lastPathComponent)
+    if FileManager.default.fileExists(atPath: destPath.path) {
+      try FileManager.default.removeItem(at: destPath)
+    }
+    try FileManager.default.copyItem(at: item, to: destPath)
+  }
+
+  // Update manifest
+  try updatePluginManifest(manifestPath: manifestPath, installPath: cacheDir.path, version: pluginVersion)
+
+  let payload = PluginInstallPayload(
+    action: "installed",
+    identifier: pluginIdentifier,
+    version: pluginVersion,
+    path: cacheDir.path
+  )
+
+  try ContextifyQueryCLI.printResponse(type: "pluginInstalled", data: payload, json: options.jsonOutput) {
+    print("Installed \(pluginIdentifier) v\(pluginVersion)")
+    print("  Path: \(cacheDir.path)")
+    print("")
+    print("Restart Claude Code to activate the plugin.")
+  }
+}
+
+private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
+  let home = FileManager.default.homeDirectoryForCurrentUser
+  let pluginsDir = home.appendingPathComponent(".claude/plugins")
+  let cacheDir = pluginsDir.appendingPathComponent("cache/\(pluginNamespace)")
+  let manifestPath = pluginsDir.appendingPathComponent("installed_plugins.json")
+
+  // Remove plugin cache directory
+  if FileManager.default.fileExists(atPath: cacheDir.path) {
+    try FileManager.default.removeItem(at: cacheDir)
+  }
+
+  // Update manifest to remove our entry
+  try removeFromPluginManifest(manifestPath: manifestPath)
+
+  let payload = PluginInstallPayload(
+    action: "uninstalled",
+    identifier: pluginIdentifier,
+    version: pluginVersion,
+    path: cacheDir.path
+  )
+
+  try ContextifyQueryCLI.printResponse(type: "pluginUninstalled", data: payload, json: options.jsonOutput) {
+    print("Uninstalled \(pluginIdentifier)")
+    print("")
+    print("Restart Claude Code to complete removal.")
+  }
+}
+
+private func findPluginSource() throws -> URL {
+  // 1. Check if running from app bundle (DMG build)
+  if let bundleURL = Bundle.main.resourceURL {
+    let bundledPlugin = bundleURL.appendingPathComponent("contextify-query/claude-plugin")
+    if FileManager.default.fileExists(atPath: bundledPlugin.path) {
+      return bundledPlugin
+    }
+  }
+
+  // 2. Check alongside the executable (Homebrew install - tarball extraction)
+  let executablePath = CommandLine.arguments[0]
+  let executableURL = URL(fileURLWithPath: executablePath)
+  let execDir = executableURL.deletingLastPathComponent()
+  let siblingPlugin = execDir.appendingPathComponent("claude-plugin")
+  if FileManager.default.fileExists(atPath: siblingPlugin.path) {
+    return siblingPlugin
+  }
+
+  // 3. Resolve symlinks and check Homebrew Cellar structure
+  // /opt/homebrew/bin/contextify-query -> ../Cellar/contextify-query/1.0.3/bin/contextify-query
+  // Plugin at: /opt/homebrew/Cellar/contextify-query/1.0.3/share/claude-plugin/
+  let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
+  let cellarBin = resolvedExec.deletingLastPathComponent()  // .../1.0.3/bin/
+  let cellarRoot = cellarBin.deletingLastPathComponent()    // .../1.0.3/
+  let cellarShare = cellarRoot.appendingPathComponent("share/claude-plugin")
+  if FileManager.default.fileExists(atPath: cellarShare.path) {
+    return cellarShare
+  }
+
+  throw CLIError(
+    code: "pluginNotFound",
+    message: """
+      Plugin files not found.
+
+      If installed via Homebrew:
+        brew reinstall contextify-query
+
+      If using the DMG version:
+        Open Contextify.app → Settings → CLI → Enable
+      """,
+    exitCode: .unknown
+  )
+}
+
+private struct PluginManifest: Codable {
+  var version: Int
+  var plugins: [String: [PluginEntry]]
+
+  struct PluginEntry: Codable {
+    var scope: String
+    var installPath: String
+    var version: String
+    var installedAt: String
+    var lastUpdated: String
+    var isLocal: Bool
+  }
+}
+
+private func updatePluginManifest(manifestPath: URL, installPath: String, version: String) throws {
+  var manifest: PluginManifest
+
+  if FileManager.default.fileExists(atPath: manifestPath.path) {
+    let data = try Data(contentsOf: manifestPath)
+    manifest = try JSONDecoder().decode(PluginManifest.self, from: data)
+  } else {
+    manifest = PluginManifest(version: 2, plugins: [:])
+  }
+
+  let now = ISO8601DateFormatter().string(from: Date())
+  let entry = PluginManifest.PluginEntry(
+    scope: "user",
+    installPath: installPath,
+    version: version,
+    installedAt: manifest.plugins[pluginIdentifier]?.first?.installedAt ?? now,
+    lastUpdated: now,
+    isLocal: true
+  )
+
+  manifest.plugins[pluginIdentifier] = [entry]
+
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+  let data = try encoder.encode(manifest)
+
+  // Ensure parent directory exists
+  try FileManager.default.createDirectory(
+    at: manifestPath.deletingLastPathComponent(),
+    withIntermediateDirectories: true
+  )
+  try data.write(to: manifestPath, options: .atomic)
+}
+
+private func removeFromPluginManifest(manifestPath: URL) throws {
+  guard FileManager.default.fileExists(atPath: manifestPath.path) else { return }
+
+  let data = try Data(contentsOf: manifestPath)
+  var manifest = try JSONDecoder().decode(PluginManifest.self, from: data)
+
+  manifest.plugins.removeValue(forKey: pluginIdentifier)
+
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+  let newData = try encoder.encode(manifest)
+  try newData.write(to: manifestPath, options: .atomic)
+}
+
+private struct PluginInstallPayload: Encodable {
+  let action: String
+  let identifier: String
+  let version: String
+  let path: String
 }

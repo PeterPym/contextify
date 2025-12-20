@@ -54,6 +54,8 @@ declare -a ALL_TESTS=(
 
   # Phase 6: Feature tests
   "QA-12-git-branch-display.sh:0"
+  "QA-13-cli-install-dmg.sh:0"
+  "QA-15-query-bundle-integrity.sh:0"
 )
 
 # Track results

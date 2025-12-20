@@ -23,8 +23,19 @@ log.debug("[BRANCH-VALIDATE] ✓ Git and transcript branches match: \(branch)")
 - Include relevant data in the message (counts, IDs, status)
 - E2E tests use `assert_log_contains "[TAG]"` to verify behavior
 - Tags at `.info` are always captured; `.debug` requires `--level debug` in log stream
+- For user-driven flows, prefer paired markers like `[TAG-START]` and `[TAG-DONE]` (plus a state marker like `[TAB-OPEN]`) so tests can wait on readiness and then assert completion.
 
 See `scripts/qa/README.md` for E2E assertion patterns and `scripts/qa/lib/assertions.sh` for available assertions.
+
+### E2E-Friendly UI Patterns
+
+E2E tests validate user flows primarily via log tags, but they still need a reliable way to trigger UI actions.
+
+**Guidelines:**
+- Prefer using `.keyboardShortcut(.defaultAction)` for the primary button in a flow so tests can use `press_return` (see onboarding tests in `scripts/qa/tests/QA-01c-launch-appstore-clean.sh`).
+- Use stable, human-visible button titles for user-facing actions; tests may use them as a fallback when keyboard shortcuts are insufficient.
+- When SwiftUI accessibility surfaces are nested (buttons not directly clickable by name), E2E scripts should prefer keyboard shortcuts and log-tag assertions over window counting or brittle UI tree traversal.
+- If an action is intentionally “user must choose” (e.g. an `NSOpenPanel` location decision), tests should treat that as a deliberate manual step or use a narrowly-scoped test hook (e.g. a UserDefaults override) that is clearly labeled as QA-only.
 
 ### Pipeline telemetry tags
 

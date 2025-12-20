@@ -21,6 +21,12 @@ This directory contains design documentation for:
 - Dark mode support
 - Implementation references (TimelineEntryRow.swift:192-206)
 
+### [Apple HIG Reference Snapshots](references/apple-hig/README.md)
+**Topics:** Local copies of Apple Human Interface Guidelines pages used in design reviews
+- Settings window conventions and pane behavior
+- Buttons, text views, and copyable snippets
+- Grouping and writing guidance
+
 ### [Provider Iconography](providers.md)
 **Topics:** AI provider visual identity
 - Claude Code and Codex CLI logomarks

@@ -74,6 +74,7 @@ build/logs/
 build/ResultBundles/
 build/demo-videos/
 build/db-backups/
+build/cli-release/
 
 # App Store assets (ignore all screenshots except releases/)
 appstore-metadata/screenshots/*.png

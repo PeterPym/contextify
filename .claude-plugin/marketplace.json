@@ -1,0 +1,16 @@
+{
+  "name": "contextify",
+  "metadata": {
+    "description": "Contextify plugins (starting with query/reinjection skills via contextify-query)."
+  },
+  "owner": {
+    "name": "Contextify"
+  },
+  "plugins": [
+    {
+      "name": "query",
+      "source": "./contextify-query/claude-plugin",
+      "description": "Contextify query + reinjection skills (requires Contextify + contextify-query CLI)"
+    }
+  ]
+}

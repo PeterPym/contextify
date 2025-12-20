@@ -63,6 +63,8 @@ This test suite validates critical user flows through:
 | QA-10 | Quick Search | DMG build, searchable content |
 | QA-11 | Deep Search Window | DMG build |
 | **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
+| QA-13 | CLI Install/Repair/Uninstall (DMG) | DMG build, Accessibility |
+| QA-15 | contextify-query bundle integrity | DMG build (App Store optional) |
 
 ## Test Output
 
@@ -130,6 +132,18 @@ QA_DEBUG=1 ./scripts/qa/tests/QA-03-codex-discovery.sh
 | `QA_FIXTURE_MODE` | 0 | Set to 1 to use fixtures instead of live CLIs |
 | `QA_FIXTURE_DIR` | $REPO_ROOT/scripts/qa/fixtures | Fixture directory |
 | `TEST_PROJECT` | /tmp/contextify-qa-test | Test project path (cwd written into fixtures) |
+
+### QA-only UserDefaults overrides
+
+Some E2E tests use narrowly-scoped UserDefaults overrides to avoid brittle UI traversal and privileged filesystem writes:
+
+- `dev.contextify Contextify.QueryCLI.DMGInstallDirOverride` → forces DMG CLI shim install into a deterministic directory (e.g. `/tmp/contextify-qa-bin`) for unattended tests.
+- `dev.contextify Contextify.Settings.SelectedTabOverride` → forces Settings to open on a specific tab (e.g. `cli`) for unattended tests.
+
+### Troubleshooting
+
+- Prefer `/usr/bin/log` instead of `log` in scripts/notes (some shells define `log` as a builtin).
+- If a PATH shim runs the “wrong” installed app on a dev machine with multiple builds, prefer forcing the target bundle with `CONTEXTIFY_QUERY_APP_PATH=/path/to/Contextify.app` for diagnosis.
 
 ## Fixture Mode
 

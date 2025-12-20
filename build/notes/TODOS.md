@@ -651,7 +651,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 
 ---
 
-## Context Re-injection (1 item)
+## Context Re-injection (3 items)
 
 **Status:** Phase 1 complete; Phase 2 queued
 **Priority:** P1 (enables AI workflow continuity)
@@ -671,6 +671,14 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
    - DMG: install/symlink into a PATH directory with explicit user consent.
    - App Store: bundle CLI and support user-driven install to a user-writable directory, or document absolute-path invocation.
 
+**Follow-ons (tracked):**
+- `#CONTEXTIFY-QUERY-REPORTS` - add `contextify-query report ...` aggregations (demos + query planning): `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+- `#QA-14-APPSTORE-CLI-REPAIR` - add App Store E2E coverage for CLI repair flow: `build/notes/todo-support/QA-14-appstore-cli-repair-e2e.md`
+- `#CONTEXTIFY-QUERY-APPSTORE-CLI` - resolve standalone execution model for embedded CLI in App Store builds (current crash): `build/notes/todo-support/CONTEXTIFY-QUERY-APPSTORE-CLI-investigation.md`
+
+- [ ] #QA-14-APPSTORE-CLI-REPAIR: Add E2E test for App Store “Repair (Saved Folder)” CLI install flow (bookmark seeding + log-tag assertions)
+- [ ] #CONTEXTIFY-QUERY-APPSTORE-CLI: Decide/fix whether `contextify-query` embedded in App Store builds is expected to run standalone, and if yes, make it stable
+
 **Research Docs:**
 - `build/notes/todo-support/CONTEXT-REINJECTION-synthesized-architecture.md` - Architecture recommendation
 - `build/notes/todo-support/CONTEXT-REINJECTION-claude-code-research-report.md` - Claude Code capabilities
@@ -679,6 +687,7 @@ GitHub Actions workflow (https://github.com/banagale/contextify/actions/workflow
 - `build/notes/todo-support/CONTEXT-REINJECTION-cli-research-prompt.md` - CLI research prompt
 
 **Spec:** `build/notes/todo-support/CONTEXT-REINJECTION-spec.md`
+**Phase 2:** `build/notes/todo-support/CONTEXT-REINJECTION-phase2-spec.md`
 
 **Related:** #CONVO-SEARCH spec section 5.4 (surrounding context query), #RESUME-FORK (resume/fork from search)
 
@@ -766,7 +775,76 @@ When user says "use contextify to look through our convo history", agent doesn't
 
 ---
 
+## Settings Window Width - App Store Build (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (App Store build quality issue)
+**Effort:** 1-2 hours
+**Discovered:** During App Store QA testing (2025-12-15)
+
+- [ ] #SETTINGS-APPSTORE-WIDTH: Fix Settings window width in App Store build to match DMG version
+
+**Problem:**
+Settings window is narrower in App Store builds compared to DMG builds, causing layout issues:
+- Database tab shows text wrapping/truncation (multi-machine warning)
+- Overall cramped appearance
+- Likely caused by different window restoration behavior or frame constraints between sandboxed/unsandboxed builds
+
+**Impact:**
+- Functional but looks unprofessional
+- May confuse users about database status
+- Affects perceived quality of App Store version
+
+**Investigation needed:**
+- Check window frame constraints in Settings window definition
+- Compare window restoration code between DMG/App Store entitlements
+- Verify if sandbox affects window sizing APIs
+
+**Location:**
+- Settings window definition (likely `Contextify/Contextify/Settings/SettingsView.swift` or similar)
+
+---
+
+## Settings Window UX Modernization (1 item)
+
+**Status:** Not Started
+**Priority:** P1 (polish - affects perceived quality)
+**Effort:** 4-10 hours
+**Reference:** `build/notes/todo-support/SETTINGS-UX-MODERNIZATION.md`
+
+- [ ] #SETTINGS-UX-MODERNIZATION: Modernize Settings window navigation and pane layout to match macOS conventions (sidebar/toolbar norms, grid alignment, padding/spacing) and avoid "web/mobile-in-a-window" feel.
+
+**Problem:**
+Several settings panes (including the CLI tab) are functionally correct but visually read as "unstyled" and can feel cramped or misaligned, undermining trust in the app.
+
+**Acceptance Criteria:**
+- [ ] Settings navigation uses a macOS-idiomatic pattern (pinned down in the support doc)
+- [ ] Pane content uses consistent margins/padding and aligned control columns
+- [ ] Actions (buttons) are visually distinct from state (toggles/labels)
+- [ ] Key panes (Database, Permissions, CLI) pass a “quick vibe check” without requiring scrolling to find primary actions
+
+---
+
 # P2 (Medium Priority)
+
+---
+
+## Contextify Query Reports (1 item)
+
+**Status:** Not Started
+**Priority:** P2 (demo + workflow acceleration)
+**Effort:** 3-6 hours
+**Reference:** `build/notes/todo-support/CONTEXT-REINJECTION-report-aggregations.md`
+
+- [ ] #CONTEXTIFY-QUERY-REPORTS: Add `contextify-query report ...` aggregations to support RAG query planning and “killer demo” outputs (activity histograms, decision index, recurring themes).
+
+**Problem:**
+Reinjection workflows benefit from lightweight aggregations that guide better searches (time windows, project scope, recurring topics) and enable high-signal demos beyond raw text search.
+
+**Notes:**
+- Keep outputs deterministic and read-only.
+- Prefer “RAG-adjacent” reports (decision points, revisited topics) over vanity metrics.
+- Consider a telemetry/trace loop to learn how skills actually construct queries before expanding the report set.
 
 ---
 
@@ -2421,21 +2499,31 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 - Extend parser for additional debugging data
 - **Effort:** 2-3 hours each
 
-## Code Quality (1 item)
+## Code Quality (2 items)
 
 **Status:** Not Started
 **Priority:** P3 (low priority refactoring)
-**Effort:** 1-2 hours
+**Effort:** 2-3 hours
 
 - [ ] #91: Remove hardcoded magic number 25 for timeline entry limits
+- [ ] #DATABASE-MULTI-MACHINE-WARNING: Fix duplicate machine names in Database settings multi-machine access warning
 
-**Details:**
+**#91 Details:**
 - Currently hardcoded in 3 places:
   - `ConversationMonitor.swift:185` - `visibleEntryLimit = 25`
   - `TimelineModels.swift:252` - `maxEntries: Int = 25`
   - `TranscriptMetadataFormatters.swift:21` - `fullStrategyLimit = 25`
 - Should be centralized constant or user preference
 - Low priority: current value works fine, just poor code hygiene
+
+**#DATABASE-MULTI-MACHINE-WARNING Details:**
+- **Issue:** Multi-machine database access warning shows duplicate machine names
+- **Observed behavior:** Settings > Database tab shows "Rob's MacBook Air" repeated ~25+ times
+- **Expected behavior:** Should deduplicate machine names or show unique access count
+- **Screenshot:** Available in session /tmp/transcript-queue-monitor-20251215-222104.log
+- **Impact:** Low - warning is functional but ugly/confusing
+- **Effort:** ~1 hour (find deduplication logic, add Set or grouping)
+- **Location:** Likely in database settings view or multi-machine conflict detection code
 
 ---
 

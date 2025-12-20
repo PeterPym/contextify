@@ -316,6 +316,9 @@ struct ContextifyApp: App {
       // PHASE 2: Start legacy coordinators (for now - will migrate later)
       await StartupCoordinator.shared.start()
       startupLog.info("✅ Legacy coordinator started (StartupCoordinator) - ProjectSwitcherState starts during project initialization")
+
+      // PHASE 3: Check for CLI upgrades (background, non-blocking)
+      await CLICoordinator.shared.checkAndUpgrade()
     }
     #endif
 
