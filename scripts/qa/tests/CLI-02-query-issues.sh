@@ -31,9 +31,11 @@ source "$SCRIPT_DIR/../lib/assertions.sh"
 
 TEST_ID="CLI-02"
 TEST_NAME="Query Issues"
+CLI_BIN="${CONTEXTIFY_QUERY_BIN:-contextify-query}"
 
 CLI_DAYS="${CLI_DAYS:-365}"
 CLI_LIMIT="${CLI_LIMIT:-5}"
+CLI_SEARCH_TERM="${CLI_SEARCH_TERM:-}"
 
 LAST_STATUS=0
 
@@ -58,9 +60,57 @@ contains_error_text() {
   echo "$1" | grep -qiE "error|invalid|unsupported|parse"
 }
 
+collect_terms() {
+  local activity
+  set +e
+  activity=$("$CLI_BIN" activity --days "$CLI_DAYS" --limit 5 --json 2>/dev/null)
+  set -e
+
+  if [ -z "$activity" ]; then
+    return 0
+  fi
+
+  echo "$activity" | jq -r '.data[].content // empty' 2>/dev/null | \
+    tr -cs '[:alnum:]' '\n' | \
+    awk 'length($0) >= 4 { print tolower($0) }' | \
+    head -n 10
+}
+
+resolve_search_term() {
+  if [ -n "$CLI_SEARCH_TERM" ]; then
+    echo "$CLI_SEARCH_TERM"
+    return 0
+  fi
+
+  local term
+  term=$(collect_terms | head -n 1)
+  if [ -z "$term" ]; then
+    term="contextify"
+  fi
+  echo "$term"
+}
+
+resolve_or_terms() {
+  local terms
+  terms=($(collect_terms | head -n 4))
+  if [ "${#terms[@]}" -lt 4 ]; then
+    terms=("contextify" "search" "history" "query")
+  fi
+  echo "${terms[@]}"
+}
+
 check_prerequisites() {
-  if ! assert_command_exists "contextify-query" "contextify-query CLI available"; then
-    exit 1
+  if [[ "$CLI_BIN" == /* ]]; then
+    if [ ! -x "$CLI_BIN" ]; then
+      log_error "ASSERTION FAILED: contextify-query CLI not found at $CLI_BIN"
+      TEST_FAILED=1
+      exit 1
+    fi
+    log_success "✓ contextify-query CLI available ($CLI_BIN)"
+  else
+    if ! assert_command_exists "$CLI_BIN" "contextify-query CLI available"; then
+      exit 1
+    fi
   fi
   if ! assert_command_exists "jq" "jq available"; then
     exit 1
@@ -69,7 +119,7 @@ check_prerequisites() {
 
 test_issue_1_regex_or_silent_failure() {
   local result
-  result=$(run_command contextify-query search "thank you|thanks|nice" --days "$CLI_DAYS" --limit "$CLI_LIMIT" --json)
+  result=$(run_command "$CLI_BIN" search "thank you|thanks|nice" --days "$CLI_DAYS" --limit "$CLI_LIMIT" --json)
 
   if contains_error_text "$result"; then
     log_success "Issue 1 fixed: invalid syntax returns error"
@@ -97,7 +147,9 @@ test_issue_1_regex_or_silent_failure() {
 
 test_issue_2_kinds_filter_broken() {
   local result
-  result=$(run_command contextify-query search "thanks" --days "$CLI_DAYS" --limit 20 --kinds user --json)
+  local term
+  term=$(resolve_search_term)
+  result=$(run_command "$CLI_BIN" search "$term" --days "$CLI_DAYS" --limit 20 --kinds user --json)
 
   if ! json_valid "$result"; then
     log_error "ISSUE 2 PRESENT: Invalid JSON response for --kinds"
@@ -126,7 +178,7 @@ test_issue_2_kinds_filter_broken() {
 
 test_issue_3_fts5_or_documented() {
   local help_text
-  help_text=$(run_command contextify-query --help)
+  help_text=$(run_command "$CLI_BIN" --help)
 
   if echo "$help_text" | grep -qiE "FTS5|query syntax|OR"; then
     log_success "Issue 3 fixed: FTS5 OR documented in help"
@@ -140,7 +192,9 @@ test_issue_3_fts5_or_documented() {
 
 test_issue_4_fts5_or_four_terms() {
   local result
-  result=$(run_command contextify-query search "the OR and OR to OR of" --days "$CLI_DAYS" --limit "$CLI_LIMIT" --json)
+  local terms
+  terms=($(resolve_or_terms))
+  result=$(run_command "$CLI_BIN" search "${terms[0]} OR ${terms[1]} OR ${terms[2]} OR ${terms[3]}" --days "$CLI_DAYS" --limit "$CLI_LIMIT" --json)
 
   if contains_error_text "$result"; then
     log_success "Issue 4 fixed: 4-term OR returns error"
@@ -156,7 +210,7 @@ test_issue_4_fts5_or_four_terms() {
     fi
     if [ "$count" = "0" ]; then
       local single
-      single=$(run_command contextify-query search "the" --days "$CLI_DAYS" --limit 1 --json)
+      single=$(run_command "$CLI_BIN" search "${terms[0]}" --days "$CLI_DAYS" --limit 1 --json)
       if json_valid "$single"; then
         local single_count
         single_count=$(json_length "$single")
@@ -178,7 +232,9 @@ test_issue_4_fts5_or_four_terms() {
 
 test_issue_5_context_output_structure() {
   local search
-  search=$(run_command contextify-query search "the" --days "$CLI_DAYS" --limit 1 --json)
+  local term
+  term=$(resolve_search_term)
+  search=$(run_command "$CLI_BIN" search "$term" --days "$CLI_DAYS" --limit 1 --json)
 
   if ! json_valid "$search"; then
     log_error "ISSUE 5 PRESENT: Invalid JSON response for context search"
@@ -194,7 +250,7 @@ test_issue_5_context_output_structure() {
   fi
 
   local result
-  result=$(run_command contextify-query context "$entry_id" --before 2 --after 2 --json)
+  result=$(run_command "$CLI_BIN" context "$entry_id" --before 2 --after 2 --json)
   if ! json_valid "$result"; then
     log_error "ISSUE 5 PRESENT: Context response is not valid JSON"
     TEST_FAILED=1
@@ -202,7 +258,7 @@ test_issue_5_context_output_structure() {
   fi
 
   local help_text
-  help_text=$(run_command contextify-query context --help)
+  help_text=$(run_command "$CLI_BIN" context --help)
 
   if echo "$result" | jq -e '.data | type == "array"' >/dev/null 2>&1; then
     log_success "Issue 5 fixed: context output is a flat array"
@@ -221,7 +277,9 @@ test_issue_5_context_output_structure() {
 
 test_issue_6_no_limit_metadata() {
   local result
-  result=$(run_command contextify-query search "the" --days "$CLI_DAYS" --limit 10 --json)
+  local term
+  term=$(resolve_search_term)
+  result=$(run_command "$CLI_BIN" search "$term" --days "$CLI_DAYS" --limit 10 --json)
 
   if ! json_valid "$result"; then
     log_error "ISSUE 6 PRESENT: Invalid JSON response for limit metadata check"
@@ -244,10 +302,10 @@ test_issue_6_no_limit_metadata() {
 
 test_issue_8_empty_vs_error() {
   local valid_empty
-  valid_empty=$(run_command contextify-query search "xyznonexistent123456789" --days 1 --limit "$CLI_LIMIT" --json)
+  valid_empty=$(run_command "$CLI_BIN" search "xyznonexistent123456789" --days 1 --limit "$CLI_LIMIT" --json)
 
   local invalid
-  invalid=$(run_command contextify-query search "a OR b OR c OR d" --days 1 --limit "$CLI_LIMIT" --json)
+  invalid=$(run_command "$CLI_BIN" search "a OR b OR c OR d" --days 1 --limit "$CLI_LIMIT" --json)
 
   local valid_is_json=0
   local invalid_is_json=0
@@ -300,10 +358,10 @@ first_object_keys() {
 
 test_issue_9_field_consistency() {
   local transcripts
-  transcripts=$(run_command contextify-query transcripts --project . --limit 1 --json)
+  transcripts=$(run_command "$CLI_BIN" transcripts --project . --limit 1 --json)
 
   local stats
-  stats=$(run_command contextify-query stats --json)
+  stats=$(run_command "$CLI_BIN" stats --json)
 
   local t_keys
   local s_keys

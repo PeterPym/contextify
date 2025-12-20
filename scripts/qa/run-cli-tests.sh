@@ -3,9 +3,10 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/lib/common.sh"
-source "$SCRIPT_DIR/lib/assertions.sh"
+RUNNER_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLI_BIN="${CONTEXTIFY_QUERY_BIN:-contextify-query}"
+source "$RUNNER_DIR/lib/common.sh"
+source "$RUNNER_DIR/lib/assertions.sh"
 
 LOGDIR="/tmp/qa-cli-run-$(date +%Y%m%d-%H%M%S)"
 
@@ -20,9 +21,16 @@ FAILED_TESTS=()
 SKIPPED_TESTS=()
 
 check_prerequisites() {
-  if ! command -v contextify-query >/dev/null 2>&1; then
-    log_error "contextify-query CLI not found"
-    exit 1
+  if [[ "$CLI_BIN" == /* ]]; then
+    if [ ! -x "$CLI_BIN" ]; then
+      log_error "contextify-query CLI not found at $CLI_BIN"
+      exit 1
+    fi
+  else
+    if ! command -v "$CLI_BIN" >/dev/null 2>&1; then
+      log_error "contextify-query CLI not found"
+      exit 1
+    fi
   fi
   if ! command -v jq >/dev/null 2>&1; then
     log_error "jq not found"
@@ -32,7 +40,7 @@ check_prerequisites() {
 
 run_test() {
   local test_name="$1"
-  local test_path="$SCRIPT_DIR/tests/$test_name"
+  local test_path="$RUNNER_DIR/tests/$test_name"
 
   if [ ! -f "$test_path" ]; then
     log_warn "Test not implemented: $test_name"
