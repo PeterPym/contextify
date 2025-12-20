@@ -16,6 +16,9 @@ This test suite validates critical user flows through:
 # Run all tests
 ./scripts/qa/run-all-tests.sh
 
+# Run CLI query tests only
+./scripts/qa/run-cli-tests.sh
+
 # Run with options
 ./scripts/qa/run-all-tests.sh --skip-appstore    # Skip App Store build tests
 ./scripts/qa/run-all-tests.sh --skip-cli         # Skip tests requiring CLI tools
@@ -43,6 +46,11 @@ This test suite validates critical user flows through:
 - **Codex CLI** installed and authenticated
 - **Claude Code** installed and authenticated
 
+### For CLI Query Tests (CLI-01/02/03)
+- **contextify-query** installed and authenticated
+- **jq** installed
+- **Claude Code** installed and authenticated (CLI-03 only)
+
 ## Test Suite
 
 | Test | Description | Requirements |
@@ -62,6 +70,9 @@ This test suite validates critical user flows through:
 | QA-09 | DB Migration & Integrity | DMG build, DB fixtures |
 | QA-10 | Quick Search | DMG build, searchable content |
 | QA-11 | Deep Search Window | DMG build |
+| CLI-01 | Query Baseline | contextify-query, jq |
+| CLI-02 | Query Issues (red) | contextify-query, jq |
+| CLI-03 | Skill Invocation | contextify-query, jq, Claude Code |
 | **Lite Mode** | macOS 15 VM testing | See `build/docs/testing/lite-mode-qa-checklist.md` |
 | QA-13 | CLI Install/Repair/Uninstall (DMG) | DMG build, Accessibility |
 | QA-15 | contextify-query bundle integrity | DMG build (App Store optional) |
@@ -83,6 +94,7 @@ Each run creates a timestamped log directory:
 ```
 scripts/qa/
 ├── run-all-tests.sh        # Main test orchestrator
+├── run-cli-tests.sh        # CLI query test runner
 ├── README.md               # This file
 ├── lib/
 │   ├── common.sh           # Shared utilities
@@ -108,6 +120,9 @@ scripts/qa/
     ├── QA-09-db-migration.sh
     ├── QA-10-quick-search.sh
     └── QA-11-deep-search.sh
+    ├── CLI-01-query-baseline.sh
+    ├── CLI-02-query-issues.sh
+    └── CLI-03-skill-invocation.sh
 ```
 
 ## Running Individual Tests

@@ -40,11 +40,18 @@ Run `./scripts/qa/run-all-tests.sh` when:
 - File watcher or monitoring changes
 - Before any release
 
+Run `./scripts/qa/run-cli-tests.sh` when:
+- Changes touch `contextify-query` output or CLI flags
+- Skill invocation or CLI wiring changes
+
 ### When to Run Specific Tests
 
 ```bash
 # Run single test
 ./scripts/qa/tests/QA-03-codex-discovery.sh
+
+# Run CLI query tests
+./scripts/qa/run-cli-tests.sh
 
 # Run with fixtures (no CLI tools needed)
 QA_FIXTURE_MODE=1 ./scripts/qa/run-all-tests.sh --skip-appstore
