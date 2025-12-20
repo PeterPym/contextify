@@ -14,7 +14,7 @@ private struct SuccessEnvelope<T: Encodable>: Encodable {
   let type: String
   let schemaVersion: Int
   let data: T
-  let meta: [String: String]?
+  let metadata: JSONValue?
 }
 
 private struct ErrorEnvelope: Encodable {
@@ -294,19 +294,35 @@ struct ContextifyQueryCLI {
         if options.noContent {
           fputs("Warning: --no-content has no effect on search (snippets are always returned)\n", stderr)
         }
-        let query = commandArgs.joined(separator: " ")
+        let rawQuery = commandArgs.joined(separator: " ")
+        let query = try buildSearchQuery(rawQuery)
         try validateCapability(command: command, dbURL: dbURL, versionInfo: versionInfo)
         let resolvedProjectId = try resolveProjectId(options: options, service: service)
+        let kinds = parseCSV(options.kinds)?.map { $0.lowercased() }
+        let requestedLimit = options.limit
         let results = try service.search(
           query: query,
           projectId: resolvedProjectId,
           transcriptId: options.transcriptId,
-          limit: options.limit,
+          limit: requestedLimit + 1,
           includeHidden: options.includeHidden,
-          timeRange: timeRange
+          timeRange: timeRange,
+          kinds: kinds,
+          treatAsFTS: true
         )
-        try printResponse(type: "search", data: results, json: options.jsonOutput) {
-          printSearchHits(results)
+        var trimmedResults = results
+        var hasMore = false
+        if results.count > requestedLimit {
+          trimmedResults = Array(results.prefix(requestedLimit))
+          hasMore = true
+        }
+        let metadata: JSONValue = .object([
+          "returned": .number(Double(trimmedResults.count)),
+          "limit": .number(Double(requestedLimit)),
+          "hasMore": .bool(hasMore)
+        ])
+        try printResponse(type: "search", data: trimmedResults, json: options.jsonOutput, metadata: metadata) {
+          printSearchHits(trimmedResults)
         }
 
       case .activity:
@@ -635,12 +651,13 @@ struct ContextifyQueryCLI {
     type: String,
     data: T,
     json: Bool,
+    metadata: JSONValue? = nil,
     human: () -> Void
   ) throws {
     if json {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      let payload = SuccessEnvelope(type: type, schemaVersion: ResponseConstants.schemaVersion, data: data, meta: nil)
+      let payload = SuccessEnvelope(type: type, schemaVersion: ResponseConstants.schemaVersion, data: data, metadata: metadata)
       let out = try encoder.encode(payload)
       FileHandle.standardOutput.write(out)
       FileHandle.standardOutput.write(Data("\n".utf8))
@@ -822,6 +839,29 @@ private func parseCSV(_ value: String?) -> [String]? {
     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     .filter { !$0.isEmpty }
   return parts.isEmpty ? nil : parts
+}
+
+private func buildSearchQuery(_ rawQuery: String) throws -> String {
+  let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !trimmed.isEmpty else {
+    throw CLIError(code: "invalidArgs", message: "Missing search query", exitCode: .invalidArgs)
+  }
+
+  if trimmed.contains("|") {
+    throw CLIError(
+      code: "invalidQuery",
+      message: "Unsupported query syntax: '|' is not allowed. Use FTS5 syntax like \"term1 OR term2\".",
+      exitCode: .invalidArgs
+    )
+  }
+
+  let operatorPattern = "\\b(OR|AND|NOT)\\b"
+  let hasOperators = trimmed.range(of: operatorPattern, options: [.regularExpression, .caseInsensitive]) != nil
+  if hasOperators || trimmed.contains("\"") {
+    return trimmed
+  }
+
+  return ConversationSearchService.buildSafeFTSQuery(trimmed)
 }
 
 private func runFeedback(
@@ -1409,6 +1449,10 @@ private func mapDatabaseError(_ error: DatabaseError) -> CLIError {
   if message.contains("no such table: transcript_metadata") {
     return CLIError(code: "featureUnavailable", message: "Summaries table missing (transcript_metadata). Open Contextify to run migrations, or pass a different --db-path.", exitCode: .featureUnavailable)
   }
+  if message.localizedCaseInsensitiveContains("fts5") &&
+      (message.localizedCaseInsensitiveContains("syntax") || message.localizedCaseInsensitiveContains("parse")) {
+    return CLIError(code: "invalidQuery", message: "Invalid FTS query syntax: \(message)", exitCode: .invalidArgs)
+  }
   if let table = parseMissingTableName(message: message) {
     return CLIError(
       code: "dbNotFound",
@@ -1508,6 +1552,13 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
 }
 
 private func findPluginSource() throws -> URL {
+  // 0. Check repo-local source (development runs from repo root)
+  let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+  let repoPlugin = cwdURL.appendingPathComponent("contextify-query/claude-plugin")
+  if FileManager.default.fileExists(atPath: repoPlugin.path) {
+    return repoPlugin
+  }
+
   // 1. Check if running from app bundle (DMG build)
   if let bundleURL = Bundle.main.resourceURL {
     let bundledPlugin = bundleURL.appendingPathComponent("contextify-query/claude-plugin")

@@ -115,6 +115,15 @@ public struct ContextifyQueryService: Sendable {
     public let entryCount: Int
     public let lastEntryTimestamp: Int?
     public let lastViewedTs: Double?
+
+    enum CodingKeys: String, CodingKey {
+      case projectId
+      case projectName
+      case transcriptCount
+      case entryCount
+      case lastEntryTimestamp
+      case lastViewedTs = "lastViewedTimestamp"
+    }
   }
 
   public struct VersionInfo: Codable, Sendable {
@@ -451,9 +460,11 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
-    timeRange: QueryTimeRange = QueryTimeRange()
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    kinds: [String]? = nil,
+    treatAsFTS: Bool = false
   ) throws -> [SearchHit] {
-    let safeQuery = ConversationSearchService.buildSafeFTSQuery(query)
+    let safeQuery = treatAsFTS ? query : ConversationSearchService.buildSafeFTSQuery(query)
     guard !safeQuery.isEmpty else { return [] }
 
     return try pool.read { db in
@@ -462,67 +473,55 @@ public struct ContextifyQueryService: Sendable {
       }
 
       var sql = """
-        WITH hits AS (
-          SELECT
-            e.id AS id,
-            e.project_id AS project_id,
-            p.name AS project_name,
-            e.transcript_id AS transcript_id,
-            tm.title AS transcript_title,
-            e.provider AS provider,
-            e.kind AS kind,
-            e.timestamp AS timestamp,
-            e.created_at AS created_at,
-            e.display_in_timeline AS display_in_timeline,
-            bm25(transcript_entries_fts) AS score,
-            COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet
-          FROM transcript_entries_fts
-          JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
-          LEFT JOIN projects p ON p.id = e.project_id
-          LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
-          WHERE transcript_entries_fts MATCH ?
-        )
         SELECT
-          id,
-          project_id,
-          project_name,
-          transcript_id,
-          transcript_title,
-          provider,
-          kind,
-          timestamp,
-          score,
-          snippet,
+          e.id AS id,
+          e.project_id AS project_id,
+          p.name AS project_name,
+          e.transcript_id AS transcript_id,
+          tm.title AS transcript_title,
+          e.provider AS provider,
+          e.kind AS kind,
+          e.timestamp AS timestamp,
+          bm25(transcript_entries_fts) AS score,
+          COALESCE(snippet(transcript_entries_fts, 0, '', '', '…', 10), '') AS snippet,
           CASE
-            WHEN instr(snippet, '…') > 0 THEN 1
+            WHEN instr(snippet(transcript_entries_fts, 0, '', '', '…', 10), '…') > 0 THEN 1
             ELSE 0
           END AS content_truncated
-        FROM hits
-        WHERE 1 = 1
+        FROM transcript_entries_fts
+        JOIN transcript_entries e ON e.id = transcript_entries_fts.entry_id
+        LEFT JOIN projects p ON p.id = e.project_id
+        LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
+        WHERE transcript_entries_fts MATCH ?
       """
       var args: [DatabaseValueConvertible] = [safeQuery]
 
       if !includeHidden {
-        sql += " AND display_in_timeline = 1"
+        sql += " AND e.display_in_timeline = 1"
       }
       if let projectId {
-        sql += " AND project_id = ?"
+        sql += " AND e.project_id = ?"
         args.append(projectId)
       }
       if let transcriptId {
-        sql += " AND transcript_id = ?"
+        sql += " AND e.transcript_id = ?"
         args.append(transcriptId)
       }
+      if let kinds, !kinds.isEmpty {
+        let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+        sql += " AND e.kind IN (\(placeholders))"
+        args.append(contentsOf: kinds)
+      }
       if let since = timeRange.sinceTimestamp {
-        sql += " AND timestamp >= ?"
+        sql += " AND e.timestamp >= ?"
         args.append(since)
       }
       if let until = timeRange.untilTimestamp {
-        sql += " AND timestamp <= ?"
+        sql += " AND e.timestamp <= ?"
         args.append(until)
       }
 
-      sql += " ORDER BY score ASC, timestamp DESC, created_at DESC, id ASC LIMIT ?"
+      sql += " LIMIT ?"
       args.append(limit)
 
       struct Row: FetchableRecord, Decodable {
