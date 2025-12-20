@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-14
+**Last Updated:** 2025-12-17
 **Status:** Active
 
 **Priority Levels:**
@@ -188,90 +188,40 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## Missing 112 Transcripts - Never Ingested
+## ~~Missing 112 Transcripts - Never Ingested~~ FIXED
 
-**Status:** Not started
-**Priority:** P0 (data completeness - 9.3% of transcripts missing)
-**Discovered:** 2025-12-15
-**Related:** `#INGEST-GAP`
+**Status:** Complete (2025-12-17)
+**Priority:** P0 (data completeness)
+**Branch:** `fix/codex-discovery-parser-failures`
 
-- [ ] #INGEST-GAP-REMAINING: Investigate why 112 transcripts never made it into database
+- [x] #INGEST-GAP-REMAINING: Fixed - was Codex discovery issue
 
-**Current state (2025-12-15 23:10):**
-- On disk: 1,208 transcripts
-- In database: 1,096 transcripts
-- **Not ingested: 112 transcripts (9.3%)**
+**Root cause:** Codex sessions from nested project directories (e.g., `/repo/subdir`) couldn't find their Claude root (`/repo`) because discovery only did exact-match lookups.
 
-**Possible causes:**
-1. Transcripts in projects that weren't monitored at startup
-2. Transcripts arrived after app startup (late-arriving files)
-3. FastPath worker pool completed before discovering these files
-4. Permission issues or file access errors
-5. Files created after initial project scan
+**Fix:** Implemented longest-prefix root assignment in `LightweightDiscoveryService.remapCodexToClaudeRoots()`. Runs automatically at startup.
 
-**Investigation queries:**
-```bash
-# Get all file paths on disk
-find ~/.claude/projects ~/.codex/sessions -name "*.jsonl" > /tmp/disk_transcripts.txt
-
-# Get all file paths in DB
-sqlite3 "$DB_PATH" "SELECT file_path FROM transcripts;" > /tmp/db_transcripts.txt
-
-# Find missing ones
-comm -23 <(sort /tmp/disk_transcripts.txt) <(sort /tmp/db_transcripts.txt)
-```
-
-**Next steps:**
-1. Run investigation queries to identify specific missing transcripts
-2. Check if they're in specific projects (pattern analysis)
-3. Check file creation dates vs app startup time
-4. Check ingestion logs for errors related to these files
-5. Determine if this is related to #INGEST-PERIODIC-CHECK need
-6. Fix and test with clean build (5-7 min full ingestion time)
-
-**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
+**Results:**
+- 180 Codex transcripts now discovered
+- Match breakdown: 7 exact, 10 prefix, 6 codex-only
+- Fallback bucket for CWD extraction failures (no silent data loss)
 
 ---
 
-## Transcript Parser Bug - Content Without Entries
+## ~~Transcript Parser Bug - Content Without Entries~~ FIXED
 
-**Status:** Not started
-**Priority:** P0 (data completeness - 6.8% of transcripts unusable)
-**Discovered:** 2025-12-14, analyzed 2025-12-15
-**Related:** `#INGEST-GAP`
+**Status:** Complete (2025-12-17)
+**Priority:** P0 (data completeness)
+**Branch:** `fix/codex-discovery-parser-failures`
 
-- [ ] #INGEST-PARSER-BUG: Fix parser for 82 transcripts with content but 0 entries
+- [x] #INGEST-PARSER-BUG: Fixed - was tool_use block indexing issue
 
-**Updated analysis (2025-12-15):**
-- Total transcripts: 1,208
-- In database: 1,096
-- With 0 entries: 719 (but 637 are agent sidechains - correct behavior!)
-- **Real parser failures: 82 transcripts (6.8%)**
-  - 73 Claude regular conversations (non-agent files)
-  - 9 Codex transcripts
+**Root cause:** Claude Code transcripts with `tool_use` blocks weren't being indexed. Transcripts with only tool calls (no text) had 0 entries.
 
-**Important:** Agent sidechains (files matching `agent-*.jsonl`) SHOULD have 0 entries. They're background work files with `isSidechain: true`, not conversations.
+**Fix:** Added tool_use block indexing in `TranscriptParsers.swift`.
 
-**Evidence (FCB3B514):**
-- File: `/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/FCB3B514-A11B-419D-8157-E1BE18DEC02B.jsonl`
-- Size: 85KB (88 lines)
-- Content: 26 assistant messages, 31 user messages with `userType: "external"`
-- All have `isSidechain: false`
-- DB shows: `ingest_state: complete`, `last_processed_line: 88`, but 0 entries
-
-**Parser analysis:**
-- `extractContentWithType()` should handle string content (line 274-275)
-- `validateMessageIntegrity()` returns `false` for string content (line 355-358)
-- No parse errors recorded in `parse_errors` table
-
-**Next steps:**
-1. Sample 5-10 failing transcripts (use query from continuation doc)
-2. Examine file structure and identify common patterns
-3. Add parser logging for these specific cases
-4. Fix parser to handle these edge cases
-5. Test with clean build (5-7 min full ingestion time)
-
-**Reference:** `app/Sources/ContextifyCore/Database/TranscriptParsers.swift`
+**Results:**
+- +25,352 entries recovered (+51.6% increase)
+- 79 previously zero-entry transcripts now have content
 
 ---
 
@@ -765,6 +715,54 @@ Both should use identical card components for consistency.
 - [ ] Visual consistency between wizard and Settings
 - [ ] Clear affordance for enable/disable actions
 - [ ] Matches overall app design language
+
+---
+
+## Contextify CLI Improvements
+
+**Status:** Not started
+**Priority:** P1 (developer experience - CLI is primary interface for Contextify data)
+**Discovered:** 2025-12-20
+
+- [ ] #CLI-KINDS-FILTER: Fix `--kinds` flag not filtering results
+- [ ] #CLI-QUERY-ERRORS: Return errors for invalid query syntax instead of silent empty results
+- [ ] #CLI-OR-SYNTAX: Document FTS5 OR syntax in help text
+
+**Issues Found:**
+
+1. **Silent failures on invalid queries:** Regex-style queries like `term1|term2` return empty results with no error message. Should either support the syntax or return a parse error.
+
+2. **`--kinds` flag ignored:** `contextify-query search "term" --kinds user` still returns assistant messages. Workaround: filter in jq with `select(.kind == "user")`.
+
+3. **Query syntax undocumented:** Help text shows `search <query>` but doesn't explain supported syntax (FTS5 with OR/AND/NOT).
+
+**Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
+
+---
+
+## Contextify Skill Invocation Discoverability
+
+**Status:** Not started
+**Priority:** P1 (user experience - skill should trigger on natural language)
+**Discovered:** 2025-12-20
+
+- [ ] #SKILL-TRIGGER: Improve skill description to trigger on "use contextify to search history" phrasing
+
+**Problem:**
+When user says "use contextify to look through our convo history", agent doesn't recognize intent to invoke the `query:contextify-reinject` skill. The skill should be recognized when users ask to:
+- Search past conversations
+- Find where something was discussed
+- Look up conversation history
+- Use Contextify to find something
+
+**Suggested trigger phrases to document:**
+- "use contextify to..."
+- "search our conversation history"
+- "find where we discussed..."
+- "look through past sessions"
+- "what did we talk about regarding..."
+
+**Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
 
 ---
 
@@ -2006,6 +2004,50 @@ See `releases/schemas/appstore-states.schema.json` for complete enum and categor
 - `releases/STATUS-VALUES.md` - State definitions and Apple mapping
 - `releases/schemas/` - JSON schemas for state tracking
 - `scripts/release/poll-appstore-status.sh` - Interim bash implementation
+
+---
+
+## Status Bar Error Text Overflow (2 items)
+
+**Status:** Not Started
+**Priority:** P2 (UX polish)
+**Discovered:** 2025-12-18
+
+- [ ] #STATUS-OVERFLOW: Fix error message overflow in status bar indicator
+- [ ] #STATUS-RECOVERY: Investigate persistent GenerationError -1 not recovering
+
+**Problem:**
+When Apple Intelligence encounters `FoundationModels.LanguageModelSession.GenerationError error -1`, the error message overflows the status bar area. The error text "Failed to create LLM session: The operation couldn't be completed..." is displayed in the status indicator, which should only show brief status like "Apple Intelligence" or similar.
+
+**Screenshot evidence:** Status bar showing full error message instead of truncated status.
+
+**Observed behavior:**
+1. Error appears in status bar: "Failed to create LLM session: The operation couldn't be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)"
+2. Text overflows the status indicator bounds
+3. Error persists despite "typically recovers after a minute or two" message
+4. Logs show retry attempts failing: `Attempt 1/3 failed`, `Attempt 2/3 failed`, then `Failed to generate cache after retries`
+
+**Log reference:** `/private/tmp/transcript-queue-monitor-20251218-131255.log`
+
+**Root cause hypotheses:**
+1. System-level Apple Intelligence breakdown requiring restart
+2. FoundationModels session pool exhaustion
+3. Rate limiting or resource contention
+
+**UI Fix:**
+- Truncate/ellipsize error messages in status indicator
+- Show brief "AI Error" with tooltip or popover for full message
+- Consider separate error indicator that doesn't overflow status area
+
+**Recovery Investigation:**
+- Determine if GenerationError -1 requires app restart or system restart
+- Consider longer backoff intervals or session reset on persistent failure
+- Add diagnostic logging for session creation attempts
+
+**Files likely involved:**
+- Status bar/indicator view (find with grep for status indicator)
+- `CacheMissGenerator` retry logic
+- LLM session management
 
 ---
 
