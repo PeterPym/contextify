@@ -1626,8 +1626,33 @@ private func findPluginSources() throws -> PluginSources {
     }
   }
 
+  // Get the executable path - need to handle case where argv[0] has no path
+  var executablePath = CommandLine.arguments[0]
+
+  // If argv[0] doesn't contain a path separator, look it up via PATH
+  if !executablePath.contains("/") {
+    // Use `which` to find the actual path
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+    process.arguments = [executablePath]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+
+    try? process.run()
+    process.waitUntilExit()
+
+    if process.terminationStatus == 0 {
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+         !path.isEmpty {
+        executablePath = path
+      }
+    }
+  }
+
   // 2. Check alongside the executable (Homebrew install - tarball extraction)
-  let executablePath = CommandLine.arguments[0]
   let executableURL = URL(fileURLWithPath: executablePath)
   let execDir = executableURL.deletingLastPathComponent()
   let siblingPlugin = execDir.appendingPathComponent("claude-plugin")
