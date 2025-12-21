@@ -234,12 +234,12 @@ public actor ConversationSearchService {
       // Get context entries from the SAME conversation (transcript)
       // Uses (timestamp, id) ordering for deterministic results when timestamps collide
       // The hit is explicitly included via the id comparison
+      // Note: is_sidechain filter removed to support sidechain search hits (search includes sidechains)
       return try TranscriptEntry.fetchAll(db, sql: """
         SELECT * FROM (
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND (timestamp < ? OR (timestamp = ? AND id < ?))
           ORDER BY timestamp DESC, id DESC
           LIMIT ?
@@ -249,7 +249,6 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND id = ?
         )
         UNION ALL
@@ -257,7 +256,6 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND (timestamp > ? OR (timestamp = ? AND id > ?))
           ORDER BY timestamp ASC, id ASC
           LIMIT ?
@@ -299,11 +297,11 @@ public actor ConversationSearchService {
       let hitId: String = hit["id"]
 
       // Count entries strictly before the current window (same conversation)
+      // Note: is_sidechain filter removed to match getContext() behavior
       let earlierCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
-          AND is_sidechain = 0
           AND (timestamp < ? OR (timestamp = ? AND id < ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
@@ -315,7 +313,6 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
-          AND is_sidechain = 0
           AND (timestamp > ? OR (timestamp = ? AND id > ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
