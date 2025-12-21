@@ -194,6 +194,76 @@ final class ConversationSearchServiceTests: XCTestCase {
     XCTAssertEqual(hit1, hit2)
   }
 
+  // MARK: - isSelectable Tests (UI Hidden-Hit Policy)
+
+  func testSearchHit_isSelectable_visibleMainChain() {
+    let hit = ConversationSearchHit(
+      id: "e1",
+      projectId: "p1",
+      projectName: "Project",
+      provider: "claude.code",
+      role: "user",
+      content: "visible main-chain",
+      createdAt: Date(),
+      rank: -0.5,
+      snippet: "snippet",
+      displayInTimeline: true,
+      isSidechain: false
+    )
+    XCTAssertTrue(hit.isSelectable, "Visible main-chain hits should be selectable")
+  }
+
+  func testSearchHit_isSelectable_visibleSidechain() {
+    let hit = ConversationSearchHit(
+      id: "e1",
+      projectId: "p1",
+      projectName: "Project",
+      provider: "claude.code",
+      role: "assistant",
+      content: "sidechain entry",
+      createdAt: Date(),
+      rank: -0.5,
+      snippet: "snippet",
+      displayInTimeline: true,
+      isSidechain: true
+    )
+    XCTAssertTrue(hit.isSelectable, "Visible sidechain hits should be selectable")
+  }
+
+  func testSearchHit_isSelectable_hiddenMainChain() {
+    let hit = ConversationSearchHit(
+      id: "e1",
+      projectId: "p1",
+      projectName: "Project",
+      provider: "claude.code",
+      role: "system",
+      content: "hidden entry",
+      createdAt: Date(),
+      rank: -0.5,
+      snippet: "snippet",
+      displayInTimeline: false,
+      isSidechain: false
+    )
+    XCTAssertFalse(hit.isSelectable, "Hidden main-chain hits should NOT be selectable")
+  }
+
+  func testSearchHit_isSelectable_hiddenSidechain() {
+    let hit = ConversationSearchHit(
+      id: "e1",
+      projectId: "p1",
+      projectName: "Project",
+      provider: "claude.code",
+      role: "system",
+      content: "hidden sidechain",
+      createdAt: Date(),
+      rank: -0.5,
+      snippet: "snippet",
+      displayInTimeline: false,
+      isSidechain: true
+    )
+    XCTAssertFalse(hit.isSelectable, "Hidden sidechain hits should NOT be selectable")
+  }
+
   // MARK: - getContext Integration Tests
 
   /// Test that getContext returns the hit entry itself in the context

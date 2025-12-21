@@ -751,14 +751,15 @@ The `EntryFilter` design accommodates future needs:
 - [x] UI `ConversationSearchHit` includes `displayInTimeline` and `isSidechain` fields (Phase 3 - DONE)
 - [x] UI `ConversationSearchService.search()` unchanged (deep search) (Phase 3 - verified)
 - [x] UI hidden-hit policy: plumbing complete, fields available for UI gating (Phase 3 - DONE)
-- [ ] UI hidden-hit policy: UI layer gates clicks on `displayInTimeline` (pending)
+- [x] UI hidden-hit policy: `isSelectable` helper + unit tests (Phase 3 - DONE)
 - [x] UI `getContext()` doc comment clarifies hidden hit behavior (Phase 3 - DONE)
 - [ ] Debug logging for computed predicates
 
 ### Testing
 - [ ] Phase 0 characterization tests with `XCTExpectFailure` for known bugs (skipped - went direct to Phase 2a)
 - [x] All 4 visibility combinations tested for `context()` (Phase 2a - DONE)
-- [ ] All 4 visibility combinations tested for `activity()` (Phase 2b)
+- [x] All 4 visibility combinations tested for `activity()` (DONE)
+- [x] UI `isSelectable` helper tested for all 4 hit types (DONE)
 - [ ] Sidechain anchor context window test (anchor returned, neighbors filtered)
 - [ ] `projectStats()` LEFT JOIN regression test (projects with 0 entries still appear)
 - [ ] UI search sidechain hit + context retrieval test

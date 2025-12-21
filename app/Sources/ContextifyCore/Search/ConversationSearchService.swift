@@ -33,6 +33,13 @@ public struct ConversationSearchRequest: Sendable {
 
 /// Individual search hit with metadata
 public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
+
+  /// Whether this hit should be selectable/clickable in the UI.
+  /// Hidden entries (displayInTimeline=false) are not selectable.
+  /// Sidechain entries are selectable (they have valid context).
+  public var isSelectable: Bool {
+    displayInTimeline
+  }
   public let id: String          // entry_id
   public let projectId: String
   public let projectName: String
