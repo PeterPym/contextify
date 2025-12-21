@@ -70,7 +70,7 @@ This document provides detailed information about Contextify's architecture and 
 - Type-safe GRDB repositories (ProjectRepository, TranscriptRepository, EntryRepository, TimelineCacheRepository, ProjectVisitsRepository)
 
 **DatabaseSchema** (`app/Sources/ContextifyCore/Database/DatabaseSchema.swift`):
-- SQL schema definitions and versioned migrations (v1-v26)
+- SQL schema definitions and versioned migrations (v1-v30)
 - **v8-v9**: project_visits table, unread query indices
 - **v10-v11**: assistant_usage_pending staging, FK hardening
 - **v12-v13**: Epoch timestamps (projects.last_viewed_ts, entries.created_ts), optimizations
@@ -80,6 +80,10 @@ This document provides detailed information about Contextify's architecture and 
 - **v21**: database_access_metadata table
 - **v22**: Strategy constraint fix (transcript_metadata.generation_strategy)
 - **v23**: Active transcript follow (project_follow_policy table)
+- **v27**: queued message tracking (`transcript_entries.is_queued`)
+- **v28**: FTS5 search index for conversation search
+- **v29**: include summaries in FTS
+- **v30**: sidechain ingestion (`transcript_entries.is_sidechain`) + `tool_invocations` table
 
 **TranscriptWatcher** (`app/Sources/ContextifyCore/Database/TranscriptWatcher.swift`):
 - File system monitoring for real-time transcript updates
@@ -87,7 +91,7 @@ This document provides detailed information about Contextify's architecture and 
 - Health check recovery restores all watchers if any are missing
 
 **Models** (`app/Sources/ContextifyCore/Database/Models.swift`):
-- Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, AssistantUsage, etc.)
+- Codable/Sendable database models (Project, Transcript, Entry, TimelineCache, ToolInvocation, AssistantUsage, etc.)
 
 **ProjectVisitsRepository** (`app/Sources/ContextifyCore/Database/ProjectVisitsRepository.swift`):
 - Unread tracking and visit timestamps per project
