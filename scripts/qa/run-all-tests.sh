@@ -24,7 +24,7 @@ export TEST_PROJECT="${TEST_PROJECT:-/tmp/contextify-qa-test}"
 
 # Test suite definition
 # Format: "test_script:requires_cli"
-# requires_cli: 0 = no CLI needed, 1 = needs Codex, 2 = needs Claude Code
+# requires_cli: 0 = no CLI needed, 1 = needs Codex, 2 = needs Claude Code, 3 = needs contextify-query
 
 declare -a ALL_TESTS=(
   # Phase 1: Tests that need existing data (run first, before destructive tests)
@@ -56,6 +56,11 @@ declare -a ALL_TESTS=(
   "QA-12-git-branch-display.sh:0"
   "QA-13-cli-install-dmg.sh:0"
   "QA-15-query-bundle-integrity.sh:0"
+
+  # Phase 7: CLI query tests
+  "CLI-01-query-baseline.sh:3"
+  "CLI-02-query-issues.sh:3"
+  "CLI-03-skill-invocation.sh:3"
 )
 
 # Track results
@@ -114,6 +119,7 @@ list_tests() {
     case $cli_req in
       1) req_note=" (requires Codex CLI)" ;;
       2) req_note=" (requires Claude Code)" ;;
+      3) req_note=" (requires contextify-query)" ;;
     esac
     echo "  - $test_name$req_note"
   done
@@ -133,9 +139,11 @@ should_skip_test() {
     return 0  # Skip
   fi
 
-  # Skip CLI tests only if NOT in fixture mode
-  if [ "$SKIP_CLI" = "1" ] && [ "${QA_FIXTURE_MODE:-0}" != "1" ] && [ "$cli_req" != "0" ]; then
-    return 0  # Skip
+  # Skip CLI tests only if NOT in fixture mode (contextify-query always skipped)
+  if [ "$SKIP_CLI" = "1" ] && [ "$cli_req" != "0" ]; then
+    if [ "$cli_req" = "3" ] || [ "${QA_FIXTURE_MODE:-0}" != "1" ]; then
+      return 0  # Skip
+    fi
   fi
 
   return 1  # Don't skip
@@ -194,6 +202,12 @@ check_prerequisites() {
     fi
     if ! command -v claude &> /dev/null; then
       echo "[WARN] Claude Code not found. QA-04 will be skipped."
+    fi
+    if ! command -v contextify-query &> /dev/null; then
+      echo "[WARN] contextify-query not found. CLI-01/02/03 will be skipped."
+    fi
+    if ! command -v jq &> /dev/null; then
+      echo "[WARN] jq not found. CLI-01/02/03 will be skipped."
     fi
   fi
 
@@ -515,6 +529,16 @@ main() {
     if [ "$cli_req" = "2" ] && [ "${QA_FIXTURE_MODE:-0}" != "1" ] && ! command -v claude &> /dev/null; then
       SKIPPED_TESTS+=("$test_name (Claude Code not available)")
       echo "[SKIP] $test_name (Claude Code not available)"
+      continue
+    fi
+    if [ "$cli_req" = "3" ] && ! command -v contextify-query &> /dev/null; then
+      SKIPPED_TESTS+=("$test_name (contextify-query not available)")
+      echo "[SKIP] $test_name (contextify-query not available)"
+      continue
+    fi
+    if [ "$cli_req" = "3" ] && ! command -v jq &> /dev/null; then
+      SKIPPED_TESTS+=("$test_name (jq not available)")
+      echo "[SKIP] $test_name (jq not available)"
       continue
     fi
 

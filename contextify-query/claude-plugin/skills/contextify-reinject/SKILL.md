@@ -1,9 +1,16 @@
 ---
 name: contextify-reinject
-description: Use contextify-query to locate an anchor entry and retrieve a bounded neighborhood from Contextify's read-only database for reinjection.
+description: Search past conversations / decisions with Contextify (use contextify, search history, find where we discussed, what did we decide, look back in past sessions, remember when we talked about). Runs contextify-query to locate an anchor entry and retrieve nearby context for reinjection.
 ---
 
 # Contextify reinjection (Claude Code)
+
+## Trigger phrases
+
+- "use contextify to..."
+- "search our conversation history"
+- "find where we discussed..."
+- "look through past sessions"
 
 ## Preconditions
 

@@ -1,0 +1,9 @@
+{
+  "name": "contextify-query",
+  "version": "0.1.0",
+  "description": "Contextify query skill + researcher subagent (debug skill removed)",
+  "author": {
+    "name": "Contextify"
+  },
+  "repository": "https://github.com/PeterPym/contextify"
+}

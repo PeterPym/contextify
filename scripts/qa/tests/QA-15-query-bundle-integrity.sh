@@ -39,7 +39,6 @@ assert_bundle_assets() {
   assert_file_exists "$app_path/Contents/Resources/contextify-query/shim/contextify-query-shim" "$label: bundled shim present"
   assert_directory_exists "$app_path/Contents/Resources/contextify-query/skills" "$label: bundled skills dir present"
   assert_file_exists "$app_path/Contents/Resources/contextify-query/skills/claude/contextify-reinject/SKILL.md" "$label: reinject skill present"
-  assert_file_exists "$app_path/Contents/Resources/contextify-query/skills/claude/contextify-query-debug/SKILL.md" "$label: debug skill present"
   assert_file_exists "$app_path/Contents/Resources/contextify-query/claude-plugin/.claude-plugin/plugin.json" "$label: plugin.json present"
 }
 
@@ -70,4 +69,3 @@ main() {
 }
 
 main "$@"
-

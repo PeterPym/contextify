@@ -188,6 +188,23 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Cross-Platform Ingestion CLI (Linux/Windows)
+
+**Status:** Not started
+**Priority:** P1
+
+- [ ] #CROSS-PLATFORM-INGESTION: Derisk and prototype a cross-platform ingestion engine
+
+**Goal:** Build a Linux/Windows CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
+
+**Key tasks:**
+1. Lift SwiftPM macOS-only platform restriction and attempt Linux/Windows builds.
+2. Identify macOS-only APIs in ingestion path and isolate behind platform adapters.
+3. Decide on GRDB portability vs SQLite C fallback based on feasibility results.
+4. Prototype CLI ingestion run on Linux with fixture transcripts and validate parity.
+
+**Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
+
 ## ~~Missing 112 Transcripts - Never Ingested~~ FIXED
 
 **Status:** Complete (2025-12-17)
@@ -727,28 +744,6 @@ Both should use identical card components for consistency.
 
 ---
 
-## Contextify CLI Improvements
-
-**Status:** Not started
-**Priority:** P1 (developer experience - CLI is primary interface for Contextify data)
-**Discovered:** 2025-12-20
-
-- [ ] #CLI-KINDS-FILTER: Fix `--kinds` flag not filtering results
-- [ ] #CLI-QUERY-ERRORS: Return errors for invalid query syntax instead of silent empty results
-- [ ] #CLI-OR-SYNTAX: Document FTS5 OR syntax in help text
-
-**Issues Found:**
-
-1. **Silent failures on invalid queries:** Regex-style queries like `term1|term2` return empty results with no error message. Should either support the syntax or return a parse error.
-
-2. **`--kinds` flag ignored:** `contextify-query search "term" --kinds user` still returns assistant messages. Workaround: filter in jq with `select(.kind == "user")`.
-
-3. **Query syntax undocumented:** Help text shows `search <query>` but doesn't explain supported syntax (FTS5 with OR/AND/NOT).
-
-**Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
-
----
-
 ## Contextify Skill Invocation Discoverability
 
 **Status:** Not started
@@ -770,6 +765,8 @@ When user says "use contextify to look through our convo history", agent doesn't
 - "find where we discussed..."
 - "look through past sessions"
 - "what did we talk about regarding..."
+
+- [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `build/notes/todo-support/contextify-query-plugin-draft/`.
 
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
 

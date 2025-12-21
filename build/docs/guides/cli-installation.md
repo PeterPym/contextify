@@ -74,6 +74,13 @@ contextify-query install-plugin
 contextify-query uninstall-plugin
 ```
 
+Local development via Claude Code:
+
+```bash
+claude plugin marketplace add /Users/rob/code/projects/contextify
+claude plugin install query@contextify
+```
+
 ### Other Commands
 
 ```bash
@@ -164,7 +171,6 @@ contextify-query install-plugin  # Re-run to update plugin
 ├─────────────────────────────────────────────────────────────┤
 │ Plugin provides skills:                                      │
 │   - contextify-reinject: Context reinjection from database  │
-│   - contextify-query-debug: Diagnostic queries              │
 │ Skills call contextify-query CLI for database access        │
 └─────────────────────────────────────────────────────────────┘
 ```

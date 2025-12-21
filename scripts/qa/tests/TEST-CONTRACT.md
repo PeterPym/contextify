@@ -103,3 +103,6 @@ Test migrations. Use fixture databases.
 
 ### Category E: Search Tests (QA-10, QA-11)
 Test search functionality. Require FTS5 data from discovery tests.
+
+### Category F: CLI Query Tests (CLI-01 through CLI-03)
+Read-only CLI tests for contextify-query and skill invocation. Require CLI tools and a populated database.
