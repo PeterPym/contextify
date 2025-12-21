@@ -346,15 +346,10 @@
 					D4APPSTORE00000000000006 /* Sources */,
 					D4APPSTORE00000000000004 /* Frameworks */,
 					D4APPSTORE00000000000007 /* Resources */,
-					D4C0B0122E77AAAA00747100 /* Embed contextify-query */,
-					D4C0B0242E77AAAA00747100 /* Copy contextify-query resources */,
-					D4C0C0132E77AAAA00747100 /* Copy contextify-query shim */,
 				);
 				buildRules = (
 				);
 					dependencies = (
-						D4C0B0162E77AAAA00747100 /* PBXTargetDependency */,
-						D4C0C0172E77AAAA00747100 /* PBXTargetDependency */,
 					);
 				fileSystemSynchronizedGroups = (
 					D4A7739F2E76936700747100 /* Contextify */,
@@ -936,6 +931,7 @@
 					DEVELOPMENT_TEAM = VQ7RPM8H77;
 					OTHER_SWIFT_FLAGS = "-parse-as-library";
 					PRODUCT_NAME = "contextify-query";
+					SKIP_INSTALL = YES;
 					SUPPORTED_PLATFORMS = macosx;
 					SWIFT_VERSION = 6.0;
 				};
@@ -948,6 +944,7 @@
 						DEVELOPMENT_TEAM = VQ7RPM8H77;
 						OTHER_SWIFT_FLAGS = "-parse-as-library";
 						PRODUCT_NAME = "contextify-query";
+						SKIP_INSTALL = YES;
 						SUPPORTED_PLATFORMS = macosx;
 						SWIFT_VERSION = 6.0;
 					};
@@ -959,6 +956,7 @@
 						CODE_SIGN_STYLE = Automatic;
 						DEVELOPMENT_TEAM = VQ7RPM8H77;
 						PRODUCT_NAME = "contextify-query-shim";
+						SKIP_INSTALL = YES;
 						SUPPORTED_PLATFORMS = macosx;
 						SWIFT_VERSION = 6.0;
 					};
@@ -970,6 +968,7 @@
 						CODE_SIGN_STYLE = Automatic;
 						DEVELOPMENT_TEAM = VQ7RPM8H77;
 						PRODUCT_NAME = "contextify-query-shim";
+						SKIP_INSTALL = YES;
 						SUPPORTED_PLATFORMS = macosx;
 						SWIFT_VERSION = 6.0;
 					};

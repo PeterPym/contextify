@@ -89,7 +89,7 @@ if [ "$SKIP_APPSTORE" = false ]; then
   echo -e "${GREEN}OK${NC} Archive: build/Contextify.xcarchive"
 
   echo -e "${BLUE}==>${NC} Exporting .pkg..."
-  bash scripts/xc.sh export-pkg
+  bash scripts/xc.sh --dist=appstore export-pkg
 
   if [ -f "build/appstore/Contextify.pkg" ]; then
     PKG_SIZE=$(stat -f%z "build/appstore/Contextify.pkg" 2>/dev/null || stat -c%s "build/appstore/Contextify.pkg" 2>/dev/null)
