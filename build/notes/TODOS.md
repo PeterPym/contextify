@@ -800,8 +800,9 @@ When user says "use contextify to look through our convo history", agent doesn't
 **Notes:**
 - Decoration appears in the entry row alongside existing badges/icons (same location as QUEUED/directive/completion).
 - Skill call shows Contextify icon; agent call shows detective emoji + Contextify icon.
-- Detection uses transcript tool metadata (not prompt text) to avoid false positives.
-- Reference doc will be copied from `/tmp/contextify-skill-agent-call-identification.md`.
+- Detection uses `tool_invocations` table (from SIDECHAIN-INGESTION) to avoid re-parsing transcripts.
+
+**Depends on:** #SIDECHAIN-INGESTION (Phase 1-2 for `tool_invocations` table)
 
 **Reference:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-spec.md`
 
@@ -828,16 +829,20 @@ Contextify claims to back up transcript data, but currently **excludes 55% of tr
 - Size increase: 2-5 MB on 188 MB database (~2%)
 - Minimal overhead
 
-**Implementation approach (Option A - simple columns):**
-- Add columns to `transcript_entries`: `tool_name`, `tool_key`, `tool_use_id`, `parent_agent_id`, `is_sidechain`
-- Remove sidechain skip in parser
+**Implementation approach (Option B - dedicated table):**
+- Create `tool_invocations` table for tool metadata and sidechain linkage
+- Add `is_sidechain` column to `transcript_entries`
+- Remove sidechain skip in parser, extract tool_use blocks
 - Filter `is_sidechain = 0` in timeline queries (preserve current behavior)
 - Include sidechain content in search
+- Enables DECORATE-CONTEXTIFY-CALLS feature
 
-**Migration path to Option B (if needed later):**
-- Create dedicated `tool_invocations` table for sophisticated chain tracking
-- Populate from existing columns
-- Spec includes full migration SQL
+**Components requiring updates:**
+- `TranscriptParsers.swift` (remove skip, add tool extraction)
+- `HooverEngine.swift` (insert tool_invocations)
+- `TranscriptOrchestrator.swift` (remove agent-* filter)
+- `Models.swift` (add ToolInvocation model)
+- `DatabaseSchema.swift` (migration v27+)
 
 **Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`
 

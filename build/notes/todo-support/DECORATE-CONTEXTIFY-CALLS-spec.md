@@ -156,18 +156,74 @@ Add a section like **“Skill and Agent Invocation Identification”** to both s
 
 ---
 
-## Model/UI Change Proposal (Draft)
+## Model/UI Change Proposal
 
-### Model changes (optional but recommended)
-- Persist tool invocation metadata extracted from Claude Code transcripts so the UI can decorate without re-reading files:
-  - Option A (new table): `tool_invocations` keyed by `entry_id`, with `tool_name`, `tool_kind` (Skill/Task), `tool_key` (skill name or subagent_type), `tool_use_id`, `related_entry_ids`.
-  - Option B (columns on `transcript_entries`): `tool_name`, `tool_key`, `tool_use_id`, `tool_metadata_json`.
-- Keep `project_id` as the primary query key (use `ActiveProjectContext.id`).
-- Add database entries for skill/agent identifiers at ingestion time so historical data remains queryable without reparsing transcripts.
+### Decision: Use `tool_invocations` Table (Option B)
+
+This feature will use the new `tool_invocations` table being added as part of the SIDECHAIN-INGESTION work. This approach:
+- Cleanly separates tool metadata from entry content
+- Enables decoration without re-parsing transcripts
+- Provides foundation for sidechain ingestion and future tool analytics
+- Allows efficient queries for Contextify-specific invocations
+
+### Schema (from SIDECHAIN-INGESTION-spec.md)
+
+```sql
+CREATE TABLE tool_invocations (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT NOT NULL REFERENCES transcript_entries(id) ON DELETE CASCADE,
+  transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+  tool_name TEXT NOT NULL,              -- "Skill", "Task", etc.
+  tool_key TEXT,                        -- skill name or subagent_type
+  tool_use_id TEXT,                     -- Claude's tool_use.id
+  is_contextify INTEGER DEFAULT 0,      -- 1 for Contextify calls
+  -- ... additional columns for sidechain support ...
+);
+
+CREATE INDEX idx_invocations_contextify ON tool_invocations(is_contextify) WHERE is_contextify = 1;
+```
+
+### Detection Logic (at ingestion time)
+
+```swift
+func isContextifyTool(_ block: [String: Any]) -> Bool {
+    guard let name = block["name"] as? String,
+          let input = block["input"] as? [String: Any] else { return false }
+
+    switch name {
+    case "Skill":
+        return input["skill"] as? String == "query:contextify-reinject"
+    case "Task":
+        return input["subagent_type"] as? String == "query:contextify-researcher"
+    default:
+        return false
+    }
+}
+```
+
+### Decoration Query
+
+```sql
+-- Get Contextify invocations for a transcript
+SELECT ti.tool_name, ti.tool_key, ti.entry_id
+FROM tool_invocations ti
+WHERE ti.transcript_id = ?
+  AND ti.is_contextify = 1
+```
 
 ### UI changes
-- Add a persistent badge/icon group in `TimelineEntryRow` adjacent to existing status icons (QUEUED/directive/completion):
-  - Skill invocation: Contextify icon.
-  - Agent invocation: detective emoji + Contextify icon.
-- Ensure color treatment aligns with `build/design/brand/colors.md` (no ad hoc hues).
-- Apply decoration to the tool_use entry and associated tool_result/meta entries (using `tool_use_id` / `sourceToolUseID`).
+- Add decoration logic in `TimelineEntryRow` adjacent to existing status icons (QUEUED/directive/completion):
+  - Skill invocation (`tool_name = "Skill"`): Contextify icon
+  - Agent invocation (`tool_name = "Task"`): Detective emoji + Contextify icon
+- Query `tool_invocations` table for entries in current transcript where `is_contextify = 1`
+- Cache results per transcript to avoid repeated queries
+- Ensure color treatment aligns with `build/design/brand/colors.md` (no ad hoc hues)
+
+### Dependency
+
+This feature depends on the `tool_invocations` table from SIDECHAIN-INGESTION. Implementation order:
+1. SIDECHAIN-INGESTION Phase 1 (schema + models)
+2. SIDECHAIN-INGESTION Phase 2 (parser updates)
+3. DECORATE-CONTEXTIFY-CALLS (UI decoration using the table)
+
+**Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`
