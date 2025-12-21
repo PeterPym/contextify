@@ -1647,6 +1647,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ? AND display_in_timeline = 1
+          AND is_sidechain = 0
       """, arguments: [transcriptId]) ?? 0
     }
   }
@@ -1660,6 +1661,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
       try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
         WHERE project_id = ? AND display_in_timeline = 1
+          AND is_sidechain = 0
       """, arguments: [projectId]) ?? 0
     }
   }
@@ -2308,6 +2310,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           SELECT * FROM transcript_entries
            WHERE project_id = :pid
              AND display_in_timeline = 1
+             AND is_sidechain = 0
              AND (
                   timestamp > :ts
                OR (timestamp = :ts AND created_at > :ca)
@@ -2321,6 +2324,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           SELECT * FROM transcript_entries
            WHERE project_id = :pid
              AND display_in_timeline = 1
+             AND is_sidechain = 0
            ORDER BY timestamp ASC, created_at ASC, id ASC
         """, arguments: ["pid": projectId])
       }
@@ -2339,7 +2343,6 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           FROM transcripts t
           LEFT JOIN transcript_entries e ON e.transcript_id = t.id
           WHERE e.transcript_id IS NULL
-            AND t.file_path NOT LIKE '%/agent-%'
             AND NOT EXISTS (SELECT 1 FROM parse_errors pe WHERE pe.transcript_id = t.id)
           ORDER BY t.updated_at DESC
           LIMIT ?

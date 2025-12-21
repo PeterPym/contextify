@@ -160,14 +160,15 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
     let isMetaMessage = (json["isMeta"] as? Bool) == true
 
-    // Skip sidechain messages
-    if (json["isSidechain"] as? Bool) == true {
-      throw ParserError.skipEntry
-    }
+    let isSidechain = (json["isSidechain"] as? Bool) == true
+    let agentId = json["agentId"] as? String
 
     // Extract content and determine if it should be displayed
-    let content: String
-    let hasTextContent: Bool
+    var content: String = ""
+    var hasTextContent: Bool = false
+    var toolInvocations: [ToolInvocationInsert] = []
+    var toolResultData: [ToolResultData] = []
+    var toolResultTextParts: [String] = []
     if var message = json["message"] as? [String: Any] {
       let messageId = message["id"] as? String
 
@@ -213,10 +214,64 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
         throw ParserError.skipEntry
       }
 
+      if let contentBlocks = message["content"] as? [[String: Any]] {
+        if type == "assistant" {
+          for block in contentBlocks where block["type"] as? String == "tool_use" {
+            let toolName = block["name"] as? String ?? "unknown"
+            let toolKey = extractToolKey(from: block)
+            let toolUseId = block["id"] as? String
+            let isContextify = isContextifyTool(block)
+            let metadataJson = encodeToolMetadata(block["input"])
+
+            toolInvocations.append(ToolInvocationInsert(
+              toolName: toolName,
+              toolKey: toolKey,
+              toolUseId: toolUseId,
+              isContextify: isContextify,
+              startedAt: timestamp,
+              metadataJson: metadataJson
+            ))
+          }
+        }
+
+        if type == "user" {
+          for block in contentBlocks where block["type"] as? String == "tool_result" {
+            let toolUseId = block["tool_use_id"] as? String
+            let toolUseResult = json["toolUseResult"] as? [String: Any]
+            let resultAgentId = toolUseResult?["agentId"] as? String
+            let status = toolUseResult?["status"] as? String
+
+            toolResultData.append(ToolResultData(
+              toolUseId: toolUseId,
+              entryId: uuid,
+              agentId: resultAgentId,
+              status: status,
+              timestamp: timestamp
+            ))
+
+            if let toolUseId,
+               let info = toolUseInfo(for: toolUseId, transcriptId: transcriptId),
+               ["Skill", "Task"].contains(info.toolName),
+               let toolText = extractToolResultText(from: block),
+               !toolText.isEmpty {
+              toolResultTextParts.append(toolText)
+            }
+          }
+        }
+      }
+
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
       let shouldHideShellOutput = type == "user" && containsShellOutput(content)
       hasTextContent = (type == "user") ? !shouldHideShellOutput : hasText
+      if content.isEmpty && !toolResultTextParts.isEmpty {
+        content = toolResultTextParts.joined(separator: "\n")
+        hasTextContent = true
+      }
+      if content.isEmpty && !toolResultData.isEmpty {
+        content = "[Tool Result]"
+        hasTextContent = false
+      }
       // Skip entries with empty content (tool_use blocks, etc.)
       guard !content.isEmpty else {
         throw ParserError.skipEntry
@@ -262,7 +317,11 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
       gitBranch: gitBranch,
       gitCommit: gitCommit,
       cwd: cwd,
-      hasTextContent: hasTextContent
+      hasTextContent: hasTextContent,
+      isSidechain: isSidechain,
+      agentId: agentId,
+      toolInvocations: toolInvocations,
+      toolResultData: toolResultData
     )
   }
 
@@ -462,12 +521,77 @@ private func validateMessageIntegrity(
   }
 }
 
+private func extractToolKey(from block: [String: Any]) -> String? {
+  guard let name = block["name"] as? String,
+        let input = block["input"] as? [String: Any] else {
+    return nil
+  }
+
+  switch name {
+  case "Skill":
+    return input["skill"] as? String
+  case "Task":
+    return input["subagent_type"] as? String
+  default:
+    return nil
+  }
+}
+
+private func isContextifyTool(_ block: [String: Any]) -> Bool {
+  guard let name = block["name"] as? String,
+        let input = block["input"] as? [String: Any] else {
+    return false
+  }
+
+  switch name {
+  case "Skill":
+    return input["skill"] as? String == "query:contextify-reinject"
+  case "Task":
+    return input["subagent_type"] as? String == "query:contextify-researcher"
+  default:
+    return false
+  }
+}
+
+private func encodeToolMetadata(_ input: Any?) -> String? {
+  guard let input else { return nil }
+  guard JSONSerialization.isValidJSONObject(input),
+        let data = try? JSONSerialization.data(withJSONObject: input),
+        let json = String(data: data, encoding: .utf8) else {
+    return nil
+  }
+  return json
+}
+
+private func extractToolResultText(from block: [String: Any]) -> String? {
+  if let text = block["content"] as? String {
+    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+  if let items = block["content"] as? [[String: Any]] {
+    let parts = items.compactMap { item -> String? in
+      guard item["type"] as? String == "text",
+            let text = item["text"] as? String,
+            !text.isEmpty else { return nil }
+      return text
+    }
+    if parts.isEmpty { return nil }
+    return parts.joined(separator: "\n")
+  }
+  return nil
+}
+
 // MARK: - Tool Call Tracking
 
 private struct ToolCallTrackerState {
   var toolUseBuffers: [String: ToolUseBuffer] = [:]
   var assistantBuffers: [String: [String: BufferedAssistantMessage]] = [:]
+  var toolUseInfo: [String: [String: ToolUseInfo]] = [:]
   var metrics = ParserMetrics()
+}
+
+private struct ToolUseInfo: Sendable {
+  let toolName: String
+  let toolKey: String?
 }
 
 private struct BufferedAssistantMessage: Sendable {
@@ -523,22 +647,32 @@ private extension ClaudeCodeLineParser {
       buffer.reset()
       state.toolUseBuffers[transcriptId] = buffer
       state.assistantBuffers[transcriptId]?.removeAll()
+      state.toolUseInfo[transcriptId]?.removeAll()
     }
   }
 
   func recordToolUses(in blocks: [[String: Any]], transcriptId: String) {
-    let ids = blocks.compactMap { block -> String? in
-      guard block["type"] as? String == "tool_use" else { return nil }
-      return block["id"] as? String
+    let toolUses: [(id: String, name: String, toolKey: String?)] = blocks.compactMap { block -> (String, String, String?)? in
+      guard block["type"] as? String == "tool_use",
+            let id = block["id"] as? String,
+            let name = block["name"] as? String else { return nil }
+      let toolKey = extractToolKey(from: block)
+      return (id, name, toolKey)
     }
-    guard !ids.isEmpty else { return }
+    guard !toolUses.isEmpty else { return }
 
     trackerLock.withLock { state in
       var buffer = state.toolUseBuffers[transcriptId, default: ToolUseBuffer()]
-      for id in ids {
-        buffer.insert(id)
+      for toolUse in toolUses {
+        buffer.insert(toolUse.id)
       }
       state.toolUseBuffers[transcriptId] = buffer
+
+      var infoMap = state.toolUseInfo[transcriptId] ?? [:]
+      for toolUse in toolUses {
+        infoMap[toolUse.id] = ToolUseInfo(toolName: toolUse.name, toolKey: toolUse.toolKey)
+      }
+      state.toolUseInfo[transcriptId] = infoMap
     }
   }
 
@@ -548,6 +682,12 @@ private extension ClaudeCodeLineParser {
       let consumed = buffer.consume(id)
       state.toolUseBuffers[transcriptId] = buffer
       return consumed
+    }
+  }
+
+  func toolUseInfo(for toolUseId: String, transcriptId: String) -> ToolUseInfo? {
+    trackerLock.withLock { state in
+      state.toolUseInfo[transcriptId]?[toolUseId]
     }
   }
 

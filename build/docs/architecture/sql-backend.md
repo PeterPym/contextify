@@ -1,11 +1,11 @@
 # SQL Backend Architecture
 
-**Status:** Post-Implementation (v28 current)
+**Status:** Post-Implementation (v30 current)
 **Database:** SQLite via GRDB.swift
-**Schema Version:** 28 (latest: FTS5 full-text search index)
+**Schema Version:** 30 (latest: sidechain ingestion + tool invocations)
 **Related:** `app/Sources/ContextifyCore/Database/README.md` (usage guide)
 
-**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v28 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v28).
+**Schema versioning note:** References to "v6" in this doc refer to the 6th design iteration (denormalization cleanup), while v30 is the current migration version. See `DatabaseSchema.swift` for complete migration history (v16-v30).
 
 ---
 
@@ -72,6 +72,8 @@ transcript_entries (CANONICAL SOURCE DATA - v6: removed denormalized fields)
 │   └── window_sha256 (for cache key computation)
 ├── display_in_timeline (1 = show, 0 = hide thinking-only entries)
 ├── created_ts (REAL, v12+, millisecond-precision epoch for unread queries)
+├── is_queued (INTEGER, v27+, transient queued message tracking)
+├── is_sidechain (INTEGER, v30+, agent sidechain marker)
 ├── git_context (branch, commit, cwd)
 └── embedding (BLOB, optional for RAG features)
     └── v6 REMOVED: summary, disposition, is_completion, is_directive
@@ -88,6 +90,18 @@ timeline_cache (WITHOUT ROWID - DERIVED/COMPUTED DATA)
 ├── selected_form
 ├── verb_lemma
 └── user_edits (user_edited, user_text, edited_at)
+
+tool_invocations (v30+)
+├── id (PK)
+├── entry_id (FK → transcript_entries, CASCADE)
+├── transcript_id (FK → transcripts, CASCADE)
+├── parent_invocation_id (FK → tool_invocations, SET NULL)
+├── tool_name + tool_key + tool_use_id
+├── tool_result_entry_id (FK → transcript_entries, SET NULL)
+├── sidechain_transcript_id + sidechain_agent_id
+├── started_at + completed_at + status
+├── is_contextify + metadata_json
+└── timestamps
 
 transcript_metadata
 ├── transcript_id (PK, FK → transcripts, CASCADE)
@@ -152,6 +166,12 @@ let isDirective: Bool = {
 - **v15:** Index cleanup (remove redundant indices, add composite pending index)
 - **v16:** Schema collapse (v1-v16 merged into single base), `idx_entries_unread_join` for GROUP BY optimization
 - **v17:** Hotfix for v16 collapse - backfills for NULL timestamps, missing indexes, composite PK on `assistant_usage_pending`, file migration (transcripts.db → contextify.db)
+
+**v27-v30 Migrations (2025-12):** Queue + FTS + Sidechains
+- **v27:** Add `is_queued` to `transcript_entries` for queued message badges
+- **v28:** Add FTS5 index for conversation search
+- **v29:** Expand FTS5 indexing to include summaries
+- **v30:** Add `is_sidechain` and `tool_invocations` to support agent sidechains and tool metadata
 
 **Proposed v7 Schema:**
 ```
@@ -527,6 +547,27 @@ generator.queueMisses([miss])  // Async processing
 - Columns: `project_id`, `mode` (0=auto, 1=manual), `pinned_session_id`, `pinned_provider`, `updated_at`
 - Purpose: Control whether timeline automatically follows active transcript or stays pinned to selected session
 - Default: Auto mode for all existing projects
+
+## Recent Migrations (v27-v30)
+
+**v27: Queued Messages**
+- Add `transcript_entries.is_queued` with default 0
+- Index on `(transcript_id, session_id, is_queued, content_sha256)`
+- Purpose: Show transient QUEUED badge for messages sent while tools run
+
+**v28: FTS5 Search Index**
+- Create `transcript_entries_fts` virtual table
+- Index `user` and `assistant` entries (displayable only)
+- Add triggers to keep FTS in sync
+
+**v29: Summary Search**
+- Expand FTS indexing to include `summary` entries
+- Update triggers to allow `kind IN ('user','assistant','summary')`
+
+**v30: Sidechain + Tool Invocations**
+- Add `transcript_entries.is_sidechain` with default 0
+- Create `tool_invocations` table with linkage to tool_use/tool_result and sidechains
+- Re-ingest Claude Code transcripts to backfill tool metadata
 
 ---
 

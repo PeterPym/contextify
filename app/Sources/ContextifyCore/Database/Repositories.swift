@@ -320,6 +320,14 @@ public protocol EntryRepository {
   func latestTimestampsByTranscript(projectId: String) throws -> [String: Int]
 }
 
+// MARK: - Tool Invocation Repository
+
+public protocol ToolInvocationRepository {
+  func insert(_ invocation: ToolInvocation) throws
+  func insertBatch(_ invocations: [ToolInvocation]) throws
+  func byTranscript(_ transcriptId: String) throws -> [ToolInvocation]
+}
+
 public final class EntryRepositoryImpl: EntryRepository {
   private let db: DatabasePool
 
@@ -344,7 +352,7 @@ public final class EntryRepositoryImpl: EntryRepository {
   public func recentByProject(_ projectId: String, limit: Int) throws -> [TranscriptEntry] {
     try db.read { db in
       try TranscriptEntry
-        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
+        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
         .order(Column("timestamp").desc, Column("created_at").desc, Column("id").desc)
         .limit(limit)
         .fetchAll(db)
@@ -354,7 +362,7 @@ public final class EntryRepositoryImpl: EntryRepository {
   public func newByProject(_ projectId: String, afterTimestamp: Int) throws -> [TranscriptEntry] {
     try db.read { db in
       try TranscriptEntry
-        .filter(Column("project_id") == projectId && Column("timestamp") > afterTimestamp && Column("display_in_timeline") == 1)
+        .filter(Column("project_id") == projectId && Column("timestamp") > afterTimestamp && Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
         .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
         .fetchAll(db)
     }
@@ -364,7 +372,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       var query = TranscriptEntry
         .filter(Column("transcript_id") == transcriptId)
-        .filter(Column("display_in_timeline") == 1)
+        .filter(Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
       if let after = afterTimestamp {
         query = query.filter(Column("timestamp") > after)
       }
@@ -376,7 +384,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       var query = TranscriptEntry
         .filter(Column("content").like("%\(content)%"))
-        .filter(Column("display_in_timeline") == 1)
+        .filter(Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
       if let projectId = projectId {
         query = query.filter(Column("project_id") == projectId)
       }
@@ -402,6 +410,7 @@ public final class EntryRepositoryImpl: EntryRepository {
          AND c.generator_signature = ?
         WHERE e.project_id = ?
           AND e.display_in_timeline = 1
+          AND e.is_sidechain = 0
         ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
         LIMIT ?
       """
@@ -435,7 +444,7 @@ public final class EntryRepositoryImpl: EntryRepository {
   public func entriesAfterCursor(projectId: String, after: (timestamp: Int, createdAt: Int, id: String)) throws -> [TranscriptEntry] {
     try db.read { db in
       try TranscriptEntry
-        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1)
+        .filter(Column("project_id") == projectId && Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
         .filter(sql: "(timestamp, created_at, id) > (?, ?, ?)", arguments: [after.timestamp, after.createdAt, after.id])
         .order(Column("timestamp").asc, Column("created_at").asc, Column("id").asc)
         .fetchAll(db)
@@ -448,6 +457,7 @@ public final class EntryRepositoryImpl: EntryRepository {
         SELECT transcript_id, MAX(timestamp) as latest_timestamp
         FROM transcript_entries
         WHERE project_id = ?
+          AND is_sidechain = 0
         GROUP BY transcript_id
       """
 
@@ -460,6 +470,37 @@ public final class EntryRepositoryImpl: EntryRepository {
         }
       }
       return result
+    }
+  }
+}
+
+public final class ToolInvocationRepositoryImpl: ToolInvocationRepository {
+  private let db: DatabasePool
+
+  public init(db: DatabasePool) {
+    self.db = db
+  }
+
+  public func insert(_ invocation: ToolInvocation) throws {
+    try db.write { db in
+      try invocation.insert(db, onConflict: .ignore)
+    }
+  }
+
+  public func insertBatch(_ invocations: [ToolInvocation]) throws {
+    try db.write { db in
+      for invocation in invocations {
+        try invocation.insert(db, onConflict: .ignore)
+      }
+    }
+  }
+
+  public func byTranscript(_ transcriptId: String) throws -> [ToolInvocation] {
+    try db.read { db in
+      try ToolInvocation
+        .filter(Column("transcript_id") == transcriptId)
+        .order(Column("started_at").asc, Column("created_at").asc)
+        .fetchAll(db)
     }
   }
 }

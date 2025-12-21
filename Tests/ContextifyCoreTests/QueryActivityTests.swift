@@ -72,7 +72,8 @@ final class QueryActivityTests: XCTestCase {
       createdTs: nil,
       createdAt: 100,
       updatedAt: 100,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     let e2 = TranscriptEntry(
@@ -99,7 +100,8 @@ final class QueryActivityTests: XCTestCase {
       createdTs: nil,
       createdAt: 200,
       updatedAt: 200,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     try await pool.write { db in

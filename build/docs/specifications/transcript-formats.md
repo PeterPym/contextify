@@ -179,6 +179,11 @@ Assistant messages contain typed content blocks:
 }
 ```
 
+**Skill and Agent Invocation Identification (Claude Code):**
+- **Skill calls:** `tool_use` block with `name: "Skill"` and `input.skill` set to the skill key (e.g., `query:contextify-reinject`).
+- **Agent calls (Task tool):** `tool_use` block with `name: "Task"` and `input.subagent_type` set to the agent key (e.g., `query:contextify-researcher`).
+- **Tool result linkage:** The following `user` record includes `tool_result` blocks and may include `toolUseResult.agentId` (for Task) and `toolUseResult.commandName` (for Skill). Use these fields to link tool results to invocations rather than parsing prompt text.
+
 **`tool_result` Block:**
 ```json
 {

@@ -155,6 +155,67 @@ final class TranscriptParserTests: XCTestCase {
     XCTAssertTrue(entry.hasTextContent, "Messages with text blocks should be displayable")
   }
 
+  func testSidechainEntryIsParsed() throws {
+    let parser = ClaudeCodeLineParser()
+    let line = """
+    {"type":"assistant","uuid":"sidechain-1","timestamp":"2025-01-01T00:00:00Z","isSidechain":true,"agentId":"agent-123","message":{"role":"assistant","content":[{"type":"text","text":"Sidechain response"}]}}
+    """
+
+    let entry = try parser.parse(
+      line: line,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: nil
+    )
+
+    XCTAssertEqual(entry.content, "Sidechain response")
+    XCTAssertTrue(entry.isSidechain)
+    XCTAssertEqual(entry.agentId, "agent-123")
+  }
+
+  func testTaskToolUseAndResultExtraction() throws {
+    let parser = ClaudeCodeLineParser()
+
+    let assistantLine = """
+    {"type":"assistant","uuid":"assistant-task","timestamp":"2025-01-01T00:00:00Z","message":{"content":[{"type":"tool_use","id":"toolu_task","name":"Task","input":{"subagent_type":"query:contextify-researcher","prompt":"Find things"}}]}}
+    """
+
+    let assistantEntry = try parser.parse(
+      line: assistantLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    XCTAssertEqual(assistantEntry.toolInvocations.count, 1)
+    XCTAssertEqual(assistantEntry.toolInvocations.first?.toolName, "Task")
+    XCTAssertEqual(assistantEntry.toolInvocations.first?.toolKey, "query:contextify-researcher")
+    XCTAssertTrue(assistantEntry.toolInvocations.first?.isContextify ?? false)
+
+    let userLine = """
+    {"type":"user","uuid":"user-task","timestamp":"2025-01-01T00:00:01Z","toolUseResult":{"status":"completed","agentId":"agent-xyz"},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_task","content":[{"type":"text","text":"Agent output"}]}]}}
+    """
+
+    let userEntry = try parser.parse(
+      line: userLine,
+      lineNumber: 2,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    XCTAssertEqual(userEntry.content, "Agent output")
+    XCTAssertTrue(userEntry.hasTextContent)
+    XCTAssertEqual(userEntry.toolResultData.count, 1)
+    XCTAssertEqual(userEntry.toolResultData.first?.agentId, "agent-xyz")
+    XCTAssertEqual(userEntry.toolResultData.first?.status, "completed")
+  }
+
   func testThinkingOnlyMessage() throws {
     let parser = ClaudeCodeLineParser()
     let line = """

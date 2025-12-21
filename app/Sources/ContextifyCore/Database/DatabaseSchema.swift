@@ -3,7 +3,7 @@ import GRDB
 import OSLog
 
 /// SQLite schema for Contextify transcript storage
-/// Current version: v28 (added FTS5 full-text search index)
+/// Current version: v30 (sidechain ingestion + tool invocations)
 ///
 /// Time Unit Convention:
 /// - Standard timestamps (created_at, updated_at, generated_at, timestamp, last_modified): Unix seconds (Int)
@@ -771,6 +771,74 @@ enum DatabaseSchema {
       logger.info("[MIGRATION-v29] Added \(summaryCount, privacy: .public) summaries to FTS index")
     }
 
+    // ========================================================================
+    // v30: Sidechain ingestion + tool invocations
+    // ========================================================================
+    migrator.registerMigration("v30") { db in
+      logger.info("[MIGRATION-v30] Adding sidechain + tool invocation support")
+
+      // Add is_sidechain column to transcript_entries (defensive)
+      let entryColumns = try db.columns(in: "transcript_entries")
+      if !entryColumns.contains(where: { $0.name == "is_sidechain" }) {
+        try db.execute(sql: """
+          ALTER TABLE transcript_entries
+          ADD COLUMN is_sidechain INTEGER NOT NULL DEFAULT 0
+        """)
+        logger.info("[MIGRATION-v30] is_sidechain column added successfully")
+      } else {
+        logger.info("[MIGRATION-v30] is_sidechain column already exists, skipping")
+      }
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_entries_sidechain ON transcript_entries(is_sidechain)")
+
+      // Create tool_invocations table + indexes
+      try db.execute(sql: """
+        CREATE TABLE IF NOT EXISTS tool_invocations (
+          id TEXT PRIMARY KEY,
+          entry_id TEXT NOT NULL REFERENCES transcript_entries(id) ON DELETE CASCADE,
+          transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+          parent_invocation_id TEXT REFERENCES tool_invocations(id) ON DELETE SET NULL,
+          tool_name TEXT NOT NULL,
+          tool_key TEXT,
+          tool_use_id TEXT,
+          tool_result_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL,
+          sidechain_transcript_id TEXT REFERENCES transcripts(id) ON DELETE SET NULL,
+          sidechain_agent_id TEXT,
+          started_at INTEGER,
+          completed_at INTEGER,
+          status TEXT DEFAULT 'unknown',
+          is_contextify INTEGER DEFAULT 0,
+          metadata_json TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      """)
+
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_entry ON tool_invocations(entry_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_result_entry ON tool_invocations(tool_result_entry_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_transcript ON tool_invocations(transcript_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_parent ON tool_invocations(parent_invocation_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_sidechain ON tool_invocations(sidechain_transcript_id)")
+      try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_invocations_tool_key ON tool_invocations(tool_key)")
+      try db.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_invocations_contextify
+        ON tool_invocations(is_contextify)
+        WHERE is_contextify = 1
+      """)
+
+      // Force re-ingestion of Claude Code transcripts to populate tool_invocations + sidechains
+      try db.execute(sql: """
+        UPDATE transcripts
+        SET ingest_state = 'partial',
+            last_processed_line = 0,
+            last_processed_entry_id = NULL,
+            last_error = NULL,
+            status = 'active',
+            updated_at = strftime('%s','now')
+        WHERE provider = 'claude.code'
+      """)
+      logger.info("[MIGRATION-v30] Marked Claude Code transcripts for re-ingestion")
+    }
+
     return migrator
   }
 
@@ -897,6 +965,8 @@ enum DatabaseSchema {
       t.column("created_ts", .double)  // Populated from timestamp during ingestion
       // v27: Queue-operation tracking for transient "QUEUED" badge display
       t.column("is_queued", .integer).notNull().defaults(to: 0)
+      // v30: Sidechain marker for agent transcripts (hidden from timeline)
+      t.column("is_sidechain", .integer).notNull().defaults(to: 0)
     }
     try db.create(index: "idx_entries_transcript_time", on: "transcript_entries", columns: ["transcript_id", "timestamp"], ifNotExists: true)
     try db.create(index: "idx_entries_content_sha", on: "transcript_entries", columns: ["content_sha256"], ifNotExists: true)
@@ -931,6 +1001,39 @@ enum DatabaseSchema {
       CREATE INDEX IF NOT EXISTS idx_entries_unread_join
       ON transcript_entries(project_id, created_ts)
       WHERE display_in_timeline = 1
+    """)
+    try db.create(index: "idx_entries_sidechain", on: "transcript_entries", columns: ["is_sidechain"], ifNotExists: true)
+
+    // Tool invocations table (v30)
+    try db.create(table: "tool_invocations", ifNotExists: true) { t in
+      t.column("id", .text).primaryKey()
+      t.column("entry_id", .text).notNull().references("transcript_entries", onDelete: .cascade)
+      t.column("transcript_id", .text).notNull().references("transcripts", onDelete: .cascade)
+      t.column("parent_invocation_id", .text).references("tool_invocations", onDelete: .setNull)
+      t.column("tool_name", .text).notNull()
+      t.column("tool_key", .text)
+      t.column("tool_use_id", .text)
+      t.column("tool_result_entry_id", .text).references("transcript_entries", onDelete: .setNull)
+      t.column("sidechain_transcript_id", .text).references("transcripts", onDelete: .setNull)
+      t.column("sidechain_agent_id", .text)
+      t.column("started_at", .integer)
+      t.column("completed_at", .integer)
+      t.column("status", .text).notNull().defaults(to: "unknown")
+      t.column("is_contextify", .integer).notNull().defaults(to: 0)
+      t.column("metadata_json", .text)
+      t.column("created_at", .integer).notNull()
+      t.column("updated_at", .integer).notNull()
+    }
+    try db.create(index: "idx_invocations_entry", on: "tool_invocations", columns: ["entry_id"], ifNotExists: true)
+    try db.create(index: "idx_invocations_result_entry", on: "tool_invocations", columns: ["tool_result_entry_id"], ifNotExists: true)
+    try db.create(index: "idx_invocations_transcript", on: "tool_invocations", columns: ["transcript_id"], ifNotExists: true)
+    try db.create(index: "idx_invocations_parent", on: "tool_invocations", columns: ["parent_invocation_id"], ifNotExists: true)
+    try db.create(index: "idx_invocations_sidechain", on: "tool_invocations", columns: ["sidechain_transcript_id"], ifNotExists: true)
+    try db.create(index: "idx_invocations_tool_key", on: "tool_invocations", columns: ["tool_key"], ifNotExists: true)
+    try db.execute(sql: """
+      CREATE INDEX IF NOT EXISTS idx_invocations_contextify
+      ON tool_invocations(is_contextify)
+      WHERE is_contextify = 1
     """)
 
     // Timeline cache table (WITHOUT ROWID for composite PK optimization)

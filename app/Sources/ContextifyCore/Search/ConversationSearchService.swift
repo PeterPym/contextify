@@ -239,6 +239,7 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
+            AND is_sidechain = 0
             AND (timestamp < ? OR (timestamp = ? AND id < ?))
           ORDER BY timestamp DESC, id DESC
           LIMIT ?
@@ -248,6 +249,7 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
+            AND is_sidechain = 0
             AND id = ?
         )
         UNION ALL
@@ -255,6 +257,7 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
+            AND is_sidechain = 0
             AND (timestamp > ? OR (timestamp = ? AND id > ?))
           ORDER BY timestamp ASC, id ASC
           LIMIT ?
@@ -300,6 +303,7 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
+          AND is_sidechain = 0
           AND (timestamp < ? OR (timestamp = ? AND id < ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
@@ -311,6 +315,7 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
+          AND is_sidechain = 0
           AND (timestamp > ? OR (timestamp = ? AND id > ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 

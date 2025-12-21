@@ -163,7 +163,8 @@ final class DatabaseTests: XCTestCase {
         createdTs: Double(now),
         createdAt: now,
         updatedAt: now,
-        isQueued: 0
+        isQueued: 0,
+        isSidechain: 0
       ),
       TranscriptEntry(
         id: UUID().uuidString,
@@ -186,7 +187,8 @@ final class DatabaseTests: XCTestCase {
         createdTs: Double(now + 1),
         createdAt: now + 1,
         updatedAt: now + 1,
-        isQueued: 0
+        isQueued: 0,
+        isSidechain: 0
       )
     ]
 
@@ -386,7 +388,8 @@ final class DatabaseTests: XCTestCase {
       createdTs: Double(now),
       createdAt: now,
       updatedAt: now,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
     try entryRepo.insertBatch([entry])
 
@@ -1063,7 +1066,8 @@ final class DatabaseTests: XCTestCase {
         createdTs: olderCreated,
         createdAt: Int(olderCreated),
         updatedAt: Int(olderCreated),
-        isQueued: 0
+        isQueued: 0,
+        isSidechain: 0
       ),
       TranscriptEntry(
         id: UUID().uuidString,
@@ -1089,7 +1093,8 @@ final class DatabaseTests: XCTestCase {
         createdTs: newerCreated,
         createdAt: Int(newerCreated),
         updatedAt: Int(newerCreated),
-        isQueued: 0
+        isQueued: 0,
+        isSidechain: 0
       )
     ]
     try entryRepo.insertBatch(entries)
@@ -1156,7 +1161,8 @@ final class DatabaseTests: XCTestCase {
       createdTs: created,
       createdAt: Int(created),
       updatedAt: Int(created),
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
     try entryRepo.insert(entry)
 

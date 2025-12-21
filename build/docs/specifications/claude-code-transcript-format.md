@@ -110,7 +110,7 @@ type ContentBlock =
 ```
 
 **Special Cases:**
-- **`isSidechain: true`:** Used for subagent/sidechain messages AND warmup/initialization contexts. Should be skipped for timeline display. See [Sidechain Transcript Files](#sidechain-transcript-files).
+- **`isSidechain: true`:** Used for subagent/sidechain messages AND warmup/initialization contexts. Ingested into the database but filtered from timeline display (`is_sidechain = 0` in timeline queries). See [Sidechain Transcript Files](#sidechain-transcript-files).
 - **`isMeta: true`:** Meta/command wrappers (e.g., "DO NOT respond to these messages..."). System-generated, not user-initiated.
 
 **Frequency:** 6,391 records (34.3%)
@@ -340,6 +340,10 @@ Used within `message.content` arrays for both user and assistant messages.
 ```
 **Frequency:** 5,685 blocks
 
+**Skill/Task Identification:**
+- **Skill calls:** `name: "Skill"` and `input.skill` = skill key (e.g., `query:contextify-reinject`).
+- **Agent calls (Task tool):** `name: "Task"` and `input.subagent_type` = agent key (e.g., `query:contextify-researcher`).
+
 ### Tool Result Block
 ```typescript
 {
@@ -350,6 +354,11 @@ Used within `message.content` arrays for both user and assistant messages.
 }
 ```
 **Frequency:** 5,684 blocks
+
+**Tool Result Linkage:**
+- Skill runs may include `toolUseResult.commandName` on the enclosing `user` record.
+- Task runs may include `toolUseResult.agentId` (used to locate `agent-<id>.jsonl` sidechain files).
+- Use these fields to link `tool_result` to tool invocations without parsing prompt text.
 
 ### Thinking Block
 ```typescript
@@ -677,30 +686,14 @@ if operation == "dequeue" {
 
 ### Implementation Guidance
 
-**Database Storage:**
+**Database Storage (Current Implementation):**
+- Uses `transcript_entries.is_queued` to persist queue state (v27 migration).
+- Queue-operation parsing sets `is_queued = 1` on synthetic entries and clears it on dequeue/remove.
+- Timeline reads the persisted flag to show the `QUEUED` badge.
 
-**Option 1: Transient Computation (RECOMMENDED)**
-- Parse transcript and compute queue state dynamically
-- Track which messages are currently queued based on `enqueue`/`remove`/`popAll`/`dequeue` records
-- Display queue status in UI without persisting to database
-
-**Pros:**
-- No schema changes required
-- Always accurate (reflects transcript state)
-- Simpler implementation
-
-**Option 2: Database Column**
-- Add `is_queued BOOLEAN` column to transcript_entries
-- Update column when parsing queue-operation records
-
-**Pros:**
-- Faster queries (no parsing required)
-- Simpler UI logic
-
-**Recommendation:** Use **Option 1 (Transient)** because:
-1. Queue state is inherently transient (only meaningful during active session)
-2. Historical transcripts don't need queue status (already processed)
-3. Simpler implementation without schema changes
+**Rationale:**
+- Persisted flags avoid recomputing queue state on every timeline query.
+- Historical entries retain correct state for debugging and audit.
 
 **UI Display Guidelines:**
 
@@ -761,16 +754,16 @@ class QueueStateTracker {
 ### Current Implementation (Contextify)
 
 **What we parse (store in DB):**
-- `user` and `assistant` messages with `uuid`, `isMeta: false`, `isSidechain: false`
+- `user` and `assistant` messages with `uuid` (including `isSidechain: true`)
 - Extract: `content`, `timestamp`, `parentUuid`, `sessionId`, `provider`, `kind`, `gitBranch`, `gitCommit`, `cwd`
+- Tool-use-only entries are stored with tool markers (e.g., `[Tool: Bash]`) and `display_in_timeline = 0`
 
 **What we skip:**
-- `isSidechain: true` - Warmup/initialization messages
 - `isMeta: true` - Meta/command wrappers
 - `summary` - Internal navigation metadata
 - `file-history-snapshot` - File tracking metadata
 - `system` - System events
-- Empty content - Tool-use-only messages
+- Empty content - Messages with no displayable text or tool markers
 
 ### Proposed Enhancements
 
@@ -1026,7 +1019,7 @@ Transcripts should be classified across **four orthogonal axes**:
 **2. Sidechain-Only** (warmup/initialization sessions)
 - **Has:** ONLY messages with `isSidechain: true`
 - **Purpose:** Project context loading, warmup before actual conversation
-- **Database:** `entryCount = 0` (skipped by parser)
+- **Database:** Entries exist with `is_sidechain = 1` and `display_in_timeline = 0`
 - **File content:** 2-10 lines typically
 - **Relevant sections:** §1 (User Messages - Special Cases)
 
