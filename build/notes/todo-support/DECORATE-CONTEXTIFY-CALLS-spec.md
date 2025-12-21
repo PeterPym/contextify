@@ -20,7 +20,7 @@ description: Identify Contextify skill/agent invocations and decorate conversati
 - Identification must be based on call metadata/title/key, not conversational prompt text, to avoid false positives (e.g., unrelated skills mentioning "contextify" in prompts).
 - Target identifiers:
   - Agent call: `query:contextify-researcher`.
-  - Skill call: `/query:contextify-reinject`.
+  - Skill call: `query:contextify-reinject`.
 - Goal: decorate conversation log entry rows (same location as existing icons/"QUEUED" label) for:
   - Skill calls: Contextify icon.
   - Agent calls: detective emoji + Contextify icon.
@@ -120,7 +120,7 @@ description: Identify Contextify skill/agent invocations and decorate conversati
 
 ## Proposed Identification Logic
 
-### Skill calls (`/query:contextify-reinject`)
+### Skill calls (`query:contextify-reinject`)
 - Claude Code transcript `assistant.message.content[]` block:
   - `type: "tool_use"`
   - `name: "Skill"`

@@ -221,13 +221,13 @@ Database (transcript_entries + tool_invocations)
 | **ClaudeCodeLineParser** | `TranscriptParsers.swift:163-166` | Skips `isSidechain: true` records | **YES** | Remove skip, populate `is_sidechain` field instead |
 | **ClaudeCodeLineParser** | `TranscriptParsers.swift:168-350` | Extracts content, ignores tool metadata | **YES** | Add tool_use block extraction for `tool_invocations` |
 | **CodexLineParser** | `TranscriptParsers.swift:645-810` | No sidechain handling (Codex has none) | NO | Codex doesn't use sidechains |
-| **HooverEngine.storeEntries** | `HooverEngine.swift:721-750` | Inserts transcript_entries only | **YES** | Also insert `tool_invocations` records |
+| **HooverEngine.commitBatch** | `HooverEngine.swift:721-750` | Inserts transcript_entries only | **YES** | Also insert `tool_invocations` records |
 | **HooverEngine.EntryInsert** | `HooverEngine.swift:70-138` | No tool metadata fields | **YES** | Add `isSidechain`, `toolInvocations` array |
 | **FastPathIngestionCoordinator** | `FastPathIngestionCoordinator.swift:582-586` | Deprioritizes agent-* files | OPTIONAL | Keep deprioritization (process mains first) or remove |
 | **TranscriptOrchestrator** | `TranscriptOrchestrator.swift:2342` | Excludes agent-* from some queries | **YES** | Remove or change to `is_sidechain = 0` filter |
 | **TranscriptOrchestrator** | Multiple timeline queries | No sidechain filter | **YES** | Add `WHERE is_sidechain = 0` to preserve UI |
 | **TranscriptConverter** | `TranscriptConverter.swift:191-193` | Skips meta/sidechain for format conversion | NO | Converter is for export, not ingestion |
-| **DatabaseSchema** | `DatabaseSchema.swift` (migrations) | No tool_invocations table | **YES** | Add migration v27+ |
+| **DatabaseSchema** | `DatabaseSchema.swift` (migrations) | No tool_invocations table | **YES** | Add migration v30 |
 | **Models.swift** | `Models.swift:104-163` | TranscriptEntry has no sidechain field | **YES** | Add `is_sidechain` column |
 | **Models.swift** | N/A | No ToolInvocation model | **YES** | Add new model struct |
 | **Repositories.swift** | `Repositories.swift:332-339` | Entry insert only | **YES** | Add ToolInvocationRepository |
@@ -424,7 +424,7 @@ Phases 1-4 are the core work and should be done together as a cohesive unit.
 DECORATE-CONTEXTIFY-CALLS can be done after Phase 2 completes.
 
 ### Phase 1: Schema & Models
-- [ ] Add migration v27 with `tool_invocations` table
+- [ ] Add migration v30 with `tool_invocations` table
 - [ ] Add `is_sidechain` column to `transcript_entries`
 - [ ] Create `ToolInvocation` model in Models.swift
 - [ ] Create `ToolInvocationRepository` in Repositories.swift
@@ -438,7 +438,7 @@ DECORATE-CONTEXTIFY-CALLS can be done after Phase 2 completes.
 - [ ] Add unit tests for tool extraction
 
 ### Phase 3: Ingestion Pipeline
-- [ ] Update `HooverEngine.storeEntries()` to insert tool_invocations
+- [ ] Update `HooverEngine.commitBatch()` to insert tool_invocations
 - [ ] Remove `NOT LIKE '%/agent-%'` filter in `TranscriptOrchestrator`
 - [ ] Add `is_sidechain = 0` filter to timeline queries
 - [ ] Update FastPath priority handling (optional: keep deprioritizing)
