@@ -143,7 +143,13 @@ extension EntryFilter {
 
   // MARK: - Table Aliases (constrain prefix to known-safe values)
 
-  /// Known-safe table aliases for entry queries
+  /// Known-safe table aliases for entry queries.
+  /// Hardening against SQL injection by constraining to enum values.
+  ///
+  /// Trade-off: New aliases require modifying this enum (coupling point).
+  /// For a solo project, this is acceptable - add cases as needed.
+  /// If this becomes friction, consider a validated custom case:
+  ///   case custom(String)  // validated against ^[A-Za-z_][A-Za-z0-9_]*$
   public enum TableAlias: String {
     case e      // Standard: "transcript_entries e"
     case te     // Alternative: "transcript_entries te"
@@ -164,7 +170,8 @@ extension EntryFilter {
       clauses.append("\(prefix).is_sidechain = 0")
     }
     if let kinds, !kinds.isEmpty {
-      let sortedKinds = kinds.sorted()
+      // Dedupe and sort for deterministic SQL (order not preserved)
+      let sortedKinds = Array(Set(kinds)).sorted()
       let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
       clauses.append("\(prefix).kind IN (\(placeholders))")
       for k in sortedKinds {
@@ -281,7 +288,9 @@ func testContext_includeHiddenTrue_shouldIncludeSidechains() async throws {
   // ...
 
   // This documents the CURRENT BUG: includeHidden=true still excludes sidechains
-  XCTExpectFailure("Bug: sidechains coupled to includeHidden - will be fixed in ENTRY-FILTER-ARCHITECTURE") {
+  // NOTE: XCTExpectFailure is STRICT by default - test FAILS if assertion passes.
+  // MUST remove this wrapper when bug is fixed.
+  XCTExpectFailure("Bug: sidechains coupled to includeHidden - REMOVE WRAPPER when fixed") {
     let context = try service.context(entryId: "anchor", includeHidden: true)
     // After fix, this should include sidechain neighbors
     XCTAssertTrue(context.entries.contains { $0.isSidechain == 1 })
@@ -289,10 +298,18 @@ func testContext_includeHiddenTrue_shouldIncludeSidechains() async throws {
 }
 ```
 
+**Important:** `XCTExpectFailure` is **strict by default** - if the expected failure doesn't happen (i.e., the bug is fixed), XCTest treats it as an "unexpected pass" and **fails the test**. This is actually desirable: it forces cleanup of the wrapper once the bug is fixed.
+
 **Benefits:**
 - Permanent "this was broken" breadcrumb in test history
-- Test passes now (expected failure) and after fix (assertion succeeds)
-- No need to rewrite test - just remove `XCTExpectFailure` wrapper when fixed
+- Strict mode nags you to clean up when bug is fixed
+- Documents expected behavior clearly
+
+**Workflow:**
+1. Add test with `XCTExpectFailure` wrapper - test passes (expected failure)
+2. Fix the bug
+3. Test now fails ("unexpected pass") - reminder to remove wrapper
+4. Remove `XCTExpectFailure` wrapper - test passes normally
 
 ### Phase 1: Add EntryFilter Type (Non-Breaking)
 
@@ -310,13 +327,13 @@ func testContext_includeHiddenTrue_shouldIncludeSidechains() async throws {
 - [ ] Add unit tests for kinds filtering
 - [ ] Run `swift test` - all tests must pass (Phase 0 characterization tests still pass)
 
-### Phase 2a: Minimal Fix (Alternative - Fastest Path)
+### Phase 2a: Minimal Fix (Alternative - Fastest Path) ✅ COMPLETE
 
 If full `EntryFilter` is deferred, this standalone fix resolves the immediate bug:
 
 **Tasks:**
-- [ ] Add `includeSidechains: Bool = false` to `context()` and `activity()`
-- [ ] Split coupled filter into two independent checks:
+- [x] Add `includeSidechains: Bool = false` to `context()` and `activity()`
+- [x] Split coupled filter into two independent checks:
   ```swift
   if !includeHidden {
     filters.append("\(prefix).display_in_timeline = 1")
@@ -325,42 +342,61 @@ If full `EntryFilter` is deferred, this standalone fix resolves the immediate bu
     filters.append("\(prefix).is_sidechain = 0")
   }
   ```
-- [ ] Add tests for all 4 combinations
+- [x] Add tests for all 4 combinations
+- [x] Fix `ConversationSearchService.getContext()` - removed hard-coded `is_sidechain = 0`
+- [x] Fix `ConversationSearchService.getContextCounts()` - same fix
 
-This is a ~20 line change that fixes the CLI correctness bug immediately.
+**Commits:**
+- `fc703491 test(query): add sidechain filter decoupling test`
+- `4edf184f fix(query): decouple is_sidechain from includeHidden filter`
+
+This ~20 line change fixed the CLI correctness bug immediately.
 
 ### Phase 2b: Refactor CLI Functions (Full Solution)
 
 **Files:**
 - `app/Sources/ContextifyCore/Database/ContextifyQueryService.swift`
 
-**API Strategy: Transitional Overloads**
+**API Strategy: Internal Implementation Function (Avoids Overload Ambiguity)**
 
-To enable gradual migration without forcing all callers to change immediately:
+Swift overloads with defaulted parameters can cause "ambiguous use of 'activity'" errors. For example, `activity(projectId: "p1")` could match both a boolean-based and filter-based signature if both have defaults.
+
+**Solution:** Use an internal implementation function and keep the public surface boolean-based:
 
 ```swift
-// Keep existing signature (routes to EntryFilter internally)
+// Public API: boolean parameters (backward compatible)
 public func activity(
   projectId: String? = nil,
   includeHidden: Bool = false,
-  includeSidechains: Bool = false,  // NEW
+  includeSidechains: Bool = false,
   // ... other params
 ) throws -> [ActivityItem] {
   let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
-  return try activity(filter: filter, projectId: projectId, ...)
+  return try activityImpl(filter: filter, projectId: projectId, ...)
 }
 
-// New overload for callers who want EntryFilter directly
-public func activity(
-  filter: EntryFilter = .timeline,
+// Internal: EntryFilter-based implementation
+internal func activityImpl(
+  filter: EntryFilter,
   projectId: String? = nil,
-  // ... other params (fewer booleans)
+  // ... other params
 ) throws -> [ActivityItem] {
   // Primary implementation using filter.sqlPredicate()
 }
 ```
 
-This gives the "scalable" path without forcing every consumer to migrate immediately.
+If we later want to expose `EntryFilter` publicly, make the filter parameter **required** (no default) to avoid ambiguity:
+
+```swift
+// Future: explicit filter overload (no default = no ambiguity)
+public func activity(
+  filter: EntryFilter,  // REQUIRED - no default
+  projectId: String? = nil,
+  // ... other params
+) throws -> [ActivityItem]
+```
+
+**Alternative:** Keep `EntryFilter` internal until Phase 3 proves reuse across CLI + UI. Solo project - don't lock into public API shape prematurely.
 
 **Tasks:**
 - [ ] Add `includeSidechains: Bool = false` parameter to `activity()`
@@ -392,12 +428,27 @@ The UI search policy requires explicit decisions:
 
 **Note:** `ConversationSearchService.search()` currently does NOT filter `display_in_timeline`. This is intentional - it's a "deep search" that finds all matching entries. The UI can filter results at display time if needed. Changing this would be a user-visible behavior change requiring separate consideration.
 
+**UI Hidden-Hit Policy (MUST DECIDE)**
+
+Since `search()` is "deep search" and can return hidden entries (`display_in_timeline = 0`), but `getContext()` uses `.search` (which excludes hidden), we have a potential inconsistency:
+
+- User clicks a hidden hit → `getContext()` filters it out → empty context or missing anchor
+
+**Policy options:**
+
+1. **Filter at display time (recommended for now):** Deep search may find hidden entries, but UI filters them from clickable results. Then `.search` for `getContext()` is correct because hidden hits are never clickable.
+
+2. **Anchor-unfiltered context:** Make `getContext()` match CLI `context()` anchor semantics - always include the anchor entry by ID regardless of filter, apply filter only to before/after windows. Eliminates "empty window for existing hit" entirely.
+
+**Decision:** Option 1 for Phase 3. Add test that hidden hits are filtered from displayed/clickable results in UI. If this causes user confusion later, revisit with Option 2.
+
 **Tasks:**
 - [ ] Use `EntryFilter.search.sqlAndFragment()` for `getContext()` queries (L237-265)
 - [ ] Use `EntryFilter.search.sqlAndFragment()` for `getContextCounts()` queries (L299-340)
 - [ ] Remove duplicated hard-coded filter SQL strings
 - [ ] Add sidechain fixtures to `ConversationSearchServiceTests.swift`
 - [ ] Add regression test: search finds sidechain entry, context retrieval includes neighbors
+- [ ] Add hidden-hit policy test: hidden entries from search are filtered from clickable results
 - [ ] Run `swift test` - all tests must pass
 
 ### Phase 4: CLI Interface Updates (Optional)
@@ -655,35 +706,44 @@ The `EntryFilter` design accommodates future needs:
    - **Decision:** No change to current behavior. `search()` is "deep search" - returns all FTS matches. Filtering happens at display time if needed. Changing this would be user-visible behavior change.
 
 8. **Public API direction - booleans vs EntryFilter?**
-   - **Decision:** Transitional overloads. Keep boolean params for compatibility, add `filter: EntryFilter` overloads for callers who want it. Gradual migration path.
+   - **Decision:** Internal implementation function. Keep boolean params for public API (backward compatible), use internal `activityImpl(filter:)` for implementation. If exposing `EntryFilter` publicly later, make `filter:` parameter **required** (no default) to avoid Swift overload ambiguity.
+
+9. **What is the intended UI behavior for hidden hits from deep search?**
+   - **Decision:** Filter at display time. Hidden entries may be found by search, but UI filters them from clickable results. `getContext()` uses `.search` preset (excludes hidden), which is correct since hidden hits are never clickable. Add test to enforce this policy.
+
+10. **Should `EntryFilter` be public or internal initially?**
+    - **Decision:** Keep internal until Phase 3 proves reuse across CLI + UI. Solo project - don't lock into public API shape prematurely. SQL helpers can be internal.
 
 ## Acceptance Criteria
 
 ### Functional
-- [ ] `is_sidechain` filter decoupled from `includeHidden`
-- [ ] `EntryFilter` type with `sqlPredicate()` and `sqlAndFragment()` helpers
+- [x] `is_sidechain` filter decoupled from `includeHidden` (Phase 2a - DONE)
+- [ ] `EntryFilter` type with `sqlPredicate()` and `sqlAndFragment()` helpers (Phase 1)
 - [ ] `TableAlias` enum constrains prefix to known-safe values (SQL injection prevention)
-- [ ] `kinds` uses `[String]?` for ergonomic call sites
+- [ ] `kinds` uses `[String]?` for ergonomic call sites, deduped internally
 - [ ] Kind constants (`EntryFilter.Kind.*`) defined to prevent stringly-typed drift
-- [ ] New `includeSidechains` parameter available on `activity()` and `context()`
-- [ ] Transitional `filter: EntryFilter` overloads for gradual migration
+- [x] New `includeSidechains` parameter available on `activity()` and `context()` (Phase 2a - DONE)
+- [ ] Internal `activityImpl(filter:)` / `contextImpl(filter:)` for implementation (Phase 2b)
 - [ ] `recentActivity()` and `projectStats()` have optional filter override
 - [ ] `projectStats()` keeps filter in ON clause (LEFT JOIN semantics preserved)
 - [ ] UI `ConversationSearchService.getContext()` uses `EntryFilter.search`
 - [ ] UI `ConversationSearchService.search()` unchanged (deep search)
+- [ ] UI hidden-hit policy: hidden entries filtered from clickable results
 - [ ] Debug logging for computed predicates
 
 ### Testing
-- [ ] Phase 0 characterization tests with `XCTExpectFailure` for known bugs
-- [ ] `XCTExpectFailure` removed after fix (tests now pass)
-- [ ] All 4 visibility combinations tested for `activity()` and `context()`
+- [ ] Phase 0 characterization tests with `XCTExpectFailure` for known bugs (skipped - went direct to Phase 2a)
+- [x] All 4 visibility combinations tested for `context()` (Phase 2a - DONE)
+- [ ] All 4 visibility combinations tested for `activity()` (Phase 2b)
 - [ ] Sidechain anchor context window test (anchor returned, neighbors filtered)
 - [ ] `projectStats()` LEFT JOIN regression test (projects with 0 entries still appear)
 - [ ] UI search sidechain hit + context retrieval test
+- [ ] UI hidden-hit policy test (hidden entries filtered from clickable results)
+- [ ] Kinds determinism test (verify args order is sorted/deduped)
 - [ ] Existing tests in `QueryActivityTests`, `QueryContextTests` updated with sidechain fixtures
 - [ ] Full test suite passes: `swift test` with 0 failures
 
 ### Compatibility
-- [ ] No breaking changes to existing CLI consumers
-- [ ] Default behavior unchanged (sidechains excluded from timeline views)
-- [ ] Transitional overloads allow gradual migration to `EntryFilter` API
+- [x] No breaking changes to existing CLI consumers (Phase 2a - DONE)
+- [x] Default behavior unchanged (sidechains excluded from timeline views) (Phase 2a - DONE)
+- [ ] Internal implementation allows gradual migration to `EntryFilter` API (Phase 2b)
