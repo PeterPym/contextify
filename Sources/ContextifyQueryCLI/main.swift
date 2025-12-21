@@ -109,7 +109,7 @@ struct ContextifyQueryCLI {
     }
   }
 
-  static let cliVersion = "1.0.4"
+  static let cliVersion = "1.0.5"
 
   static func main() {
     // Handle --version early (before any other parsing)
