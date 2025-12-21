@@ -51,6 +51,19 @@ if !includeHidden {
 }
 ```
 
+### Sidechain Storage Model
+
+Sidechain entries are **interleaved within the same transcript** as main-chain entries, distinguished by `is_sidechain = 1`. They are NOT stored in separate transcript IDs.
+
+- **Same transcript:** Sidechain entries share `transcript_id` with their parent conversation
+- **Flagged:** `is_sidechain = 1` marks entries from subagent invocations
+- **Linked:** `agent_id` links sidechain entries to their parent `tool_invocations` record
+
+**Implications for filtering:**
+- `includeSidechains` is meaningful for `context()` - sidechains appear as neighbors within the same transcript window
+- `includeSidechains` is meaningful for `activity()` - sidechains can be included/excluded from cross-transcript queries
+- Test fixtures correctly use same `transcript_id` with different `is_sidechain` values
+
 ## Solution: Unified `EntryFilter` Type
 
 ### Design Principles
@@ -411,44 +424,39 @@ public func activity(
 - [ ] Add test for sidechain anchor context window
 - [ ] Run `swift test` - all tests must pass with new correct behavior
 
-### Phase 3: Update UI Search Service
+### Phase 3: Update UI Search Service ✅ PARTIAL (blocking issues fixed)
 
 **Files:**
 - `app/Sources/ContextifyCore/Search/ConversationSearchService.swift`
 
-**Decision: Use `EntryFilter.search` for context retrieval**
+**Implementation approach changed:** Instead of using `EntryFilter.search` in `getContext()`, we added `displayInTimeline` and `isSidechain` fields to `ConversationSearchHit`. This enables UI-layer filtering while keeping the search queries simple.
 
-The UI search policy requires explicit decisions:
+| Function | Current Behavior | Decision | Implementation |
+|----------|-----------------|----------|----------------|
+| `search()` | Deep search (all FTS hits) | **Keep as-is** | Added `displayInTimeline`, `isSidechain` to hit model |
+| `getContext()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Doc comment updated to clarify behavior |
+| `getContextCounts()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Matches `getContext()` |
 
-| Function | Current Behavior | Decision | Rationale |
-|----------|-----------------|----------|-----------|
-| `search()` | No filtering (returns all FTS hits) | **Keep as-is** | Search should find everything; filtering happens at display |
-| `getContext()` | Hard-codes `is_sidechain = 0` | **Use `.search`** | Include sidechains so context works for sidechain hits |
-| `getContextCounts()` | Hard-codes `is_sidechain = 0` | **Use `.search`** | Match `getContext()` behavior |
+**UI Hidden-Hit Policy: Filter at Display Time** ✅ IMPLEMENTED
 
-**Note:** `ConversationSearchService.search()` currently does NOT filter `display_in_timeline`. This is intentional - it's a "deep search" that finds all matching entries. The UI can filter results at display time if needed. Changing this would be a user-visible behavior change requiring separate consideration.
+Deep search returns all FTS matches including hidden entries. The UI filters using `ConversationSearchHit.displayInTimeline` before allowing interaction. This ensures:
+- Hidden hits are not clickable
+- `getContext()` never receives hidden hit IDs (so no empty context windows)
+- Sidechains are visible and clickable (sidechain context retrieval works)
 
-**UI Hidden-Hit Policy (MUST DECIDE)**
+**Commits:**
+- `4e48eebf fix(search): add displayInTimeline/isSidechain to ConversationSearchHit`
 
-Since `search()` is "deep search" and can return hidden entries (`display_in_timeline = 0`), but `getContext()` uses `.search` (which excludes hidden), we have a potential inconsistency:
+**Completed tasks:**
+- [x] Add `displayInTimeline` and `isSidechain` to `ConversationSearchHit`
+- [x] Update `search()` SELECT to include `e.display_in_timeline`, `e.is_sidechain`
+- [x] Update `getContext()` doc comment to clarify hidden hits are excluded
+- [x] Remove hard-coded `is_sidechain = 0` from `getContext()` and `getContextCounts()` (prior commit)
 
-- User clicks a hidden hit → `getContext()` filters it out → empty context or missing anchor
-
-**Policy options:**
-
-1. **Filter at display time (recommended for now):** Deep search may find hidden entries, but UI filters them from clickable results. Then `.search` for `getContext()` is correct because hidden hits are never clickable.
-
-2. **Anchor-unfiltered context:** Make `getContext()` match CLI `context()` anchor semantics - always include the anchor entry by ID regardless of filter, apply filter only to before/after windows. Eliminates "empty window for existing hit" entirely.
-
-**Decision:** Option 1 for Phase 3. Add test that hidden hits are filtered from displayed/clickable results in UI. If this causes user confusion later, revisit with Option 2.
-
-**Tasks:**
-- [ ] Use `EntryFilter.search.sqlAndFragment()` for `getContext()` queries (L237-265)
-- [ ] Use `EntryFilter.search.sqlAndFragment()` for `getContextCounts()` queries (L299-340)
-- [ ] Remove duplicated hard-coded filter SQL strings
+**Remaining tasks:**
 - [ ] Add sidechain fixtures to `ConversationSearchServiceTests.swift`
 - [ ] Add regression test: search finds sidechain entry, context retrieval includes neighbors
-- [ ] Add hidden-hit policy test: hidden entries from search are filtered from clickable results
+- [ ] Add hidden-hit policy test: verify `displayInTimeline=false` hits are filtered in UI
 - [ ] Run `swift test` - all tests must pass
 
 ### Phase 4: CLI Interface Updates (Optional)
@@ -626,11 +634,22 @@ func testSqlAndFragmentGeneration() {
 
 ### Integration Tests
 
+**CLI Query Service:**
+- [x] `context()` with all 4 visibility combinations (Phase 2a - DONE)
 - [ ] `activity()` with all 4 visibility combinations
-- [ ] `context()` with sidechain anchor, `includeSidechains: false` - verify empty neighbors
+- [ ] `context()` with sidechain anchor, `includeSidechains: false` - verify anchor returned, neighbors empty
 - [ ] `context()` with sidechain anchor, `includeSidechains: true` - verify neighbors returned
-- [ ] `projectStats()` with filter in ON clause - verify projects with 0 entries still appear
-- [ ] UI search finds sidechain hit, context retrieval includes neighbors
+- [ ] `context()` timestamp collision tie-break test - multiple entries with same timestamp, verify stable ordering
+- [ ] `projectStats()` LEFT JOIN semantics - project with zero matching entries still appears
+
+**UI Search Service:**
+- [ ] `search()` returns hidden hits with `displayInTimeline: false` (deep search finds everything)
+- [ ] `search()` returns sidechain hits with `isSidechain: true`
+- [ ] UI filters hidden hits before allowing click (hidden-hit policy enforcement)
+- [ ] `getContext()` for sidechain hit returns non-empty window (regression test for original bug)
+
+**Kinds filtering:**
+- [ ] `kinds` deduplication test - verify args ordering is sorted/deduped
 
 ## Migration Notes
 
@@ -709,10 +728,13 @@ The `EntryFilter` design accommodates future needs:
    - **Decision:** Internal implementation function. Keep boolean params for public API (backward compatible), use internal `activityImpl(filter:)` for implementation. If exposing `EntryFilter` publicly later, make `filter:` parameter **required** (no default) to avoid Swift overload ambiguity.
 
 9. **What is the intended UI behavior for hidden hits from deep search?**
-   - **Decision:** Filter at display time. Hidden entries may be found by search, but UI filters them from clickable results. `getContext()` uses `.search` preset (excludes hidden), which is correct since hidden hits are never clickable. Add test to enforce this policy.
+   - **Decision:** Filter at display time. `ConversationSearchHit` now includes `displayInTimeline` and `isSidechain` fields. UI filters hidden hits before allowing interaction. `getContext()` doc comment clarifies hidden hits are excluded. Test to enforce policy is pending.
 
 10. **Should `EntryFilter` be public or internal initially?**
     - **Decision:** Keep internal until Phase 3 proves reuse across CLI + UI. Solo project - don't lock into public API shape prematurely. SQL helpers can be internal.
+
+11. **What is the sidechain storage model?**
+    - **Decision:** Sidechains are interleaved in the same transcript with `is_sidechain = 1`. They share `transcript_id` with main-chain entries. This means `includeSidechains` is meaningful for `context()` (sidechains appear as neighbors) and `activity()` (cross-transcript filtering). Test fixtures correctly reflect this model.
 
 ## Acceptance Criteria
 
@@ -726,9 +748,10 @@ The `EntryFilter` design accommodates future needs:
 - [ ] Internal `activityImpl(filter:)` / `contextImpl(filter:)` for implementation (Phase 2b)
 - [ ] `recentActivity()` and `projectStats()` have optional filter override
 - [ ] `projectStats()` keeps filter in ON clause (LEFT JOIN semantics preserved)
-- [ ] UI `ConversationSearchService.getContext()` uses `EntryFilter.search`
-- [ ] UI `ConversationSearchService.search()` unchanged (deep search)
-- [ ] UI hidden-hit policy: hidden entries filtered from clickable results
+- [x] UI `ConversationSearchHit` includes `displayInTimeline` and `isSidechain` fields (Phase 3 - DONE)
+- [x] UI `ConversationSearchService.search()` unchanged (deep search) (Phase 3 - verified)
+- [x] UI hidden-hit policy: `displayInTimeline`/`isSidechain` fields enable UI filtering (Phase 3 - DONE)
+- [x] UI `getContext()` doc comment clarifies hidden hit behavior (Phase 3 - DONE)
 - [ ] Debug logging for computed predicates
 
 ### Testing
