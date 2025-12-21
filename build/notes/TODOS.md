@@ -56,6 +56,24 @@ See tracking file for current branches in flight and review status.
 
 ---
 
+## Production DB Migration Safety & QA
+
+**Status:** Not started
+**Priority:** P0 (first production DB migration)
+**Discovered:** 2025-12-21
+
+- [ ] #DB-MIGRATION-PROD-QA: Analyze migration behavior for in-field updates (Sparkle DMG + App Store) and validate via E2E QA
+
+**Problem:**
+This is the first production database migration. We must confirm upgrade paths are safe for existing installs (DMG updates via Sparkle and App Store builds) and verify E2E QA covers the migration behavior.
+
+**Scope:**
+- Document expected migration flows for DMG and App Store distributions.
+- Validate that E2E QA includes a migration scenario from the previous schema version.
+- Confirm no data loss or blocking migrations on upgrade.
+
+---
+
 ## Historical Transcript Ingestion Gap
 
 **Status:** Core fix complete (2025-12-14), follow-up items in P1
@@ -768,6 +786,24 @@ When user says "use contextify to look through our convo history", agent doesn't
 - [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `build/notes/todo-support/contextify-query-plugin-draft/`.
 
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
+
+---
+
+## Decorate Contextify Agent/Skill Requests in Conversation Logs
+
+**Status:** Not started
+**Priority:** P1 (UX clarity - distinguish Contextify skill/agent calls)
+**Discovered:** 2025-12-21
+
+- [ ] #DECORATE-CONTEXTIFY-CALLS: Add persistent Contextify decorations for `query:contextify-reinject` skills and `query:contextify-researcher` agent calls in the conversation log
+
+**Notes:**
+- Decoration appears in the entry row alongside existing badges/icons (same location as QUEUED/directive/completion).
+- Skill call shows Contextify icon; agent call shows detective emoji + Contextify icon.
+- Detection uses transcript tool metadata (not prompt text) to avoid false positives.
+- Reference doc will be copied from `/tmp/contextify-skill-agent-call-identification.md`.
+
+**Reference:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-spec.md`
 
 ---
 
