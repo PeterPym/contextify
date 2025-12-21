@@ -550,7 +550,7 @@ public final class ProjectSwitcherState {
     }
   }
 
-  /// Manually trigger a full hoover rescan (Diagnostics menu, welcome modal investigations)
+  /// Manually trigger a full hoover rescan (welcome modal investigations)
   public func triggerManualHooverRescan(reason: String = "user-command") {
     guard let monitor = activityMonitor else {
       log.error("Manual hoover rescan requested but activity monitor is unavailable")
