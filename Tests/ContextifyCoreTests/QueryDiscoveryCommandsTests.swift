@@ -72,7 +72,8 @@ final class QueryDiscoveryCommandsTests: XCTestCase {
       createdTs: nil,
       createdAt: 200,
       updatedAt: 200,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     try await pool.write { db in

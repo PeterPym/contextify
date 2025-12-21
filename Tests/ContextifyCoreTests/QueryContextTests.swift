@@ -72,7 +72,8 @@ final class QueryContextTests: XCTestCase {
       createdTs: nil,
       createdAt: 100,
       updatedAt: 100,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     let e2 = TranscriptEntry(
@@ -99,7 +100,8 @@ final class QueryContextTests: XCTestCase {
       createdTs: nil,
       createdAt: 200,
       updatedAt: 200,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     let e3Hidden = TranscriptEntry(
@@ -126,7 +128,8 @@ final class QueryContextTests: XCTestCase {
       createdTs: nil,
       createdAt: 300,
       updatedAt: 300,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     let e4 = TranscriptEntry(
@@ -153,7 +156,8 @@ final class QueryContextTests: XCTestCase {
       createdTs: nil,
       createdAt: 400,
       updatedAt: 400,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     try await pool.write { db in
@@ -250,7 +254,8 @@ final class QueryContextTests: XCTestCase {
       createdTs: nil,
       createdAt: 100,
       updatedAt: 100,
-      isQueued: 0
+      isQueued: 0,
+        isSidechain: 0
     )
 
     try await pool.write { db in
