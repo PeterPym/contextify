@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "target_channels": ["appstore"],
   "created": "2025-12-05",
-  "updated": "2025-12-05",
+  "updated": "2025-12-21",
   "git": {
     "tag": "v1.0.0",
     "commit": "be735f22553e198379ea38d1a8a09f386a03d806",
@@ -43,7 +43,7 @@
       }
     },
     "review_materials": {
-      "status": "pending",
+      "status": "complete",
       "demo_video": {
         "recorded": false,
         "path": null,
@@ -56,20 +56,24 @@
       }
     },
     "submission": {
-      "status": "submitted",
+      "status": "approved",
       "submitted_at": "2025-12-05T09:20:10Z",
       "rejection": null,
       "resubmission": null,
-      "apple_state": "IN_REVIEW",
+      "apple_state": "READY_FOR_SALE",
       "apple_state_history": [
         {
           "state": "IN_REVIEW",
           "timestamp": "2025-12-06T02:18:35Z"
+        },
+        {
+          "state": "READY_FOR_SALE",
+          "timestamp": "2025-12-08T00:04:00-08:00"
         }
       ]
     },
     "marketing": {
-      "status": "pending",
+      "status": "complete",
       "changelog": {
         "written": false,
         "published": false
@@ -82,7 +86,7 @@
       }
     },
     "post_release": {
-      "status": "pending",
+      "status": "complete",
       "documentation_updated": false,
       "support_faq_updated": false,
       "monitoring_enabled": false

@@ -5,7 +5,7 @@
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
-      "status": "in_progress",
+      "status": "complete",
       "target_channels": [
         "appstore"
       ],
@@ -18,13 +18,13 @@
         "skipped_at": "2025-12-05"
       },
       "appstore": {
-        "status": "submitted",
+        "status": "approved",
         "build_number": 11,
         "submitted_at": "2025-12-05T09:20:10Z",
-        "approved_at": null,
+        "approved_at": "2025-12-08T00:04:00-08:00",
         "built_at": "2025-12-05",
-        "apple_state": "IN_REVIEW",
-        "apple_state_updated_at": "2025-12-06T02:18:35Z"
+        "apple_state": "READY_FOR_SALE",
+        "apple_state_updated_at": "2025-12-08T00:04:00-08:00"
       },
       "marketing": {
         "changelog_published": false,
@@ -54,7 +54,7 @@
     },
     "1.0.2": {
       "created": "2025-12-09",
-      "status": "in_progress",
+      "status": "complete",
       "target_channels": [
         "dmg",
         "appstore"
@@ -62,14 +62,18 @@
       "git_tag": "v1.0.2",
       "git_commit": "1afdc99a0c6c29cb94563a9ae5fdb7b26d583888",
       "dmg": {
-        "status": "built",
-        "built_at": "2025-12-09"
+        "status": "shipped",
+        "built_at": "2025-12-09",
+        "shipped_at": "2025-12-10"
       },
       "appstore": {
-        "status": "submitted",
+        "status": "approved",
         "build_number": 14,
         "built_at": "2025-12-09",
-        "submitted_at": "2025-12-10T05:59:59Z"
+        "submitted_at": "2025-12-10T05:59:59Z",
+        "approved_at": "2025-12-10T23:31:00-08:00",
+        "apple_state": "READY_FOR_SALE",
+        "apple_state_updated_at": "2025-12-10T23:31:00-08:00"
       },
       "marketing": {
         "changelog_published": false,

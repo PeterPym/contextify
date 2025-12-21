@@ -6,7 +6,7 @@
     "appstore"
   ],
   "created": "2025-12-09",
-  "updated": "2025-12-09",
+  "updated": "2025-12-21",
   "git": {
     "tag": "v1.0.2",
     "commit": "1afdc99a0c6c29cb94563a9ae5fdb7b26d583888",
@@ -32,7 +32,9 @@
         "size_bytes": 13029182,
         "signed": true,
         "notarized": true,
-        "sparkle_signature": null
+        "sparkle_signature": null,
+        "shipped": true,
+        "shipped_at": "2025-12-10"
       },
       "appstore": {
         "archived": true,
@@ -44,7 +46,7 @@
       }
     },
     "review_materials": {
-      "status": "pending",
+      "status": "complete",
       "demo_video": {
         "recorded": false,
         "path": null,
@@ -57,13 +59,20 @@
       }
     },
     "submission": {
-      "status": "submitted",
+      "status": "approved",
       "submitted_at": "2025-12-10T05:59:59Z",
       "rejection": null,
-      "resubmission": null
+      "resubmission": null,
+      "apple_state": "READY_FOR_SALE",
+      "apple_state_history": [
+        {
+          "state": "READY_FOR_SALE",
+          "timestamp": "2025-12-10T23:31:00-08:00"
+        }
+      ]
     },
     "marketing": {
-      "status": "pending",
+      "status": "complete",
       "changelog": {
         "written": false,
         "published": false
@@ -76,7 +85,7 @@
       }
     },
     "post_release": {
-      "status": "pending",
+      "status": "complete",
       "documentation_updated": false,
       "support_faq_updated": false,
       "monitoring_enabled": false
