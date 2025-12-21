@@ -164,7 +164,6 @@ contextify-query install-plugin  # Re-run to update plugin
 ├─────────────────────────────────────────────────────────────┤
 │ Plugin provides skills:                                      │
 │   - contextify-reinject: Context reinjection from database  │
-│   - contextify-query-debug: Diagnostic queries              │
 │ Skills call contextify-query CLI for database access        │
 └─────────────────────────────────────────────────────────────┘
 ```
