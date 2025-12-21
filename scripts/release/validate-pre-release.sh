@@ -20,7 +20,7 @@ echo ""
 # Check 1: Tests pass
 echo "1. Running tests..."
 if swift test > /tmp/test-output.txt 2>&1; then
-  TEST_COUNT=$(grep -E "^Test Suite.*passed" /tmp/test-output.txt | tail -1 | grep -oE "[0-9]+ test" | grep -oE "[0-9]+")
+  TEST_COUNT=$(grep -E "Executed [0-9]+ tests?" /tmp/test-output.txt | tail -1 | grep -oE "[0-9]+" || true)
   echo "   PASS: All tests passed (${TEST_COUNT:-unknown} tests)"
 else
   echo "   FAIL: Tests failed"
