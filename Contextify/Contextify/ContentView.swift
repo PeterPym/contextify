@@ -269,15 +269,6 @@ struct ContentView: View {
                         }
                     }
                 }
-            } else {
-                Button("Open project...") {
-                    Task {
-                        let ok = await pickProjectRoot()
-                        uiLog.info("Open project result=\(ok, privacy: .public)")
-                    }
-                }
-                .buttonStyle(.link)
-                .accessibilityIdentifier("set-project-root")
             }
             Spacer()
 
@@ -423,33 +414,6 @@ private struct Layout {
 }
 
 private extension ContentView {
-    @discardableResult
-    @MainActor
-    func pickProjectRoot() async -> Bool {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        if panel.runModal() == .OK, let url = panel.urls.first {
-            // Use async variant for deterministic coordinator update (C5)
-            let result = await model.setProjectRootAsync(url: url)
-            switch result {
-            case .success(let root):
-                #if DEBUG
-                uiLog.info("Open project path=\(root.path, privacy: .public)")
-                #else
-                uiLog.info("Open project path=\(root.path, privacy: .private)")
-                #endif
-                return true
-            case .failure(let error):
-                uiLog.error("Failed to open project: \(String(describing: error), privacy: .public)")
-                return false
-            }
-        }
-        return false
-    }
-
     func presentToast(_ message: String, duration: TimeInterval? = nil) {
         // Cancel any existing auto-dismiss task to prevent premature hiding of new toast
         toastDismissTask?.cancel()

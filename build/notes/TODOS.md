@@ -478,7 +478,6 @@ let entries = TimelineEntryQuery()
 **Scope:**
 
 1. **UI Polish** (1 hour)
-   - Remove "open project" link from empty/no-project state
    - Clean up messaging for better first-run experience
 
 2. **QA Test Scenarios** (2-3 hours)
