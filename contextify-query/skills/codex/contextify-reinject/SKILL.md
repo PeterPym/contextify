@@ -1,6 +1,6 @@
 ---
 name: contextify-reinject
-description: Use Contextify to search conversation history ("use contextify to...", "search our conversation history", "find where we discussed..."). Runs contextify-query to locate an anchor entry and retrieve nearby context for reinjection.
+description: Search past conversations / decisions with Contextify (use contextify, search history, find where we discussed, what did we decide, look back in past sessions, remember when we talked about). Runs contextify-query to locate an anchor entry and retrieve nearby context for reinjection.
 ---
 
 # Contextify reinjection (Codex)
