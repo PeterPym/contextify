@@ -715,6 +715,7 @@ public struct ContextifyQueryService: Sendable {
         var filters: [String] = []
         if !includeHidden {
           filters.append("\(prefix).display_in_timeline = 1")
+          filters.append("\(prefix).is_sidechain = 0")
         }
         if let kinds, !kinds.isEmpty {
           let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
@@ -900,7 +901,7 @@ public struct ContextifyQueryService: Sendable {
       var args: [DatabaseValueConvertible] = []
 
       if !includeHidden {
-        sql += " AND e.display_in_timeline = 1"
+        sql += " AND e.display_in_timeline = 1 AND e.is_sidechain = 0"
       }
       if let projectId {
         sql += " AND e.project_id = ?"
@@ -978,7 +979,7 @@ public struct ContextifyQueryService: Sendable {
       var sql = """
         SELECT *
         FROM transcript_entries
-        WHERE display_in_timeline = 1
+        WHERE display_in_timeline = 1 AND is_sidechain = 0
       """
       var args: [DatabaseValueConvertible] = []
       if let projectId {
@@ -1051,7 +1052,7 @@ public struct ContextifyQueryService: Sendable {
         FROM projects p
         LEFT JOIN transcripts t ON t.project_id = p.id
         LEFT JOIN transcript_entries e
-          ON e.project_id = p.id AND e.display_in_timeline = 1
+          ON e.project_id = p.id AND e.display_in_timeline = 1 AND e.is_sidechain = 0
       """
       var args: [DatabaseValueConvertible] = []
       if let projectId {
