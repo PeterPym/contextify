@@ -221,9 +221,13 @@ WHERE ti.transcript_id = ?
 
 ### Dependency
 
-This feature depends on the `tool_invocations` table from SIDECHAIN-INGESTION. Implementation order:
-1. SIDECHAIN-INGESTION Phase 1 (schema + models)
-2. SIDECHAIN-INGESTION Phase 2 (parser updates)
-3. DECORATE-CONTEXTIFY-CALLS (UI decoration using the table)
+This feature depends on the `tool_invocations` table from SIDECHAIN-INGESTION.
+
+**Implementation order:**
+1. SIDECHAIN-INGESTION Phase 1-2 (schema + parser - creates and populates `tool_invocations`)
+2. DECORATE-CONTEXTIFY-CALLS (UI decoration using the table)
+3. SIDECHAIN-INGESTION Phase 3-4 (full ingestion pipeline + linkage) - can proceed in parallel
+
+Phases 1-4 of SIDECHAIN-INGESTION are cohesive data collection work. This decoration feature slots in after Phase 2 provides the queryable data.
 
 **Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`

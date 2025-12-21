@@ -364,6 +364,9 @@ The DECORATE-CONTEXTIFY-CALLS spec should be updated to reference `tool_invocati
 
 ## Implementation Plan
 
+Phases 1-4 are the core work and should be done together as a cohesive unit.
+DECORATE-CONTEXTIFY-CALLS can be done after Phase 2 completes.
+
 ### Phase 1: Schema & Models
 - [ ] Add migration v27 with `tool_invocations` table
 - [ ] Add `is_sidechain` column to `transcript_entries`
@@ -385,17 +388,19 @@ The DECORATE-CONTEXTIFY-CALLS spec should be updated to reference `tool_invocati
 - [ ] Update FastPath priority handling (optional: keep deprioritizing)
 - [ ] Add integration tests
 
-### Phase 4: Sidechain Linkage
+### Phase 4: Sidechain Linkage & Validation
 - [ ] Link sidechain entries to parent Task invocations via agentId
 - [ ] Populate `sidechain_transcript_id` on tool_invocations
 - [ ] Build parent-child invocation relationships
-- [ ] Add queries for exploring sidechain content
-
-### Phase 5: UI & Testing
-- [ ] Add decoration support using tool_invocations (see DECORATE-CONTEXTIFY-CALLS)
-- [ ] (Future) Add UI to explore sidechain content
 - [ ] Full regression testing
 - [ ] Verify database size within estimate
+- [ ] Backfill existing transcripts with new parser
+
+---
+
+**After Phase 2:** DECORATE-CONTEXTIFY-CALLS can proceed (uses `tool_invocations` table)
+
+**Deferred (separate TODO):** UI to explore sidechain content - this is a different domain of concern and can be prioritized independently after the data is being collected
 
 ---
 
