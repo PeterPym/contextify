@@ -727,28 +727,6 @@ Both should use identical card components for consistency.
 
 ---
 
-## Contextify CLI Improvements
-
-**Status:** Not started
-**Priority:** P1 (developer experience - CLI is primary interface for Contextify data)
-**Discovered:** 2025-12-20
-
-- [ ] #CLI-KINDS-FILTER: Fix `--kinds` flag not filtering results
-- [ ] #CLI-QUERY-ERRORS: Return errors for invalid query syntax instead of silent empty results
-- [ ] #CLI-OR-SYNTAX: Document FTS5 OR syntax in help text
-
-**Issues Found:**
-
-1. **Silent failures on invalid queries:** Regex-style queries like `term1|term2` return empty results with no error message. Should either support the syntax or return a parse error.
-
-2. **`--kinds` flag ignored:** `contextify-query search "term" --kinds user` still returns assistant messages. Workaround: filter in jq with `select(.kind == "user")`.
-
-3. **Query syntax undocumented:** Help text shows `search <query>` but doesn't explain supported syntax (FTS5 with OR/AND/NOT).
-
-**Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
-
----
-
 ## Contextify Skill Invocation Discoverability
 
 **Status:** Not started
