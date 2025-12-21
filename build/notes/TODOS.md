@@ -767,7 +767,7 @@ When user says "use contextify to look through our convo history", agent doesn't
 - "what did we talk about regarding..."
 
 - [ ] Remove `contextify-query-debug` from public release distribution (developer-only skill).
-- [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `/tmp/contextify-query-plugin-draft/`.
+- [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `build/notes/todo-support/contextify-query-plugin-draft/`.
 
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
 
