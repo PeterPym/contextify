@@ -469,12 +469,6 @@ struct ContextifyApp: App {
       ProjectRootCommands()
       WindowCommands()
       HelpCommands()
-      CommandMenu("Diagnostics") {
-        Button("Force Hoover Rescan") {
-          ProjectSwitcherState.shared.triggerManualHooverRescan(reason: "DiagnosticsMenu")
-        }
-        .keyboardShortcut("r", modifiers: [.command, .option, .shift])
-      }
     }
 
     Settings {
