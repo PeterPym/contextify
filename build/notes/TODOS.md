@@ -848,6 +848,55 @@ Contextify claims to back up transcript data, but currently **excludes 55% of tr
 
 ---
 
+## Transcript Data Completeness Audit (Data Integrity)
+
+**Status:** Not started
+**Priority:** P1 (data integrity - ensure we're capturing all valuable transcript data)
+**Discovered:** 2025-12-21
+**Blocked by:** None (research task)
+
+- [ ] #TRANSCRIPT-DATA-AUDIT: Audit what transcript data is not being properly ingested and stored
+
+**Context:**
+Discovery of the sidechain gap (55% of transcripts excluded) raises the question: what else are we missing? This audit should systematically review all transcript record types and fields to identify data we're not preserving.
+
+**Audit scope:**
+
+| Data Category | Current State | Audit Status |
+|--------------|---------------|--------------|
+| Sidechain transcripts (`agent-*.jsonl`) | Not ingested (SIDECHAIN-INGESTION) | Identified |
+| Tool invocation metadata (`tool_use` blocks) | Lost - only `[Tool: X]` marker stored | Identified |
+| Tool result content (`tool_result` blocks) | Partially stored (summarized) | Needs audit |
+| File snapshots (`file-history-snapshot`) | Stored in `file_snapshots` table | Needs audit |
+| System events (`system` records) | Stored in `system_events` table | Needs audit |
+| Session summaries (`summary` records) | Stored in `transcript_summaries` table | Needs audit |
+| Thinking blocks (`thinking` content) | Filtered from display | Needs audit |
+| Usage metadata (`usage` on assistant) | Stored in `assistant_usages` table | Needs audit |
+| Queue operations (`queue-operation`) | Partially handled | Needs audit |
+| Meta records (`isMeta: true`) | Skipped | Needs audit |
+| Image content (`image` blocks) | Unknown | Needs audit |
+| Git context (`gitBranch`, `gitCommit`) | Stored on entries | Needs verification |
+
+**Deliverables:**
+1. Complete inventory of Claude Code record types and fields
+2. Complete inventory of Codex CLI record types and fields
+3. Gap analysis: what's captured vs. what's discarded
+4. Prioritized list of missing data by value to users
+5. Recommendations for what to add to ingestion
+
+**Method:**
+- Sample recent transcripts and compare raw JSON to DB records
+- Review `TranscriptParsers.swift` skip conditions
+- Review `HooverEngine.swift` metadata extraction
+- Check if stored data matches source fidelity
+
+**Notes:**
+- This is a research/audit task, not implementation
+- Findings may spawn additional P1/P2 items
+- Should be done before or alongside SIDECHAIN-INGESTION to ensure we're building the right solution
+
+---
+
 ## Settings Window Width - App Store Build (1 item)
 
 **Status:** Not Started
