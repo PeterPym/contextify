@@ -73,6 +73,10 @@ public struct EntryInsert {
   public let cwd: String?
   public let hasTextContent: Bool  // true if contains "text" blocks, false if only "thinking"
   public let isQueued: Bool  // true if message is queued (queue-operation enqueue without remove/popAll/dequeue)
+  public let isSidechain: Bool
+  public let agentId: String?
+  public let toolInvocations: [ToolInvocationInsert]
+  public let toolResultData: [ToolResultData]
 
   public init(
     id: String,
@@ -89,7 +93,11 @@ public struct EntryInsert {
     gitCommit: String?,
     cwd: String?,
     hasTextContent: Bool = true,
-    isQueued: Bool = false
+    isQueued: Bool = false,
+    isSidechain: Bool = false,
+    agentId: String? = nil,
+    toolInvocations: [ToolInvocationInsert] = [],
+    toolResultData: [ToolResultData] = []
   ) {
     self.id = id
     self.transcriptId = transcriptId
@@ -106,6 +114,10 @@ public struct EntryInsert {
     self.cwd = cwd
     self.hasTextContent = hasTextContent
     self.isQueued = isQueued
+    self.isSidechain = isSidechain
+    self.agentId = agentId
+    self.toolInvocations = toolInvocations
+    self.toolResultData = toolResultData
   }
 
   /// Convert to TranscriptEntry model
@@ -133,9 +145,27 @@ public struct EntryInsert {
       createdTs: TimeUnits.truncateToMillis(epochSeconds),  // Truncate to milliseconds for consistent precision
       createdAt: now,
       updatedAt: now,
-      isQueued: isQueued ? 1 : 0
+      isQueued: isQueued ? 1 : 0,
+      isSidechain: isSidechain ? 1 : 0
     )
   }
+}
+
+public struct ToolInvocationInsert: Sendable {
+  public let toolName: String
+  public let toolKey: String?
+  public let toolUseId: String?
+  public let isContextify: Bool
+  public let startedAt: Date?
+  public let metadataJson: String?
+}
+
+public struct ToolResultData: Sendable {
+  public let toolUseId: String?
+  public let entryId: String
+  public let agentId: String?
+  public let status: String?
+  public let timestamp: Date
 }
 
 // MARK: - Metadata Batch (v7)
@@ -690,6 +720,7 @@ public final class HooverEngine {
     previousEntries: inout [String]
   ) throws -> Int {
     var insertedCount = 0
+    let now = Int(Date().timeIntervalSince1970)
     try db.write { db in
       // Insert entries with window tracking
       for entry in entries {
@@ -746,6 +777,63 @@ public final class HooverEngine {
           log.error("   Prev1 ID: \(model.prev1Id ?? "nil")")
           log.error("   Prev2 ID: \(model.prev2Id ?? "nil")")
           throw error
+        }
+
+        // Insert tool invocations from tool_use blocks
+        for invocation in entry.toolInvocations {
+          let startedAt = invocation.startedAt.map { Int($0.timeIntervalSince1970) }
+          let tool = ToolInvocation(
+            id: "\(entry.id)-\(invocation.toolUseId ?? UUID().uuidString)",
+            entryId: entry.id,
+            transcriptId: transcriptId,
+            parentInvocationId: nil,
+            toolName: invocation.toolName,
+            toolKey: invocation.toolKey,
+            toolUseId: invocation.toolUseId,
+            toolResultEntryId: nil,
+            sidechainTranscriptId: nil,
+            sidechainAgentId: nil,
+            startedAt: startedAt,
+            completedAt: nil,
+            status: "unknown",
+            isContextify: invocation.isContextify ? 1 : 0,
+            metadataJson: invocation.metadataJson,
+            createdAt: now,
+            updatedAt: now
+          )
+          try tool.insert(db, onConflict: .ignore)
+        }
+
+        // Update tool invocations with tool_result data (completion + agent linkage)
+        for result in entry.toolResultData {
+          try db.execute(sql: """
+            UPDATE tool_invocations
+            SET tool_result_entry_id = ?,
+                sidechain_agent_id = ?,
+                completed_at = ?,
+                status = COALESCE(?, status),
+                updated_at = ?
+            WHERE tool_use_id = ? AND transcript_id = ?
+          """, arguments: [
+            result.entryId,
+            result.agentId,
+            Int(result.timestamp.timeIntervalSince1970),
+            result.status,
+            now,
+            result.toolUseId,
+            transcriptId
+          ])
+        }
+
+        // Link sidechain transcripts to parent invocations by agentId
+        if entry.isSidechain, let agentId = entry.agentId {
+          try db.execute(sql: """
+            UPDATE tool_invocations
+            SET sidechain_transcript_id = ?,
+                updated_at = ?
+            WHERE sidechain_agent_id = ?
+              AND (sidechain_transcript_id IS NULL OR sidechain_transcript_id != ?)
+          """, arguments: [transcriptId, now, agentId, transcriptId])
         }
       }
 
