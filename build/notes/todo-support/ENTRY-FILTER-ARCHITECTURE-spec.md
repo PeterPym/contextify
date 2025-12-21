@@ -437,9 +437,9 @@ public func activity(
 | `getContext()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Doc comment updated to clarify behavior |
 | `getContextCounts()` | Filters to `display_in_timeline = 1` | **Keep current filter** | Matches `getContext()` |
 
-**UI Hidden-Hit Policy: Filter at Display Time** ✅ IMPLEMENTED
+**UI Hidden-Hit Policy: Filter at Display Time** ✅ PLUMBED (UI gating pending)
 
-Deep search returns all FTS matches including hidden entries. The UI filters using `ConversationSearchHit.displayInTimeline` before allowing interaction. This ensures:
+Deep search returns all FTS matches including hidden entries. `ConversationSearchHit` now includes `displayInTimeline` and `isSidechain` fields so the UI can filter before allowing interaction. Once the UI layer gates clicks on these flags, this ensures:
 - Hidden hits are not clickable
 - `getContext()` never receives hidden hit IDs (so no empty context windows)
 - Sidechains are visible and clickable (sidechain context retrieval works)
@@ -750,7 +750,8 @@ The `EntryFilter` design accommodates future needs:
 - [ ] `projectStats()` keeps filter in ON clause (LEFT JOIN semantics preserved)
 - [x] UI `ConversationSearchHit` includes `displayInTimeline` and `isSidechain` fields (Phase 3 - DONE)
 - [x] UI `ConversationSearchService.search()` unchanged (deep search) (Phase 3 - verified)
-- [x] UI hidden-hit policy: `displayInTimeline`/`isSidechain` fields enable UI filtering (Phase 3 - DONE)
+- [x] UI hidden-hit policy: plumbing complete, fields available for UI gating (Phase 3 - DONE)
+- [ ] UI hidden-hit policy: UI layer gates clicks on `displayInTimeline` (pending)
 - [x] UI `getContext()` doc comment clarifies hidden hit behavior (Phase 3 - DONE)
 - [ ] Debug logging for computed predicates
 

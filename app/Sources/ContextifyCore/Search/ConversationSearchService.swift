@@ -134,8 +134,8 @@ public actor ConversationSearchService {
           COALESCE(e.timestamp, f.created_at) as created_at,
           bm25(transcript_entries_fts) as rank,
           snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet,
-          e.display_in_timeline,
-          e.is_sidechain
+          e.display_in_timeline AS display_in_timeline,
+          e.is_sidechain AS is_sidechain
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
         LEFT JOIN transcript_entries e ON e.id = f.entry_id
@@ -170,7 +170,11 @@ public actor ConversationSearchService {
       let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
 
       let hits = rows.map { row in
-        ConversationSearchHit(
+        // Coalesce to sensible defaults: visible=true, sidechain=false
+        // Avoids silent false if NULL or type mismatch (would incorrectly hide visible hits)
+        let displayFlag = (row["display_in_timeline"] as Int?) ?? 1
+        let sidechainFlag = (row["is_sidechain"] as Int?) ?? 0
+        return ConversationSearchHit(
           id: row["entry_id"],
           projectId: row["project_id"],
           projectName: row["project_name"] ?? "Unknown",
@@ -180,8 +184,8 @@ public actor ConversationSearchService {
           createdAt: Date(timeIntervalSince1970: TimeInterval(row["created_at"] as Int64)),
           rank: row["rank"],
           snippet: row["snippet"],
-          displayInTimeline: (row["display_in_timeline"] as Int64?) == 1,
-          isSidechain: (row["is_sidechain"] as Int64?) == 1
+          displayInTimeline: displayFlag == 1,
+          isSidechain: sidechainFlag == 1
         )
       }
 
