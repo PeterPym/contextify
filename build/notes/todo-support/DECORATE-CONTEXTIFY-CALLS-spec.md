@@ -166,15 +166,17 @@ This feature will use the new `tool_invocations` table being added as part of th
 - Provides foundation for sidechain ingestion and future tool analytics
 - Allows efficient queries for Contextify-specific invocations
 
-### Schema (from SIDECHAIN-INGESTION-spec.md)
+### Schema (canonical - see SIDECHAIN-INGESTION-spec.md for full definition)
 
 ```sql
+-- Key columns for decoration (subset of full schema)
 CREATE TABLE tool_invocations (
   id TEXT PRIMARY KEY,
-  entry_id TEXT NOT NULL REFERENCES transcript_entries(id) ON DELETE CASCADE,
-  transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+  entry_id TEXT NOT NULL,               -- FK to tool_use entry
+  tool_result_entry_id TEXT,            -- FK to tool_result entry (for decorating both)
+  transcript_id TEXT NOT NULL,
   tool_name TEXT NOT NULL,              -- "Skill", "Task", etc.
-  tool_key TEXT,                        -- skill name or subagent_type
+  tool_key TEXT,                        -- skill name or subagent_type (no leading slash)
   tool_use_id TEXT,                     -- Claude's tool_use.id
   is_contextify INTEGER DEFAULT 0,      -- 1 for Contextify calls
   -- ... additional columns for sidechain support ...
@@ -182,6 +184,8 @@ CREATE TABLE tool_invocations (
 
 CREATE INDEX idx_invocations_contextify ON tool_invocations(is_contextify) WHERE is_contextify = 1;
 ```
+
+> **Note:** Skill keys are stored WITHOUT leading slash (e.g., `query:contextify-reinject` not `/query:contextify-reinject`) to match transcript format.
 
 ### Detection Logic (at ingestion time)
 
@@ -204,12 +208,18 @@ func isContextifyTool(_ block: [String: Any]) -> Bool {
 ### Decoration Query
 
 ```sql
--- Get Contextify invocations for a transcript
-SELECT ti.tool_name, ti.tool_key, ti.entry_id
+-- Get Contextify invocations for a transcript (includes both tool_use and tool_result entries)
+SELECT
+  ti.tool_name,
+  ti.tool_key,
+  ti.entry_id AS tool_use_entry_id,
+  ti.tool_result_entry_id
 FROM tool_invocations ti
 WHERE ti.transcript_id = ?
   AND ti.is_contextify = 1
 ```
+
+This returns both entry IDs so both the `tool_use` and `tool_result` rows can be decorated.
 
 ### UI changes
 - Add decoration logic in `TimelineEntryRow` adjacent to existing status icons (QUEUED/directive/completion):

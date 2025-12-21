@@ -128,7 +128,9 @@ Use a dedicated `tool_invocations` table to track tool metadata and sidechain li
 - Supports the DECORATE-CONTEXTIFY-CALLS feature
 - Provides a foundation for future tool analytics
 
-### Schema Changes (Migration v27+)
+### Schema Changes (Migration v30)
+
+> **Note:** v27-v29 are already used. This feature requires v30.
 
 ```sql
 -- New table for tool invocations
@@ -140,8 +142,9 @@ CREATE TABLE tool_invocations (
   tool_name TEXT NOT NULL,              -- "Skill", "Task", "Bash", "Read", etc.
   tool_key TEXT,                        -- skill name or subagent_type
   tool_use_id TEXT,                     -- Claude's tool_use.id for linking
+  tool_result_entry_id TEXT REFERENCES transcript_entries(id) ON DELETE SET NULL, -- FK to tool_result entry
   sidechain_transcript_id TEXT REFERENCES transcripts(id) ON DELETE SET NULL,
-  sidechain_agent_id TEXT,              -- agentId from sidechain file
+  sidechain_agent_id TEXT,              -- agentId from tool_result.toolUseResult.agentId
   started_at INTEGER,                   -- timestamp of tool_use
   completed_at INTEGER,                 -- timestamp of tool_result
   status TEXT DEFAULT 'unknown',        -- 'pending', 'completed', 'failed', 'unknown'
@@ -153,6 +156,7 @@ CREATE TABLE tool_invocations (
 
 -- Indexes for common queries
 CREATE INDEX idx_invocations_entry ON tool_invocations(entry_id);
+CREATE INDEX idx_invocations_result_entry ON tool_invocations(tool_result_entry_id);
 CREATE INDEX idx_invocations_transcript ON tool_invocations(transcript_id);
 CREATE INDEX idx_invocations_parent ON tool_invocations(parent_invocation_id);
 CREATE INDEX idx_invocations_sidechain ON tool_invocations(sidechain_transcript_id);
@@ -175,8 +179,9 @@ CREATE INDEX idx_entries_sidechain ON transcript_entries(is_sidechain);
 | `tool_name` | TEXT | Tool type: "Skill", "Task", "Bash", etc. |
 | `tool_key` | TEXT | Specific identifier: skill name or subagent_type |
 | `tool_use_id` | TEXT | Claude's tool_use.id for tool_result linking |
+| `tool_result_entry_id` | TEXT | FK to the tool_result entry (for decoration) |
 | `sidechain_transcript_id` | TEXT | FK to agent-*.jsonl transcript |
-| `sidechain_agent_id` | TEXT | agentId from sidechain (for linking) |
+| `sidechain_agent_id` | TEXT | agentId from `tool_result.toolUseResult.agentId` |
 | `started_at` | INTEGER | Unix timestamp of invocation start |
 | `completed_at` | INTEGER | Unix timestamp of completion |
 | `status` | TEXT | Invocation status |
@@ -232,6 +237,9 @@ Database (transcript_entries + tool_invocations)
 
 #### 1. TranscriptParsers.swift (Critical)
 
+> **Important:** Agent IDs live in `tool_result.toolUseResult.agentId`, not `tool_use`.
+> Both `tool_use` AND `tool_result` records must be parsed to complete the linkage.
+
 **Current:**
 ```swift
 // Line 163-166
@@ -241,7 +249,7 @@ if (json["isSidechain"] as? Bool) == true {
 }
 ```
 
-**New:**
+**New - Part 1 (tool_use extraction):**
 ```swift
 // Extract sidechain flag (don't skip)
 let isSidechain = (json["isSidechain"] as? Bool) == true
@@ -260,21 +268,48 @@ if type == "assistant", let contentBlocks = message["content"] as? [[String: Any
         toolInvocations.append(inv)
     }
 }
+```
 
-// Return entry with sidechain/tool metadata
+**New - Part 2 (tool_result linkage):**
+```swift
+// For user records containing tool_result, extract completion data
+if type == "user", let contentBlocks = message["content"] as? [[String: Any]] {
+    for block in contentBlocks where block["type"] as? String == "tool_result" {
+        let toolUseId = block["tool_use_id"] as? String
+        let toolUseResult = json["toolUseResult"] as? [String: Any]
+        let resultAgentId = toolUseResult?["agentId"] as? String  // Critical for sidechain linkage
+        let status = toolUseResult?["status"] as? String
+
+        // Store for later update of corresponding tool_invocation record
+        toolResultData.append(ToolResultData(
+            toolUseId: toolUseId,
+            entryId: uuid,  // This entry's ID becomes tool_result_entry_id
+            agentId: resultAgentId,
+            status: status,
+            timestamp: timestamp
+        ))
+    }
+}
+```
+
+**Return entry with sidechain/tool metadata:**
+```swift
 return EntryInsert(
     // ... existing fields ...
     isSidechain: isSidechain,
     agentId: agentId,
-    toolInvocations: toolInvocations
+    toolInvocations: toolInvocations,
+    toolResultData: toolResultData  // For updating invocations with completion info
 )
 ```
 
 #### 2. HooverEngine.swift (Critical)
 
-**Add after line 722 (entry insert):**
+> **Note:** The method is `commitBatch` (not `storeEntries`). Entry models are created via `EntryInsert.toModel()`.
+
+**In commitBatch, after entry insert (around line 722):**
 ```swift
-// Insert tool invocations
+// Insert tool invocations from tool_use blocks
 for invocation in entry.toolInvocations {
     let model = ToolInvocation(
         id: "\(entry.id)-\(invocation.toolUseId ?? UUID().uuidString)",
@@ -288,6 +323,27 @@ for invocation in entry.toolInvocations {
         updatedAt: now
     )
     try model.insert(db, onConflict: .ignore)
+}
+
+// Update tool invocations with tool_result data (completion, agentId linkage)
+for result in entry.toolResultData {
+    try db.execute(sql: """
+        UPDATE tool_invocations
+        SET tool_result_entry_id = ?,
+            sidechain_agent_id = ?,
+            completed_at = ?,
+            status = COALESCE(?, status),
+            updated_at = ?
+        WHERE tool_use_id = ? AND transcript_id = ?
+    """, arguments: [
+        result.entryId,
+        result.agentId,
+        Int(result.timestamp.timeIntervalSince1970),
+        result.status,
+        now,
+        result.toolUseId,
+        transcriptId
+    ])
 }
 ```
 
@@ -404,13 +460,28 @@ DECORATE-CONTEXTIFY-CALLS can be done after Phase 2 completes.
 
 ---
 
-## Open Questions
+## Open Questions (Resolved)
 
-1. **Should sidechain entries appear in timeline?** (Recommend: No, filter by default)
-2. **Should sidechain content be searchable?** (Recommend: Yes, include in FTS)
-3. **How to handle orphaned sidechains?** (Agent file exists but parent deleted)
-4. **Keep FastPath deprioritization?** (Recommend: Yes, process mains first)
-5. **Backfill existing transcripts?** (Recommend: Yes, re-parse with new logic)
+1. **Should sidechain entries appear in timeline?**
+   - **Decision:** No, filter by default (`WHERE is_sidechain = 0`)
+   - Future UI can opt-in to show sidechains
+
+2. **Should sidechain content be searchable?**
+   - **Decision:** Yes, include in FTS
+   - Rationale: Users searching for tool outputs or agent work should find it
+   - FTS triggers should NOT filter on `is_sidechain`
+
+3. **How to handle orphaned sidechains?** (Agent file exists but parent transcript deleted)
+   - **Decision:** Ingest anyway, set `sidechain_transcript_id = NULL`
+   - Data preservation is the priority; linkage is nice-to-have
+
+4. **Keep FastPath deprioritization?**
+   - **Decision:** Yes, process main transcripts first
+   - Agent files are lower priority but still processed
+
+5. **Backfill existing transcripts?**
+   - **Decision:** Yes, re-parse with new logic on migration
+   - Mark all Claude Code transcripts for re-ingestion in v30 migration
 
 ---
 
