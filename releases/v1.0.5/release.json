@@ -7,7 +7,7 @@
 
   "git": {
     "tag": "v1.0.5",
-    "commit": "106f04bacb42a69c7cff27a43bad566104bdf8a5",
+    "commit": "3137c39863f97d3f438ef0a4665c7c2a5f75ddb7",
     "branch": "main"
   },
 
@@ -37,7 +37,7 @@
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": 1,
+        "build_number": 2,
         "exported": false,
         "uploaded": false,
         "upload_receipt": null
@@ -89,9 +89,14 @@
 
   "notes": [
     {
-      "date": "2025-12-21",
-      "author": "system",
-      "note": "Release initialized"
+        "date": "2025-12-21",
+        "author": "system",
+        "note": "Release initialized"
+    },
+    {
+        "date": "2025-12-21",
+        "author": "system",
+        "note": "Reset for build 2 from commit 3137c398"
     }
-  ]
+]
 }

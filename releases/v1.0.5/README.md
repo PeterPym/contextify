@@ -2,7 +2,7 @@
 
 **Created:** 2025-12-21
 **Status:** In Progress
-**Build:** 1
+**Build:** 2
 **Targeting:** Both (DMG + App Store)
 
 ## Quick Status
