@@ -807,6 +807,42 @@ When user says "use contextify to look through our convo history", agent doesn't
 
 ---
 
+## Sidechain Transcript Ingestion (Data Integrity)
+
+**Status:** Not started
+**Priority:** P1 (data integrity - 55% of transcripts currently excluded from backup)
+**Discovered:** 2025-12-21
+
+- [ ] #SIDECHAIN-INGESTION: Add ingestion of agent-*.jsonl sidechain transcripts to preserve subagent conversation data
+
+**Problem:**
+Contextify claims to back up transcript data, but currently **excludes 55% of transcript files** (951 agent sidechains out of 1,732 total). Claude Code actively deletes these files within days - 63 files (7%) already lost since discovery on 2025-12-19.
+
+**Current exclusion points:**
+1. Parser: `TranscriptParsers.swift:163-164` skips `isSidechain: true` records
+2. Query: `TranscriptOrchestrator.swift:2342` filters `NOT LIKE '%/agent-%'`
+3. Priority: `FastPathIngestionCoordinator.swift:582-586` sorts agents last
+
+**Database impact estimate:**
+- New entries: ~4,245 (from 888 existing agent files)
+- Size increase: 2-5 MB on 188 MB database (~2%)
+- Minimal overhead
+
+**Implementation approach (Option A - simple columns):**
+- Add columns to `transcript_entries`: `tool_name`, `tool_key`, `tool_use_id`, `parent_agent_id`, `is_sidechain`
+- Remove sidechain skip in parser
+- Filter `is_sidechain = 0` in timeline queries (preserve current behavior)
+- Include sidechain content in search
+
+**Migration path to Option B (if needed later):**
+- Create dedicated `tool_invocations` table for sophisticated chain tracking
+- Populate from existing columns
+- Spec includes full migration SQL
+
+**Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`
+
+---
+
 ## Settings Window Width - App Store Build (1 item)
 
 **Status:** Not Started
