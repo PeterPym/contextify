@@ -1,6 +1,6 @@
 # Contextify Query (Claude Code Plugin)
 
-This plugin provides skills that teach Claude Code how to use `contextify-query` for context reinjection.
+This plugin provides skills and a researcher subagent that teach Claude Code how to use `contextify-query` for context reinjection.
 
 ## Install
 

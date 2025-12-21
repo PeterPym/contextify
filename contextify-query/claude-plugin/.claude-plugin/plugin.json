@@ -1,7 +1,7 @@
 {
   "name": "query",
-  "version": "0.0.1",
-  "description": "Contextify query + reinjection skills (requires Contextify + contextify-query CLI)",
+  "version": "1.0.4",
+  "description": "Contextify query + reinjection skills and researcher subagent (requires Contextify + contextify-query CLI)",
   "author": {
     "name": "Contextify"
   },
