@@ -74,6 +74,13 @@ contextify-query install-plugin
 contextify-query uninstall-plugin
 ```
 
+Local development via Claude Code:
+
+```bash
+claude plugin marketplace add /Users/rob/code/projects/contextify
+claude plugin install query@contextify
+```
+
 ### Other Commands
 
 ```bash

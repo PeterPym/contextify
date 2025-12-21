@@ -1,7 +1,7 @@
 {
   "name": "contextify",
   "metadata": {
-    "description": "Contextify plugins (starting with query/reinjection skills via contextify-query)."
+    "description": "Contextify plugins (query + reinjection skills and researcher agent)."
   },
   "owner": {
     "name": "Contextify"
@@ -10,7 +10,7 @@
     {
       "name": "query",
       "source": "./contextify-query/claude-plugin",
-      "description": "Contextify query + reinjection skills (requires Contextify + contextify-query CLI)"
+      "description": "Contextify query + reinjection skills and researcher agent (requires Contextify + contextify-query CLI)"
     }
   ]
 }
