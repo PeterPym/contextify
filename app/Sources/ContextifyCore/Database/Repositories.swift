@@ -384,7 +384,7 @@ public final class EntryRepositoryImpl: EntryRepository {
     try db.read { db in
       var query = TranscriptEntry
         .filter(Column("content").like("%\(content)%"))
-        .filter(Column("display_in_timeline") == 1)
+        .filter(Column("display_in_timeline") == 1 && Column("is_sidechain") == 0)
       if let projectId = projectId {
         query = query.filter(Column("project_id") == projectId)
       }
