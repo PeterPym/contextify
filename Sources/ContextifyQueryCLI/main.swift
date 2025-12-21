@@ -708,6 +708,10 @@ struct ContextifyQueryCLI {
         install-plugin       Install Claude Code plugin (enables skills)
         uninstall-plugin     Remove Claude Code plugin
 
+      Search query syntax (FTS5):
+        Use OR/AND/NOT operators (e.g. "bug OR fix"), or quoted phrases ("memory leak").
+        Regex operators like "|" are not supported.
+
       Feedback commands:
         feedback "<summary>"
         feedback list|show <id>
