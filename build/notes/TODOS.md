@@ -188,6 +188,23 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Cross-Platform Ingestion CLI (Linux/Windows)
+
+**Status:** Not started
+**Priority:** P1
+
+- [ ] #CROSS-PLATFORM-INGESTION: Derisk and prototype a cross-platform ingestion engine
+
+**Goal:** Build a Linux/Windows CLI that ingests Claude Code/Codex transcripts and writes a Contextify-compatible database.
+
+**Key tasks:**
+1. Lift SwiftPM macOS-only platform restriction and attempt Linux/Windows builds.
+2. Identify macOS-only APIs in ingestion path and isolate behind platform adapters.
+3. Decide on GRDB portability vs SQLite C fallback based on feasibility results.
+4. Prototype CLI ingestion run on Linux with fixture transcripts and validate parity.
+
+**Investigation:** `build/notes/todo-support/CROSS-PLATFORM-INGESTION-investigation.md`
+
 ## ~~Missing 112 Transcripts - Never Ingested~~ FIXED
 
 **Status:** Complete (2025-12-17)
@@ -748,6 +765,9 @@ When user says "use contextify to look through our convo history", agent doesn't
 - "find where we discussed..."
 - "look through past sessions"
 - "what did we talk about regarding..."
+
+- [ ] Remove `contextify-query-debug` from public release distribution (developer-only skill).
+- [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `/tmp/contextify-query-plugin-draft/`.
 
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
 
