@@ -42,6 +42,8 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
   public let createdAt: Date
   public let rank: Double        // BM25 score
   public let snippet: String     // Highlighted snippet
+  public let displayInTimeline: Bool  // For UI filtering (hidden entries)
+  public let isSidechain: Bool        // For UI filtering (sidechain entries)
 
   public init(
     id: String,
@@ -52,7 +54,9 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     content: String,
     createdAt: Date,
     rank: Double,
-    snippet: String
+    snippet: String,
+    displayInTimeline: Bool = true,
+    isSidechain: Bool = false
   ) {
     self.id = id
     self.projectId = projectId
@@ -63,6 +67,8 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     self.createdAt = createdAt
     self.rank = rank
     self.snippet = snippet
+    self.displayInTimeline = displayInTimeline
+    self.isSidechain = isSidechain
   }
 }
 
@@ -127,7 +133,9 @@ public actor ConversationSearchService {
           f.content,
           COALESCE(e.timestamp, f.created_at) as created_at,
           bm25(transcript_entries_fts) as rank,
-          snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
+          snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet,
+          e.display_in_timeline,
+          e.is_sidechain
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
         LEFT JOIN transcript_entries e ON e.id = f.entry_id
@@ -171,7 +179,9 @@ public actor ConversationSearchService {
           content: row["content"],
           createdAt: Date(timeIntervalSince1970: TimeInterval(row["created_at"] as Int64)),
           rank: row["rank"],
-          snippet: row["snippet"]
+          snippet: row["snippet"],
+          displayInTimeline: (row["display_in_timeline"] as Int64?) == 1,
+          isSidechain: (row["is_sidechain"] as Int64?) == 1
         )
       }
 
@@ -213,7 +223,13 @@ public actor ConversationSearchService {
 
   /// Get surrounding context for a hit, matching timeline display semantics
   ///
-  /// Returns entries before and after the hit, always including the hit itself.
+  /// Returns entries before and after the hit within the same transcript.
+  /// Only includes entries with `display_in_timeline = 1` (timeline-visible).
+  ///
+  /// **Important:** If the hit itself is hidden (`display_in_timeline = 0`),
+  /// it will NOT be included in results. The UI should filter hidden hits
+  /// using `ConversationSearchHit.displayInTimeline` before calling this method.
+  ///
   /// Uses `id` as secondary sort to ensure deterministic ordering when multiple
   /// entries share the same timestamp (fixes timestamp collision bug).
   public func getContext(entryId: String, before: Int = 10, after: Int = 10) async throws -> [TranscriptEntry] {
