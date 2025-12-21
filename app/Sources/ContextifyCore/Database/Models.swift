@@ -130,9 +130,11 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
   public var updatedAt: Int
   // v27: Queue status for transient UI indicators
   public var isQueued: Int  // SQLite boolean (0=false, 1=true)
+  // v30: Sidechain flag for agent transcripts
+  public var isSidechain: Int  // SQLite boolean (0=false, 1=true)
 
   public static let databaseTableName = "transcript_entries"
-  public static let databaseColumnCount = 24
+  public static let databaseColumnCount = 25
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -159,6 +161,51 @@ public struct TranscriptEntry: Codable, FetchableRecord, PersistableRecord, Send
     case createdAt = "created_at"
     case updatedAt = "updated_at"
     case isQueued = "is_queued"
+    case isSidechain = "is_sidechain"
+  }
+}
+
+// MARK: - Tool Invocations
+
+public struct ToolInvocation: Codable, FetchableRecord, PersistableRecord, Sendable {
+  public var id: String
+  public var entryId: String
+  public var transcriptId: String
+  public var parentInvocationId: String?
+  public var toolName: String
+  public var toolKey: String?
+  public var toolUseId: String?
+  public var toolResultEntryId: String?
+  public var sidechainTranscriptId: String?
+  public var sidechainAgentId: String?
+  public var startedAt: Int?
+  public var completedAt: Int?
+  public var status: String
+  public var isContextify: Int
+  public var metadataJson: String?
+  public var createdAt: Int
+  public var updatedAt: Int
+
+  public static let databaseTableName = "tool_invocations"
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case entryId = "entry_id"
+    case transcriptId = "transcript_id"
+    case parentInvocationId = "parent_invocation_id"
+    case toolName = "tool_name"
+    case toolKey = "tool_key"
+    case toolUseId = "tool_use_id"
+    case toolResultEntryId = "tool_result_entry_id"
+    case sidechainTranscriptId = "sidechain_transcript_id"
+    case sidechainAgentId = "sidechain_agent_id"
+    case startedAt = "started_at"
+    case completedAt = "completed_at"
+    case status
+    case isContextify = "is_contextify"
+    case metadataJson = "metadata_json"
+    case createdAt = "created_at"
+    case updatedAt = "updated_at"
   }
 }
 

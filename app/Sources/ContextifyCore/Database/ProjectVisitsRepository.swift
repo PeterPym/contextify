@@ -148,6 +148,7 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
       WHERE p.id = ?
         AND COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
         AND e.display_in_timeline = 1
+        AND e.is_sidechain = 0
     """, arguments: [projectId])
 
     return count ?? 0
@@ -165,6 +166,7 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
         JOIN projects p ON p.id = t.project_id
         WHERE COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
           AND e.display_in_timeline = 1
+          AND e.is_sidechain = 0
         GROUP BY t.project_id
       """)
 
@@ -194,6 +196,7 @@ public final class ProjectVisitsRepositoryImpl: ProjectVisitsRepository {
         WHERE t.project_id IN (\(placeholders))
           AND COALESCE(e.created_ts, CAST(e.timestamp AS REAL)) > p.last_viewed_ts
           AND e.display_in_timeline = 1
+          AND e.is_sidechain = 0
         GROUP BY t.project_id
       """, arguments: StatementArguments(projectIds))
 
