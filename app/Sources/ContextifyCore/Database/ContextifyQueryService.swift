@@ -508,9 +508,11 @@ public struct ContextifyQueryService: Sendable {
         args.append(transcriptId)
       }
       if let kinds, !kinds.isEmpty {
-        let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+        // Dedupe and sort for deterministic SQL
+        let sortedKinds = Array(Set(kinds)).sorted()
+        let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
         sql += " AND e.kind IN (\(placeholders))"
-        args.append(contentsOf: kinds)
+        args.append(contentsOf: sortedKinds)
       }
       if let since = timeRange.sinceTimestamp {
         sql += " AND e.timestamp >= ?"
@@ -721,9 +723,11 @@ public struct ContextifyQueryService: Sendable {
           filters.append("\(prefix).is_sidechain = 0")
         }
         if let kinds, !kinds.isEmpty {
-          let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
+          // Dedupe and sort for deterministic SQL
+          let sortedKinds = Array(Set(kinds)).sorted()
+          let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
           filters.append("\(prefix).kind IN (\(placeholders))")
-          args.append(contentsOf: kinds)
+          args.append(contentsOf: sortedKinds)
         }
         if filters.isEmpty { return "" }
         return " AND " + filters.joined(separator: " AND ")
