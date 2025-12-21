@@ -56,6 +56,24 @@ See tracking file for current branches in flight and review status.
 
 ---
 
+## Production DB Migration Safety & QA
+
+**Status:** Not started
+**Priority:** P0 (first production DB migration)
+**Discovered:** 2025-12-21
+
+- [ ] #DB-MIGRATION-PROD-QA: Analyze migration behavior for in-field updates (Sparkle DMG + App Store) and validate via E2E QA
+
+**Problem:**
+This is the first production database migration. We must confirm upgrade paths are safe for existing installs (DMG updates via Sparkle and App Store builds) and verify E2E QA covers the migration behavior.
+
+**Scope:**
+- Document expected migration flows for DMG and App Store distributions.
+- Validate that E2E QA includes a migration scenario from the previous schema version.
+- Confirm no data loss or blocking migrations on upgrade.
+
+---
+
 ## Historical Transcript Ingestion Gap
 
 **Status:** Core fix complete (2025-12-14), follow-up items in P1
@@ -768,6 +786,114 @@ When user says "use contextify to look through our convo history", agent doesn't
 - [ ] Test `contextify-researcher` subagent flow with the updated core query behavior (validate search budget and citation output). Draft plugin: `build/notes/todo-support/contextify-query-plugin-draft/`.
 
 **Reference:** `build/notes/todo-support/contextify-cli-improvements.md`
+
+---
+
+## Decorate Contextify Agent/Skill Requests in Conversation Logs
+
+**Status:** Not started
+**Priority:** P1 (UX clarity - distinguish Contextify skill/agent calls)
+**Discovered:** 2025-12-21
+
+- [ ] #DECORATE-CONTEXTIFY-CALLS: Add persistent Contextify decorations for `query:contextify-reinject` skills and `query:contextify-researcher` agent calls in the conversation log
+
+**Notes:**
+- Decoration appears in the entry row alongside existing badges/icons (same location as QUEUED/directive/completion).
+- Skill call shows Contextify icon; agent call shows detective emoji + Contextify icon.
+- Detection uses `tool_invocations` table (from SIDECHAIN-INGESTION) to avoid re-parsing transcripts.
+
+**Depends on:** #SIDECHAIN-INGESTION (Phase 1-2 for `tool_invocations` table)
+
+**Reference:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-spec.md`
+
+---
+
+## Sidechain Transcript Ingestion (Data Integrity)
+
+**Status:** Not started
+**Priority:** P1 (data integrity - 55% of transcripts currently excluded from backup)
+**Discovered:** 2025-12-21
+
+- [ ] #SIDECHAIN-INGESTION: Add ingestion of agent-*.jsonl sidechain transcripts to preserve subagent conversation data
+
+**Problem:**
+Contextify claims to back up transcript data, but currently **excludes 55% of transcript files** (951 agent sidechains out of 1,732 total). Claude Code actively deletes these files within days - 63 files (7%) already lost since discovery on 2025-12-19.
+
+**Current exclusion points:**
+1. Parser: `TranscriptParsers.swift:163-164` skips `isSidechain: true` records
+2. Query: `TranscriptOrchestrator.swift:2342` filters `NOT LIKE '%/agent-%'`
+3. Priority: `FastPathIngestionCoordinator.swift:582-586` sorts agents last
+
+**Database impact estimate:**
+- New entries: ~4,245 (from 888 existing agent files)
+- Size increase: 2-5 MB on 188 MB database (~2%)
+- Minimal overhead
+
+**Implementation approach (Option B - dedicated table):**
+- Create `tool_invocations` table for tool metadata and sidechain linkage
+- Add `is_sidechain` column to `transcript_entries`
+- Remove sidechain skip in parser, extract tool_use blocks
+- Filter `is_sidechain = 0` in timeline queries (preserve current behavior)
+- Include sidechain content in search
+- Enables DECORATE-CONTEXTIFY-CALLS feature
+
+**Components requiring updates:**
+- `TranscriptParsers.swift` (remove skip, add tool extraction)
+- `HooverEngine.swift` (insert tool_invocations)
+- `TranscriptOrchestrator.swift` (remove agent-* filter)
+- `Models.swift` (add ToolInvocation model)
+- `DatabaseSchema.swift` (migration v27+)
+
+**Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`
+
+---
+
+## Transcript Data Completeness Audit (Data Integrity)
+
+**Status:** Not started
+**Priority:** P1 (data integrity - ensure we're capturing all valuable transcript data)
+**Discovered:** 2025-12-21
+**Blocked by:** None (research task)
+
+- [ ] #TRANSCRIPT-DATA-AUDIT: Audit what transcript data is not being properly ingested and stored
+
+**Context:**
+Discovery of the sidechain gap (55% of transcripts excluded) raises the question: what else are we missing? This audit should systematically review all transcript record types and fields to identify data we're not preserving.
+
+**Audit scope:**
+
+| Data Category | Current State | Audit Status |
+|--------------|---------------|--------------|
+| Sidechain transcripts (`agent-*.jsonl`) | Not ingested (SIDECHAIN-INGESTION) | Identified |
+| Tool invocation metadata (`tool_use` blocks) | Lost - only `[Tool: X]` marker stored | Identified |
+| Tool result content (`tool_result` blocks) | Partially stored (summarized) | Needs audit |
+| File snapshots (`file-history-snapshot`) | Stored in `file_snapshots` table | Needs audit |
+| System events (`system` records) | Stored in `system_events` table | Needs audit |
+| Session summaries (`summary` records) | Stored in `transcript_summaries` table | Needs audit |
+| Thinking blocks (`thinking` content) | Filtered from display | Needs audit |
+| Usage metadata (`usage` on assistant) | Stored in `assistant_usages` table | Needs audit |
+| Queue operations (`queue-operation`) | Partially handled | Needs audit |
+| Meta records (`isMeta: true`) | Skipped | Needs audit |
+| Image content (`image` blocks) | Unknown | Needs audit |
+| Git context (`gitBranch`, `gitCommit`) | Stored on entries | Needs verification |
+
+**Deliverables:**
+1. Complete inventory of Claude Code record types and fields
+2. Complete inventory of Codex CLI record types and fields
+3. Gap analysis: what's captured vs. what's discarded
+4. Prioritized list of missing data by value to users
+5. Recommendations for what to add to ingestion
+
+**Method:**
+- Sample recent transcripts and compare raw JSON to DB records
+- Review `TranscriptParsers.swift` skip conditions
+- Review `HooverEngine.swift` metadata extraction
+- Check if stored data matches source fidelity
+
+**Notes:**
+- This is a research/audit task, not implementation
+- Findings may spawn additional P1/P2 items
+- Should be done before or alongside SIDECHAIN-INGESTION to ensure we're building the right solution
 
 ---
 
