@@ -1017,16 +1017,14 @@ public struct ContextifyQueryService: Sendable {
   }
 
   /// Most recent timeline-visible entries, optionally project scoped.
-  /// Uses `.timeline` filter (excludes hidden + sidechains).
-  public func recentActivity(projectId: String? = nil, limit: Int = 50) throws -> [TranscriptEntry] {
-    try recentActivityImpl(projectId: projectId, limit: limit, filter: .timeline)
-  }
-
-  /// Internal implementation using EntryFilter for unified filter handling.
-  internal func recentActivityImpl(
+  /// - Parameters:
+  ///   - projectId: Optional project ID to scope results
+  ///   - limit: Maximum number of entries to return
+  ///   - filter: Entry filter. Defaults to `.timeline` (excludes hidden + sidechains).
+  public func recentActivity(
     projectId: String? = nil,
     limit: Int = 50,
-    filter: EntryFilter
+    filter: EntryFilter = .timeline
   ) throws -> [TranscriptEntry] {
     let (filterPredicate, filterArgs) = filter.sqlPredicate()
     return try pool.read { db in
@@ -1094,15 +1092,12 @@ public struct ContextifyQueryService: Sendable {
   }
 
   /// Aggregate stats per project, or for a specific project if provided.
-  /// Uses `.timeline` filter (excludes hidden + sidechains).
-  public func projectStats(projectId: String? = nil) throws -> [ProjectStats] {
-    try projectStatsImpl(projectId: projectId, filter: .timeline)
-  }
-
-  /// Internal implementation using EntryFilter for unified filter handling.
-  /// Filter is applied in ON clause to preserve LEFT JOIN semantics
-  /// (projects with 0 matching entries still appear).
-  internal func projectStatsImpl(projectId: String? = nil, filter: EntryFilter) throws -> [ProjectStats] {
+  /// - Parameters:
+  ///   - projectId: Optional project ID to scope results
+  ///   - filter: Entry filter for counting entries. Defaults to `.timeline`.
+  ///             Filter is applied in ON clause to preserve LEFT JOIN semantics
+  ///             (projects with 0 matching entries still appear).
+  public func projectStats(projectId: String? = nil, filter: EntryFilter = .timeline) throws -> [ProjectStats] {
     // Keep filter in ON clause to preserve LEFT JOIN semantics
     let (filterPredicate, filterArgs) = filter.sqlPredicate(alias: .e)
     return try pool.read { db in
