@@ -232,6 +232,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
+    @ObservationIgnored private var spawnedAgentsLookup: [String: String] = [:]  // entry.id -> agent type
+    @ObservationIgnored private var contextifyEntryIds: Set<String> = Set()  // entry IDs for Contextify calls
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
@@ -1106,6 +1108,9 @@ final class ConversationMonitor {
 
             let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
 
+            // Refresh decoration data for this project
+            refreshDecorationData(projectId: transcript.projectId)
+
             // Map to timeline entries
             seenEntryIDs.removeAll(keepingCapacity: false)
             let transcriptTimelineEntries = transcriptEntries.map { entry in
@@ -1374,9 +1379,31 @@ final class ConversationMonitor {
             sessionId: entry.sessionId,
             disposition: cached?.disposition,
             isQueued: entry.isQueued == 1,
+            spawnedAgentType: spawnedAgentsLookup[entry.id],
+            isContextifyCall: contextifyEntryIds.contains(entry.id),
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256
         )
+    }
+
+    /// Refresh decoration lookup tables for the current project
+    private func refreshDecorationData(projectId: String) {
+        guard let orchestrator = orchestrator else {
+            spawnedAgentsLookup.removeAll()
+            contextifyEntryIds.removeAll()
+            return
+        }
+        do {
+            spawnedAgentsLookup = try orchestrator.getSpawnedAgentEntries(projectId: projectId)
+            contextifyEntryIds = try orchestrator.getContextifyEntryIds(projectId: projectId)
+            if !self.spawnedAgentsLookup.isEmpty || !self.contextifyEntryIds.isEmpty {
+                log.debug("[DECORATION] Loaded decoration data: \(self.spawnedAgentsLookup.count, privacy: .public) agents, \(self.contextifyEntryIds.count, privacy: .public) contextify entries")
+            }
+        } catch {
+            log.warning("[DECORATION] Failed to load decoration data: \(error.localizedDescription, privacy: .public)")
+            spawnedAgentsLookup.removeAll()
+            contextifyEntryIds.removeAll()
+        }
     }
 
     @MainActor
@@ -1520,6 +1547,9 @@ final class ConversationMonitor {
             log.debug("📊 Feed loaded: \(feed.count) entries from DB")
             log.info("[SUMM-LOAD] Feed loaded: \(feed.count) entries from database")
             log.info("[TIMELINE-LOAD] DAO.fetchPrimerEntries \(feed.count) entries in \(String(format: "%.0f", Date().timeIntervalSince(startTime) * 1000), privacy: .public)ms")
+
+            // Refresh decoration data for this project (agent types, Contextify entries)
+            refreshDecorationData(projectId: projectId)
 
             // Map to UI entries and track seen IDs + collect cache misses
             let mapStart = Date()
@@ -2773,6 +2803,9 @@ final class ConversationMonitor {
                 // Build transcript path lookup for new entries
                 let transcripts = try orchestrator.getTranscripts(forProject: projectId)
                 let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
+
+                // Refresh decoration data (new entries may have agent/contextify calls)
+                refreshDecorationData(projectId: projectId)
 
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance

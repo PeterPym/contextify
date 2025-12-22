@@ -121,6 +121,13 @@ struct TimelineEntryRow: View, Equatable {
         }
         .onAppear {
             log.info("[ROW-APPEAR] Entry rendered: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) summary: \(String(entry.summary.prefix(40)), privacy: .public)...")
+            // Log decoration data for E2E test assertions
+            if let agentType = entry.agentTypeLabel {
+                log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) for entry \(entry.id, privacy: .public)")
+            }
+            if entry.isContextifyCall {
+                log.debug("[DECORATION] Contextify indicator rendered for entry \(entry.id, privacy: .public)")
+            }
         }
     }
 
@@ -180,6 +187,25 @@ struct TimelineEntryRow: View, Equatable {
                         )
                     }
                     .help("Message sent while Claude was working")
+            }
+            // Agent spawn badge (Layer 1: shows when entry spawned an agent via Task tool)
+            if let agentType = entry.agentTypeLabel {
+                Text(agentType)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.purple.opacity(0.8))
+                    .cornerRadius(3)
+                    .help("Spawned \(agentType) agent")
+            }
+            // Contextify indicator (Layer 2: shows for Contextify skill/agent calls)
+            if entry.isContextifyCall {
+                Image("contextify-logomark")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 12, height: 12)
+                    .help(entry.spawnedAgentType != nil ? "Contextify agent" : "Contextify skill")
             }
             if entry.action == .nonSummarizable {
                 Text("—")
