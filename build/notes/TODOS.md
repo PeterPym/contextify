@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-17
+**Last Updated:** 2025-12-21
 **Status:** Active
 
 **Priority Levels:**
@@ -199,40 +199,6 @@ transcript provider permission via Settings. Two bugs were fixed:
 5. **AI cancellation noise** - Log at debug level instead of error (reduced 45+ warnings)
 
 **Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
-
----
-
-## CLI Query Entry Filter Architecture
-
-**Status:** Not started
-**Priority:** P0 (breaks CLI query functionality)
-**Discovered:** 2025-12-21
-
-- [ ] #ENTRY-FILTER-ARCHITECTURE: Decouple is_sidechain from includeHidden and implement unified EntryFilter type
-
-**Problem:**
-The CLI query service incorrectly couples `is_sidechain` filtering to the `includeHidden` parameter. This makes it impossible to:
-- Show hidden entries but not sidechains
-- Show sidechains for debugging but not hidden entries
-- Retrieve proper context windows around sidechain search hits
-
-**Affected Functions:**
-- `context()` - L714-718: couples filters incorrectly
-- `activity()` - L903: same coupling
-- `recentActivity()` - L976: always filters, no override
-- `projectStats()` - L1042: always filters, no override
-
-**Solution:**
-Implement unified `EntryFilter` type with orthogonal `includeHidden` and `includeSidechains` parameters, central SQL generation, and presets for common use cases (`.timeline`, `.search`, `.debug`).
-
-**Scope:**
-1. Add `EntryFilter` type with `sqlWhereClause()` helper
-2. Add `includeSidechains` parameter to `activity()` and `context()`
-3. Refactor internal SQL generation to use `EntryFilter`
-4. Update `recentActivity()` and `projectStats()` with optional filter override
-5. Update UI search service to use same filter helper
-
-**Spec:** `build/notes/todo-support/ENTRY-FILTER-ARCHITECTURE-spec.md`
 
 ---
 
