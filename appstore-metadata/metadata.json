@@ -5,7 +5,7 @@
     "sku": "CONTEXTIFY-001",
     "primary_language": "en-US",
     "platforms": ["macOS"],
-    "minimum_os_version": "26.0"
+    "minimum_os_version": "15.0"
   },
 
   "metadata": {
@@ -13,11 +13,11 @@
       "name": "Contextify",
       "subtitle": "AI Coding History, Searchable",
       "promotional_text": "A private, searchable timeline of your Claude Code and Codex sessions.",
-      "description": "Contextify keeps a searchable record of every Claude Code and Codex conversation you have.\n\nWatch sessions unfold in real-time. Each message is summarized so you can skim what happened while you were away, or follow along as your AI works.\n\nSearch across every conversation you've ever had. Find that one command, that specific fix, or that brilliant solution from weeks ago in seconds.\n\nAll processing happens locally using Apple Intelligence. Your transcripts never leave your machine.\n\nFEATURES\n\n• Real-time timeline of Claude Code and Codex sessions\n• AI-powered summaries generated on-device\n• Full-text search across all conversations\n• Automatic project organization\n• Support for custom database locations (Dropbox, iCloud Drive)\n\nPRIVACY\n\nYour conversations stay on your Mac.\n\nREQUIREMENTS\n\n• macOS 26 (Tahoe) or later\n• Apple Intelligence enabled\n• Claude Code or Codex CLI installed",
+      "description": "Contextify keeps a searchable record of every Claude Code and Codex conversation you have.\n\nWatch sessions unfold in real-time. Each message is summarized so you can skim what happened while you were away, or follow along as your AI works.\n\nSearch across every conversation you've ever had. Find that one command, that specific fix, or that brilliant solution from weeks ago in seconds.\n\nAll processing happens locally using Apple Intelligence. Your transcripts never leave your machine.\n\nFEATURES\n\n• Real-time timeline of Claude Code and Codex sessions\n• AI-powered summaries generated on-device\n• Full-text search across all conversations\n• Automatic project organization\n• Support for custom database locations (Dropbox, iCloud Drive)\n\nPRIVACY\n\nYour conversations stay on your Mac.\n\nREQUIREMENTS\n\n• macOS 15 (Sequoia) or later\n• macOS 26+ for AI summaries (Lite Mode on macOS 15)\n• Claude Code or Codex CLI installed",
 
       "keywords": "AI,Claude,developer,productivity,conversation,search,context,timeline,code,tracking,Codex",
 
-      "release_notes": "- Faster detection when adding new transcript sources\n- More responsive project switching\n- Bug fixes and improvements",
+      "release_notes": "What's New\n\n• macOS 15 Compatibility - Now supports macOS 15 (Sequoia) in Lite Mode. Timeline monitoring and search work fully; AI summaries require macOS 26+.\n\n• Total Recall - Introducing Contextify Query, a new CLI for AI to query your conversation history using a new Claude Code skill and Agent. See Settings > CLI for install instructions.\n\n• Improved Agent Sidechain Support - Better capture of tool invocations and agent sidechains for more complete conversation context.\n\n• Bug Fixes and Performance Enhancements",
 
       "support_url": "https://contextify.sh/support.html",
       "marketing_url": "https://contextify.sh",
@@ -37,7 +37,7 @@
     "last_name": "Banagale",
     "phone_number": "503-730-6015",
     "email_address": "rob@banagale.com",
-    "notes": "Hello. Thank you for reviewing my app.\n\nThis is a bug fix release with performance improvements.\n\nSAMPLE DATA:\nhttps://contextify.sh/review-4a125b1d/sample-data.zip\n\nDEMO VIDEO:\nhttps://contextify.sh/review-4a125b1d/demo-video.mp4\n\nSETUP INSTRUCTIONS (also in README.txt inside the archive):\n1. Download and extract sample-data.zip\n2. Create directories (needed if Claude Code/Codex not installed):\n   mkdir -p ~/.claude/projects\n   mkdir -p ~/.codex/sessions\n3. Copy the claude/ folder contents to ~/.claude/projects/\n4. Copy the codex/ folder contents to ~/.codex/sessions/\n5. Launch Contextify\n6. Grant permission when prompted for ~/.claude/ access\n7. App will detect sample projects (taskflow, weatherly, recipebox)\n8. Timeline displays conversations, LLM summaries generate automatically\n\nFEATURES TO TEST:\n- Timeline view - shows conversation history with timestamps\n- LLM summaries - auto-generated for each conversation\n- Quick Search (Cmd+F) - filter current project\n- Deep Search (Cmd+Shift+F) - search across all projects\n- Project switching - click tabs to switch between projects\n\nThe sample data contains synthetic Claude Code and Codex CLI transcript files demonstrating all app features."
+    "notes": "Hello. Thank you for reviewing my app.\n\nThis release adds macOS 15 (Sequoia) support in Lite Mode, a new CLI query tool, and improved agent sidechain capture.\n\nSAMPLE DATA:\nhttps://contextify.sh/review-4a125b1d/sample-data.zip\n\nDEMO VIDEO:\nhttps://contextify.sh/review-4a125b1d/demo-video.mp4\n\nSETUP INSTRUCTIONS (also in README.txt inside the archive):\n1. Download and extract sample-data.zip\n2. Create directories (needed if Claude Code/Codex not installed):\n   mkdir -p ~/.claude/projects\n   mkdir -p ~/.codex/sessions\n3. Copy the claude/ folder contents to ~/.claude/projects/\n4. Copy the codex/ folder contents to ~/.codex/sessions/\n5. Launch Contextify\n6. Grant permission when prompted for ~/.claude/ access\n7. App will detect sample projects (taskflow, weatherly, recipebox)\n8. Timeline displays conversations, LLM summaries generate automatically\n\nFEATURES TO TEST:\n- Timeline view - shows conversation history with timestamps\n- LLM summaries - auto-generated for each conversation\n- Quick Search (Cmd+F) - filter current project\n- Deep Search (Cmd+Shift+F) - search across all projects\n- Project switching - click tabs to switch between projects\n\nThe sample data contains synthetic Claude Code and Codex CLI transcript files demonstrating all app features."
   },
 
   "app_privacy": {

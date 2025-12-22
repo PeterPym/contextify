@@ -836,6 +836,7 @@ When user says "use contextify to look through our convo history", agent doesn't
 **Depends on:** #SIDECHAIN-INGESTION (Phase 1-2 for `tool_invocations` table)
 
 **Reference:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-spec.md`
+**E2E Test Design:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-e2e-design.md`
 
 ---
 
