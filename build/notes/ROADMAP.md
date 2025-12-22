@@ -94,6 +94,8 @@ priority_levels:
 
 **Vision:** Transform transcripts into work story. Show ahead/behind main, staged/unstaged counts, commit badges, timeline visualization of work progression.
 
+**Related:** See `/tmp/PROJECT-CHRONICLE-spec.md` for broader "development narrative" thinking that could subsume this. Git data (branches, commits, merges gleaned from conversations) would be one input source feeding the narrative synthesis.
+
 ---
 
 ### RESUME-FORK: Resume and fork conversations from search

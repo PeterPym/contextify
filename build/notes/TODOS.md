@@ -206,6 +206,37 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Project Chronicle: Continuous Development Narrative Synthesis
+
+**Status:** Spec complete, ready for prototype
+**Priority:** P1
+**Discovered:** 2025-12-22
+
+- [ ] #PROJECT-CHRONICLE: Prototype continuous narrative synthesis using local LLM
+
+**Problem:**
+AI-assisted development velocity is so high that developers lose track of what they were working on and why, even after short interruptions. The "flow state" now happens at the architecture/design level, generating far more code than before. Losing context is more costly than ever.
+
+**Insight:**
+Handoff documents created for conversation continuation accidentally became the only reliable archaeology of development intent. They capture narrative arcs, discovery chains, and decisions - but require manual invocation.
+
+**Solution:**
+Background process that continuously watches conversation transcripts and uses Apple Intelligence to build a higher-level narrative:
+- Detects "arcs" (coherent threads of work toward a goal)
+- Tracks "signposts" (decisions, discoveries, pivots, milestones, blockers)
+- Links conversations across `/clear` and compaction boundaries
+- Captures the "russian doll" nesting when one task reveals prerequisites
+
+**Prototype scope:**
+1. Hook into transcript ingestion pipeline
+2. Call Apple Intelligence for exchange analysis
+3. Maintain persistent narrative state (arcs, signposts)
+4. Generate per-session narrative documents to `/tmp/`
+
+**Spec:** `build/notes/todo-support/PROJECT-CHRONICLE-spec.md`
+
+---
+
 ## Cross-Platform Ingestion CLI (Linux/Windows)
 
 **Status:** Not started
