@@ -101,7 +101,8 @@ extension EntryFilter {
   /// Generate a SQL predicate for entry filtering.
   /// Returns a complete predicate (never empty - returns "1 = 1" if no filters).
   /// Use in: `WHERE (\(predicate))` or `ON ... AND (\(predicate))`
-  func sqlPredicate(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
+  /// Note: Kept internal until Phase 3 proves reuse value.
+  internal func sqlPredicate(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
     let (clauses, args) = buildClauses(alias: alias)
     let sql = clauses.isEmpty ? "1 = 1" : clauses.joined(separator: " AND ")
     return (sql, args)
@@ -110,7 +111,8 @@ extension EntryFilter {
   /// Generate a SQL fragment with leading " AND " for appending to existing WHERE.
   /// Returns empty string if no filters apply.
   /// Use in: `WHERE existing_condition\(andFragment)`
-  func sqlAndFragment(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
+  /// Note: Kept internal until Phase 3 proves reuse value.
+  internal func sqlAndFragment(alias: TableAlias = .e) -> (sql: String, args: [any DatabaseValueConvertible]) {
     let (clauses, args) = buildClauses(alias: alias)
     if clauses.isEmpty {
       return ("", [])

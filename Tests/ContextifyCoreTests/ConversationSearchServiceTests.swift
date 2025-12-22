@@ -736,13 +736,17 @@ final class ConversationSearchServiceTests: XCTestCase {
     // Assert: Context should NOT be empty (this was the original bug)
     XCTAssertFalse(context.isEmpty, "Context for sidechain hit should NOT be empty")
 
-    // Assert: The sidechain hit itself should be in the context
+    // Assert: All 3 entries should be in the context (before, hit, after)
     let hitIds = context.map { $0.id }
+    XCTAssertTrue(hitIds.contains("before-entry"), "Context should include before-entry neighbor")
     XCTAssertTrue(hitIds.contains("sidechain-hit"), "Context should include the sidechain hit itself")
+    XCTAssertTrue(hitIds.contains("after-entry"), "Context should include after-entry neighbor")
 
-    // Assert: Context should include neighbors from the same transcript
-    // Note: getContext uses displayInTimeline filter, so it returns visible entries only.
-    // The sidechain hit is visible (displayInTimeline=1), so it should be returned.
-    XCTAssertGreaterThanOrEqual(context.count, 1, "Context should include at least the hit entry")
+    // Assert: Exactly 3 entries (no duplicates, no extras)
+    XCTAssertEqual(context.count, 3, "Context should include exactly 3 entries")
+
+    // Assert: Entries are ordered by timestamp (before < hit < after)
+    XCTAssertEqual(hitIds, ["before-entry", "sidechain-hit", "after-entry"],
+      "Context entries should be ordered by timestamp")
   }
 }
