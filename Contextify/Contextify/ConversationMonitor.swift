@@ -1106,16 +1106,13 @@ final class ConversationMonitor {
 
             let cacheMap = try orchestrator.getCachedTimelineMany(keys: cacheKeys)
 
-            // Get Contextify invocation entry IDs for decoration
-            let contextifyEntryIds = (try? orchestrator.getContextifyEntryIds(transcriptId: transcript.id)) ?? []
-
             // Map to timeline entries
             seenEntryIDs.removeAll(keepingCapacity: false)
             let transcriptTimelineEntries = transcriptEntries.map { entry in
                 seenEntryIDs.insert(entry.id)
                 let cacheKey = entry.windowSha256.map { CacheKey(content: entry.contentSha256, window: $0) }
                 let cache = cacheKey.flatMap { cacheMap[$0] }
-                return toTimelineEntry(entry, cached: cache, transcriptPath: transcript.filePath, contextifyEntryIds: contextifyEntryIds)
+                return toTimelineEntry(entry, cached: cache, transcriptPath: transcript.filePath)
             }
 
             setEntries(transcriptTimelineEntries)
@@ -1319,7 +1316,7 @@ final class ConversationMonitor {
 
     // MARK: - SQL-based Processing
 
-    private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?, transcriptPath: String?, contextifyEntryIds: Set<String> = []) -> TimelineEntry {
+    private func toTimelineEntry(_ entry: TranscriptEntry, cached: TimelineCache?, transcriptPath: String?) -> TimelineEntry {
         // Use cached summary if available, otherwise fallback
         let summary: String
         let action: TimelineEntryAction
@@ -1377,7 +1374,6 @@ final class ConversationMonitor {
             sessionId: entry.sessionId,
             disposition: cached?.disposition,
             isQueued: entry.isQueued == 1,
-            isContextifyCall: contextifyEntryIds.contains(entry.id),
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256
         )
@@ -1487,9 +1483,6 @@ final class ConversationMonitor {
                 let transcripts = try orchestrator.getTranscripts(forProject: projectId)
                 let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 
-                // Get Contextify invocation entry IDs for decoration
-                let contextifyEntryIds = (try? orchestrator.getContextifyEntryIds(projectId: projectId)) ?? []
-
                 await MainActor.run {
                     guard self.currentProjectId == projectId else { return }
                 }
@@ -1497,7 +1490,6 @@ final class ConversationMonitor {
                     projectId: projectId,
                     feed: feed,
                     transcriptPaths: transcriptPaths,
-                    contextifyEntryIds: contextifyEntryIds,
                     startTime: startTime,
                     priorReady: priorReady
                 )
@@ -1522,7 +1514,6 @@ final class ConversationMonitor {
         projectId: String,
         feed: [(TranscriptEntry, TimelineCache?)],
         transcriptPaths: [String: String],
-        contextifyEntryIds: Set<String>,
         startTime: Date,
         priorReady: Bool
     ) async {
@@ -1559,7 +1550,7 @@ final class ConversationMonitor {
 
                 // Create timeline entry with active state check
                 let transcriptPath = transcriptPaths[entry.transcriptId]
-                var timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath, contextifyEntryIds: contextifyEntryIds)
+                var timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
 
                 // Override action if this is the actively processing entry
                 // Compare using the timeline's UUID (already converted in toTimelineEntry)
@@ -2783,9 +2774,6 @@ final class ConversationMonitor {
                 let transcripts = try orchestrator.getTranscripts(forProject: projectId)
                 let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 
-                // Get Contextify invocation entry IDs for decoration
-                let contextifyEntryIds = (try? orchestrator.getContextifyEntryIds(projectId: projectId)) ?? []
-
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
                 var addedCount = 0
@@ -2820,7 +2808,7 @@ final class ConversationMonitor {
                     }
 
                     let transcriptPath = transcriptPaths[entry.transcriptId]
-                    let timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath, contextifyEntryIds: contextifyEntryIds)
+                    let timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
                     appendEntry(timelineEntry)
                     addedCount += 1
                 }

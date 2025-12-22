@@ -41,7 +41,6 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let sessionId: String?  // Identifies which session this entry belongs to
     let disposition: String?  // Cache disposition (e.g., "safety-filtered", "directive", etc.)
     let isQueued: Bool  // True if message was queued (sent while Claude was working)
-    let isContextifyCall: Bool  // True if this entry is a Contextify skill/agent invocation
 
     // Hidden cache keys for lightweight refresh (not displayed in UI)
     let contentSha256: String?
@@ -80,7 +79,6 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         sessionId: String? = nil,
         disposition: String? = nil,
         isQueued: Bool = false,
-        isContextifyCall: Bool = false,
         contentSha256: String? = nil,
         windowSha256: String? = nil
     ) {
@@ -100,7 +98,6 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.sessionId = sessionId
         self.disposition = disposition
         self.isQueued = isQueued
-        self.isContextifyCall = isContextifyCall
         self.contentSha256 = contentSha256
         self.windowSha256 = windowSha256
     }
