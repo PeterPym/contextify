@@ -197,4 +197,76 @@ final class ContextifyQueryServiceTests: XCTestCase {
     let info = try service.versionInfo()
     XCTAssertFalse(info.summariesEnabled)
   }
+
+  /// Regression test: projectStats should not over-count entries due to join multiplication
+  /// When a project has multiple transcripts, COUNT(e.id) would be multiplied by transcript count.
+  /// Fix: Use COUNT(DISTINCT e.id) to avoid inflation.
+  func testProjectStats_multipleTranscripts_noJoinMultiplication() async throws {
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("contextify-projectstats-join-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    let dbURL = tempDir.appendingPathComponent("contextify.db")
+    let dbManager = DatabaseManager.makeTestingInstance(databaseURL: dbURL)
+    let pool = try dbManager.pool
+
+    // Setup: 1 project, 2 transcripts, 3 entries total
+    // Without DISTINCT, join would produce 2×3=6 entry rows
+    try await pool.write { db in
+      // Create project
+      try db.execute(sql: """
+        INSERT INTO projects (id, name, root_path, created_at, updated_at, last_viewed_ts)
+        VALUES ('p1', 'Test Project', '/test', 0, 0, 0)
+      """)
+
+      // Create 2 transcripts
+      try db.execute(sql: """
+        INSERT INTO transcripts (
+          id, project_id, file_path, normalized_path, path_hash, provider,
+          last_modified, file_size, content_length, mtime_ms,
+          line_count, last_processed_line, parser_version, status, ingest_state,
+          created_at, updated_at
+        ) VALUES
+          ('t1', 'p1', '/test/t1.jsonl', '/test/t1.jsonl', 'hash1', 'claude.code',
+            0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0),
+          ('t2', 'p1', '/test/t2.jsonl', '/test/t2.jsonl', 'hash2', 'claude.code',
+            0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
+      """)
+
+      // Create 3 entries (all visible, main-chain)
+      try db.execute(sql: """
+        INSERT INTO transcript_entries (
+          id, transcript_id, project_id, provider, kind, timestamp, content,
+          content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
+        ) VALUES
+          ('e1', 't1', 'p1', 'claude.code', 'user', 100, 'msg1', 'sha1', 1, 0, 100, 100, 0),
+          ('e2', 't1', 'p1', 'claude.code', 'assistant', 200, 'msg2', 'sha2', 1, 0, 200, 200, 0),
+          ('e3', 't2', 'p1', 'claude.code', 'user', 300, 'msg3', 'sha3', 1, 0, 300, 300, 0)
+      """)
+    }
+
+    let service = try ContextifyQueryService(databaseURL: dbURL)
+    let stats = try service.projectStats(projectId: "p1")
+
+    // Assert: Should have exactly 1 project stat
+    XCTAssertEqual(stats.count, 1, "Should return exactly 1 project stat")
+
+    guard let stat = stats.first else {
+      XCTFail("No stats returned")
+      return
+    }
+
+    // Assert: transcriptCount should be 2 (not inflated)
+    XCTAssertEqual(stat.transcriptCount, 2, "Should count 2 transcripts")
+
+    // Assert: entryCount should be 3 (not 6 from join multiplication)
+    // Without COUNT(DISTINCT e.id), this would be 6 (2 transcripts × 3 entries)
+    XCTAssertEqual(stat.entryCount, 3,
+      "Entry count should be 3, not 6 (join multiplication bug)")
+
+    // Assert: lastEntryTimestamp should be the max timestamp
+    XCTAssertEqual(stat.lastEntryTimestamp, 300,
+      "Last entry timestamp should be 300")
+  }
 }

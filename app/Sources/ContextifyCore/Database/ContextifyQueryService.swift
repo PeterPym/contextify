@@ -680,6 +680,32 @@ public struct ContextifyQueryService: Sendable {
     fullContent: Bool = false,
     maxContentBytes: Int = 2048
   ) throws -> ContextResult {
+    let filter = EntryFilter(
+      includeHidden: includeHidden,
+      includeSidechains: includeSidechains,
+      kinds: kinds
+    )
+    return try contextImpl(
+      entryId: entryId,
+      beforeCount: beforeCount,
+      afterCount: afterCount,
+      filter: filter,
+      includeContent: includeContent,
+      fullContent: fullContent,
+      maxContentBytes: maxContentBytes
+    )
+  }
+
+  /// Internal implementation using EntryFilter for unified filter handling.
+  internal func contextImpl(
+    entryId: String,
+    beforeCount: Int,
+    afterCount: Int,
+    filter: EntryFilter,
+    includeContent: Bool,
+    fullContent: Bool,
+    maxContentBytes: Int
+  ) throws -> ContextResult {
     try pool.read { db in
       struct AnchorRow: FetchableRecord, Decodable {
         let id: String
@@ -712,25 +738,6 @@ public struct ContextifyQueryService: Sendable {
       """
       guard let anchor = try AnchorRow.fetchOne(db, sql: anchorSQL, arguments: [entryId]) else {
         throw EntryLookupError.notFound(entryId: entryId)
-      }
-
-      func buildFilters(prefix: String, args: inout [DatabaseValueConvertible]) -> String {
-        var filters: [String] = []
-        if !includeHidden {
-          filters.append("\(prefix).display_in_timeline = 1")
-        }
-        if !includeSidechains {
-          filters.append("\(prefix).is_sidechain = 0")
-        }
-        if let kinds, !kinds.isEmpty {
-          // Dedupe and sort for deterministic SQL
-          let sortedKinds = Array(Set(kinds)).sorted()
-          let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
-          filters.append("\(prefix).kind IN (\(placeholders))")
-          args.append(contentsOf: sortedKinds)
-        }
-        if filters.isEmpty { return "" }
-        return " AND " + filters.joined(separator: " AND ")
       }
 
       func mapEntry(_ row: AnchorRow) -> EntryPayload {
@@ -770,7 +777,10 @@ public struct ContextifyQueryService: Sendable {
       let beforeLimit = max(0, beforeCount)
       let afterLimit = max(0, afterCount)
 
-      var beforeArgs: [DatabaseValueConvertible] = [
+      // Get filter SQL fragment (uses EntryFilter for unified handling)
+      let (filterFragment, filterArgs) = filter.sqlAndFragment(alias: .e)
+
+      var beforeArgs: [any DatabaseValueConvertible] = [
         anchor.transcriptId,
         anchor.timestamp,
         anchor.timestamp,
@@ -779,7 +789,7 @@ public struct ContextifyQueryService: Sendable {
         anchor.createdAt,
         anchor.id,
       ]
-      let beforeFilters = buildFilters(prefix: "e", args: &beforeArgs)
+      beforeArgs.append(contentsOf: filterArgs)
       let beforeSQL = """
         SELECT id, project_id, transcript_id, provider, kind, timestamp, created_at, display_in_timeline, content
         FROM transcript_entries e
@@ -788,7 +798,7 @@ public struct ContextifyQueryService: Sendable {
             e.timestamp < ?
             OR (e.timestamp = ? AND e.created_at < ?)
             OR (e.timestamp = ? AND e.created_at = ? AND e.id < ?)
-          )\(beforeFilters)
+          )\(filterFragment)
         ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC
         LIMIT ?
       """
@@ -797,7 +807,7 @@ public struct ContextifyQueryService: Sendable {
       let hasMoreBefore = beforeRows.count > beforeLimit
       let beforeWindow = beforeRows.prefix(beforeLimit).reversed().map(mapEntry)
 
-      var afterArgs: [DatabaseValueConvertible] = [
+      var afterArgs: [any DatabaseValueConvertible] = [
         anchor.transcriptId,
         anchor.timestamp,
         anchor.timestamp,
@@ -806,7 +816,7 @@ public struct ContextifyQueryService: Sendable {
         anchor.createdAt,
         anchor.id,
       ]
-      let afterFilters = buildFilters(prefix: "e", args: &afterArgs)
+      afterArgs.append(contentsOf: filterArgs)
       let afterSQL = """
         SELECT id, project_id, transcript_id, provider, kind, timestamp, created_at, display_in_timeline, content
         FROM transcript_entries e
@@ -815,7 +825,7 @@ public struct ContextifyQueryService: Sendable {
             e.timestamp > ?
             OR (e.timestamp = ? AND e.created_at > ?)
             OR (e.timestamp = ? AND e.created_at = ? AND e.id > ?)
-          )\(afterFilters)
+          )\(filterFragment)
         ORDER BY e.timestamp ASC, e.created_at ASC, e.id ASC
         LIMIT ?
       """
@@ -824,9 +834,9 @@ public struct ContextifyQueryService: Sendable {
       let hasMoreAfter = afterRows.count > afterLimit
       let afterWindow = afterRows.prefix(afterLimit).map(mapEntry)
 
-      var countArgs: [DatabaseValueConvertible] = [anchor.transcriptId]
-      let countFilters = buildFilters(prefix: "e", args: &countArgs)
-      let countSQL = "SELECT COUNT(*) FROM transcript_entries e WHERE e.transcript_id = ?\(countFilters)"
+      var countArgs: [any DatabaseValueConvertible] = [anchor.transcriptId]
+      countArgs.append(contentsOf: filterArgs)
+      let countSQL = "SELECT COUNT(*) FROM transcript_entries e WHERE e.transcript_id = ?\(filterFragment)"
       let transcriptEntryCount = try Int.fetchOne(db, sql: countSQL, arguments: StatementArguments(countArgs))
 
       let anchorEntry = mapEntry(anchor)
@@ -854,6 +864,30 @@ public struct ContextifyQueryService: Sendable {
     limit: Int = 50,
     includeHidden: Bool = false,
     includeSidechains: Bool = false,
+    timeRange: QueryTimeRange = QueryTimeRange(),
+    includeContent: Bool = true,
+    fullContent: Bool = false,
+    maxContentBytes: Int = 2048
+  ) throws -> [ActivityItem] {
+    let filter = EntryFilter(includeHidden: includeHidden, includeSidechains: includeSidechains)
+    return try activityImpl(
+      filter: filter,
+      projectId: projectId,
+      transcriptId: transcriptId,
+      limit: limit,
+      timeRange: timeRange,
+      includeContent: includeContent,
+      fullContent: fullContent,
+      maxContentBytes: maxContentBytes
+    )
+  }
+
+  /// Internal implementation using EntryFilter for unified filter handling.
+  internal func activityImpl(
+    filter: EntryFilter,
+    projectId: String? = nil,
+    transcriptId: String? = nil,
+    limit: Int = 50,
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
@@ -888,6 +922,9 @@ public struct ContextifyQueryService: Sendable {
         }
       }
 
+      // Get filter SQL fragment (uses EntryFilter for unified handling)
+      let (filterFragment, filterArgs) = filter.sqlAndFragment(alias: .e)
+
       var sql = """
         SELECT
           e.id AS id,
@@ -904,16 +941,11 @@ public struct ContextifyQueryService: Sendable {
         FROM transcript_entries e
         LEFT JOIN projects p ON p.id = e.project_id
         LEFT JOIN transcript_metadata tm ON tm.transcript_id = e.transcript_id
-        WHERE 1 = 1
+        WHERE 1 = 1\(filterFragment)
       """
-      var args: [DatabaseValueConvertible] = []
+      var args: [any DatabaseValueConvertible] = []
+      args.append(contentsOf: filterArgs)
 
-      if !includeHidden {
-        sql += " AND e.display_in_timeline = 1"
-      }
-      if !includeSidechains {
-        sql += " AND e.is_sidechain = 0"
-      }
       if let projectId {
         sql += " AND e.project_id = ?"
         args.append(projectId)
@@ -985,19 +1017,29 @@ public struct ContextifyQueryService: Sendable {
   }
 
   /// Most recent timeline-visible entries, optionally project scoped.
-  public func recentActivity(projectId: String? = nil, limit: Int = 50) throws -> [TranscriptEntry] {
-    try pool.read { db in
+  /// - Parameters:
+  ///   - projectId: Optional project ID to scope results
+  ///   - limit: Maximum number of entries to return
+  ///   - filter: Entry filter. Defaults to `.timeline` (excludes hidden + sidechains).
+  public func recentActivity(
+    projectId: String? = nil,
+    limit: Int = 50,
+    filter: EntryFilter = .timeline
+  ) throws -> [TranscriptEntry] {
+    let (filterPredicate, filterArgs) = filter.sqlPredicate()
+    return try pool.read { db in
       var sql = """
         SELECT *
-        FROM transcript_entries
-        WHERE display_in_timeline = 1 AND is_sidechain = 0
+        FROM transcript_entries e
+        WHERE (\(filterPredicate))
       """
-      var args: [DatabaseValueConvertible] = []
+      var args: [any DatabaseValueConvertible] = []
+      args.append(contentsOf: filterArgs)
       if let projectId {
-        sql += " AND project_id = ?"
+        sql += " AND e.project_id = ?"
         args.append(projectId)
       }
-      sql += " ORDER BY timestamp DESC, created_at DESC, id DESC LIMIT ?"
+      sql += " ORDER BY e.timestamp DESC, e.created_at DESC, e.id DESC LIMIT ?"
       args.append(limit)
       return try TranscriptEntry.fetchAll(db, sql: sql, arguments: StatementArguments(args))
     }
@@ -1050,22 +1092,30 @@ public struct ContextifyQueryService: Sendable {
   }
 
   /// Aggregate stats per project, or for a specific project if provided.
-  public func projectStats(projectId: String? = nil) throws -> [ProjectStats] {
-    try pool.read { db in
+  /// - Parameters:
+  ///   - projectId: Optional project ID to scope results
+  ///   - filter: Entry filter for counting entries. Defaults to `.timeline`.
+  ///             Filter is applied in ON clause to preserve LEFT JOIN semantics
+  ///             (projects with 0 matching entries still appear).
+  public func projectStats(projectId: String? = nil, filter: EntryFilter = .timeline) throws -> [ProjectStats] {
+    // Keep filter in ON clause to preserve LEFT JOIN semantics
+    let (filterPredicate, filterArgs) = filter.sqlPredicate(alias: .e)
+    return try pool.read { db in
       var sql = """
         SELECT
           p.id AS project_id,
           p.name AS project_name,
           COUNT(DISTINCT t.id) AS transcript_count,
-          COUNT(e.id) AS entry_count,
+          COUNT(DISTINCT e.id) AS entry_count,
           MAX(e.timestamp) AS last_entry_timestamp,
           p.last_viewed_ts AS last_viewed_ts
         FROM projects p
         LEFT JOIN transcripts t ON t.project_id = p.id
         LEFT JOIN transcript_entries e
-          ON e.project_id = p.id AND e.display_in_timeline = 1 AND e.is_sidechain = 0
+          ON e.project_id = p.id AND (\(filterPredicate))
       """
-      var args: [DatabaseValueConvertible] = []
+      var args: [any DatabaseValueConvertible] = []
+      args.append(contentsOf: filterArgs)
       if let projectId {
         sql += " WHERE p.id = ?"
         args.append(projectId)
