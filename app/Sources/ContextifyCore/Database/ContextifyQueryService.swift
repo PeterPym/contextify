@@ -1095,24 +1095,33 @@ public struct ContextifyQueryService: Sendable {
   /// - Parameters:
   ///   - projectId: Optional project ID to scope results
   ///   - filter: Entry filter for counting entries. Defaults to `.timeline`.
-  ///             Filter is applied in ON clause to preserve LEFT JOIN semantics
-  ///             (projects with 0 matching entries still appear).
+  ///             Uses aggregate subqueries to avoid cross-product performance issues.
+  ///             Projects with 0 matching entries still appear (LEFT JOIN semantics).
   public func projectStats(projectId: String? = nil, filter: EntryFilter = .timeline) throws -> [ProjectStats] {
-    // Keep filter in ON clause to preserve LEFT JOIN semantics
+    // Use aggregate subqueries to avoid cross-product (N×M) performance issues.
+    // Filter is applied inside entries subquery; projects with 0 entries still appear.
     let (filterPredicate, filterArgs) = filter.sqlPredicate(alias: .e)
     return try pool.read { db in
       var sql = """
         SELECT
           p.id AS project_id,
           p.name AS project_name,
-          COUNT(DISTINCT t.id) AS transcript_count,
-          COUNT(DISTINCT e.id) AS entry_count,
-          MAX(e.timestamp) AS last_entry_timestamp,
+          COALESCE(ta.transcript_count, 0) AS transcript_count,
+          COALESCE(ea.entry_count, 0) AS entry_count,
+          ea.last_entry_timestamp AS last_entry_timestamp,
           p.last_viewed_ts AS last_viewed_ts
         FROM projects p
-        LEFT JOIN transcripts t ON t.project_id = p.id
-        LEFT JOIN transcript_entries e
-          ON e.project_id = p.id AND (\(filterPredicate))
+        LEFT JOIN (
+          SELECT project_id, COUNT(*) AS transcript_count
+          FROM transcripts
+          GROUP BY project_id
+        ) ta ON ta.project_id = p.id
+        LEFT JOIN (
+          SELECT e.project_id, COUNT(*) AS entry_count, MAX(e.timestamp) AS last_entry_timestamp
+          FROM transcript_entries e
+          WHERE (\(filterPredicate))
+          GROUP BY e.project_id
+        ) ea ON ea.project_id = p.id
       """
       var args: [any DatabaseValueConvertible] = []
       args.append(contentsOf: filterArgs)
@@ -1120,7 +1129,7 @@ public struct ContextifyQueryService: Sendable {
         sql += " WHERE p.id = ?"
         args.append(projectId)
       }
-      sql += " GROUP BY p.id ORDER BY last_entry_timestamp DESC NULLS LAST"
+      sql += " ORDER BY last_entry_timestamp DESC NULLS LAST"
 
       struct RowStats: FetchableRecord, Decodable {
         let projectId: String

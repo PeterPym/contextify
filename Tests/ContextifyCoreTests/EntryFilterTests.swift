@@ -175,6 +175,30 @@ final class EntryFilterTests: XCTestCase {
     XCTAssertNotEqual(filter1, filter3)
   }
 
+  func testEquatable_kindsOrderDoesNotMatter() {
+    // Different input orders should be equal after canonicalization
+    let filter1 = EntryFilter(kinds: ["user", "assistant", "tool_use"])
+    let filter2 = EntryFilter(kinds: ["tool_use", "user", "assistant"])
+    let filter3 = EntryFilter(kinds: ["assistant", "tool_use", "user"])
+
+    XCTAssertEqual(filter1, filter2, "Filters with same kinds in different order should be equal")
+    XCTAssertEqual(filter2, filter3, "Filters with same kinds in different order should be equal")
+    XCTAssertEqual(filter1, filter3, "Filters with same kinds in different order should be equal")
+
+    // Verify canonicalization worked (kinds stored in sorted order)
+    XCTAssertEqual(filter1.kinds, ["assistant", "tool_use", "user"])
+    XCTAssertEqual(filter2.kinds, ["assistant", "tool_use", "user"])
+  }
+
+  func testEquatable_kindsDuplicatesRemoved() {
+    // Duplicates should be removed during canonicalization
+    let filter1 = EntryFilter(kinds: ["user", "user", "assistant"])
+    let filter2 = EntryFilter(kinds: ["assistant", "user"])
+
+    XCTAssertEqual(filter1, filter2, "Duplicates should be removed")
+    XCTAssertEqual(filter1.kinds, ["assistant", "user"])
+  }
+
   // MARK: - Kind Constants
 
   func testKindConstants() {

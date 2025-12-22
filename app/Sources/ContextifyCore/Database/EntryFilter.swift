@@ -20,8 +20,8 @@ public struct EntryFilter: Sendable, Equatable {
 
   /// Filter by entry kind. Nil or empty means all kinds (no filter applied).
   /// Use EntryFilter.Kind constants to avoid typos.
-  /// Note: Uses array for ergonomic call sites; sorted internally for deterministic SQL.
-  public var kinds: [String]?
+  /// Note: Canonicalized (deduped + sorted) at init for consistent Equatable behavior.
+  public let kinds: [String]?
 
   // MARK: - Presets
 
@@ -44,7 +44,12 @@ public struct EntryFilter: Sendable, Equatable {
   ) {
     self.includeHidden = includeHidden
     self.includeSidechains = includeSidechains
-    self.kinds = kinds
+    // Canonicalize kinds: dedupe + sort for consistent Equatable behavior
+    if let kinds, !kinds.isEmpty {
+      self.kinds = Array(Set(kinds)).sorted()
+    } else {
+      self.kinds = kinds
+    }
   }
 }
 
@@ -86,13 +91,10 @@ extension EntryFilter {
       clauses.append("\(prefix).is_sidechain = 0")
     }
     if let kinds, !kinds.isEmpty {
-      // Dedupe and sort for deterministic SQL (order not preserved)
-      let sortedKinds = Array(Set(kinds)).sorted()
-      let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
+      // kinds is already canonicalized (deduped + sorted) at init
+      let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
       clauses.append("\(prefix).kind IN (\(placeholders))")
-      for k in sortedKinds {
-        args.append(k)
-      }
+      args.append(contentsOf: kinds)
     }
 
     return (clauses, args)

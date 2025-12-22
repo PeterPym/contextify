@@ -534,14 +534,17 @@ final class ConversationSearchServiceTests: XCTestCase {
           0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
       """, arguments: [transcriptId, projectId, "hash-\(testUUID)"])
 
+      let visibleContent = "\(searchTerm) visible content"
+      let hiddenContent = "\(searchTerm) hidden content"
+
       // Insert visible entry
       try db.execute(sql: """
         INSERT INTO transcript_entries (
           id, transcript_id, project_id, provider, kind, timestamp, content,
           content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
         ) VALUES (?, ?, ?, 'claude.code', 'user', 1000,
-          '\(searchTerm) visible content', 'sha-v', 1, 0, 1000, 1000, 0)
-      """, arguments: [visibleEntryId, transcriptId, projectId])
+          ?, 'sha-v', 1, 0, 1000, 1000, 0)
+      """, arguments: [visibleEntryId, transcriptId, projectId, visibleContent])
 
       // Insert hidden entry (display_in_timeline = 0)
       try db.execute(sql: """
@@ -549,18 +552,18 @@ final class ConversationSearchServiceTests: XCTestCase {
           id, transcript_id, project_id, provider, kind, timestamp, content,
           content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
         ) VALUES (?, ?, ?, 'claude.code', 'system', 2000,
-          '\(searchTerm) hidden content', 'sha-h', 0, 0, 2000, 2000, 0)
-      """, arguments: [hiddenEntryId, transcriptId, projectId])
+          ?, 'sha-h', 0, 0, 2000, 2000, 0)
+      """, arguments: [hiddenEntryId, transcriptId, projectId, hiddenContent])
 
       // Insert FTS entries for both (required for FTS search)
       try db.execute(sql: """
         INSERT INTO transcript_entries_fts (entry_id, project_id, role, content, created_at)
-        VALUES (?, ?, 'user', '\(searchTerm) visible content', 1000)
-      """, arguments: [visibleEntryId, projectId])
+        VALUES (?, ?, 'user', ?, 1000)
+      """, arguments: [visibleEntryId, projectId, visibleContent])
       try db.execute(sql: """
         INSERT INTO transcript_entries_fts (entry_id, project_id, role, content, created_at)
-        VALUES (?, ?, 'system', '\(searchTerm) hidden content', 2000)
-      """, arguments: [hiddenEntryId, projectId])
+        VALUES (?, ?, 'system', ?, 2000)
+      """, arguments: [hiddenEntryId, projectId, hiddenContent])
     }
 
     // Test: Search should find both entries
@@ -619,14 +622,17 @@ final class ConversationSearchServiceTests: XCTestCase {
           0, 0, 0, 0, 0, 0, 1, 'active', 'complete', 0, 0)
       """, arguments: [transcriptId, projectId, "hash-\(testUUID)"])
 
+      let mainContent = "\(searchTerm) main chain content"
+      let sidechainContent = "\(searchTerm) sidechain content"
+
       // Insert main-chain entry
       try db.execute(sql: """
         INSERT INTO transcript_entries (
           id, transcript_id, project_id, provider, kind, timestamp, content,
           content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
         ) VALUES (?, ?, ?, 'claude.code', 'user', 1000,
-          '\(searchTerm) main chain content', 'sha-m', 1, 0, 1000, 1000, 0)
-      """, arguments: [mainEntryId, transcriptId, projectId])
+          ?, 'sha-m', 1, 0, 1000, 1000, 0)
+      """, arguments: [mainEntryId, transcriptId, projectId, mainContent])
 
       // Insert sidechain entry (is_sidechain = 1)
       try db.execute(sql: """
@@ -634,18 +640,18 @@ final class ConversationSearchServiceTests: XCTestCase {
           id, transcript_id, project_id, provider, kind, timestamp, content,
           content_sha256, display_in_timeline, is_sidechain, created_at, updated_at, is_queued
         ) VALUES (?, ?, ?, 'claude.code', 'assistant', 2000,
-          '\(searchTerm) sidechain content', 'sha-s', 1, 1, 2000, 2000, 0)
-      """, arguments: [sidechainEntryId, transcriptId, projectId])
+          ?, 'sha-s', 1, 1, 2000, 2000, 0)
+      """, arguments: [sidechainEntryId, transcriptId, projectId, sidechainContent])
 
       // Insert FTS entries for both
       try db.execute(sql: """
         INSERT INTO transcript_entries_fts (entry_id, project_id, role, content, created_at)
-        VALUES (?, ?, 'user', '\(searchTerm) main chain content', 1000)
-      """, arguments: [mainEntryId, projectId])
+        VALUES (?, ?, 'user', ?, 1000)
+      """, arguments: [mainEntryId, projectId, mainContent])
       try db.execute(sql: """
         INSERT INTO transcript_entries_fts (entry_id, project_id, role, content, created_at)
-        VALUES (?, ?, 'assistant', '\(searchTerm) sidechain content', 2000)
-      """, arguments: [sidechainEntryId, projectId])
+        VALUES (?, ?, 'assistant', ?, 2000)
+      """, arguments: [sidechainEntryId, projectId, sidechainContent])
     }
 
     // Test: Search should find both entries
