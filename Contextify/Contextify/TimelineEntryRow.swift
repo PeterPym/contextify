@@ -207,6 +207,13 @@ struct TimelineEntryRow: View, Equatable {
                     }
                     .help("Summary generation failed")
             }
+            if entry.isContextifyCall {
+                Image("contextify-logomark")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 14, height: 14)
+                    .help("Contextify skill/agent call")
+            }
             if entry.isDirective {
                 Image(systemName: "arrow.forward.circle.fill")
                     .font(.caption)

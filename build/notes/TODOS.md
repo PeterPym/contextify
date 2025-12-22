@@ -820,65 +820,6 @@ When user says "use contextify to look through our convo history", agent doesn't
 
 ---
 
-## Decorate Contextify Agent/Skill Requests in Conversation Logs
-
-**Status:** Not started
-**Priority:** P1 (UX clarity - distinguish Contextify skill/agent calls)
-**Discovered:** 2025-12-21
-
-- [ ] #DECORATE-CONTEXTIFY-CALLS: Add persistent Contextify decorations for `query:contextify-reinject` skills and `query:contextify-researcher` agent calls in the conversation log
-
-**Notes:**
-- Decoration appears in the entry row alongside existing badges/icons (same location as QUEUED/directive/completion).
-- Skill call shows Contextify icon; agent call shows detective emoji + Contextify icon.
-- Detection uses `tool_invocations` table (from SIDECHAIN-INGESTION) to avoid re-parsing transcripts.
-
-**Depends on:** #SIDECHAIN-INGESTION (Phase 1-2 for `tool_invocations` table)
-
-**Reference:** `build/notes/todo-support/DECORATE-CONTEXTIFY-CALLS-spec.md`
-
----
-
-## Sidechain Transcript Ingestion (Data Integrity)
-
-**Status:** Not started
-**Priority:** P1 (data integrity - 55% of transcripts currently excluded from backup)
-**Discovered:** 2025-12-21
-
-- [ ] #SIDECHAIN-INGESTION: Add ingestion of agent-*.jsonl sidechain transcripts to preserve subagent conversation data
-
-**Problem:**
-Contextify claims to back up transcript data, but currently **excludes 55% of transcript files** (951 agent sidechains out of 1,732 total). Claude Code actively deletes these files within days - 63 files (7%) already lost since discovery on 2025-12-19.
-
-**Current exclusion points:**
-1. Parser: `TranscriptParsers.swift:163-164` skips `isSidechain: true` records
-2. Query: `TranscriptOrchestrator.swift:2342` filters `NOT LIKE '%/agent-%'`
-3. Priority: `FastPathIngestionCoordinator.swift:582-586` sorts agents last
-
-**Database impact estimate:**
-- New entries: ~4,245 (from 888 existing agent files)
-- Size increase: 2-5 MB on 188 MB database (~2%)
-- Minimal overhead
-
-**Implementation approach (Option B - dedicated table):**
-- Create `tool_invocations` table for tool metadata and sidechain linkage
-- Add `is_sidechain` column to `transcript_entries`
-- Remove sidechain skip in parser, extract tool_use blocks
-- Filter `is_sidechain = 0` in timeline queries (preserve current behavior)
-- Include sidechain content in search
-- Enables DECORATE-CONTEXTIFY-CALLS feature
-
-**Components requiring updates:**
-- `TranscriptParsers.swift` (remove skip, add tool extraction)
-- `HooverEngine.swift` (insert tool_invocations)
-- `TranscriptOrchestrator.swift` (remove agent-* filter)
-- `Models.swift` (add ToolInvocation model)
-- `DatabaseSchema.swift` (migration v27+)
-
-**Reference:** `build/notes/todo-support/SIDECHAIN-INGESTION-spec.md`
-
----
-
 ## Transcript Data Completeness Audit (Data Integrity)
 
 **Status:** Not started
@@ -895,8 +836,8 @@ Discovery of the sidechain gap (55% of transcripts excluded) raises the question
 
 | Data Category | Current State | Audit Status |
 |--------------|---------------|--------------|
-| Sidechain transcripts (`agent-*.jsonl`) | Not ingested (SIDECHAIN-INGESTION) | Identified |
-| Tool invocation metadata (`tool_use` blocks) | Lost - only `[Tool: X]` marker stored | Identified |
+| Sidechain transcripts (`agent-*.jsonl`) | ✅ Ingested (v30 schema) | Complete |
+| Tool invocation metadata (`tool_use` blocks) | ✅ Stored in `tool_invocations` table (v30) | Complete |
 | Tool result content (`tool_result` blocks) | Partially stored (summarized) | Needs audit |
 | File snapshots (`file-history-snapshot`) | Stored in `file_snapshots` table | Needs audit |
 | System events (`system` records) | Stored in `system_events` table | Needs audit |
@@ -924,7 +865,7 @@ Discovery of the sidechain gap (55% of transcripts excluded) raises the question
 **Notes:**
 - This is a research/audit task, not implementation
 - Findings may spawn additional P1/P2 items
-- Should be done before or alongside SIDECHAIN-INGESTION to ensure we're building the right solution
+- SIDECHAIN-INGESTION is complete (v30 schema) - this audit can proceed independently
 
 ---
 
