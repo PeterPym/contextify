@@ -508,9 +508,11 @@ public struct ContextifyQueryService: Sendable {
         args.append(transcriptId)
       }
       if let kinds, !kinds.isEmpty {
-        let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
+        // Dedupe and sort for deterministic SQL
+        let sortedKinds = Array(Set(kinds)).sorted()
+        let placeholders = sortedKinds.map { _ in "?" }.joined(separator: ", ")
         sql += " AND e.kind IN (\(placeholders))"
-        args.append(contentsOf: kinds)
+        args.append(contentsOf: sortedKinds)
       }
       if let since = timeRange.sinceTimestamp {
         sql += " AND e.timestamp >= ?"
@@ -672,6 +674,7 @@ public struct ContextifyQueryService: Sendable {
     beforeCount: Int = 10,
     afterCount: Int = 20,
     includeHidden: Bool = false,
+    includeSidechains: Bool = false,
     kinds: [String]? = nil,
     includeContent: Bool = true,
     fullContent: Bool = false,
@@ -715,12 +718,16 @@ public struct ContextifyQueryService: Sendable {
         var filters: [String] = []
         if !includeHidden {
           filters.append("\(prefix).display_in_timeline = 1")
+        }
+        if !includeSidechains {
           filters.append("\(prefix).is_sidechain = 0")
         }
         if let kinds, !kinds.isEmpty {
-          let placeholders = Array(repeating: "?", count: kinds.count).joined(separator: ", ")
+          // Dedupe and sort for deterministic SQL
+          let sortedKinds = Array(Set(kinds)).sorted()
+          let placeholders = Array(repeating: "?", count: sortedKinds.count).joined(separator: ", ")
           filters.append("\(prefix).kind IN (\(placeholders))")
-          args.append(contentsOf: kinds)
+          args.append(contentsOf: sortedKinds)
         }
         if filters.isEmpty { return "" }
         return " AND " + filters.joined(separator: " AND ")
@@ -846,6 +853,7 @@ public struct ContextifyQueryService: Sendable {
     transcriptId: String? = nil,
     limit: Int = 50,
     includeHidden: Bool = false,
+    includeSidechains: Bool = false,
     timeRange: QueryTimeRange = QueryTimeRange(),
     includeContent: Bool = true,
     fullContent: Bool = false,
@@ -901,7 +909,10 @@ public struct ContextifyQueryService: Sendable {
       var args: [DatabaseValueConvertible] = []
 
       if !includeHidden {
-        sql += " AND e.display_in_timeline = 1 AND e.is_sidechain = 0"
+        sql += " AND e.display_in_timeline = 1"
+      }
+      if !includeSidechains {
+        sql += " AND e.is_sidechain = 0"
       }
       if let projectId {
         sql += " AND e.project_id = ?"

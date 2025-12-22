@@ -33,6 +33,13 @@ public struct ConversationSearchRequest: Sendable {
 
 /// Individual search hit with metadata
 public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
+
+  /// Whether this hit should be selectable/clickable in the UI.
+  /// Hidden entries (displayInTimeline=false) are not selectable.
+  /// Sidechain entries are selectable (they have valid context).
+  public var isSelectable: Bool {
+    displayInTimeline
+  }
   public let id: String          // entry_id
   public let projectId: String
   public let projectName: String
@@ -42,6 +49,8 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
   public let createdAt: Date
   public let rank: Double        // BM25 score
   public let snippet: String     // Highlighted snippet
+  public let displayInTimeline: Bool  // For UI filtering (hidden entries)
+  public let isSidechain: Bool        // For UI filtering (sidechain entries)
 
   public init(
     id: String,
@@ -52,7 +61,9 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     content: String,
     createdAt: Date,
     rank: Double,
-    snippet: String
+    snippet: String,
+    displayInTimeline: Bool = true,
+    isSidechain: Bool = false
   ) {
     self.id = id
     self.projectId = projectId
@@ -63,6 +74,8 @@ public struct ConversationSearchHit: Sendable, Identifiable, Equatable {
     self.createdAt = createdAt
     self.rank = rank
     self.snippet = snippet
+    self.displayInTimeline = displayInTimeline
+    self.isSidechain = isSidechain
   }
 }
 
@@ -127,7 +140,9 @@ public actor ConversationSearchService {
           f.content,
           COALESCE(e.timestamp, f.created_at) as created_at,
           bm25(transcript_entries_fts) as rank,
-          snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet
+          snippet(transcript_entries_fts, 0, '<mark>', '</mark>', '...', 64) as snippet,
+          e.display_in_timeline AS display_in_timeline,
+          e.is_sidechain AS is_sidechain
         FROM transcript_entries_fts f
         LEFT JOIN projects p ON p.id = f.project_id
         LEFT JOIN transcript_entries e ON e.id = f.entry_id
@@ -162,7 +177,11 @@ public actor ConversationSearchService {
       let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
 
       let hits = rows.map { row in
-        ConversationSearchHit(
+        // Coalesce to sensible defaults: visible=true, sidechain=false
+        // Avoids silent false if NULL or type mismatch (would incorrectly hide visible hits)
+        let displayFlag = (row["display_in_timeline"] as Int?) ?? 1
+        let sidechainFlag = (row["is_sidechain"] as Int?) ?? 0
+        return ConversationSearchHit(
           id: row["entry_id"],
           projectId: row["project_id"],
           projectName: row["project_name"] ?? "Unknown",
@@ -171,7 +190,9 @@ public actor ConversationSearchService {
           content: row["content"],
           createdAt: Date(timeIntervalSince1970: TimeInterval(row["created_at"] as Int64)),
           rank: row["rank"],
-          snippet: row["snippet"]
+          snippet: row["snippet"],
+          displayInTimeline: displayFlag == 1,
+          isSidechain: sidechainFlag == 1
         )
       }
 
@@ -213,7 +234,13 @@ public actor ConversationSearchService {
 
   /// Get surrounding context for a hit, matching timeline display semantics
   ///
-  /// Returns entries before and after the hit, always including the hit itself.
+  /// Returns entries before and after the hit within the same transcript.
+  /// Only includes entries with `display_in_timeline = 1` (timeline-visible).
+  ///
+  /// **Important:** If the hit itself is hidden (`display_in_timeline = 0`),
+  /// it will NOT be included in results. The UI should filter hidden hits
+  /// using `ConversationSearchHit.displayInTimeline` before calling this method.
+  ///
   /// Uses `id` as secondary sort to ensure deterministic ordering when multiple
   /// entries share the same timestamp (fixes timestamp collision bug).
   public func getContext(entryId: String, before: Int = 10, after: Int = 10) async throws -> [TranscriptEntry] {
@@ -234,12 +261,12 @@ public actor ConversationSearchService {
       // Get context entries from the SAME conversation (transcript)
       // Uses (timestamp, id) ordering for deterministic results when timestamps collide
       // The hit is explicitly included via the id comparison
+      // Note: is_sidechain filter removed to support sidechain search hits (search includes sidechains)
       return try TranscriptEntry.fetchAll(db, sql: """
         SELECT * FROM (
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND (timestamp < ? OR (timestamp = ? AND id < ?))
           ORDER BY timestamp DESC, id DESC
           LIMIT ?
@@ -249,7 +276,6 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND id = ?
         )
         UNION ALL
@@ -257,7 +283,6 @@ public actor ConversationSearchService {
           SELECT * FROM transcript_entries
           WHERE transcript_id = ?
             AND display_in_timeline = 1
-            AND is_sidechain = 0
             AND (timestamp > ? OR (timestamp = ? AND id > ?))
           ORDER BY timestamp ASC, id ASC
           LIMIT ?
@@ -299,11 +324,11 @@ public actor ConversationSearchService {
       let hitId: String = hit["id"]
 
       // Count entries strictly before the current window (same conversation)
+      // Note: is_sidechain filter removed to match getContext() behavior
       let earlierCount = try Int.fetchOne(db, sql: """
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
-          AND is_sidechain = 0
           AND (timestamp < ? OR (timestamp = ? AND id < ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
@@ -315,7 +340,6 @@ public actor ConversationSearchService {
         SELECT COUNT(*) FROM transcript_entries
         WHERE transcript_id = ?
           AND display_in_timeline = 1
-          AND is_sidechain = 0
           AND (timestamp > ? OR (timestamp = ? AND id > ?))
       """, arguments: [transcriptId, timestamp, timestamp, hitId]) ?? 0
 
