@@ -8,7 +8,7 @@
   "updated": "2025-12-23",
   "git": {
     "tag": "v1.0.7",
-    "commit": "865ab80f",
+    "commit": "a888f3de",
     "branch": "main"
   },
   "build_number": 18,
@@ -28,13 +28,13 @@
       "dmg": {
         "built": true,
         "path": "dist/Contextify.dmg",
-        "sha256": "e043596ab597bf20c2dc4b7b74a3b0c81cc6c1b6772bdd473d40c96c55fab1be",
-        "size_bytes": 20240946,
+        "sha256": "bc388acdecfd836c4a62aa28ef623a8848b5f295250611b1343e468aef1401f2",
+        "size_bytes": 20240622,
         "signed": true,
         "notarized": true,
-        "sparkle_signature": "B9hcJyGjxKUdl+skfFuOrvjqL2CopvKCLtyVXQ3pDZsMe1pxehRnPRuGbAaokXaTGAhi7dgQUjGVmhKp5r9wBA==",
-        "shipped": true,
-        "shipped_at": "2025-12-23"
+        "sparkle_signature": "42fPFnLWV1r+4KylQc0fvQAmhiMCw0zLK3SQ+1rReErCTk3dsKqXTb68qgEp+Br+lwNOdNAMZq9YEIpZhP2RDA==",
+        "shipped": false,
+        "shipped_at": null
       },
       "appstore": {
         "archived": false,

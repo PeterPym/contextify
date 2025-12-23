@@ -1,7 +1,7 @@
 {
   "$schema": "./schemas/manifest.schema.json",
   "schema_version": 1,
-  "current_version": "1.0.6",
+  "current_version": "1.0.7",
   "releases": {
     "1.0.0": {
       "created": "2025-11-25",
@@ -119,6 +119,27 @@
         "build_number": 17,
         "submitted_at": "2025-12-23T07:33:58Z",
         "approved_at": "2025-12-23"
+      },
+      "marketing": {
+        "changelog_published": false,
+        "announcement_posted": false
+      }
+    },
+    "1.0.7": {
+      "created": "2025-12-23",
+      "status": "complete",
+      "target_channels": [
+        "dmg"
+      ],
+      "git_tag": "v1.0.7",
+      "git_commit": "bb636aca557fa90bcb484f1c172328f57d2f7daf",
+      "dmg": {
+        "status": "shipped",
+        "released_at": "2025-12-23"
+      },
+      "appstore": {
+        "status": "skipped",
+        "build_number": 1
       },
       "marketing": {
         "changelog_published": false,
