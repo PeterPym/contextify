@@ -78,7 +78,7 @@
 - [x] Facebook posted: https://www.facebook.com/share/p/16cjvNbjEi/
 
 ### Other Channels
-- [x] LinkedIn: Posted (2025-12-23)
+- [x] LinkedIn: https://www.linkedin.com/feed/update/urn:li:share:7409336165499232257/
 - [ ] Product Hunt: [ ] Yes / [ ] Skipped / [ ] Deferred
 - [ ] Dev.to article: [ ] Yes / [ ] Skipped / [ ] Deferred
 - [ ] Indie Hackers: [ ] Yes / [ ] Skipped / [ ] Deferred
