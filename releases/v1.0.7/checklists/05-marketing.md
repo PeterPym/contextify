@@ -72,6 +72,10 @@
 - [ ] Reddit (r/MacApps) posted: [ ] Yes / [ ] Skipped
 - [x] Reddit (r/ClaudeCode): https://www.reddit.com/r/ClaudeCode/comments/1pu52qh/total_recall_rag_search_across_all_your_claude/
 
+### Follow-ups
+- [x] GitHub Issue #1 (macOS 15 request): Commented and closed
+- [x] Email to Noah Zoschke re: Sequoia support
+
 ### Facebook
 - [x] Facebook posted: https://www.facebook.com/share/p/15uGNFQ9Mg/
 - [x] Facebook posted: https://www.facebook.com/share/p/16cjvNbjEi/
