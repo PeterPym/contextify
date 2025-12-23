@@ -57,6 +57,21 @@ assert_directory_exists() {
   fi
 }
 
+assert_directory_not_exists() {
+  local dir="$1"
+  local desc="${2:-Directory does not exist: $dir}"
+
+  if [ ! -d "$dir" ]; then
+    log_success "✓ $desc"
+    return 0
+  else
+    log_error "ASSERTION FAILED: $desc"
+    log_error "  Directory should not exist: $dir"
+    TEST_FAILED=1
+    return 1
+  fi
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # App Build Assertions
 # ─────────────────────────────────────────────────────────────────────────────
