@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-21
+**Last Updated:** 2025-12-22
 **Status:** Active
 
 **Priority Levels:**
@@ -203,6 +203,31 @@ transcript provider permission via Settings. Two bugs were fixed:
 ---
 
 # P1 (High Priority)
+
+---
+
+## Status Bar Permission Indicator
+
+**Status:** Not started
+**Priority:** P1 (App Store UX)
+**Discovered:** 2025-12-22
+
+- [ ] #STATUS-BAR-PERMISSIONS: Show indicator when neither CLI permission is granted, with one-click to Settings
+
+**Problem:**
+When neither Claude Code nor Codex CLI permissions are granted, the app appears non-functional with no clear guidance. Users may not realize they need to grant folder access in Settings.
+
+**Solution:**
+- Detect when both `~/.claude/` and `~/.codex/` access is unavailable
+- Show indicator in status bar (icon change or badge)
+- Single click opens Settings > Permissions tab
+- Clear visual state: "No CLI access - click to configure"
+
+**Scope:**
+1. Add permission state check to status bar view
+2. Design indicator (icon variant or overlay badge)
+3. Wire click action to open Settings at Permissions tab
+4. Clear indicator once any permission is granted
 
 ---
 
