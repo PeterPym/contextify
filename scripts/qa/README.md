@@ -28,6 +28,28 @@ This test suite validates critical user flows through:
 ./scripts/qa/run-all-tests.sh --list
 ```
 
+## Utility Scripts
+
+### Clean Install Reset
+
+Reset all Contextify and CLI state for fresh install testing:
+
+```bash
+./scripts/qa/reset-for-clean-install.sh
+```
+
+This script:
+- Quits Claude Code
+- Uninstalls Homebrew contextify-query (if present)
+- Clears Contextify app state (DB, prefs, CLI, bookmarks)
+- Clears Claude Code plugin cache
+- Clears user skills (total-recall and legacy locations)
+- Verifies clean state
+
+Use this before testing DMG installation, CLI installation, or skill activation.
+
+---
+
 ## Prerequisites
 
 ### Required
@@ -93,9 +115,10 @@ Each run creates a timestamped log directory:
 
 ```
 scripts/qa/
-├── run-all-tests.sh        # Main test orchestrator
-├── run-cli-tests.sh        # CLI query test runner
-├── README.md               # This file
+├── run-all-tests.sh            # Main test orchestrator
+├── run-cli-tests.sh            # CLI query test runner
+├── reset-for-clean-install.sh  # Reset state for clean install testing
+├── README.md                   # This file
 ├── lib/
 │   ├── common.sh           # Shared utilities
 │   └── assertions.sh       # Test assertions

@@ -255,6 +255,31 @@ Marketing feels vulnerable but this release has real value to announce.
 
 ---
 
+## Shell-Aware PATH Instructions for CLI Install
+
+**Status:** Not started
+**Priority:** P1 (UX polish)
+**Discovered:** 2025-12-23
+
+- [ ] #CLI-PATH-DETECT: Detect user's shell and provide customized PATH instructions
+
+**Problem:**
+When DMG CLI installs to `~/bin/`, the app shows a generic message that `~/bin` is not in PATH, with a copy-able command that may not match the user's shell config file.
+
+**Solution:**
+Detect the user's active shell and provide the correct command:
+- zsh: `echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc`
+- bash: `echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc` (or `~/.bash_profile`)
+- fish: `set -Ua fish_user_paths $HOME/bin`
+
+**Scope:**
+1. Detect shell from `$SHELL` environment variable
+2. Generate appropriate config file path and command syntax
+3. Update CLI Settings tab to show shell-specific instruction
+4. Consider offering a "Add to PATH" button that runs the command
+
+---
+
 ## Status Bar Permission Indicator
 
 **Status:** Not started
