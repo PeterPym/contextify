@@ -104,7 +104,7 @@
     },
     "1.0.6": {
       "created": "2025-12-22",
-      "status": "in_progress",
+      "status": "complete",
       "target_channels": [
         "appstore"
       ],
@@ -115,9 +115,10 @@
         "released_at": "2025-12-23"
       },
       "appstore": {
-        "status": "submitted",
+        "status": "approved",
         "build_number": 17,
-        "submitted_at": "2025-12-23T07:33:58Z"
+        "submitted_at": "2025-12-23T07:33:58Z",
+        "approved_at": "2025-12-23"
       },
       "marketing": {
         "changelog_published": false,

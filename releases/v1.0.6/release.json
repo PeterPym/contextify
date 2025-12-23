@@ -59,10 +59,11 @@
       }
     },
     "submission": {
-      "status": "submitted",
+      "status": "approved",
       "submitted_at": "2025-12-23T07:33:58Z",
       "rejection": null,
-      "resubmission": null
+      "resubmission": null,
+      "approved_at": "2025-12-23"
     },
     "marketing": {
       "status": "pending",
@@ -99,6 +100,11 @@
       "date": "2025-12-23",
       "author": "system",
       "note": "dmg marked as shipped (guard bypassed)"
+    },
+    {
+      "date": "2025-12-23",
+      "author": "system",
+      "note": "appstore marked as approved (guard bypassed)"
     }
   ],
   "dmg": {
