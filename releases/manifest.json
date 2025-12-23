@@ -109,7 +109,7 @@
         "appstore"
       ],
       "git_tag": "v1.0.6",
-      "git_commit": "c40c1bacf7c353d970c99e9d3141ac2ec1f45425",
+      "git_commit": "3137c39863f97d3f438ef0a4665c7c2a5f75ddb7",
       "dmg": {
         "status": "shipped",
         "released_at": "2025-12-23"
