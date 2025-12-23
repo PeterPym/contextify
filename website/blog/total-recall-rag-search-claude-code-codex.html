@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Contextify 1.0.6 brings macOS 15 support, Total Recall for AI history search, and improved agent sidechain capture.">
-    <title>Contextify 1.0.6: macOS 15 Support, Total Recall, and More - Contextify Blog</title>
+    <title>Total Recall: RAG Search Across All Your Claude Code and Codex Conversations - Contextify Blog</title>
 
     <!-- Open Graph -->
-    <meta property="og:url" content="https://contextify.sh/blog/2025-12-23-version-1.0.6.html">
+    <meta property="og:url" content="https://contextify.sh/blog/total-recall-rag-search-claude-code-codex.html">
     <meta property="og:type" content="article">
-    <meta property="og:title" content="Contextify 1.0.6: macOS 15 Support, Total Recall, and More">
-    <meta property="og:description" content="Now works on macOS 15 (Sequoia) in Lite Mode. Plus: your AI can search your conversation history.">
-    <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+    <meta property="og:title" content="Total Recall: RAG Search Across All Your Claude Code and Codex Conversations">
+    <meta property="og:description" content="Your AI can now search your entire conversation history. Ask 'What did we decide last week?' and get answers. Plus: macOS 15 support.">
+    <meta property="og:image" content="https://contextify.sh/assets/img/blog/total-recall-og.jpg">
 
     <style>
         :root {
@@ -194,12 +194,39 @@
     <div class="container">
         <header>
             <p class="breadcrumb"><a href="/">Contextify</a> / <a href="/blog/">Blog</a></p>
-            <h1>Contextify 1.0.6: macOS 15 Support, Total Recall, and More</h1>
+            <h1>Total Recall: RAG Search Across All Your Claude Code and Codex Conversations</h1>
             <p class="post-meta">December 23, 2025</p>
         </header>
 
+        <img src="../assets/img/blog/total-recall-og.jpg" alt="Johnny Cab from Total Recall" style="width: 100%; max-width: 900px; border-radius: 8px; margin: 20px 0;">
+
         <main>
-            <p>Contextify 1.0.6 is now available on the <a href="https://apps.apple.com/us/app/contextify/id6753190666">Mac App Store</a> and as a <a href="https://github.com/PeterPym/contextify/releases/latest">direct download</a>. This release brings three significant improvements.</p>
+            <p>Contextify 1.0.6 is now available on the <a href="https://contextify.sh/go/appstore">Mac App Store</a> and as a <a href="https://contextify.sh/download/">direct download</a>. This release brings three significant improvements.</p>
+
+            <h2>Total Recall: Your AI Can Search Your History</h2>
+
+            <p>This is the power feature of 1.0.6.</p>
+
+            <p>Contextify now includes a CLI tool that Claude Code can use to search your conversation history. Ask your AI:</p>
+
+            <ul>
+                <li>"What did we decide about the database schema last week?"</li>
+                <li>"Find where we discussed authentication approaches"</li>
+                <li>"What was that solution for the API rate limiting issue?"</li>
+            </ul>
+
+            <p>Your AI can now reference past decisions, revisit previous solutions, and maintain context across sessions.</p>
+
+            <p>The feature consists of a CLI tool (<code>contextify-query</code>), a Claude Code plugin (<code>query@contextify</code>), and a researcher agent (<code>contextify-researcher</code>) that knows how to search effectively.</p>
+
+            <div class="highlight-box">
+                <h3>How to Enable Total Recall</h3>
+                <p><strong>DMG users:</strong> Go to Settings > CLI and click "Install/Repair CLI." The CLI and plugin install automatically.</p>
+                <p style="margin-top: 12px;"><strong>App Store users:</strong> Due to sandbox restrictions, install the CLI via Homebrew:</p>
+                <pre style="background: var(--border); padding: 10px; border-radius: 4px; margin-top: 8px; overflow-x: auto;"><code>brew tap peterpym/contextify
+brew install contextify-query</code></pre>
+                <p style="margin-top: 12px;">After installation, restart Claude Code. The plugin registers automatically and you'll have access to the <code>contextify-researcher</code> agent.</p>
+            </div>
 
             <h2>macOS 15 (Sequoia) Support</h2>
 
@@ -217,35 +244,6 @@
             </ul>
 
             <p>Start building your searchable history now. When you eventually upgrade to Tahoe, summaries will generate automatically.</p>
-
-            <h2>Total Recall: Your AI Can Search Your History</h2>
-
-            <img src="../assets/img/total-recall-poster.jpg" alt="Total Recall (1990) movie poster - 'How would you know if someone stole your mind?'" style="max-width: 280px; border-radius: 8px; margin: 20px 0; float: right; margin-left: 20px;">
-
-            <p>This is the power feature of 1.0.6.</p>
-
-            <p>Contextify now includes a CLI tool that Claude Code can use to search your conversation history. Ask your AI:</p>
-
-            <ul>
-                <li>"What did we decide about the database schema last week?"</li>
-                <li>"Find where we discussed authentication approaches"</li>
-                <li>"What was that solution for the API rate limiting issue?"</li>
-            </ul>
-
-            <p>Your AI can now reference past decisions, revisit previous solutions, and maintain context across sessions.</p>
-
-            <p>The feature consists of a CLI tool (<code>contextify-query</code>), a Claude Code plugin (<code>query@contextify</code>), and a researcher agent (<code>contextify-researcher</code>) that knows how to search effectively.</p>
-
-            <div style="clear: both;"></div>
-
-            <div class="highlight-box">
-                <h3>How to Enable Total Recall</h3>
-                <p><strong>DMG users:</strong> Go to Settings > CLI and click "Install/Repair CLI." The CLI and plugin install automatically.</p>
-                <p style="margin-top: 12px;"><strong>App Store users:</strong> Due to sandbox restrictions, install the CLI via Homebrew:</p>
-                <pre style="background: var(--border); padding: 10px; border-radius: 4px; margin-top: 8px; overflow-x: auto;"><code>brew tap peterpym/contextify
-brew install contextify-query</code></pre>
-                <p style="margin-top: 12px;">After installation, restart Claude Code. The plugin registers automatically and you'll have access to the <code>contextify-researcher</code> agent.</p>
-            </div>
 
             <h2>Improved Agent Sidechain Capture</h2>
 
