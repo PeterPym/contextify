@@ -1384,6 +1384,100 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  // MARK: - Timeline Decoration Queries
+
+  /// Layer 1: Get entries that spawned agents (Task tool with sidechain).
+  /// Returns a dictionary mapping entry IDs to their spawned agent type (tool_key).
+  public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: String] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT entry_id, tool_key
+        FROM tool_invocations
+        WHERE transcript_id = ? AND sidechain_transcript_id IS NOT NULL
+      """
+      var result: [String: String] = [:]
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [transcriptId])
+      for row in rows {
+        if let entryId: String = row["entry_id"],
+           let toolKey: String = row["tool_key"] {
+          result[entryId] = toolKey
+        }
+      }
+      return result
+    }
+  }
+
+  /// Layer 1: Get entries that spawned agents for all transcripts in a project.
+  public func getSpawnedAgentEntries(projectId: String) throws -> [String: String] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT ti.entry_id, ti.tool_key
+        FROM tool_invocations ti
+        JOIN transcripts t ON ti.transcript_id = t.id
+        WHERE t.project_id = ? AND ti.sidechain_transcript_id IS NOT NULL
+      """
+      var result: [String: String] = [:]
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+      for row in rows {
+        if let entryId: String = row["entry_id"],
+           let toolKey: String = row["tool_key"] {
+          result[entryId] = toolKey
+        }
+      }
+      return result
+    }
+  }
+
+  /// Layer 2: Get entry IDs that are Contextify skill/agent invocations for a transcript.
+  /// Returns both tool_use entry IDs and tool_result entry IDs where is_contextify = 1.
+  public func getContextifyEntryIds(transcriptId: String) throws -> Set<String> {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT entry_id, tool_result_entry_id
+        FROM tool_invocations
+        WHERE transcript_id = ? AND is_contextify = 1
+      """
+      var entryIds = Set<String>()
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [transcriptId])
+      for row in rows {
+        if let entryId: String = row["entry_id"] {
+          entryIds.insert(entryId)
+        }
+        if let resultEntryId: String = row["tool_result_entry_id"] {
+          entryIds.insert(resultEntryId)
+        }
+      }
+      return entryIds
+    }
+  }
+
+  /// Layer 2: Get entry IDs that are Contextify skill/agent invocations for all transcripts in a project.
+  public func getContextifyEntryIds(projectId: String) throws -> Set<String> {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT ti.entry_id, ti.tool_result_entry_id
+        FROM tool_invocations ti
+        JOIN transcripts t ON ti.transcript_id = t.id
+        WHERE t.project_id = ? AND ti.is_contextify = 1
+      """
+      var entryIds = Set<String>()
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+      for row in rows {
+        if let entryId: String = row["entry_id"] {
+          entryIds.insert(entryId)
+        }
+        if let resultEntryId: String = row["tool_result_entry_id"] {
+          entryIds.insert(resultEntryId)
+        }
+      }
+      return entryIds
+    }
+  }
+
   /// Mark a transcript as terminally unavailable to prevent repeated retries across runs.
   /// Uses `ingest_state = 'complete'` so it won't be picked up by startup partial resumption.
   public func markTranscriptUnavailable(transcriptId: String, lastError: String) throws {

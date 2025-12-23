@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-21
+**Last Updated:** 2025-12-22
 **Status:** Active
 
 **Priority Levels:**
@@ -202,7 +202,81 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Agent Sidechain QA and UI Polish
+
+**Status:** Not started
+**Priority:** P0 (shipped feature not yet QA'd)
+**Discovered:** 2025-12-23
+**Branch:** merged from `feature/decorate-contextify-calls`
+
+- [ ] #SIDECHAIN-QA: Manually QA agent sidechain display in timeline
+
+**Problem:**
+Agent sidechain ingestion and timeline decoration shipped in 1.0.6 but was not manually verified. Need to confirm:
+1. Sidechains are being ingested correctly from transcripts
+2. Timeline displays agent/skill call decorations appropriately
+3. Sidechain entries are filtered correctly (not cluttering timeline)
+
+**Scope:**
+- Run the app and trigger some agent/skill calls (e.g., Contextify Query skill)
+- Verify sidechains appear in database
+- Verify timeline shows appropriate decorations
+- Note any UI polish needed for follow-up
+
+**Expected follow-up:** UI tweaks likely needed after initial QA.
+
+---
+
+## Announce 1.0.6 Release
+
+**Status:** Not started
+**Priority:** P0 (marketing debt)
+**Discovered:** 2025-12-23
+
+- [ ] #ANNOUNCE-1.0.6: Write and publish release announcement
+
+**Problem:**
+1.0.6 has significant features that users should know about:
+- macOS 15 Lite Mode support (wider audience)
+- Total Recall / Contextify Query CLI (AI can search your history)
+- Agent sidechain capture
+
+**Scope:**
+- Update website with feature highlights
+- Post on relevant channels (Twitter/X, Hacker News, Reddit r/ClaudeAI?)
+- Consider short demo video showing Total Recall in action
+
+**Notes:**
+Marketing feels vulnerable but this release has real value to announce.
+
+---
+
 # P1 (High Priority)
+
+---
+
+## Status Bar Permission Indicator
+
+**Status:** Not started
+**Priority:** P1 (App Store UX)
+**Discovered:** 2025-12-22
+
+- [ ] #STATUS-BAR-PERMISSIONS: Show indicator when neither CLI permission is granted, with one-click to Settings
+
+**Problem:**
+When neither Claude Code nor Codex CLI permissions are granted, the app appears non-functional with no clear guidance. Users may not realize they need to grant folder access in Settings.
+
+**Solution:**
+- Detect when both `~/.claude/` and `~/.codex/` access is unavailable
+- Show indicator in status bar (icon change or badge)
+- Single click opens Settings > Permissions tab
+- Clear visual state: "No CLI access - click to configure"
+
+**Scope:**
+1. Add permission state check to status bar view
+2. Design indicator (icon variant or overlay badge)
+3. Wire click action to open Settings at Permissions tab
+4. Clear indicator once any permission is granted
 
 ---
 

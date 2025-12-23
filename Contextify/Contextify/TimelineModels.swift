@@ -42,6 +42,10 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
     let disposition: String?  // Cache disposition (e.g., "safety-filtered", "directive", etc.)
     let isQueued: Bool  // True if message was queued (sent while Claude was working)
 
+    // Decoration fields for agent/skill invocations
+    let spawnedAgentType: String?  // e.g., "Explore", "Plan" - set when entry spawned an agent
+    let isContextifyCall: Bool     // True if this is a Contextify skill or agent call
+
     // Hidden cache keys for lightweight refresh (not displayed in UI)
     let contentSha256: String?
     let windowSha256: String?
@@ -62,6 +66,13 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         return String(disp.dropFirst(6))  // Remove "error-" prefix
     }
 
+    /// Display-friendly agent type label (strips namespace prefix)
+    /// e.g., "query:contextify-researcher" -> "contextify-researcher", "Explore" -> "Explore"
+    var agentTypeLabel: String? {
+        guard let type = spawnedAgentType else { return nil }
+        return type.components(separatedBy: ":").last ?? type
+    }
+
     init(
         id: UUID = UUID(),
         kind: TimelineEntryKind,
@@ -79,6 +90,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         sessionId: String? = nil,
         disposition: String? = nil,
         isQueued: Bool = false,
+        spawnedAgentType: String? = nil,
+        isContextifyCall: Bool = false,
         contentSha256: String? = nil,
         windowSha256: String? = nil
     ) {
@@ -98,6 +111,8 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.sessionId = sessionId
         self.disposition = disposition
         self.isQueued = isQueued
+        self.spawnedAgentType = spawnedAgentType
+        self.isContextifyCall = isContextifyCall
         self.contentSha256 = contentSha256
         self.windowSha256 = windowSha256
     }
@@ -252,6 +267,8 @@ extension TimelineEntry {
             sessionId: sessionId ?? self.sessionId,
             disposition: newDisposition,
             isQueued: self.isQueued,  // Preserve queued flag during cache refresh
+            spawnedAgentType: self.spawnedAgentType,  // Preserve decoration fields
+            isContextifyCall: self.isContextifyCall,
             contentSha256: contentSha256,
             windowSha256: windowSha256
         )
