@@ -104,20 +104,21 @@
     },
     "1.0.6": {
       "created": "2025-12-22",
-      "status": "in_progress",
+      "status": "complete",
       "target_channels": [
         "appstore"
       ],
       "git_tag": "v1.0.6",
-      "git_commit": "c40c1bacf7c353d970c99e9d3141ac2ec1f45425",
+      "git_commit": "3137c39863f97d3f438ef0a4665c7c2a5f75ddb7",
       "dmg": {
         "status": "shipped",
         "released_at": "2025-12-23"
       },
       "appstore": {
-        "status": "submitted",
+        "status": "approved",
         "build_number": 17,
-        "submitted_at": "2025-12-23T07:33:58Z"
+        "submitted_at": "2025-12-23T07:33:58Z",
+        "approved_at": "2025-12-23"
       },
       "marketing": {
         "changelog_published": false,

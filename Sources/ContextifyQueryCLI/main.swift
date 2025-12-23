@@ -1493,14 +1493,44 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   let cacheDir = pluginsDir.appendingPathComponent("cache/\(pluginNamespace)/\(pluginName)/\(pluginVersion)")
   let manifestPath = pluginsDir.appendingPathComponent("installed_plugins.json")
 
-  // Find plugin source - check multiple locations
-  let pluginSource = try findPluginSource()
+  // Find sources - plugin and user skill
+  let sources = try findPluginSources()
 
-  // Create plugins directory structure
+  // 1. Install user skill to ~/.claude/skills/total-recall/
+  if let userSkillSource = sources.userSkill {
+    let skillsDir = home.appendingPathComponent(".claude/skills/total-recall")
+    try FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+
+    let skillFile = userSkillSource.appendingPathComponent("SKILL.md")
+    let skillDest = skillsDir.appendingPathComponent("SKILL.md")
+    if FileManager.default.fileExists(atPath: skillDest.path) {
+      try FileManager.default.removeItem(at: skillDest)
+    }
+    try FileManager.default.copyItem(at: skillFile, to: skillDest)
+  }
+
+  // 2. Clean up old plugin skill location (if exists)
+  let oldPluginSkillDir = cacheDir.appendingPathComponent("skills/contextify-reinject")
+  if FileManager.default.fileExists(atPath: oldPluginSkillDir.path) {
+    try FileManager.default.removeItem(at: oldPluginSkillDir)
+  }
+  let oldPluginSkillsDir = cacheDir.appendingPathComponent("skills")
+  if FileManager.default.fileExists(atPath: oldPluginSkillsDir.path) {
+    // Remove entire skills/ directory from plugin
+    try FileManager.default.removeItem(at: oldPluginSkillsDir)
+  }
+
+  // 3. Clean up old user skill name (if exists)
+  let oldUserSkillDir = home.appendingPathComponent(".claude/skills/contextify-reinject")
+  if FileManager.default.fileExists(atPath: oldUserSkillDir.path) {
+    try FileManager.default.removeItem(at: oldUserSkillDir)
+  }
+
+  // 4. Create plugins directory structure
   try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-  // Copy plugin files
-  let sourceContents = try FileManager.default.contentsOfDirectory(at: pluginSource, includingPropertiesForKeys: nil)
+  // 5. Copy plugin files (agents + hooks only, no skills/)
+  let sourceContents = try FileManager.default.contentsOfDirectory(at: sources.plugin, includingPropertiesForKeys: nil)
   for item in sourceContents {
     let destPath = cacheDir.appendingPathComponent(item.lastPathComponent)
     if FileManager.default.fileExists(atPath: destPath.path) {
@@ -1509,7 +1539,7 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
     try FileManager.default.copyItem(at: item, to: destPath)
   }
 
-  // Update manifest
+  // 6. Update manifest
   try updatePluginManifest(manifestPath: manifestPath, installPath: cacheDir.path, version: pluginVersion)
 
   let payload = PluginInstallPayload(
@@ -1520,10 +1550,10 @@ private func runInstallPlugin(options: ContextifyQueryCLI.Options) throws {
   )
 
   try ContextifyQueryCLI.printResponse(type: "pluginInstalled", data: payload, json: options.jsonOutput) {
-    print("Installed \(pluginIdentifier) v\(pluginVersion)")
-    print("  Path: \(cacheDir.path)")
+    print("Contextify Total Recall installed!")
+    print("  Plugin: \(cacheDir.path)")
     print("")
-    print("Restart Claude Code to activate the plugin.")
+    print("Restart Claude Code, then type /total-recall to search your history.")
   }
 }
 
@@ -1532,6 +1562,18 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
   let pluginsDir = home.appendingPathComponent(".claude/plugins")
   let cacheDir = pluginsDir.appendingPathComponent("cache/\(pluginNamespace)")
   let manifestPath = pluginsDir.appendingPathComponent("installed_plugins.json")
+
+  // Remove user skill
+  let userSkillDir = home.appendingPathComponent(".claude/skills/total-recall")
+  if FileManager.default.fileExists(atPath: userSkillDir.path) {
+    try FileManager.default.removeItem(at: userSkillDir)
+  }
+
+  // Remove old user skill name (if exists)
+  let oldUserSkillDir = home.appendingPathComponent(".claude/skills/contextify-reinject")
+  if FileManager.default.fileExists(atPath: oldUserSkillDir.path) {
+    try FileManager.default.removeItem(at: oldUserSkillDir)
+  }
 
   // Remove plugin cache directory
   if FileManager.default.fileExists(atPath: cacheDir.path) {
@@ -1555,19 +1597,32 @@ private func runUninstallPlugin(options: ContextifyQueryCLI.Options) throws {
   }
 }
 
-private func findPluginSource() throws -> URL {
+private struct PluginSources {
+  let plugin: URL
+  let userSkill: URL?
+}
+
+private func findPluginSources() throws -> PluginSources {
   // 0. Check repo-local source (development runs from repo root)
   let cwdURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
   let repoPlugin = cwdURL.appendingPathComponent("contextify-query/claude-plugin")
   if FileManager.default.fileExists(atPath: repoPlugin.path) {
-    return repoPlugin
+    let repoUserSkill = cwdURL.appendingPathComponent("contextify-query/user-skill/total-recall")
+    return PluginSources(
+      plugin: repoPlugin,
+      userSkill: FileManager.default.fileExists(atPath: repoUserSkill.path) ? repoUserSkill : nil
+    )
   }
 
   // 1. Check if running from app bundle (DMG build)
   if let bundleURL = Bundle.main.resourceURL {
     let bundledPlugin = bundleURL.appendingPathComponent("contextify-query/claude-plugin")
     if FileManager.default.fileExists(atPath: bundledPlugin.path) {
-      return bundledPlugin
+      let bundledUserSkill = bundleURL.appendingPathComponent("contextify-query/user-skill/total-recall")
+      return PluginSources(
+        plugin: bundledPlugin,
+        userSkill: FileManager.default.fileExists(atPath: bundledUserSkill.path) ? bundledUserSkill : nil
+      )
     }
   }
 
@@ -1577,18 +1632,27 @@ private func findPluginSource() throws -> URL {
   let execDir = executableURL.deletingLastPathComponent()
   let siblingPlugin = execDir.appendingPathComponent("claude-plugin")
   if FileManager.default.fileExists(atPath: siblingPlugin.path) {
-    return siblingPlugin
+    let siblingUserSkill = execDir.appendingPathComponent("user-skill/total-recall")
+    return PluginSources(
+      plugin: siblingPlugin,
+      userSkill: FileManager.default.fileExists(atPath: siblingUserSkill.path) ? siblingUserSkill : nil
+    )
   }
 
   // 3. Resolve symlinks and check Homebrew Cellar structure
   // /opt/homebrew/bin/contextify-query -> ../Cellar/contextify-query/1.0.3/bin/contextify-query
   // Plugin at: /opt/homebrew/Cellar/contextify-query/1.0.3/share/claude-plugin/
+  // User skill at: /opt/homebrew/Cellar/contextify-query/1.0.3/share/user-skill/total-recall/
   let resolvedExec = URL(fileURLWithPath: (executablePath as NSString).resolvingSymlinksInPath)
   let cellarBin = resolvedExec.deletingLastPathComponent()  // .../1.0.3/bin/
   let cellarRoot = cellarBin.deletingLastPathComponent()    // .../1.0.3/
   let cellarShare = cellarRoot.appendingPathComponent("share/claude-plugin")
   if FileManager.default.fileExists(atPath: cellarShare.path) {
-    return cellarShare
+    let cellarUserSkill = cellarRoot.appendingPathComponent("share/user-skill/total-recall")
+    return PluginSources(
+      plugin: cellarShare,
+      userSkill: FileManager.default.fileExists(atPath: cellarUserSkill.path) ? cellarUserSkill : nil
+    )
   }
 
   throw CLIError(
@@ -1604,6 +1668,10 @@ private func findPluginSource() throws -> URL {
       """,
     exitCode: .unknown
   )
+}
+
+private func findPluginSource() throws -> URL {
+  return try findPluginSources().plugin
 }
 
 private struct PluginManifest: Codable {

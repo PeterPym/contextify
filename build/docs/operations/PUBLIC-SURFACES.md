@@ -21,6 +21,7 @@
 | Public Repo | [github.com/PeterPym/contextify](https://github.com/PeterPym/contextify) | `~/code/projects/contextify-public-repo/` | Major releases, docs changes |
 | GitHub Releases | [github.com/banagale/contextify/releases](https://github.com/banagale/contextify/releases) | Created via `gh release` | Every DMG release |
 | Twitter/X | [x.com/Contextify_sh](https://x.com/Contextify_sh) | - | Launches, updates, engagement |
+| Blog | [contextify.sh/blog](https://contextify.sh/blog/) | `website/blog/` | Release announcements, feature deep-dives |
 
 ---
 
@@ -329,6 +330,40 @@ Hashes MUST match. If they don't, the wrong file was uploaded.
 
 ---
 
+### 12. Blog
+
+**URL:** https://contextify.sh/blog/
+
+**Source files:**
+```
+website/blog/
+├── index.html                    # Blog index
+└── YYYY-MM-DD-{slug}.html        # Individual posts
+```
+
+**Content:**
+- Release announcements
+- Feature deep-dives
+- Technical articles
+- Project updates
+
+**Update triggers:**
+- Major releases (announcement post)
+- Significant new features
+- Technical topics worth documenting
+
+**Naming convention:**
+- Files: `YYYY-MM-DD-{descriptive-slug}.html`
+- Example: `2025-12-23-version-1.0.6.html`
+
+**Review checklist:**
+- [ ] Post content accurate?
+- [ ] Index page updated with new post?
+- [ ] Open Graph meta tags set?
+- [ ] Links to download page working?
+
+---
+
 ## Dynamic Links (Future Enhancement)
 
 **TODO:** See #P2-DYNAMIC-FORWARDER in TODOS.md
@@ -387,11 +422,10 @@ During each release, parse each surface and check for required updates:
 ## Known Discrepancies to Fix
 
 **App Store vs Reality:**
-- App Store description says "macOS 14.0 (Sonoma)" but app requires macOS 26
-- Should be updated to "macOS 26 (Tahoe)" when corrected
+- (Fixed in v1.0.6) App now supports macOS 15+ with Lite Mode
 
 **Public Repo:**
-- Download links say "(coming soon)" - update when App Store approved
+- (Fixed in v1.0.6) README updated with correct system requirements
 
 ---
 

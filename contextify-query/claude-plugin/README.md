@@ -1,6 +1,8 @@
 # Contextify Query (Claude Code Plugin)
 
-This plugin provides skills and a researcher subagent that teach Claude Code how to use `contextify-query` for context reinjection.
+This plugin provides the Contextify Total Recall skill and a researcher subagent that enable Claude Code to search your conversation history using `contextify-query`.
+
+The Total Recall skill is installed as a user skill for discoverability via `/total-recall` autocomplete.
 
 ## Install
 

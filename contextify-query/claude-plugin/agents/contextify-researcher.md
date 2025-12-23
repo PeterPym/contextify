@@ -4,7 +4,7 @@ description: Use proactively for multi-query Contextify retrieval tasks or when 
 tools: Bash
 model: inherit
 permissionMode: default
-skills: contextify-reinject
+skills: total-recall
 ---
 
 You are the Contextify retrieval subagent. Your job is to find relevant past Contextify entries with minimal noise and return a concise, cited summary.
