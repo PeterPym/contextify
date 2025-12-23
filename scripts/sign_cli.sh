@@ -322,7 +322,16 @@ package_cli() {
     log_warn "Plugin source not found at $plugin_source"
   fi
 
-  # Create tarball with binary and plugin
+  # Copy user skill for Total Recall feature
+  local user_skill_source="$ROOT_DIR/contextify-query/user-skill"
+  if [ -d "$user_skill_source" ]; then
+    log_info "Including user skill (Total Recall)..."
+    cp -R "$user_skill_source" "$staging/user-skill"
+  else
+    log_warn "User skill source not found at $user_skill_source"
+  fi
+
+  # Create tarball with binary, plugin, and user skill
   rm -f "$tarball"
   tar -czvf "$tarball" -C "$staging" .
 

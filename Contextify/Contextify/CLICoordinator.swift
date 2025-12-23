@@ -227,8 +227,10 @@ public final class CLICoordinator: ObservableObject {
     }
 
     // Check if shim's parent directory is on PATH
+    // Note: Homebrew paths work in user shells even if not in GUI app's PATH
     let shimDir = URL(fileURLWithPath: shimPath).deletingLastPathComponent().path
-    let pathWarning = !isDirectoryOnPath(shimDir)
+    let isHomebrewPath = shimDir == "/opt/homebrew/bin" || shimDir == "/usr/local/bin"
+    let pathWarning = !isHomebrewPath && !isDirectoryOnPath(shimDir)
 
     return .enabled(version: pluginVersion, pathWarning: pathWarning)
   }
@@ -412,6 +414,29 @@ exit 1
 
     // 9. Update plugin manifest
     try updatePluginManifest(version: readBundledVersion(), pluginPath: finalPluginURL)
+
+    // 10. For DMG builds: run install-plugin to install user skill
+    // This installs /total-recall to ~/.claude/skills/total-recall/
+    if !Sandbox.isSandboxed {
+      log.info("[CLI-INSTALL] Running install-plugin to install user skill...")
+      let process = Process()
+      process.executableURL = finalShimURL
+      process.arguments = ["install-plugin"]
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus == 0 {
+          log.info("[CLI-INSTALL] User skill installed successfully")
+        } else {
+          log.warning("[CLI-INSTALL] install-plugin exited with status \(process.terminationStatus)")
+        }
+      } catch {
+        log.warning("[CLI-INSTALL] Failed to run install-plugin: \(error.localizedDescription)")
+        // Non-fatal: shim and plugin are installed, user can run manually
+      }
+    }
 
     log.info("[CLI-INSTALL-SUCCESS] shim=\(finalShimURL.path, privacy: .public) plugin=\(finalPluginURL.path, privacy: .public)")
   }
