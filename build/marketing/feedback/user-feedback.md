@@ -73,7 +73,7 @@ Collected feedback from users, testers, and reviewers.
 >
 > Tags are a new idea I hadn't considered. Could you tell me more about how you'd use them? Would these be manually applied, or auto-generated from something (client name in path, etc.)?
 
-**Status:** Awaiting response on LLM and tags questions
+**Status:** Follow-up reply drafted in `build/marketing/announcements/1.0.6/replies.md` - macOS 15 support now available in v1.0.6
 
 ---
 
@@ -92,7 +92,7 @@ Collected feedback from users, testers, and reviewers.
 - German-speaking user base exists
 - Validates #LEGACY-MACOS priority
 
-**Status:** Pending response - point to Reddit discussion about planned macOS 15 "lite mode" support
+**Status:** Reply drafted in `build/marketing/announcements/1.0.6/replies.md` - macOS 15 support now available in v1.0.6
 
 ---
 
