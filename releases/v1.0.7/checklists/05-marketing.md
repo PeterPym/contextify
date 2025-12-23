@@ -71,6 +71,7 @@
 - [ ] Reddit (r/MacApps) post drafted
 - [ ] Reddit (r/MacApps) posted: [ ] Yes / [ ] Skipped
 - [x] Reddit (r/ClaudeCode): https://www.reddit.com/r/ClaudeCode/comments/1pu52qh/total_recall_rag_search_across_all_your_claude/
+- [x] Reddit (r/codex): https://www.reddit.com/r/codex/comments/1pu6ja7/total_recall_rag_search_across_all_your_claude/
 
 ### Follow-ups
 - [x] GitHub Issue #1 (macOS 15 request): Commented and closed
