@@ -69,9 +69,8 @@
 - [x] Hacker News post drafted
 - [x] Hacker News posted: https://news.ycombinator.com/item?id=42369252
 - [ ] Reddit (r/MacApps) post drafted
-- [ ] Reddit posted: [ ] Yes / [ ] Skipped
-- [ ] Reddit (r/ClaudeAI) post drafted
-- [ ] Reddit (r/ClaudeAI) posted: [ ] Yes / [ ] Skipped
+- [ ] Reddit (r/MacApps) posted: [ ] Yes / [ ] Skipped
+- [x] Reddit (r/ClaudeCode): https://www.reddit.com/r/ClaudeCode/comments/1pu52qh/total_recall_rag_search_across_all_your_claude/
 
 ### Facebook
 - [x] Facebook posted: https://www.facebook.com/share/p/15uGNFQ9Mg/
