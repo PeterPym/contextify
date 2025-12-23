@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Contextify Blog - Updates, features, and development notes">
+    <title>Blog - Contextify</title>
+    <style>
+        :root {
+            /* Contextify Design System */
+            --bg: #F8FAFC;           /* slate-50 */
+            --bg-surface: #FFFFFF;
+            --text: #1E293B;         /* slate-800 */
+            --text-muted: #64748B;   /* slate-500 */
+            --accent: #4A7BA7;       /* contextify-primary */
+            --accent-hover: #3D6A94; /* contextify-primary-hover */
+            --border: #E2E8F0;       /* slate-200 */
+            --code-bg: #F1F5F9;      /* slate-100 */
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F172A;           /* slate-900 */
+                --bg-surface: #1E293B;   /* slate-800 */
+                --text: #F1F5F9;         /* slate-100 */
+                --text-muted: #94A3B8;   /* slate-400 */
+                --accent: #6A9BC7;       /* contextify-primary dark */
+                --accent-hover: #7AABDA; /* contextify-primary-hover dark */
+                --border: #334155;       /* slate-700 */
+                --code-bg: #334155;      /* slate-700 */
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            color: var(--text);
+            background: var(--bg);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .tagline {
+            font-size: 1.1rem;
+            color: var(--text-muted);
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .post-list {
+            list-style: none;
+        }
+
+        .post-item {
+            padding: 20px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .post-item:last-child {
+            border-bottom: none;
+        }
+
+        .post-date {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 5px;
+        }
+
+        .post-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .post-title a {
+            color: var(--text);
+        }
+
+        .post-title a:hover {
+            color: var(--accent);
+        }
+
+        .post-excerpt {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            margin: 0 10px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            body {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <p class="breadcrumb"><a href="/">Contextify</a> / Blog</p>
+            <h1>Blog</h1>
+            <p class="tagline">Updates, features, and development notes</p>
+        </header>
+
+        <main>
+            <ul class="post-list">
+                <li class="post-item">
+                    <p class="post-date">December 23, 2025</p>
+                    <h2 class="post-title"><a href="2025-12-23-version-1.0.6.html">Contextify 1.0.6: macOS 15 Support, Total Recall, and More</a></h2>
+                    <a href="2025-12-23-version-1.0.6.html" style="float: right; margin-left: 15px; margin-bottom: 10px;">
+                        <img src="../assets/img/total-recall-poster.jpg" alt="" style="width: 80px; border-radius: 4px;">
+                    </a>
+                    <p class="post-excerpt">Contextify now works on macOS 15 (Sequoia). Timeline monitoring, search, and transcript backup all work without upgrading to Tahoe.</p>
+                    <p class="post-excerpt" style="margin-top: 12px;">Also in this release: Total Recall, a new CLI and Claude Code plugin that lets your AI search past conversations. And better agent sidechain capture shows what sub-agents are doing.</p>
+                </li>
+            </ul>
+        </main>
+
+        <footer>
+            <p>
+                &copy; 2025 Contextify. All rights reserved.
+                <br>
+                <a href="/">Home</a>
+                <a href="/download/">Download</a>
+                <a href="/privacy/">Privacy</a>
+                <a href="/support/">Support</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

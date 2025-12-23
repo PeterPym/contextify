@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Contextify 1.0.6 brings macOS 15 support, Total Recall for AI history search, and improved agent sidechain capture.">
+    <title>Contextify 1.0.6: macOS 15 Support, Total Recall, and More - Contextify Blog</title>
+
+    <!-- Open Graph -->
+    <meta property="og:url" content="https://contextify.sh/blog/2025-12-23-version-1.0.6.html">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Contextify 1.0.6: macOS 15 Support, Total Recall, and More">
+    <meta property="og:description" content="Now works on macOS 15 (Sequoia) in Lite Mode. Plus: your AI can search your conversation history.">
+    <meta property="og:image" content="https://contextify.sh/assets/img/og-banner.png">
+
+    <style>
+        :root {
+            /* Contextify Design System */
+            --bg: #F8FAFC;           /* slate-50 */
+            --bg-surface: #FFFFFF;
+            --text: #1E293B;         /* slate-800 */
+            --text-muted: #64748B;   /* slate-500 */
+            --accent: #4A7BA7;       /* contextify-primary */
+            --accent-hover: #3D6A94; /* contextify-primary-hover */
+            --border: #E2E8F0;       /* slate-200 */
+            --code-bg: #F1F5F9;      /* slate-100 */
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0F172A;           /* slate-900 */
+                --bg-surface: #1E293B;   /* slate-800 */
+                --text: #F1F5F9;         /* slate-100 */
+                --text-muted: #94A3B8;   /* slate-400 */
+                --accent: #6A9BC7;       /* contextify-primary dark */
+                --accent-hover: #7AABDA; /* contextify-primary-hover dark */
+                --border: #334155;       /* slate-700 */
+                --code-bg: #334155;      /* slate-700 */
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7;
+            color: var(--text);
+            background: var(--bg);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .breadcrumb {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+
+        .post-meta {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 35px 0 15px 0;
+        }
+
+        p {
+            margin-bottom: 18px;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        ul, ol {
+            margin: 0 0 18px 0;
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Monaco, monospace;
+            font-size: 0.9em;
+        }
+
+        .highlight-box {
+            background: var(--code-bg);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+        }
+
+        .highlight-box h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .cta-section {
+            background: var(--code-bg);
+            padding: 25px;
+            border-radius: 8px;
+            margin: 35px 0;
+            text-align: center;
+        }
+
+        .cta-section h3 {
+            margin-bottom: 10px;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: var(--accent);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 10px;
+        }
+
+        .cta-btn:hover {
+            background: #0052a3;
+            text-decoration: none;
+        }
+
+        footer {
+            margin-top: 60px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            margin: 0 10px;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.6rem;
+            }
+
+            body {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <p class="breadcrumb"><a href="/">Contextify</a> / <a href="/blog/">Blog</a></p>
+            <h1>Contextify 1.0.6: macOS 15 Support, Total Recall, and More</h1>
+            <p class="post-meta">December 23, 2025</p>
+        </header>
+
+        <main>
+            <p>Contextify 1.0.6 is now available on the <a href="https://apps.apple.com/us/app/contextify/id6753190666">Mac App Store</a> and as a <a href="https://github.com/PeterPym/contextify/releases/latest">direct download</a>. This release brings three significant improvements.</p>
+
+            <h2>macOS 15 (Sequoia) Support</h2>
+
+            <p>The most requested feature: Contextify now works on macOS 15.</p>
+
+            <p>When I launched Contextify, it required macOS 26 (Tahoe) because it relies on Apple Intelligence for local LLM summaries. Many users wanted to try the app but weren't ready to upgrade to Tahoe.</p>
+
+            <p>Version 1.0.6 introduces <strong>Lite Mode</strong> for macOS 15:</p>
+
+            <ul>
+                <li>Timeline monitoring works fully</li>
+                <li>Search across all your sessions works fully</li>
+                <li>Transcript backup and organization works fully</li>
+                <li>AI summaries are disabled (they require Apple Intelligence on macOS 26)</li>
+            </ul>
+
+            <p>Start building your searchable history now. When you eventually upgrade to Tahoe, summaries will generate automatically.</p>
+
+            <h2>Total Recall: Your AI Can Search Your History</h2>
+
+            <img src="../assets/img/total-recall-poster.jpg" alt="Total Recall (1990) movie poster - 'How would you know if someone stole your mind?'" style="max-width: 280px; border-radius: 8px; margin: 20px 0; float: right; margin-left: 20px;">
+
+            <p>This is the power feature of 1.0.6.</p>
+
+            <p>Contextify now includes a CLI tool that Claude Code can use to search your conversation history. Ask your AI:</p>
+
+            <ul>
+                <li>"What did we decide about the database schema last week?"</li>
+                <li>"Find where we discussed authentication approaches"</li>
+                <li>"What was that solution for the API rate limiting issue?"</li>
+            </ul>
+
+            <p>Your AI can now reference past decisions, revisit previous solutions, and maintain context across sessions.</p>
+
+            <p>The feature consists of a CLI tool (<code>contextify-query</code>), a Claude Code plugin (<code>query@contextify</code>), and a researcher agent (<code>contextify-researcher</code>) that knows how to search effectively.</p>
+
+            <div style="clear: both;"></div>
+
+            <div class="highlight-box">
+                <h3>How to Enable Total Recall</h3>
+                <p><strong>DMG users:</strong> Go to Settings > CLI and click "Install/Repair CLI." The CLI and plugin install automatically.</p>
+                <p style="margin-top: 12px;"><strong>App Store users:</strong> Due to sandbox restrictions, install the CLI via Homebrew:</p>
+                <pre style="background: var(--border); padding: 10px; border-radius: 4px; margin-top: 8px; overflow-x: auto;"><code>brew tap peterpym/contextify
+brew install contextify-query</code></pre>
+                <p style="margin-top: 12px;">After installation, restart Claude Code. The plugin registers automatically and you'll have access to the <code>contextify-researcher</code> agent.</p>
+            </div>
+
+            <h2>Improved Agent Sidechain Capture</h2>
+
+            <p>When Claude Code uses the Task tool or spawns sub-agents, those conversations are now captured and displayed in your timeline with visual indicators.</p>
+
+            <p>Previously, you'd only see the main conversation thread. Now you see the full picture of multi-agent work, including what each sub-agent did and how it contributed to the result.</p>
+
+            <h2>Bug Fixes and Performance</h2>
+
+            <ul>
+                <li>Improved Codex session discovery</li>
+                <li>Faster historical transcript ingestion</li>
+                <li>Various stability improvements</li>
+            </ul>
+
+            <div class="cta-section">
+                <h3>Download Contextify 1.0.6</h3>
+                <p>Free. Your data stays on your Mac.</p>
+                <a href="/download/" class="cta-btn">Download Now</a>
+            </div>
+
+            <p>Questions or feedback? <a href="mailto:support@contextify.sh">Email support</a> or <a href="https://github.com/PeterPym/contextify/issues">open an issue on GitHub</a>.</p>
+        </main>
+
+        <footer>
+            <p>
+                &copy; 2025 Contextify. All rights reserved.
+                <br>
+                <a href="/">Home</a>
+                <a href="/download/">Download</a>
+                <a href="/blog/">Blog</a>
+                <a href="/privacy/">Privacy</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
