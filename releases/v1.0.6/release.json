@@ -1,15 +1,15 @@
 {
   "$schema": "../schemas/release.schema.json",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "target_channels": [
     "dmg",
     "appstore"
   ],
-  "created": "2025-12-21",
-  "updated": "2025-12-22",
+  "created": "2025-12-22",
+  "updated": "2025-12-23",
   "git": {
-    "tag": "v1.0.5",
-    "commit": "3137c39863f97d3f438ef0a4665c7c2a5f75ddb7",
+    "tag": "v1.0.6",
+    "commit": "c40c1bacf7c353d970c99e9d3141ac2ec1f45425",
     "branch": "main"
   },
   "phases": {
@@ -32,14 +32,16 @@
         "size_bytes": null,
         "signed": false,
         "notarized": false,
-        "sparkle_signature": null
+        "sparkle_signature": null,
+        "shipped": true,
+        "shipped_at": "2025-12-23"
       },
       "appstore": {
         "archived": false,
         "archive_path": null,
-        "build_number": 2,
+        "build_number": 17,
         "exported": false,
-        "uploaded": false,
+        "uploaded": true,
         "upload_receipt": null
       }
     },
@@ -57,11 +59,10 @@
       }
     },
     "submission": {
-      "status": "approved",
-      "submitted_at": null,
+      "status": "submitted",
+      "submitted_at": "2025-12-23T07:33:58Z",
       "rejection": null,
-      "resubmission": null,
-      "approved_at": "2025-12-22"
+      "resubmission": null
     },
     "marketing": {
       "status": "pending",
@@ -85,19 +86,23 @@
   },
   "notes": [
     {
-      "date": "2025-12-21",
+      "date": "2025-12-22",
       "author": "system",
       "note": "Release initialized"
     },
     {
-      "date": "2025-12-21",
-      "author": "system",
-      "note": "Reset for build 2 from commit 3137c398"
-    },
-    {
       "date": "2025-12-22",
       "author": "system",
-      "note": "appstore marked as approved (guard bypassed)"
+      "note": "Submitted build 17 to App Store Connect (guard bypassed)"
+    },
+    {
+      "date": "2025-12-23",
+      "author": "system",
+      "note": "dmg marked as shipped (guard bypassed)"
     }
-  ]
+  ],
+  "dmg": {
+    "status": "shipped",
+    "released_at": "2025-12-23"
+  }
 }

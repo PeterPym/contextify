@@ -202,6 +202,31 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
+## Agent Sidechain QA and UI Polish
+
+**Status:** Not started
+**Priority:** P0 (shipped feature not yet QA'd)
+**Discovered:** 2025-12-23
+**Branch:** merged from `feature/decorate-contextify-calls`
+
+- [ ] #SIDECHAIN-QA: Manually QA agent sidechain display in timeline
+
+**Problem:**
+Agent sidechain ingestion and timeline decoration shipped in 1.0.6 but was not manually verified. Need to confirm:
+1. Sidechains are being ingested correctly from transcripts
+2. Timeline displays agent/skill call decorations appropriately
+3. Sidechain entries are filtered correctly (not cluttering timeline)
+
+**Scope:**
+- Run the app and trigger some agent/skill calls (e.g., Contextify Query skill)
+- Verify sidechains appear in database
+- Verify timeline shows appropriate decorations
+- Note any UI polish needed for follow-up
+
+**Expected follow-up:** UI tweaks likely needed after initial QA.
+
+---
+
 # P1 (High Priority)
 
 ---

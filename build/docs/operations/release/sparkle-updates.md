@@ -163,6 +163,33 @@ Release notes are generated during Phase 5 (Marketing) of the release workflow:
 
 The HTML file is referenced in the appcast via `<sparkle:releaseNotesLink>`.
 
+#### Dark Mode Support
+
+Sparkle's update dialog displays release notes in a web view that respects the system appearance. **Release notes HTML must include dark mode styles** or text will be unreadable.
+
+Required CSS pattern:
+
+```css
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #333;
+    background: #fff;
+  }
+  h2 { color: #555; }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #e0e0e0; }
+    h2 { color: #aaa; }
+  }
+</style>
+```
+
+Key points:
+- Set explicit `background` on body (don't rely on browser default)
+- Use `@media (prefers-color-scheme: dark)` for dark mode overrides
+- Test in both light and dark mode before deploying
+
 ### 5. Deploy
 
 ```bash
