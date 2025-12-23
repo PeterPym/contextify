@@ -227,6 +227,30 @@ Agent sidechain ingestion and timeline decoration shipped in 1.0.6 but was not m
 
 ---
 
+## Announce 1.0.6 Release
+
+**Status:** Not started
+**Priority:** P0 (marketing debt)
+**Discovered:** 2025-12-23
+
+- [ ] #ANNOUNCE-1.0.6: Write and publish release announcement
+
+**Problem:**
+1.0.6 has significant features that users should know about:
+- macOS 15 Lite Mode support (wider audience)
+- Total Recall / Contextify Query CLI (AI can search your history)
+- Agent sidechain capture
+
+**Scope:**
+- Update website with feature highlights
+- Post on relevant channels (Twitter/X, Hacker News, Reddit r/ClaudeAI?)
+- Consider short demo video showing Total Recall in action
+
+**Notes:**
+Marketing feels vulnerable but this release has real value to announce.
+
+---
+
 # P1 (High Priority)
 
 ---
