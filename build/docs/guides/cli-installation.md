@@ -94,11 +94,16 @@ contextify-query --help
 contextify-query status --json
 ```
 
-## Plugin Location
+## Plugin and Skill Locations
 
 The Claude Code plugin is installed to:
 ```
 ~/.claude/plugins/cache/contextify/query/{version}/
+```
+
+The Total Recall user skill is installed to:
+```
+~/.claude/skills/total-recall/
 ```
 
 Plugin registration is stored in:
@@ -169,8 +174,9 @@ contextify-query install-plugin  # Re-run to update plugin
 ┌─────────────────────────────────────────────────────────────┐
 │                   Claude Code Integration                    │
 ├─────────────────────────────────────────────────────────────┤
-│ Plugin provides skills:                                      │
-│   - contextify-reinject: Context reinjection from database  │
+│ User skill (discoverable):                                   │
+│   - /total-recall: Search past conversations & decisions    │
+│ Plugin provides background agents and session hooks         │
 │ Skills call contextify-query CLI for database access        │
 └─────────────────────────────────────────────────────────────┘
 ```

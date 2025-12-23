@@ -1,7 +1,7 @@
 {
   "name": "query",
   "version": "1.0.5",
-  "description": "Contextify query + reinjection skills and researcher subagent (requires Contextify + contextify-query CLI)",
+  "description": "Contextify Total Recall - Search past conversations and decisions with your AI (requires Contextify + contextify-query CLI)",
   "author": {
     "name": "Contextify"
   },
