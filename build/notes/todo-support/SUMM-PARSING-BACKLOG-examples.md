@@ -563,6 +563,42 @@ The summary is a truncated echo of the detail, which contains a markdown table. 
 
 ---
 
+## Example 16: File Path Treated as Command
+
+**Date Added:** 2025-12-24
+**Category:** attribution error
+**Transcript:** `68547b5c-474b-4257-a612-dd24a773f97f.jsonl`
+
+**Entry:**
+```json
+{
+  "detail" : "/private/tmp/v7-is-a-real-step-up.md  ultrathink",
+  "entry_id" : "e89aea55-543a-4507-820f-47520301eb8f",
+  "summary" : "You performed the following command: /private/tmp/v7-is-a-real-step-up.md ultrathink.",
+  "timestamp" : "2025-12-24T23:17:42Z",
+  "transcript_path" : "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify-worker-bee/68547b5c-474b-4257-a612-dd24a773f97f.jsonl"
+}
+```
+
+**Problem:**
+The summary says "You performed the following command" - interpreting the file path `/private/tmp/v7-is-a-real-step-up.md` as a slash command. The detail appears to be file path + mode metadata (ultrathink), not a user-issued command.
+
+**Expected Summary:**
+- "You referenced the file v7-is-a-real-step-up.md with ultrathink mode."
+- Or contextual: "You pointed to a document about version 7 improvements."
+
+**Root Cause (suspected):**
+- Leading slash in file path (`/private/tmp/...`) was misinterpreted as a slash command prefix
+- The summarization prompt may not distinguish between `/command` patterns and `/path/to/file` patterns
+- "ultrathink" suffix may have reinforced the "command with argument" interpretation
+
+**Fix Approach:**
+1. Add heuristic: paths with multiple slashes and file extensions are file paths, not commands
+2. Adjust prompt to recognize absolute paths (starting with `/`) as file references, not commands
+3. Pattern match: if string matches `/[a-z]+/...` with slashes throughout, treat as path not command
+
+---
+
 ## Template for New Examples
 
 ```markdown
