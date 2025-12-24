@@ -264,6 +264,31 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
       content = extractedContent
       let shouldHideShellOutput = type == "user" && containsShellOutput(content)
       hasTextContent = (type == "user") ? !shouldHideShellOutput : hasText
+
+      // For Task tool invocations: extract prompt as meaningful content
+      // This makes agent-spawn entries visible and summarizable in the timeline
+      if type == "assistant" && !hasText,
+         let taskInvocation = toolInvocations.first(where: { $0.toolName == "Task" }),
+         let contentBlocks = message["content"] as? [[String: Any]],
+         let taskBlock = contentBlocks.first(where: {
+           $0["type"] as? String == "tool_use" && $0["name"] as? String == "Task"
+         }),
+         let input = taskBlock["input"] as? [String: Any],
+         let prompt = input["prompt"] as? String,
+         !prompt.isEmpty {
+        // Extract subagent type and model for display context
+        let subagentType = taskInvocation.toolKey ?? "agent"
+        let model = input["model"] as? String
+        let modelSuffix = model.map { " (\($0))" } ?? ""
+
+        // Use first line of prompt as summary, with agent context prefix
+        let firstLine = prompt.components(separatedBy: .newlines)
+          .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? prompt
+        let truncated = String(firstLine.prefix(300))
+        content = "[\(subagentType)\(modelSuffix)] \(truncated)"
+        hasTextContent = true
+      }
+
       if content.isEmpty && !toolResultTextParts.isEmpty {
         content = toolResultTextParts.joined(separator: "\n")
         hasTextContent = true
