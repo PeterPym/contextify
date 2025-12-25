@@ -373,6 +373,7 @@ struct ContextifyApp: App {
             .environment(DeveloperMode.shared)
             .environment(ProjectSwitcherState.shared)
             .environment(vm)  // Add ProjectsViewModel
+            .environmentObject(folderAccessController)  // For status bar permission indicator
             .background(WindowAccessor())
             .sheet(isPresented: $showWelcomeModal) {
               // C3.4: Welcome modal sheet
