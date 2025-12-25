@@ -245,6 +245,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             // If agentId is present, this is a Task tool result (agent output)
             if resultAgentId != nil {
               isAgentResult = true
+              parserLog.info("[AGENT-RESULT] Detected Task tool result line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) agentId=\(resultAgentId ?? "nil", privacy: .public)")
             }
 
             toolResultData.append(ToolResultData(
@@ -293,6 +294,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
         let truncated = String(firstLine.prefix(300))
         content = "[\(subagentType)\(modelSuffix)] \(truncated)"
         hasTextContent = true
+        parserLog.info("[TASK-SPAWN] Extracted Task prompt uuid=\(uuid, privacy: .public) agent=\(subagentType, privacy: .public) model=\(model ?? "default", privacy: .public)")
       }
 
       if content.isEmpty && !toolResultTextParts.isEmpty {
@@ -330,6 +332,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
     // Map kind - agent results display as "assistant" for proper attribution
     let effectiveType = isAgentResult ? "assistant" : type
+    if isAgentResult {
+      parserLog.info("[AGENT-ATTR] Reattributing entry as assistant uuid=\(uuid, privacy: .public) original_type=\(type, privacy: .public)")
+    }
     let kind = mapKind(effectiveType)
 
     // Compute content hash

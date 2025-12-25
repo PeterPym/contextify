@@ -1428,6 +1428,9 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
           result[entryId] = toolKey
         }
       }
+      if !result.isEmpty {
+        log.info("[DECORATION-QUERY] Found \(result.count, privacy: .public) Task invocations for project badges")
+      }
       return result
     }
   }
