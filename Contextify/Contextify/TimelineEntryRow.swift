@@ -123,7 +123,11 @@ struct TimelineEntryRow: View, Equatable {
             log.info("[ROW-APPEAR] Entry rendered: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) summary: \(String(entry.summary.prefix(40)), privacy: .public)...")
             // Log decoration data for E2E test assertions
             if let agentType = entry.agentTypeLabel {
-                log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) for entry \(entry.id, privacy: .public)")
+                if let model = entry.spawnedAgentModel {
+                    log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) model=\(model, privacy: .public) for entry \(entry.id, privacy: .public)")
+                } else {
+                    log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) for entry \(entry.id, privacy: .public)")
+                }
             }
             if entry.isContextifyCall {
                 log.debug("[DECORATION] Contextify indicator rendered for entry \(entry.id, privacy: .public)")

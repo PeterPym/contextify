@@ -1428,16 +1428,18 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         WHERE t.project_id = ? AND ti.tool_name = 'Task'
       """
       var result: [String: AgentDecorationInfo] = [:]
+      var modelsFound = 0
       let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
       for row in rows {
         if let entryId: String = row["entry_id"],
            let toolKey: String = row["tool_key"] {
           let model: String? = row["model"]
+          if model != nil { modelsFound += 1 }
           result[entryId] = AgentDecorationInfo(agentType: toolKey, model: model)
         }
       }
       if !result.isEmpty {
-        log.info("[DECORATION-QUERY] Found \(result.count, privacy: .public) Task invocations for project badges")
+        log.info("[DECORATION-QUERY] Found \(result.count, privacy: .public) Task invocations (\(modelsFound, privacy: .public) with model info)")
       }
       return result
     }
