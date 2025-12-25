@@ -19,6 +19,8 @@ struct CacheMiss: Sendable {
     let context: String  // Surrounding context for better summaries
     let kind: String
     let provider: String
+    let contextifyToolKey: String?  // If set, this is a Contextify entry - use template summary
+    let isContextifyResult: Bool    // True if this is the result of a Contextify tool, false if invocation
 
     /// Composite key for deduplication (returns struct for type safety)
     nonisolated var cacheKey: CacheKey {
@@ -624,8 +626,14 @@ actor TimelineCacheMissGenerator {
         throw error
     }
 
-    /// Generate summary for a cache miss using LLM
+    /// Generate summary for a cache miss using LLM (or template for Contextify entries)
     private func generateSummary(for miss: CacheMiss) async throws -> GeneratedSummary {
+        // Fast path: Contextify entries use template summaries (no LLM needed)
+        if let toolKey = miss.contextifyToolKey {
+            log.debug("[CONTEXTIFY-TEMPLATE] Using template for Contextify entry: toolKey=\(toolKey, privacy: .public), isResult=\(miss.isContextifyResult, privacy: .public)")
+            return generateContextifyTemplate(toolKey: toolKey, isResult: miss.isContextifyResult, content: miss.content)
+        }
+
         // Parse kind and provider
         let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
         let provider = TimelineSourceContext.Provider(rawValue: miss.provider) ?? .other
@@ -674,6 +682,68 @@ actor TimelineCacheMissGenerator {
             isDirective: result.isDirective,
             isCompletion: result.isCompletion
         )
+    }
+
+    /// Generate template-based summary for Contextify tool entries
+    /// This skips LLM entirely for predictable, branded summaries
+    private func generateContextifyTemplate(toolKey: String, isResult: Bool, content: String) -> GeneratedSummary {
+        // Parse agent type from toolKey (e.g., "query:contextify-researcher" -> "researcher")
+        let agentType = extractAgentType(from: toolKey)
+
+        // Generate appropriate summary based on tool type and whether it's invocation or result
+        let summary: String
+        if isResult {
+            // Result entries - what came back from the tool
+            if toolKey.contains("total-recall") || toolKey.contains("contextify-researcher") {
+                summary = "Contextify Total Recall returned search results"
+            } else if let agent = agentType {
+                summary = "Contextify \(agent) agent returned results"
+            } else {
+                summary = "Contextify tool returned results"
+            }
+        } else {
+            // Invocation entries - launching the tool
+            if toolKey.contains("total-recall") {
+                summary = "Launched Contextify Total Recall search"
+            } else if toolKey.contains("contextify-researcher") {
+                summary = "Launched Contextify researcher agent"
+            } else if let agent = agentType {
+                summary = "Launched Contextify \(agent) agent"
+            } else {
+                summary = "Launched Contextify tool"
+            }
+        }
+
+        return GeneratedSummary(
+            presentForm: summary,
+            pastForm: summary,  // Same form for both (already sounds complete)
+            selectedForm: "present",
+            disposition: isResult ? "completion" : "proposal",
+            isDirective: false,
+            isCompletion: isResult
+        )
+    }
+
+    /// Extract agent type from tool key (e.g., "query:contextify-researcher" -> "researcher")
+    private func extractAgentType(from toolKey: String) -> String? {
+        // Handle patterns like "query:contextify-researcher", "skill:total-recall"
+        if toolKey.contains("contextify-") {
+            let parts = toolKey.components(separatedBy: "contextify-")
+            if parts.count > 1 {
+                return parts[1].capitalized
+            }
+        }
+        // Handle skill names like "total-recall"
+        if toolKey.contains(":") {
+            let parts = toolKey.components(separatedBy: ":")
+            if parts.count > 1 {
+                let skillName = parts[1]
+                    .replacingOccurrences(of: "-", with: " ")
+                    .capitalized
+                return skillName
+            }
+        }
+        return nil
     }
 
     /// Upsert cache entry (never clobber user_edited=1)

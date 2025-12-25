@@ -234,6 +234,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
     @ObservationIgnored private var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]  // entry.id -> agent decoration info
     @ObservationIgnored private var contextifyEntryIds: Set<String> = Set()  // entry IDs for Contextify calls
+    @ObservationIgnored private var contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]  // toolKey + isResult for Contextify entries
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
     // Observable flag for status bar - avoids exposing non-Sendable generator object
@@ -1218,6 +1219,7 @@ final class ConversationMonitor {
         }
 
         // Create cache miss
+        let ctxInfo = contextifyEntryInfo[entry.sourceIdentifier]
         let miss = CacheMiss(
             entryId: entry.sourceIdentifier,
             projectId: projectId,
@@ -1226,7 +1228,9 @@ final class ConversationMonitor {
             content: content,
             context: entry.detail,
             kind: entry.kind.rawValue,
-            provider: entry.sourceContext?.provider.rawValue ?? "other"
+            provider: entry.sourceContext?.provider.rawValue ?? "other",
+            contextifyToolKey: ctxInfo?.toolKey,
+            isContextifyResult: ctxInfo?.isResult ?? false
         )
 
         // Queue with high priority (user explicitly requested it)
@@ -1392,11 +1396,13 @@ final class ConversationMonitor {
         guard let orchestrator = orchestrator else {
             spawnedAgentsLookup.removeAll()
             contextifyEntryIds.removeAll()
+            contextifyEntryInfo.removeAll()
             return
         }
         do {
             spawnedAgentsLookup = try orchestrator.getSpawnedAgentEntries(projectId: projectId)
             contextifyEntryIds = try orchestrator.getContextifyEntryIds(projectId: projectId)
+            contextifyEntryInfo = try orchestrator.getContextifyEntryInfo(projectId: projectId)
             if !self.spawnedAgentsLookup.isEmpty || !self.contextifyEntryIds.isEmpty {
                 log.debug("[DECORATION] Loaded decoration data: \(self.spawnedAgentsLookup.count, privacy: .public) agents, \(self.contextifyEntryIds.count, privacy: .public) contextify entries")
             }
@@ -1404,6 +1410,7 @@ final class ConversationMonitor {
             log.warning("[DECORATION] Failed to load decoration data: \(error.localizedDescription, privacy: .public)")
             spawnedAgentsLookup.removeAll()
             contextifyEntryIds.removeAll()
+            contextifyEntryInfo.removeAll()
         }
     }
 
@@ -1566,6 +1573,7 @@ final class ConversationMonitor {
 
                 // Collect cache miss for background generation
                 if cache == nil, let windowSha = entry.windowSha256 {
+                    let ctxInfo = contextifyEntryInfo[entry.id]
                     let miss = CacheMiss(
                         entryId: entry.id,
                         projectId: projectId,  // Track project for cancellation when switching
@@ -1574,7 +1582,9 @@ final class ConversationMonitor {
                         content: entry.content,
                         context: entry.content,  // TODO: Add surrounding context
                         kind: entry.kind,
-                        provider: entry.provider
+                        provider: entry.provider,
+                        contextifyToolKey: ctxInfo?.toolKey,
+                        isContextifyResult: ctxInfo?.isResult ?? false
                     )
                     misses.append(miss)
                 }
@@ -2109,6 +2119,7 @@ final class ConversationMonitor {
             return
         }
 
+        let ctxInfo = contextifyEntryInfo[entry.sourceIdentifier]
         let miss = CacheMiss(
             entryId: entry.id.uuidString,
             projectId: projectId,
@@ -2117,7 +2128,9 @@ final class ConversationMonitor {
             content: sourceContent,
             context: entry.detail,
             kind: entry.kind.rawValue,
-            provider: entry.sourceContext?.provider.rawValue ?? "other"
+            provider: entry.sourceContext?.provider.rawValue ?? "other",
+            contextifyToolKey: ctxInfo?.toolKey,
+            isContextifyResult: ctxInfo?.isResult ?? false
         )
 
         // Queue immediately (user is looking at it)
@@ -2549,6 +2562,7 @@ final class ConversationMonitor {
                 continue
             }
 
+            let ctxInfo = contextifyEntryInfo[entryId]
             misses.append(CacheMiss(
                 entryId: entryId,  // Use original DB ID, not UUID
                 projectId: projectId,
@@ -2557,7 +2571,9 @@ final class ConversationMonitor {
                 content: sourceText,
                 context: entry.detail,
                 kind: entry.kind.rawValue,
-                provider: entry.sourceContext?.provider.rawValue ?? "other"
+                provider: entry.sourceContext?.provider.rawValue ?? "other",
+                contextifyToolKey: ctxInfo?.toolKey,
+                isContextifyResult: ctxInfo?.isResult ?? false
             ))
         }
 
@@ -2828,6 +2844,7 @@ final class ConversationMonitor {
 
                     // Collect cache miss for background generation
                     if cache == nil, let windowSha = entry.windowSha256 {
+                        let ctxInfo = contextifyEntryInfo[entry.id]
                         let miss = CacheMiss(
                             entryId: entry.id,
                             projectId: projectId,  // Track project for cancellation when switching
@@ -2836,7 +2853,9 @@ final class ConversationMonitor {
                             content: entry.content,
                             context: entry.content,  // TODO: Add surrounding context
                             kind: entry.kind,
-                            provider: entry.provider
+                            provider: entry.provider,
+                            contextifyToolKey: ctxInfo?.toolKey,
+                            isContextifyResult: ctxInfo?.isResult ?? false
                         )
                         misses.append(miss)
                     }

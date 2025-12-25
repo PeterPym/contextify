@@ -1493,6 +1493,38 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
     }
   }
 
+  /// Info about a Contextify tool invocation for template-based summaries
+  public struct ContextifyEntryInfo: Sendable {
+    public let toolKey: String?      // e.g., "total-recall", "query:contextify-researcher"
+    public let isResult: Bool        // true if this is the tool_result, false if tool_use
+  }
+
+  /// Layer 2: Get Contextify entry info (tool_key, isResult) for all Contextify entries in a project.
+  /// Used to generate template summaries instead of LLM for Contextify calls.
+  public func getContextifyEntryInfo(projectId: String) throws -> [String: ContextifyEntryInfo] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT ti.entry_id, ti.tool_result_entry_id, ti.tool_key
+        FROM tool_invocations ti
+        JOIN transcripts t ON ti.transcript_id = t.id
+        WHERE t.project_id = ? AND ti.is_contextify = 1
+      """
+      var result: [String: ContextifyEntryInfo] = [:]
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+      for row in rows {
+        let toolKey: String? = row["tool_key"]
+        if let entryId: String = row["entry_id"] {
+          result[entryId] = ContextifyEntryInfo(toolKey: toolKey, isResult: false)
+        }
+        if let resultEntryId: String = row["tool_result_entry_id"] {
+          result[resultEntryId] = ContextifyEntryInfo(toolKey: toolKey, isResult: true)
+        }
+      }
+      return result
+    }
+  }
+
   /// Mark a transcript as terminally unavailable to prevent repeated retries across runs.
   /// Uses `ingest_state = 'complete'` so it won't be picked up by startup partial resumption.
   public func markTranscriptUnavailable(transcriptId: String, lastError: String) throws {
