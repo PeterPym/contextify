@@ -111,6 +111,41 @@ Plugin registration is stored in:
 ~/.claude/plugins/installed_plugins.json
 ```
 
+## App Store Permission Requirements
+
+App Store builds require explicit folder access grants due to macOS sandbox restrictions.
+
+### Status Bar Permission Indicator
+
+When no CLI transcript folder access is granted, the status bar shows a **"No CLI Access"** warning:
+
+```
+⚠️ No CLI Access | Lite Mode | Up to date
+```
+
+**Clicking the indicator** opens Settings > Permissions, where you can grant access.
+
+### Required Permissions
+
+Grant access to at least one transcript folder:
+
+| CLI Tool | Folder Location | Purpose |
+|----------|-----------------|---------|
+| Claude Code | `~/.claude/projects/` | Session transcripts |
+| Codex CLI | `~/.codex/sessions/` | Session transcripts |
+
+### Granting Access
+
+1. Open Contextify Settings (⌘,)
+2. Go to **Permissions** tab
+3. Click **Grant Access** for Claude Code or Codex CLI
+4. Select the appropriate folder in the file picker
+5. The status bar indicator disappears once access is granted
+
+**Note:** DMG builds have unrestricted filesystem access and don't require these permission grants.
+
+---
+
 ## Troubleshooting
 
 ### "database not found" error
@@ -160,6 +195,7 @@ contextify-query install-plugin  # Re-run to update plugin
 ├─────────────────────────────────────────────────────────────┤
 │ CLI: Embedded in app bundle, shim installed to system path  │
 │ Plugin: Auto-installed to ~/.claude/plugins/                │
+│ Permissions: Unrestricted filesystem access                 │
 │ Database: ~/Library/Application Support/Contextify/         │
 └─────────────────────────────────────────────────────────────┘
 
@@ -168,6 +204,8 @@ contextify-query install-plugin  # Re-run to update plugin
 ├─────────────────────────────────────────────────────────────┤
 │ CLI: Installed via Homebrew to /opt/homebrew/bin/           │
 │ Plugin: User runs `contextify-query install-plugin`         │
+│ Permissions: Requires security-scoped bookmark grants       │
+│   - Status bar shows "No CLI Access" if none granted        │
 │ Database: ~/Library/Application Support/Contextify/         │
 └─────────────────────────────────────────────────────────────┘
 
