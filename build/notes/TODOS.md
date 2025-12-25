@@ -2812,4 +2812,34 @@ The v1 fix for the sidechain transcript bug uses a filename heuristic (`agent-*.
 
 ---
 
+## Timeline View Hang During Heavy Updates (1 item)
+
+**Status:** Investigated - monitoring
+**Priority:** P3 (low priority - borderline hang, likely normal SwiftUI behavior)
+**Discovered:** 2025-12-24
+**Investigation:** `build/notes/todo-support/TIMELINE-HANG-investigation.md`
+
+- [ ] #TIMELINE-HANG: Monitor and optimize timeline row rendering if hangs recur
+
+**Incident:**
+A 1.06 second hang was observed during agent decoration testing. Stack trace showed `TimelineEntryRow.body.getter` in SwiftUI's AttributeGraph update cycle.
+
+**Analysis:**
+- Hang occurred in `.contextMenu` modifier (line 104)
+- Deep stack shows `AttributedString.Guts.characterwiseIsEqual` - expensive string comparison
+- `formatWithBackticks()` creates AttributedStrings that SwiftUI compares on re-render
+- Decoration lookups are `@ObservationIgnored` - not causing cascade updates
+- 1.06s is borderline; may be normal heavy UI work
+
+**Recommendation:**
+1. Monitor for recurrence in normal usage
+2. If frequent, consider memoizing `formatWithBackticks()` results
+3. Profiling with Instruments if needed
+
+**Files:**
+- `Contextify/Contextify/TimelineEntryRow.swift:104` - hang location
+- `Contextify/Contextify/TimelineEntryRow.swift:366` - `formatWithBackticks()` function
+
+---
+
 **End of TODO List**
