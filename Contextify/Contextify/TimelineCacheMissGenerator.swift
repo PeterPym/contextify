@@ -698,8 +698,10 @@ actor TimelineCacheMissGenerator {
         let summary: String
         if isResult {
             // Result entries - what came back from the tool
-            if toolKey.contains("total-recall") || toolKey.contains("contextify-researcher") {
+            if toolKey.contains("total-recall") {
                 summary = "Contextify Total Recall returned search results"
+            } else if toolKey.contains("contextify-researcher") {
+                summary = "Contextify researcher agent returned findings"
             } else if let agent = agentType {
                 summary = "Contextify \(agent) agent returned results"
             } else {
@@ -758,8 +760,9 @@ actor TimelineCacheMissGenerator {
         for prefix in actionPrefixes {
             if lowerText.hasPrefix(prefix) {
                 // Convert "Use contextify-query to search..." -> "to search..."
-                if let toIndex = lowerText.range(of: " to ") {
-                    text = String(text[toIndex.lowerBound...]).trimmingCharacters(in: .whitespaces)
+                // Use case-insensitive search on original text to get valid indices
+                if let toRange = text.range(of: " to ", options: .caseInsensitive) {
+                    text = String(text[toRange.lowerBound...]).trimmingCharacters(in: .whitespaces)
                     break
                 }
             }
