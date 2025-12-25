@@ -690,6 +690,10 @@ actor TimelineCacheMissGenerator {
         // Parse agent type from toolKey (e.g., "query:contextify-researcher" -> "researcher")
         let agentType = extractAgentType(from: toolKey)
 
+        // Extract purpose from content for invocations
+        // Content format: "[toolKey] Purpose description here..."
+        let purpose = extractPurpose(from: content)
+
         // Generate appropriate summary based on tool type and whether it's invocation or result
         let summary: String
         if isResult {
@@ -702,15 +706,23 @@ actor TimelineCacheMissGenerator {
                 summary = "Contextify tool returned results"
             }
         } else {
-            // Invocation entries - launching the tool
+            // Invocation entries - include the purpose from the prompt
+            let baseSummary: String
             if toolKey.contains("total-recall") {
-                summary = "Launched Contextify Total Recall search"
+                baseSummary = "Launched Contextify Total Recall"
             } else if toolKey.contains("contextify-researcher") {
-                summary = "Launched Contextify researcher agent"
+                baseSummary = "Launched Contextify researcher agent"
             } else if let agent = agentType {
-                summary = "Launched Contextify \(agent) agent"
+                baseSummary = "Launched Contextify \(agent) agent"
             } else {
-                summary = "Launched Contextify tool"
+                baseSummary = "Launched Contextify tool"
+            }
+
+            // Append purpose if available (e.g., "to search for notable milestones...")
+            if let purpose = purpose, !purpose.isEmpty {
+                summary = "\(baseSummary) \(purpose)"
+            } else {
+                summary = baseSummary
             }
         }
 
@@ -722,6 +734,50 @@ actor TimelineCacheMissGenerator {
             isDirective: false,
             isCompletion: isResult
         )
+    }
+
+    /// Extract the purpose/instruction from Contextify tool content
+    /// Content format: "[toolKey] Purpose description here..."
+    /// Returns: "to search for..." or similar, truncated to ~60 chars
+    private func extractPurpose(from content: String) -> String? {
+        // Strip the [toolKey] prefix if present
+        var text = content
+        if let closeBracket = content.firstIndex(of: "]") {
+            text = String(content[content.index(after: closeBracket)...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        // Skip if empty or starts with non-useful content
+        guard !text.isEmpty else { return nil }
+
+        // Extract first sentence or meaningful chunk
+        // Look for common instruction patterns
+        let lowerText = text.lowercased()
+
+        // If it starts with action words, convert to "to [verb]" form
+        let actionPrefixes = ["use ", "search ", "find ", "look ", "get ", "retrieve ", "query "]
+        for prefix in actionPrefixes {
+            if lowerText.hasPrefix(prefix) {
+                // Convert "Use contextify-query to search..." -> "to search..."
+                if let toIndex = lowerText.range(of: " to ") {
+                    text = String(text[toIndex.lowerBound...]).trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+        }
+
+        // Truncate to reasonable length (aim for ~60-80 chars)
+        let maxLength = 80
+        if text.count > maxLength {
+            // Try to break at word boundary
+            let truncated = String(text.prefix(maxLength))
+            if let lastSpace = truncated.lastIndex(of: " ") {
+                text = String(truncated[..<lastSpace]) + "..."
+            } else {
+                text = truncated + "..."
+            }
+        }
+
+        return text.isEmpty ? nil : text
     }
 
     /// Extract agent type from tool key (e.g., "query:contextify-researcher" -> "researcher")
