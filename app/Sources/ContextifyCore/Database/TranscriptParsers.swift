@@ -169,6 +169,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     var toolInvocations: [ToolInvocationInsert] = []
     var toolResultData: [ToolResultData] = []
     var toolResultTextParts: [String] = []
+    var isAgentResult = false  // True if entry contains Task tool result (agent output)
     if var message = json["message"] as? [String: Any] {
       let messageId = message["id"] as? String
 
@@ -240,6 +241,11 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             let toolUseResult = json["toolUseResult"] as? [String: Any]
             let resultAgentId = toolUseResult?["agentId"] as? String
             let status = toolUseResult?["status"] as? String
+
+            // If agentId is present, this is a Task tool result (agent output)
+            if resultAgentId != nil {
+              isAgentResult = true
+            }
 
             toolResultData.append(ToolResultData(
               toolUseId: toolUseId,
@@ -322,8 +328,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     let cwd = json["cwd"] as? String
     let providerSessionId = json["sessionId"] as? String ?? sessionId
 
-    // Map kind
-    let kind = mapKind(type)
+    // Map kind - agent results display as "assistant" for proper attribution
+    let effectiveType = isAgentResult ? "assistant" : type
+    let kind = mapKind(effectiveType)
 
     // Compute content hash
     let contentSha256 = SHA256Utils.hash(content)
