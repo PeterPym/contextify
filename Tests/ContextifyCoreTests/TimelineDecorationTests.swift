@@ -91,11 +91,11 @@ final class TimelineDecorationTests: XCTestCase {
     XCTAssertEqual(result["e1"], "Explore", "Entry should have Explore as spawned agent type")
   }
 
-  func testGetSpawnedAgentEntries_taskWithoutSidechain_returnsEmpty() throws {
+  func testGetSpawnedAgentEntries_taskWithoutSidechain_stillReturnsBadge() throws {
     let (dbManager, pool, tempDir) = try makeTestDatabase()
     defer { try? FileManager.default.removeItem(at: tempDir) }
 
-    // Setup: Entry with Task tool but NO sidechain (maybe still running)
+    // Setup: Entry with Task tool but NO sidechain (agent still running or linkage pending)
     try insertProject(pool)
     try insertTranscript(pool)
     try insertEntry(pool, id: "e1")
@@ -105,8 +105,8 @@ final class TimelineDecorationTests: XCTestCase {
     let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
     let result = try orchestrator.getSpawnedAgentEntries(transcriptId: "t1")
 
-    // Assert
-    XCTAssertNil(result["e1"], "Entry without sidechain should not appear in spawned agents")
+    // Assert: Badge should show immediately when Task is invoked, not waiting for sidechain
+    XCTAssertEqual(result["e1"], "Explore", "Task invocation should show badge immediately")
   }
 
   func testGetSpawnedAgentEntries_regularTool_returnsEmpty() throws {

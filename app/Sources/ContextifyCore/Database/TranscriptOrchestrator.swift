@@ -1386,15 +1386,16 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   // MARK: - Timeline Decoration Queries
 
-  /// Layer 1: Get entries that spawned agents (Task tool with sidechain).
+  /// Layer 1: Get entries that spawned agents (Task tool invocations).
   /// Returns a dictionary mapping entry IDs to their spawned agent type (tool_key).
+  /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
   public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: String] {
     let pool = try dbManager.pool
     return try pool.read { db in
       let sql = """
         SELECT entry_id, tool_key
         FROM tool_invocations
-        WHERE transcript_id = ? AND sidechain_transcript_id IS NOT NULL
+        WHERE transcript_id = ? AND tool_name = 'Task'
       """
       var result: [String: String] = [:]
       let rows = try Row.fetchAll(db, sql: sql, arguments: [transcriptId])
@@ -1409,6 +1410,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   }
 
   /// Layer 1: Get entries that spawned agents for all transcripts in a project.
+  /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
   public func getSpawnedAgentEntries(projectId: String) throws -> [String: String] {
     let pool = try dbManager.pool
     return try pool.read { db in
@@ -1416,7 +1418,7 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         SELECT ti.entry_id, ti.tool_key
         FROM tool_invocations ti
         JOIN transcripts t ON ti.transcript_id = t.id
-        WHERE t.project_id = ? AND ti.sidechain_transcript_id IS NOT NULL
+        WHERE t.project_id = ? AND ti.tool_name = 'Task'
       """
       var result: [String: String] = [:]
       let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
