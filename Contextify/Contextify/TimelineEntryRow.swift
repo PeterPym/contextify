@@ -138,30 +138,17 @@ struct TimelineEntryRow: View, Equatable {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             // Use provider-specific icon for assistant messages, default icons for others
-            // When Contextify tools were used, show Contextify logo as a co-pilot icon
-            HStack(spacing: 4) {
-                if entry.kind == .assistant, let provider = entry.sourceContext?.provider {
-                    Image(provider.iconImage)
-                        .renderingMode(.template)
-                        .foregroundStyle(providerColor(provider))
-                        .shadow(
-                            color: (colorScheme == .light && provider == .codexCLI) ? .black.opacity(0.7) : .clear,
-                            radius: 0.5
-                        )
-                } else {
-                    Image(systemName: entry.kind.iconName)
-                        .foregroundStyle(entry.kind.accentColor)
-                }
-
-                // Contextify co-pilot icon - shows when Contextify CLI contributed to this entry
-                if entry.isContextifyCall {
-                    Image("contextify-logomark")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 14, height: 14)
-                        .foregroundStyle(.primary.opacity(0.8))
-                        .help("Contextify CLI contributed to this response")
-                }
+            if entry.kind == .assistant, let provider = entry.sourceContext?.provider {
+                Image(provider.iconImage)
+                    .renderingMode(.template)
+                    .foregroundStyle(providerColor(provider))
+                    .shadow(
+                        color: (colorScheme == .light && provider == .codexCLI) ? .black.opacity(0.7) : .clear,
+                        radius: 0.5
+                    )
+            } else {
+                Image(systemName: entry.kind.iconName)
+                    .foregroundStyle(entry.kind.accentColor)
             }
             Text(entry.timestamp, format: .dateTime.hour().minute())
                 .font(.caption.monospaced())
@@ -227,6 +214,14 @@ struct TimelineEntryRow: View, Equatable {
                     }
                 }
                 .help("Spawned \(agentType) agent" + (entry.spawnedAgentModel.map { " (\($0))" } ?? ""))
+            }
+            // Contextify indicator (Layer 2: shows for Contextify skill/agent calls)
+            if entry.isContextifyCall {
+                Image("contextify-logomark")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 12, height: 12)
+                    .help(entry.spawnedAgentType != nil ? "Contextify agent" : "Contextify skill")
             }
             if entry.action == .nonSummarizable {
                 Text("—")
