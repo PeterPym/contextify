@@ -56,6 +56,7 @@ declare -a ALL_TESTS=(
   "QA-12-git-branch-display.sh:0"
   "QA-13-cli-install-dmg.sh:0"
   "QA-15-query-bundle-integrity.sh:0"
+  "QA-16-agent-decoration.sh:0"
 
   # Phase 7: CLI query tests
   "CLI-01-query-baseline.sh:3"
