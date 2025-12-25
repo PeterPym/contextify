@@ -200,7 +200,7 @@ struct TimelineEntryRow: View, Equatable {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.8))
+                        .background(Color.contextifyPurple)
                         .cornerRadius(3)
                     // Model chip (shows haiku/sonnet/opus if specified)
                     if let model = entry.spawnedAgentModel {
