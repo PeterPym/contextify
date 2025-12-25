@@ -123,7 +123,11 @@ struct TimelineEntryRow: View, Equatable {
             log.info("[ROW-APPEAR] Entry rendered: \(entry.id, privacy: .public) kind: \(entry.kind.rawValue, privacy: .public) summary: \(String(entry.summary.prefix(40)), privacy: .public)...")
             // Log decoration data for E2E test assertions
             if let agentType = entry.agentTypeLabel {
-                log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) for entry \(entry.id, privacy: .public)")
+                if let model = entry.spawnedAgentModel {
+                    log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) model=\(model, privacy: .public) for entry \(entry.id, privacy: .public)")
+                } else {
+                    log.debug("[DECORATION] Agent badge rendered: \(agentType, privacy: .public) for entry \(entry.id, privacy: .public)")
+                }
             }
             if entry.isContextifyCall {
                 log.debug("[DECORATION] Contextify indicator rendered for entry \(entry.id, privacy: .public)")
@@ -190,14 +194,26 @@ struct TimelineEntryRow: View, Equatable {
             }
             // Agent spawn badge (Layer 1: shows when entry spawned an agent via Task tool)
             if let agentType = entry.agentTypeLabel {
-                Text(agentType)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.purple.opacity(0.8))
-                    .cornerRadius(3)
-                    .help("Spawned \(agentType) agent")
+                HStack(spacing: 3) {
+                    Text(agentType)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.contextifyPurple)
+                        .cornerRadius(3)
+                    // Model chip (shows haiku/sonnet/opus if specified)
+                    if let model = entry.spawnedAgentModel {
+                        Text(normalizedModelName(model))
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15))
+                            .cornerRadius(2)
+                    }
+                }
+                .help("Spawned \(agentType) agent" + (entry.spawnedAgentModel.map { " (\($0))" } ?? ""))
             }
             // Contextify indicator (Layer 2: shows for Contextify skill/agent calls)
             if entry.isContextifyCall {
@@ -379,6 +395,20 @@ struct TimelineEntryRow: View, Equatable {
         }
 
         return Text(attributed)
+    }
+
+    /// Normalize model name for display (whitelist known models, truncate unknown)
+    private func normalizedModelName(_ model: String) -> String {
+        let known = ["haiku", "sonnet", "opus"]
+        let lower = model.lowercased()
+        if known.contains(lower) {
+            return lower
+        }
+        // Unknown model - truncate to prevent UI blowout
+        if model.count > 12 {
+            return String(model.prefix(10)) + "…"
+        }
+        return model
     }
 
     /// Generate contextual error message based on error type

@@ -44,6 +44,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
 
     // Decoration fields for agent/skill invocations
     let spawnedAgentType: String?  // e.g., "Explore", "Plan" - set when entry spawned an agent
+    let spawnedAgentModel: String? // e.g., "haiku", "sonnet", "opus" - model used by spawned agent
     let isContextifyCall: Bool     // True if this is a Contextify skill or agent call
 
     // Hidden cache keys for lightweight refresh (not displayed in UI)
@@ -91,6 +92,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         disposition: String? = nil,
         isQueued: Bool = false,
         spawnedAgentType: String? = nil,
+        spawnedAgentModel: String? = nil,
         isContextifyCall: Bool = false,
         contentSha256: String? = nil,
         windowSha256: String? = nil
@@ -112,6 +114,7 @@ struct TimelineEntry: Identifiable, Hashable, Sendable {
         self.disposition = disposition
         self.isQueued = isQueued
         self.spawnedAgentType = spawnedAgentType
+        self.spawnedAgentModel = spawnedAgentModel
         self.isContextifyCall = isContextifyCall
         self.contentSha256 = contentSha256
         self.windowSha256 = windowSha256
@@ -268,6 +271,7 @@ extension TimelineEntry {
             disposition: newDisposition,
             isQueued: self.isQueued,  // Preserve queued flag during cache refresh
             spawnedAgentType: self.spawnedAgentType,  // Preserve decoration fields
+            spawnedAgentModel: self.spawnedAgentModel,
             isContextifyCall: self.isContextifyCall,
             contentSha256: contentSha256,
             windowSha256: windowSha256

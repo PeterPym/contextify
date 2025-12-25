@@ -1,0 +1,47 @@
+# Release v1.0.7
+
+**Created:** 2025-12-23
+**Status:** In Progress
+**Build:** 1
+**Targeting:** DMG only
+
+## Quick Status
+
+| Phase | Status |
+|-------|--------|
+| 1. Pre-Release | Pending |
+| 2. Build | Pending |
+| 3. Review Materials | Complete (n/a - DMG only) |
+| 4. Submission | Complete (n/a - DMG only) |
+| 5. Marketing | Pending |
+| 6. Post-Release | Pending |
+
+## Checklists
+
+- [`01-pre-release.md`](checklists/01-pre-release.md)
+- [`02-build.md`](checklists/02-build.md)
+- [`03-review-materials.md`](checklists/03-review-materials.md)
+- [`04-submission.md`](checklists/04-submission.md)
+- [`05-marketing.md`](checklists/05-marketing.md)
+- [`06-post-release.md`](checklists/06-post-release.md)
+
+## Files
+
+- `release.json` - Complete release state
+- `checklists/` - Phase checklists
+- `artifacts/` - Build artifact references
+- `logs/` - Validation outputs
+- `assets/` - Screenshots, receipts
+
+## Commands
+
+```bash
+# Check status
+./scripts/release/status.sh 1.0.7
+
+# Validate pre-release
+./scripts/release/validate-pre-release.sh 1.0.7
+
+# Reset for new build (preserves notes)
+./scripts/release/init.sh 1.0.7 --reset
+```

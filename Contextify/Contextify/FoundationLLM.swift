@@ -154,9 +154,11 @@ actor FoundationLLM {
     // Throttle to prevent overwhelming the LLM
     private let minRequestInterval: TimeInterval = 0.15 // 150ms between requests
 
-    // Runtime-configurable forceStateless mode (set via CONTEXTIFY_FORCE_STATELESS_LLM=1 or setForceStateless)
+    // Runtime-configurable forceStateless mode
+    // Default: ON to prevent session corruption causing repeated hallucinations
+    // Set CONTEXTIFY_STATEFUL_LLM=1 to opt-in to stateful sessions
     private var forceStatelessMode: Bool = {
-        ProcessInfo.processInfo.environment["CONTEXTIFY_FORCE_STATELESS_LLM"] == "1"
+        ProcessInfo.processInfo.environment["CONTEXTIFY_STATEFUL_LLM"] != "1"
     }()
 
     /// Hard timeout guard for LLM respond calls (prevents indefinite hangs)
@@ -1856,6 +1858,52 @@ extension FoundationLLM {
         return examples.contains { summary.localizedCaseInsensitiveContains($0) }
     }
 
+    /// Check if summary contains technical phrases not grounded in the original message
+    /// This catches hallucinations where the LLM invents specific technical terms
+    private func containsUngroundedTechnicalPhrase(summary: String, message: String, leaked: [String]) -> Bool {
+        // Known hallucination patterns from session corruption
+        // These are specific phrases that appear repeatedly when Apple Intelligence gets stuck
+        let halluccinationPhrases = [
+            "retry logic in the network client",
+            "retry logic in network client",
+            "implemented retry logic"
+        ]
+
+        let summaryLower = summary.lowercased()
+        for phrase in halluccinationPhrases {
+            if summaryLower.contains(phrase) {
+                // Check if key terms from the phrase are actually in the message
+                let messageLower = message.lowercased()
+                let keyTerms = ["retry", "network", "client"]
+                let foundInMessage = keyTerms.filter { messageLower.contains($0) }
+
+                // If fewer than 2 key terms are in the message, it's likely a hallucination
+                if foundInMessage.count < 2 {
+                    return true
+                }
+            }
+        }
+
+        // Check for coherent technical phrase patterns in leaked tokens
+        // If 3+ leaked tokens form a recognizable technical pattern, reject
+        let techPatterns: Set<Set<String>> = [
+            ["retry", "logic"],
+            ["network", "client"],
+            ["authentication", "flow"],
+            ["database", "connection"],
+            ["api", "endpoint"]
+        ]
+
+        let leakedSet = Set(leaked.map { $0.lowercased() })
+        for pattern in techPatterns {
+            if pattern.isSubset(of: leakedSet) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     func postProcess(
         kind: TimelineEntryKind,
         payload: GuidedTimelineSummary,
@@ -1869,19 +1917,24 @@ extension FoundationLLM {
 
             // Objective validation (no LLM self-assessment)
             // Reject if:
-            // 1. Excessive leakage (>6 tokens from prompt)
+            // 1. Moderate leakage (>4 tokens not in original message)
             // 2. Contains known prompt example phrases
-            let excessiveLeakage = leaked.count > 6
+            // 3. Contains technical phrase not grounded in message (hallucination detection)
+            let moderateLeakage = leaked.count > 4
             let hasExamplePhrase = containsPromptExample(summary)
+            let hasUngroundedTechPhrase = containsUngroundedTechnicalPhrase(summary: summary, message: message, leaked: leaked)
 
-            let shouldReject = excessiveLeakage || hasExamplePhrase
+            let shouldReject = moderateLeakage || hasExamplePhrase || hasUngroundedTechPhrase
 
             if shouldReject {
                 if hasExamplePhrase {
                     log.warning("[VALIDATION-REJECT] Timeline summary contains prompt example phrase: \(summary, privacy: .public)")
                 }
-                if excessiveLeakage {
-                    log.warning("[VALIDATION-REJECT] Timeline summary has excessive leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
+                if moderateLeakage {
+                    log.warning("[VALIDATION-REJECT] Timeline summary has moderate leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
+                }
+                if hasUngroundedTechPhrase {
+                    log.warning("[VALIDATION-REJECT] Timeline summary contains ungrounded technical phrase: \(summary, privacy: .public)")
                 }
 
                 // Special case: if it's just an ack, accept the generic ack message

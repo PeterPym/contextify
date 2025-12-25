@@ -823,6 +823,20 @@ public final class HooverEngine {
             result.toolUseId,
             transcriptId
           ])
+
+          // Also link already-ingested sidechain transcripts (fixes race condition where
+          // agent transcript is ingested before tool_result sets sidechain_agent_id)
+          if let agentId = result.agentId {
+            let sidechainTranscriptId = "agent-\(agentId)"
+            try db.execute(sql: """
+              UPDATE tool_invocations
+              SET sidechain_transcript_id = ?,
+                  updated_at = ?
+              WHERE sidechain_agent_id = ?
+                AND sidechain_transcript_id IS NULL
+                AND EXISTS (SELECT 1 FROM transcripts WHERE id = ?)
+            """, arguments: [sidechainTranscriptId, now, agentId, sidechainTranscriptId])
+          }
         }
 
         // Link sidechain transcripts to parent invocations by agentId

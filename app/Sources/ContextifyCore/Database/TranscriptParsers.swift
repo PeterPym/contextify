@@ -169,6 +169,7 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     var toolInvocations: [ToolInvocationInsert] = []
     var toolResultData: [ToolResultData] = []
     var toolResultTextParts: [String] = []
+    var isAgentResult = false  // True if entry contains Task tool result (agent output)
     if var message = json["message"] as? [String: Any] {
       let messageId = message["id"] as? String
 
@@ -241,6 +242,12 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
             let resultAgentId = toolUseResult?["agentId"] as? String
             let status = toolUseResult?["status"] as? String
 
+            // If agentId is present, this is a Task tool result (agent output)
+            if resultAgentId != nil {
+              isAgentResult = true
+              parserLog.info("[AGENT-RESULT] Detected Task tool result line=\(lineNumber, privacy: .public) uuid=\(uuid, privacy: .public) agentId=\(resultAgentId ?? "nil", privacy: .public)")
+            }
+
             toolResultData.append(ToolResultData(
               toolUseId: toolUseId,
               entryId: uuid,
@@ -262,8 +269,35 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
-      let shouldHideShellOutput = type == "user" && containsShellOutput(content)
-      hasTextContent = (type == "user") ? !shouldHideShellOutput : hasText
+      // Never hide agent results (they may contain shell output but should be visible)
+      let shouldHideShellOutput = type == "user" && !isAgentResult && containsShellOutput(content)
+      hasTextContent = (type == "user" && !isAgentResult) ? !shouldHideShellOutput : hasText
+
+      // For Task tool invocations: extract prompt as meaningful content
+      // This makes agent-spawn entries visible and summarizable in the timeline
+      if type == "assistant" && !hasText,
+         let taskInvocation = toolInvocations.first(where: { $0.toolName == "Task" }),
+         let contentBlocks = message["content"] as? [[String: Any]],
+         let taskBlock = contentBlocks.first(where: {
+           $0["type"] as? String == "tool_use" && $0["name"] as? String == "Task"
+         }),
+         let input = taskBlock["input"] as? [String: Any],
+         let prompt = input["prompt"] as? String,
+         !prompt.isEmpty {
+        // Extract subagent type and model for display context
+        let subagentType = taskInvocation.toolKey ?? "agent"
+        let model = input["model"] as? String
+        let modelSuffix = model.map { " (\($0))" } ?? ""
+
+        // Use first line of prompt as summary, with agent context prefix
+        let firstLine = prompt.components(separatedBy: .newlines)
+          .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? prompt
+        let truncated = String(firstLine.prefix(300))
+        content = "[\(subagentType)\(modelSuffix)] \(truncated)"
+        hasTextContent = true
+        parserLog.info("[TASK-SPAWN] Extracted Task prompt uuid=\(uuid, privacy: .public) agent=\(subagentType, privacy: .public) model=\(model ?? "default", privacy: .public)")
+      }
+
       if content.isEmpty && !toolResultTextParts.isEmpty {
         content = toolResultTextParts.joined(separator: "\n")
         hasTextContent = true
@@ -297,8 +331,12 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
     let cwd = json["cwd"] as? String
     let providerSessionId = json["sessionId"] as? String ?? sessionId
 
-    // Map kind
-    let kind = mapKind(type)
+    // Map kind - agent results display as "assistant" for proper attribution
+    let effectiveType = isAgentResult ? "assistant" : type
+    if isAgentResult {
+      parserLog.info("[AGENT-ATTR] Reattributing entry as assistant uuid=\(uuid, privacy: .public) original_type=\(type, privacy: .public)")
+    }
+    let kind = mapKind(effectiveType)
 
     // Compute content hash
     let contentSha256 = SHA256Utils.hash(content)

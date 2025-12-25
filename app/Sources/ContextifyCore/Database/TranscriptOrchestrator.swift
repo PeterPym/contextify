@@ -1386,45 +1386,60 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
 
   // MARK: - Timeline Decoration Queries
 
-  /// Layer 1: Get entries that spawned agents (Task tool with sidechain).
-  /// Returns a dictionary mapping entry IDs to their spawned agent type (tool_key).
-  public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: String] {
+  /// Layer 1: Get entries that spawned agents (Task tool invocations).
+  /// Returns a dictionary mapping entry IDs to their agent decoration info (type + model).
+  /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
+  public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: AgentDecorationInfo] {
     let pool = try dbManager.pool
     return try pool.read { db in
       let sql = """
-        SELECT entry_id, tool_key
+        SELECT entry_id, tool_key, json_extract(metadata_json, '$.model') as model
         FROM tool_invocations
-        WHERE transcript_id = ? AND sidechain_transcript_id IS NOT NULL
+        WHERE transcript_id = ? AND tool_name = 'Task'
       """
-      var result: [String: String] = [:]
+      var result: [String: AgentDecorationInfo] = [:]
       let rows = try Row.fetchAll(db, sql: sql, arguments: [transcriptId])
       for row in rows {
         if let entryId: String = row["entry_id"],
            let toolKey: String = row["tool_key"] {
-          result[entryId] = toolKey
+          let model: String? = row["model"]
+          result[entryId] = AgentDecorationInfo(agentType: toolKey, model: model)
         }
       }
       return result
     }
   }
 
+  /// Agent decoration info returned by getSpawnedAgentEntries
+  public struct AgentDecorationInfo: Sendable {
+    public let agentType: String   // e.g., "Explore", "Plan"
+    public let model: String?      // e.g., "haiku", "sonnet", "opus"
+  }
+
   /// Layer 1: Get entries that spawned agents for all transcripts in a project.
-  public func getSpawnedAgentEntries(projectId: String) throws -> [String: String] {
+  /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
+  public func getSpawnedAgentEntries(projectId: String) throws -> [String: AgentDecorationInfo] {
     let pool = try dbManager.pool
     return try pool.read { db in
       let sql = """
-        SELECT ti.entry_id, ti.tool_key
+        SELECT ti.entry_id, ti.tool_key, json_extract(ti.metadata_json, '$.model') as model
         FROM tool_invocations ti
         JOIN transcripts t ON ti.transcript_id = t.id
-        WHERE t.project_id = ? AND ti.sidechain_transcript_id IS NOT NULL
+        WHERE t.project_id = ? AND ti.tool_name = 'Task'
       """
-      var result: [String: String] = [:]
+      var result: [String: AgentDecorationInfo] = [:]
+      var modelsFound = 0
       let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
       for row in rows {
         if let entryId: String = row["entry_id"],
            let toolKey: String = row["tool_key"] {
-          result[entryId] = toolKey
+          let model: String? = row["model"]
+          if model != nil { modelsFound += 1 }
+          result[entryId] = AgentDecorationInfo(agentType: toolKey, model: model)
         }
+      }
+      if !result.isEmpty {
+        log.info("[DECORATION-QUERY] Found \(result.count, privacy: .public) Task invocations (\(modelsFound, privacy: .public) with model info)")
       }
       return result
     }
@@ -1475,6 +1490,38 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
         }
       }
       return entryIds
+    }
+  }
+
+  /// Info about a Contextify tool invocation for template-based summaries
+  public struct ContextifyEntryInfo: Sendable {
+    public let toolKey: String?      // e.g., "total-recall", "query:contextify-researcher"
+    public let isResult: Bool        // true if this is the tool_result, false if tool_use
+  }
+
+  /// Layer 2: Get Contextify entry info (tool_key, isResult) for all Contextify entries in a project.
+  /// Used to generate template summaries instead of LLM for Contextify calls.
+  public func getContextifyEntryInfo(projectId: String) throws -> [String: ContextifyEntryInfo] {
+    let pool = try dbManager.pool
+    return try pool.read { db in
+      let sql = """
+        SELECT ti.entry_id, ti.tool_result_entry_id, ti.tool_key
+        FROM tool_invocations ti
+        JOIN transcripts t ON ti.transcript_id = t.id
+        WHERE t.project_id = ? AND ti.is_contextify = 1
+      """
+      var result: [String: ContextifyEntryInfo] = [:]
+      let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
+      for row in rows {
+        let toolKey: String? = row["tool_key"]
+        if let entryId: String = row["entry_id"] {
+          result[entryId] = ContextifyEntryInfo(toolKey: toolKey, isResult: false)
+        }
+        if let resultEntryId: String = row["tool_result_entry_id"] {
+          result[resultEntryId] = ContextifyEntryInfo(toolKey: toolKey, isResult: true)
+        }
+      }
+      return result
     }
   }
 

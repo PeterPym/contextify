@@ -19,6 +19,9 @@ struct CacheMiss: Sendable {
     let context: String  // Surrounding context for better summaries
     let kind: String
     let provider: String
+    let isContextify: Bool          // True if this is a Contextify entry (use template, skip LLM)
+    let contextifyToolKey: String?  // Tool key for template wording (may be nil even if isContextify)
+    let isContextifyResult: Bool    // True if this is the result of a Contextify tool, false if invocation
 
     /// Composite key for deduplication (returns struct for type safety)
     nonisolated var cacheKey: CacheKey {
@@ -566,10 +569,15 @@ actor TimelineCacheMissGenerator {
                 }
 
                 if case .validationFailure = timelineError {
-                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
-                    try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
-                    // Don't trackError - show (i) icon but not status bar error
-                    return .tombstone(reason: "validation")
+                    // Allow one retry for validation failures (may succeed with fresh session)
+                    if attempt >= 1 {
+                        log.info("Validation failure on retry for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                        try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
+                        // Don't trackError - show (i) icon but not status bar error
+                        return .tombstone(reason: "validation")
+                    }
+                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - will retry with fresh session")
+                    // Fall through to retry logic
                 }
 
                 if case .unexpected = timelineError {
@@ -624,8 +632,15 @@ actor TimelineCacheMissGenerator {
         throw error
     }
 
-    /// Generate summary for a cache miss using LLM
+    /// Generate summary for a cache miss using LLM (or template for Contextify entries)
     private func generateSummary(for miss: CacheMiss) async throws -> GeneratedSummary {
+        // Fast path: Contextify entries use template summaries (no LLM needed)
+        if miss.isContextify {
+            let toolKey = miss.contextifyToolKey ?? "contextify"  // Fallback if toolKey missing
+            log.debug("[CONTEXTIFY-TEMPLATE] Using template for Contextify entry: toolKey=\(toolKey, privacy: .public), isResult=\(miss.isContextifyResult, privacy: .public)")
+            return generateContextifyTemplate(toolKey: toolKey, isResult: miss.isContextifyResult, content: miss.content)
+        }
+
         // Parse kind and provider
         let kind = TimelineEntryKind(rawValue: miss.kind) ?? .assistant
         let provider = TimelineSourceContext.Provider(rawValue: miss.provider) ?? .other
@@ -674,6 +689,128 @@ actor TimelineCacheMissGenerator {
             isDirective: result.isDirective,
             isCompletion: result.isCompletion
         )
+    }
+
+    /// Generate template-based summary for Contextify tool entries
+    /// This skips LLM entirely for predictable, branded summaries
+    private func generateContextifyTemplate(toolKey: String, isResult: Bool, content: String) -> GeneratedSummary {
+        // Parse agent type from toolKey (e.g., "query:contextify-researcher" -> "researcher")
+        let agentType = extractAgentType(from: toolKey)
+
+        // Extract purpose from content for invocations
+        // Content format: "[toolKey] Purpose description here..."
+        let purpose = extractPurpose(from: content)
+
+        // Generate appropriate summary based on tool type and whether it's invocation or result
+        let summary: String
+        if isResult {
+            // Result entries - what came back from the tool
+            if toolKey.contains("total-recall") {
+                summary = "Contextify Total Recall returned search results"
+            } else if toolKey.contains("contextify-researcher") {
+                summary = "Contextify researcher agent returned findings"
+            } else if let agent = agentType {
+                summary = "Contextify \(agent) agent returned results"
+            } else {
+                summary = "Contextify tool returned results"
+            }
+        } else {
+            // Invocation entries - include the purpose from the prompt
+            let baseSummary: String
+            if toolKey.contains("total-recall") {
+                baseSummary = "Launched Contextify Total Recall"
+            } else if toolKey.contains("contextify-researcher") {
+                baseSummary = "Launched Contextify researcher agent"
+            } else if let agent = agentType {
+                baseSummary = "Launched Contextify \(agent) agent"
+            } else {
+                baseSummary = "Launched Contextify tool"
+            }
+
+            // Append purpose if available (e.g., "to search for notable milestones...")
+            if let purpose = purpose, !purpose.isEmpty {
+                summary = "\(baseSummary) \(purpose)"
+            } else {
+                summary = baseSummary
+            }
+        }
+
+        return GeneratedSummary(
+            presentForm: summary,
+            pastForm: summary,  // Same form for both (already sounds complete)
+            selectedForm: "present",
+            disposition: isResult ? "completion" : "proposal",
+            isDirective: false,
+            isCompletion: isResult
+        )
+    }
+
+    /// Extract the purpose/instruction from Contextify tool content
+    /// Content format: "[toolKey] Purpose description here..."
+    /// Returns: "to search for..." or similar, truncated to ~60 chars
+    private func extractPurpose(from content: String) -> String? {
+        // Strip the [toolKey] prefix if present
+        var text = content
+        if let closeBracket = content.firstIndex(of: "]") {
+            text = String(content[content.index(after: closeBracket)...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        // Skip if empty or starts with non-useful content
+        guard !text.isEmpty else { return nil }
+
+        // Extract first sentence or meaningful chunk
+        // Look for common instruction patterns
+        let lowerText = text.lowercased()
+
+        // If it starts with action words, convert to "to [verb]" form
+        let actionPrefixes = ["use ", "search ", "find ", "look ", "get ", "retrieve ", "query "]
+        for prefix in actionPrefixes {
+            if lowerText.hasPrefix(prefix) {
+                // Convert "Use contextify-query to search..." -> "to search..."
+                // Use case-insensitive search on original text to get valid indices
+                if let toRange = text.range(of: " to ", options: .caseInsensitive) {
+                    text = String(text[toRange.lowerBound...]).trimmingCharacters(in: .whitespaces)
+                    break
+                }
+            }
+        }
+
+        // Truncate to reasonable length (aim for ~60-80 chars)
+        let maxLength = 80
+        if text.count > maxLength {
+            // Try to break at word boundary
+            let truncated = String(text.prefix(maxLength))
+            if let lastSpace = truncated.lastIndex(of: " ") {
+                text = String(truncated[..<lastSpace]) + "..."
+            } else {
+                text = truncated + "..."
+            }
+        }
+
+        return text.isEmpty ? nil : text
+    }
+
+    /// Extract agent type from tool key (e.g., "query:contextify-researcher" -> "researcher")
+    /// Returns lowercase for consistency in summaries like "Launched Contextify researcher agent"
+    private func extractAgentType(from toolKey: String) -> String? {
+        // Handle patterns like "query:contextify-researcher", "skill:total-recall"
+        if toolKey.contains("contextify-") {
+            let parts = toolKey.components(separatedBy: "contextify-")
+            if parts.count > 1 {
+                return parts[1].lowercased()  // "researcher", not "Researcher"
+            }
+        }
+        // Handle skill names like "total-recall" -> "total recall"
+        if toolKey.contains(":") {
+            let parts = toolKey.components(separatedBy: ":")
+            if parts.count > 1 {
+                let skillName = parts[1]
+                    .replacingOccurrences(of: "-", with: " ")
+                    .lowercased()  // "total recall", not "Total Recall"
+                return skillName
+            }
+        }
+        return nil
     }
 
     /// Upsert cache entry (never clobber user_edited=1)
