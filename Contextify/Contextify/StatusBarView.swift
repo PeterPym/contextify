@@ -8,16 +8,22 @@
 
 import SwiftUI
 import OSLog
+import ContextifyCore
 
 struct StatusBarView: View {
     private let log = Logger(subsystem: "dev.contextify", category: "StatusBarView")
     @Environment(ConversationMonitor.self) private var timeline
+    @EnvironmentObject private var folderAccessController: FolderAccessController
     @State private var viewModel: StatusBarViewModel?
     @State private var lastSeenGenerator: ObjectIdentifier?
+
+    // Permission state (App Store builds only)
+    @State private var hasCLIAccess: Bool = true  // Assume true until checked
 
     // Info popover state
     @State private var showAIInfo = false
     @State private var showErrorInfo = false
+    @State private var showPermissionInfo = false
 
     // Animation triggers
     @State private var lastErrorCount = 0
@@ -25,6 +31,14 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 16) {
+            // Permission warning (App Store builds without CLI access)
+            if Sandbox.isSandboxed && !hasCLIAccess {
+                permissionWarningIndicator
+
+                Divider()
+                    .frame(height: 12)
+            }
+
             // Apple Intelligence indicator
             aiStatusIndicator
 
@@ -80,6 +94,7 @@ struct StatusBarView: View {
         .animation(.easeInOut(duration: 0.3), value: viewModel?.hooverMessage)
         .onAppear {
             updateViewModel()
+            checkCLIPermissions()
         }
         .onDisappear {
             viewModel?.stop()
@@ -87,6 +102,10 @@ struct StatusBarView: View {
         .task(id: generatorIdentity) {
             // Automatically recreate ViewModel when generator changes
             updateViewModel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .permissionAuthorizationDidChange)) { _ in
+            // Re-check permissions when user grants access
+            checkCLIPermissions()
         }
         .onChange(of: viewModel?.recentErrorCount) { _, newCount in
             // Trigger bounce animation on new errors
@@ -132,6 +151,84 @@ struct StatusBarView: View {
             viewModel = newViewModel  // Assign after cache is loaded
             newViewModel.start()
         }
+    }
+
+    /// Check if at least one CLI permission is granted (App Store builds only)
+    private func checkCLIPermissions() {
+        guard Sandbox.isSandboxed else {
+            hasCLIAccess = true  // DMG builds always have access
+            log.debug("[STATUS-BAR-PERMISSIONS] DMG build - skipping permission check (always has access)")
+            return
+        }
+
+        Task { @MainActor in
+            let claudeAuth = await folderAccessController.authorization(for: .claude)
+            let codexAuth = await folderAccessController.authorization(for: .codex)
+
+            let claudeGranted = claudeAuth?.status == .authorized
+            let codexGranted = codexAuth?.status == .authorized
+            let hasAccess = claudeGranted || codexGranted
+
+            log.info("[STATUS-BAR-PERMISSIONS] Claude=\(claudeGranted, privacy: .public), Codex=\(codexGranted, privacy: .public), hasCLIAccess=\(hasAccess, privacy: .public)")
+
+            hasCLIAccess = hasAccess
+        }
+    }
+
+    /// Open Settings window with Permissions tab selected
+    private func openPermissionsSettings() {
+        log.info("[STATUS-BAR-PERMISSIONS] Opening Settings > Permissions tab")
+
+        // Set tab override to trigger permissions tab selection
+        ContextifyDefaults.shared.set("permissions", forKey: "Contextify.Settings.SelectedTabOverride")
+
+        // Open Settings window
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+
+        // Clear override after a short delay (so it doesn't persist)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            ContextifyDefaults.shared.removeObject(forKey: "Contextify.Settings.SelectedTabOverride")
+        }
+    }
+
+    // MARK: - Permission Warning Indicator
+
+    @ViewBuilder
+    private var permissionWarningIndicator: some View {
+        Button(action: openPermissionsSettings) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    // Use Contextify Yellow for warnings
+                    .foregroundStyle(Color(red: 0.831, green: 0.659, blue: 0.306))  // #D4A84E
+                    .font(.caption)
+
+                Text("No CLI Access")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                InfoButton(isPresented: $showPermissionInfo)
+                    .popover(isPresented: $showPermissionInfo) {
+                        InfoPopoverContent(
+                            title: "Transcript Access Required",
+                            message: """
+                            Contextify needs access to CLI transcript folders to monitor your Claude Code or Codex sessions.
+
+                            Grant access to at least one:
+                            • ~/.claude/projects/ (Claude Code)
+                            • ~/.codex/sessions/ (Codex CLI)
+
+                            Click "Grant Access" to open Settings.
+                            """,
+                            actionLabel: "Grant Access",
+                            action: openPermissionsSettings
+                        )
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .help("Click to grant transcript folder access")
+        .accessibilityLabel("No CLI access granted. Click to open permissions settings.")
     }
 
     // MARK: - Apple Intelligence Indicator
