@@ -232,7 +232,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
-    @ObservationIgnored private var spawnedAgentsLookup: [String: String] = [:]  // entry.id -> agent type
+    @ObservationIgnored private var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]  // entry.id -> agent decoration info
     @ObservationIgnored private var contextifyEntryIds: Set<String> = Set()  // entry IDs for Contextify calls
     @ObservationIgnored private var backgroundTasks: Task<Void, Never>?  // Parent task for all background work
     private(set) var cacheMissGenerator: TimelineCacheMissGenerator?  // Background cache generation
@@ -1379,7 +1379,8 @@ final class ConversationMonitor {
             sessionId: entry.sessionId,
             disposition: cached?.disposition,
             isQueued: entry.isQueued == 1,
-            spawnedAgentType: spawnedAgentsLookup[entry.id],
+            spawnedAgentType: spawnedAgentsLookup[entry.id]?.agentType,
+            spawnedAgentModel: spawnedAgentsLookup[entry.id]?.model,
             isContextifyCall: contextifyEntryIds.contains(entry.id),
             contentSha256: entry.contentSha256,
             windowSha256: entry.windowSha256

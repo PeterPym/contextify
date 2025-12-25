@@ -190,14 +190,26 @@ struct TimelineEntryRow: View, Equatable {
             }
             // Agent spawn badge (Layer 1: shows when entry spawned an agent via Task tool)
             if let agentType = entry.agentTypeLabel {
-                Text(agentType)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.purple.opacity(0.8))
-                    .cornerRadius(3)
-                    .help("Spawned \(agentType) agent")
+                HStack(spacing: 3) {
+                    Text(agentType)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.8))
+                        .cornerRadius(3)
+                    // Model chip (shows haiku/sonnet/opus if specified)
+                    if let model = entry.spawnedAgentModel {
+                        Text(model)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 3)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15))
+                            .cornerRadius(2)
+                    }
+                }
+                .help("Spawned \(agentType) agent" + (entry.spawnedAgentModel.map { " (\($0))" } ?? ""))
             }
             // Contextify indicator (Layer 2: shows for Contextify skill/agent calls)
             if entry.isContextifyCall {

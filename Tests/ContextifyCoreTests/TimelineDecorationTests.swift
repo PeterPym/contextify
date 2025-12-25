@@ -88,7 +88,7 @@ final class TimelineDecorationTests: XCTestCase {
     let result = try orchestrator.getSpawnedAgentEntries(transcriptId: "t1")
 
     // Assert
-    XCTAssertEqual(result["e1"], "Explore", "Entry should have Explore as spawned agent type")
+    XCTAssertEqual(result["e1"]?.agentType, "Explore", "Entry should have Explore as spawned agent type")
   }
 
   func testGetSpawnedAgentEntries_taskWithoutSidechain_stillReturnsBadge() throws {
@@ -106,7 +106,33 @@ final class TimelineDecorationTests: XCTestCase {
     let result = try orchestrator.getSpawnedAgentEntries(transcriptId: "t1")
 
     // Assert: Badge should show immediately when Task is invoked, not waiting for sidechain
-    XCTAssertEqual(result["e1"], "Explore", "Task invocation should show badge immediately")
+    XCTAssertEqual(result["e1"]?.agentType, "Explore", "Task invocation should show badge immediately")
+  }
+
+  func testGetSpawnedAgentEntries_taskWithModel_returnsModelInfo() throws {
+    let (dbManager, pool, tempDir) = try makeTestDatabase()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Setup: Entry with Task tool that has model info
+    try insertProject(pool)
+    try insertTranscript(pool)
+    try insertEntry(pool, id: "e1")
+    // Insert tool invocation with metadata_json containing model
+    try pool.write { db in
+      try db.execute(sql: """
+        INSERT INTO tool_invocations (id, entry_id, transcript_id, tool_name, tool_key,
+          metadata_json, is_contextify, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1000, 1000)
+      """, arguments: [UUID().uuidString, "e1", "t1", "Task", "Explore", "{\"model\": \"haiku\", \"prompt\": \"test\"}", 0])
+    }
+
+    // Execute
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+    let result = try orchestrator.getSpawnedAgentEntries(transcriptId: "t1")
+
+    // Assert
+    XCTAssertEqual(result["e1"]?.agentType, "Explore", "Should have Explore as agent type")
+    XCTAssertEqual(result["e1"]?.model, "haiku", "Should have haiku as model")
   }
 
   func testGetSpawnedAgentEntries_regularTool_returnsEmpty() throws {
@@ -149,8 +175,8 @@ final class TimelineDecorationTests: XCTestCase {
 
     // Assert
     XCTAssertEqual(result.count, 2, "Should have 2 spawned agents")
-    XCTAssertEqual(result["e1"], "Explore")
-    XCTAssertEqual(result["e2"], "Plan")
+    XCTAssertEqual(result["e1"]?.agentType, "Explore")
+    XCTAssertEqual(result["e2"]?.agentType, "Plan")
     XCTAssertNil(result["e3"], "Bash entry should not be in result")
   }
 
@@ -175,8 +201,8 @@ final class TimelineDecorationTests: XCTestCase {
 
     // Assert
     XCTAssertEqual(result.count, 2, "Should have 2 spawned agents across both transcripts")
-    XCTAssertEqual(result["e1"], "Explore")
-    XCTAssertEqual(result["e2"], "Plan")
+    XCTAssertEqual(result["e1"]?.agentType, "Explore")
+    XCTAssertEqual(result["e2"]?.agentType, "Plan")
   }
 
   // MARK: - Layer 2: Contextify-Specific Tests
@@ -269,7 +295,7 @@ final class TimelineDecorationTests: XCTestCase {
     let contextifyEntries = try orchestrator.getContextifyEntryIds(transcriptId: "t1")
 
     // Assert: Entry appears in BOTH results
-    XCTAssertEqual(spawnedAgents["e1"], "query:contextify-researcher", "Should be in spawned agents")
+    XCTAssertEqual(spawnedAgents["e1"]?.agentType, "query:contextify-researcher", "Should be in spawned agents")
     XCTAssertTrue(contextifyEntries.contains("e1"), "Should be in Contextify entries")
   }
 
@@ -297,7 +323,7 @@ final class TimelineDecorationTests: XCTestCase {
     let contextifyEntries = try orchestrator.getContextifyEntryIds(transcriptId: "t1")
 
     // Assert: Entry appears in spawned agents but NOT Contextify
-    XCTAssertEqual(spawnedAgents["e1"], "Explore", "Should be in spawned agents")
+    XCTAssertEqual(spawnedAgents["e1"]?.agentType, "Explore", "Should be in spawned agents")
     XCTAssertFalse(contextifyEntries.contains("e1"), "Should NOT be in Contextify entries")
   }
 

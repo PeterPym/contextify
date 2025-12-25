@@ -1387,45 +1387,53 @@ public final class TranscriptOrchestrator: @unchecked Sendable {
   // MARK: - Timeline Decoration Queries
 
   /// Layer 1: Get entries that spawned agents (Task tool invocations).
-  /// Returns a dictionary mapping entry IDs to their spawned agent type (tool_key).
+  /// Returns a dictionary mapping entry IDs to their agent decoration info (type + model).
   /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
-  public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: String] {
+  public func getSpawnedAgentEntries(transcriptId: String) throws -> [String: AgentDecorationInfo] {
     let pool = try dbManager.pool
     return try pool.read { db in
       let sql = """
-        SELECT entry_id, tool_key
+        SELECT entry_id, tool_key, json_extract(metadata_json, '$.model') as model
         FROM tool_invocations
         WHERE transcript_id = ? AND tool_name = 'Task'
       """
-      var result: [String: String] = [:]
+      var result: [String: AgentDecorationInfo] = [:]
       let rows = try Row.fetchAll(db, sql: sql, arguments: [transcriptId])
       for row in rows {
         if let entryId: String = row["entry_id"],
            let toolKey: String = row["tool_key"] {
-          result[entryId] = toolKey
+          let model: String? = row["model"]
+          result[entryId] = AgentDecorationInfo(agentType: toolKey, model: model)
         }
       }
       return result
     }
   }
 
+  /// Agent decoration info returned by getSpawnedAgentEntries
+  public struct AgentDecorationInfo: Sendable {
+    public let agentType: String   // e.g., "Explore", "Plan"
+    public let model: String?      // e.g., "haiku", "sonnet", "opus"
+  }
+
   /// Layer 1: Get entries that spawned agents for all transcripts in a project.
   /// Shows badges immediately when Task is invoked, not waiting for sidechain linkage.
-  public func getSpawnedAgentEntries(projectId: String) throws -> [String: String] {
+  public func getSpawnedAgentEntries(projectId: String) throws -> [String: AgentDecorationInfo] {
     let pool = try dbManager.pool
     return try pool.read { db in
       let sql = """
-        SELECT ti.entry_id, ti.tool_key
+        SELECT ti.entry_id, ti.tool_key, json_extract(ti.metadata_json, '$.model') as model
         FROM tool_invocations ti
         JOIN transcripts t ON ti.transcript_id = t.id
         WHERE t.project_id = ? AND ti.tool_name = 'Task'
       """
-      var result: [String: String] = [:]
+      var result: [String: AgentDecorationInfo] = [:]
       let rows = try Row.fetchAll(db, sql: sql, arguments: [projectId])
       for row in rows {
         if let entryId: String = row["entry_id"],
            let toolKey: String = row["tool_key"] {
-          result[entryId] = toolKey
+          let model: String? = row["model"]
+          result[entryId] = AgentDecorationInfo(agentType: toolKey, model: model)
         }
       }
       if !result.isEmpty {
