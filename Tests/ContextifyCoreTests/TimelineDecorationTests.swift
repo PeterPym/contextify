@@ -59,14 +59,15 @@ final class TimelineDecorationTests: XCTestCase {
     toolName: String,
     toolKey: String?,
     sidechainTranscriptId: String? = nil,
-    isContextify: Bool = false
+    isContextify: Bool = false,
+    toolResultEntryId: String? = nil
   ) throws {
     try pool.write { db in
       try db.execute(sql: """
         INSERT INTO tool_invocations (id, entry_id, transcript_id, tool_name, tool_key,
-          sidechain_transcript_id, is_contextify, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1000, 1000)
-      """, arguments: [id, entryId, transcriptId, toolName, toolKey, sidechainTranscriptId, isContextify ? 1 : 0])
+          sidechain_transcript_id, is_contextify, tool_result_entry_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1000, 1000)
+      """, arguments: [id, entryId, transcriptId, toolName, toolKey, sidechainTranscriptId, isContextify ? 1 : 0, toolResultEntryId])
     }
   }
 
@@ -352,5 +353,114 @@ final class TimelineDecorationTests: XCTestCase {
     // Assert: Entry appears in Contextify but NOT spawned agents
     XCTAssertNil(spawnedAgents["e1"], "Skills should NOT be in spawned agents")
     XCTAssertTrue(contextifyEntries.contains("e1"), "Should be in Contextify entries")
+  }
+
+  // MARK: - ContextifyEntryInfo Tests
+
+  func testGetContextifyEntryInfo_invocationEntry_returnsToolKeyAndIsResultFalse() throws {
+    let (dbManager, pool, tempDir) = try makeTestDatabase()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Setup: Contextify skill invocation
+    try insertProject(pool)
+    try insertTranscript(pool)
+    try insertEntry(pool, id: "e1")
+    try insertToolInvocation(
+      pool,
+      entryId: "e1",
+      toolName: "Skill",
+      toolKey: "total-recall",
+      isContextify: true
+    )
+
+    // Execute
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+    let result = try orchestrator.getContextifyEntryInfo(projectId: "p1")
+
+    // Assert
+    XCTAssertNotNil(result["e1"], "Should have entry info for invocation")
+    XCTAssertEqual(result["e1"]?.toolKey, "total-recall", "Should have correct toolKey")
+    XCTAssertEqual(result["e1"]?.isResult, false, "Invocation should have isResult=false")
+  }
+
+  func testGetContextifyEntryInfo_resultEntry_returnsToolKeyAndIsResultTrue() throws {
+    let (dbManager, pool, tempDir) = try makeTestDatabase()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Setup: Contextify skill with result entry
+    try insertProject(pool)
+    try insertTranscript(pool)
+    try insertEntry(pool, id: "e1")  // Invocation entry
+    try insertEntry(pool, id: "e2")  // Result entry
+    try insertToolInvocation(
+      pool,
+      entryId: "e1",
+      toolName: "Skill",
+      toolKey: "query:contextify-researcher",
+      isContextify: true,
+      toolResultEntryId: "e2"
+    )
+
+    // Execute
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+    let result = try orchestrator.getContextifyEntryInfo(projectId: "p1")
+
+    // Assert: Both invocation and result should be mapped
+    XCTAssertNotNil(result["e1"], "Should have entry info for invocation")
+    XCTAssertEqual(result["e1"]?.isResult, false, "Invocation should have isResult=false")
+
+    XCTAssertNotNil(result["e2"], "Should have entry info for result")
+    XCTAssertEqual(result["e2"]?.toolKey, "query:contextify-researcher", "Result should have same toolKey")
+    XCTAssertEqual(result["e2"]?.isResult, true, "Result should have isResult=true")
+  }
+
+  func testGetContextifyEntryInfo_nilToolKey_stillReturnsEntry() throws {
+    let (dbManager, pool, tempDir) = try makeTestDatabase()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Setup: Contextify entry with nil toolKey (edge case)
+    try insertProject(pool)
+    try insertTranscript(pool)
+    try insertEntry(pool, id: "e1")
+    try insertToolInvocation(
+      pool,
+      entryId: "e1",
+      toolName: "Skill",
+      toolKey: nil,  // No toolKey
+      isContextify: true
+    )
+
+    // Execute
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+    let result = try orchestrator.getContextifyEntryInfo(projectId: "p1")
+
+    // Assert: Entry should still be returned with nil toolKey
+    XCTAssertNotNil(result["e1"], "Should have entry info even with nil toolKey")
+    XCTAssertNil(result["e1"]?.toolKey, "toolKey should be nil")
+    XCTAssertEqual(result["e1"]?.isResult, false)
+  }
+
+  func testGetContextifyEntryInfo_nonContextify_notReturned() throws {
+    let (dbManager, pool, tempDir) = try makeTestDatabase()
+    defer { try? FileManager.default.removeItem(at: tempDir) }
+
+    // Setup: Non-Contextify tool invocation
+    try insertProject(pool)
+    try insertTranscript(pool)
+    try insertEntry(pool, id: "e1")
+    try insertToolInvocation(
+      pool,
+      entryId: "e1",
+      toolName: "Skill",
+      toolKey: "some-other-skill",
+      isContextify: false
+    )
+
+    // Execute
+    let orchestrator = try TranscriptOrchestrator(dbManager: dbManager)
+    let result = try orchestrator.getContextifyEntryInfo(projectId: "p1")
+
+    // Assert: Non-Contextify entries should not be returned
+    XCTAssertNil(result["e1"], "Non-Contextify entry should not be in result")
   }
 }

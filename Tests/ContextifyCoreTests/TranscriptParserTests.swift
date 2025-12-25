@@ -272,4 +272,99 @@ final class TranscriptParserTests: XCTestCase {
     XCTAssertTrue(entry.content.contains("[Tool: Read]"), "Tool use blocks without type field should be detected via shape")
     XCTAssertFalse(entry.hasTextContent, "Tool markers are not displayable text")
   }
+
+  // MARK: - Agent Result Attribution Tests
+
+  func testAgentResult_attributedAsAssistant() throws {
+    let parser = ClaudeCodeLineParser()
+
+    // First, send the Task invocation to register the tool use
+    let assistantLine = """
+    {"type":"assistant","uuid":"assistant-task","timestamp":"2025-01-01T00:00:00Z","message":{"content":[{"type":"tool_use","id":"toolu_agent","name":"Task","input":{"subagent_type":"Explore","prompt":"Find code"}}]}}
+    """
+    _ = try parser.parse(
+      line: assistantLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    // Agent result comes in as type="user" but should be attributed as "assistant"
+    let agentResultLine = """
+    {"type":"user","uuid":"agent-result","timestamp":"2025-01-01T00:00:01Z","toolUseResult":{"status":"completed","agentId":"agent-123"},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_agent","content":[{"type":"text","text":"Agent found code"}]}]}}
+    """
+
+    let entry = try parser.parse(
+      line: agentResultLine,
+      lineNumber: 2,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    // Assert: Agent result should be attributed as assistant, not user
+    XCTAssertEqual(entry.kind, "assistant", "Agent result should be attributed as assistant")
+    XCTAssertEqual(entry.content, "Agent found code")
+    XCTAssertTrue(entry.hasTextContent, "Agent result should be visible")
+  }
+
+  func testAgentResult_withShellOutput_notHidden() throws {
+    let parser = ClaudeCodeLineParser()
+
+    // First, send the Task invocation
+    let assistantLine = """
+    {"type":"assistant","uuid":"assistant-task","timestamp":"2025-01-01T00:00:00Z","message":{"content":[{"type":"tool_use","id":"toolu_agent","name":"Task","input":{"subagent_type":"Explore","prompt":"Run command"}}]}}
+    """
+    _ = try parser.parse(
+      line: assistantLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    // Agent result with shell-like output (should NOT be hidden unlike regular user shell output)
+    let agentResultLine = """
+    {"type":"user","uuid":"agent-result","timestamp":"2025-01-01T00:00:01Z","toolUseResult":{"status":"completed","agentId":"agent-123"},"message":{"content":[{"type":"tool_result","tool_use_id":"toolu_agent","content":[{"type":"text","text":"<bash-stdout>ls output</bash-stdout>"}]}]}}
+    """
+
+    let entry = try parser.parse(
+      line: agentResultLine,
+      lineNumber: 2,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    // Assert: Agent result with shell output should still be visible
+    XCTAssertTrue(entry.hasTextContent, "Agent result with shell output should NOT be hidden")
+    XCTAssertEqual(entry.kind, "assistant", "Agent result should be attributed as assistant")
+  }
+
+  func testRegularUserShellOutput_stillHidden() throws {
+    let parser = ClaudeCodeLineParser()
+
+    // Regular user shell output (NOT an agent result) should still be hidden
+    let userShellLine = """
+    {"type":"user","uuid":"user-shell","timestamp":"2025-01-01T00:00:00Z","message":{"content":"<bash-stdout>ls output</bash-stdout><bash-stderr></bash-stderr>"}}
+    """
+
+    let entry = try parser.parse(
+      line: userShellLine,
+      lineNumber: 1,
+      transcriptId: transcriptId,
+      projectId: projectId,
+      provider: "claude.code",
+      sessionId: "session"
+    )
+
+    // Assert: Regular user shell output should be hidden
+    XCTAssertFalse(entry.hasTextContent, "Regular user shell output should be hidden")
+    XCTAssertEqual(entry.kind, "user", "Regular user should remain as user")
+  }
 }
