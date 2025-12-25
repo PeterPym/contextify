@@ -19,7 +19,8 @@ struct CacheMiss: Sendable {
     let context: String  // Surrounding context for better summaries
     let kind: String
     let provider: String
-    let contextifyToolKey: String?  // If set, this is a Contextify entry - use template summary
+    let isContextify: Bool          // True if this is a Contextify entry (use template, skip LLM)
+    let contextifyToolKey: String?  // Tool key for template wording (may be nil even if isContextify)
     let isContextifyResult: Bool    // True if this is the result of a Contextify tool, false if invocation
 
     /// Composite key for deduplication (returns struct for type safety)
@@ -568,10 +569,15 @@ actor TimelineCacheMissGenerator {
                 }
 
                 if case .validationFailure = timelineError {
-                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - writing tombstone")
-                    try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
-                    // Don't trackError - show (i) icon but not status bar error
-                    return .tombstone(reason: "validation")
+                    // Allow one retry for validation failures (may succeed with fresh session)
+                    if attempt >= 1 {
+                        log.info("Validation failure on retry for entry \(miss.entryId.prefix(8)) - writing tombstone")
+                        try await writeErrorTombstone(miss: miss, errorType: "validation", error: timelineError)
+                        // Don't trackError - show (i) icon but not status bar error
+                        return .tombstone(reason: "validation")
+                    }
+                    log.info("Validation failure for entry \(miss.entryId.prefix(8)) - will retry with fresh session")
+                    // Fall through to retry logic
                 }
 
                 if case .unexpected = timelineError {
@@ -629,7 +635,8 @@ actor TimelineCacheMissGenerator {
     /// Generate summary for a cache miss using LLM (or template for Contextify entries)
     private func generateSummary(for miss: CacheMiss) async throws -> GeneratedSummary {
         // Fast path: Contextify entries use template summaries (no LLM needed)
-        if let toolKey = miss.contextifyToolKey {
+        if miss.isContextify {
+            let toolKey = miss.contextifyToolKey ?? "contextify"  // Fallback if toolKey missing
             log.debug("[CONTEXTIFY-TEMPLATE] Using template for Contextify entry: toolKey=\(toolKey, privacy: .public), isResult=\(miss.isContextifyResult, privacy: .public)")
             return generateContextifyTemplate(toolKey: toolKey, isResult: miss.isContextifyResult, content: miss.content)
         }
@@ -784,21 +791,22 @@ actor TimelineCacheMissGenerator {
     }
 
     /// Extract agent type from tool key (e.g., "query:contextify-researcher" -> "researcher")
+    /// Returns lowercase for consistency in summaries like "Launched Contextify researcher agent"
     private func extractAgentType(from toolKey: String) -> String? {
         // Handle patterns like "query:contextify-researcher", "skill:total-recall"
         if toolKey.contains("contextify-") {
             let parts = toolKey.components(separatedBy: "contextify-")
             if parts.count > 1 {
-                return parts[1].capitalized
+                return parts[1].lowercased()  // "researcher", not "Researcher"
             }
         }
-        // Handle skill names like "total-recall"
+        // Handle skill names like "total-recall" -> "total recall"
         if toolKey.contains(":") {
             let parts = toolKey.components(separatedBy: ":")
             if parts.count > 1 {
                 let skillName = parts[1]
                     .replacingOccurrences(of: "-", with: " ")
-                    .capitalized
+                    .lowercased()  // "total recall", not "Total Recall"
                 return skillName
             }
         }

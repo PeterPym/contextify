@@ -269,8 +269,9 @@ public final class ClaudeCodeLineParser: TranscriptLineParser {
 
       let (extractedContent, hasText) = extractContentWithType(message["content"])
       content = extractedContent
-      let shouldHideShellOutput = type == "user" && containsShellOutput(content)
-      hasTextContent = (type == "user") ? !shouldHideShellOutput : hasText
+      // Never hide agent results (they may contain shell output but should be visible)
+      let shouldHideShellOutput = type == "user" && !isAgentResult && containsShellOutput(content)
+      hasTextContent = (type == "user" && !isAgentResult) ? !shouldHideShellOutput : hasText
 
       // For Task tool invocations: extract prompt as meaningful content
       // This makes agent-spawn entries visible and summarizable in the timeline

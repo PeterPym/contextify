@@ -1229,6 +1229,7 @@ final class ConversationMonitor {
             context: entry.detail,
             kind: entry.kind.rawValue,
             provider: entry.sourceContext?.provider.rawValue ?? "other",
+            isContextify: ctxInfo != nil,
             contextifyToolKey: ctxInfo?.toolKey,
             isContextifyResult: ctxInfo?.isResult ?? false
         )
@@ -1583,6 +1584,7 @@ final class ConversationMonitor {
                         context: entry.content,  // TODO: Add surrounding context
                         kind: entry.kind,
                         provider: entry.provider,
+                        isContextify: ctxInfo != nil,
                         contextifyToolKey: ctxInfo?.toolKey,
                         isContextifyResult: ctxInfo?.isResult ?? false
                     )
@@ -2129,6 +2131,7 @@ final class ConversationMonitor {
             context: entry.detail,
             kind: entry.kind.rawValue,
             provider: entry.sourceContext?.provider.rawValue ?? "other",
+            isContextify: ctxInfo != nil,
             contextifyToolKey: ctxInfo?.toolKey,
             isContextifyResult: ctxInfo?.isResult ?? false
         )
@@ -2572,6 +2575,7 @@ final class ConversationMonitor {
                 context: entry.detail,
                 kind: entry.kind.rawValue,
                 provider: entry.sourceContext?.provider.rawValue ?? "other",
+                isContextify: ctxInfo != nil,
                 contextifyToolKey: ctxInfo?.toolKey,
                 isContextifyResult: ctxInfo?.isResult ?? false
             ))
@@ -2854,6 +2858,7 @@ final class ConversationMonitor {
                             context: entry.content,  // TODO: Add surrounding context
                             kind: entry.kind,
                             provider: entry.provider,
+                            isContextify: ctxInfo != nil,
                             contextifyToolKey: ctxInfo?.toolKey,
                             isContextifyResult: ctxInfo?.isResult ?? false
                         )

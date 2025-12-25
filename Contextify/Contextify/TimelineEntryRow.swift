@@ -204,7 +204,7 @@ struct TimelineEntryRow: View, Equatable {
                         .cornerRadius(3)
                     // Model chip (shows haiku/sonnet/opus if specified)
                     if let model = entry.spawnedAgentModel {
-                        Text(model)
+                        Text(normalizedModelName(model))
                             .font(.system(size: 8, weight: .regular))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 3)
@@ -395,6 +395,20 @@ struct TimelineEntryRow: View, Equatable {
         }
 
         return Text(attributed)
+    }
+
+    /// Normalize model name for display (whitelist known models, truncate unknown)
+    private func normalizedModelName(_ model: String) -> String {
+        let known = ["haiku", "sonnet", "opus"]
+        let lower = model.lowercased()
+        if known.contains(lower) {
+            return lower
+        }
+        // Unknown model - truncate to prevent UI blowout
+        if model.count > 12 {
+            return String(model.prefix(10)) + "…"
+        }
+        return model
     }
 
     /// Generate contextual error message based on error type
