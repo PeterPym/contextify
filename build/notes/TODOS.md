@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-22
+**Last Updated:** 2025-12-25
 **Status:** Active
 
 **Priority Levels:**
@@ -53,53 +53,6 @@ See tracking file for current branches in flight and review status.
 ---
 
 # P0 (Launch Critical)
-
----
-
-## Production DB Migration Safety & QA
-
-**Status:** Not started
-**Priority:** P0 (first production DB migration)
-**Discovered:** 2025-12-21
-
-- [ ] #DB-MIGRATION-PROD-QA: Analyze migration behavior for in-field updates (Sparkle DMG + App Store) and validate via E2E QA
-
-**Problem:**
-This is the first production database migration. We must confirm upgrade paths are safe for existing installs (DMG updates via Sparkle and App Store builds) and verify E2E QA covers the migration behavior.
-
-**Scope:**
-- Document expected migration flows for DMG and App Store distributions.
-- Validate that E2E QA includes a migration scenario from the previous schema version.
-- Confirm no data loss or blocking migrations on upgrade.
-
----
-
-## Historical Transcript Ingestion Gap
-
-**Status:** Core fix complete (2025-12-14), follow-up items in P1
-**Priority:** P0 (data loss - user history not searchable)
-**Discovered:** 2025-12-13
-**Branch:** `fix/ingest-gap-historical-transcripts`
-
-- [x] #INGEST-GAP: Fix missing historical transcript ingestion
-
-**Fix Applied (2025-12-14):**
-
-1. **Added `startWatching` parameter** to `ingestTranscript()` - completion work uses `false` to avoid watcher explosion
-2. **Bounded worker pool** (4 workers max) replaces unbounded `Task.detached`
-3. **Enqueue ALL remaining transcripts** immediately after preview subset (not blocked on preview)
-4. **Added `watcherCount` getter** to TranscriptWatcher for diagnostics
-
-**Results:**
-- Coverage improved from 1.7% to 95.1% for active main session transcripts
-- Remaining 5% are legitimately empty files (0 bytes, session-only metadata)
-- Build: zero warnings, 196 tests passing
-
-**Follow-up items (see P1):**
-- `#INGEST-PARSER-BUG`: Some transcripts with content produce 0 entries
-- `#INGEST-PERIODIC-CHECK`: No periodic check for late-arriving partials
-
-**Reference:** `app/Sources/ContextifyCore/Projects/FastPathIngestionCoordinator.swift`
 
 ---
 
@@ -202,52 +155,42 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## Agent Sidechain QA and UI Polish
+## Total Recall Plugin Distribution & Promotion
 
-**Status:** Not started
-**Priority:** P0 (shipped feature not yet QA'd)
+**Status:** In progress (blog done, marketplace pending)
+**Priority:** P0 (namespace squatting risk)
 **Discovered:** 2025-12-23
-**Branch:** merged from `feature/decorate-contextify-calls`
+**Updated:** 2025-12-25
 
-- [ ] #SIDECHAIN-QA: Manually QA agent sidechain display in timeline
+- [ ] #PLUGIN-MARKETPLACE: Register total-recall in Claude Code plugin ecosystem
+- [ ] #BLOG-CLI-REPORTS: Blog post demonstrating CLI report generation
+- [ ] #SOCIAL-TOTAL-RECALL: Social post focusing on Total Recall feature
 
-**Problem:**
-Agent sidechain ingestion and timeline decoration shipped in 1.0.6 but was not manually verified. Need to confirm:
-1. Sidechains are being ingested correctly from transcripts
-2. Timeline displays agent/skill call decorations appropriately
-3. Sidechain entries are filtered correctly (not cluttering timeline)
+**Done:**
+- [x] Blog post for Total Recall feature (contextify.sh/blog/total-recall-rag-search-claude-code-codex.html)
+- [x] Release notes 1.0.7 with Total Recall mention
+- [x] Website updated with feature highlights
 
-**Scope:**
-- Run the app and trigger some agent/skill calls (e.g., Contextify Query skill)
-- Verify sidechains appear in database
-- Verify timeline shows appropriate decorations
-- Note any UI polish needed for follow-up
+**Remaining:**
 
-**Expected follow-up:** UI tweaks likely needed after initial QA.
+### 1. Plugin Marketplace Namespace (URGENT)
+Claude Code uses decentralized plugin marketplaces. Need to secure "total-recall" namespace:
+- Create marketplace repo: `contextify/claude-plugins` or similar on GitHub
+- Add `.claude-plugin/marketplace.json` with total-recall skill
+- Submit PR to community marketplace: https://github.com/ccplugins/marketplace
+- Consider also: https://github.com/ananddtyagi/claude-code-marketplace
 
----
+### 2. Blog: CLI Report Generation Demo
+Show the contextify-query report generation capability:
+- Example queries and outputs
+- How reports are formatted
+- Integration with project workflows
 
-## Announce 1.0.6 Release
-
-**Status:** Not started
-**Priority:** P0 (marketing debt)
-**Discovered:** 2025-12-23
-
-- [ ] #ANNOUNCE-1.0.6: Write and publish release announcement
-
-**Problem:**
-1.0.6 has significant features that users should know about:
-- macOS 15 Lite Mode support (wider audience)
-- Total Recall / Contextify Query CLI (AI can search your history)
-- Agent sidechain capture
-
-**Scope:**
-- Update website with feature highlights
-- Post on relevant channels (Twitter/X, Hacker News, Reddit r/ClaudeAI?)
-- Consider short demo video showing Total Recall in action
-
-**Notes:**
-Marketing feels vulnerable but this release has real value to announce.
+### 3. Social Announcement
+Focused post about Total Recall:
+- Twitter/X with demo GIF or screenshot
+- Reddit r/ClaudeAI
+- Consider Hacker News if substantial engagement expected
 
 ---
 
