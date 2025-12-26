@@ -14,9 +14,8 @@ import ContextifyCore
 actor HealthMonitoringCoordinator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "HealthMonitor")
 
-    // Recovery backoff state (previously in ConversationMonitor)
-    private var watcherRecoveryFailureCount = 0
-    private var lastWatcherRecoveryFailure: Date?
+    // Recovery backoff state - uses pure Core type for testability
+    private var backoff = RecoveryBackoff()
 
     // Monitoring task and generation token (P1.4: prevents overlap on quick restart)
     private var monitoringTask: Task<Void, Never>?
@@ -64,8 +63,7 @@ actor HealthMonitoringCoordinator {
         monitoringTask = nil
 
         // Reset backoff state for new monitoring session
-        watcherRecoveryFailureCount = 0
-        lastWatcherRecoveryFailure = nil
+        backoff.reset()
 
         // New generation for this monitoring session
         let currentGeneration = UUID()
@@ -96,14 +94,13 @@ actor HealthMonitoringCoordinator {
 
     /// Reset recovery backoff (call when project switches or user fixes permissions)
     func resetRecoveryBackoff() {
-        watcherRecoveryFailureCount = 0
-        lastWatcherRecoveryFailure = nil
+        backoff.reset()
         log.debug("[HEALTH-COORD] Reset recovery backoff")
     }
 
     /// Get current backoff state for diagnostics
     var recoveryState: (failureCount: Int, lastFailure: Date?) {
-        (watcherRecoveryFailureCount, lastWatcherRecoveryFailure)
+        (backoff.failureCount, backoff.lastFailure)
     }
 
     // MARK: - Private Implementation
@@ -237,38 +234,33 @@ actor HealthMonitoringCoordinator {
 
     /// Check if recovery should be attempted based on backoff state
     private func shouldAttemptRecovery() -> Bool {
-        // After 5 failures, give up (security scope likely unavailable)
-        let failureCount = self.watcherRecoveryFailureCount
-        if failureCount >= 5 {
-            log.warning("[RECOVERY-BACKOFF] Recovery disabled after \(failureCount) consecutive failures")
-            return false
-        }
+        let shouldAttempt = backoff.shouldAttempt()
 
-        // Check exponential backoff
-        if failureCount > 0 {
-            let backoffSeconds = min(30 * (1 << failureCount), 600)  // 60s, 120s, 240s, 480s
-            if let lastFailure = self.lastWatcherRecoveryFailure,
-               Date().timeIntervalSince(lastFailure) < Double(backoffSeconds) {
+        // Log why recovery is blocked (for diagnostics)
+        // Extract to locals for Swift 6 closure capture rules
+        if !shouldAttempt {
+            let failureCount = backoff.failureCount
+            let backoffSeconds = backoff.currentBackoffSeconds
+            if failureCount >= RecoveryBackoff.failureCap {
+                log.warning("[RECOVERY-BACKOFF] Recovery disabled after \(failureCount) consecutive failures")
+            } else {
                 log.debug("[RECOVERY-BACKOFF] Skipping recovery (backoff: \(backoffSeconds)s, failures: \(failureCount))")
-                return false
             }
         }
 
-        return true
+        return shouldAttempt
     }
 
     /// Record recovery success (resets backoff)
     func recordRecoverySuccess() {
-        self.watcherRecoveryFailureCount = 0
-        self.lastWatcherRecoveryFailure = nil
+        backoff.recordSuccess()
         log.info("[RECOVERY-BACKOFF] Recovery succeeded, backoff reset")
     }
 
     /// Record recovery failure (increments backoff)
     func recordRecoveryFailure() {
-        self.watcherRecoveryFailureCount += 1
-        self.lastWatcherRecoveryFailure = Date()
-        let count = self.watcherRecoveryFailureCount
+        backoff.recordFailure()
+        let count = backoff.failureCount
         log.warning("[RECOVERY-BACKOFF] Recovery failed, failure count: \(count)")
     }
 }
