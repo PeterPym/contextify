@@ -56,16 +56,15 @@ actor HealthMonitoringCoordinator {
         recoveryHandler: @escaping RecoveryHandler,
         idleAlertHandler: @escaping IdleAlertHandler
     ) {
-        // Invalidate generation first (belt + suspenders with cancellation)
-        generation = UUID()
         // Cancel any existing monitoring task
         monitoringTask?.cancel()
         monitoringTask = nil
 
-        // Reset backoff state for new monitoring session
+        // Reset backoff state for new monitoring session (session boundary)
         backoff.reset()
 
         // New generation for this monitoring session
+        // (single authoritative value - cancellation is the primary invalidation)
         let currentGeneration = UUID()
         generation = currentGeneration
 
@@ -224,7 +223,10 @@ actor HealthMonitoringCoordinator {
                     ))
                 }
             } else if issue.category == .hooverStall, !didAttemptHooverRecovery {
-                // Final generation check before high-impact side effect
+                // Hoover recovery is exempt from backoff gating because:
+                // 1. It's a lightweight restart of the ingestion loop, not a file system operation
+                // 2. Hoover stalls are usually transient (unlike permission issues)
+                // 3. The 30s health check interval already provides natural throttling
                 guard generation == self.generation else { return }
                 didAttemptHooverRecovery = true
                 await recoveryHandler(.hoover(projectId: projectId))

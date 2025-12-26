@@ -217,4 +217,58 @@ final class RecoveryBackoffTests: XCTestCase {
         XCTAssertEqual(RecoveryBackoff.baseBackoffSeconds, 30)
         XCTAssertEqual(RecoveryBackoff.maxBackoffSeconds, 600)
     }
+
+    // MARK: - Reset After Cap
+
+    func testResetAllowsImmediateRecoveryAfterCap() {
+        var backoff = RecoveryBackoff()
+        let now = Date()
+
+        // Drive to cap
+        for _ in 0..<RecoveryBackoff.failureCap {
+            backoff.recordFailure(now: now)
+        }
+
+        // Verify disabled
+        XCTAssertFalse(backoff.shouldAttempt(now: now))
+
+        // Reset
+        backoff.reset()
+
+        // Should immediately allow recovery
+        XCTAssertTrue(backoff.shouldAttempt(now: now))
+        XCTAssertEqual(backoff.failureCount, 0)
+    }
+
+    func testSuccessAllowsImmediateRecoveryAfterCap() {
+        var backoff = RecoveryBackoff()
+        let now = Date()
+
+        // Drive to cap
+        for _ in 0..<RecoveryBackoff.failureCap {
+            backoff.recordFailure(now: now)
+        }
+
+        // Verify disabled
+        XCTAssertFalse(backoff.shouldAttempt(now: now))
+
+        // Record success (e.g., user fixed permissions)
+        backoff.recordSuccess()
+
+        // Should immediately allow recovery
+        XCTAssertTrue(backoff.shouldAttempt(now: now))
+    }
+
+    // MARK: - Edge Cases
+
+    func testExactBackoffExpiryAllowsRecovery() {
+        var backoff = RecoveryBackoff()
+        let failureTime = Date()
+
+        backoff.recordFailure(now: failureTime)
+
+        // 1 failure = 60s backoff. At exactly 60s, should be allowed (uses <, not <=)
+        let exactExpiry = failureTime.addingTimeInterval(60)
+        XCTAssertTrue(backoff.shouldAttempt(now: exactExpiry))
+    }
 }

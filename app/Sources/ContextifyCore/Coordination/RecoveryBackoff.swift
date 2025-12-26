@@ -70,8 +70,7 @@ public struct RecoveryBackoff: Sendable, Equatable {
             return true
         }
 
-        // Calculate exponential backoff: 30 * 2^failureCount, capped at 600s
-        let backoffSeconds = min(Self.baseBackoffSeconds * (1 << failureCount), Self.maxBackoffSeconds)
+        let backoffSeconds = Self.computeBackoffSeconds(for: failureCount)
 
         // Check if we're still within the backoff window
         if let lastFailure = lastFailure,
@@ -85,6 +84,14 @@ public struct RecoveryBackoff: Sendable, Equatable {
     /// Current backoff interval in seconds (0 if no failures).
     public var currentBackoffSeconds: Int {
         guard failureCount > 0 else { return 0 }
-        return min(Self.baseBackoffSeconds * (1 << failureCount), Self.maxBackoffSeconds)
+        return Self.computeBackoffSeconds(for: failureCount)
+    }
+
+    /// Compute backoff seconds with overflow-safe shift.
+    /// Formula: base * 2^failureCount, capped at maxBackoffSeconds.
+    private static func computeBackoffSeconds(for count: Int) -> Int {
+        // Clamp exponent to prevent shift overflow (Int has ~63 usable bits)
+        let safeExponent = min(count, 20)
+        return min(baseBackoffSeconds * (1 << safeExponent), maxBackoffSeconds)
     }
 }
