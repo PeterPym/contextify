@@ -226,9 +226,8 @@ final class ConversationMonitor {
     @ObservationIgnored private var monitorRestartGuardTask: Task<Void, Never>?
     @ObservationIgnored private var monitorRestartFailureCount = 0
     @ObservationIgnored private var pendingIdleRestartAlert = false
-    // Watcher recovery backoff (prevent infinite loops when security scope is unavailable)
-    @ObservationIgnored private var watcherRecoveryFailureCount = 0
-    @ObservationIgnored private var lastWatcherRecoveryFailure: Date?
+    // Health monitoring coordinator (extracted to reduce god object complexity)
+    @ObservationIgnored private let healthMonitor = HealthMonitoringCoordinator()
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -282,7 +281,6 @@ final class ConversationMonitor {
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     // Health monitoring and diagnostics
-    @ObservationIgnored private var lastHealthCheck: Date?
     @ObservationIgnored private var diagnosticsService: TimelineDiagnosticsService?
 
     // Viewport tracking and background summarization (Phase 2-3)
@@ -479,8 +477,7 @@ final class ConversationMonitor {
         backgroundTasks = nil
         seenEntryIDs.removeAll(keepingCapacity: false)
         // Reset recovery backoff on project switch (user may have fixed permissions)
-        watcherRecoveryFailureCount = 0
-        lastWatcherRecoveryFailure = nil
+        Task { await healthMonitor.resetRecoveryBackoff() }
 
         guard !isMonitoring else {
             log.info("⚠️ [MONITOR-SKIP] Already monitoring different project, need to stop first")
@@ -606,11 +603,33 @@ final class ConversationMonitor {
                             await self?.watchForDebouncedTranscriptUpdates()
                         }
 
-                        // Task 2: Health monitoring with auto-recovery
-                        // NOTE: Do NOT capture orchestrator here - use self.orchestrator in the loop
-                        // so health checks use the current orchestrator (may be reconfigured mid-session).
+                        // Task 2: Health monitoring with auto-recovery (via coordinator)
                         group.addTask { [weak self] in
-                            await self?.runHealthMonitoring()
+                            guard let self else { return }
+                            await self.healthMonitor.startMonitoring(
+                                contextProvider: { [weak self] in
+                                    await MainActor.run {
+                                        // P1.1: Don't pass orchestrator across actor boundary
+                                        HealthMonitoringCoordinator.HealthCheckContext(
+                                            projectId: self?.currentProjectId,
+                                            hasOrchestrator: self?.orchestrator != nil,
+                                            isSwitchingProjects: self?.isSwitchingProjects ?? false,
+                                            hasPendingIdleAlert: self?.pendingIdleRestartAlert ?? false
+                                        )
+                                    }
+                                },
+                                diagnosticsProvider: { [weak self] in
+                                    await self?.captureDiagnostics()
+                                },
+                                recoveryHandler: { [weak self] action in
+                                    await self?.handleRecoveryAction(action)
+                                },
+                                idleAlertHandler: { [weak self] in
+                                    await MainActor.run {
+                                        self?.pendingIdleRestartAlert = false
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -654,8 +673,11 @@ final class ConversationMonitor {
         lastMonitorReadyAt = nil
         activeSession = nil
         // Cancel background task group
+        // P1.2: backgroundTasks?.cancel() does NOT stop health monitoring - must call stopMonitoring()
         backgroundTasks?.cancel()
         backgroundTasks = nil
+        // Stop health monitoring coordinator (required - not coupled to TaskGroup cancellation)
+        Task { await healthMonitor.stopMonitoring() }
 
         // CXT-101: Cancel viewport/background-fill work (atomic capture-nil-cancel)
         let bfTask = backgroundFillTask
@@ -3344,124 +3366,25 @@ final class ConversationMonitor {
         }
     }
 
-    /// Health monitoring loop - runs every 30s
-    /// Detects stalls and attempts auto-recovery
-    ///
-    /// NOTE: Uses `self.orchestrator` instead of a captured parameter so that health checks
-    /// use the CURRENT orchestrator instance. This is critical because the orchestrator may be
-    /// reconfigured mid-session (e.g., when user grants additional permissions via Settings).
-    private func runHealthMonitoring() async {
-        log.info("🏥 Health monitoring started")
-
-        while !Task.isCancelled {
-            do {
-                let shouldRunImmediateCheck = await MainActor.run { () -> Bool in
-                    if self.pendingIdleRestartAlert {
-                        self.pendingIdleRestartAlert = false
-                        return true
-                    }
-                    return false
-                }
-
-                if shouldRunImmediateCheck {
-                    await performHealthCheck(trigger: "restart-guard")
-                    continue
-                }
-
-                // Wait 30s between checks
-                try await Task.sleep(for: .seconds(30))
-                guard !Task.isCancelled else { return }
-
-                await performHealthCheck(trigger: "interval")
-
-            } catch is CancellationError {
-                break
-            } catch {
-                await MainActor.run { [weak self] in
-                    self?.log.error("Health monitoring error: \(error.localizedDescription)")
-                }
-            }
-        }
-
-        log.info("🏥 Health monitoring stopped")
-    }
-
-    private func performHealthCheck(trigger: String) async {
-        await MainActor.run { [weak self] in
-            self?.lastHealthCheck = Date()
-        }
-
-        // Get current project ID from state (may have changed since task started)
-        let projectId = await MainActor.run { self.currentProjectId }
-        guard let projectId else {
-            log.debug("🏥 Health check skipped (no current project)")
+    /// Handle recovery action from HealthMonitoringCoordinator
+    /// Runs on MainActor to ensure orchestrator usage is always on correct executor
+    @MainActor
+    private func handleRecoveryAction(_ action: HealthMonitoringCoordinator.RecoveryAction) async {
+        guard let orchestrator = self.orchestrator else {
+            log.warning("[RECOVERY] Skipping recovery - no orchestrator available")
             return
         }
 
-        // Get CURRENT orchestrator (may have been reconfigured since monitoring started)
-        let currentOrchestrator = await MainActor.run { self.orchestrator }
-        guard let currentOrchestrator else {
-            log.warning("🏥 Health check skipped (no orchestrator)")
-            return
-        }
-
-        // Capture diagnostic snapshot
-        guard let snapshot = await self.captureDiagnostics() else {
-            return
-        }
-
-        // Log heartbeat (debug level - visible during development)
-        // NOTE: Keep privacy .public for diagnostics - these values are not sensitive
-        log.debug("🏥 Health check (trigger=\(trigger, privacy: .public)): \(snapshot.issues.count) issues")
-
-        // CXT-13: Skip health check during project switch to avoid spurious recovery attempts
-        let switching = await MainActor.run { self.isSwitchingProjects }
-        guard !switching else {
-            log.debug("🏥 Skipping health check during project switch")
-            return
-        }
-
-        // Check for critical issues and attempt recovery
-        for issue in snapshot.issues where issue.severity == .critical {
-            await MainActor.run { [weak self] in
-                self?.log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
-            }
-
-            // Auto-recovery for specific issues
-            if issue.category == .watcherMissing {
-                // Check backoff: exponential backoff prevents infinite loops when security scope is unavailable
-                // Formula: 30s * 2^failures, capped at 10 minutes after 5 failures
-                let backoffSeconds: Int
-                let failureCount = await MainActor.run { self.watcherRecoveryFailureCount }
-                if failureCount >= 5 {
-                    // After 5 failures, give up (security scope likely unavailable)
-                    log.warning("[RECOVERY-BACKOFF] Recovery disabled after \(failureCount) consecutive failures - security scope likely unavailable")
-                    continue
-                } else if failureCount > 0 {
-                    backoffSeconds = min(30 * (1 << failureCount), 600)  // 60s, 120s, 240s, 480s
-                    let lastFailure = await MainActor.run { self.lastWatcherRecoveryFailure }
-                    if let lastFailure, Date().timeIntervalSince(lastFailure) < Double(backoffSeconds) {
-                        log.debug("[RECOVERY-BACKOFF] Skipping recovery (backoff: \(backoffSeconds)s, failures: \(failureCount))")
-                        continue
-                    }
-                }
-
-                // Recover ALL transcripts, not just the one that triggered - since if one is missing,
-                // likely all watchers were lost (e.g., DispatchSource cleanup, memory pressure)
-                log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public) (triggered by: \(snapshot.watcherState.transcriptId ?? "nil", privacy: .public))")
-                await attemptWatcherRecovery(
-                    projectId: projectId,
-                    orchestrator: currentOrchestrator,
-                    targetTranscriptId: nil  // nil = recover ALL transcripts
-                )
-                log.warning("[RECOVERY-TRIGGER] Returned from attemptWatcherRecovery")
-            } else if issue.category == .hooverStall {
-                await attemptHooverRecovery(projectId: projectId, orchestrator: currentOrchestrator)
-            }
+        switch action {
+        case .watcher(let projectId, let targetTranscriptId):
+            await attemptWatcherRecovery(projectId: projectId, orchestrator: orchestrator, targetTranscriptId: targetTranscriptId)
+        case .hoover(let projectId):
+            await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
         }
     }
 
     /// Attempt to recover stalled watcher
+    @MainActor
     private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?) async {
         log.info("[WATCHER-RECOVERY-START] Attempting recovery for project=\(projectId, privacy: .public) target=\(targetTranscriptId ?? "all", privacy: .public)")
 
@@ -3473,24 +3396,18 @@ final class ConversationMonitor {
             )
             log.info("[WATCHER-RECOVERY-DONE] project=\(projectId, privacy: .public) started=\(summary.startedCount) already=\(summary.alreadyActiveCount) missing=\(summary.missingFileCount) target=\(summary.targetTranscriptId ?? "all")")
 
-            // Success - reset backoff counters
-            await MainActor.run {
-                self.watcherRecoveryFailureCount = 0
-                self.lastWatcherRecoveryFailure = nil
-            }
+            // Success - notify coordinator to reset backoff
+            await healthMonitor.recordRecoverySuccess()
         } catch {
             log.error("[WATCHER-RECOVERY-ERROR] Recovery failed for project=\(projectId, privacy: .public): \(error.localizedDescription, privacy: .public)")
 
-            // Failure - increment backoff counter
-            await MainActor.run {
-                self.watcherRecoveryFailureCount += 1
-                self.lastWatcherRecoveryFailure = Date()
-                self.log.warning("[RECOVERY-BACKOFF] Failure count: \(self.watcherRecoveryFailureCount)")
-            }
+            // Failure - notify coordinator to increment backoff
+            await healthMonitor.recordRecoveryFailure()
         }
     }
 
     /// Attempt to recover stalled hoover
+    @MainActor
     private func attemptHooverRecovery(projectId: String, orchestrator: TranscriptOrchestrator) async {
         do {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
