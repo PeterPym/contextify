@@ -464,6 +464,28 @@ When files under `Contextify/` are staged, the pre-commit hook runs a headless b
   - Do not suggest PRs, focus on getting to merge with `main`
 
 
+## Worktree Setup
+
+This project uses git worktrees with shared tooling from cli-ai-setup.
+
+**Session Start:**
+1. Run `wt-context.sh` to confirm which worktree you're in
+2. Read `current.md` for work coordination and starter prompts
+3. Update `current.md` when starting/finishing significant work
+
+**Coordination:**
+- Check `current.md` at session start to see what siblings are working on
+- Before modifying shared components, verify no sibling is working on them
+- Update your worktree's section in `current.md` when starting new work
+
+**Commands:**
+- `wt-status.sh` - See all worktrees and sync state
+- `wt-sync.sh` - Sync this worktree with main
+- `wt-sync-all.sh` - Sync all worktrees
+- `wt-context.sh` - Show current worktree identity
+
+**Worktrees:** See `.worktrees.json` for registry. Current work tracked in `current.md`.
+
 ## Code References
 
 When referencing specific functions include the pattern `file_path:line_number` to allow easy navigation.

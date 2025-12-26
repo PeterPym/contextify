@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "repo": "contextify",
+  "canonicalBranch": "main",
+  "remote": "origin",
+  "sync": {
+    "strategy": "merge",
+    "pushLanding": true,
+    "publishToCanonical": false
+  },
+  "hooks": {
+    "preSyncAll": null,
+    "postSyncAll": null,
+    "preSync": null,
+    "postSync": null,
+    "postInit": null
+  },
+  "worktrees": [
+    {
+      "name": "primary",
+      "path": "~/code/projects/contextify",
+      "landingBranch": "feature/conversation-monitor-phase2-3",
+      "meta": {}
+    },
+    {
+      "name": "liquid-glass",
+      "path": "~/code/projects/contextify-liquid-glass",
+      "landingBranch": "feat/liquid-glass-implementation",
+      "meta": {}
+    },
+    {
+      "name": "worker-bee",
+      "path": "~/code/projects/contextify-worker-bee",
+      "landingBranch": "feat/cli-auto-install",
+      "meta": {}
+    }
+  ]
+}

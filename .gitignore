@@ -59,6 +59,7 @@ fastlane/test_output/
 
 # Session tracking (local, not committed)
 build/notes/active-work.md
+current.md
 
 # Project artifacts (ensure non-source outputs aren't committed)
 outputs/
