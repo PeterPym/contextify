@@ -48,6 +48,12 @@ protocol ViewportTrackingDelegate: AnyObject {
 
     /// Contextify entry info lookup
     func getContextifyEntryInfo(for entryId: String) -> TranscriptOrchestrator.ContextifyEntryInfo?
+
+    /// Called when user has been at bottom long enough to mark as viewed
+    func markActiveProjectAsViewed() async
+
+    /// Get current entry IDs for pruning viewed set
+    func getCurrentEntryIDs() -> Set<UUID>
 }
 
 // MARK: - Viewport Tracking Coordinator
@@ -134,6 +140,23 @@ final class ViewportTrackingCoordinator {
         cancelStarvationCheck()
         cancelFallback(reason: reason)
         log.debug("[VIEWPORT-RESET] State reset (\(reason, privacy: .public))")
+    }
+
+    /// Full reset of all viewport state (for project/session changes)
+    func fullReset(reason: String) {
+        reset(reason: reason)
+        viewedEntryIDs.removeAll(keepingCapacity: false)
+        doingProgrammaticScroll = false
+        isUserScrollActive = false
+        lastVisibleIDs.removeAll()
+        coalesceTask?.cancel()
+        coalesceTask = nil
+        isAtBottom = false
+        clearUnreadTask?.cancel()
+        clearUnreadTask = nil
+        visibleEntryTimestamps.removeAll()
+        debugVisibleIDs.removeAll()
+        log.debug("[VIEWPORT-FULL-RESET] All viewport state cleared (\(reason, privacy: .public))")
     }
 
     /// Begin awaiting initial viewport snapshot
@@ -445,8 +468,7 @@ final class ViewportTrackingCoordinator {
     private func pruneViewedIDsIfNeeded() {
         let cap = visibleEntryLimit * 4
         guard viewedEntryIDs.count > cap else { return }
-        if let entries = delegate?.visibleEntries {
-            let currentIDs = Set(entries.map { $0.id })
+        if let currentIDs = delegate?.getCurrentEntryIDs() {
             viewedEntryIDs.formIntersection(currentIDs)
         }
         log.debug("Pruned viewedEntryIDs to \(self.viewedEntryIDs.count)")
@@ -456,12 +478,11 @@ final class ViewportTrackingCoordinator {
 
     private func scheduleMarkAsViewed() {
         clearUnreadTask?.cancel()
-        clearUnreadTask = Task {
+        clearUnreadTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
                 guard !Task.isCancelled else { return }
-                // Delegate to ConversationMonitor for actual mark-as-viewed
-                // (requires orchestrator access - TODO: add delegate callback)
+                await self?.delegate?.markActiveProjectAsViewed()
             } catch {}
         }
     }
