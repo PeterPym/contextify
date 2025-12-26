@@ -599,6 +599,42 @@ The summary says "You performed the following command" - interpreting the file p
 
 ---
 
+## Example 17: Internal Monologue Literal Echo
+
+**Date Added:** 2025-12-25
+**Category:** attribution error (echo/passthrough)
+**Transcript:** `fa5ca5f3-f3a4-4748-b363-5ed449e483cc.jsonl`
+
+**Entry:**
+```json
+{
+  "detail": "Build succeeds, tests pass. Let me stop messing around and actually do the wiring.\n\nLet me read the ViewportTrackingCoordinator to understand its API, then read the ConversationMonitor viewport methods that need to delegate to it:",
+  "entry_id": "645f7de3-3c9a-4755-903d-c6b08e4e8660",
+  "summary": "Build succeeds, tests pass. Let me stop messing around and actually do the wiring.\n\nLet me read the …",
+  "timestamp": "2025-12-26T07:53:07Z",
+  "transcript_path": "/Users/rob/.claude/projects/-Users-rob-code-projects-contextify/fa5ca5f3-f3a4-4748-b363-5ed449e483cc.jsonl"
+}
+```
+
+**Problem:**
+The summary is a truncated literal echo of Claude's internal monologue. No summarization occurred - just passthrough with truncation. The casual phrasing ("Let me stop messing around") and transitional statements shouldn't appear verbatim in a summary.
+
+**Expected Summary:**
+- "Claude Code confirmed build/tests pass and began wiring ViewportTrackingCoordinator."
+- Or: "Claude Code verified build success and started reading viewport coordinator files."
+
+**Root Cause (suspected):**
+- Similar to Examples 2, 3, 6: passthrough behavior on Claude's own messages
+- Conversational/informal language ("stop messing around") may bypass summarization logic
+- Transitional phrases ("Let me read...") being echoed instead of summarized as actions
+
+**Fix Approach:**
+1. Detect transitional patterns ("Let me X...", "I'll read...") and summarize the action not the announcement
+2. Strip conversational filler before summarization
+3. For Claude messages that describe intent, summarize what Claude did/is doing, not the phrasing
+
+---
+
 ## Template for New Examples
 
 ```markdown
