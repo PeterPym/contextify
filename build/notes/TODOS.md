@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-25
+**Last Updated:** 2025-12-25 (Phase 1 ConversationMonitor refactor complete)
 **Status:** Active
 
 **Priority Levels:**
@@ -152,6 +152,53 @@ transcript provider permission via Settings. Two bugs were fixed:
 5. **AI cancellation noise** - Log at debug level instead of error (reduced 45+ warnings)
 
 **Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
+
+---
+
+## ConversationMonitor Refactoring - Phase 1 (Complete)
+
+**Status:** Complete
+**Priority:** P0 (architecture tech debt)
+**Completed:** 2025-12-26
+
+### Phase 1A: HealthMonitoringCoordinator (merged)
+
+**Branch:** `feature/conversation-monitor-refactor`
+
+- [x] #ARCH-REFACTOR-PHASE1A: Extract HealthMonitoringCoordinator from ConversationMonitor
+
+**Changes:**
+- **HealthMonitoringCoordinator.swift** (266 lines) - Actor with callback-based interface, generation token pattern
+- **RecoveryBackoff.swift** (97 lines) - Pure type in ContextifyCore for deterministic testing
+- **RecoveryBackoffTests.swift** (274 lines) - 20 unit tests for backoff logic
+- **ConversationMonitor.swift** (-132 lines) - Reduced from 3528 to ~3400 lines
+
+### Phase 1B: ViewportTrackingCoordinator (merged)
+
+**Branch:** `feature/conversation-monitor-phase1-only`
+
+- [x] #ARCH-REFACTOR-PHASE1B: Extract ViewportTrackingCoordinator from ConversationMonitor
+
+**Changes:**
+- **ViewportTrackingCoordinator.swift** (~513 lines) - Owns viewport state machine, visibility tracking, scroll control, debouncing
+- **TimelineDataLoader.swift** (~40 lines) - Infrastructure stub for future extraction
+- **ConversationMonitor.swift** (-399 lines) - Reduced from 3445 to 3046 lines
+
+**Key improvements:**
+- Initial viewport state machine extracted with fallback/starvation timers
+- Debounce logic centralized (1.25s settle time)
+- Delegate pattern with proper @MainActor isolation
+- Scroll gate for programmatic scroll coordination
+- 6 rounds of external code review hardening
+
+**Validation:**
+- 277 tests passing
+- Zero build warnings
+- All P0-P2 review issues resolved
+
+**Remaining phases (deferred):**
+- Phase 2: TimelineDataLoader wiring (medium risk)
+- Phase 3: TimelineCacheCoordinator extraction (high risk)
 
 ---
 
@@ -2575,6 +2622,9 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 **Prerequisites:**
 - ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
+  - [x] Phase 1: HealthMonitoringCoordinator extraction (complete, see #ARCH-REFACTOR-PHASE1)
+  - [ ] Phase 2: TimelineLoader extraction (deferred)
+  - [ ] Phase 3: TimelineCacheCoordinator extraction (deferred)
 
 ---
 
