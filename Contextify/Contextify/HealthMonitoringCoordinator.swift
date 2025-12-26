@@ -57,7 +57,9 @@ actor HealthMonitoringCoordinator {
         recoveryHandler: @escaping RecoveryHandler,
         idleAlertHandler: @escaping IdleAlertHandler
     ) {
-        // Cancel any existing monitoring task before starting new one
+        // Invalidate generation first (belt + suspenders with cancellation)
+        generation = UUID()
+        // Cancel any existing monitoring task
         monitoringTask?.cancel()
         monitoringTask = nil
 
@@ -65,7 +67,7 @@ actor HealthMonitoringCoordinator {
         watcherRecoveryFailureCount = 0
         lastWatcherRecoveryFailure = nil
 
-        // P1.4: New generation token invalidates any lingering old loop iterations
+        // New generation for this monitoring session
         let currentGeneration = UUID()
         generation = currentGeneration
 
@@ -135,6 +137,7 @@ actor HealthMonitoringCoordinator {
                     await performHealthCheck(
                         trigger: "restart-guard",
                         context: freshContext,
+                        generation: generation,
                         diagnosticsProvider: diagnosticsProvider,
                         recoveryHandler: recoveryHandler
                     )
@@ -156,6 +159,7 @@ actor HealthMonitoringCoordinator {
                 await performHealthCheck(
                     trigger: "interval",
                     context: freshContext,
+                    generation: generation,
                     diagnosticsProvider: diagnosticsProvider,
                     recoveryHandler: recoveryHandler
                 )
@@ -174,6 +178,7 @@ actor HealthMonitoringCoordinator {
     private func performHealthCheck(
         trigger: String,
         context: HealthCheckContext,
+        generation: UUID,
         diagnosticsProvider: @escaping DiagnosticsProvider,
         recoveryHandler: @escaping RecoveryHandler
     ) async {
@@ -212,15 +217,18 @@ actor HealthMonitoringCoordinator {
             if issue.category == .watcherMissing, !didAttemptWatcherRecovery {
                 // Check backoff before attempting recovery
                 if shouldAttemptRecovery() {
+                    // Final generation check before high-impact side effect
+                    guard generation == self.generation else { return }
                     didAttemptWatcherRecovery = true
                     log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public)")
-                    // P1.1: Don't pass orchestrator - handler fetches it on MainActor
                     await recoveryHandler(.watcher(
                         projectId: projectId,
                         targetTranscriptId: nil  // nil = recover ALL
                     ))
                 }
             } else if issue.category == .hooverStall, !didAttemptHooverRecovery {
+                // Final generation check before high-impact side effect
+                guard generation == self.generation else { return }
                 didAttemptHooverRecovery = true
                 await recoveryHandler(.hoover(projectId: projectId))
             }
