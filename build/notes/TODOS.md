@@ -33,7 +33,7 @@ doc_references:
 **Purpose:** Track open work items. Do NOT celebrate completions - remove completed items.
 **Exploratory ideas:** See [ROADMAP.md](ROADMAP.md) for P4-P5 items.
 
-**Last Updated:** 2025-12-25
+**Last Updated:** 2025-12-25 (Phase 1 ConversationMonitor refactor complete)
 **Status:** Active
 
 **Priority Levels:**
@@ -152,6 +152,43 @@ transcript provider permission via Settings. Two bugs were fixed:
 5. **AI cancellation noise** - Log at debug level instead of error (reduced 45+ warnings)
 
 **Investigation:** `build/notes/todo-support/log-analysis-2025-12-09.md`
+
+---
+
+## ConversationMonitor Refactoring - Phase 1
+
+**Status:** Complete (ready to merge)
+**Priority:** P0 (architecture tech debt)
+**Branch:** `feature/conversation-monitor-refactor`
+**Completed:** 2025-12-25
+
+- [x] #ARCH-REFACTOR-PHASE1: Extract HealthMonitoringCoordinator from ConversationMonitor
+
+**Summary:**
+Phase 1 of the 4-way split identified in `build/docs/architecture/architecture-refactoring-analysis.md`. Extracted health monitoring loop, recovery coordination, and backoff logic into dedicated actor.
+
+**Changes:**
+- **HealthMonitoringCoordinator.swift** (266 lines) - Actor with callback-based interface, generation token pattern
+- **RecoveryBackoff.swift** (97 lines) - Pure type in ContextifyCore for deterministic testing
+- **RecoveryBackoffTests.swift** (274 lines) - 20 unit tests for backoff logic
+- **ConversationMonitor.swift** (-132 lines) - Reduced from 3528 to ~3400 lines
+
+**Key improvements:**
+- Pure RecoveryBackoff type enables deterministic time-injected tests
+- @MainActor isolation on recovery methods (orchestrator safety)
+- Generation token prevents stale work on quick restart
+- 5 rounds of external code review hardening
+
+**Validation:**
+- 277 tests passing (was 257)
+- Zero build warnings
+- Pre-commit hook passed on all 7 commits
+
+**Report:** `/tmp/conversation-monitor-refactor-report-v2.md`
+
+**Remaining phases (deferred):**
+- Phase 2: TimelineLoader extraction (medium-high risk)
+- Phase 3: TimelineCacheCoordinator extraction (high risk)
 
 ---
 
@@ -2575,6 +2612,9 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 
 **Prerequisites:**
 - ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
+  - [x] Phase 1: HealthMonitoringCoordinator extraction (complete, see #ARCH-REFACTOR-PHASE1)
+  - [ ] Phase 2: TimelineLoader extraction (deferred)
+  - [ ] Phase 3: TimelineCacheCoordinator extraction (deferred)
 
 ---
 
