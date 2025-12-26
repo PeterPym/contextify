@@ -57,8 +57,9 @@ actor HealthMonitoringCoordinator {
         recoveryHandler: @escaping RecoveryHandler,
         idleAlertHandler: @escaping IdleAlertHandler
     ) {
-        // Cancel any existing monitoring
+        // Cancel any existing monitoring task before starting new one
         monitoringTask?.cancel()
+        monitoringTask = nil
 
         // Reset backoff state for new monitoring session
         watcherRecoveryFailureCount = 0
@@ -127,6 +128,8 @@ actor HealthMonitoringCoordinator {
                 // Check for pending idle alert (triggers immediate check)
                 if context.hasPendingIdleAlert {
                     await idleAlertHandler()
+                    // Bail if stopped/restarted during handler
+                    guard !Task.isCancelled, generation == self.generation else { return }
                     // Re-fetch context after handler - state may have changed
                     let freshContext = await contextProvider()
                     await performHealthCheck(
