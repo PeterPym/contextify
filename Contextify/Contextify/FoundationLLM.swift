@@ -1917,21 +1917,21 @@ extension FoundationLLM {
 
             // Objective validation (no LLM self-assessment)
             // Reject if:
-            // 1. Moderate leakage (>4 tokens not in original message)
+            // 1. Excessive leakage (>6 tokens not in original message)
             // 2. Contains known prompt example phrases
             // 3. Contains technical phrase not grounded in message (hallucination detection)
-            let moderateLeakage = leaked.count > 4
+            let excessiveLeakage = leaked.count > 6
             let hasExamplePhrase = containsPromptExample(summary)
             let hasUngroundedTechPhrase = containsUngroundedTechnicalPhrase(summary: summary, message: message, leaked: leaked)
 
-            let shouldReject = moderateLeakage || hasExamplePhrase || hasUngroundedTechPhrase
+            let shouldReject = excessiveLeakage || hasExamplePhrase || hasUngroundedTechPhrase
 
             if shouldReject {
                 if hasExamplePhrase {
                     log.warning("[VALIDATION-REJECT] Timeline summary contains prompt example phrase: \(summary, privacy: .public)")
                 }
-                if moderateLeakage {
-                    log.warning("[VALIDATION-REJECT] Timeline summary has moderate leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
+                if excessiveLeakage {
+                    log.warning("[VALIDATION-REJECT] Timeline summary has excessive leakage (leaked=\(leaked.count), confidence=\(payload.confidence, privacy: .public)): \(leaked.joined(separator: ", "), privacy: .public)")
                 }
                 if hasUngroundedTechPhrase {
                     log.warning("[VALIDATION-REJECT] Timeline summary contains ungrounded technical phrase: \(summary, privacy: .public)")
