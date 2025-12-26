@@ -84,6 +84,8 @@ actor HealthMonitoringCoordinator {
 
     /// Stop health monitoring
     func stopMonitoring() {
+        // Bump generation to ensure any loop iteration in progress exits promptly
+        generation = UUID()
         monitoringTask?.cancel()
         monitoringTask = nil
         log.info("[HEALTH-COORD] Stopped health monitoring")
@@ -125,10 +127,11 @@ actor HealthMonitoringCoordinator {
                 // Check for pending idle alert (triggers immediate check)
                 if context.hasPendingIdleAlert {
                     await idleAlertHandler()
-                    // P2.1: Pass context instead of calling contextProvider again
+                    // Re-fetch context after handler - state may have changed
+                    let freshContext = await contextProvider()
                     await performHealthCheck(
                         trigger: "restart-guard",
-                        context: context,
+                        context: freshContext,
                         diagnosticsProvider: diagnosticsProvider,
                         recoveryHandler: recoveryHandler
                     )

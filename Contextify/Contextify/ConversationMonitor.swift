@@ -3367,11 +3367,10 @@ final class ConversationMonitor {
     }
 
     /// Handle recovery action from HealthMonitoringCoordinator
-    /// P1.1: Fetches orchestrator on MainActor at point of use (not passed across actor boundary)
+    /// Runs on MainActor to ensure orchestrator usage is always on correct executor
+    @MainActor
     private func handleRecoveryAction(_ action: HealthMonitoringCoordinator.RecoveryAction) async {
-        // Fetch orchestrator on MainActor - don't pass across actor boundaries
-        let currentOrchestrator = await MainActor.run { self.orchestrator }
-        guard let orchestrator = currentOrchestrator else {
+        guard let orchestrator = self.orchestrator else {
             log.warning("[RECOVERY] Skipping recovery - no orchestrator available")
             return
         }
@@ -3385,6 +3384,7 @@ final class ConversationMonitor {
     }
 
     /// Attempt to recover stalled watcher
+    @MainActor
     private func attemptWatcherRecovery(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?) async {
         log.info("[WATCHER-RECOVERY-START] Attempting recovery for project=\(projectId, privacy: .public) target=\(targetTranscriptId ?? "all", privacy: .public)")
 
@@ -3407,6 +3407,7 @@ final class ConversationMonitor {
     }
 
     /// Attempt to recover stalled hoover
+    @MainActor
     private func attemptHooverRecovery(projectId: String, orchestrator: TranscriptOrchestrator) async {
         do {
             let transcripts = try orchestrator.getTranscripts(forProject: projectId)
