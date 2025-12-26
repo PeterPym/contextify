@@ -228,6 +228,14 @@ final class ConversationMonitor {
     @ObservationIgnored private var pendingIdleRestartAlert = false
     // Health monitoring coordinator (extracted to reduce god object complexity)
     @ObservationIgnored private let healthMonitor = HealthMonitoringCoordinator()
+    // Timeline data loader (Phase 2 extraction - handles feed loading, cursor, decoration data)
+    @ObservationIgnored private var dataLoader: TimelineDataLoader?
+    // Viewport tracking coordinator (Phase 3 extraction - handles viewport state machine, visibility)
+    @ObservationIgnored private lazy var viewportCoordinator: ViewportTrackingCoordinator = {
+        let coord = ViewportTrackingCoordinator()
+        coord.delegate = self
+        return coord
+    }()
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
     @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
@@ -290,7 +298,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var doingProgrammaticScroll = false  // Gate queueing during programmatic jumps
     @ObservationIgnored private var isUserScrollActive = false  // True when user-driven scroll is in progress
     @ObservationIgnored private var scrollGateTimeoutTask: Task<Void, Never>?  // Clears stuck gate after 1s
-    @ObservationIgnored private var initialViewportStateMachine = InitialViewportStateMachine()  // Tracks waiting snapshot lifecycle
+    // NOTE: initialViewportStateMachine moved to ViewportTrackingCoordinator
     @ObservationIgnored private var pendingInitialVisibleIDs: Set<UUID>? = nil  // IDs seen while programmatic scroll is active
     @ObservationIgnored private var initialViewportFallbackTask: Task<Void, Never>?
     @ObservationIgnored private var initialViewportSnapshotIDs = Set<UUID>()
@@ -310,15 +318,15 @@ final class ConversationMonitor {
     @ObservationIgnored nonisolated(unsafe) private var appBecomeActiveObserver: NSObjectProtocol? // App become active notifications
 
     private var needsInitialVisibilitySnapshot: Bool {
-        initialViewportStateMachine.isAwaiting
+        viewportCoordinator.needsInitialVisibilitySnapshot
     }
 
     private var initialViewportAwaitingContext: InitialViewportStateMachine.Context? {
-        initialViewportStateMachine.awaitingContext
+        viewportCoordinator.awaitingContext
     }
 
     private var activeInitialViewportContext: InitialViewportStateMachine.Context? {
-        initialViewportStateMachine.activeContext
+        viewportCoordinator.activeContext
     }
 
     // P1-UNREAD-COUNT: Scroll-to-bottom unread clearing
@@ -360,6 +368,7 @@ final class ConversationMonitor {
     @MainActor
     func configureSharedOrchestrator(_ orchestrator: TranscriptOrchestrator) {
         self.orchestrator = orchestrator
+        self.dataLoader = TimelineDataLoader(orchestrator: orchestrator)
         log.info("[TIMELINE-ORCH] Using shared TranscriptOrchestrator instance")
     }
 
@@ -817,14 +826,7 @@ final class ConversationMonitor {
 
     @MainActor
     private func resetInitialViewportState(reason: String) {
-        initialViewportStateMachine.reset()
-        pendingInitialVisibleIDs = nil
-        initialViewportSnapshotIDs.removeAll()
-        initialViewportSnapshotTimestamp = nil
-        initialViewportFallbackFireCount = 0
-        initialViewportFallbackArmedCount = 0
-        cancelInitialViewportStarvationCheck()
-        cancelInitialViewportFallback(reason: reason)
+        viewportCoordinator.reset(reason: reason)
     }
 
     private func scheduleInitialViewportStarvationCheck() {
@@ -2502,21 +2504,12 @@ final class ConversationMonitor {
     @MainActor
     private func beginAwaitingInitialViewport(reason: String) {
         guard let projectId = currentProjectId else { return }
-        let sessionId = currentSessionId
-        guard initialViewportStateMachine.beginAwaiting(projectId: projectId, sessionId: sessionId) else {
-            return
-        }
-        pendingInitialVisibleIDs = nil
-        log.debug("[SUMM-VIEWPORT-ARM] Awaiting initial snapshot for project \(projectId, privacy: .public) (\(reason, privacy: .public))")
-        scheduleInitialViewportFallback(using: nil, reason: reason)
+        viewportCoordinator.beginAwaiting(projectId: projectId, sessionId: currentSessionId, reason: reason)
     }
 
     @MainActor
     private func replayPendingInitialViewportSnapshot(reason: String) {
-        guard needsInitialVisibilitySnapshot else { return }
-        guard let snapshot = pendingInitialVisibleIDs, !snapshot.isEmpty else { return }
-        log.debug("[SUMM-VIEWPORT-DEFER] Replaying pending initial snapshot (\(snapshot.count, privacy: .public) IDs) reason=\(reason, privacy: .public)")
-        processInitialVisibleSnapshot(snapshot)
+        viewportCoordinator.replayPendingSnapshot(reason: reason)
     }
 
     /// Prune generator queue to keep only visible entries
@@ -2649,7 +2642,7 @@ final class ConversationMonitor {
         }
 
         pendingInitialVisibleIDs = nil
-        let accepted = initialViewportStateMachine.acceptSnapshot(
+        let accepted = viewportCoordinator.acceptSnapshot(
             projectId: context.projectId,
             sessionId: context.sessionId
         )
@@ -3429,6 +3422,35 @@ final class ConversationMonitor {
         } catch {
             log.error("Hoover recovery failed: \(error.localizedDescription)")
         }
+    }
+}
+
+// MARK: - ViewportTrackingDelegate
+
+extension ConversationMonitor: ViewportTrackingDelegate {
+    func viewportDidSettle(visibleIDs: Set<UUID>) {
+        debugVisibleIDs = visibleIDs
+        Task {
+            await pruneQueueToVisible(visibleIDs)
+            await queueVisibleGeneratingEntries(visibleIDs)
+        }
+    }
+
+    func queueCacheMisses(_ misses: [CacheMiss]) async {
+        guard let generator = cacheMissGenerator else { return }
+        await generator.queueMisses(misses)
+    }
+
+    func lookupEntry(_ id: UUID) -> TimelineEntry? {
+        state.lookup(id)
+    }
+
+    func getCurrentProjectId() -> String? {
+        currentProjectId
+    }
+
+    func getContextifyEntryInfo(for entryId: String) -> TranscriptOrchestrator.ContextifyEntryInfo? {
+        contextifyEntryInfo[entryId]
     }
 }
 
