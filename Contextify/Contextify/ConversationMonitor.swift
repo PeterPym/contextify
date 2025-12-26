@@ -609,9 +609,10 @@ final class ConversationMonitor {
                             await self.healthMonitor.startMonitoring(
                                 contextProvider: { [weak self] in
                                     await MainActor.run {
+                                        // P1.1: Don't pass orchestrator across actor boundary
                                         HealthMonitoringCoordinator.HealthCheckContext(
                                             projectId: self?.currentProjectId,
-                                            orchestrator: self?.orchestrator,
+                                            hasOrchestrator: self?.orchestrator != nil,
                                             isSwitchingProjects: self?.isSwitchingProjects ?? false,
                                             hasPendingIdleAlert: self?.pendingIdleRestartAlert ?? false
                                         )
@@ -672,9 +673,10 @@ final class ConversationMonitor {
         lastMonitorReadyAt = nil
         activeSession = nil
         // Cancel background task group
+        // P1.2: backgroundTasks?.cancel() does NOT stop health monitoring - must call stopMonitoring()
         backgroundTasks?.cancel()
         backgroundTasks = nil
-        // Stop health monitoring coordinator
+        // Stop health monitoring coordinator (required - not coupled to TaskGroup cancellation)
         Task { await healthMonitor.stopMonitoring() }
 
         // CXT-101: Cancel viewport/background-fill work (atomic capture-nil-cancel)
@@ -3365,11 +3367,19 @@ final class ConversationMonitor {
     }
 
     /// Handle recovery action from HealthMonitoringCoordinator
+    /// P1.1: Fetches orchestrator on MainActor at point of use (not passed across actor boundary)
     private func handleRecoveryAction(_ action: HealthMonitoringCoordinator.RecoveryAction) async {
+        // Fetch orchestrator on MainActor - don't pass across actor boundaries
+        let currentOrchestrator = await MainActor.run { self.orchestrator }
+        guard let orchestrator = currentOrchestrator else {
+            log.warning("[RECOVERY] Skipping recovery - no orchestrator available")
+            return
+        }
+
         switch action {
-        case .watcher(let projectId, let orchestrator, let targetTranscriptId):
+        case .watcher(let projectId, let targetTranscriptId):
             await attemptWatcherRecovery(projectId: projectId, orchestrator: orchestrator, targetTranscriptId: targetTranscriptId)
-        case .hoover(let projectId, let orchestrator):
+        case .hoover(let projectId):
             await attemptHooverRecovery(projectId: projectId, orchestrator: orchestrator)
         }
     }

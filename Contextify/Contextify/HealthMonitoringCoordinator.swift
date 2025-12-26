@@ -17,23 +17,24 @@ actor HealthMonitoringCoordinator {
     // Recovery backoff state (previously in ConversationMonitor)
     private var watcherRecoveryFailureCount = 0
     private var lastWatcherRecoveryFailure: Date?
-    private var lastHealthCheck: Date?
 
-    // Monitoring task
+    // Monitoring task and generation token (P1.4: prevents overlap on quick restart)
     private var monitoringTask: Task<Void, Never>?
+    private var generation = UUID()
 
     /// State snapshot provided by ConversationMonitor for each health check
+    /// NOTE: Does NOT include orchestrator - that stays on MainActor (P1.1)
     struct HealthCheckContext: Sendable {
         let projectId: String?
-        let orchestrator: TranscriptOrchestrator?
+        let hasOrchestrator: Bool  // Just check existence, don't transport across actors
         let isSwitchingProjects: Bool
         let hasPendingIdleAlert: Bool
     }
 
-    /// Recovery action types
+    /// Recovery action types - orchestrator fetched on MainActor side (P1.1)
     enum RecoveryAction: Sendable {
-        case watcher(projectId: String, orchestrator: TranscriptOrchestrator, targetTranscriptId: String?)
-        case hoover(projectId: String, orchestrator: TranscriptOrchestrator)
+        case watcher(projectId: String, targetTranscriptId: String?)
+        case hoover(projectId: String)
     }
 
     /// Callback types for ConversationMonitor integration
@@ -63,9 +64,14 @@ actor HealthMonitoringCoordinator {
         watcherRecoveryFailureCount = 0
         lastWatcherRecoveryFailure = nil
 
+        // P1.4: New generation token invalidates any lingering old loop iterations
+        let currentGeneration = UUID()
+        generation = currentGeneration
+
         monitoringTask = Task { [weak self] in
             guard let self else { return }
             await self.runHealthMonitoring(
+                generation: currentGeneration,
                 contextProvider: contextProvider,
                 diagnosticsProvider: diagnosticsProvider,
                 recoveryHandler: recoveryHandler,
@@ -98,6 +104,7 @@ actor HealthMonitoringCoordinator {
     // MARK: - Private Implementation
 
     private func runHealthMonitoring(
+        generation: UUID,
         contextProvider: @escaping ContextProvider,
         diagnosticsProvider: @escaping DiagnosticsProvider,
         recoveryHandler: @escaping RecoveryHandler,
@@ -106,15 +113,22 @@ actor HealthMonitoringCoordinator {
         log.info("🏥 Health monitoring started")
 
         while !Task.isCancelled {
+            // P1.4: Bail if generation changed (new startMonitoring was called)
+            guard generation == self.generation else {
+                log.debug("🏥 Health monitoring stopped (generation mismatch)")
+                return
+            }
+
             do {
                 let context = await contextProvider()
 
                 // Check for pending idle alert (triggers immediate check)
                 if context.hasPendingIdleAlert {
                     await idleAlertHandler()
+                    // P2.1: Pass context instead of calling contextProvider again
                     await performHealthCheck(
                         trigger: "restart-guard",
-                        contextProvider: contextProvider,
+                        context: context,
                         diagnosticsProvider: diagnosticsProvider,
                         recoveryHandler: recoveryHandler
                     )
@@ -125,9 +139,17 @@ actor HealthMonitoringCoordinator {
                 try await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
 
+                // P1.4: Check generation again after sleep
+                guard generation == self.generation else {
+                    log.debug("🏥 Health monitoring stopped (generation mismatch after sleep)")
+                    return
+                }
+
+                // Fetch fresh context after sleep (state may have changed)
+                let freshContext = await contextProvider()
                 await performHealthCheck(
                     trigger: "interval",
-                    contextProvider: contextProvider,
+                    context: freshContext,
                     diagnosticsProvider: diagnosticsProvider,
                     recoveryHandler: recoveryHandler
                 )
@@ -142,22 +164,20 @@ actor HealthMonitoringCoordinator {
         log.info("🏥 Health monitoring stopped")
     }
 
+    // P2.1: Takes context directly instead of calling contextProvider
     private func performHealthCheck(
         trigger: String,
-        contextProvider: @escaping ContextProvider,
+        context: HealthCheckContext,
         diagnosticsProvider: @escaping DiagnosticsProvider,
         recoveryHandler: @escaping RecoveryHandler
     ) async {
-        lastHealthCheck = Date()
-
-        let context = await contextProvider()
-
         guard let projectId = context.projectId else {
             log.debug("🏥 Health check skipped (no current project)")
             return
         }
 
-        guard let orchestrator = context.orchestrator else {
+        // P1.1: Just check existence, orchestrator stays on MainActor
+        guard context.hasOrchestrator else {
             log.warning("🏥 Health check skipped (no orchestrator)")
             return
         }
@@ -175,22 +195,28 @@ actor HealthMonitoringCoordinator {
             return
         }
 
+        // P1.3: Track which recovery types we've attempted this check (at most once per category)
+        var didAttemptWatcherRecovery = false
+        var didAttemptHooverRecovery = false
+
         // Check for critical issues and attempt recovery
         for issue in snapshot.issues where issue.severity == .critical {
             log.warning("🏥 Critical issue detected: \(issue.message, privacy: .public)")
 
-            if issue.category == .watcherMissing {
+            if issue.category == .watcherMissing, !didAttemptWatcherRecovery {
                 // Check backoff before attempting recovery
                 if shouldAttemptRecovery() {
+                    didAttemptWatcherRecovery = true
                     log.warning("[RECOVERY-TRIGGER] Recovering ALL watchers for project=\(projectId, privacy: .public)")
+                    // P1.1: Don't pass orchestrator - handler fetches it on MainActor
                     await recoveryHandler(.watcher(
                         projectId: projectId,
-                        orchestrator: orchestrator,
                         targetTranscriptId: nil  // nil = recover ALL
                     ))
                 }
-            } else if issue.category == .hooverStall {
-                await recoveryHandler(.hoover(projectId: projectId, orchestrator: orchestrator))
+            } else if issue.category == .hooverStall, !didAttemptHooverRecovery {
+                didAttemptHooverRecovery = true
+                await recoveryHandler(.hoover(projectId: projectId))
             }
         }
     }
