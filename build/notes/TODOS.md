@@ -155,17 +155,17 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## ConversationMonitor Refactoring - Phase 1
+## ConversationMonitor Refactoring - Phase 1 (Complete)
 
-**Status:** Complete (ready to merge)
+**Status:** Complete
 **Priority:** P0 (architecture tech debt)
+**Completed:** 2025-12-26
+
+### Phase 1A: HealthMonitoringCoordinator (merged)
+
 **Branch:** `feature/conversation-monitor-refactor`
-**Completed:** 2025-12-25
 
-- [x] #ARCH-REFACTOR-PHASE1: Extract HealthMonitoringCoordinator from ConversationMonitor
-
-**Summary:**
-Phase 1 of the 4-way split identified in `build/docs/architecture/architecture-refactoring-analysis.md`. Extracted health monitoring loop, recovery coordination, and backoff logic into dedicated actor.
+- [x] #ARCH-REFACTOR-PHASE1A: Extract HealthMonitoringCoordinator from ConversationMonitor
 
 **Changes:**
 - **HealthMonitoringCoordinator.swift** (266 lines) - Actor with callback-based interface, generation token pattern
@@ -173,21 +173,31 @@ Phase 1 of the 4-way split identified in `build/docs/architecture/architecture-r
 - **RecoveryBackoffTests.swift** (274 lines) - 20 unit tests for backoff logic
 - **ConversationMonitor.swift** (-132 lines) - Reduced from 3528 to ~3400 lines
 
+### Phase 1B: ViewportTrackingCoordinator (merged)
+
+**Branch:** `feature/conversation-monitor-phase1-only`
+
+- [x] #ARCH-REFACTOR-PHASE1B: Extract ViewportTrackingCoordinator from ConversationMonitor
+
+**Changes:**
+- **ViewportTrackingCoordinator.swift** (~513 lines) - Owns viewport state machine, visibility tracking, scroll control, debouncing
+- **TimelineDataLoader.swift** (~40 lines) - Infrastructure stub for future extraction
+- **ConversationMonitor.swift** (-399 lines) - Reduced from 3445 to 3046 lines
+
 **Key improvements:**
-- Pure RecoveryBackoff type enables deterministic time-injected tests
-- @MainActor isolation on recovery methods (orchestrator safety)
-- Generation token prevents stale work on quick restart
-- 5 rounds of external code review hardening
+- Initial viewport state machine extracted with fallback/starvation timers
+- Debounce logic centralized (1.25s settle time)
+- Delegate pattern with proper @MainActor isolation
+- Scroll gate for programmatic scroll coordination
+- 6 rounds of external code review hardening
 
 **Validation:**
-- 277 tests passing (was 257)
+- 277 tests passing
 - Zero build warnings
-- Pre-commit hook passed on all 7 commits
-
-**Report:** `/tmp/conversation-monitor-refactor-report-v2.md`
+- All P0-P2 review issues resolved
 
 **Remaining phases (deferred):**
-- Phase 2: TimelineLoader extraction (medium-high risk)
+- Phase 2: TimelineDataLoader wiring (medium risk)
 - Phase 3: TimelineCacheCoordinator extraction (high risk)
 
 ---

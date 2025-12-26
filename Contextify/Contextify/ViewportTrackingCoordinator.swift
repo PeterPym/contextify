@@ -13,6 +13,7 @@ import ContextifyCore
 // MARK: - Viewport Context
 
 /// Context for viewport tracking operations
+/// Note: Currently defined for potential future Phase 2/3 use - not actively used by coordinator
 public struct ViewportContext: Equatable, Sendable {
     public let projectId: String
     public let sessionId: String?
@@ -32,6 +33,7 @@ protocol ViewportTrackingDelegate: AnyObject {
     func viewportDidSettle(visibleIDs: Set<UUID>)
 
     /// Called to queue cache misses for generation
+    /// Note: Reserved for Phase 2/3 - not currently called by coordinator
     func queueCacheMisses(_ misses: [CacheMiss]) async
 
     /// Lookup entry by ID
@@ -47,6 +49,7 @@ protocol ViewportTrackingDelegate: AnyObject {
     var cacheMissGenerator: TimelineCacheMissGenerator? { get }
 
     /// Contextify entry info lookup
+    /// Note: Reserved for Phase 2/3 - not currently called by coordinator
     func getContextifyEntryInfo(for entryId: String) -> TranscriptOrchestrator.ContextifyEntryInfo?
 
     /// Called when user has been at bottom long enough to mark as viewed
@@ -54,6 +57,9 @@ protocol ViewportTrackingDelegate: AnyObject {
 
     /// Get current entry IDs for pruning viewed set
     func getCurrentEntryIDs() -> Set<UUID>
+
+    /// Max entries for pruning cap calculation
+    var maxEntries: Int { get }
 }
 
 // MARK: - Viewport Tracking Coordinator
@@ -96,7 +102,7 @@ final class ViewportTrackingCoordinator {
     // Configuration
     private let visibleEntryLimit = 25
     private let initialViewportFallbackCount = 12
-    private let initialViewportFallbackDelay: UInt64 = 750_000_000  // 750ms
+    private let initialViewportFallbackDelay: UInt64 = 500_000_000  // 500ms (matches original)
 
     // MARK: - State Accessors
 
@@ -119,9 +125,6 @@ final class ViewportTrackingCoordinator {
     var currentVisibleIDs: Set<UUID> {
         lastVisibleIDs
     }
-
-    /// Debug-observable visible IDs (for UI visualization)
-    private(set) var debugVisibleIDs = Set<UUID>()
 
     // MARK: - Initialization
 
@@ -148,6 +151,8 @@ final class ViewportTrackingCoordinator {
         viewedEntryIDs.removeAll(keepingCapacity: false)
         doingProgrammaticScroll = false
         isUserScrollActive = false
+        scrollGateTimeoutTask?.cancel()
+        scrollGateTimeoutTask = nil
         lastVisibleIDs.removeAll()
         coalesceTask?.cancel()
         coalesceTask = nil
@@ -155,7 +160,6 @@ final class ViewportTrackingCoordinator {
         clearUnreadTask?.cancel()
         clearUnreadTask = nil
         visibleEntryTimestamps.removeAll()
-        debugVisibleIDs.removeAll()
         log.debug("[VIEWPORT-FULL-RESET] All viewport state cleared (\(reason, privacy: .public))")
     }
 
@@ -167,12 +171,6 @@ final class ViewportTrackingCoordinator {
         pendingInitialVisibleIDs = nil
         log.debug("[VIEWPORT-ARM] Awaiting initial snapshot for project \(projectId, privacy: .public) (\(reason, privacy: .public))")
         scheduleFallback(using: nil, reason: reason)
-    }
-
-    /// Accept snapshot for the given context (returns true if newly accepted)
-    @discardableResult
-    func acceptSnapshot(projectId: String, sessionId: String?) -> Bool {
-        stateMachine.acceptSnapshot(projectId: projectId, sessionId: sessionId)
     }
 
     /// Replay pending initial viewport snapshot if available
@@ -193,7 +191,11 @@ final class ViewportTrackingCoordinator {
 
         scrollGateTimeoutTask?.cancel()
         scrollGateTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return  // Cancelled - don't clear gate
+            }
             await MainActor.run {
                 guard let self, self.doingProgrammaticScroll else { return }
                 self.doingProgrammaticScroll = false
@@ -249,7 +251,6 @@ final class ViewportTrackingCoordinator {
 
         // Update tracking
         lastVisibleIDs = current
-        debugVisibleIDs = current
         recordTimestamps(current)
 
         // Debounced processing
@@ -260,11 +261,16 @@ final class ViewportTrackingCoordinator {
             } catch { return }
 
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 self.log.info("[VIEWPORT-SETTLED] Timer completed, notifying delegate")
-                self.delegate?.viewportDidSettle(visibleIDs: self.lastVisibleIDs)
+                // Union/prune before callback to keep viewed set current before downstream work
                 self.viewedEntryIDs.formUnion(self.lastVisibleIDs)
                 self.pruneViewedIDsIfNeeded()
+                if let delegate = self.delegate {
+                    delegate.viewportDidSettle(visibleIDs: self.lastVisibleIDs)
+                } else {
+                    self.log.warning("[VIEWPORT-SETTLED] Delegate nil - settle callback dropped (teardown in progress?)")
+                }
             }
         }
     }
@@ -309,8 +315,13 @@ final class ViewportTrackingCoordinator {
     // MARK: - Private: Initial Snapshot Handling
 
     private func handleInitialSnapshotUpdate(_ current: Set<UUID>) {
+        guard let delegate else {
+            log.warning("[VIEWPORT-INIT] Delegate nil - resetting initial viewport state")
+            reset(reason: "nil-delegate")
+            return
+        }
         guard let context = activeContext,
-              context.projectId == delegate?.getCurrentProjectId() else {
+              context.projectId == delegate.getCurrentProjectId() else {
             log.debug("[VIEWPORT-INIT] Ignoring snapshot from stale project context")
             return
         }
@@ -332,8 +343,13 @@ final class ViewportTrackingCoordinator {
     }
 
     private func processInitialSnapshot(_ current: Set<UUID>) {
+        guard let delegate else {
+            log.warning("[VIEWPORT-INIT] Delegate nil in processInitialSnapshot - resetting initial viewport state")
+            reset(reason: "nil-delegate")
+            return
+        }
         guard let context = awaitingContext,
-              context.projectId == delegate?.getCurrentProjectId() else {
+              context.projectId == delegate.getCurrentProjectId() else {
             log.debug("[VIEWPORT-INIT] Snapshot ignored - project context changed")
             return
         }
@@ -344,7 +360,7 @@ final class ViewportTrackingCoordinator {
             return
         }
 
-        guard delegate?.cacheMissGenerator != nil else {
+        guard delegate.cacheMissGenerator != nil else {
             pendingInitialVisibleIDs = current
             log.debug("[VIEWPORT-DEFER] Generator unavailable; stored \(current.count, privacy: .public) IDs")
             return
@@ -366,11 +382,12 @@ final class ViewportTrackingCoordinator {
         initialViewportSnapshotTimestamp = Date()
         scheduleStarvationCheck()
 
-        // Notify delegate
-        delegate?.viewportDidSettle(visibleIDs: current)
+        // Union before callback for consistency with debounce path
         viewedEntryIDs.formUnion(current)
         lastVisibleIDs = current
-        debugVisibleIDs = current
+
+        // Notify delegate (also sets debugVisibleIDs in ConversationMonitor)
+        delegate.viewportDidSettle(visibleIDs: current)
     }
 
     // MARK: - Private: Fallback Timer
@@ -382,16 +399,17 @@ final class ViewportTrackingCoordinator {
         }
 
         initialViewportFallbackTask?.cancel()
+        let delay = initialViewportFallbackDelay
         initialViewportFallbackTask = Task { [weak self] in
             do {
-                try await Task.sleep(nanoseconds: self?.initialViewportFallbackDelay ?? 750_000_000)
+                try await Task.sleep(nanoseconds: delay)
             } catch { return }
             await MainActor.run { [weak self] in
                 self?.fireFallback(reason: reason)
             }
         }
 
-        initialViewportFallbackArmedCount += 1
+        initialViewportFallbackArmedCount &+= 1  // wrapping increment (matches original)
         let delayMs = initialViewportFallbackDelay / 1_000_000
         log.debug("[VIEWPORT-FALLBACK] Armed fallback timer (\(reason, privacy: .public)) - firing in \(delayMs, privacy: .public)ms (armed #\(self.initialViewportFallbackArmedCount, privacy: .public))")
     }
@@ -413,7 +431,7 @@ final class ViewportTrackingCoordinator {
             return
         }
 
-        initialViewportFallbackFireCount += 1
+        initialViewportFallbackFireCount &+= 1  // wrapping increment (matches original)
         log.warning("[VIEWPORT-FALLBACK] Triggering fallback snapshot (\(snapshot.count, privacy: .public) IDs, reason=\(reason, privacy: .public)) (count #\(self.initialViewportFallbackFireCount, privacy: .public))")
         processInitialSnapshot(snapshot)
     }
@@ -428,10 +446,31 @@ final class ViewportTrackingCoordinator {
 
     private func scheduleStarvationCheck() {
         cancelStarvationCheck()
+        let snapshotIDs = initialViewportSnapshotIDs
+        guard !snapshotIDs.isEmpty,
+              let snapshotTimestamp = initialViewportSnapshotTimestamp else {
+            return
+        }
+
         initialViewportStarvationTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)  // 5 seconds
+            do {
+                try await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds (matches original)
+            } catch {
+                return
+            }
             await MainActor.run { [weak self] in
-                self?.checkForStarvation()
+                guard let self else { return }
+                // Only warn if same snapshot context
+                guard self.initialViewportSnapshotTimestamp == snapshotTimestamp else { return }
+                let elapsed = Date().timeIntervalSince(snapshotTimestamp)
+                // Only warn if entries are still unsummarized
+                let stillPending = snapshotIDs.filter { id in
+                    guard let entry = self.delegate?.lookupEntry(id) else { return false }
+                    return entry.action == .unsummarized
+                }
+                guard !stillPending.isEmpty else { return }
+                let preview = stillPending.prefix(4).map { String($0.uuidString.prefix(8)) }.joined(separator: ", ")
+                self.log.warning("[SUMM-VIEWPORT-STARVATION] \(stillPending.count, privacy: .public) initial entries still unsummarized after \(Int(elapsed * 1000), privacy: .public)ms: \(preview, privacy: .public)")
             }
         }
     }
@@ -439,14 +478,6 @@ final class ViewportTrackingCoordinator {
     private func cancelStarvationCheck() {
         initialViewportStarvationTask?.cancel()
         initialViewportStarvationTask = nil
-    }
-
-    private func checkForStarvation() {
-        guard let timestamp = initialViewportSnapshotTimestamp else { return }
-        let elapsed = Date().timeIntervalSince(timestamp)
-        if elapsed > 5.0 {
-            log.warning("[VIEWPORT-STARVATION] No progress \(Int(elapsed), privacy: .public)s after initial snapshot")
-        }
     }
 
     // MARK: - Private: Timestamp Tracking
@@ -466,7 +497,8 @@ final class ViewportTrackingCoordinator {
     // MARK: - Private: Viewed IDs Pruning
 
     private func pruneViewedIDsIfNeeded() {
-        let cap = visibleEntryLimit * 4
+        // Use delegate's maxEntries to match original behavior (config.maxEntries * 4)
+        let cap = (delegate?.maxEntries ?? visibleEntryLimit) * 4
         guard viewedEntryIDs.count > cap else { return }
         if let currentIDs = delegate?.getCurrentEntryIDs() {
             viewedEntryIDs.formIntersection(currentIDs)

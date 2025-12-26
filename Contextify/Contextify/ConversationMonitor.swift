@@ -700,6 +700,8 @@ final class ConversationMonitor {
         lastSeenCursor = nil
         currentProjectId = nil
         cacheMissGenerator = nil
+        isCacheGeneratorActive = false
+        debugVisibleIDs.removeAll()
     }
 
     /// Cancel pending debounce task on project changes to avoid late callbacks into torn state
@@ -1572,16 +1574,23 @@ final class ConversationMonitor {
             log.info("[SUMM-MISSES] Detected \(misses.count) cache misses")
 
             // Viewport-aware queueing: Trust viewport tracking to queue visible entries
-            // The initial visibility snapshot (needsInitialVisibilitySnapshot) will handle queueing
-            // when replaceVisibleSnapshot() fires after ScrollView measures the viewport.
-            //
-            // This eliminates the race condition where we would queue "last 12 entries" before
-            // the viewport callback reports which entries are actually visible.
+            // If we already have a viewport snapshot that intersects current entries,
+            // trigger settle directly instead of re-arming initial snapshot state machine
             if !misses.isEmpty {
-                log.info("[SUMM-LOAD-STATE] currentVisibleIDs.count=\(self.viewportCoordinator.currentVisibleIDs.count, privacy: .public), needsInitialSnapshot=\(self.needsInitialVisibilitySnapshot, privacy: .public)")
-                log.info("[SUMM-LOAD-DEFER] Deferring queueing to viewport tracking (\(misses.count, privacy: .public) candidates)")
-                beginAwaitingInitialViewport(reason: "post-load")
-                replayPendingInitialViewportSnapshot(reason: "post-load")
+                let currentVisible = viewportCoordinator.currentVisibleIDs
+                let currentEntryIDs = Set(state.entries.map(\.id))
+                let effectiveVisible = currentVisible.intersection(currentEntryIDs)
+                log.info("[SUMM-LOAD-STATE] currentVisibleIDs.count=\(currentVisible.count, privacy: .public), effectiveVisible=\(effectiveVisible.count, privacy: .public), needsInitialSnapshot=\(self.needsInitialVisibilitySnapshot, privacy: .public)")
+                if !effectiveVisible.isEmpty {
+                    // Snapshot intersects current entries - use it directly
+                    log.info("[SUMM-LOAD-SETTLE] Using existing viewport snapshot (\(effectiveVisible.count, privacy: .public) IDs)")
+                    viewportDidSettle(visibleIDs: effectiveVisible)
+                } else {
+                    // No valid snapshot - arm initial viewport state machine
+                    log.info("[SUMM-LOAD-DEFER] Deferring queueing to viewport tracking (\(misses.count, privacy: .public) candidates)")
+                    beginAwaitingInitialViewport(reason: "post-load")
+                    replayPendingInitialViewportSnapshot(reason: "post-load")
+                }
             } else {
                 log.info("[SUMM-LOAD-COMPLETE] No cache misses - all entries have summaries")
                 resetInitialViewportState(reason: "post-load-no-miss")
@@ -2042,51 +2051,10 @@ final class ConversationMonitor {
     }
 
     /// Mark an entry as visible in the viewport (called by UI)
+    /// Queueing for summarization happens via settle-driven aggregate path (viewportDidSettle)
     @MainActor
     func markEntryVisible(_ entryId: UUID) {
         viewportCoordinator.markEntryVisible(entryId)
-
-        // Queue entry for summarization if it needs one (scrolled into view)
-        queueEntryIfNeeded(entryId)
-    }
-
-    /// Queue a single entry for summarization if it has a cache miss
-    /// NOTE: This method is deprecated in favor of aggregate visibility tracking (replaceVisibleSnapshot)
-    @MainActor
-    private func queueEntryIfNeeded(_ entryId: UUID) {
-
-        guard let entry = visibleEntries.first(where: { $0.id == entryId }) else { return }
-        guard entry.action == .unsummarized else { return }  // Already has summary or processing
-
-        // Create cache miss for this entry
-        guard let content = entry.contentSha256,
-              let window = entry.windowSha256,
-              let sourceContent = entry.sourceContent,
-              let projectId = currentProjectId else {
-            return
-        }
-
-        let ctxInfo = contextifyEntryInfo[entry.sourceIdentifier]
-        let miss = CacheMiss(
-            entryId: entry.id.uuidString,
-            projectId: projectId,
-            contentSha256: content,
-            windowSha256: window,
-            content: sourceContent,
-            context: entry.detail,
-            kind: entry.kind.rawValue,
-            provider: entry.sourceContext?.provider.rawValue ?? "other",
-            isContextify: ctxInfo != nil,
-            contextifyToolKey: ctxInfo?.toolKey,
-            isContextifyResult: ctxInfo?.isResult ?? false
-        )
-
-        // Queue immediately (user is looking at it)
-        guard let generator = cacheMissGenerator else { return }
-        Task(priority: .userInitiated) {
-            log.info("[SUMM-SCROLL] Entry scrolled into view, queueing for summarization: \(entryId.uuidString.prefix(8))")
-            await generator.queueMisses([miss])
-        }
     }
 
     // MARK: - Scroll-to-Bottom Unread Clearing (P1-UNREAD-COUNT)
@@ -2285,7 +2253,7 @@ final class ConversationMonitor {
         if entry.action != .unsummarized { return "cached" }
         if let generator = cacheMissGenerator {
             if generator.activeEntryID == entry.id { return "generating" }
-            if await generator.isEntryQueued(entry.id.uuidString) {
+            if await generator.isEntryQueued(entry.sourceIdentifier) {
                 return "queued"
             }
         }
@@ -3058,6 +3026,10 @@ extension ConversationMonitor: ViewportTrackingDelegate {
 
     func getCurrentEntryIDs() -> Set<UUID> {
         Set(state.entries.map { $0.id })
+    }
+
+    var maxEntries: Int {
+        config.maxEntries
     }
 }
 
