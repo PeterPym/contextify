@@ -166,13 +166,8 @@ actor ImageExtractor {
     url: URL,
     log: Logger
   ) throws -> ImageExtractionResult {
-    guard FileManager.default.fileExists(atPath: url.path) else {
-      log.debug("[IMAGE-EXTRACT] Transcript file not found: \(url.path, privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil)
-    }
-
     guard let fileHandle = FileHandle(forReadingAtPath: url.path) else {
-      log.warning("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
+      log.debug("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
       return ImageExtractionResult(images: [], promptText: nil)
     }
 
