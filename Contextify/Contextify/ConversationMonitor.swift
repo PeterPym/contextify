@@ -269,6 +269,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var backgroundFillTask: Task<Void, Never>?  // Background summarization task
     @ObservationIgnored private var lastLoadCompletionTime: Date?  // Timestamp of last loadFeedFromSQL completion for timing
     @ObservationIgnored private var feedHydrationTask: Task<Void, Never>?  // Cancelable hydration work item
+    @ObservationIgnored private var feedLoadGeneration: UInt64 = 0  // Monotonic token to gate async load application
     var debugVisibleIDs = Set<UUID>()  // Observable for debug visualization in timeline rows
     // IMPORTANT: nonisolated(unsafe) is REQUIRED - see comment above cacheUpdateObserver
     @ObservationIgnored nonisolated(unsafe) private var appLifecycleObserver: NSObjectProtocol?  // App lifecycle notifications
@@ -1463,12 +1464,15 @@ final class ConversationMonitor {
         phase = .loading
         log.info("[UIOPT-BRANCH] phase → loading")
 
+        feedLoadGeneration &+= 1
+        let loadGeneration = feedLoadGeneration
+
         isReadyForUpdates = false
         isProcessing = true
 
         cancelPrimerRetry(reason: "entries-available")
 
-        feedHydrationTask = Task(priority: .userInitiated) { [weak self, dataLoader] in
+        feedHydrationTask = Task(priority: .userInitiated) { [weak self, dataLoader, loadGeneration] in
             guard let self, let loader = dataLoader else { return }
 
             do {
@@ -1490,7 +1494,9 @@ final class ConversationMonitor {
 
                 let shouldApply = await MainActor.run { [weak self] in
                     guard let self else { return false }
-                    return self.currentProjectId == projectId && self.phase == .loading
+                    return self.currentProjectId == projectId
+                        && self.phase == .loading
+                        && self.feedLoadGeneration == loadGeneration
                 }
                 guard shouldApply else {
                     self.log.debug("[TIMELINE-HYDRATE-DROP] Dropping load result for stale projectId=\(projectId, privacy: .public)")
@@ -1509,6 +1515,8 @@ final class ConversationMonitor {
                     let shouldApply = await MainActor.run { [weak self] in
                         guard let self else { return false }
                         return self.currentProjectId == projectId
+                            && self.phase == .loading
+                            && self.feedLoadGeneration == loadGeneration
                     }
                     guard shouldApply else { return }
                     await MainActor.run { self.restoreLoadStateAfterCancellation(priorReady: priorReady) }
@@ -1516,6 +1524,8 @@ final class ConversationMonitor {
                     let shouldApply = await MainActor.run { [weak self] in
                         guard let self else { return false }
                         return self.currentProjectId == projectId
+                            && self.phase == .loading
+                            && self.feedLoadGeneration == loadGeneration
                     }
                     guard shouldApply else { return }
                     await MainActor.run { self.handleFeedLoadError(error, priorReady: priorReady) }
@@ -2535,6 +2545,13 @@ final class ConversationMonitor {
             } catch is CancellationError {
                 log.debug("[INCR-UPDATE] Cancelled")
                 return
+            } catch let error as TimelineDataLoaderError {
+                switch error {
+                case let .projectMismatch(current, requested):
+                    log.warning("[INCR-UPDATE] Project mismatch during incremental (current=\(current, privacy: .public), requested=\(requested, privacy: .public)); forcing full reload")
+                    await loadFeedFromSQL()?.value
+                    return
+                }
             } catch {
                 lastError = "Failed to fetch new entries: \(error.localizedDescription)"
                 log.error("Incremental update failed: \(error.localizedDescription, privacy: .public)")

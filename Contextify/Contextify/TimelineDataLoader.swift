@@ -36,6 +36,10 @@ public struct DecorationSnapshot: Sendable {
 
 // MARK: - Feed Load Result
 
+public enum TimelineDataLoaderError: Error, Sendable {
+    case projectMismatch(current: String, requested: String)
+}
+
 /// Result of loading timeline feed from database
 public struct FeedLoadResult: Sendable {
     public let entries: [(TranscriptEntry, TimelineCache?)]
@@ -221,11 +225,12 @@ public actor TimelineDataLoader {
     /// Reset loader state only if it is still associated with the expected project.
     /// Used to avoid racing a late reset against a new project after a rapid switch.
     public func resetIfProjectMatches(_ expectedProjectId: String?, clearCursor: Bool, reason: String) {
-        if let expectedProjectId,
-           let currentProjectId,
-           currentProjectId != expectedProjectId {
-            log.debug("[RESET-SKIP] reason=\(reason, privacy: .public) expected=\(expectedProjectId, privacy: .public) current=\(currentProjectId, privacy: .public)")
-            return
+        if let expectedProjectId {
+            guard let currentProjectId, currentProjectId == expectedProjectId else {
+                let current = currentProjectId ?? "nil"
+                log.debug("[RESET-SKIP] reason=\(reason, privacy: .public) expected=\(expectedProjectId, privacy: .public) current=\(current, privacy: .public)")
+                return
+            }
         }
         log.info("[RESET] reason=\(reason, privacy: .public) clearCursor=\(clearCursor, privacy: .public)")
         resetState(clearCursor: clearCursor)
@@ -297,12 +302,7 @@ public actor TimelineDataLoader {
         if let currentProjectId, currentProjectId != projectId {
             log.warning("[INCR-UPDATE] Project mismatch (current=\(currentProjectId, privacy: .public), requested=\(projectId, privacy: .public)); resetting state and forcing reload")
             resetState(clearCursor: true)
-            return IncrementalUpdateResult(
-                newEntries: [],
-                transcriptPaths: [:],
-                updatedCursor: nil,
-                decoration: DecorationSnapshot.empty
-            )
+            throw TimelineDataLoaderError.projectMismatch(current: currentProjectId, requested: projectId)
         }
         currentProjectId = projectId
 
@@ -373,6 +373,7 @@ public actor TimelineDataLoader {
     // MARK: - Session Loading
 
     /// Load all sessions from database for transcripts
+    /// App-only API: used by `ConversationMonitor.loadAllSessionsFromDatabase` to keep DB work off-main.
     func loadAllSessions(projectId: String) throws -> [TranscriptSession] {
         try Task.checkCancellation()
 
