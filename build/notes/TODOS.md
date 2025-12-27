@@ -281,6 +281,33 @@ Image rendering feature works but has performance/memory concerns identified in 
 
 ---
 
+## Image Rendering UI/UX Polish (7 items)
+
+**Status:** Not started
+**Priority:** P1 (UX quality)
+**Discovered:** 2025-12-27
+
+- [ ] #IMG-POLISH-THUMBNAILS: Refine thumbnail styling (borders, corners, hover states)
+- [ ] #IMG-POLISH-PANEL: Polish preview panel window appearance and chrome
+- [ ] #IMG-POLISH-A11Y: Add VoiceOver support and keyboard nav completeness
+- [ ] #IMG-POLISH-ANIMATIONS: Smooth transitions between images and zoom/pan gestures
+- [ ] #IMG-POLISH-ERRORS: Improve empty/error state feedback when images fail to load
+- [ ] #IMG-POLISH-PROMPT: Enhance prompt text display (expand on click, better truncation)
+- [ ] #IMG-POLISH-WINDOW: Persist preview window size/position, handle close behavior
+
+**Background:**
+Image rendering feature is functional but needs UI polish:
+- Thumbnail styling minimal (basic rounded rect with low-contrast border)
+- Preview panel appearance could be more refined
+- No VoiceOver labels or screen reader support
+- Animations basic (0.2s easeInOut)
+- Prompt text truncates abruptly with no way to see full text
+- Window loses size/position on close
+
+**Scope:** UI/UX polish only. Performance concerns tracked separately in #IMAGE-RENDER-*.
+
+---
+
 ## Shell-Aware PATH Instructions for CLI Install
 
 **Status:** Not started
