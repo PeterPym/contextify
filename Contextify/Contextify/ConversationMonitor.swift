@@ -209,7 +209,10 @@ final class ConversationMonitor {
     }()
     @ObservationIgnored private var lastSeenCursor: EntryCursor?  // P1-4: Keyset cursor for incremental updates (persisted per project)
     @ObservationIgnored var orchestrator: TranscriptOrchestrator!
-    @ObservationIgnored private var seenEntryIDs = Set<String>()  // Deduplicate entries
+    /// Legacy: seenEntryIDs for dedup. Main paths (loadFeedFromSQL, processIncrementalUpdate)
+    /// now use TimelineDataLoader's seenEntryIDs. This local copy is only used by
+    /// switchToSessionFromUser and related legacy paths.
+    @ObservationIgnored private var seenEntryIDs = Set<String>()
     @ObservationIgnored private var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]  // entry.id -> agent decoration info
     @ObservationIgnored private var contextifyEntryIds: Set<String> = Set()  // entry IDs for Contextify calls
     @ObservationIgnored private var contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]  // toolKey + isResult for Contextify entries
@@ -812,6 +815,8 @@ final class ConversationMonitor {
     @available(*, unavailable, message: "Use watchForDebouncedTranscriptUpdates()")
     private func handleTranscriptUpdate(projectId: String?) async {}
 
+    /// Legacy: Prune CM's local seenEntryIDs. Only used by switchToSessionFromUser.
+    /// Main paths use TimelineDataLoader.pruneSeenIDsIfNeeded() instead.
     @MainActor
     private func pruneSeenIDsIfNeeded() {
         let cap = config.maxEntries * 2
@@ -1063,10 +1068,24 @@ final class ConversationMonitor {
             sortEntriesChronologically()  // Ensure consistent sort (timestamp, sourceIdentifier)
             pruneSeenIDsIfNeeded()
 
-            // Update cursor from latest entry (P1-4: persist)
+            // Phase 2B: Sync loader state after session switch
+            // Reset loader's seenEntryIDs and update cursor to stay in sync
+            if let loader = dataLoader {
+                // Reset loader state (this clears seenEntryIDs, will be rebuilt on next feed load)
+                await loader.reset(clearCursor: false, reason: "session-switch")
+                // Update loader cursor from latest entry
+                if let latest = transcriptEntries.max(by: { a, b in
+                    if a.timestamp != b.timestamp { return a.timestamp < b.timestamp }
+                    if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+                    return a.id < b.id
+                }) {
+                    await loader.setCursor(EntryCursor(from: latest))
+                }
+            }
+
+            // Update CM cursor (backward compat)
             if let latest = transcriptEntries.first {
                 lastSeenCursor = EntryCursor(from: latest)
-                saveCursor()
             }
 
             // Route through policy engine to update follow state and emit system events
@@ -1208,27 +1227,19 @@ final class ConversationMonitor {
             return
         }
 
+        // Phase 2B: Use loader for session loading (DB work off main actor)
+        guard let loader = dataLoader else {
+            log.warning("Cannot load sessions: dataLoader not initialized")
+            return
+        }
+
         do {
-            let transcripts = try orchestrator.getTranscripts(forProject: projectId)
-            let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
-
-            // Fetch entry counts for all transcripts
-            var entryCounts: [String: Int] = [:]
-            for transcript in transcripts {
-                if let count = try? orchestrator.getEntryCount(transcriptId: transcript.id) {
-                    entryCounts[transcript.id] = count
-                }
-            }
-
-            let sessions = Self.mapTranscriptsToSessions(
-                transcripts: transcripts,
-                latestTimestamps: latestTimestamps,
-                entryCounts: entryCounts
-            )
-
+            let sessions = try await loader.loadAllSessions(projectId: projectId)
             allSessions = sessions
             allSessionsLastUpdate = Date()
             log.info("Loaded \(sessions.count) sessions from database for transcripts")
+        } catch is CancellationError {
+            log.debug("Session loading cancelled")
         } catch {
             log.error("Failed to load sessions from database: \(error.localizedDescription, privacy: .public)")
         }
@@ -1331,6 +1342,8 @@ final class ConversationMonitor {
     }
 
     /// Refresh decoration lookup tables for the current project
+    /// Legacy: Only used by switchToSessionFromUser. Main paths (loadFeedFromSQL,
+    /// processIncrementalUpdate) now use decoration snapshots from TimelineDataLoader.
     private func refreshDecorationData(projectId: String) {
         guard let orchestrator = orchestrator else {
             spawnedAgentsLookup.removeAll()
@@ -2501,38 +2514,6 @@ final class ConversationMonitor {
                 break
             }
         } while true
-    }
-
-
-    nonisolated private static func mapTranscriptsToSessions(
-        transcripts: [Transcript],
-        latestTimestamps: [String: Int],
-        entryCounts: [String: Int]
-    ) -> [TranscriptSession] {
-        return transcripts.compactMap { transcript in
-            let fileURL = URL(fileURLWithPath: transcript.filePath)
-            let provider: TimelineSourceContext.Provider
-            switch transcript.provider {
-            case "claude.code": provider = .claudeCode
-            case "codex.cli": provider = .codexCLI
-            default: provider = .other
-            }
-
-            // Use latest conversation timestamp if available, otherwise fall back to file modified time
-            let lastActivityTimestamp = latestTimestamps[transcript.id] ?? transcript.updatedAt
-            let lastActivity = Date(timeIntervalSince1970: TimeInterval(lastActivityTimestamp))
-
-            // Get entry count (defaults to 0 if not found)
-            let entryCount = entryCounts[transcript.id] ?? 0
-
-            return TranscriptSession(
-                provider: provider,
-                identifier: transcript.id,
-                fileURL: fileURL,
-                lastActivity: lastActivity,
-                entryCount: entryCount
-            )
-        }.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     private func generatorSignature() -> String {
