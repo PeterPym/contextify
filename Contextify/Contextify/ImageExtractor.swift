@@ -53,11 +53,17 @@ actor ImageExtractor {
   /// Track insertion order for FIFO eviction
   private var cacheOrder: [String] = []
 
+  /// Track cached bytes for memory pressure management
+  private var cachedBytes: Int = 0
+
   /// In-flight extraction tasks to avoid duplicate reads
   private var inFlight: [String: Task<ImageExtractionResult, Never>] = [:]
 
   /// Maximum number of entries to cache
   private let maxCacheSize = 100
+
+  /// Maximum bytes to cache (100 MB default)
+  private let maxCacheBytes = 100 * 1024 * 1024
 
   /// Access provider for sandbox builds (set once during app initialization)
   private var accessProvider: TranscriptAccessProvider?
@@ -260,22 +266,43 @@ actor ImageExtractor {
     return ImageExtractionResult(images: images, promptText: promptText)
   }
 
-  /// Cache result with FIFO eviction
+  /// Compute the byte size of a cached result
+  private func byteSize(of result: ImageExtractionResult) -> Int {
+    let imageBytes = result.images.reduce(0) { $0 + $1.data.count }
+    let textBytes = result.promptText?.utf8.count ?? 0
+    return imageBytes + textBytes
+  }
+
+  /// Cache result with FIFO eviction based on both entry count and byte size
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
-    // Evict oldest entry if at capacity
+    let resultBytes = byteSize(of: result)
+
+    // Evict oldest entries until under byte limit
+    while cachedBytes + resultBytes > maxCacheBytes, let oldest = cacheOrder.first {
+      if let evicted = cache.removeValue(forKey: oldest) {
+        cachedBytes -= byteSize(of: evicted)
+      }
+      cacheOrder.removeFirst()
+    }
+
+    // Also evict if at entry count capacity
     if cache.count >= maxCacheSize, let oldest = cacheOrder.first {
-      cache.removeValue(forKey: oldest)
+      if let evicted = cache.removeValue(forKey: oldest) {
+        cachedBytes -= byteSize(of: evicted)
+      }
       cacheOrder.removeFirst()
     }
 
     cache[entryId] = result
     cacheOrder.append(entryId)
+    cachedBytes += resultBytes
   }
 
   /// Clear the image cache
   func clearCache() {
     cache.removeAll()
     cacheOrder.removeAll()
+    cachedBytes = 0
     log.info("[IMAGE-EXTRACT] Cache cleared")
   }
 
