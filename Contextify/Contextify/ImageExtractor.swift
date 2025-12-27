@@ -10,7 +10,6 @@ struct ExtractedImage: Identifiable, Sendable {
   let data: Data
 
   /// Decode the image data to NSImage
-  @MainActor
   var nsImage: NSImage? {
     NSImage(data: data)
   }
@@ -310,10 +309,9 @@ actor ImageExtractor {
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
     // Verify cache/cacheOrder invariants
     #if DEBUG
-    assert(cache.count == cacheOrder.count, "cache/cacheOrder out of sync")
-    assert(Set(cacheOrder).count == cacheOrder.count, "cacheOrder contains duplicates")
-    assert(cacheOrder.allSatisfy { cache[$0] != nil }, "cacheOrder has missing cache entries")
-    assert(cache.keys.allSatisfy { cacheOrder.contains($0) }, "cache has keys missing from cacheOrder")
+    let orderSet = Set(cacheOrder)
+    assert(orderSet.count == cacheOrder.count, "cacheOrder contains duplicates")
+    assert(orderSet == Set(cache.keys), "cache and cacheOrder keysets diverged")
     #endif
 
     let resultBytes = byteSize(of: result)
@@ -352,10 +350,9 @@ actor ImageExtractor {
 
     // Verify post-mutation invariants
     #if DEBUG
-    assert(cache.count == cacheOrder.count, "cache/cacheOrder out of sync after mutation")
-    assert(Set(cacheOrder).count == cacheOrder.count, "cacheOrder contains duplicates after mutation")
-    assert(cacheOrder.allSatisfy { cache[$0] != nil }, "cacheOrder has missing cache entries after mutation")
-    assert(cache.keys.allSatisfy { cacheOrder.contains($0) }, "cache has keys missing from cacheOrder after mutation")
+    let postOrderSet = Set(cacheOrder)
+    assert(postOrderSet.count == cacheOrder.count, "cacheOrder contains duplicates after mutation")
+    assert(postOrderSet == Set(cache.keys), "cache and cacheOrder keysets diverged after mutation")
     #endif
   }
 
