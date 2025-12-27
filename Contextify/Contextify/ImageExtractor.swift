@@ -19,6 +19,7 @@ struct ExtractedImage: Identifiable, Sendable {
 struct ImageExtractionResult: Sendable {
   let images: [ExtractedImage]
   let promptText: String?  // Text content that accompanied the images
+  let didReadFile: Bool    // Whether file was successfully opened and read
 
   /// Convenience for checking if result has images
   var isEmpty: Bool { images.isEmpty }
@@ -94,7 +95,7 @@ actor ImageExtractor {
 
     guard let path = transcriptPath else {
       log.debug("[IMAGE-EXTRACT] No transcript path for entry \(entryId.prefix(8), privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil)
+      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
     }
 
     // Capture values for detached task (avoid capturing self)
@@ -121,8 +122,10 @@ actor ImageExtractor {
     // Clean up in-flight tracking
     inFlight[entryId] = nil
 
-    // Cache the result
-    cacheResult(result, forEntry: entryId)
+    // Cache the result only if we successfully read the file
+    if result.didReadFile {
+      cacheResult(result, forEntry: entryId)
+    }
 
     return result
   }
@@ -140,6 +143,11 @@ actor ImageExtractor {
     // Determine provider ID for sandbox access
     let providerID = TranscriptProviderID.fromTranscriptURL(url)
 
+    // Defensive log for sandbox mismatch (provider set but no providerID)
+    if accessProvider != nil && providerID == nil {
+      log.debug("[IMAGE-EXTRACT] Sandbox mismatch: accessProvider set but providerID is nil for path \(url.path, privacy: .public)")
+    }
+
     do {
       // Wrap file access for sandbox builds
       let result: ImageExtractionResult = try {
@@ -156,7 +164,7 @@ actor ImageExtractor {
       return result
     } catch {
       log.warning("[IMAGE-EXTRACT] Failed to read transcript: \(error.localizedDescription, privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil)
+      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
     }
   }
 
@@ -168,7 +176,8 @@ actor ImageExtractor {
   ) throws -> ImageExtractionResult {
     guard let fileHandle = FileHandle(forReadingAtPath: url.path) else {
       log.debug("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil)
+      // File not found/unreadable - don't cache this result
+      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
     }
 
     defer { try? fileHandle.close() }
@@ -199,7 +208,12 @@ actor ImageExtractor {
         }
 
         // Found the entry - extract images and text
-        let result = extractContentFromEntry(json, log: log)
+        var result = extractContentFromEntry(json, log: log)
+        result = ImageExtractionResult(
+          images: result.images,
+          promptText: result.promptText,
+          didReadFile: true
+        )
 
         if !result.images.isEmpty {
           log.info("[IMAGE-EXTRACT] Extracted \(result.images.count, privacy: .public) images from entry \(entryId.prefix(8), privacy: .public)")
@@ -214,7 +228,12 @@ actor ImageExtractor {
       if let json = try? JSONSerialization.jsonObject(with: buffer) as? [String: Any],
          let uuid = json["uuid"] as? String,
          uuid == entryId {
-        let result = extractContentFromEntry(json, log: log)
+        var result = extractContentFromEntry(json, log: log)
+        result = ImageExtractionResult(
+          images: result.images,
+          promptText: result.promptText,
+          didReadFile: true
+        )
         if !result.images.isEmpty {
           log.info("[IMAGE-EXTRACT] Extracted \(result.images.count, privacy: .public) images from entry \(entryId.prefix(8), privacy: .public)")
         }
@@ -222,15 +241,16 @@ actor ImageExtractor {
       }
     }
 
-    // Entry not found
-    return ImageExtractionResult(images: [], promptText: nil)
+    // Entry not found in file (but file was read successfully)
+    return ImageExtractionResult(images: [], promptText: nil, didReadFile: true)
   }
 
   /// Extract image blocks and text from an entry's JSON
   private static func extractContentFromEntry(_ json: [String: Any], log: Logger) -> ImageExtractionResult {
     guard let message = json["message"] as? [String: Any],
           let contentBlocks = message["content"] as? [[String: Any]] else {
-      return ImageExtractionResult(images: [], promptText: nil)
+      // Note: didReadFile will be set by caller based on whether file was opened
+      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
     }
 
     var images: [ExtractedImage] = []
@@ -258,7 +278,8 @@ actor ImageExtractor {
     }
 
     let promptText = textParts.isEmpty ? nil : textParts.joined(separator: "\n")
-    return ImageExtractionResult(images: images, promptText: promptText)
+    // Note: didReadFile will be set by caller based on whether file was opened
+    return ImageExtractionResult(images: images, promptText: promptText, didReadFile: false)
   }
 
   /// Compute the byte size of a cached result
@@ -272,20 +293,32 @@ actor ImageExtractor {
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
     let resultBytes = byteSize(of: result)
 
-    // Evict oldest entries until under byte limit
-    while cachedBytes + resultBytes > maxCacheBytes, let oldest = cacheOrder.first {
-      if let evicted = cache.removeValue(forKey: oldest) {
-        cachedBytes -= byteSize(of: evicted)
-      }
-      cacheOrder.removeFirst()
+    // If a single result is larger than the entire cache budget, don't cache it.
+    // (Still return it to the caller; just skip retention.)
+    guard resultBytes <= maxCacheBytes else {
+      log.info(
+        "[IMAGE-EXTRACT] Skipping cache for oversized result (\(resultBytes, privacy: .public) bytes) entry \(entryId.prefix(8), privacy: .public)"
+      )
+      return
     }
 
-    // Also evict if at entry count capacity
-    if cache.count >= maxCacheSize, let oldest = cacheOrder.first {
+    // Defensive: if we're re-caching the same entryId, remove old accounting + ordering.
+    if let existing = cache.removeValue(forKey: entryId) {
+      cachedBytes -= byteSize(of: existing)
+    }
+    if let idx = cacheOrder.firstIndex(of: entryId) {
+      cacheOrder.remove(at: idx)
+    }
+    if cachedBytes < 0 { cachedBytes = 0 } // defensive against drift
+
+    // Evict until BOTH constraints are satisfied.
+    while (cachedBytes + resultBytes > maxCacheBytes || cache.count >= maxCacheSize),
+          let oldest = cacheOrder.first {
+      cacheOrder.removeFirst()
       if let evicted = cache.removeValue(forKey: oldest) {
         cachedBytes -= byteSize(of: evicted)
+        if cachedBytes < 0 { cachedBytes = 0 }
       }
-      cacheOrder.removeFirst()
     }
 
     cache[entryId] = result
