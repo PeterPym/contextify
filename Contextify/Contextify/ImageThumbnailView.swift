@@ -291,8 +291,12 @@ final class ImagePreviewPanelController: NSObject, NSWindowDelegate {
     // MARK: - NSWindowDelegate
 
     /// Clean up references when user closes panel via window chrome (red button)
+    /// Guard against race where rapid reopen could cause new panel to be cleared
     nonisolated func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow else { return }
         Task { @MainActor in
+            // Only clear if the closing window is the current panel
+            guard self.panel === closingWindow else { return }
             self.panel = nil
             self.hostingView = nil
         }
