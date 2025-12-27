@@ -35,6 +35,10 @@ struct TimelineEntryRow: View, Equatable {
     @State private var showSafetyInfo = false
     @State private var showErrorInfo = false
     @State private var showQueuedInfo = false
+    // Image preview state
+    @State private var extractedImages: [ExtractedImage] = []
+    @State private var imagePromptText: String?
+    @State private var hasLoadedImages = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @Environment(ConversationMonitor.self) private var monitor
@@ -56,6 +60,19 @@ struct TimelineEntryRow: View, Equatable {
                 formatWithBackticks(entry.summary)
                     .font(.callout)
                     .foregroundStyle(.primary)
+
+                // Show image thumbnails if entry has images
+                if !extractedImages.isEmpty {
+                    ImageThumbnailRow(images: extractedImages) { index in
+                        ImagePreviewPanelController.shared.show(
+                            images: extractedImages,
+                            promptText: imagePromptText,
+                            startIndex: index
+                        )
+                    }
+                    .padding(.top, 6)
+                    .padding(.leading, 4)  // Align with text content
+                }
 
                 if isExpanded {
                     Divider()
@@ -131,6 +148,28 @@ struct TimelineEntryRow: View, Equatable {
             }
             if entry.isContextifyCall {
                 log.debug("[DECORATION] Contextify indicator rendered for entry \(entry.id, privacy: .public)")
+            }
+            // Load images for this entry (lazy, cached)
+            loadImagesIfNeeded()
+        }
+    }
+
+    /// Load images from transcript file (lazy, cached via ImageExtractor)
+    private func loadImagesIfNeeded() {
+        guard !hasLoadedImages else { return }
+        hasLoadedImages = true
+
+        Task {
+            let result = await ImageExtractor.shared.extractImages(
+                entryId: entry.sourceIdentifier,
+                transcriptPath: entry.sourceContext?.filePath
+            )
+            if !result.images.isEmpty {
+                await MainActor.run {
+                    self.extractedImages = result.images
+                    self.imagePromptText = result.promptText
+                    log.info("[IMAGE-LOAD] Loaded \(result.images.count, privacy: .public) images for entry \(entry.sourceIdentifier.prefix(8), privacy: .public)")
+                }
             }
         }
     }

@@ -169,6 +169,61 @@ Contextify uses **two independent LLM processing queues** for content generation
 
 ---
 
+## Image Handling (Timeline Media)
+
+Contextify extracts and displays images embedded in Claude Code transcript entries. Images are stored as base64-encoded content blocks in JSONL files and extracted on-demand for timeline display.
+
+### Image Content Block Format
+
+Images in Claude Code transcripts use the following JSON structure:
+
+```json
+{
+  "type": "image",
+  "source": {
+    "type": "base64",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgo..."
+  }
+}
+```
+
+### Key Components
+
+**ImageExtractor** (`Contextify/Contextify/ImageExtractor.swift`):
+- Actor-based image extraction from Claude Code transcripts
+- Extracts base64-encoded images from JSONL content blocks
+- Streaming file I/O with 64KB chunks (no full-file loads)
+- Cache: FIFO eviction with dual constraints (100 entries, 100MB total)
+- In-flight task deduplication prevents redundant file reads
+- Sandbox-aware: Uses TranscriptAccessProvider for App Store builds
+
+**Architecture notes:**
+- **Lazy loading:** Images extracted on-demand when timeline entries become visible
+- **Caching strategy:** Results cached by entry UUID; oversized entries (>100MB) returned but not cached
+- **Sandbox access:** All FileManager operations wrapped in `accessProvider.withAccess()` closure
+- **Data models:** ExtractedImage (Sendable) contains decoded data; NSImage conversion on MainActor
+
+**UI Components** (`Contextify/Contextify/ImageThumbnailView.swift`):
+- **ImageThumbnailRow:** Displays up to 4 thumbnails inline with overflow indicator
+- **ImagePreviewPanelController:** Floating NSPanel for Quick Look-style preview
+- **ImagePreviewPanelContent:** SwiftUI view with zoom/pan gestures, keyboard navigation (arrow keys, ESC)
+
+**Integration:**
+- TimelineEntryRow calls `ImageExtractor.shared.extractImages()` on appearance
+- Preview panel opened via `ImagePreviewPanelController.shared.show()`
+- Access provider configured in ContextifyApp.swift during startup
+
+### Cache Management
+
+The ImageExtractor maintains a memory-efficient cache with two constraints:
+- **Entry limit:** 100 cached results (FIFO eviction)
+- **Byte limit:** 100MB total cached data
+- **Oversized handling:** Results >100MB are returned to caller but not cached
+- **In-flight deduplication:** Multiple requests for the same entry share a single file read
+
+---
+
 ## Core Components (Project Context)
 
 **HUDViewModel** (`app/Sources/ContextifyCore/HUDCore.swift:370-1032`):
