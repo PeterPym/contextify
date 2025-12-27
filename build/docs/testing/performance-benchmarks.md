@@ -685,7 +685,7 @@ func testMetadataExtractionPerformance() async throws {
 ### Target: 60 FPS (16.67ms/frame)
 
 **Critical UI Components:**
-- `ConversationMonitor` - Timeline display (3054 lines)
+- `ConversationMonitor` - Timeline display (~2900 lines, partially refactored)
 - `ProjectSwitcherView` - Project dropdown
 - `TimelineView` - Entry list rendering
 
@@ -1374,7 +1374,7 @@ Average per project: 8.8s
 **Impact:** First timeline view of a session shows "Generating summary..." for 1s
 **Frequency:** Once per session per app launch
 **Cause:** LLM summarization on-demand (FoundationLLM)
-**Status:** Unchanged (ConversationMonitor not refactored)
+**Status:** Partially refactored (Phase 1–3 extractions complete)
 **Fix (Phase 4):** Pre-generate summaries during background indexing
 
 **2. Large Project JIT Ingestion (>1.5s)**
@@ -1389,7 +1389,7 @@ Average per project: 8.8s
 
 ### P1 - High (Internal)
 
-**3. ConversationMonitor God Object (3054 lines)**
+**3. ConversationMonitor God Object (~2900 lines)**
 
 **Impact:** Hard to test, maintain, optimize
 **Frequency:** Developer velocity issue
@@ -1474,7 +1474,7 @@ Average per project: 8.8s
 ### Phase 4: Refactoring (Planned - Q1 2026)
 
 **Goals:**
-- Split ConversationMonitor (3054 → 4×~400 lines)
+- Split ConversationMonitor (remaining subsystems after Phase 1–3)
 - Add protocol abstractions (testability)
 - Unified event system (AsyncStream)
 - Optimize timeline cache (pre-generation)
@@ -1680,7 +1680,7 @@ self.timelineEntries.append(contentsOf: additions)
 
 - `app/Sources/ContextifyCore/Database/HooverEngine.swift` - Ingestion performance
 - `app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift:199` - Discovery targets
-- `Contextify/Contextify/ConversationMonitor.swift` - UI rendering bottleneck (3054 lines)
+- `Contextify/Contextify/ConversationMonitor.swift` - UI rendering bottleneck (~2900 lines)
 - `Contextify/Contextify/FoundationLLM.swift` - LLM performance
 - `Contextify/ContextifyTests/FoundationLLMTests.swift:416` - Session creation benchmark
 

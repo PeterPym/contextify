@@ -701,7 +701,7 @@ var body: some View {
 
 **Recommendation:** Split large @Observable objects (like ConversationMonitor) into focused, single-responsibility objects.
 
-**Reference:** `build/docs/architecture/architecture-refactoring-analysis.md` (ConversationMonitor god object, 3054 lines)
+**Reference:** `build/docs/architecture/architecture-refactoring-analysis.md` (ConversationMonitor god object, ~2900 lines, partially refactored)
 
 ---
 
@@ -965,7 +965,7 @@ class ViewModel {
 ```swift
 @Observable
 class ConversationMonitor {
-  // 3054 lines with 15+ responsibilities
+  // ~2900 lines with 10+ responsibilities (Phase 1–3 extractions complete)
   var entries: [Entry]
   var isLoading: Bool
   var error: String?
@@ -1148,7 +1148,7 @@ Do you need a binding?
 ### File Count by Pattern
 
 **@Observable Classes:** 6
-- `ConversationMonitor.swift` (3054 lines)
+- `ConversationMonitor.swift` (~2900 lines)
 - `ProjectSwitcherState.swift`
 - `StatusBarViewModel.swift`
 - `ProjectsViewModel.swift`

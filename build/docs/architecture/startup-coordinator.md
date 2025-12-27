@@ -17,7 +17,7 @@
 **StartupCoordinator (Legacy):**
 - Receives project switch notifications from AppStateOrchestrator via `handleExternalProjectSwitch()`
 - Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
-- **Note:** Planned for refactor/removal when ConversationMonitor is split (see architecture-refactoring-analysis.md)
+- **Note:** Partial ConversationMonitor split is complete (Phase 1–3), but StartupCoordinator remains in use until remaining CM subsystems move out
 
 **For New Development:** Use AppStateOrchestrator directly. Only use StartupCoordinator if integrating with legacy components that haven't been migrated to current patterns.
 
@@ -107,7 +107,7 @@ public func handleExternalProjectSwitch(id: String, path: String) async throws {
 **Purpose:** Bridge between current architecture (AppStateOrchestrator) and legacy components (ConversationMonitor).
 
 **When to Use:**
-- ✅ ConversationMonitor integration (required until refactor)
+- ✅ ConversationMonitor integration (required until remaining refactor phases complete)
 - ✅ Other legacy components using `StartupCoordinator.shared.updates`
 - ❌ New components (use AppStateOrchestrator directly)
 
@@ -396,12 +396,13 @@ func testFullStartupSequence() async throws {
 
 ### Planned Refactoring
 
-**When:** After ConversationMonitor split
+**When:** After remaining ConversationMonitor split
 
 **Steps:**
 
-1. **Refactor ConversationMonitor** (P0 - Critical, 3-4 weeks)
-   - Split into 4 focused components (TimelineLoader, MonitoringCoordinator, TimelineCacheCoordinator, ConversationMonitor)
+1. **Refactor ConversationMonitor** (P0 - Critical, remaining phases)
+   - Completed: TimelineDataLoader, TimelineCacheCoordinator, ViewportTrackingCoordinator, HealthMonitoringCoordinator
+   - Remaining: watcher lifecycle extraction, session/follow policy isolation, notification hub
    - Update to use AppStateOrchestrator directly (not StartupCoordinator)
 
 2. **Audit Legacy Subscribers** (1 week)

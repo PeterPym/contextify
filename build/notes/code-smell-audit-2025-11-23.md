@@ -22,7 +22,7 @@
 | @Observable state classes | 6 | ⚠️ |
 | Database write operations from UI | 6 | ⚠️ Layer violation |
 | Files over 1000 lines (god classes) | 8 | ❌ |
-| Largest file (ConversationMonitor) | 3,189 lines | ❌ |
+| Largest file (ConversationMonitor) | ~2.9k lines (reduced after Phase 1–3 extractions) | ❌ |
 | Detached tasks | 25 | ⚠️ Cancellation risk |
 | nonisolated(unsafe) usages | 22 | ⚠️ Race condition risk |
 | Total catch blocks | 195 | ⚠️ Inconsistent handling |
@@ -432,7 +432,7 @@ Several classes have grown to thousands of lines with multiple unrelated respons
 
 | File | Lines | Primary Issues |
 |------|-------|----------------|
-| ConversationMonitor.swift | 3,189 | Timeline, sessions, cache, monitoring, LLM coordination |
+| ConversationMonitor.swift | ~2900 | Timeline, sessions, monitoring, policy, notifications (cache + DB work extracted) |
 | TranscriptOrchestrator.swift | 2,134 | Parsing, DB, validation, coordination, migrations |
 | FoundationLLM.swift | 2,096 | LLM calls, prompt engineering, response parsing, caching |
 | HUDCore.swift | 1,196 | App coordination, file drops, git monitoring, settings |

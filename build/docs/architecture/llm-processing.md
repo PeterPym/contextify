@@ -45,7 +45,7 @@ Contextify uses **two independent LLM processing queues** for different content 
 
 Both systems use **FoundationLLM** (Apple Intelligence) and operate independently with their own rate limiting, error handling, and circuit breakers.
 
-**Viewport-driven summarization:** Timeline entries enter the LLM queue once SwiftUI reports ≥25% visibility (`viewportVisibilityThreshold` shared constant). `ConversationMonitor` tracks that snapshot via `InitialViewportStateMachine`, cancels fallback timers after the first accepted snapshot, and logs `[SUMM-VIEWPORT-ACCEPTED]` / `[SUMM-VIEWPORT-FALLBACK]` plus starvation warnings when visible entries stay unsummarized for >2 s. Recent-visible IDs expire after 1 s so pruning removes scrolled-off entries even if their UUIDs linger.
+**Viewport-driven summarization:** Timeline entries enter the LLM queue once SwiftUI reports ≥25% visibility (`viewportVisibilityThreshold` shared constant). `ViewportTrackingCoordinator` tracks the snapshot and settle timing, while `TimelineCacheCoordinator` handles queue prune/queueing and logs `[SUMM-VIEWPORT-ACCEPTED]` / `[SUMM-VIEWPORT-FALLBACK]` plus starvation warnings when visible entries stay unsummarized for >2 s. Recent-visible IDs expire after 1 s so pruning removes scrolled-off entries even if their UUIDs linger.
 
 ---
 
@@ -65,8 +65,8 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
                     │                        │
         ┌───────────▼──────────┐  ┌─────────▼────────────────┐
         │ ConversationMonitor  │  │ TranscriptInventoryView  │
-        │  - Loads feed        │  │  - Loads sessions        │
-        │  - Detects misses    │  │  - Requests metadata     │
+        │  - Coordinates feed  │  │  - Loads sessions        │
+        │  - Delegates queue   │  │  - Requests metadata     │
         └───────────┬──────────┘  └─────────┬────────────────┘
                     │                       │
         ┌───────────▼──────────────┐ ┌─────▼────────────────────┐
@@ -100,7 +100,7 @@ Both systems use **FoundationLLM** (Apple Intelligence) and operate independentl
 **Location:** `Contextify/Contextify/TimelineCacheMissGenerator.swift`
 
 **Triggered By:**
-- Timeline entry display in ConversationMonitor
+- Timeline entry display via ConversationMonitor + TimelineCacheCoordinator
 - Cache miss detected (no cached summary for content+window hash)
 - Real-time during conversation monitoring
 

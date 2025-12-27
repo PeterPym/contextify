@@ -37,13 +37,13 @@ Contextify's architecture demonstrates **strong fundamentals** with a mature laz
 - ✅ Clean discovery tier separation (lightweight vs. full)
 
 ### Areas for Improvement
-- ⚠️ ConversationMonitor remains a god object (3054 lines, ~15 responsibilities)
+- ⚠️ ConversationMonitor remains large (≈2.9k lines) but is materially slimmer after Phase 1–3 extractions
 - ⚠️ Hybrid event system (NotificationCenter + @Published)
 - ⚠️ No protocol abstractions (difficult to test)
 - ⚠️ HUDCore combines multiple concerns (1196 lines)
 
 ### Critical Priorities
-1. **P0 - ConversationMonitor Refactor** (3-4 weeks) - Split into focused components
+1. **P0 - ConversationMonitor Refactor** (remaining phases, 2-3 weeks) - Finish splitting remaining responsibilities
 2. **P1 - HUDCore Extraction** (2 weeks) - Separate Git and bookmark management
 3. **P2 - Protocol Abstractions** (2-3 weeks) - Enable dependency injection for testing
 4. **P3 - Unified Event System** (2-3 weeks) - Replace NotificationCenter with EventBus actor
@@ -56,7 +56,7 @@ Contextify's architecture demonstrates **strong fundamentals** with a mature laz
 
 ### Critical - Requires Refactoring (>1000 lines)
 ```
-ConversationMonitor.swift           3054 lines  🔴 CRITICAL
+ConversationMonitor.swift           ~2900 lines  🔴 CRITICAL (large but partially refactored)
 HUDCore.swift                      1196 lines  ⚠️  HIGH
 ProjectDiscoveryService.swift     1000 lines  ⚠️  MEDIUM
 ```
@@ -90,7 +90,7 @@ ActiveProjectContext.swift          ~80 lines  ✓
 
 | File | Lines | Responsibilities | Severity | Recommended Action |
 |------|-------|------------------|----------|-------------------|
-| ConversationMonitor.swift | 3054 | 15+ | 🔴 Critical | Split into 4 components |
+| ConversationMonitor.swift | ~2900 | 10+ | 🔴 Critical | Continue split (remaining subsystems) |
 | HUDCore.swift | 1196 | 8+ | ⚠️ High | Extract Git/Bookmark managers |
 | ProjectDiscoveryService.swift | 1000 | 6 | ⚠️ Medium | Consider lightweight-only in future |
 | HooverEngine.swift | 898 | 4 | ℹ️ Low | Acceptable for streaming parser |
@@ -163,25 +163,24 @@ enum AppState: Sendable {
 
 # God Objects & Complexity Hotspots
 
-## Critical: ConversationMonitor (3054 lines)
+## Critical: ConversationMonitor (~2900 lines)
 
-**Current Responsibilities (~15):**
+**Current Responsibilities (~10+):**
 
 1. Timeline state management (TimelineState, entries array)
-2. Database query coordination (loadFeedFromSQL, pagination)
-3. Transcript watcher lifecycle (start/stop monitoring)
-4. LLM queue management (TimelineCacheMissGenerator coordination)
+2. Transcript watcher lifecycle (start/stop monitoring)
+3. Session follow policy + active session decisions
+4. Notification and observer lifecycle (NotificationCenter wiring)
 5. Session filtering and switching
 6. Unread tracking and visit updates
 7. System message handling
 8. Entry expansion/collapse state
 9. Scroll position management
-10. Real-time update handling (NotificationCenter subscriptions)
-11. StartupCoordinator integration (legacy)
-12. Project switching coordination
-13. Metadata generation orchestration
-14. Status bar state aggregation
-15. Error handling and recovery
+10. StartupCoordinator integration (legacy)
+11. Project switching coordination
+12. Metadata generation orchestration
+13. Status bar state aggregation
+14. Error handling and recovery
 
 **Coupling Issues:**
 - Tight coupling to StartupCoordinator (legacy dependency)
@@ -189,7 +188,7 @@ enum AppState: Sendable {
 - Mixed UI state and business logic
 - Hard to test (no protocol abstractions)
 
-**Recommended Split (4 components):**
+**Recommended Split (remaining components):**
 
 ### 1. ConversationMonitor (~400 lines)
 **Responsibilities:** Timeline coordination only
@@ -197,11 +196,8 @@ enum AppState: Sendable {
 - Coordinates between loader, watcher, cache
 - Handles user actions (session switch, scroll)
 
-### 2. TimelineLoader (~300 lines)
-**Responsibilities:** Database queries and pagination
-- SQL query execution via TranscriptOrchestrator
-- Pagination logic
-- Entry filtering
+### Completed in Phase 2: TimelineDataLoader (~450 lines)
+**Responsibilities:** Database queries, pagination, cursor persistence
 
 ### 3. MonitoringCoordinator (~250 lines)
 **Responsibilities:** Watcher lifecycle management
@@ -209,13 +205,19 @@ enum AppState: Sendable {
 - Handle file system events
 - Coordinate refresh triggers
 
-### 4. TimelineCacheCoordinator (~200 lines)
+### Completed in Phase 3: TimelineCacheCoordinator (~300 lines)
 **Responsibilities:** LLM queue management
 - Coordinate TimelineCacheMissGenerator
 - Track pending summaries
 - Provide status aggregation
 
-**Estimated Effort:** 3-4 weeks
+### Completed in Phase 1: ViewportTrackingCoordinator (~520 lines)
+**Responsibilities:** viewport settle/debounce, visibility tracking, unread gating
+
+### Completed in Phase 1: HealthMonitoringCoordinator (~260 lines)
+**Responsibilities:** watcher health checks, recovery, diagnostics
+
+**Estimated Effort:** 2-3 weeks (remaining subsystems only)
 **Priority:** P0 (Critical)
 
 ---

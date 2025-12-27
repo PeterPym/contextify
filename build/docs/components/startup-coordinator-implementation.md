@@ -13,7 +13,7 @@
 **Integration with AppStateOrchestrator:**
 - Receives `handleExternalProjectSwitch(id:path:)` calls from AppStateOrchestrator
 - Publishes `ActiveProjectContext` updates for legacy subscribers (ConversationMonitor)
-- Planned for refactor/removal when ConversationMonitor is split
+- Planned for refactor/removal after remaining ConversationMonitor subsystems move out (Phase 1–3 already complete)
 
 **See:** `build/docs/architecture/startup-coordinator.md` for migration guide
 

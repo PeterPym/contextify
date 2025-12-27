@@ -175,7 +175,7 @@ graph TB
 - **Purpose:** Legacy compatibility shim for ConversationMonitor
 - **Integration:** Receives handleExternalProjectSwitch() calls from AppStateOrchestrator
 - **Publishes:** `ActiveProjectContext` (id, path, branch, bookmark) via AsyncStream
-- **Note:** Planned for refactor/removal when ConversationMonitor is split (see architecture-refactoring-analysis.md)
+- **Note:** Planned for refactor/removal after remaining ConversationMonitor subsystems move out (see architecture-refactoring-analysis.md)
 
 **ProjectDiscoveryService** (`app/Sources/ContextifyCore/Projects/ProjectDiscoveryService.swift`, 1000 lines)
 - **Purpose:** Full discovery with DB writes (used by legacy code paths)
@@ -247,11 +247,11 @@ graph TB
   - `convertToDiscoveredProjects()` (line 156) - Convert LightweightProject → UI model
 - **Responsibilities:** State observation, UI model conversion, action delegation (no business logic)
 
-**ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`, 3054 lines)
+**ConversationMonitor** (`Contextify/Contextify/ConversationMonitor.swift`, ~2900 lines)
 - **Purpose:** Timeline state management and real-time updates
 - **Key Method:** `startMonitoring()` (line 428)
 - **Architecture:** @MainActor @Observable
-- **Note:** Planned refactoring into 4 focused components (see architecture-refactoring-analysis.md)
+- **Note:** Phase 1–3 extractions complete (TimelineDataLoader, ViewportTrackingCoordinator, HealthMonitoringCoordinator, TimelineCacheCoordinator); remaining subsystems tracked in architecture-refactoring-analysis.md
 - **Current:** Still uses legacy StartupCoordinator integration
 - **Subscribes To:**
   - StartupCoordinator.updates (AsyncStream) - project switches
@@ -693,7 +693,7 @@ deinit {
 
 ### State Management
 
-**File:** `Contextify/Contextify/ConversationMonitor.swift` (3054 lines)
+**File:** `Contextify/Contextify/ConversationMonitor.swift` (~2900 lines)
 **Architecture:** @MainActor @Observable
 
 **Key State:**
@@ -713,8 +713,8 @@ public func startMonitoring(projectId: String) async {
     // 1. Store projectId
     self.currentProjectId = projectId
 
-    // 2. Query database for transcripts
-    let transcripts = try await orchestrator.getTranscripts(projectId: projectId)
+    // 2. Query database for transcripts (via data loader)
+    let transcripts = try await dataLoader.loadAllSessions(projectId: projectId)
 
     // 3. Create watchers for each transcript
     for transcript in transcripts {
@@ -727,7 +727,7 @@ public func startMonitoring(projectId: String) async {
         activeTranscriptWatchers[transcript.id] = watcher
     }
 
-    // 4. Load initial timeline entries
+    // 4. Load initial timeline entries (delegates to TimelineDataLoader)
     await loadFeedFromSQL()
 
     // 5. Subscribe to coordinator updates
@@ -1259,7 +1259,7 @@ actor EventBus {
 
 ### 4. StartupCoordinator Refactor/Removal (P1 - High)
 
-**Goal:** Remove after ConversationMonitor refactor
+**Goal:** Remove after remaining ConversationMonitor refactor phases
 
 **Plan:**
 - Fold functionality into AppStateOrchestrator

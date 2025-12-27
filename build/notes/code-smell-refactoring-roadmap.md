@@ -333,7 +333,7 @@ func stop() {
 ```
 
 **Files & Lines:**
-- [ ] ConversationMonitor.swift:1594 - Cursor persistence
+- [ ] TimelineDataLoader.swift - Cursor persistence (moved out of ConversationMonitor)
 - [ ] ConversationMonitor.swift:342, 399, 462, 527, 555 - Various tasks
 - [ ] ProjectSwitcherState.swift:312, 545, 600, 608 - Project operations
 - [ ] SettingsView.swift:296, 347 - Settings operations
@@ -484,38 +484,44 @@ Refs: code-smell-audit-2025-11-23.md Pattern #1
 
 ---
 
-#### Task 3.2: Split ConversationMonitor (3189 lines)
-**Files:** Extract TimelineState, TimelineLoader, CacheCoordinator
+#### Task 3.2: Split ConversationMonitor (~2900 lines)
+**Files:** Remaining extraction: SessionMonitor, RefreshCoordinator (notification hub), FollowPolicyCoordinator
 **Effort:** 16 hours
 **Impact:** Improved maintainability, clearer responsibilities
 
 **Plan:**
 ```
-ConversationMonitor (3189 lines) →
-  - TimelineState.swift (200 lines) - @Observable properties only
-  - TimelineLoader.swift (400 lines) - Load entries from DB
-  - CacheCoordinator.swift (500 lines) - LLM summary coordination
-  - SessionMonitor.swift (300 lines) - File watching
-  - RefreshCoordinator.swift (400 lines) - Debouncing, triggers
-  - ConversationMonitor.swift (800 lines) - Coordinates above
+ConversationMonitor (~2900 lines) →
+  - TimelineDataLoader.swift (done) - DB queries, cursor, decoration
+  - ViewportTrackingCoordinator.swift (done) - visibility + settle
+  - HealthMonitoringCoordinator.swift (done) - watcher recovery
+  - TimelineCacheCoordinator.swift (done) - cache miss queueing
+  - SessionMonitor.swift (remaining) - file watching + event routing
+  - RefreshCoordinator.swift (remaining) - debouncing, notification hub
+  - FollowPolicyCoordinator.swift (remaining) - active session follow logic
+  - ConversationMonitor.swift (target: 800-1000 lines) - coordinates above
 ```
 
 **Approach (Gradual):**
-1. **Week 1:** Extract TimelineState (just observable properties)
-2. **Week 2:** Extract TimelineLoader (loading logic)
-3. **Week 3:** Extract CacheCoordinator (cache management)
-4. **Week 4:** Extract SessionMonitor, RefreshCoordinator
-5. **Week 5:** Slim down ConversationMonitor to coordinator
+1. **Completed:** Extract TimelineDataLoader
+2. **Completed:** Extract ViewportTrackingCoordinator
+3. **Completed:** Extract HealthMonitoringCoordinator
+4. **Completed:** Extract TimelineCacheCoordinator
+5. **Next:** Extract SessionMonitor + RefreshCoordinator (notification hub)
+6. **Next:** Extract FollowPolicyCoordinator
+7. **Then:** Slim down ConversationMonitor to coordinator
 
 **Testing:** Comprehensive tests after each extraction
 
 **Commit series:**
 ```
-refactor(timeline): extract TimelineState from ConversationMonitor
-refactor(timeline): extract TimelineLoader from ConversationMonitor
-refactor(timeline): extract CacheCoordinator from ConversationMonitor
+refactor(timeline): extract TimelineDataLoader from ConversationMonitor
+refactor(timeline): extract ViewportTrackingCoordinator from ConversationMonitor
+refactor(timeline): extract HealthMonitoringCoordinator from ConversationMonitor
+refactor(timeline): extract TimelineCacheCoordinator from ConversationMonitor
 refactor(timeline): extract SessionMonitor from ConversationMonitor
 refactor(timeline): extract RefreshCoordinator from ConversationMonitor
+refactor(timeline): extract FollowPolicyCoordinator from ConversationMonitor
 refactor(timeline): slim ConversationMonitor to coordinator role
 ```
 

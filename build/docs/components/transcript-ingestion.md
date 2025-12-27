@@ -396,8 +396,12 @@ func replace(with entries: [TimelineEntry]) {
 | **ProjectActivityMonitor** | `app/Sources/ContextifyCore/ProjectActivityMonitor.swift` | 1-339 | FSEvents global monitoring |
 | **TranscriptWatcher** | `app/Sources/ContextifyCore/Database/TranscriptWatcher.swift` | 1-168 | Per-file DispatchSource monitoring |
 | **HooverEngine** | `app/Sources/ContextifyCore/Database/HooverEngine.swift` | 1-579 | Streaming JSONL parser & DB ingestor |
-| **ConversationMonitor** | `Contextify/Contextify/ConversationMonitor.swift` | 1-1060 | Timeline state & event orchestration |
+| **ConversationMonitor** | `Contextify/Contextify/ConversationMonitor.swift` | ~1-2900 | Timeline state & event orchestration (delegates DB + cache queueing) |
 | **TimelineState** | `Contextify/Contextify/ConversationMonitor.swift` | 8-72 | Single source of truth for entries |
+| **TimelineDataLoader** | `Contextify/Contextify/TimelineDataLoader.swift` | 1-480 | Database queries, cursor persistence, decoration snapshots |
+| **ViewportTrackingCoordinator** | `Contextify/Contextify/ViewportTrackingCoordinator.swift` | 1-520 | Visibility tracking and settle debounce |
+| **TimelineCacheCoordinator** | `Contextify/Contextify/TimelineCacheCoordinator.swift` | 1-340 | Queue prune/queueing and CacheMiss creation |
+| **HealthMonitoringCoordinator** | `Contextify/Contextify/HealthMonitoringCoordinator.swift` | 1-300 | Watcher health checks and recovery |
 | **StatusBarViewModel** | `Contextify/Contextify/StatusBarViewModel.swift` | 1-257 | Hoover status UI (observes AsyncStream) |
 | **ProjectSwitcherState** | `Contextify/Contextify/ProjectSwitcherState.swift` | 1-400 | Project list & unread counts |
 

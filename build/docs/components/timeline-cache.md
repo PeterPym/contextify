@@ -30,7 +30,7 @@ Timeline entries display LLM-generated summaries (e.g., "Claude proposes to impl
 │                  (Main Actor, UI Layer)                  │
 └───────────────────────┬─────────────────────────────────┘
                         ↓
-                  Load Feed (SQL)
+            Load Feed (TimelineDataLoader)
                         ↓
         ┌───────────────────────────────┐
         │   TranscriptOrchestrator      │
@@ -45,10 +45,15 @@ Timeline entries display LLM-generated summaries (e.g., "Claude proposes to impl
         │  Cache Hit  → Display cached  │
         │               summary         │
         │                               │
-        │  Cache Miss → Queue for LLM   │
-        │               generation      │
+        │  Cache Miss → TimelineCache   │
+        │    Coordinator builds misses  │
         └───────────────┬───────────────┘
                         ↓
+           ┌────────────────────────────┐
+           │ TimelineCacheCoordinator   │
+           │ .queueVisibleMisses(...)   │
+           └────────┬───────────────────┘
+                    ↓
            ┌────────────────────────────┐
            │ TimelineCacheMissGenerator │
            │        (Actor)             │
@@ -162,7 +167,7 @@ LIMIT 50
 - UI flags (`isCompletion`, `isDirective`) derived at runtime from `timeline_cache.disposition`
 - `transcript_entries` contains only canonical source data from transcript files
 
-**Derivation Logic (ConversationMonitor.swift:513-517):**
+**Derivation Logic (ConversationMonitor.toTimelineEntry):**
 ```swift
 let cached = try? orchestrator.getCachedTimeline(
   contentSha256: entry.contentSha256,
@@ -191,14 +196,15 @@ let isDirective: Bool = {
 **Properties:**
 ```swift
 actor TimelineCacheMissGenerator {
-  private var pendingMisses: [CacheKey: CacheMiss] = [:]
+  private var pendingMisses: [CacheMiss] = []  // LIFO
+  private var pendingKeys: Set<CacheKey> = []
   private let maxQueueSize = 5000
-  private let maxBatchSize = 10  // Matches code
-  private let batchDelayNs: UInt64 = 2_000_000_000  // ~2s rate limit between batches
+  private let maxBatchSize = 1  // Sequential processing
+  private let batchDelayNs: UInt64 = 0
 }
 ```
 
-**Deduplication:** Dictionary keyed by CacheKey → multiple identical requests collapse to one.
+**Deduplication:** `pendingKeys` set keyed by CacheKey → multiple identical requests collapse to one.
 
 **Capacity:** 5000 max pending → oldest dropped if exceeded.
 
@@ -221,11 +227,9 @@ func queueMisses(_ misses: [CacheMiss]) {
 
 func processQueue() async {
   while !pendingMisses.isEmpty {
-    // 1. Take batch of 10
-    let batch = Array(pendingMisses.values.prefix(10))
-    for key in batch.map(\.cacheKey) {
-      pendingMisses.removeValue(forKey: key)
-    }
+    // 1. Take batch of 1
+    let batch = Array(pendingMisses.prefix(1))
+    pendingMisses.removeFirst(min(1, pendingMisses.count))
 
     // 2. Reset LLM sessions (per kind/provider)
     resetSessionsForBatch(batch)
@@ -567,13 +571,10 @@ App launch performs health check; notifies user if LLM unavailable. Circuit brea
 |--------|--------|----------|
 | Cache hit latency | <5ms | ~3ms (SQL query) |
 | Cache miss (LLM) | <2s | ~1.5s (FoundationLLM) |
-| Batch processing | 10 entries/2s | ~5 entries/s |
+| Batch processing | 1 entry/continuous | ~0.7 entries/s |
 | Queue capacity | 5000 | No drops observed |
 
-**Optimization:** Batch size (10) and rate limit (2s) tuned to balance:
-- LLM load (avoid overwhelming on-device model)
-- UI responsiveness (summaries appear within ~2s)
-- Background CPU usage (<10% sustained)
+**Optimization:** Sequential processing (batch size 1) keeps FoundationLLM stable and avoids overload on-device.
 
 ---
 
@@ -604,17 +605,18 @@ See: `technical-reference/conversation-monitor-state-architecture.md`
 // 1. Initialize
 let generator = TimelineCacheMissGenerator(orchestrator: orchestrator)
 
-// 2. Load feed with cache
-let feed = try orchestrator.getRecentFeed(forProject: projectId, limit: 50)
+// 2. Load feed with cache (off-main)
+let feed = try await dataLoader.loadFeed(projectId: projectId, limit: 50, generatorSignature: sig)
 
-// 3. Detect misses
-let misses: [CacheMiss] = feed.compactMap { (entry, cache) in
-  guard cache == nil else { return nil }
-  return CacheMiss(from: entry)
-}
+// 3. Detect misses via coordinator
+let misses = cacheCoordinator.createMissesForFeed(
+  entries: feed.entries,
+  projectId: projectId,
+  contextifyEntryInfo: feed.decoration.contextifyEntryInfo
+)
 
 // 4. Queue for background generation
-generator.queueMisses(misses)
+await generator.queueMisses(misses)
 
 // 5. Listen for cache updates
 NotificationCenter.default.addObserver(

@@ -307,7 +307,7 @@ rg "nonisolated\(unsafe\).*var" --type swift
    - Reduces duplication, improves maintainability
 
 3. **God Class Refactoring** (~10 hours)
-   - ConversationMonitor.swift (3,189 lines) → Extract LLM processing
+   - ConversationMonitor.swift (~2.9k lines) → Remaining extractions (LLM queueing already moved to TimelineCacheCoordinator)
    - TranscriptOrchestrator.swift (2,234 lines) → Split by responsibility
 
 ### P3: Low Priority (~40 hours estimated)

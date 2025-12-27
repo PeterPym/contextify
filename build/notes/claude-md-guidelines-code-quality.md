@@ -728,7 +728,7 @@ Task.detached {
 2. Keep tests passing at each step
 3. Refactor when touching code anyway
 
-### Example: ConversationMonitor.swift (3189 lines)
+### Example: ConversationMonitor.swift (~2.9k lines, partially refactored)
 
 **Current responsibilities:**
 - Timeline state (@Observable properties)

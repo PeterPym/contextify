@@ -40,10 +40,10 @@
 ---
 
 #### 2. ConversationMonitor.swift
-**Lines:** 3,189 | **Issues:** 12+ | **P0/P1:** 3
+**Lines:** ~2.9k | **Issues:** 12+ | **P0/P1:** 3
 
 **Problems:**
-- ⚠️ God class (timeline + cache + monitoring + coordination)
+- ⚠️ God class (timeline + monitoring + coordination; cache/DB work extracted)
 - ⚠️ Too many detached tasks without cancellation (8 tasks)
 - ⚠️ Complex state management (hard to track mutations)
 
@@ -286,7 +286,7 @@
 **Priority:** P2
 
 **Largest:**
-1. ConversationMonitor.swift (3,189 lines)
+1. ConversationMonitor.swift (~2.9k lines, partially refactored in Phase 1–3)
 2. TranscriptOrchestrator.swift (2,134 lines)
 3. FoundationLLM.swift (2,096 lines)
 
@@ -298,7 +298,7 @@
 **Priority:** P1
 
 **Hottest Files:**
-1. ConversationMonitor.swift (8 tasks)
+1. ConversationMonitor.swift (remaining tasks after Phase 1–3 extractions)
 2. ProjectSwitcherState.swift (4 tasks)
 3. SettingsView.swift (2 tasks)
 
@@ -350,7 +350,7 @@
 
 ### Month 1 (High Priority)
 1. **TranscriptOrchestrator.swift** - Delegate to Repository (eliminate raw SQL)
-2. **ConversationMonitor.swift** - Make tasks cancellable
+2. **ConversationMonitor.swift** - Make tasks cancellable (some addressed; remaining audit in progress)
 3. **UI files** - Remove GRDB imports, use Orchestrator
 4. **HUDCore.swift** - Fix unsafe mutable state
 
@@ -359,7 +359,7 @@
 ---
 
 ### Quarter 1 (Long-term)
-1. **ConversationMonitor.swift** - Split into focused classes
+1. **ConversationMonitor.swift** - Split into focused classes (Phase 1–3 complete; remaining subsystems pending)
 2. **TranscriptOrchestrator.swift** - Extract responsibilities
 3. **FoundationLLM.swift** - Split LLM coordination
 4. **Implement query builder** - Prevent filter bugs systematically
