@@ -20,6 +20,15 @@ struct ImageExtractionResult: Sendable {
   let images: [ExtractedImage]
   let promptText: String?  // Text content that accompanied the images
   let didReadFile: Bool    // Whether file was successfully opened and read
+  let didFindEntry: Bool   // Whether the target entry UUID was found in the file
+
+  /// Convenience initializer with default values
+  nonisolated init(images: [ExtractedImage] = [], promptText: String? = nil, didReadFile: Bool = false, didFindEntry: Bool = false) {
+    self.images = images
+    self.promptText = promptText
+    self.didReadFile = didReadFile
+    self.didFindEntry = didFindEntry
+  }
 
   /// Convenience for checking if result has images
   var isEmpty: Bool { images.isEmpty }
@@ -95,7 +104,7 @@ actor ImageExtractor {
 
     guard let path = transcriptPath else {
       log.debug("[IMAGE-EXTRACT] No transcript path for entry \(entryId.prefix(8), privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
+      return ImageExtractionResult()
     }
 
     // Capture values for detached task (avoid capturing self)
@@ -122,8 +131,9 @@ actor ImageExtractor {
     // Clean up in-flight tracking
     inFlight[entryId] = nil
 
-    // Cache the result only if we successfully read the file
-    if result.didReadFile {
+    // Cache the result only if we successfully found the entry
+    // (Don't cache mid-write/incomplete JSONL reads or missing entries)
+    if result.didFindEntry {
       cacheResult(result, forEntry: entryId)
     }
 
@@ -150,21 +160,22 @@ actor ImageExtractor {
 
     do {
       // Wrap file access for sandbox builds
+      let isSandboxed = accessProvider != nil && providerID != nil
       let result: ImageExtractionResult = try {
         if let provider = accessProvider, let provID = providerID {
           return try provider.withAccess(for: provID) { _ in
-            try Self.extractFromFile(entryId: entryId, url: url, log: log)
+            try Self.extractFromFile(entryId: entryId, url: url, isSandboxed: isSandboxed, log: log)
           }
         } else {
           // DMG build or unknown provider - direct access
-          return try Self.extractFromFile(entryId: entryId, url: url, log: log)
+          return try Self.extractFromFile(entryId: entryId, url: url, isSandboxed: isSandboxed, log: log)
         }
       }()
 
       return result
     } catch {
       log.warning("[IMAGE-EXTRACT] Failed to read transcript: \(error.localizedDescription, privacy: .public)")
-      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
+      return ImageExtractionResult()
     }
   }
 
@@ -172,12 +183,19 @@ actor ImageExtractor {
   private static func extractFromFile(
     entryId: String,
     url: URL,
+    isSandboxed: Bool,
     log: Logger
   ) throws -> ImageExtractionResult {
     guard let fileHandle = FileHandle(forReadingAtPath: url.path) else {
-      log.debug("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
+      // Sandbox failure is likely a permission issue (warning)
+      // File missing in DMG build is normal churn (debug)
+      if isSandboxed {
+        log.warning("[IMAGE-EXTRACT] Could not open file in sandboxed environment (likely missing security scope): \(url.path, privacy: .public)")
+      } else {
+        log.debug("[IMAGE-EXTRACT] Could not open file for reading: \(url.path, privacy: .public)")
+      }
       // File not found/unreadable - don't cache this result
-      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
+      return ImageExtractionResult()
     }
 
     defer { try? fileHandle.close() }
@@ -208,18 +226,18 @@ actor ImageExtractor {
         }
 
         // Found the entry - extract images and text
-        var result = extractContentFromEntry(json, log: log)
-        result = ImageExtractionResult(
-          images: result.images,
-          promptText: result.promptText,
-          didReadFile: true
-        )
+        let result = extractContentFromEntry(json, log: log)
 
         if !result.images.isEmpty {
           log.info("[IMAGE-EXTRACT] Extracted \(result.images.count, privacy: .public) images from entry \(entryId.prefix(8), privacy: .public)")
         }
 
-        return result
+        return ImageExtractionResult(
+          images: result.images,
+          promptText: result.promptText,
+          didReadFile: true,
+          didFindEntry: true
+        )
       }
     }
 
@@ -228,29 +246,30 @@ actor ImageExtractor {
       if let json = try? JSONSerialization.jsonObject(with: buffer) as? [String: Any],
          let uuid = json["uuid"] as? String,
          uuid == entryId {
-        var result = extractContentFromEntry(json, log: log)
-        result = ImageExtractionResult(
-          images: result.images,
-          promptText: result.promptText,
-          didReadFile: true
-        )
+        let result = extractContentFromEntry(json, log: log)
         if !result.images.isEmpty {
           log.info("[IMAGE-EXTRACT] Extracted \(result.images.count, privacy: .public) images from entry \(entryId.prefix(8), privacy: .public)")
         }
-        return result
+        return ImageExtractionResult(
+          images: result.images,
+          promptText: result.promptText,
+          didReadFile: true,
+          didFindEntry: true
+        )
       }
     }
 
     // Entry not found in file (but file was read successfully)
-    return ImageExtractionResult(images: [], promptText: nil, didReadFile: true)
+    // Don't cache this - could be mid-write JSONL or incomplete data
+    return ImageExtractionResult(didReadFile: true, didFindEntry: false)
   }
 
   /// Extract image blocks and text from an entry's JSON
   private static func extractContentFromEntry(_ json: [String: Any], log: Logger) -> ImageExtractionResult {
     guard let message = json["message"] as? [String: Any],
           let contentBlocks = message["content"] as? [[String: Any]] else {
-      // Note: didReadFile will be set by caller based on whether file was opened
-      return ImageExtractionResult(images: [], promptText: nil, didReadFile: false)
+      // Note: didReadFile and didFindEntry will be set by caller
+      return ImageExtractionResult()
     }
 
     var images: [ExtractedImage] = []
@@ -278,8 +297,8 @@ actor ImageExtractor {
     }
 
     let promptText = textParts.isEmpty ? nil : textParts.joined(separator: "\n")
-    // Note: didReadFile will be set by caller based on whether file was opened
-    return ImageExtractionResult(images: images, promptText: promptText, didReadFile: false)
+    // Note: didReadFile and didFindEntry will be set by caller
+    return ImageExtractionResult(images: images, promptText: promptText)
   }
 
   /// Compute the byte size of a cached result
@@ -291,6 +310,9 @@ actor ImageExtractor {
 
   /// Cache result with FIFO eviction based on both entry count and byte size
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
+    // Verify cache/cacheOrder invariant
+    assert(cache.count == cacheOrder.count, "cache/cacheOrder out of sync")
+
     let resultBytes = byteSize(of: result)
 
     // If a single result is larger than the entire cache budget, don't cache it.
