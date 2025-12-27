@@ -164,7 +164,7 @@ final class TimelineFixValidationTests: XCTestCase {
                 let result = try await FoundationLLM.shared._testTimelineSummary(
                     message: testCase.message,
                     kind: .assistant,
-                    provider: TimelineSourceContext.Provider(id: .claudeCode, displayName: "Claude Code")
+                    provider: .claudeCode
                 )
 
                 let actualDisp = result.disposition

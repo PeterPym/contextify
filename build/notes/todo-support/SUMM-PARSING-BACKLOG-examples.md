@@ -299,16 +299,21 @@ The user's message was "this too seems poorly summarized:" followed by a JSON bl
 ```
 
 **Problem:**
-TODO
+The user asked "are you stuck?" (addressing Claude Code), but the summary says "if you were stuck" - confusing who "you" refers to. The summary should reflect that the USER asked if CLAUDE was stuck, not vice versa.
 
 **Expected Summary:**
-TODO
+- "You asked if Claude Code was stuck."
+- Or: "You checked if Claude Code was stalled."
 
 **Root Cause (suspected):**
-TODO
+- The pronoun "you" in the original message refers to Claude Code (from the user's perspective)
+- The LLM misinterpreted the subject/object relationship when transforming to third-person summary
+- No special handling for user messages that address the assistant directly
 
 **Fix Approach:**
-TODO
+1. Detect second-person questions addressed to the assistant ("are you...", "can you...", "do you...")
+2. Transform "you" → "Claude Code" in such questions before summarizing
+3. Post-process: ensure "you" in user summaries refers to the user, not the assistant
 
 ---
 
@@ -330,16 +335,21 @@ TODO
 ```
 
 **Problem:**
-TODO
+The summary is literally `<bash-input>gs</bash-input>` - the raw markup is echoed back without any transformation. The preprocessing should have converted this to something usable, or the LLM should have summarized the action.
 
 **Expected Summary:**
-TODO
+- "You executed the command `gs`."
+- Or: "You ran a shell command."
 
 **Root Cause (suspected):**
-TODO
+- The `stripQuotedAndCode` function replaces `<bash-input>...</bash-input>` with `[system output]` but this might not have been applied
+- Or the LLM received the raw markup and just echoed it back
+- Very short command (`gs`) may have bypassed summarization logic
 
 **Fix Approach:**
-TODO
+1. Ensure `stripQuotedAndCode` is always applied to user messages before summarization
+2. Add fast path: if message is just a bash-input tag with short content, use template: "You executed the command `X`."
+3. Post-process: detect XML-like tags in summaries and reject/regenerate
 
 ---
 

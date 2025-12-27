@@ -285,6 +285,47 @@ actor FoundationLLM {
             options: .regularExpression
         )
 
+        // Remove markdown tables (lines containing |---|)
+        // Tables cause echo/passthrough behavior (Examples 1, 15)
+        if result.contains("|") {
+            var tableFilteredLines: [String] = []
+            var inTable = false
+            for line in result.split(separator: "\n", omittingEmptySubsequences: false) {
+                let lineStr = String(line).trimmingCharacters(in: .whitespaces)
+                // Detect table separator row
+                if lineStr.contains("|---") || lineStr.contains("| ---") || lineStr.contains("|:--") {
+                    inTable = true
+                    continue
+                }
+                // Skip table rows (lines with multiple pipe characters)
+                if inTable && lineStr.hasPrefix("|") && lineStr.contains("|") {
+                    continue
+                }
+                // Exit table mode when we hit a non-table line
+                if inTable && !lineStr.hasPrefix("|") {
+                    inTable = false
+                }
+                // Skip table header rows too
+                if lineStr.hasPrefix("|") && lineStr.hasSuffix("|") && lineStr.filter({ $0 == "|" }).count >= 3 {
+                    continue
+                }
+                tableFilteredLines.append(String(line))
+            }
+            result = tableFilteredLines.joined(separator: "\n")
+        }
+
+        // Remove JSON blobs (quoted content that confuses summarization - Example 7)
+        // Detect patterns like: "this seems X:" followed by { or JSON content
+        if result.contains("{") && result.contains("\"") {
+            // Replace JSON object literals with placeholder
+            // Pattern: { followed by "key": on same or next lines
+            result = result.replacingOccurrences(
+                of: #"(?s)\{[^{}]*\"[^\"]+\"[^{}]*:[^{}]*\}"#,
+                with: "[quoted JSON content]",
+                options: .regularExpression
+            )
+        }
+
         // Remove triple-quoted strings ("""...""") handling same-line open/close correctly
         var cleanedLines: [String] = []
         var inTripleQuote = false
@@ -1904,6 +1945,135 @@ extension FoundationLLM {
         return false
     }
 
+    // MARK: - Echo Detection (Examples 2, 3, 6, 14, 17)
+
+    struct EchoCheckResult {
+        let isEcho: Bool
+        let reason: String
+    }
+
+    /// Detect when a summary is just echoing the input with minimal transformation
+    func detectEchoPattern(summary: String, message: String, kind: TimelineEntryKind, assistantName: String) -> EchoCheckResult {
+        let normalizedSummary = collapseWhitespace(summary).lowercased()
+        let normalizedMessage = collapseWhitespace(message).lowercased()
+
+        // Check 1: Duplicate attribution (Example 14: "Claude Code Claude Code's Queue System")
+        let duplicatePattern = assistantName.lowercased() + " " + assistantName.lowercased()
+        if normalizedSummary.contains(duplicatePattern) {
+            return EchoCheckResult(isEcho: true, reason: "duplicate attribution '\(assistantName) \(assistantName)'")
+        }
+
+        // Check 2: Summary is just prefix + original message (Examples 3, 6)
+        // Strip the attribution prefix and compare
+        if kind == .assistant {
+            let prefixPattern = assistantName.lowercased() + " "
+            if normalizedSummary.hasPrefix(prefixPattern) {
+                let withoutPrefix = String(normalizedSummary.dropFirst(prefixPattern.count))
+                // If what remains is very similar to the original, it's an echo
+                if withoutPrefix == normalizedMessage || normalizedMessage.hasPrefix(withoutPrefix) {
+                    return EchoCheckResult(isEcho: true, reason: "literal echo with attribution prefix")
+                }
+                // Check for ~90% substring match (truncated echo)
+                if withoutPrefix.count >= 20 && normalizedMessage.contains(withoutPrefix.prefix(withoutPrefix.count - 3)) {
+                    return EchoCheckResult(isEcho: true, reason: "truncated literal echo")
+                }
+            }
+        }
+
+        // Check 3: User message echo (Example 2: "You said: 'original'")
+        if kind == .user {
+            let saidPattern = "you said:"
+            if normalizedSummary.contains(saidPattern) {
+                // Extract what's after "You said:" and compare to original
+                if let range = normalizedSummary.range(of: saidPattern) {
+                    let afterSaid = String(normalizedSummary[range.upperBound...])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                    // If the "said" content is essentially the original, it's unhelpful
+                    if afterSaid == normalizedMessage || normalizedMessage.hasPrefix(afterSaid) {
+                        // Only flag as echo if the message is short (longer messages might benefit from truncation)
+                        if message.count <= 30 {
+                            return EchoCheckResult(isEcho: true, reason: "passthrough 'You said:' on short message")
+                        }
+                    }
+                }
+            }
+        }
+
+        return EchoCheckResult(isEcho: false, reason: "")
+    }
+
+    // MARK: - Format Issue Detection (Examples 1, 4, 9, 15)
+
+    /// Detect formatting issues in summaries that indicate LLM confusion
+    func detectFormatIssue(summary: String) -> String? {
+        // Check 1: Markdown table markers (Examples 1, 15)
+        if summary.contains("|---") || summary.contains("| ---") || summary.contains("|:--") {
+            return "contains markdown table separator"
+        }
+        // Check for table row pattern (multiple pipes)
+        if summary.filter({ $0 == "|" }).count >= 3 {
+            return "contains markdown table row"
+        }
+
+        // Check 2: XML-like tags (Example 9)
+        if summary.contains("<bash-") || summary.contains("<command-") || summary.contains("</") {
+            return "contains XML-like tags"
+        }
+
+        // Check 3: CSS-like patterns that may have leaked through (Example 4)
+        if summary.contains("var(--") || summary.contains("rgba(") {
+            return "contains CSS syntax"
+        }
+
+        // Check 4: Raw code patterns that shouldn't appear in summaries
+        if summary.contains("func ") || summary.contains("class ") || summary.contains("import ") {
+            return "contains code syntax"
+        }
+
+        return nil
+    }
+
+    // MARK: - Pronoun Issue Detection (Examples 8, 11)
+
+    /// Detect pronoun confusion in user message summaries
+    /// - "You noted that my video..." should be "your video" (first-person in summary)
+    /// - "You asked if you were stuck" should be "if Claude Code was stuck" (addressing assistant)
+    func detectPronounIssue(summary: String, message: String, assistantName: String) -> String? {
+        // Check 1: First-person pronouns in summary that should be second-person
+        // "You noted that my video" → user's "my" should become "your" in third-person summary
+        let firstPersonInSummary = [" my ", " i ", " me ", " mine "]
+        for pronoun in firstPersonInSummary {
+            if summary.contains(pronoun) {
+                // Only flag if the original message also had this pronoun (echo without transformation)
+                if message.contains(pronoun) {
+                    return "first-person pronoun '\(pronoun.trimmingCharacters(in: .whitespaces))' not converted to second-person"
+                }
+            }
+        }
+
+        // Check 2: "You asked if you were..." pattern - second "you" should refer to assistant
+        // User asked "are you stuck?" (addressing Claude) → "You asked if Claude Code was stuck"
+        // Bad: "You asked if you were stuck" (confusing who "you" is)
+        if summary.contains("you asked if you") || summary.contains("you asked whether you") {
+            return "'you asked if you' creates pronoun confusion - should use '\(assistantName)'"
+        }
+
+        // Check 3: Questions addressing the assistant in original message
+        // "are you stuck?", "can you do X?", "do you need help?"
+        let assistantAddressingPatterns = ["are you ", "can you ", "do you ", "will you ", "could you ", "would you "]
+        for pattern in assistantAddressingPatterns {
+            if message.hasPrefix(pattern) || message.contains(" " + pattern) {
+                // If the original is addressing the assistant, summary shouldn't have "if you were"
+                if summary.contains("if you") || summary.contains("whether you") {
+                    return "question addressing assistant should use '\(assistantName)', not 'you'"
+                }
+            }
+        }
+
+        return nil
+    }
+
     func postProcess(
         kind: TimelineEntryKind,
         payload: GuidedTimelineSummary,
@@ -1911,6 +2081,20 @@ extension FoundationLLM {
         provider: TimelineSourceContext.Provider? = nil
     ) throws -> TimelineSummaryResult {
         let summary = sanitize(payload.summary, kind: kind, provider: provider)
+        let assistantName = provider?.displayName ?? "Claude Code"
+
+        // ECHO DETECTION: Reject summaries that are just echoing the input (Examples 2, 3, 6, 14, 17)
+        let echoCheckResult = detectEchoPattern(summary: summary, message: message, kind: kind, assistantName: assistantName)
+        if echoCheckResult.isEcho {
+            log.warning("[VALIDATION-REJECT] Echo pattern detected: \(echoCheckResult.reason, privacy: .public)")
+            throw TimelineError.validationFailure(reason: echoCheckResult.reason)
+        }
+
+        // FORMAT VALIDATION: Reject summaries with problematic formatting (Examples 1, 4, 9, 15)
+        if let formatIssue = detectFormatIssue(summary: summary) {
+            log.warning("[VALIDATION-REJECT] Format issue in summary: \(formatIssue, privacy: .public)")
+            throw TimelineError.validationFailure(reason: formatIssue)
+        }
 
         if kind == .assistant {
             let leaked = introducedTopics(message: message, summary: summary)
@@ -1938,7 +2122,6 @@ extension FoundationLLM {
                 }
 
                 // Special case: if it's just an ack, accept the generic ack message
-                let assistantName = provider?.displayName ?? "Claude Code"
                 if isAck(message) {
                     return TimelineSummaryResult(summary: "\(assistantName) acknowledges the request.", isCompletion: false, isDirective: false, disposition: "ack")
                 }
@@ -1978,6 +2161,21 @@ extension FoundationLLM {
                 "from the logs", "from the stack trace"
             ]
             let hasAnalysisCue = analysisCues.contains { msgLower.contains($0) }
+
+            // Investigation cues: "let me find/check/see" patterns are ACTIONS, not questions (Example 5)
+            // These often get misclassified with "asked how..." but should use "investigated/searched"
+            let investigationCues = [
+                "let me find ", "let me check ", "let me see ", "let me look ",
+                "now let me ", "i'll find ", "i'll check ", "i'll look "
+            ]
+            let hasInvestigationCue = investigationCues.contains { msgLower.contains($0) }
+
+            // Future/pending work cues: NOT completion, should stay as proposal (Example 12)
+            let futureWorkCues = [
+                "ready to implement", "when you are", "when you're ready",
+                "let me know when", "ready when you are"
+            ]
+            let hasFutureWorkCue = futureWorkCues.contains { msgLower.contains($0) }
 
             // Validation rules (in priority order)
 
@@ -2040,6 +2238,28 @@ extension FoundationLLM {
             // Note: "let me" with analysis verbs (analyze, calculate, read) is intentionally
             // NOT overridden because investigation/calculation completes when done.
             // Example: "Let me analyze the logs" → "analyzed" is correct.
+
+            // Rule 5: Future work cue should prevent completion disposition (Example 12)
+            // "Ready to implement when you are" → proposal, not completion
+            if payload.disposition == "completion" && hasFutureWorkCue && !hasCompletionCue {
+                log.warning("Overriding disposition: completion → proposal (future work cue detected)")
+                log.debug("Message preview: \(String(message.prefix(200)), privacy: .public)")
+
+                return TimelineSummaryResult(
+                    summary: summary,
+                    isCompletion: false,
+                    isDirective: false,
+                    disposition: "proposal"
+                )
+            }
+
+            // Rule 6: Investigation patterns should not use "asked" verb (Example 5)
+            // "Let me find how X works" → "searched/investigated", not "asked"
+            let summaryLower = summary.lowercased()
+            if hasInvestigationCue && summaryLower.contains(" asked ") {
+                log.warning("[VALIDATION-REJECT] Investigation pattern misclassified as question")
+                throw TimelineError.validationFailure(reason: "investigation pattern should not use 'asked'")
+            }
 
         } else if kind == .user {
             // NEW: User message validation (parity with assistant)
@@ -2113,6 +2333,45 @@ extension FoundationLLM {
             if payload.confidence < 0.45 && payload.grounding.lowercased() != "grounded" {
                 log.warning("User summary has low confidence (\(payload.confidence, privacy: .public)) and is not grounded")
                 throw TimelineError.validationFailure(reason: "low confidence and ungrounded")
+            }
+
+            // PRONOUN VALIDATION: Detect first-person pronouns in summary that should be second-person (Examples 8, 11)
+            // "You noted that my video..." → should be "your video"
+            // "You asked if you were stuck" → should be "if Claude Code was stuck"
+            let pronounIssue = detectPronounIssue(summary: s, message: message.lowercased(), assistantName: assistantName)
+            if let issue = pronounIssue {
+                log.warning("[VALIDATION-REJECT] Pronoun issue: \(issue, privacy: .public)")
+                throw TimelineError.validationFailure(reason: issue)
+            }
+
+            // SUGGESTION DETECTION: "we should" is a suggestion, not a request (Example 10)
+            let msgLower = message.lowercased()
+            let suggestionPatterns = ["we should ", "it would be nice ", "might want to ", "we could "]
+            let isSuggestion = suggestionPatterns.contains { msgLower.contains($0) }
+            if isSuggestion && s.contains("requested") {
+                log.warning("[VALIDATION-REJECT] Suggestion misclassified as request")
+                throw TimelineError.validationFailure(reason: "'we should' pattern is suggestion, not request")
+            }
+
+            // FILE PATH VS COMMAND DETECTION (Example 16)
+            // Paths like /private/tmp/... are file references, not slash commands
+            if msgLower.contains("/private/") || msgLower.contains("/users/") || msgLower.contains("/tmp/") {
+                if s.contains("performed") && s.contains("command") {
+                    log.warning("[VALIDATION-REJECT] File path misclassified as command")
+                    throw TimelineError.validationFailure(reason: "file path should not be 'performed command'")
+                }
+            }
+
+            // MULTI-CLAUSE IMPERATIVE DETECTION (Example 13)
+            // "great. commit and push" → has request after acknowledgment
+            let imperativeVerbs = ["commit", "push", "run", "fix", "build", "deploy", "test", "merge"]
+            let hasImperative = imperativeVerbs.contains { msgLower.contains($0) }
+            if hasImperative && s.contains("noted") && !s.contains("requested") {
+                // Check if this is really a request disguised after an acknowledgment
+                if msgLower.contains(". ") || msgLower.contains(", ") {
+                    log.warning("[VALIDATION-REJECT] Multi-clause with imperative misclassified as observation")
+                    throw TimelineError.validationFailure(reason: "imperative verb after acknowledgment is a request")
+                }
             }
         }
 

@@ -2263,7 +2263,7 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 
 ## Summarization Parsing Backlog (1 item)
 
-**Status:** Collecting examples
+**Status:** Validation fixes implemented, parked pending ingestion issue resolution
 **Priority:** P2 (Quality - batch fix unparseable summaries)
 **Effort:** 2-4 hours per batch
 
@@ -2272,15 +2272,16 @@ Timeline summaries sometimes reverse attribution, showing user action requests a
 **Problem:**
 Some transcript entries produce summaries that fail post-processing or contain unexpected formats. Rather than fixing these one-off as they appear, collect examples and fix in batches.
 
-**Workflow:**
-1. When encountering an unparseable summary, add to the backlog reference doc
-2. Periodically review backlog and identify patterns
-3. Fix root causes in parser/prompts/post-processing
-4. Validate fixes against collected examples
+**Progress:**
+- Implemented validation fixes for all 17 examples in backlog
+- Fixes include: echo detection, format validation, pronoun validation, attribution rules
+- Changes parked pending resolution of ingestion issue discovered during testing
+- Test script available: `build/notes/todo-support/summarization-validation-test.sh`
+- Validation report: `/tmp/summarization-fixes-report.md`
 
 **Reference:** `build/notes/todo-support/SUMM-PARSING-BACKLOG-examples.md`
 
-**Current Count:** 1 example (seed script markdown table output)
+**Current Count:** 17 examples (all with implemented fixes, pending ingestion fix)
 
 ---
 
