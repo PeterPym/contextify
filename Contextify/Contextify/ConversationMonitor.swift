@@ -4,34 +4,9 @@ import OSLog
 import ContextifyCore
 import AppKit
 import SwiftUI
-import CryptoKit
 
-// MARK: - R3: String hash extension for stable cursor keys
-
-extension String {
-    /// R3: Normalize project paths to stable short keys for cursor persistence
-    nonisolated func sha1Hex() -> String {
-        let digest = Insecure.SHA1.hash(data: Data(self.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-// MARK: - P0-3: Cursor Persistence Actor
-
-/// Off-main-thread cursor persistence to avoid UI jank
-/// R3: Uses sha1 hash of project path for stable UserDefaults keys
-private actor CursorPersistence {
-    func load(projectId: String) -> EntryCursor? {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(EntryCursor.self, from: data)
-    }
-    func save(projectId: String, cursor: EntryCursor) {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = try? JSONEncoder().encode(cursor) else { return }
-        UserDefaults.standard.set(data, forKey: key)
-    }
-}
+// Note: sha1Hex() extension moved to StringExtensions.swift
+// Note: CursorPersistence actor merged into TimelineDataLoader
 
 // MARK: - Timeline State
 
@@ -281,7 +256,7 @@ final class ConversationMonitor {
     @ObservationIgnored private var lastSystemEventTs: Int64?
     @ObservationIgnored private var seenSystemEventIds = Set<String>()
     @ObservationIgnored private let policyEngine = ActiveSessionPolicyEngine()
-    @ObservationIgnored private let cursorPersistence = CursorPersistence()  // P0-3: Off-main cursor I/O
+    // Note: Cursor persistence now handled by TimelineDataLoader actor
     private(set) var activeSession: TranscriptSession?  // Observable for UI (v23: actively followed session)
 
     // Health monitoring and diagnostics
@@ -1677,25 +1652,26 @@ final class ConversationMonitor {
 
     // MARK: - Cursor Persistence (P1-4)
 
-    /// Load persisted cursor for current project from UserDefaults
-    /// P0-3: Async I/O via cursor persistence actor to avoid main thread jank
+    /// Load persisted cursor for current project from dataLoader
+    /// Phase 2: Cursor persistence now owned by TimelineDataLoader actor
     @MainActor
     private func loadCursor() async {
-        guard let projectId = currentProjectId else { return }
-
-        if let cursor = await cursorPersistence.load(projectId: projectId) {
-            lastSeenCursor = cursor
+        guard let projectId = currentProjectId, let loader = dataLoader else { return }
+        await loader.loadCursor(projectId: projectId)
+        // Sync local cursor from loader for backward compat during wiring
+        lastSeenCursor = await loader.lastSeenCursor
+        if let cursor = lastSeenCursor {
             log.debug("Loaded persisted cursor for project \(projectId, privacy: .public): \(cursor.id, privacy: .public)")
         }
     }
 
-    /// Save current cursor to UserDefaults for restart safety
-    /// P0-3: Fire-and-forget detached task to avoid blocking main thread
+    /// Save current cursor to UserDefaults via dataLoader
+    /// Phase 2: Cursor persistence now owned by TimelineDataLoader actor (best-effort, actor-internal)
     private func saveCursor() {
-        guard let projectId = currentProjectId, let cursor = lastSeenCursor else { return }
-
-        Task.detached { [cursor, projectId, cursorPersistence] in
-            await cursorPersistence.save(projectId: projectId, cursor: cursor)
+        guard let cursor = lastSeenCursor, let loader = dataLoader else { return }
+        // Fire-and-forget: loader handles persistence internally
+        Task {
+            await loader.setCursor(cursor)
         }
     }
 

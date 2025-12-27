@@ -2,28 +2,36 @@
 //  TimelineDataLoader.swift
 //  Contextify
 //
-//  Extracted from ConversationMonitor - handles database queries and feed loading
+//  Background actor for database queries and feed loading.
+//  Extracted from ConversationMonitor to reduce god object complexity.
+//
+//  Phase 2: Converted from @MainActor class to background actor.
+//  Owns cursor, seen IDs, decoration data, and refresh tracking.
 //
 
 import Foundation
 import OSLog
 import ContextifyCore
 
-// MARK: - Cursor Persistence Actor
+// MARK: - Decoration Snapshot
 
-/// Off-main-thread cursor persistence to avoid UI jank
-private actor CursorPersistenceActor {
-    func load(projectId: String) -> EntryCursor? {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(EntryCursor.self, from: data)
+/// Immutable snapshot of decoration data for entry mapping
+public struct DecorationSnapshot: Sendable {
+    public let spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo]
+    public let contextifyEntryIds: Set<String>
+    public let contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo]
+
+    public nonisolated init(
+        spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:],
+        contextifyEntryIds: Set<String> = [],
+        contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]
+    ) {
+        self.spawnedAgentsLookup = spawnedAgentsLookup
+        self.contextifyEntryIds = contextifyEntryIds
+        self.contextifyEntryInfo = contextifyEntryInfo
     }
 
-    func save(projectId: String, cursor: EntryCursor) {
-        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
-        guard let data = try? JSONEncoder().encode(cursor) else { return }
-        UserDefaults.standard.set(data, forKey: key)
-    }
+    public nonisolated static var empty: DecorationSnapshot { DecorationSnapshot() }
 }
 
 // MARK: - Feed Load Result
@@ -33,15 +41,18 @@ public struct FeedLoadResult: Sendable {
     public let entries: [(TranscriptEntry, TimelineCache?)]
     public let transcriptPaths: [String: String]
     public let newestCursor: EntryCursor?
+    public let decoration: DecorationSnapshot
 
-    public init(
+    public nonisolated init(
         entries: [(TranscriptEntry, TimelineCache?)],
         transcriptPaths: [String: String],
-        newestCursor: EntryCursor?
+        newestCursor: EntryCursor?,
+        decoration: DecorationSnapshot
     ) {
         self.entries = entries
         self.transcriptPaths = transcriptPaths
         self.newestCursor = newestCursor
+        self.decoration = decoration
     }
 }
 
@@ -50,40 +61,44 @@ public struct IncrementalUpdateResult: Sendable {
     public let newEntries: [TranscriptEntry]
     public let transcriptPaths: [String: String]
     public let updatedCursor: EntryCursor?
+    public let decoration: DecorationSnapshot
 
-    public init(
+    public nonisolated init(
         newEntries: [TranscriptEntry],
         transcriptPaths: [String: String],
-        updatedCursor: EntryCursor?
+        updatedCursor: EntryCursor?,
+        decoration: DecorationSnapshot
     ) {
         self.newEntries = newEntries
         self.transcriptPaths = transcriptPaths
         self.updatedCursor = updatedCursor
+        self.decoration = decoration
     }
 }
 
 // MARK: - Timeline Data Loader
 
-/// Handles database queries and feed loading for the timeline
-/// Extracted from ConversationMonitor to reduce god object complexity
-@MainActor
-public final class TimelineDataLoader {
+/// Background actor for database queries and feed loading.
+/// Owns cursor, seen IDs, decoration data, and refresh tracking.
+/// ConversationMonitor awaits loader calls from off-main tasks.
+public actor TimelineDataLoader {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "TimelineDataLoader")
     private let orchestrator: TranscriptOrchestrator
-    private let cursorPersistence = CursorPersistenceActor()
 
-    // State
+    // Cursor state (project-scoped)
     public private(set) var lastSeenCursor: EntryCursor?
+    private var currentProjectId: String?
+
+    // Seen entry tracking (for deduplication)
     private var seenEntryIDs = Set<String>()
 
     // Decoration data (agent types, Contextify entries)
-    private(set) var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]
-    private(set) var contextifyEntryIds: Set<String> = Set()
-    private(set) var contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]
+    private var spawnedAgentsLookup: [String: TranscriptOrchestrator.AgentDecorationInfo] = [:]
+    private var contextifyEntryIds: Set<String> = Set()
+    private var contextifyEntryInfo: [String: TranscriptOrchestrator.ContextifyEntryInfo] = [:]
 
-    // Refresh tracking
+    // Refresh tracking (diagnostics)
     private var refreshHistory: [(trigger: String, timestamp: Date)] = []
-    private var lastProgressRefreshTime: Date?
 
     public init(orchestrator: TranscriptOrchestrator) {
         self.orchestrator = orchestrator
@@ -92,25 +107,37 @@ public final class TimelineDataLoader {
     // MARK: - Cursor Persistence
 
     /// Load persisted cursor for project from UserDefaults
-    public func loadCursor(projectId: String) async {
-        if let cursor = await cursorPersistence.load(projectId: projectId) {
+    public func loadCursor(projectId: String) {
+        currentProjectId = projectId
+        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
+        guard let data = UserDefaults.standard.data(forKey: key) else {
+            log.debug("[CURSOR] No persisted cursor for project \(projectId, privacy: .public)")
+            return
+        }
+        if let cursor = try? JSONDecoder().decode(EntryCursor.self, from: data) {
             lastSeenCursor = cursor
-            log.debug("Loaded persisted cursor for project \(projectId, privacy: .public): \(cursor.id, privacy: .public)")
+            log.debug("[CURSOR] Loaded persisted cursor for project \(projectId, privacy: .public): \(cursor.id, privacy: .public)")
         }
     }
 
-    /// Save current cursor to UserDefaults for restart safety
-    public func saveCursor(projectId: String) {
-        guard let cursor = lastSeenCursor else { return }
-        Task.detached { [cursor, weak self] in
-            await self?.cursorPersistence.save(projectId: projectId, cursor: cursor)
-        }
+    /// Save current cursor to UserDefaults (best-effort, actor-internal)
+    private func saveCursor() {
+        guard let projectId = currentProjectId, let cursor = lastSeenCursor else { return }
+        let key = "dev.contextify.cursor.\(projectId.sha1Hex())"
+        guard let data = try? JSONEncoder().encode(cursor) else { return }
+        UserDefaults.standard.set(data, forKey: key)
     }
 
-    /// Update cursor from entry
-    public func updateCursor(from entry: TranscriptEntry, projectId: String) {
+    /// Update cursor from entry and persist
+    public func updateCursor(from entry: TranscriptEntry) {
         lastSeenCursor = EntryCursor(from: entry)
-        saveCursor(projectId: projectId)
+        saveCursor()
+    }
+
+    /// Set cursor directly and persist (for backward compat during wiring)
+    public func setCursor(_ cursor: EntryCursor) {
+        lastSeenCursor = cursor
+        saveCursor()
     }
 
     // MARK: - Seen Entry Tracking
@@ -120,14 +147,16 @@ public final class TimelineDataLoader {
         seenEntryIDs.contains(id)
     }
 
-    /// Mark entry as seen
-    public func markEntrySeen(_ id: String) {
-        seenEntryIDs.insert(id)
-    }
-
-    /// Clear all seen entries
-    public func clearSeenEntries() {
-        seenEntryIDs.removeAll(keepingCapacity: false)
+    /// Filter entries to only those not yet seen, and mark them as seen
+    public func filterAndMarkNewEntries(_ entries: [TranscriptEntry]) -> [TranscriptEntry] {
+        var newEntries: [TranscriptEntry] = []
+        for entry in entries {
+            if !seenEntryIDs.contains(entry.id) {
+                seenEntryIDs.insert(entry.id)
+                newEntries.append(entry)
+            }
+        }
+        return newEntries
     }
 
     /// Prune seen IDs to prevent unbounded growth
@@ -135,25 +164,54 @@ public final class TimelineDataLoader {
         let cap = maxEntries * 2
         if seenEntryIDs.count > cap {
             seenEntryIDs = Set(currentEntryIDs)
+            log.debug("[SEEN-IDS] Pruned to \(self.seenEntryIDs.count, privacy: .public) entries (cap: \(cap, privacy: .public))")
         }
     }
 
     // MARK: - Decoration Data
 
     /// Refresh decoration lookup tables for the current project
-    public func refreshDecorationData(projectId: String) {
+    private func refreshDecorationData(projectId: String) {
         do {
             spawnedAgentsLookup = try orchestrator.getSpawnedAgentEntries(projectId: projectId)
             contextifyEntryIds = try orchestrator.getContextifyEntryIds(projectId: projectId)
             contextifyEntryInfo = try orchestrator.getContextifyEntryInfo(projectId: projectId)
             if !spawnedAgentsLookup.isEmpty || !contextifyEntryIds.isEmpty {
-                log.debug("[DECORATION] Loaded decoration data: \(self.spawnedAgentsLookup.count, privacy: .public) agents, \(self.contextifyEntryIds.count, privacy: .public) contextify entries")
+                log.debug("[DECORATION] Loaded: \(self.spawnedAgentsLookup.count, privacy: .public) agents, \(self.contextifyEntryIds.count, privacy: .public) contextify entries")
             }
         } catch {
-            log.warning("[DECORATION] Failed to load decoration data: \(error.localizedDescription, privacy: .public)")
+            log.warning("[DECORATION] Failed to load: \(error.localizedDescription, privacy: .public)")
             spawnedAgentsLookup.removeAll()
             contextifyEntryIds.removeAll()
             contextifyEntryInfo.removeAll()
+        }
+    }
+
+    /// Create immutable snapshot of current decoration data
+    private func decorationSnapshot() -> DecorationSnapshot {
+        DecorationSnapshot(
+            spawnedAgentsLookup: spawnedAgentsLookup,
+            contextifyEntryIds: contextifyEntryIds,
+            contextifyEntryInfo: contextifyEntryInfo
+        )
+    }
+
+    // MARK: - Reset
+
+    /// Reset loader state for project/session change
+    /// - Parameter clearCursor: true for project change (clear cursor), false for session change (keep cursor)
+    public func reset(clearCursor: Bool, reason: String) {
+        log.info("[RESET] reason=\(reason, privacy: .public) clearCursor=\(clearCursor, privacy: .public)")
+
+        seenEntryIDs.removeAll(keepingCapacity: false)
+        spawnedAgentsLookup.removeAll()
+        contextifyEntryIds.removeAll()
+        contextifyEntryInfo.removeAll()
+        refreshHistory.removeAll()
+
+        if clearCursor {
+            lastSeenCursor = nil
+            currentProjectId = nil
         }
     }
 
@@ -164,8 +222,12 @@ public final class TimelineDataLoader {
         projectId: String,
         limit: Int,
         generatorSignature: String
-    ) async throws -> FeedLoadResult {
-        log.info("[FEED-LOAD] Loading feed for project: \(projectId, privacy: .public) limit: \(limit, privacy: .public)")
+    ) throws -> FeedLoadResult {
+        // Cancellation checkpoint before DB work
+        try Task.checkCancellation()
+
+        log.info("[FEED-LOAD] Loading for project: \(projectId, privacy: .public) limit: \(limit, privacy: .public)")
+        currentProjectId = projectId
 
         let feed = try orchestrator.getRecentFeed(
             forProject: projectId,
@@ -173,13 +235,16 @@ public final class TimelineDataLoader {
             generatorSignature: generatorSignature
         )
 
+        // Cancellation checkpoint after main query
+        try Task.checkCancellation()
+
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
         let transcriptPaths = Dictionary(uniqueKeysWithValues: transcripts.map { ($0.id, $0.filePath) })
 
         // Refresh decoration data
         refreshDecorationData(projectId: projectId)
 
-        // Track seen IDs
+        // Track seen IDs (full load replaces the set)
         seenEntryIDs.removeAll(keepingCapacity: true)
         for (entry, _) in feed {
             seenEntryIDs.insert(entry.id)
@@ -190,42 +255,63 @@ public final class TimelineDataLoader {
         if let newestEntry = feed.last?.0 {
             newestCursor = EntryCursor(from: newestEntry)
             lastSeenCursor = newestCursor
-            saveCursor(projectId: projectId)
+            saveCursor()
         } else {
             newestCursor = nil
         }
 
-        log.info("[FEED-LOAD] Loaded \(feed.count, privacy: .public) entries")
+        log.info("[FEED-LOAD] Loaded \(feed.count, privacy: .public) entries, seenIDs=\(self.seenEntryIDs.count, privacy: .public)")
 
         return FeedLoadResult(
             entries: feed,
             transcriptPaths: transcriptPaths,
-            newestCursor: newestCursor
+            newestCursor: newestCursor,
+            decoration: decorationSnapshot()
         )
     }
 
     /// Process incremental update using cursor pagination
+    /// Returns only entries not already seen (dedup handled by loader)
     public func processIncremental(
-        projectId: String,
-        cursor: EntryCursor
-    ) async throws -> IncrementalUpdateResult {
+        projectId: String
+    ) throws -> IncrementalUpdateResult {
+        // Cancellation checkpoint
+        try Task.checkCancellation()
+
+        guard let cursor = lastSeenCursor else {
+            log.debug("[INCR-UPDATE] No cursor available")
+            return IncrementalUpdateResult(
+                newEntries: [],
+                transcriptPaths: [:],
+                updatedCursor: nil,
+                decoration: decorationSnapshot()
+            )
+        }
+
         log.info("[INCR-UPDATE] Fetching entries after cursor for project: \(projectId, privacy: .public)")
 
-        let newEntries = try orchestrator.getEntriesAfterCursor(
+        let rawEntries = try orchestrator.getEntriesAfterCursor(
             projectId: projectId,
             after: cursor
         )
 
+        // Cancellation checkpoint after query
+        try Task.checkCancellation()
+
+        // Filter to only unseen entries (loader owns dedup)
+        let newEntries = filterAndMarkNewEntries(rawEntries)
+
         guard !newEntries.isEmpty else {
-            log.debug("[INCR-UPDATE] No new entries")
+            log.debug("[INCR-UPDATE] No new unseen entries")
             return IncrementalUpdateResult(
                 newEntries: [],
                 transcriptPaths: [:],
-                updatedCursor: nil
+                updatedCursor: nil,
+                decoration: decorationSnapshot()
             )
         }
 
-        log.info("[INCR-UPDATE] Found \(newEntries.count, privacy: .public) new entries")
+        log.info("[INCR-UPDATE] Found \(newEntries.count, privacy: .public) new entries (filtered from \(rawEntries.count, privacy: .public))")
 
         // Build transcript path lookup
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
@@ -243,7 +329,7 @@ public final class TimelineDataLoader {
         }) {
             updatedCursor = EntryCursor(from: latestNew)
             lastSeenCursor = updatedCursor
-            saveCursor(projectId: projectId)
+            saveCursor()
         } else {
             updatedCursor = nil
         }
@@ -251,14 +337,17 @@ public final class TimelineDataLoader {
         return IncrementalUpdateResult(
             newEntries: newEntries,
             transcriptPaths: transcriptPaths,
-            updatedCursor: updatedCursor
+            updatedCursor: updatedCursor,
+            decoration: decorationSnapshot()
         )
     }
 
     // MARK: - Session Loading
 
     /// Load all sessions from database for transcripts
-    func loadAllSessions(projectId: String) async throws -> [TranscriptSession] {
+    func loadAllSessions(projectId: String) throws -> [TranscriptSession] {
+        try Task.checkCancellation()
+
         let transcripts = try orchestrator.getTranscripts(forProject: projectId)
         let latestTimestamps = try orchestrator.latestTimestampsByTranscript(projectId: projectId)
 
@@ -276,7 +365,7 @@ public final class TimelineDataLoader {
             entryCounts: entryCounts
         )
 
-        log.info("Loaded \(sessions.count) sessions from database")
+        log.info("[SESSIONS] Loaded \(sessions.count, privacy: .public) sessions")
         return sessions
     }
 
@@ -295,11 +384,8 @@ public final class TimelineDataLoader {
             default: provider = .other
             }
 
-            // Use latest conversation timestamp if available, otherwise fall back to file modified time
             let lastActivityTimestamp = latestTimestamps[transcript.id] ?? transcript.updatedAt
             let lastActivity = Date(timeIntervalSince1970: TimeInterval(lastActivityTimestamp))
-
-            // Get entry count (defaults to 0 if not found)
             let entryCount = entryCounts[transcript.id] ?? 0
 
             return TranscriptSession(
@@ -351,5 +437,3 @@ public final class TimelineDataLoader {
         }
     }
 }
-
-// NOTE: sha1Hex() extension is defined in ConversationMonitor.swift
