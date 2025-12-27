@@ -309,9 +309,10 @@ actor ImageExtractor {
   private func cacheResult(_ result: ImageExtractionResult, forEntry entryId: String) {
     // Verify cache/cacheOrder invariants
     #if DEBUG
+    let keySet = Set(cache.keys)
     let orderSet = Set(cacheOrder)
     assert(orderSet.count == cacheOrder.count, "cacheOrder contains duplicates")
-    assert(orderSet == Set(cache.keys), "cache and cacheOrder keysets diverged")
+    assert(orderSet == keySet, "cache and cacheOrder keysets diverged")
     #endif
 
     let resultBytes = byteSize(of: result)
@@ -353,6 +354,20 @@ actor ImageExtractor {
     let postOrderSet = Set(cacheOrder)
     assert(postOrderSet.count == cacheOrder.count, "cacheOrder contains duplicates after mutation")
     assert(postOrderSet == Set(cache.keys), "cache and cacheOrder keysets diverged after mutation")
+
+    // Byte drift detection
+    let computedBytes = cache.values.reduce(0) { $0 + byteSize(of: $1) }
+    assert(computedBytes == cachedBytes, "cachedBytes drifted: computed=\(computedBytes) stored=\(cachedBytes)")
+
+    // Post-conditions after insertion
+    assert(cachedBytes <= maxCacheBytes, "cachedBytes exceeds budget: \(cachedBytes) > \(maxCacheBytes)")
+    assert(cache.count <= maxCacheSize, "cache exceeds entry cap: \(cache.count) > \(maxCacheSize)")
+
+    // Empty-cache sanity
+    if cacheOrder.isEmpty {
+      assert(cache.isEmpty, "cacheOrder empty but cache not empty")
+      assert(cachedBytes == 0, "cache empty but cachedBytes nonzero: \(cachedBytes)")
+    }
     #endif
   }
 
