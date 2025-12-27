@@ -155,77 +155,6 @@ transcript provider permission via Settings. Two bugs were fixed:
 
 ---
 
-## ConversationMonitor Refactoring - Phases 1-2 (Complete)
-
-**Status:** Complete
-**Priority:** P0 (architecture tech debt)
-**Completed:** 2025-12-26
-
-### Phase 1A: HealthMonitoringCoordinator (merged)
-
-**Branch:** `feature/conversation-monitor-refactor`
-
-- [x] #ARCH-REFACTOR-PHASE1A: Extract HealthMonitoringCoordinator from ConversationMonitor
-
-**Changes:**
-- **HealthMonitoringCoordinator.swift** (266 lines) - Actor with callback-based interface, generation token pattern
-- **RecoveryBackoff.swift** (97 lines) - Pure type in ContextifyCore for deterministic testing
-- **RecoveryBackoffTests.swift** (274 lines) - 20 unit tests for backoff logic
-- **ConversationMonitor.swift** (-132 lines) - Reduced from 3528 to ~3400 lines
-
-### Phase 1B: ViewportTrackingCoordinator (merged)
-
-**Branch:** `feature/conversation-monitor-phase1-only`
-
-- [x] #ARCH-REFACTOR-PHASE1B: Extract ViewportTrackingCoordinator from ConversationMonitor
-
-**Changes:**
-- **ViewportTrackingCoordinator.swift** (~513 lines) - Owns viewport state machine, visibility tracking, scroll control, debouncing
-- **TimelineDataLoader.swift** (~40 lines) - Infrastructure stub for future extraction
-- **ConversationMonitor.swift** (-399 lines) - Reduced from 3445 to 3046 lines
-
-**Key improvements:**
-- Initial viewport state machine extracted with fallback/starvation timers
-- Debounce logic centralized (1.25s settle time)
-- Delegate pattern with proper @MainActor isolation
-- Scroll gate for programmatic scroll coordination
-- 6 rounds of external code review hardening
-
-### Phase 2: TimelineDataLoader wiring (merged)
-
-**Branch:** `feature/conversation-monitor-phase2-wiring`
-
-- [x] #ARCH-REFACTOR-PHASE2: Wire TimelineDataLoader as background actor for DB operations
-
-**Changes:**
-- **TimelineDataLoader.swift** (467 lines) - Background actor owning cursor, seenIDs, decoration data
-- **StringExtensions.swift** (20 lines) - Shared sha1Hex() utility
-- **ConversationMonitor.swift** (+125 -200 net) - Wired to use loader, removed duplicate state
-
-**Key improvements:**
-- Loader is background actor (not @MainActor) - all DB work off main thread
-- Single authoritative cursor and seenEntryIDs (eliminates split-brain)
-- DecorationSnapshot, FeedLoadResult, IncrementalUpdateResult for explicit Sendable data passing
-- Defensive guards: feedLoadGeneration token, resetIfProjectMatches(), project mismatch error
-- Cancellation safety: check project/phase/generation before applying async results
-- External code review with 8 specific questions addressed
-
-**Definition of done (verified):**
-- CM does not call orchestrator feed APIs directly (getRecentFeed, getEntriesAfterCursor)
-- Only one authoritative cursor exists (loader owns, CM syncs)
-- Only one authoritative seen-ID store exists (loader owns for main paths)
-- No DB work on main actor (loader is background actor)
-
-**Validation:**
-- 277 tests passing
-- Zero build warnings
-- Gap analysis doc: `/tmp/phase2-gap-analysis-v5.md`
-
-**Remaining phases (deferred):**
-- Phase 3: TimelineCacheCoordinator extraction (high risk)
-
----
-
 ## Total Recall Plugin Distribution & Promotion
 
 **Status:** In progress (blog done, marketplace pending)
@@ -2645,10 +2574,11 @@ Two-tier monitoring: active project gets real-time DispatchSource watchers; inac
 - Feature flag for rollout (`lazyWatchersEnabled`)
 
 **Prerequisites:**
-- ConversationMonitor 4-way split (P0 from architecture-refactoring-analysis.md)
+- ConversationMonitor refactoring (see ROADMAP.md #CM-REFACTOR for history)
   - [x] Phase 1: HealthMonitoringCoordinator + ViewportTrackingCoordinator (complete)
-  - [x] Phase 2: TimelineDataLoader wiring (complete, see #ARCH-REFACTOR-PHASE2)
-  - [ ] Phase 3: TimelineCacheCoordinator extraction (deferred)
+  - [x] Phase 2: TimelineDataLoader wiring (complete)
+  - [x] Phase 3: TimelineCacheCoordinator extraction (complete)
+  - Further phases paused (diminishing returns)
 
 ---
 

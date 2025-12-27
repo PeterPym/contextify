@@ -84,6 +84,40 @@ priority_levels:
 
 ---
 
+### CM-REFACTOR: ConversationMonitor Further Refactoring
+
+**Status:** Phases 1-3 complete, further work paused (diminishing returns)
+**Priority:** P4 (future consideration)
+**Completed phases:** 2025-12-26
+
+ConversationMonitor refactoring to reduce "god object" complexity. Phases 1-3 extracted 4 coordinators totaling 1,572 lines. CM reduced from ~3,500 to 2,880 lines.
+
+**Completed:**
+- [x] Phase 1A: HealthMonitoringCoordinator (268 lines) - health checks, auto-recovery, backoff
+- [x] Phase 1B: ViewportTrackingCoordinator (521 lines) - viewport state machine, visibility, scroll
+- [x] Phase 2: TimelineDataLoader (468 lines) - background DB queries, cursor, decoration data
+- [x] Phase 3: TimelineCacheCoordinator (315 lines) - cache miss creation, queue management
+
+**Key improvements achieved:**
+- DB work moved off main thread (background actor)
+- Single authoritative cursor and seenEntryIDs (no split-brain)
+- Defensive guards: feedLoadGeneration token, project mismatch errors
+- Cancellation safety throughout async paths
+- External code review with hardening fixes
+
+**Future candidates (if needed):**
+- NotificationHub/ObserverCoordinator - consolidate 7+ observer lifecycle management
+- ActiveSessionFollowCoordinator - isolate policy decisions from ingestion
+- TimelineEntryMapper - centralize entry transformation
+
+**Decision rule for future phases:**
+Continue only if extraction reduces correctness risk, performance risk, or change velocity.
+Pause if no crisp contract or only chasing line reduction.
+
+**Analysis:** `/tmp/colleague-response-analysis.md`, `/tmp/conversation-monitor-refactoring-assessment.md`
+
+---
+
 ### GIT-ACTIVITY: Git activity tracking and work story visualization
 
 **Status:** Not started
