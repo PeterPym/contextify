@@ -1513,31 +1513,16 @@ final class ConversationMonitor {
             // Note: seenEntryIDs now managed by dataLoader
             let mapStart = Date()
             log.info("[UIOPT-MAP-START] Mapping \(feed.count, privacy: .public) entries to timeline UI models...")
-            var misses: [CacheMiss] = []
+            let misses = cacheCoordinator.createMissesForFeed(
+                entries: feed,
+                projectId: projectId,
+                contextifyEntryInfo: decoration.contextifyEntryInfo
+            )
 
             // Get active entry ID from generator (if any)
             let activeGeneratingID = cacheMissGenerator?.activeEntryID
 
             let newEntries = feed.map { entry, cache in
-                // Collect cache miss for background generation
-                if cache == nil, let windowSha = entry.windowSha256 {
-                    let ctxInfo = decoration.contextifyEntryInfo[entry.id]
-                    let miss = CacheMiss(
-                        entryId: entry.id,
-                        projectId: projectId,  // Track project for cancellation when switching
-                        contentSha256: entry.contentSha256,
-                        windowSha256: windowSha,
-                        content: entry.content,
-                        context: entry.content,  // TODO: Add surrounding context
-                        kind: entry.kind,
-                        provider: entry.provider,
-                        isContextify: ctxInfo != nil,
-                        contextifyToolKey: ctxInfo?.toolKey,
-                        isContextifyResult: ctxInfo?.isResult ?? false
-                    )
-                    misses.append(miss)
-                }
-
                 // Create timeline entry with active state check
                 let transcriptPath = transcriptPaths[entry.transcriptId]
                 var timelineEntry = toTimelineEntry(entry, cached: cache, transcriptPath: transcriptPath)
@@ -2287,7 +2272,7 @@ final class ConversationMonitor {
                 // Convert to timeline entries with cache lookup + collect misses
                 // TODO: Batch cache lookup for better performance
                 var addedCount = 0
-                var misses: [CacheMiss] = []
+                var cacheByEntryId: [String: TimelineCache] = [:]
 
                 for entry in newEntries {
                     // Loader already filtered to unseen entries, no dedup needed here
@@ -2301,23 +2286,8 @@ final class ConversationMonitor {
                         cache = nil
                     }
 
-                    // Collect cache miss for background generation
-                    if cache == nil, let windowSha = entry.windowSha256 {
-                        let ctxInfo = result.decoration.contextifyEntryInfo[entry.id]
-                        let miss = CacheMiss(
-                            entryId: entry.id,
-                            projectId: projectId,  // Track project for cancellation when switching
-                            contentSha256: entry.contentSha256,
-                            windowSha256: windowSha,
-                            content: entry.content,
-                            context: entry.content,  // TODO: Add surrounding context
-                            kind: entry.kind,
-                            provider: entry.provider,
-                            isContextify: ctxInfo != nil,
-                            contextifyToolKey: ctxInfo?.toolKey,
-                            isContextifyResult: ctxInfo?.isResult ?? false
-                        )
-                        misses.append(miss)
+                    if let cache {
+                        cacheByEntryId[entry.id] = cache
                     }
 
                     let transcriptPath = result.transcriptPaths[entry.transcriptId]
@@ -2325,6 +2295,13 @@ final class ConversationMonitor {
                     appendEntry(timelineEntry)
                     addedCount += 1
                 }
+
+                let misses = cacheCoordinator.createMissesForUpdate(
+                    entries: newEntries,
+                    projectId: projectId,
+                    contextifyEntryInfo: result.decoration.contextifyEntryInfo,
+                    cacheForEntry: { cacheByEntryId[$0.id] }
+                )
 
                 // Queue cache misses for background generation
                 if !misses.isEmpty, let generator = cacheMissGenerator {
@@ -2843,10 +2820,8 @@ final class ConversationMonitor {
 extension ConversationMonitor: ViewportTrackingDelegate {
     func viewportDidSettle(visibleIDs: Set<UUID>) {
         debugVisibleIDs = visibleIDs
-        Task {
-            // Phase 3: Delegate to cache coordinator for queue management
-            await cacheCoordinator.handleViewportSettle(visibleIDs: visibleIDs)
-        }
+        // Phase 3: Delegate to cache coordinator for queue management (coalesced internally)
+        cacheCoordinator.handleViewportSettle(visibleIDs: visibleIDs)
     }
 
     func queueCacheMisses(_ misses: [CacheMiss]) async {

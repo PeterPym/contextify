@@ -31,12 +31,22 @@ protocol CacheCoordinatorDelegate: ViewportTrackingDelegate {
 /// - Queue pruning (removing non-visible entries from queue)
 /// - Immediate regeneration queueing (user-initiated via right-click)
 /// - Coordination between viewport events and cache miss generator
+///
+/// Concurrency notes:
+/// - All state is @MainActor-isolated, making settleGeneration checks race-free.
+/// - Delegate may become nil mid-operation; this is "best effort" - we capture what
+///   we need at entry and bail gracefully. Next settle or user action will recover.
 @MainActor
 final class TimelineCacheCoordinator {
     private let log = Logger(subsystem: "dev.contextify.timeline", category: "CacheCoordinator")
 
     // Delegate for callbacks to ConversationMonitor
     weak var delegate: CacheCoordinatorDelegate?
+
+    // Coalescing: ensure "last settle wins" under rapid settle events.
+    // MainActor serialization makes generation checks race-free - no concurrent mutation possible.
+    private var settleTask: Task<Void, Never>?
+    private var settleGeneration: UInt64 = 0
 
     // MARK: - Initialization
 
@@ -46,15 +56,37 @@ final class TimelineCacheCoordinator {
 
     /// Handle viewport settle event - prune queue and queue visible entries
     /// Called from ViewportTrackingDelegate.viewportDidSettle
-    func handleViewportSettle(visibleIDs: Set<UUID>) async {
+    func handleViewportSettle(visibleIDs: Set<UUID>) {
+        settleGeneration &+= 1
+        let generation = settleGeneration
+
+        settleTask?.cancel()
+        settleTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            await self.performViewportSettle(visibleIDs: visibleIDs, generation: generation)
+        }
+    }
+
+    private func performViewportSettle(visibleIDs: Set<UUID>, generation: UInt64) async {
+        guard !Task.isCancelled else { return }
+        guard generation == settleGeneration else { return }
+
         await pruneQueueToVisible(visibleIDs)
+
+        guard !Task.isCancelled else { return }
+        guard generation == settleGeneration else { return }
+
         await queueVisibleGeneratingEntries(visibleIDs)
+
+        // Clean up task reference for cleaner state inspection
+        settleTask = nil
     }
 
     // MARK: - Queue Management (Extracted from ConversationMonitor)
 
     /// Prune generator queue to keep only visible entries
     private func pruneQueueToVisible(_ ids: Set<UUID>) async {
+        guard !Task.isCancelled else { return }
         guard let delegate else {
             log.warning("[CACHE-COORD] pruneQueueToVisible - delegate nil")
             return
@@ -82,6 +114,7 @@ final class TimelineCacheCoordinator {
         await generator.pruneQueue(keepOnly: visibleEntryIDs)
 
         #if DEBUG
+        guard !Task.isCancelled else { return }
         // Check queue depth after pruning
         let afterCount = await generator.getStatus().pending
         log.debug("[CACHE-COORD-PRUNE-AFTER] Queue depth after pruning: \(afterCount, privacy: .public)")
@@ -91,6 +124,7 @@ final class TimelineCacheCoordinator {
 
     /// Queue entries that are both visible and generating summaries
     private func queueVisibleGeneratingEntries(_ ids: Set<UUID>) async {
+        guard !Task.isCancelled else { return }
         guard let delegate else {
             log.warning("[CACHE-COORD] queueVisibleGeneratingEntries - delegate nil")
             return
@@ -154,14 +188,15 @@ final class TimelineCacheCoordinator {
 
         log.info("[CACHE-COORD-QUEUE] Queueing \(misses.count, privacy: .public) visible unsummarized entries:")
 
-        // Create lookup map from source identifier to timeline entry (for isQueued status)
+        #if DEBUG
+        // Per-entry logging with content preview (gated to avoid leaking sensitive text in production)
         let entryLookup = Dictionary(uniqueKeysWithValues: delegate.visibleEntries.map { ($0.sourceIdentifier, $0) })
-
         for miss in misses {
             let contentPreview = String(miss.content.prefix(15))
             let isQueued = entryLookup[miss.entryId]?.isQueued ?? false
             log.info("  [CACHE-COORD-QUEUE] Entry \(miss.entryId.prefix(8), privacy: .public): \(miss.kind, privacy: .public) | isQueued=\(isQueued, privacy: .public) | \"\(contentPreview, privacy: .public)...\"")
         }
+        #endif
 
         log.debug("[CACHE-COORD-QUEUE] Calling generator.queueMisses() with \(misses.count) entries")
         await generator.queueMisses(misses)
@@ -305,6 +340,7 @@ final class TimelineCacheCoordinator {
         if entry.isError { return "error" }
         if entry.action != .unsummarized { return "cached" }
         if let generator = delegate?.cacheMissGenerator {
+            // activeEntryID is @MainActor-isolated in the actor, so synchronous access is safe here
             if generator.activeEntryID == entry.id { return "generating" }
             if await generator.isEntryQueued(entry.sourceIdentifier) {
                 return "queued"

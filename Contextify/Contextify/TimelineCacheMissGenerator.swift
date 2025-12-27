@@ -128,6 +128,10 @@ actor TimelineCacheMissGenerator {
     /// Prune pending queue to keep only entries visible in viewport
     /// - Parameter visibleIDs: Set of entry IDs currently visible to user
     func pruneQueue(keepOnly visibleIDs: Set<String>) async {
+        guard !Task.isCancelled else {
+            log.debug("[PRUNE] Cancelled; skipping prune")
+            return
+        }
         let beforeCount = pendingMisses.count
         log.debug("[PRUNE] Checking queue: \(beforeCount) pending, \(visibleIDs.count) visible IDs")
         guard beforeCount > 0 else {
@@ -163,6 +167,10 @@ actor TimelineCacheMissGenerator {
 
     /// Queue cache misses for background generation with de-duplication and cap
     func queueMisses(_ misses: [CacheMiss]) async {
+        guard !Task.isCancelled else {
+            log.debug("[GENERATOR] queueMisses cancelled; skipping \(misses.count) entries")
+            return
+        }
         // Skip in lite mode - no LLM available for summaries
         if isLiteModeActive() {
             log.info("[LITE-MODE] Skipping \(misses.count) cache misses - summaries disabled")
